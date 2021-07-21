@@ -400,7 +400,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        if (try_move_to_prewhere && storage && storage->supportsPrewhere() && query.where() && !query.prewhere())
+        if (try_move_to_prewhere && storage && query.where() && !query.prewhere())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
@@ -609,16 +609,16 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     query_info.query = query_ptr;
     query_info.has_window = query_analyzer->hasWindow();
-    if (storage && !options.only_analyze)
-    {
-        auto & query = getSelectQuery();
-        query_analyzer->makeSetsForIndex(query.where());
-        query_analyzer->makeSetsForIndex(query.prewhere());
-        query_info.sets = query_analyzer->getPreparedSets();
-    }
 
     if (storage && !options.only_analyze)
+    {
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, metadata_snapshot, query_info);
+
+        /// TODO how can we make IN index work if we cache parts before selecting a projection?
+        /// XXX Used for IN set index analysis. Is this a proper way?
+        if (query_info.projection)
+            metadata_snapshot->selected_projection = query_info.projection->desc;
+    }
 
     /// Do I need to perform the first part of the pipeline?
     /// Running on remote servers during distributed processing or if query is not distributed.
@@ -1882,6 +1882,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
+        // TODO figure out how to make set for projections
+        query_info.sets = query_analyzer->getPreparedSets();
         auto & prewhere_info = analysis_result.prewhere_info;
 
         if (prewhere_info)

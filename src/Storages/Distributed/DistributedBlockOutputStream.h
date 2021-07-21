@@ -94,7 +94,6 @@ private:
     size_t inserted_rows = 0;
 
     bool insert_sync;
-    bool random_shard_insert;
     bool allow_materialized;
 
     /// Sync-related stuff
