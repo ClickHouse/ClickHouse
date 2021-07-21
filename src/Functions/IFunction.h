@@ -113,7 +113,8 @@ public:
 
     virtual ~IFunctionBase() = default;
 
-    virtual ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
+    virtual ColumnPtr execute(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
     {
         return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
     }
@@ -161,7 +162,8 @@ public:
       * Arguments are passed without modifications, useDefaultImplementationForNulls, useDefaultImplementationForConstants,
       * useDefaultImplementationForLowCardinality are not applied.
       */
-    virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const { return nullptr; }
+    virtual ColumnPtr getConstantResultForNonConstArguments(
+        const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const { return nullptr; }
 
     /** Function is called "injective" if it returns different result for different values of arguments.
       * Example: hex, negate, tuple...

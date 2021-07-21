@@ -92,6 +92,8 @@ public:
 
     DiskType::Type getType() const override { return DiskType::Type::RAM; }
 
+    bool supportZeroCopyReplication() const override { return false; }
+
 private:
     void createDirectoriesImpl(const String & path);
     void replaceFileImpl(const String & from_path, const String & to_path);
