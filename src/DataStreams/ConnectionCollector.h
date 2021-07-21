@@ -16,7 +16,7 @@ class ConnectionCollector : boost::noncopyable, WithMutableContext
 public:
     static ConnectionCollector & init(ContextMutablePtr global_context_, size_t max_threads);
     static std::shared_ptr<IConnections>
-    enqueueConnectionCleanup(const ConnectionPoolWithFailoverPtr & pool, std::unique_ptr<IConnections> connections) noexcept;
+    enqueueConnectionCleanup(const ConnectionPoolWithFailoverPtr & pool, std::shared_ptr<IConnections> connections) noexcept;
     static void drainConnections(IConnections & connections) noexcept;
 
 private:

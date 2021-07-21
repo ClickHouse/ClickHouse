@@ -44,7 +44,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 {
     create_connections = [this, &connection, throttler]()
     {
-        return std::make_unique<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
+        return std::make_shared<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
     };
 }
 
@@ -58,7 +58,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_), pool(pool_)
 {
     create_connections = [this, connections_, throttler]() mutable {
-        return std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
+        return std::make_shared<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
     };
 }
 
@@ -70,7 +70,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     : header(header_), query(query_), context(context_)
     , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_), pool(pool_)
 {
-    create_connections = [this, throttler]()->std::unique_ptr<IConnections>
+    create_connections = [this, throttler]()->std::shared_ptr<IConnections>
     {
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
@@ -82,7 +82,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             if (main_table)
                 table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
-            return std::make_unique<HedgedConnections>(pool, current_settings, timeouts, throttler, pool_mode, table_to_check);
+            return std::make_shared<HedgedConnections>(pool, current_settings, timeouts, throttler, pool_mode, table_to_check);
         }
 #endif
 
@@ -97,7 +97,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         else
             connection_entries = pool->getMany(timeouts, &current_settings, pool_mode);
 
-        return std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
+        return std::make_shared<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
     };
 }
 
@@ -107,7 +107,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
       * all connections, then read and skip the remaining packets to make sure
       * these connections did not remain hanging in the out-of-sync state.
       */
-    if (connections && (established || isQueryPending()))
+    if (established || isQueryPending())
         connections->disconnect();
 }
 
@@ -417,7 +417,7 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
     {
         /// Finish might be called in multiple threads. Make sure we release connections in thread-safe way.
         std::lock_guard guard(connection_draining_mutex);
-        if (auto conn = ConnectionCollector::enqueueConnectionCleanup(pool, std::move(connections)))
+        if (auto conn = ConnectionCollector::enqueueConnectionCleanup(pool, connections))
         {
             /// Drain connections synchronously.
             CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);

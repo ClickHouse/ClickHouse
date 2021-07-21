@@ -54,21 +54,20 @@ struct AsyncDrainTask
 };
 
 std::shared_ptr<IConnections> ConnectionCollector::enqueueConnectionCleanup(
-    const ConnectionPoolWithFailoverPtr & pool, std::unique_ptr<IConnections> connections) noexcept
+    const ConnectionPoolWithFailoverPtr & pool, std::shared_ptr<IConnections> connections) noexcept
 {
     if (!connections)
         return nullptr;
 
-    std::shared_ptr<IConnections> shared_connections = std::move(connections);
     if (connection_collector)
     {
-        if (connection_collector->pool.trySchedule(AsyncDrainTask{pool, shared_connections}))
+        if (connection_collector->pool.trySchedule(AsyncDrainTask{pool, connections}))
         {
             CurrentMetrics::add(CurrentMetrics::AsyncDrainedConnections, 1);
             return nullptr;
         }
     }
-    return shared_connections;
+    return connections;
 }
 
 void ConnectionCollector::drainConnections(IConnections & connections) noexcept
