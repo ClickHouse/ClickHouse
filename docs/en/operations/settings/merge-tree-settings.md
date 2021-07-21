@@ -280,14 +280,13 @@ Default value: `0`.
 
 ## check_sample_column_is_correct {#check_sample_column_is_correct}
 
-Enables to check column for sampling or sampling expression is correct at table creation.
+Enables check at table creation, that data type of column for sampling or sampling expression is correct. The data type must be one of unsigned [integer types](../sql-reference/data-types/int-uint.md): `UInt8`, `UInt16`, `UInt32`, `UInt64`.
 
 Possible values:
 
--   true  — Check column or sampling expression is correct at table creation.
--   false — Do not check column or sampling expression is correct at table creation.
+-   `true`  — The check is enabled.
+-   `false` — The check is disabled.
 
 Default value: `true`.
 
-By default, the ClickHouse server check column for sampling or sampling expression at table creation. If you already had tables with incorrect sampling expression, set value `false` to make ClickHouse server do not raise exception when ClickHouse server is starting.
-[Original article](https://clickhouse.tech/docs/en/operations/settings/merge_tree_settings/) <!--hide-->
+By default the ClickHouse server checks at table creation the data type of column for sampling or sampling expression. If you already have tables with incorrect sampling expression, set this setting to `false` to make ClickHouse server not to raise exception when the server is starting.
