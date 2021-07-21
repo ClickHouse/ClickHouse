@@ -44,8 +44,6 @@ public:
 
     DiskType::Type getType() const override { return DiskType::Type::HDFS; }
 
-    bool supportZeroCopyReplication() const override { return true; }
-
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         size_t buf_size,
@@ -59,11 +57,6 @@ public:
     void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) override;
 
     RemoteFSPathKeeperPtr createFSPathKeeper() const override;
-
-    /// Check file exists and ClickHouse has an access to it
-    /// Overrode in remote disk
-    /// Required for remote disk to ensure that replica has access to data written by other node
-    bool checkUniqueId(const String & hdfs_uri) const override;
 
 private:
     String getRandomName() { return toString(UUIDHelpers::generateV4()); }

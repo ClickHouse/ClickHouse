@@ -76,10 +76,6 @@ add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
-if (USE_SQLITE)
-    add_headers_and_sources(dbms Databases/SQLite)
-endif()
-
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
@@ -419,11 +415,6 @@ if (USE_AWS_S3)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_INCLUDE_DIR})
 endif()
 
-if (USE_S2_GEOMETRY)
-    dbms_target_link_libraries (PUBLIC ${S2_GEOMETRY_LIBRARY})
-    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${S2_GEOMETRY_INCLUDE_DIR})
-endif()
-
 if (USE_BROTLI)
     target_link_libraries (clickhouse_common_io PRIVATE ${BROTLI_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
@@ -432,10 +423,6 @@ endif()
 if (USE_AMQPCPP)
     dbms_target_link_libraries(PUBLIC ${AMQPCPP_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${AMQPCPP_INCLUDE_DIR})
-endif()
-
-if (USE_SQLITE)
-    dbms_target_link_libraries(PUBLIC sqlite)
 endif()
 
 if (USE_CASSANDRA)

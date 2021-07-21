@@ -13,8 +13,6 @@
 namespace DB
 {
 
-bool needRewriteQueryWithFinalForStorage(const Names & column_names, const StoragePtr & storage);
-
 Pipe readFinalFromNestedStorage(
     StoragePtr nested_storage,
     const Names & column_names,

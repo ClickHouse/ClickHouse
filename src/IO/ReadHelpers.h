@@ -644,7 +644,7 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf)
     else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
     /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
-    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()));
+    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day(), -DateLUT::instance().getDayNumOffsetEpoch());
     return ReturnType(true);
 }
 
@@ -919,17 +919,6 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
         x = __builtin_bswap32(x);
     else if constexpr (sizeof(x) == 8)
         x = __builtin_bswap64(x);
-}
-
-template <typename T>
-inline std::enable_if_t<is_big_int_v<T>, void>
-readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
-{
-    for (size_t i = 0; i != std::size(x.items); ++i)
-    {
-        auto & item = x.items[std::size(x.items) - i - 1];
-        readBinaryBigEndian(item, buf);
-    }
 }
 
 
