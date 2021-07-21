@@ -36,6 +36,11 @@ StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_stora
     setInMemoryMetadata(in_memory_metadata);
 }
 
+bool StorageMaterializeMySQL::needRewriteQueryWithFinal(const Names & column_names) const
+{
+    return needRewriteQueryWithFinalForStorage(column_names, nested_storage);
+}
+
 Pipe StorageMaterializeMySQL::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -47,6 +52,7 @@ Pipe StorageMaterializeMySQL::read(
 {
     /// If the background synchronization thread has exception.
     rethrowSyncExceptionIfNeed(database);
+
     return readFinalFromNestedStorage(nested_storage, column_names, metadata_snapshot,
             query_info, context, processed_stage, max_block_size, num_streams);
 }

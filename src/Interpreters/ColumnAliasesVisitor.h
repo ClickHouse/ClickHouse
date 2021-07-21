@@ -60,6 +60,9 @@ public:
         /// private_aliases are from lambda, so these are local names.
         NameSet private_aliases;
 
+        /// Check if query is changed by this visitor.
+        bool changed = false;
+
         Data(const ColumnsDescription & columns_, const NameToNameMap & array_join_result_columns_, ContextPtr context_)
             : columns(columns_), context(context_)
         {
