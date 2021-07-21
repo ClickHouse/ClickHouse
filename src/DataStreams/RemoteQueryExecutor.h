@@ -127,11 +127,11 @@ private:
     /// Drain connection synchronously when finishing.
     bool sync_draining = false;
 
-    std::function<std::unique_ptr<IConnections>()> create_connections;
+    std::function<std::shared_ptr<IConnections>()> create_connections;
     /// Hold a shared reference to the connection pool so that asynchronous connection draining will
     /// work safely. Make sure it's the first member so that we don't destruct it too early.
     const ConnectionPoolWithFailoverPtr pool;
-    std::unique_ptr<IConnections> connections;
+    std::shared_ptr<IConnections> connections;
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
