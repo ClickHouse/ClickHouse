@@ -97,6 +97,14 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric Revision;
+    extern const Metric VersionInteger;
+    extern const Metric MemoryTracking;
+    extern const Metric MaxDDLEntryID;
+}
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -537,6 +545,15 @@ private:
     int mainImpl()
     {
         UseSSL use_ssl;
+
+        MainThreadStatus::getInstance();
+
+        /// Limit on total memory usage
+        size_t max_client_memory_usage = config().getUInt64("max_memory_usage", 0);
+
+        total_memory_tracker.setHardLimit(max_client_memory_usage);
+        total_memory_tracker.setDescription("(total)");
+        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
         registerFormats();
         registerFunctions();
