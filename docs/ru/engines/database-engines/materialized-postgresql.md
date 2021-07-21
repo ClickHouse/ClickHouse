@@ -18,7 +18,7 @@ SELECT * FROM test_database.postgres_table;
 
 1. `materialized_postgresql_max_block_size` — задает максимальное количество строк, собранных перед вставкой данных в таблицу. По умолчанию: `65536`.
 
-2. `materialized_postgresql_tables_list` — список таблиц для движка баз данных `MaterializedPostgreSQL`. По умолчанию: `whole database`.
+2. `materialized_postgresql_tables_list` — задает список таблиц для движка баз данных `MaterializedPostgreSQL`. По умолчанию: `whole database`.
 
 3. `materialized_postgresql_allow_automatic_update` — позволяет автоматически обновить таблицу в фоновом режиме при обнаружении изменений схемы. По умолчанию: `0` (`false`).
 
@@ -33,7 +33,7 @@ SELECT * FROM test_database.table1;
 
 ## Требования {#requirements}
 
--   Настройка `wal_level` должна иметь значение `logical` и настройка `max_replication_slots` должна быть равна, по меньшей мере, `2` в конфигурационном файле в PostgreSQL.
+-   Настройка `wal_level` должна иметь значение `logical`, настройка `max_replication_slots` должна быть равна по меньшей мере `2` в конфигурационном файле в PostgreSQL.
 
 -   Каждая реплицируемая таблица должна иметь один из следующих **идентификаторов реплики**:
 
@@ -64,4 +64,4 @@ WHERE oid = 'postgres_table'::regclass;
 
 ## Предупреждение {#warning}
 
-1.  Конвертация значений **TOAST** не поддерживается. Для типа данных будет использоваться значение по умолчанию.
+1.  Преобразование **TOAST**-значений не поддерживается. Для типа данных будет использоваться значение по умолчанию.
