@@ -36,7 +36,7 @@ def test_access_rights_for_funtion():
     instance.query(create_function_query, user = 'A')
     assert instance.query("SELECT MySum(1, 2)") == "3\n"
 
-    assert "it's necessary to have grant DROP FUNCTION ON *.*" in instance.query("DROP FUNCTION MySum", user = 'B')
+    assert "it's necessary to have grant DROP FUNCTION ON *.*" in instance.query_and_get_error("DROP FUNCTION MySum", user = 'B')
 
     instance.query("GRANT DROP FUNCTION ON *.* TO B")
     instance.query("DROP FUNCTION MySum", user = 'B')
