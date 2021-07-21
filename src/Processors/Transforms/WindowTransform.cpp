@@ -982,8 +982,6 @@ static void assertSameColumns(const Columns & left_all,
         assert(typeid(*left_column).hash_code()
             == typeid(*right_column).hash_code());
 
-        fmt::print(stderr, "{}\n", typeid(*left_column).name());
-
         if (isColumnConst(*left_column))
         {
             Field left_value = assert_cast<const ColumnConst &>(*left_column).getField();
