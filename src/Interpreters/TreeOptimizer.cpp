@@ -18,6 +18,7 @@
 #include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/GatherFunctionQuantileVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -39,6 +40,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_QUERY_PARAMETER;
 }
 
 namespace
@@ -587,6 +589,56 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & me
     RewriteFunctionToSubcolumnVisitor(data).visit(query);
 }
 
+/// Rewrites multi quantile()() functions with the same arguments to quantiles()()[]
+/// eg:SELECT quantile(0.5)(x), quantile(0.9)(x), quantile(0.95)(x) FROM...
+///    rewrite to : SELECT quantiles(0.5, 0.9, 0.95)(x)[1], quantiles(0.5, 0.9, 0.95)(x)[2], quantiles(0.5, 0.9, 0.95)(x)[3] FROM ...
+void fuseCandidate(std::unordered_map<String, GatherFunctionQuantileData::FuseQuantileAggregatesData> & fuse_quantile)
+{
+    for (auto candidate : fuse_quantile)
+    {
+        String func_name = candidate.first;
+        GatherFunctionQuantileData::FuseQuantileAggregatesData args_to_functions = candidate.second;
+
+        // Try to fuse multiply quantilexxx Function to one
+        for (auto it : args_to_functions.arg_map_function)
+        {
+            std::vector<ASTFunction *> functions = it.second;
+            size_t count = functions.size();
+            if (count > 1)
+            {
+                auto param_exp_list = std::make_shared<ASTExpressionList>();
+                for (auto func : functions)
+                {
+                    const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
+                    assert(parameters.size() == 1);
+                    param_exp_list->children.push_back(parameters[0]);
+                }
+                functions[0]->parameters = param_exp_list;
+                functions[0]->name = quantile_fuse_name_mapping.find(func_name)->second;
+                auto func_base = functions[0]->clone();
+
+                for (size_t i = 0; i < count; ++i)
+                {
+                    functions[i]->name = "arrayElement";
+                    auto func_exp_list = std::make_shared<ASTExpressionList>();
+                    func_exp_list->children.push_back(func_base);
+                    func_exp_list->children.push_back(std::make_shared<ASTLiteral>(i + 1));
+                    functions[i]->children.clear();
+                    functions[i]->parameters = nullptr;
+                    functions[i]->arguments = func_exp_list;
+                    functions[i]->children.push_back(func_exp_list);
+                }
+            }
+        }
+    }
+}
+void optimizeFuseQuantileFunctions(ASTPtr & query)
+{
+    GatherFunctionQuantileVisitor::Data data{};
+    GatherFunctionQuantileVisitor(data).visit(query);
+    fuseCandidate(data.fuse_quantile);
+}
+
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
@@ -684,6 +736,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
+
+    if (settings.optimize_fuse_quantile)
+        optimizeFuseQuantileFunctions(query);
 }
 
 }
