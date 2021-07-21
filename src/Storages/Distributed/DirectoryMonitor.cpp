@@ -913,7 +913,7 @@ public:
         std::unique_ptr<CompressedReadBuffer> decompressing_in;
         std::unique_ptr<NativeBlockInputStream> block_in;
 
-        Poco::Logger * log;
+        Poco::Logger * log = nullptr;
 
         Block first_block;
     };
