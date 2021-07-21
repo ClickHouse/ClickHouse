@@ -11,7 +11,7 @@
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/InputStreamFromASTInsertQuery.h>
+#include <Processors/Transforms/getSourceFromFromASTInsertQuery.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 
 #include <Parsers/ASTIdentifier.h>

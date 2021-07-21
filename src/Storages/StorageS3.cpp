@@ -19,7 +19,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/narrowBlockInputStreams.h>
 
 #include <Processors/QueryPipeline.h>
