@@ -18,7 +18,7 @@ DataTypePtr getDataTypeByColumn(const IColumn & column);
 void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns);
 DataTypePtr getLeastCommonTypeForObject(const DataTypes & types);
 NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list);
-NamesAndTypesList extendObjectColumns(const NamesAndTypesList & columns_list, const NameToTypeMap & object_types, bool with_subcolumns);
+void extendObjectColumns(NamesAndTypesList & columns_list, const NameToTypeMap & object_types, bool with_subcolumns);
 
 void finalizeObjectColumns(MutableColumns & columns);
 

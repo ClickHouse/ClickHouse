@@ -200,33 +200,29 @@ NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list)
     return res;
 }
 
-NamesAndTypesList extendObjectColumns(const NamesAndTypesList & columns_list, const NameToTypeMap & object_types, bool with_subcolumns)
+void extendObjectColumns(NamesAndTypesList & columns_list, const NameToTypeMap & object_types, bool with_subcolumns)
 {
-    NamesAndTypesList result_columns;
-    for (const auto & column : columns_list)
+    NamesAndTypesList subcolumns_list;
+    for (auto & column : columns_list)
     {
         auto it = object_types.find(column.name);
         if (it != object_types.end())
         {
             const auto & object_type = it->second;
-            result_columns.emplace_back(column.name, object_type);
+            column.type = object_type;
 
             if (with_subcolumns)
             {
                 for (const auto & subcolumn : object_type->getSubcolumnNames())
                 {
-                    result_columns.emplace_back(column.name, subcolumn,
+                    subcolumns_list.emplace_back(column.name, subcolumn,
                         object_type, object_type->getSubcolumnType(subcolumn));
                 }
             }
         }
-        else
-        {
-            result_columns.push_back(column);
-        }
     }
 
-    return result_columns;
+    columns_list.splice(columns_list.end(), std::move(subcolumns_list));
 }
 
 void finalizeObjectColumns(MutableColumns & columns)

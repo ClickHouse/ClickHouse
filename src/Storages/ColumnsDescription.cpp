@@ -489,6 +489,22 @@ Names ColumnsDescription::getNamesOfPhysical() const
     return ret;
 }
 
+std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    if (it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & options.kind))
+        return NameAndTypePair(it->name, it->type);
+
+    if (options.with_subcolumns)
+    {
+        auto jt = subcolumns.get<0>().find(column_name);
+        if (jt != subcolumns.get<0>().end())
+            return *jt;
+    }
+
+    return {};
+}
+
 std::optional<NameAndTypePair> ColumnsDescription::tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
