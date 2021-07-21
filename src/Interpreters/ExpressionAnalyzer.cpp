@@ -364,7 +364,7 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
 }
 
 
-/// Performance optimisation for IN() if storage supports it.
+/// Performance optimization for IN() if storage supports it.
 void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 {
     if (!node || !storage() || !storage()->supportsIndexForIn())
@@ -1477,12 +1477,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         chain.clear();
     };
-
-    if (storage)
-    {
-        query_analyzer.makeSetsForIndex(query.where());
-        query_analyzer.makeSetsForIndex(query.prewhere());
-    }
 
     {
         ExpressionActionsChain chain(context);
