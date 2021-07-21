@@ -74,7 +74,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     /// If one of the types is Nullable, we apply aggregate function combinator "Null".
 
     if (std::any_of(type_without_low_cardinality.begin(), type_without_low_cardinality.end(),
-            [](const auto & type) { return type->isNullable(); }))
+        [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
         if (!combinator)
