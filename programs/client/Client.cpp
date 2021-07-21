@@ -422,7 +422,7 @@ private:
                {TokenType::Semicolon, Replxx::Color::INTENSE},
                {TokenType::Dot, Replxx::Color::INTENSE},
                {TokenType::Asterisk, Replxx::Color::INTENSE},
-               {TokenType::HereDoc, Replxx::Color::BLUE},
+               {TokenType::HereDoc, Replxx::Color::CYAN},
                {TokenType::Plus, Replxx::Color::INTENSE},
                {TokenType::Minus, Replxx::Color::INTENSE},
                {TokenType::Slash, Replxx::Color::INTENSE},
