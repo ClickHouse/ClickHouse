@@ -748,7 +748,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto num_consumers = kafka_settings->kafka_num_consumers.value;
 
-        if (num_consumers > 16)
+        if (num_consumers > 48)
         {
             throw Exception("Number of consumers can not be bigger than 16", ErrorCodes::BAD_ARGUMENTS);
         }
