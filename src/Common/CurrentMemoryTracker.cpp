@@ -2,6 +2,8 @@
 #include <Common/CurrentThread.h>
 
 #include <Common/CurrentMemoryTracker.h>
+#include <iostream>
+
 
 namespace
 {
@@ -36,6 +38,7 @@ namespace
             if (current_thread)
             {
                 current_thread->untracked_memory += size;
+
                 if (current_thread->untracked_memory > current_thread->untracked_memory_limit)
                 {
                     /// Zero untracked before track. If tracker throws out-of-limit we would be able to alloc up to untracked_memory_limit bytes
@@ -52,6 +55,12 @@ namespace
             }
         }
     }
+}
+
+void check()
+{
+    if (auto * memory_tracker = getMemoryTracker())
+        memory_tracker->allocImpl(0, true);
 }
 
 void alloc(Int64 size)
