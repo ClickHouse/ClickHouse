@@ -12,6 +12,7 @@
 #include <cmath>
 #include <random>
 #include <cstdlib>
+#include <string>
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
@@ -130,11 +131,13 @@ void MemoryTracker::logMemoryUsage(Int64 current) const
 
 void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
 {
+    std::cout << "AllocImpl for size " << size << " when current hard limit is " << hard_limit.load() << " in " << (description_ptr.load()==nullptr ?  "" : std::string(description_ptr.load())) << std::endl;
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
 
     if (BlockerInThread::isBlocked(level))
     {
+        std::cout << "isBlocked"<< std::endl;
         /// Since the BlockerInThread should respect the level, we should go to the next parent.
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
             loaded_next->allocImpl(size, throw_if_memory_exceeded);
