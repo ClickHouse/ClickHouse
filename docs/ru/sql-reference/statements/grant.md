@@ -13,28 +13,28 @@ toc_title: GRANT
 ## Синтаксис присвоения привилегий {#grant-privigele-syntax}
 
 ```sql
-[REPLACE] GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
 - `privilege` — Тип привилегии
 - `role` — Роль пользователя ClickHouse.
 - `user` — Пользователь ClickHouse.
 
-`REPLACE` заменяет все старые привилегии новыми привилегиями для `user` или `role`.
 `WITH GRANT OPTION` разрешает пользователю или роли выполнять запрос `GRANT`. Пользователь может выдавать только те привилегии, которые есть у него, той же или меньшей области действий.
+`WITH REPLACE OPTION` заменяет все старые привилегии новыми привилегиями для `user` или `role`, Если не указано, добавьте новые привилегии для старых.
 
 
 ## Синтаксис назначения ролей {#assign-role-syntax}
 
 ```sql
-[REPLACE] GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
+GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
 ```
 
 - `role` — Роль пользователя ClickHouse.
 - `user` — Пользователь ClickHouse.
 
-`REPLACE` заменяет все старые роли новыми ролями для пользователя `user` или `role`.
 `WITH ADMIN OPTION` присваивает привилегию [ADMIN OPTION](#admin-option-privilege) пользователю или роли.
+`WITH REPLACE OPTION` заменяет все старые роли новыми ролями для пользователя `user` или `role`, Если не указано, добавьте новые роли в старые.
 
 ## Использование {#grant-usage}
 
