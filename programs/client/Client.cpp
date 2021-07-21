@@ -1964,9 +1964,6 @@ private:
 
             connection->sendData(block);
             processed_rows += block.rows();
-
-            if (!block)
-                break;
         }
     }
 
