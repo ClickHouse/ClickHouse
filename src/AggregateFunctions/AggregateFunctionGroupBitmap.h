@@ -60,7 +60,7 @@ public:
     {
     }
 
-    String getName() const override { return Data::name(); }
+    String getName() const override { return Policy::name; }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
 
@@ -120,6 +120,7 @@ template <typename Data>
 class BitmapAndPolicy
 {
 public:
+    static constexpr auto name = "groupBitmapAnd";
     static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_and(rhs.rbs); }
 };
 
@@ -127,6 +128,7 @@ template <typename Data>
 class BitmapOrPolicy
 {
 public:
+    static constexpr auto name = "groupBitmapOr";
     static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_or(rhs.rbs); }
 };
 
@@ -134,6 +136,7 @@ template <typename Data>
 class BitmapXorPolicy
 {
 public:
+    static constexpr auto name = "groupBitmapXor";
     static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_xor(rhs.rbs); }
 };
 
