@@ -40,7 +40,8 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, ContextPtr co
 
         Field min, max;
         bool read_only = false;
-        settings_constraints->get(setting_name, min, max, read_only);
+        if (settings_constraints)
+            settings_constraints->get(setting_name, min, max, read_only);
 
         /// These two columns can accept strings only.
         if (!min.isNull())

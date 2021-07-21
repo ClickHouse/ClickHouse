@@ -503,6 +503,11 @@ void MergeJoin::setTotals(const Block & totals_block)
         used_rows_bitmap = std::make_shared<RowBitmaps>(getRightBlocksCount());
 }
 
+void MergeJoin::joinTotals(Block & block) const
+{
+    JoinCommon::joinTotals(totals, right_columns_to_add, *table_join, block);
+}
+
 void MergeJoin::mergeRightBlocks()
 {
     if (is_in_memory)
@@ -1048,10 +1053,7 @@ private:
             }
 
             if (rows_added >= max_block_size)
-            {
-                ++block_number;
                 break;
-            }
         }
 
         return rows_added;

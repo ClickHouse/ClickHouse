@@ -309,7 +309,7 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         fs::copy(from, to, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
     }
     else
-        copyThroughBuffers(from_path, to_disk, to_path); /// Base implementation.
+        IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
@@ -367,8 +367,7 @@ void registerDiskLocal(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr {
+                      ContextPtr context) -> DiskPtr {
         String path = config.getString(config_prefix + ".path", "");
         if (name == "default")
         {

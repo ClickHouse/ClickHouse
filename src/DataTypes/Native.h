@@ -29,7 +29,7 @@ namespace ErrorCodes
 static inline bool typeIsSigned(const IDataType & type)
 {
     WhichDataType data_type(type);
-    return data_type.isNativeInt() || data_type.isFloat() || data_type.isEnum();
+    return data_type.isNativeInt() || data_type.isFloat();
 }
 
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
@@ -270,7 +270,7 @@ static inline llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builde
     {
         return llvm::ConstantInt::get(type, column.getUInt(index));
     }
-    else if (column_data_type.isNativeInt() || column_data_type.isEnum())
+    else if (column_data_type.isNativeInt())
     {
         return llvm::ConstantInt::get(type, column.getInt(index));
     }

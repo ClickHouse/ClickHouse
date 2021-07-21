@@ -951,13 +951,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// rewrite filters for select query, must go after getArrayJoinedColumns
     if (settings.optimize_respect_aliases && result.metadata_snapshot)
     {
-        /// If query is changed, we need to redo some work to correct name resolution.
-        if (replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext()))
-        {
-            result.aggregates = getAggregates(query, *select_query);
-            result.window_function_asts = getWindowFunctions(query, *select_query);
-            result.collectUsedColumns(query, true);
-        }
+        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
+        result.collectUsedColumns(query, true);
     }
 
     result.ast_join = select_query->join();

@@ -531,12 +531,11 @@ Names ExpressionActions::getRequiredColumns() const
 
 bool ExpressionActions::hasArrayJoin() const
 {
-    return getActionsDAG().hasArrayJoin();
-}
+    for (const auto & action : actions)
+        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return true;
 
-void ExpressionActions::assertDeterministic() const
-{
-    getActionsDAG().assertDeterministic();
+    return false;
 }
 
 
