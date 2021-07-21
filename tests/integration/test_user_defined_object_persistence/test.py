@@ -27,17 +27,15 @@ def test_persistence():
 
     cluster.shutdown()
     cluster.start()
-    instance1 = cluster.add_instance('instance')
 
-    assert instance1.query("SELECT MySum1(1,2)") == "3\n"
-    assert instance1.query("SELECT MySum2(1,2)") == "5\n"
+    assert instance.query("SELECT MySum1(1,2)") == "3\n"
+    assert instance.query("SELECT MySum2(1,2)") == "5\n"
 
-    instance1.query("DROP FUNCTION MySum2")
-    instance1.query("DROP FUNCTION MySum1")
+    instance.query("DROP FUNCTION MySum2")
+    instance.query("DROP FUNCTION MySum1")
 
     cluster.shutdown()
     cluster.start()
-    instance2 = cluster.add_instance('instance')
 
-    assert "Unknown function MySum1" in instance2.query("SELECT MySum1(1, 2)")
-    assert "Unknown function MySum2" in instance2.query("SELECT MySum2(1, 2)")
+    assert "Unknown function MySum1" in instance.query_and_get_error("SELECT MySum1(1, 2)")
+    assert "Unknown function MySum2" in instance.query_and_get_error("SELECT MySum2(1, 2)")
