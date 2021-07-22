@@ -16,11 +16,12 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <Poco/Net/HTTPRequest.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <Processors/QueryPipeline.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <common/logger_useful.h>
 #include <algorithm>
 
@@ -104,8 +105,15 @@ namespace
                 compression_method);
 
             auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
-            reader = std::make_shared<InputStreamFromInputFormat>(input_format);
-            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
+            pipeline = std::make_unique<QueryPipeline>();
+            pipeline->init(Pipe(input_format));
+
+            pipeline->addSimpleTransform([&](const Block & cur_header)
+            {
+                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *input_format, context);
+            });
+
+            reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
         }
 
         String getName() const override
@@ -118,15 +126,11 @@ namespace
             if (!reader)
                 return {};
 
-            if (!initialized)
-                reader->readPrefix();
+            Chunk chunk;
+            if (reader->pull(chunk))
+                return chunk;
 
-            initialized = true;
-
-            if (auto block = reader->read())
-                return Chunk(block.getColumns(), block.rows());
-
-            reader->readSuffix();
+            pipeline->reset();
             reader.reset();
 
             return {};
@@ -135,8 +139,8 @@ namespace
     private:
         String name;
         std::unique_ptr<ReadBuffer> read_buf;
-        BlockInputStreamPtr reader;
-        bool initialized = false;
+        std::unique_ptr<QueryPipeline> pipeline;
+        std::unique_ptr<PullingPipelineExecutor> reader;
     };
 }
 

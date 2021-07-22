@@ -581,6 +581,7 @@ SOURCE(MYSQL(
         <db>default</db>
         <table>ids</table>
         <where>id=10</where>
+        <secure>1</secure>
     </clickhouse>
 </source>
 ```
@@ -596,7 +597,8 @@ SOURCE(CLICKHOUSE(
     db 'default'
     table 'ids'
     where 'id=10'
-))
+    secure 1
+));
 ```
 
 Поля настройки:
@@ -609,6 +611,7 @@ SOURCE(CLICKHOUSE(
 -   `table` — имя таблицы.
 -   `where` — условие выбора. Может отсутствовать.
 -   `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external-dicts-dict-lifetime.md).
+-   `secure` - флаг, разрешающий или не разрешающий защищённое SSL-соединение.
 
 ### MongoDB {#dicts-external_dicts_dict_sources-mongodb}
 
@@ -769,4 +772,3 @@ Setting fields:
 -   `table` – Имя таблицы.
 -   `where` – Условие выборки. Синтаксис для условий такой же как для `WHERE` выражения в PostgreSQL, для примера, `id > 10 AND id < 20`. Необязательный параметр.
 -   `invalidate_query` – Запрос для проверки условия загрузки словаря. Необязательный параметр. Читайте больше в разделе [Обновление словарей](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
-

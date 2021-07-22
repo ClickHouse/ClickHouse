@@ -22,7 +22,9 @@ namespace
     using DiskEncryptedPtr = std::shared_ptr<DiskEncrypted>;
     using namespace FileEncryption;
 
-    String unhexKey(const String & hex, const String & disk_name)
+    constexpr Algorithm DEFAULT_ENCRYPTION_ALGORITHM = Algorithm::AES_128_CTR;
+
+    String unhexKey(const String & hex)
     {
         try
         {
@@ -30,12 +32,13 @@ namespace
         }
         catch (const std::exception &)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex for disk {}, check for valid characters [0-9a-fA-F] and length", disk_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex, check for valid characters [0-9a-fA-F] and length");
         }
     }
 
     struct DiskEncryptedSettings
     {
+        Algorithm encryption_algorithm;
         String key;
         DiskPtr wrapped_disk;
         String path_on_wrapped_disk;
@@ -43,43 +46,46 @@ namespace
         DiskEncryptedSettings(
             const String & disk_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DisksMap & map)
         {
-            String wrapped_disk_name = config.getString(config_prefix + ".disk", "");
-            if (wrapped_disk_name.empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Name of the wrapped disk must not be empty. An encrypted disk is a wrapper over another disk. "
-                    "Disk {}", disk_name);
-
-            key = config.getString(config_prefix + ".key", "");
-            String key_hex = config.getString(config_prefix + ".key_hex", "");
-            if (!key.empty() && !key_hex.empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Both 'key' and 'key_hex' are specified. There should be only one. Disk {}", disk_name);
-
-            if (!key_hex.empty())
+            try
             {
-                assert(key.empty());
-                key = unhexKey(key_hex, disk_name);
+                encryption_algorithm = DEFAULT_ENCRYPTION_ALGORITHM;
+                if (config.has(config_prefix + ".algorithm"))
+                    parseFromString(encryption_algorithm, config.getString(config_prefix + ".algorithm"));
+
+                key = config.getString(config_prefix + ".key", "");
+                String key_hex = config.getString(config_prefix + ".key_hex", "");
+                if (!key.empty() && !key_hex.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Both 'key' and 'key_hex' are specified. There should be only one");
+
+                if (!key_hex.empty())
+                {
+                    assert(key.empty());
+                    key = unhexKey(key_hex);
+                }
+
+                FileEncryption::checkKeySize(encryption_algorithm, key.size());
+
+                String wrapped_disk_name = config.getString(config_prefix + ".disk", "");
+                if (wrapped_disk_name.empty())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Name of the wrapped disk must not be empty. An encrypted disk is a wrapper over another disk");
+
+                auto wrapped_disk_it = map.find(wrapped_disk_name);
+                if (wrapped_disk_it == map.end())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The wrapped disk must have been announced earlier. No disk with name {}",
+                        wrapped_disk_name);
+                wrapped_disk = wrapped_disk_it->second;
+
+                path_on_wrapped_disk = config.getString(config_prefix + ".path", "");
             }
-
-            if (key.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key of the encrypted disk must not be empty. Disk {}", disk_name);
-
-            if (!FileEncryption::isKeyLengthSupported(key.length()))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Key length is not supported, supported only keys of length 16, 24, or 32 bytes. Disk {}", disk_name);
-
-            auto wrapped_disk_it = map.find(wrapped_disk_name);
-            if (wrapped_disk_it == map.end())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The wrapped disk must have been announced earlier. No disk with name {}. Disk {}",
-                    wrapped_disk_name, disk_name);
-            wrapped_disk = wrapped_disk_it->second;
-
-            path_on_wrapped_disk = config.getString(config_prefix + ".path", "");
+            catch (Exception & e)
+            {
+                e.addMessage("Disk " + disk_name);
+                throw;
+            }
         }
     };
 
@@ -123,9 +129,13 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
 }
 
-DiskEncrypted::DiskEncrypted(const String & name_, DiskPtr disk_, const String & key_, const String & path_)
-    : DiskDecorator(disk_)
-    , name(name_), key(key_), disk_path(path_)
+DiskEncrypted::DiskEncrypted(
+    const String & name_,
+    DiskPtr wrapped_disk_,
+    const String & path_on_wrapped_disk_,
+    FileEncryption::Algorithm encryption_algorithm_,
+    const String & key_)
+    : DiskDecorator(wrapped_disk_), name(name_), disk_path(path_on_wrapped_disk_), encryption_algorithm(encryption_algorithm_), key(key_)
 {
     initialize();
 }
@@ -152,10 +162,10 @@ void DiskEncrypted::copy(const String & from_path, const std::shared_ptr<IDisk> 
         /// Disk type is the same, check if the key is the same too.
         if (auto * to_encrypted_disk = typeid_cast<DiskEncrypted *>(to_disk.get()))
         {
-            if (key == to_encrypted_disk->key)
+            if ((encryption_algorithm == to_encrypted_disk->encryption_algorithm) && (key == to_encrypted_disk->key))
             {
                 /// Key is the same so we can simply copy the encrypted file.
-                delegate->copy(wrappedPath(from_path), to_encrypted_disk->delegate, wrappedPath(to_path));
+                delegate->copy(wrappedPath(from_path), to_encrypted_disk->delegate, to_encrypted_disk->wrappedPath(to_path));
                 return;
             }
         }
@@ -178,7 +188,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
 
     InitVector iv;
     iv.read(*buffer);
-    return std::make_unique<ReadBufferFromEncryptedFile>(buf_size, std::move(buffer), key, iv);
+    return std::make_unique<ReadBufferFromEncryptedFile>(buf_size, std::move(buffer), encryption_algorithm, key, iv);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String & path, size_t buf_size, WriteMode mode)
@@ -197,7 +207,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String &
         iv = InitVector::random();
 
     auto buffer = delegate->writeFile(wrapped_path, buf_size, mode);
-    return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, iv, old_file_size);
+    return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), encryption_algorithm, key, iv, old_file_size);
 }
 
 
@@ -227,9 +237,10 @@ void DiskEncrypted::applyNewSettings(
     const DisksMap & map)
 {
     DiskEncryptedSettings settings{name, config, config_prefix, map};
-    key = settings.key;
     delegate = settings.wrapped_disk;
     disk_path = settings.path_on_wrapped_disk;
+    encryption_algorithm = settings.encryption_algorithm;
+    key = settings.key;
     initialize();
 }
 
@@ -242,7 +253,8 @@ void registerDiskEncrypted(DiskFactory & factory)
                       const DisksMap & map) -> DiskPtr
     {
         DiskEncryptedSettings settings{name, config, config_prefix, map};
-        return std::make_shared<DiskEncrypted>(name, settings.wrapped_disk, settings.key, settings.path_on_wrapped_disk);
+        return std::make_shared<DiskEncrypted>(
+            name, settings.wrapped_disk, settings.path_on_wrapped_disk, settings.encryption_algorithm, settings.key);
     };
     factory.registerDiskType("encrypted", creator);
 }

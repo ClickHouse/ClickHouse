@@ -20,6 +20,11 @@
 
 #include "Client.h"
 
+#include <Poco/Util/Application.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/QueryPipeline.h>
+#include <Columns/ColumnString.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
@@ -53,9 +58,7 @@
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
-
-#include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 
@@ -80,6 +83,8 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
+#include <Formats/FormatFactory.h>
+#include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 
 #ifndef __clang__
@@ -1120,7 +1125,8 @@ void Client::receiveResult()
     {
         Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
 
-        while (true)
+        Block block;
+        while (executor.pull(block))
         {
             /// Has the Ctrl+C been pressed and thus the query should be cancelled?
             /// If this is the case, inform the server about it and receive the remaining packets

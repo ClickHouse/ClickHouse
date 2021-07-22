@@ -509,6 +509,23 @@ Possible values:
 
 Default value: `ALL`.
 
+## join_algorithm {#settings-join_algorithm}
+
+Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
+
+Possible values:
+
+- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
+- `partial_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
+- `prefer_partial_merge` — ClickHouse always tries to use `merge` join if possible.
+- `auto` — ClickHouse tries to change `hash` join to `merge` join on the fly to avoid out of memory.
+
+Default value: `hash`.
+
+When using `hash` algorithm the right part of `JOIN` is uploaded into RAM. 
+
+When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to the disk. The `merge` algorithm in ClickHouse differs a bit from the classic realization. First ClickHouse sorts the right table by [join key](../../sql-reference/statements/select/join.md#select-join) in blocks and creates min-max index for sorted blocks. Then it sorts parts of left table by `join key` and joins them over right table. The min-max index is also used to skip unneeded right table blocks.
+
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
 Changes behaviour of join operations with `ANY` strictness.
@@ -2007,13 +2024,13 @@ Default value: 16.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
-Sleep time for merge selecting when no part selected, a lower setting will trigger selecting tasks in background_schedule_pool frequently which result in large amount of requests to zookeeper in large-scale clusters
+Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to Zookeeper in large-scale clusters.
 
 Possible values:
 
 -   Any positive integer.
 
-Default value: 5000 
+Default value: `5000`.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
