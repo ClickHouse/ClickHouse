@@ -33,7 +33,7 @@ def cleanup_after_test():
         yield
     finally:
         instance.query("DROP USER IF EXISTS A, B")
-        instance.query("DROP ROLE IF EXISTS R1, R2")
+        instance.query("DROP ROLE IF EXISTS R1, R2, R3, R4")
 
 
 def test_create_role():
@@ -240,3 +240,37 @@ def test_introspection():
     assert instance.query("SELECT * from system.current_roles ORDER BY role_name", user='B') == TSV([["R2", 1, 1]])
     assert instance.query("SELECT * from system.enabled_roles ORDER BY role_name", user='A') == TSV([["R1", 0, 1, 1]])
     assert instance.query("SELECT * from system.enabled_roles ORDER BY role_name", user='B') == TSV([["R2", 1, 1, 1]])
+
+
+def test_function_current_roles():
+    instance.query("CREATE USER A")
+    instance.query('CREATE ROLE R1, R2, R3, R4')
+    instance.query('GRANT R4 TO R2')
+    instance.query('GRANT R1,R2,R3 TO A')
+
+    session_id = new_session_id()
+    assert instance.http_query('SELECT defaultRoles(), currentRoles(), enabledRoles()', user='A', params={'session_id':session_id}) == "['R1','R2','R3']\t['R1','R2','R3']\t['R1','R2','R3','R4']\n"
+
+    instance.http_query('SET ROLE R1', user='A', params={'session_id':session_id})
+    assert instance.http_query('SELECT defaultRoles(), currentRoles(), enabledRoles()', user='A', params={'session_id':session_id}) == "['R1','R2','R3']\t['R1']\t['R1']\n"
+
+    instance.http_query('SET ROLE R2', user='A', params={'session_id':session_id})
+    assert instance.http_query('SELECT defaultRoles(), currentRoles(), enabledRoles()', user='A', params={'session_id':session_id}) == "['R1','R2','R3']\t['R2']\t['R2','R4']\n"
+
+    instance.http_query('SET ROLE NONE', user='A', params={'session_id':session_id})
+    assert instance.http_query('SELECT defaultRoles(), currentRoles(), enabledRoles()', user='A', params={'session_id':session_id}) == "['R1','R2','R3']\t[]\t[]\n"
+
+    instance.http_query('SET ROLE DEFAULT', user='A', params={'session_id':session_id})
+    assert instance.http_query('SELECT defaultRoles(), currentRoles(), enabledRoles()', user='A', params={'session_id':session_id}) == "['R1','R2','R3']\t['R1','R2','R3']\t['R1','R2','R3','R4']\n"
+
+    instance.query('SET DEFAULT ROLE R2 TO A')
+    assert instance.http_query('SELECT defaultRoles(), currentRoles(), enabledRoles()', user='A', params={'session_id':session_id}) == "['R2']\t['R1','R2','R3']\t['R1','R2','R3','R4']\n"
+
+    instance.query('REVOKE R3 FROM A')
+    assert instance.http_query('SELECT defaultRoles(), currentRoles(), enabledRoles()', user='A', params={'session_id':session_id}) == "['R2']\t['R1','R2']\t['R1','R2','R4']\n"
+
+    instance.query('REVOKE R2 FROM A')
+    assert instance.http_query('SELECT defaultRoles(), currentRoles(), enabledRoles()', user='A', params={'session_id':session_id}) == "[]\t['R1']\t['R1']\n"
+
+    instance.query('SET DEFAULT ROLE ALL TO A')
+    assert instance.http_query('SELECT defaultRoles(), currentRoles(), enabledRoles()', user='A', params={'session_id':session_id}) == "['R1']\t['R1']\t['R1']\n"
