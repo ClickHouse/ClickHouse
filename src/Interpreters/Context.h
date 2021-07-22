@@ -119,8 +119,6 @@ using ThrottlerPtr = std::shared_ptr<Throttler>;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
-struct MySQLWireContext;
-
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
 
@@ -296,8 +294,6 @@ private:
                                                     /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
-
-    MySQLWireContext * mysql_protocol_context = nullptr;
 
     Context();
     Context(const Context &);
@@ -785,11 +781,6 @@ public:
     void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
-
-    /// Caller is responsible for lifetime of mysql_context.
-    /// Used in MySQLHandler for session context.
-    void setMySQLProtocolContext(MySQLWireContext * mysql_context);
-    MySQLWireContext * getMySQLProtocolContext() const;
 
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
