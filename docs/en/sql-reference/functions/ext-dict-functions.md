@@ -87,7 +87,7 @@ SELECT
     dictGetOrDefault('ext-dict-test', 'c1', number + 1, toUInt32(number * 10)) AS val,
     toTypeName(val) AS type
 FROM system.numbers
-LIMIT 3
+LIMIT 3;
 ```
 
 ``` text
