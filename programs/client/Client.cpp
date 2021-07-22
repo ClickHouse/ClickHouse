@@ -24,6 +24,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPipeline.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Columns/ColumnString.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
@@ -58,7 +59,6 @@
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 
@@ -1082,19 +1082,24 @@ void Client::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescrip
             current_format = insert->format;
     }
 
-    BlockInputStreamPtr block_input = global_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+    auto source = FormatFactory::instance().getInput(current_format, buf, sample, global_context, insert_format_max_block_size);
+    Pipe pipe(source);
 
     if (columns_description.hasDefaults())
-        block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns_description, global_context);
-
-    BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
-
-    async_block_input->readPrefix();
-
-    while (true)
     {
-        Block block = async_block_input->read();
+        pipe.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, global_context);
+        });
+    }
 
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
+    PullingAsyncPipelineExecutor executor(pipeline);
+
+    Block block;
+    while (executor.pull(block))
+    {
         /// Check if server send Log packet
         receiveLogs();
 
@@ -1106,18 +1111,18 @@ void Client::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescrip
                 * We're exiting with error, so it makes sense to kill the
                 * input stream without waiting for it to complete.
                 */
-            async_block_input->cancel(true);
+            executor.cancel();
             return;
         }
 
-        connection->sendData(block);
-        processed_rows += block.rows();
-
-        if (!block)
-            break;
+        if (block)
+        {
+            connection->sendData(block);
+            processed_rows += block.rows();
+        }
     }
 
-    async_block_input->readSuffix();
+    connection->sendData({});
 }
 
 
@@ -1139,8 +1144,7 @@ void Client::receiveResult()
     {
         Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
 
-        Block block;
-        while (executor.pull(block))
+        while (true)
         {
             /// Has the Ctrl+C been pressed and thus the query should be cancelled?
             /// If this is the case, inform the server about it and receive the remaining packets
