@@ -33,6 +33,7 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <librdkafka/rdkafka.h>
@@ -746,10 +747,11 @@ void registerStorageKafka(StorageFactory & factory)
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         auto num_consumers = kafka_settings->kafka_num_consumers.value;
+        auto physical_cpu_cores = getNumberOfPhysicalCPUCores();
 
-        if (num_consumers > 16)
+        if (num_consumers > physical_cpu_cores)
         {
-            throw Exception("Number of consumers can not be bigger than 16", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be bigger than {}", physical_cpu_cores);
         }
         else if (num_consumers < 1)
         {
