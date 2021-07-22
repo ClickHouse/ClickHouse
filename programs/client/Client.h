@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Client/IClient.h>
+#include <Client/ClientBase.h>
 #include <Core/ExternalTable.h>
 
 
 namespace DB
 {
 
-class Client : public IClient
+class Client : public ClientBase
 {
 public:
     Client() = default;
@@ -56,6 +56,8 @@ protected:
     void processOptions(const OptionsDescription & options_description,
                         const CommandLineOptions & options,
                         const std::vector<Arguments> & external_tables_arguments) override;
+
+    void processConfig() override;
 
 private:
     std::unique_ptr<Connection> connection; /// Connection to DB.

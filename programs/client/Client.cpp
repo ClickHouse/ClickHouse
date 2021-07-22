@@ -281,6 +281,26 @@ int Client::childMainImpl()
 
     if (is_interactive)
     {
+        /// Load Warnings at the beginning of connection
+        if (!config().has("no-warnings"))
+        {
+            try
+            {
+                std::vector<String> messages = loadWarningMessages();
+                if (!messages.empty())
+                {
+                    std::cout << "Warnings:" << std::endl;
+                    for (const auto & message : messages)
+                        std::cout << " * " << message << std::endl;
+                    std::cout << std::endl;
+                }
+            }
+            catch (...)
+            {
+                /// Ignore exception
+            }
+        }
+
         runInteractive();
     }
     else
@@ -1766,9 +1786,6 @@ void Client::processOptions(const OptionsDescription & options_description,
     if (options.count("config-file") && options.count("config"))
         throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
 
-    if (config().has("multiquery"))
-        is_multiquery = true;
-
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
 
     /// Save received data into the internal config.
@@ -1851,18 +1868,21 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("opentelemetry-traceparent"))
     {
-        std::string traceparent = options["opentelemetry-traceparent"].as<std::string>();
-        std::string error;
+        String traceparent = options["opentelemetry-traceparent"].as<std::string>();
+        String error;
         if (!global_context->getClientInfo().client_trace_context.parseTraceparentHeader(traceparent, error))
-        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse OpenTelemetry traceparent '{}': {}", traceparent, error);
-        }
     }
 
     if (options.count("opentelemetry-tracestate"))
-    {
         global_context->getClientInfo().client_trace_context.tracestate = options["opentelemetry-tracestate"].as<std::string>();
-    }
+}
+
+
+void Client::processConfig()
+{
+    if (config().has("multiquery"))
+        is_multiquery = true;
 
     is_default_format = !config().has("vertical") && !config().has("format");
     if (config().has("vertical"))
@@ -1883,26 +1903,6 @@ void Client::processOptions(const OptionsDescription & options_description,
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
     client_info.quota_key = config().getString("quota_key", "");
-
-    /// Load Warnings at the beginning of connection
-    if (!config().has("no-warnings"))
-    {
-        try
-        {
-            std::vector<String> messages = loadWarningMessages();
-            if (!messages.empty())
-            {
-                std::cout << "Warnings:" << std::endl;
-                for (const auto & message : messages)
-                    std::cout << " * " << message << std::endl;
-                std::cout << std::endl;
-            }
-        }
-        catch (...)
-        {
-            /// Ignore exception
-        }
-    }
 }
 
 }
