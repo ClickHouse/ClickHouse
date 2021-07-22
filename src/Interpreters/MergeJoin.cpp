@@ -9,11 +9,10 @@
 #include <Interpreters/join_common.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataStreams/TemporaryFileStream.h>
-#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sources/BlocksListSource.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
-#include <DataStreams/BlocksListBlockInputStream.h>
 
 
 namespace DB
@@ -518,8 +517,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
     if (right_blocks.empty())
         return;
 
-    auto stream = std::make_shared<BlocksListBlockInputStream>(std::move(right_blocks.blocks));
-    Pipe source(std::make_shared<SourceFromInputStream>(std::move(stream)));
+    Pipe source(std::make_shared<BlocksListSource>(std::move(right_blocks.blocks)));
     right_blocks.clear();
 
     QueryPipeline pipeline;
