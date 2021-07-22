@@ -154,7 +154,7 @@ void IBackgroundJobExecutor::executeMergeJob(BackgroundTaskPtr merge_task)
 }
 
 
-void IBackgroundJobExecutor::executeMerge(BackgroundTaskPtr merge_task)
+void IBackgroundJobExecutor::executeMergeMutateTask(BackgroundTaskPtr merge_task)
 {
     executeImpl([this, merge_task]() { executeMergeJob(merge_task); }, PoolType::MERGE_MUTATE);
 }

@@ -1010,15 +1010,13 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
     if (merge_entry)
     {
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, false, Names{}, merge_entry, share_lock);
-        executor.executeMerge(task);
+        executor.executeMergeMutateTask(task);
         return true;
     }
     if (mutate_entry)
     {
-        executor.execute({[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
-        {
-            return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
-        }, PoolType::MERGE_MUTATE});
+        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, metadata_snapshot, mutate_entry, share_lock);
+        executor.executeMergeMutateTask(task);
         return true;
     }
     else if (auto cmp_lock = time_after_previous_cleanup.compareAndRestartDeferred(1))

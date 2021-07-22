@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
+#include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
@@ -219,6 +220,7 @@ private:
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;
+    friend class MutatePlainMergeTreeTask;
 
 
 protected:

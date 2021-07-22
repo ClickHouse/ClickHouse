@@ -2974,7 +2974,7 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecuto
     else if (job_type == LogEntry::MERGE_PARTS)
     {
         auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry, *this);
-        executor.executeMerge(task);
+        executor.executeMergeMutateTask(task);
         return true;
     }
     else

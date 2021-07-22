@@ -1,30 +1,35 @@
 #pragma once
 
+#include <functional>
+
+#include <Core/Names.h>
+
 #include <Storages/MergeTree/BackgroundTask.h>
-#include <Storages/MergeTree/MergeTask.h>
+#include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
 
 namespace DB
 {
 
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct FutureMergedMutatedPart;
+using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
+
 class StorageMergeTree;
 
-class MergePlainMergeTreeTask : public BackgroundTask
+class MutatePlainMergeTreeTask : public BackgroundTask
 {
 public:
-    MergePlainMergeTreeTask(
+    MutatePlainMergeTreeTask(
         StorageMergeTree & storage_,
         StorageMetadataPtr metadata_snapshot_,
-        bool deduplicate_,
-        Names deduplicate_by_columns_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder & table_lock_holder_)
-        : BackgroundTask(0) // FIXME: equal priority
+        : BackgroundTask(-1)
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-        , deduplicate(deduplicate_)
-        , deduplicate_by_columns(deduplicate_by_columns_)
         , merge_mutate_entry(merge_mutate_entry_)
         , table_lock_holder(table_lock_holder_) {}
 
@@ -33,7 +38,6 @@ public:
 private:
 
     void prepare();
-    void finish();
 
     enum class State
     {
@@ -47,32 +51,21 @@ private:
     StorageMergeTree & storage;
 
     StorageMetadataPtr metadata_snapshot;
-    bool deduplicate;
-    Names deduplicate_by_columns;
-    std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry{nullptr};
-
+    MergeMutateSelectedEntryPtr merge_mutate_entry{nullptr};
     TableLockHolder & table_lock_holder;
 
     FutureMergedMutatedPartPtr future_part{nullptr};
+    std::unique_ptr<Stopwatch> stopwatch;
+
     MergeTreeData::MutableDataPartPtr new_part;
-    std::unique_ptr<Stopwatch> stopwatch_ptr{nullptr};
 
     using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
     MergeListEntryPtr merge_list_entry;
 
-    std::function<void(const ExecutionStatus &)> write_part_log;
+    std::function<void(const ExecutionStatus & execution_status)> write_part_log;
 
-    MergeTaskPtr merge_task{nullptr};
+    MutateTaskPtr mutate_task;
 };
-
-
-using MergePlainMergeTreeTaskPtr = std::shared_ptr<MergePlainMergeTreeTask>;
-
-
-[[ maybe_unused ]] static void executeHere(MergePlainMergeTreeTaskPtr task)
-{
-    while (task->execute()) {}
-}
 
 
 }

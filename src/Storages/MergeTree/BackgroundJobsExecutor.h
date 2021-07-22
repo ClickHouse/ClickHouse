@@ -102,7 +102,7 @@ public:
     void finish();
 
     /// Execute mergetask
-    void executeMerge(BackgroundTaskPtr merge_task);
+    void executeMergeMutateTask(BackgroundTaskPtr merge_task);
 
     /// Executes job in a nested pool
     void execute(JobAndPool job_and_pool);

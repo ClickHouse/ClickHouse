@@ -27,9 +27,8 @@ bool MergePlainMergeTreeTask::execute()
         {
             try
             {
-                if (merge_task->execute()) {
+                if (merge_task->execute())
                     return true;
-                }
 
                 state = State::NEED_FINISH;
                 return true;
