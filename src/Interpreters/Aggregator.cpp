@@ -302,8 +302,6 @@ Aggregator::Aggregator(const Params & params_)
 
 void Aggregator::compileAggregateFunctionsIfNeeded()
 {
-    std::cerr << "Aggregator::compileAggregateFunctions" << std::endl;
-
     static std::unordered_map<UInt128, UInt64, UInt128Hash> aggregate_functions_description_to_count;
     static std::mutex mtx;
 
@@ -345,13 +343,6 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
 
     if (functions_to_compile.empty())
         return;
-
-    std::cerr << "Functions to compile " << functions_to_compile.size() << std::endl;
-
-    for (auto & function : functions_to_compile)
-    {
-        std::cerr << "Function " << function.function->getDescription() << " offset " << function.aggregate_data_offset << std::endl;
-    }
 
     SipHash aggregate_functions_description_hash;
     aggregate_functions_description_hash.update(functions_description);
