@@ -34,6 +34,7 @@ Configuration template:
       <min_part_size>...</min_part_size>
       <min_part_size_ratio>...</min_part_size_ratio>
       <method>...</method>
+      <level>...</level>    
     </case>
     ...
 </compression>
@@ -43,7 +44,8 @@ Configuration template:
 
 -   `min_part_size` – The minimum size of a data part.
 -   `min_part_size_ratio` – The ratio of the data part size to the table size.
--   `method` – Compression method. Acceptable values: `lz4` or `zstd`.
+-   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`.
+-   `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table/#create-query-general-purpose-codecs).
 
 You can configure multiple `<case>` sections.
 
@@ -62,6 +64,7 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
+        <level>1</level>	    
     </case>
 </compression>
 ```
@@ -713,7 +716,7 @@ Keys for server/client settings:
 -   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_2 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 -   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
 -   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .

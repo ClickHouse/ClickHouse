@@ -74,6 +74,8 @@ void registerFunctionFile(FunctionFactory & factory);
 void registerFunctionConnectionId(FunctionFactory & factory);
 void registerFunctionPartitionId(FunctionFactory & factory);
 void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
+void registerFunctionQueryID(FunctionFactory & factory);
+void registerFunctionInitialQueryID(FunctionFactory & factory);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -148,6 +150,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionConnectionId(factory);
     registerFunctionPartitionId(factory);
     registerFunctionIsIPAddressContainedIn(factory);
+    registerFunctionQueryID(factory);
+    registerFunctionInitialQueryID(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
