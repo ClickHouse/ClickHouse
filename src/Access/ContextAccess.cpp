@@ -7,6 +7,7 @@
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
+#include <Access/SettingsProfilesInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -307,23 +308,25 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
 }
 
 
-std::shared_ptr<const Settings> ContextAccess::getDefaultSettings() const
+SettingsChanges ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};
     if (enabled_settings)
-        return enabled_settings->getSettings();
-    static const auto everything_by_default = std::make_shared<Settings>();
-    return everything_by_default;
+    {
+        if (auto info = enabled_settings->getInfo())
+            return info->settings;
+    }
+    return {};
 }
 
 
-std::shared_ptr<const SettingsConstraints> ContextAccess::getSettingsConstraints() const
+std::shared_ptr<const SettingsProfilesInfo> ContextAccess::getDefaultProfileInfo() const
 {
     std::lock_guard lock{mutex};
     if (enabled_settings)
-        return enabled_settings->getConstraints();
-    static const auto no_constraints = std::make_shared<SettingsConstraints>();
-    return no_constraints;
+        return enabled_settings->getInfo();
+    static const auto everything_by_default = std::make_shared<SettingsProfilesInfo>(*manager);
+    return everything_by_default;
 }
 
 
@@ -346,22 +349,6 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
     return nothing_granted;
 }
 
-Strings ContextAccess::getCurrentProfileNames() const
-{
-    std::lock_guard lock{mutex};
-    Strings result;
-    if (!enabled_settings)
-        return result;
-
-    const auto & profiles = enabled_settings->getCurrentProfiles();
-    Strings profile_names;
-    profile_names.reserve(profiles.size());
-
-    for (const auto & profile_id : profiles)
-        profile_names.emplace_back(manager->getProfileName(profile_id));
-
-    return profile_names;
-}
 
 template <bool throw_if_denied, bool grant_option, typename... Args>
 bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const
