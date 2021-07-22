@@ -427,6 +427,16 @@ window w as (order by number range between 1 preceding and 1 following)
 order by number
 ;
 
+-- to make nth_value return null for out-of-frame rows, cast the argument to
+-- Nullable; otherwise, it returns default values.
+SELECT
+    number,
+    nth_value(toNullable(number), 1) OVER w as firstValue,
+    nth_value(toNullable(number), 3) OVER w as thridValue
+FROM numbers(5)
+WINDOW w AS (ORDER BY number ASC)
+;
+    
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.
 select count() over () from numbers(4) where number < 2;

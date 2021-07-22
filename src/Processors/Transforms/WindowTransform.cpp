@@ -1631,16 +1631,9 @@ struct WindowFunctionNthValue final : public WindowFunction
         else
         {
             // Offset is inside the frame.
-            auto srcColumnPtr = transform->blockAt(target_row).input_columns[workspace.argument_column_indices[0]];
-            // If the original column type is Nullable(from DDL)
-            if (srcColumnPtr->getDataType() == TypeIndex::Nullable)
-            {
-                to.insertFrom(*srcColumnPtr, target_row.row);
-            }
-            else
-            {
-                assert_cast<ColumnNullable&>(to).insertFromNotNullable(*srcColumnPtr, target_row.row);
-            }
+            to.insertFrom(*transform->blockAt(target_row).input_columns[
+                    workspace.argument_column_indices[0]],
+               target_row.row);
         }
     }
 };
