@@ -228,6 +228,11 @@ if(HAVE_AUXV_GETAUXVAL)
   add_definitions(-DROCKSDB_AUXV_GETAUXVAL_PRESENT)
 endif()
 
+check_cxx_symbol_exists(elf_aux_info sys/auxv.h HAVE_ELF_AUX_INFO)
+if(HAVE_ELF_AUX_INFO)
+  add_definitions(-DROCKSDB_AUXV_GETAUXVAL_PRESENT)
+endif()
+
 include_directories(${ROCKSDB_SOURCE_DIR})
 include_directories("${ROCKSDB_SOURCE_DIR}/include")
 if(WITH_FOLLY_DISTRIBUTED_MUTEX)
