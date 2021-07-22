@@ -276,9 +276,13 @@ class ClickhouseIntegrationTestsRunner:
         if not os.path.isfile(all_tests_file_path) or os.path.getsize(all_tests_file_path) == 0:
             all_tests_full_file_path = "{repo_path}/tests/integration/{out_file}".format(repo_path=repo_path, out_file=out_file_full)
             if os.path.isfile(all_tests_full_file_path):
-                with open(all_tests_full_file_path, 'r') as f:
-                    for line in f:
-                        logging.info("runner output: %s", line)
+                # log runner output
+                logging.info("runner output:")
+                with open(all_tests_full_file_path, 'r') as all_tests_full_file:
+                    for line in all_tests_full_file:
+                        line = line.rstrip()
+                        if line:
+                            logging.info("runner output: %s", line)
             else:
                 logging.info("runner output '%s' is empty", all_tests_full_file_path)
 
