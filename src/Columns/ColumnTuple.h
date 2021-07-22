@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Columns/IColumn.h>
 
 
 namespace DB
