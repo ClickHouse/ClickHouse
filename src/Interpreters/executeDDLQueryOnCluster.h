@@ -31,41 +31,4 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, A
 BlockIO getDistributedDDLStatus(
     const String & node_path, const DDLLogEntry & entry, ContextPtr context, const std::optional<Strings> & hosts_to_wait = {});
 
-class DDLQueryStatusSource final : public SourceWithProgress
-{
-public:
-    DDLQueryStatusSource(
-        const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const std::optional<Strings> & hosts_to_wait = {});
-
-    String getName() const override { return "DDLQueryStatus"; }
-    Chunk generate() override;
-    Status prepare() override;
-
-private:
-    static Strings getChildrenAllowNoNode(const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & node_path);
-
-    Strings getNewAndUpdate(const Strings & current_list_of_finished_hosts);
-
-    std::pair<String, UInt16> parseHostAndPort(const String & host_id) const;
-
-    String node_path;
-    ContextPtr context;
-    Stopwatch watch;
-    Poco::Logger * log;
-
-    NameSet waiting_hosts;  /// hosts from task host list
-    NameSet finished_hosts; /// finished hosts from host list
-    NameSet ignoring_hosts; /// appeared hosts that are not in hosts list
-    Strings current_active_hosts; /// Hosts that were in active state at the last check
-    size_t num_hosts_finished = 0;
-
-    /// Save the first detected error and throw it at the end of execution
-    std::unique_ptr<Exception> first_exception;
-
-    Int64 timeout_seconds = 120;
-    bool by_hostname = true;
-    bool throw_on_timeout = true;
-    bool timeout_exceeded = false;
-};
-
 }
