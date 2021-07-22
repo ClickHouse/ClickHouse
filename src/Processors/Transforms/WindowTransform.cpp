@@ -197,6 +197,16 @@ WindowTransform::WindowTransform(const Block & input_header_,
     , input_header(input_header_)
     , window_description(window_description_)
 {
+    // Materialize all columns in header, because we materialize all columns
+    // in chunks and it's convenient if they match.
+    auto input_columns = input_header.getColumns();
+    for (auto & column : input_columns)
+    {
+        column = std::move(column)->convertToFullColumnIfConst();
+    }
+    input_header.setColumns(std::move(input_columns));
+
+    // Initialize window function workspaces.
     workspaces.reserve(functions.size());
     for (const auto & f : functions)
     {
@@ -851,6 +861,8 @@ void WindowTransform::updateAggregationState()
     assert(prev_frame_start <= prev_frame_end);
     assert(prev_frame_start <= frame_start);
     assert(prev_frame_end <= frame_end);
+    assert(partition_start <= frame_start);
+    assert(frame_end <= partition_end);
 
     // We might have to reset aggregation state and/or add some rows to it.
     // Figure out what to do.
@@ -1044,13 +1056,10 @@ void WindowTransform::appendChunk(Chunk & chunk)
             block.output_columns.back()->reserve(block.rows);
         }
 
-        // As a debugging aid, assert that chunk have the same C++ type of
-        // columns, because we often have to work across chunks.
-        if (blocks.size() > 1)
-        {
-            assertSameColumns(blocks.front().input_columns,
-                blocks.back().input_columns);
-        }
+        // As a debugging aid, assert that all chunks have the same C++ type of
+        // columns, that also matches the input header, because we often have to
+        // work across chunks.
+        assertSameColumns(input_header.getColumns(), block.input_columns);
     }
 
     // Start the calculations. First, advance the partition end.
