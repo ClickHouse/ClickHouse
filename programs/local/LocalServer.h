@@ -8,7 +8,7 @@
 #include <loggers/Loggers.h>
 #include <Poco/Util/Application.h>
 #include <Common/ProgressIndication.h>
-#include <Client/IClient.h>
+#include <Client/ClientBase.h>
 
 namespace DB
 {
@@ -16,7 +16,7 @@ namespace DB
 /// Lightweight Application for clickhouse-local
 /// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.
 /// Quiet mode by default
-class LocalServer : public IClient, public Loggers
+class LocalServer : public ClientBase, public Loggers
 {
 public:
     LocalServer();
@@ -73,6 +73,7 @@ protected:
     void processOptions(const OptionsDescription & options_description,
                         const CommandLineOptions & options,
                         const std::vector<Arguments> &) override;
+    void processConfig() override;
 
     bool supportPasswordOption() const override { return false; }
 

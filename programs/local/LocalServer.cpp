@@ -257,7 +257,7 @@ void LocalServer::executeParsedQueryImpl()
 
     try
     {
-        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, finalize_progress);
+        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, {}, finalize_progress);
     }
     catch (...)
     {
@@ -371,11 +371,6 @@ int LocalServer::childMainImpl()
 
     if (config().has("query") && config().has("queries-file"))
         throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
-
-    echo_queries = config().hasOption("echo") || config().hasOption("verbose");
-
-    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
-    server_display_name = config().getString("display_name", getFQDNOrHostName());
 
     /// Prompt may contain the following substitutions in a form of {name}.
     std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
@@ -665,6 +660,14 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
 
     if (options.count("queries-file"))
         queries_files = options["queries-file"].as<std::vector<std::string>>();
+}
+
+
+void LocalServer::processConfig()
+{
+    echo_queries = config().hasOption("echo") || config().hasOption("verbose");
+    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+    server_display_name = config().getString("display_name", getFQDNOrHostName());
 }
 
 }
