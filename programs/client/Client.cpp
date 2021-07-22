@@ -26,6 +26,9 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
 #include <Poco/Util/Application.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/QueryPipeline.h>
 #include <Columns/ColumnString.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
@@ -55,8 +58,7 @@
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -80,6 +82,7 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
+#include <Formats/FormatFactory.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
@@ -1925,19 +1928,24 @@ private:
                 current_format = insert->format;
         }
 
-        BlockInputStreamPtr block_input = context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+        auto source = FormatFactory::instance().getInput(current_format, buf, sample, context, insert_format_max_block_size);
+        Pipe pipe(source);
 
         if (columns_description.hasDefaults())
-            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns_description, context);
-
-        BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
-
-        async_block_input->readPrefix();
-
-        while (true)
         {
-            Block block = async_block_input->read();
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, context);
+            });
+        }
 
+        QueryPipeline pipeline;
+        pipeline.init(std::move(pipe));
+        PullingAsyncPipelineExecutor executor(pipeline);
+
+        Block block;
+        while (executor.pull(block))
+        {
             /// Check if server send Log packet
             receiveLogs();
 
@@ -1949,18 +1957,18 @@ private:
                  * We're exiting with error, so it makes sense to kill the
                  * input stream without waiting for it to complete.
                  */
-                async_block_input->cancel(true);
+                executor.cancel();
                 return;
             }
 
-            connection->sendData(block);
-            processed_rows += block.rows();
-
-            if (!block)
-                break;
+            if (block)
+            {
+                connection->sendData(block);
+                processed_rows += block.rows();
+            }
         }
 
-        async_block_input->readSuffix();
+        connection->sendData({});
     }
 
 

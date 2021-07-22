@@ -19,8 +19,11 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/narrowBlockInputStreams.h>
+
+#include <Processors/QueryPipeline.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -206,10 +209,18 @@ bool StorageS3Source::initialize()
     read_buf = wrapReadBufferWithCompressionMethod(
         std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries), chooseCompressionMethod(current_key, compression_hint));
     auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
-    reader = std::make_shared<InputStreamFromInputFormat>(input_format);
+    pipeline = std::make_unique<QueryPipeline>();
+    pipeline->init(Pipe(input_format));
 
     if (columns_desc.hasDefaults())
-        reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_desc, getContext());
+    {
+        pipeline->addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext());
+        });
+    }
+
+    reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     initialized = false;
     return true;
@@ -225,31 +236,25 @@ Chunk StorageS3Source::generate()
     if (!reader)
         return {};
 
-    if (!initialized)
+    Chunk chunk;
+    if (reader->pull(chunk))
     {
-        reader->readPrefix();
-        initialized = true;
-    }
-
-    if (auto block = reader->read())
-    {
-        auto columns = block.getColumns();
-        UInt64 num_rows = block.rows();
+        UInt64 num_rows = chunk.getNumRows();
 
         if (with_path_column)
-            columns.push_back(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+            chunk.addColumn(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
         if (with_file_column)
         {
             size_t last_slash_pos = file_path.find_last_of('/');
-            columns.push_back(DataTypeString().createColumnConst(num_rows, file_path.substr(
+            chunk.addColumn(DataTypeString().createColumnConst(num_rows, file_path.substr(
                     last_slash_pos + 1))->convertToFullColumnIfConst());
         }
 
-        return Chunk(std::move(columns), num_rows);
+        return chunk;
     }
 
-    reader->readSuffix();
     reader.reset();
+    pipeline.reset();
     read_buf.reset();
 
     if (!initialize())

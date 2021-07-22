@@ -1,31 +1,33 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/ISimpleTransform.h>
 #include <Storages/ColumnsDescription.h>
 
 
 namespace DB
 {
 
+class IInputFormat;
+
 /// Adds defaults to columns using BlockDelayedDefaults bitmask attached to Block by child InputStream.
-class AddingDefaultsBlockInputStream : public IBlockInputStream
+class AddingDefaultsTransform : public ISimpleTransform
 {
 public:
-    AddingDefaultsBlockInputStream(
-        const BlockInputStreamPtr & input,
+    AddingDefaultsTransform(
+        const Block & header,
         const ColumnsDescription & columns_,
+        IInputFormat & input_format_,
         ContextPtr context_);
 
-    String getName() const override { return "AddingDefaults"; }
-    Block getHeader() const override { return header; }
+    String getName() const override { return "AddingDefaultsTransform"; }
 
 protected:
-    Block readImpl() override;
+    void transform(Chunk & chunk) override;
 
 private:
-    Block header;
     const ColumnsDescription columns;
     const ColumnDefaults column_defaults;
+    IInputFormat & input_format;
     ContextPtr context;
 };
 
