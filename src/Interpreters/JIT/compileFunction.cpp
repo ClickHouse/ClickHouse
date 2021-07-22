@@ -563,8 +563,10 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     b.CreateRetVoid();
 }
 
-CompiledAggregateFunctions compileAggregateFunctons(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name)
+CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name)
 {
+    Stopwatch watch;
+
     std::string create_aggregate_states_functions_name = functions_dump_name + "_create";
     std::string add_aggregate_states_functions_name = functions_dump_name + "_add";
     std::string merge_aggregate_states_functions_name = functions_dump_name + "_merge";
@@ -598,6 +600,10 @@ CompiledAggregateFunctions compileAggregateFunctons(CHJIT & jit, const std::vect
         .functions_count = functions.size(),
         .compiled_module = std::move(compiled_module)
     };
+
+    ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, compiled_module.size);
+    ProfileEvents::increment(ProfileEvents::CompileFunction);
 
     return compiled_aggregate_functions;
 }
