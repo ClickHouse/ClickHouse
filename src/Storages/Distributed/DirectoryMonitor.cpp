@@ -916,24 +916,31 @@ public:
         Poco::Logger * log = nullptr;
 
         Block first_block;
+
+        explicit Data(const String & file_name)
+        {
+            in = std::make_unique<ReadBufferFromFile>(file_name);
+            decompressing_in = std::make_unique<CompressedReadBuffer>(*in);
+            block_in = std::make_unique<NativeBlockInputStream>(*decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+            log = &Poco::Logger::get("DirectoryMonitorSource");
+
+            readDistributedHeader(*in, log);
+
+            block_in->readPrefix();
+            first_block = block_in->read();
+        }
+
+        Data(Data &&) = default;
     };
 
-    static Block initData(const String & file_name, Data & data)
+    explicit DirectoryMonitorSource(const String & file_name)
+        : DirectoryMonitorSource(Data(file_name))
     {
-        data.in = std::make_unique<ReadBufferFromFile>(file_name);
-        data.decompressing_in = std::make_unique<CompressedReadBuffer>(*data.in);
-        data.block_in = std::make_unique<NativeBlockInputStream>(*data.decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-        data.log = &Poco::Logger::get("DirectoryMonitorSource");
-
-        readDistributedHeader(*data.in, data.log);
-
-        data.block_in->readPrefix();
-        data.first_block = data.block_in->read();
-        return data.first_block.cloneEmpty();
     }
 
-    explicit DirectoryMonitorSource(const String & file_name)
-        : SourceWithProgress(initData(file_name, data))
+    explicit DirectoryMonitorSource(Data data_)
+        : SourceWithProgress(data_.first_block.cloneEmpty())
+        , data(std::move(data_))
     {
     }
 
