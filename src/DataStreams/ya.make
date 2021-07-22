@@ -19,7 +19,6 @@ SRCS(
     BlockIO.cpp
     BlockStreamProfileInfo.cpp
     CheckConstraintsBlockOutputStream.cpp
-    CheckSortedBlockInputStream.cpp
     ColumnGathererStream.cpp
     ConvertingBlockInputStream.cpp
     CountingBlockOutputStream.cpp
@@ -30,9 +29,7 @@ SRCS(
     ITTLAlgorithm.cpp
     InputStreamFromASTInsertQuery.cpp
     InternalTextLogsRowOutputStream.cpp
-    LimitBlockInputStream.cpp
     MaterializingBlockInputStream.cpp
-    MergingSortedBlockInputStream.cpp
     MongoDBBlockInputStream.cpp
     NativeBlockInputStream.cpp
     NativeBlockOutputStream.cpp
