@@ -768,7 +768,7 @@ namespace
                 throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
 
             Block block;
-            while (!block || pipeline_executor->pull(block));
+            while (!block && pipeline_executor->pull(block));
 
             return block;
         });
