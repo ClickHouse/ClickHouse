@@ -641,8 +641,8 @@ create view partial_query_times as select * from
 -- Report for partial queries that we could only run on the new server (e.g.
 -- queries with new functions added in the tested PR).
 create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
-    as select toDecimal64(time_median, 3) time,
-        toDecimal64(time_stddev / time_median, 3) relative_time_stddev,
+    as select round(time_median, 3) time,
+        round(time_stddev / time_median, 3) relative_time_stddev,
         test, query_index, query_display_name
     from partial_query_times
     join query_display_names using (test, query_index)
@@ -720,20 +720,20 @@ create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv') as
         -- of NaN to decimal.
         (left > right ? left / right : right / left) as times_change_float,
         isFinite(times_change_float) as times_change_finite,
-        toDecimal64(times_change_finite ? times_change_float : 1., 3) as times_change_decimal,
+        round(times_change_finite ? times_change_float : 1., 3) as times_change_decimal,
         times_change_finite
             ? (left > right ? '-' : '+') || toString(times_change_decimal) || 'x'
             : '--' as times_change_str
     select
-        toDecimal64(left, 3), toDecimal64(right, 3), times_change_str,
-        toDecimal64(diff, 3), toDecimal64(stat_threshold, 3),
+        round(left, 3), round(right, 3), times_change_str,
+        round(diff, 3), round(stat_threshold, 3),
         changed_fail, test, query_index, query_display_name
     from queries where changed_show order by abs(diff) desc;
 
 create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv') as
     select
-        toDecimal64(left, 3), toDecimal64(right, 3), toDecimal64(diff, 3),
-        toDecimal64(stat_threshold, 3), unstable_fail, test, query_index, query_display_name
+        round(left, 3), round(right, 3), round(diff, 3),
+        round(stat_threshold, 3), unstable_fail, test, query_index, query_display_name
     from queries where unstable_show order by stat_threshold desc;
 
 
@@ -764,8 +764,8 @@ create view total_speedup as
 create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes.tsv') as
     with
         (times_speedup >= 1
-            ? '-' || toString(toDecimal64(times_speedup, 3)) || 'x'
-            : '+' || toString(toDecimal64(1 / times_speedup, 3)) || 'x')
+            ? '-' || toString(round(times_speedup, 3)) || 'x'
+            : '+' || toString(round(1 / times_speedup, 3)) || 'x')
         as times_speedup_str
     select test, times_speedup_str, queries, bad, changed, unstable
     -- Not sure what's the precedence of UNION ALL vs WHERE & ORDER BY, hence all
@@ -789,10 +789,10 @@ create view total_client_time_per_query as select *
         'test text, query_index int, client float, server float');
 
 create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv') as
-    select client, server, toDecimal64(client/server, 3) p,
+    select client, server, round(client/server, 3) p,
         test, query_display_name
     from total_client_time_per_query left join query_display_names using (test, query_index)
-    where p > toDecimal64(1.02, 3) order by p desc;
+    where p > 1.02 order by p desc;
 
 create table wall_clock_time_per_test engine Memory as select *
     from file('wall-clock-times.tsv', TSV, 'test text, real float, user float, system float');
@@ -877,12 +877,12 @@ create view test_times_view_total as
 create table test_times_report engine File(TSV, 'report/test-times.tsv') as
     select
         test,
-        toDecimal64(real, 3),
-        toDecimal64(total_client_time, 3),
+        round(real, 3),
+        round(total_client_time, 3),
         queries,
-        toDecimal64(query_max, 3),
-        toDecimal64(avg_real_per_query, 3),
-        toDecimal64(query_min, 3),
+        round(query_max, 3),
+        round(avg_real_per_query, 3),
+        round(query_min, 3),
         runs
     from (
         select * from test_times_view
@@ -895,19 +895,16 @@ create table test_times_report engine File(TSV, 'report/test-times.tsv') as
 -- report for all queries page, only main metric
 create table all_tests_report engine File(TSV, 'report/all-queries.tsv') as
     with
-        -- server_time is sometimes reported as zero (if it's less than 1 ms),
-        -- so we have to work around this to not get an error about conversion
-        -- of NaN to decimal.
         (left > right ? left / right : right / left) as times_change_float,
         isFinite(times_change_float) as times_change_finite,
-        toDecimal64(times_change_finite ? times_change_float : 1., 3) as times_change_decimal,
+        round(times_change_finite ? times_change_float : 1., 3) as times_change_decimal,
         times_change_finite
             ? (left > right ? '-' : '+') || toString(times_change_decimal) || 'x'
             : '--' as times_change_str
     select changed_fail, unstable_fail,
-        toDecimal64(left, 3), toDecimal64(right, 3), times_change_str,
-        toDecimal64(isFinite(diff) ? diff : 0, 3),
-        toDecimal64(isFinite(stat_threshold) ? stat_threshold : 0, 3),
+        round(left, 3), round(right, 3), times_change_str,
+        round(isFinite(diff) ? diff : 0, 3),
+        round(isFinite(stat_threshold) ? stat_threshold : 0, 3),
         test, query_index, query_display_name
     from queries order by test, query_index;
 
@@ -1060,7 +1057,7 @@ create table metric_devation engine File(TSVWithNamesAndTypes,
         'report/metric-deviation.$version.tsv') as
     -- first goes the key used to split the file with grep
     select test, query_index, query_display_name,
-        toDecimal64(d, 3) d, q, metric
+        round(d, 3) d, q, metric
     from (
         select
             test, query_index,
@@ -1189,7 +1186,7 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
 -- Show metrics that have changed
 create table changes engine File(TSV, 'metrics/changes.tsv') as
     select metric, left, right,
-        toDecimal64(diff, 3), toDecimal64(times_diff, 3)
+        round(diff, 3), round(times_diff, 3)
     from (
         select metric, median(left) as left, median(right) as right,
             (right - left) / left diff,
