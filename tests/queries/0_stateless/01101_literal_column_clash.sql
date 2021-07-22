@@ -7,13 +7,13 @@ join (select '1' as sid) as t2 on t2.sid = cast(t1.iid as String);
 select cast(7 as String), * from (select 3 "'String'");
 select cast(7 as String), * from (select number "'String'" FROM numbers(2));
 SELECT concat('xyz', 'abc'), * FROM (SELECT 2 AS "'xyz'");
-with 3 as "1" select 1, "1";
+with 3 as "1" select 1, "1"; -- { serverError 352 }
 
 -- https://github.com/ClickHouse/ClickHouse/issues/9953
 select 1, * from (select 2 x) a left join (select 1, 3 y) b on y = x;
-select 1, * from (select 2 x, 1) a right join (select 3 y) b on y = x;
-select null, isConstant(null), * from (select 2 x) a left join (select null, 3 y) b on y = x;
-select null, isConstant(null), * from (select 2 x, null) a right join (select 3 y) b on y = x;
+select 1, * from (select 2 x, 1) a right join (select 3 y) b on y = x; -- { serverError 352 }
+select null, isConstant(null), * from (select 2 x) a left join (select null, 3 y) b on y = x; -- { serverError 352 }
+select null, isConstant(null), * from (select 2 x, null) a right join (select 3 y) b on y = x; -- { serverError 352 }
 
 -- other cases with joins and constants
 
