@@ -19,7 +19,7 @@
 #endif
 
 #include "Client.h"
-
+#include <Columns/ColumnString.h>
 #include <Poco/Util/Application.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -134,6 +134,53 @@ static bool queryHasWithClause(const IAST * ast)
     }
 
     return false;
+}
+
+
+/// Make query to get all server warnings
+std::vector<String> Client::loadWarningMessages()
+{
+    std::vector<String> messages;
+    connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */, QueryProcessingStage::Complete);
+    while (true)
+    {
+        Packet packet = connection->receivePacket();
+        switch (packet.type)
+        {
+            case Protocol::Server::Data:
+                if (packet.block)
+                {
+                    const ColumnString & column = typeid_cast<const ColumnString &>(*packet.block.getByPosition(0).column);
+
+                    size_t rows = packet.block.rows();
+                    for (size_t i = 0; i < rows; ++i)
+                        messages.emplace_back(column.getDataAt(i).toString());
+                }
+                continue;
+
+            case Protocol::Server::Progress:
+                continue;
+            case Protocol::Server::ProfileInfo:
+                continue;
+            case Protocol::Server::Totals:
+                continue;
+            case Protocol::Server::Extremes:
+                continue;
+            case Protocol::Server::Log:
+                continue;
+
+            case Protocol::Server::Exception:
+                packet.exception->rethrow();
+                return messages;
+
+            case Protocol::Server::EndOfStream:
+                return messages;
+
+            default:
+                throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                    packet.type, connection->getDescription());
+        }
+    }
 }
 
 
@@ -1634,6 +1681,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
         ("history_file", po::value<std::string>(), "path to history file")
+        ("no-warnings", "disable warnings when client connects to server")
     ;
 
     /// Commandline options related to external tables.
@@ -1784,6 +1832,8 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))
         config().setString("history_file", options["history_file"].as<std::string>());
+    if (options.count("no-warnings"))
+        config().setBool("no-warnings", true);
 
     if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
     {
@@ -1829,6 +1879,26 @@ void Client::processOptions(const OptionsDescription & options_description,
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
     client_info.quota_key = config().getString("quota_key", "");
+
+    /// Load Warnings at the beginning of connection
+    if (!config().has("no-warnings"))
+    {
+        try
+        {
+            std::vector<String> messages = loadWarningMessages();
+            if (!messages.empty())
+            {
+                std::cout << "Warnings:" << std::endl;
+                for (const auto & message : messages)
+                    std::cout << " * " << message << std::endl;
+                std::cout << std::endl;
+            }
+        }
+        catch (...)
+        {
+            /// Ignore exception
+        }
+    }
 }
 
 }
