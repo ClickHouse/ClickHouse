@@ -102,7 +102,7 @@ public:
             throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        DB::Block columns_of_key_columns;
+        Block columns_of_key_columns;
 
         /// First argument may be a tuple or a single column.
         const ColumnWithTypeAndName & left_arg = arguments[0];
@@ -125,7 +125,7 @@ public:
             const DataTypes & tuple_types = type_tuple->getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
-                columns_of_key_columns.insert({ tuple_columns[i], tuple_types[i], "" });
+                columns_of_key_columns.insert({ tuple_columns[i], tuple_types[i], "_" + toString(i) });
         }
         else
             columns_of_key_columns.insert(left_arg);
