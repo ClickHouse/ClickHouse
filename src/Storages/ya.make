@@ -30,7 +30,6 @@ SRCS(
     MergeTree/BackgroundJobsExecutor.cpp
     MergeTree/BoolMask.cpp
     MergeTree/DataPartsExchange.cpp
-    MergeTree/DropPartsRanges.cpp
     MergeTree/EphemeralLockInZooKeeper.cpp
     MergeTree/IMergeTreeDataPart.cpp
     MergeTree/IMergeTreeDataPartWriter.cpp
@@ -76,7 +75,6 @@ SRCS(
     MergeTree/MergeTreePartInfo.cpp
     MergeTree/MergeTreePartition.cpp
     MergeTree/MergeTreePartsMover.cpp
-    MergeTree/MergeTreeProjections.cpp
     MergeTree/MergeTreeRangeReader.cpp
     MergeTree/MergeTreeReadPool.cpp
     MergeTree/MergeTreeReaderCompact.cpp
@@ -93,9 +91,7 @@ SRCS(
     MergeTree/MergeType.cpp
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
-    MergeTree/PartMovesBetweenShardsOrchestrator.cpp
     MergeTree/PartitionPruner.cpp
-    MergeTree/PinnedPartUUIDs.cpp
     MergeTree/ReplicatedFetchList.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
@@ -115,10 +111,7 @@ SRCS(
     MergeTree/localBackup.cpp
     MergeTree/registerStorageMergeTree.cpp
     MutationCommands.cpp
-    MySQL/MySQLSettings.cpp
     PartitionCommands.cpp
-    ProjectionsDescription.cpp
-    ReadFinalForExternalReplicaStorage.cpp
     ReadInOrderOptimizer.cpp
     SelectQueryDescription.cpp
     SetSettings.cpp
@@ -143,7 +136,6 @@ SRCS(
     StorageMySQL.cpp
     StorageNull.cpp
     StorageReplicatedMergeTree.cpp
-    StorageSQLite.cpp
     StorageSet.cpp
     StorageStripeLog.cpp
     StorageTinyLog.cpp
@@ -161,7 +153,6 @@ SRCS(
     System/StorageSystemContributors.generated.cpp
     System/StorageSystemCurrentRoles.cpp
     System/StorageSystemDDLWorkerQueue.cpp
-    System/StorageSystemDataSkippingIndices.cpp
     System/StorageSystemDataTypeFamilies.cpp
     System/StorageSystemDatabases.cpp
     System/StorageSystemDetachedParts.cpp
@@ -183,14 +174,11 @@ SRCS(
     System/StorageSystemMutations.cpp
     System/StorageSystemNumbers.cpp
     System/StorageSystemOne.cpp
-    System/StorageSystemPartMovesBetweenShards.cpp
     System/StorageSystemParts.cpp
     System/StorageSystemPartsBase.cpp
     System/StorageSystemPartsColumns.cpp
     System/StorageSystemPrivileges.cpp
     System/StorageSystemProcesses.cpp
-    System/StorageSystemProjectionParts.cpp
-    System/StorageSystemProjectionPartsColumns.cpp
     System/StorageSystemQuotaLimits.cpp
     System/StorageSystemQuotaUsage.cpp
     System/StorageSystemQuotas.cpp
@@ -211,7 +199,6 @@ SRCS(
     System/StorageSystemTables.cpp
     System/StorageSystemUserDirectories.cpp
     System/StorageSystemUsers.cpp
-    System/StorageSystemWarnings.cpp
     System/StorageSystemZeros.cpp
     System/StorageSystemZooKeeper.cpp
     System/attachSystemTables.cpp

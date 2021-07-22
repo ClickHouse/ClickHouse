@@ -21,20 +21,18 @@ namespace ErrorCodes
 
 namespace
 {
-    StoragePtr createStorageDictionary(const String & database_name, const ExternalLoader::LoadResult & load_result, ContextPtr context)
+    StoragePtr createStorageDictionary(const String & database_name, const ExternalLoader::LoadResult & load_result)
     {
         try
         {
             if (!load_result.config)
                 return nullptr;
-
             DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
             return StorageDictionary::create(
                 StorageID(database_name, load_result.name),
                 load_result.name,
                 dictionary_structure,
-                StorageDictionary::Location::DictionaryDatabase,
-                context);
+                StorageDictionary::Location::DictionaryDatabase);
         }
         catch (Exception & e)
         {
@@ -59,7 +57,7 @@ Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_nam
     String db_name = getDatabaseName();
     for (auto & load_result : load_results)
     {
-        auto storage = createStorageDictionary(db_name, load_result, getContext());
+        auto storage = createStorageDictionary(db_name, load_result);
         if (storage)
             tables.emplace(storage->getStorageID().table_name, storage);
     }
@@ -74,7 +72,7 @@ bool DatabaseDictionary::isTableExist(const String & table_name, ContextPtr) con
 StoragePtr DatabaseDictionary::tryGetTable(const String & table_name, ContextPtr) const
 {
     auto load_result = getContext()->getExternalDictionariesLoader().getLoadResult(table_name);
-    return createStorageDictionary(getDatabaseName(), load_result, getContext());
+    return createStorageDictionary(getDatabaseName(), load_result);
 }
 
 DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)

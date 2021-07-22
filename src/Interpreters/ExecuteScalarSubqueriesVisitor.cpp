@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -19,7 +20,6 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-
 
 namespace DB
 {
@@ -186,14 +186,9 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     if (data.only_analyze || !settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar)
         || !data.getContext()->hasQueryContext())
     {
-        /// subquery and ast can be the same object and ast will be moved.
-        /// Save these fields to avoid use after move.
-        auto alias = subquery.alias;
-        auto prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
-
         auto lit = std::make_unique<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
-        lit->alias = alias;
-        lit->prefer_alias_to_column_name = prefer_alias_to_column_name;
+        lit->alias = subquery.alias;
+        lit->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
         ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
 
         /// If only analyze was requested the expression is not suitable for constant folding, disable it.
@@ -201,8 +196,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         {
             ast->as<ASTFunction>()->alias.clear();
             auto func = makeASTFunction("identity", std::move(ast));
-            func->alias = alias;
-            func->prefer_alias_to_column_name = prefer_alias_to_column_name;
+            func->alias = subquery.alias;
+            func->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
             ast = std::move(func);
         }
     }

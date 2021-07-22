@@ -62,7 +62,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
         /// Both use relative_data_path which changes during rename, so we
         /// do it under share lock
         storage.clearOldWriteAheadLogs();
-        storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
+        storage.clearOldTemporaryDirectories();
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
@@ -291,7 +291,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
 
     std::vector<zkutil::ZooKeeper::FutureMulti> futures;
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
-        futures.emplace_back(zookeeper->asyncTryMultiNoThrow(requests[i]));
+        futures.emplace_back(zookeeper->tryAsyncMulti(requests[i]));
 
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
     {

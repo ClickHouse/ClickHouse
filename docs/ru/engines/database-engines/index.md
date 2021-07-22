@@ -20,5 +20,3 @@ toc_title: "Введение"
 
 -   [PostgreSQL](../../engines/database-engines/postgresql.md)
 
--   [Replicated](../../engines/database-engines/replicated.md)
-
