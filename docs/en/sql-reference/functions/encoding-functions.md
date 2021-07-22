@@ -218,7 +218,7 @@ Alias: `BIN`.
 bin(arg)
 ```
 
-For integer arguments, it prints bin digits (“nibbles”) from the most significant to least significant (big endian or “human readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints eight digits of every byte  if leading digit is zero.
+For integer arguments, it prints bin digits from the most significant to least significant (big-endian or “human-readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints eight digits of every byte if leading digit is zero.
 
 **Example**
 
@@ -238,7 +238,7 @@ Values of type `Date` and `DateTime` are formatted as corresponding integers (th
 
 For `String` and `FixedString`, all bytes are simply encoded as eight binary numbers. Zero bytes are not omitted.
 
-Values of floating point and Decimal types are encoded as their representation in memory. As we support little endian architecture, they are encoded in little endian. Zero leading/trailing bytes are not omitted.
+Values of floating-point and Decimal types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little endian. Zero leading/trailing bytes are not omitted.
 
 **Arguments**
 
