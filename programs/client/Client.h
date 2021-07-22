@@ -32,6 +32,8 @@ protected:
         return processMultiQuery(text);
     }
 
+    std::vector<String> loadWarningMessages();
+
     void initializeChild() override;
     void processMainImplException(const Exception & e) override;
     bool isInteractive() override;
