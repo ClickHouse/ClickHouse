@@ -51,10 +51,14 @@ namespace
 void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
+    LOG_TRACE(log, "Ololo");
+    try
+    {
     HTMLForm params(getContext()->getSettingsRef(), request);
-
+    LOG_TRACE(log, "parsed params");
     if (!params.has("method"))
     {
+        LOG_TRACE(log, "No 'method' in request URL");
         processError(response, "No 'method' in request URL");
         return;
     }
@@ -255,6 +259,13 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
     catch (...)
     {
         tryLogCurrentException(log);
+    }
+
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+        throw;
     }
 }
 

@@ -208,9 +208,6 @@ BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(
     WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
-    if (context->getMySQLProtocolContext() && name != "MySQLWire")
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
-
     const auto & output_getter = getCreators(name).output_processor_creator;
 
     const Settings & settings = context->getSettingsRef();
@@ -315,9 +312,6 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     if (!output_getter)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
 
-    if (context->getMySQLProtocolContext() && name != "MySQLWire")
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
-
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
     const Settings & settings = context->getSettingsRef();
@@ -359,8 +353,11 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     RowOutputFormatParams params;
     params.callback = std::move(callback);
 
-    auto format_settings = _format_settings
-        ? *_format_settings : getFormatSettings(context);
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+
+    /// If we're handling MySQL protocol connection right now then MySQLWire is only allowed output format.
+    if (format_settings.mysql_wire.sequence_id && (name != "MySQLWire"))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.

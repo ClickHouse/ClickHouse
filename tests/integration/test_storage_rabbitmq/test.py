@@ -2032,6 +2032,20 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster):
     instance.query('DROP TABLE test.rabbitmq_queue')
 
 
+def test_rabbitmq_drop_table_with_unfinished_setup(rabbitmq_cluster):
+    rabbitmq_cluster.pause_container('rabbitmq1')
+    instance.query('''
+        CREATE TABLE test.drop (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'drop',
+                     rabbitmq_format = 'JSONEachRow';
+    ''')
+    time.sleep(5)
+    instance.query('DROP TABLE test.drop;')
+    rabbitmq_cluster.unpause_container('rabbitmq1')
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")
