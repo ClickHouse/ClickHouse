@@ -51,8 +51,8 @@ public:
         void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos);
         void addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos,
                              const ASOF::Inequality & asof_inequality);
-        void setDisjuncts(const ASTFunction & or_func);
-        void addDisjunct(const ASTFunction & func);
+        void setDisjuncts(const ASTPtr & or_func);
+        void addDisjunct(const ASTPtr & func);
         void asofToJoinKeys();
     };
 
