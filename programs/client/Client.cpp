@@ -425,6 +425,7 @@ private:
                {TokenType::Semicolon, Replxx::Color::INTENSE},
                {TokenType::Dot, Replxx::Color::INTENSE},
                {TokenType::Asterisk, Replxx::Color::INTENSE},
+               {TokenType::HereDoc, Replxx::Color::CYAN},
                {TokenType::Plus, Replxx::Color::INTENSE},
                {TokenType::Minus, Replxx::Color::INTENSE},
                {TokenType::Slash, Replxx::Color::INTENSE},
@@ -450,8 +451,7 @@ private:
                {TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED},
                {TokenType::ErrorSinglePipeMark, Replxx::Color::RED},
                {TokenType::ErrorWrongNumber, Replxx::Color::RED},
-               { TokenType::ErrorMaxQuerySizeExceeded,
-                 Replxx::Color::RED }};
+               {TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }};
 
         const Replxx::Color unknown_token_color = Replxx::Color::RED;
 
