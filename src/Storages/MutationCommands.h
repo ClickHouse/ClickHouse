@@ -76,4 +76,6 @@ public:
     void readText(ReadBuffer & in);
 };
 
+using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
+
 }

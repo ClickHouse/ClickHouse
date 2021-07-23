@@ -1572,9 +1572,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         case LogEntry::MERGE_PARTS:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
         case LogEntry::MUTATE_PART:
-            /// Sometimes it's better to fetch mutated part instead of merging.
-            do_fetch = !tryExecutePartMutation(entry);
-            break;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation has to be executed by another function");
         case LogEntry::ALTER_METADATA:
             return executeMetadataAlter(entry);
         case LogEntry::SYNC_PINNED_PART_UUIDS:
@@ -1591,130 +1589,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return executeFetch(entry);
 
     return true;
-}
-
-
-bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedMergeTree::LogEntry & entry)
-{
-    const String & source_part_name = entry.source_parts.at(0);
-    const auto storage_settings_ptr = getSettings();
-    LOG_TRACE(log, "Executing log entry to mutate part {} to {}", source_part_name, entry.new_part_name);
-
-    DataPartPtr source_part = getActiveContainingPart(source_part_name);
-    if (!source_part)
-    {
-        LOG_DEBUG(log, "Source part {} for {} is not ready; will try to fetch it instead", source_part_name, entry.new_part_name);
-        return false;
-    }
-
-    if (source_part->name != source_part_name)
-    {
-        LOG_WARNING(log, "Part " + source_part_name + " is covered by " + source_part->name
-                    + " but should be mutated to " + entry.new_part_name + ". "
-                    + "Possibly the mutation of this part is not needed and will be skipped. This shouldn't happen often.");
-        return false;
-    }
-
-    /// TODO - some better heuristic?
-    size_t estimated_space_for_result = MergeTreeDataMergerMutator::estimateNeededDiskSpace({source_part});
-
-    if (entry.create_time + storage_settings_ptr->prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr)
-        && estimated_space_for_result >= storage_settings_ptr->prefer_fetch_merged_part_size_threshold)
-    {
-        /// If entry is old enough, and have enough size, and some replica has the desired part,
-        /// then prefer fetching from replica.
-        String replica = findReplicaHavingPart(entry.new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
-        if (!replica.empty())
-        {
-            LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);
-            return false;
-        }
-    }
-
-    MergeTreePartInfo new_part_info = MergeTreePartInfo::fromPartName(
-        entry.new_part_name, format_version);
-    MutationCommands commands = queue.getMutationCommands(source_part, new_part_info.mutation);
-
-    /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
-    /// Can throw an exception.
-    ReservationSharedPtr reserved_space = reserveSpace(estimated_space_for_result, source_part->volume);
-
-    auto table_lock = lockForShare(
-            RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
-    StorageMetadataPtr metadata_snapshot = getInMemoryMetadataPtr();
-
-    MutableDataPartPtr new_part;
-    Transaction transaction(*this);
-
-    auto future_mutated_part = std::make_shared<FutureMergedMutatedPart>();
-    future_mutated_part->name = entry.new_part_name;
-    future_mutated_part->uuid = entry.new_part_uuid;
-    future_mutated_part->parts.push_back(source_part);
-    future_mutated_part->part_info = new_part_info;
-    future_mutated_part->updatePath(*this, reserved_space.get());
-    future_mutated_part->type = source_part->getType();
-
-    MergeList::EntryPtr merge_entry = getContext()->getMergeList().insert(getStorageID(), future_mutated_part);
-
-    Stopwatch stopwatch;
-
-    auto write_part_log = [&] (const ExecutionStatus & execution_status)
-    {
-        writePartLog(
-            PartLogElement::MUTATE_PART, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, new_part, future_mutated_part->parts, merge_entry.get());
-    };
-
-    try
-    {
-        auto task = merger_mutator.mutatePartToTemporaryPart(
-            future_mutated_part, metadata_snapshot, commands, *merge_entry,
-            entry.create_time, getContext(), reserved_space, table_lock);
-
-        new_part = executeHere(task);
-
-        renameTempPartAndReplace(new_part, nullptr, &transaction);
-
-        try
-        {
-            checkPartChecksumsAndCommit(transaction, new_part);
-        }
-        catch (const Exception & e)
-        {
-            if (MergeTreeDataPartChecksums::isBadChecksumsErrorCode(e.code()))
-            {
-                transaction.rollback();
-
-                ProfileEvents::increment(ProfileEvents::DataAfterMutationDiffersFromReplica);
-
-                LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
-
-                write_part_log(ExecutionStatus::fromCurrentException());
-
-                tryRemovePartImmediately(std::move(new_part));
-                /// No need to delete the part from ZK because we can be sure that the commit transaction
-                /// didn't go through.
-
-                return false;
-            }
-
-            throw;
-        }
-
-        /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
-          * This is not a problem, because in this case the entry will remain in the queue, and we will try again.
-          */
-        merge_selecting_task->schedule();
-        ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
-        write_part_log({});
-
-        return true;
-    }
-    catch (...)
-    {
-        write_part_log(ExecutionStatus::fromCurrentException());
-        throw;
-    }
 }
 
 
@@ -5725,7 +5599,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     ///
     /// Leader replica records its decisions to the replication log (/log directory in ZK) in the form of
     /// MUTATE_PART entries and all replicas then execute them in the background pool
-    /// (see tryExecutePartMutation() function). When a replica encounters a MUTATE_PART command, it is
+    /// (see MutateTask class). When a replica encounters a MUTATE_PART command, it is
     /// guaranteed that the corresponding mutation entry is already loaded (when we pull entries from
     /// replication log into the replica queue, we also load mutation entries). Note that just as with merges
     /// the replica can decide not to do the mutation locally and fetch the mutated part from another replica

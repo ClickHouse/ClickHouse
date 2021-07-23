@@ -481,11 +481,6 @@ private:
     /// New metadata and columns values stored in entry.
     bool executeMetadataAlter(const LogEntry & entry);
 
-    /// Execute MUTATE_PART entry. Part name and mutation commands
-    /// stored in entry. This function relies on MergerMutator class.
-    bool tryExecutePartMutation(const LogEntry & entry);
-
-
     /// Fetch part from other replica (inserted or merged/mutated)
     /// NOTE: Attention! First of all tries to find covering part on other replica
     /// and set it into entry.actual_new_part_name. After that tries to fetch this new covering part.
