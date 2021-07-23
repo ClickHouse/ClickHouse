@@ -512,24 +512,23 @@ class DNF
 
     void normTree(ASTPtr node)
     {
-        auto *function = node->as<ASTFunction>();
-
-        // LOG_TRACE(&Poco::Logger::get("TreeRewrite"), "top of normTree:  {}", node->dumpTree());
-        if (function && function->children.size() == 1)
+        auto * func = node->as<ASTFunction>();
+        if (func && func->children.size() == 1)
         {
             for (bool touched = true; touched;)
             {
                 touched = false;
 
                 ASTs new_children;
-                const auto * expression_list = function->children[0]->as<ASTExpressionList>();
-                for (const auto & child : expression_list->children)
+                const auto * func_args = func->arguments->as<ASTExpressionList>();
+                for (const auto & child : func_args->children)
                 {
-                    auto *f = child->as<ASTFunction>();
-                    if (f && function->children.size() == 1 && ((function->name == "or" && f->name == "or") || (function->name == "and" && f->name == "and")))
+                    auto * child_func = child->as<ASTFunction>();
+                    if (child_func && func->children.size() == 1
+                        && ((func->name == "or" && child_func->name == "or") || (func->name == "and" && child_func->name == "and")))
                     {
-                        std::copy(child->children[0]->children.begin(),
-                            child->children[0]->children.end(),
+                        std::copy(child_func->arguments->children.begin(),
+                            child_func->arguments->children.end(),
                             std::back_inserter(new_children));
                         touched = true;
                     }
@@ -539,10 +538,10 @@ class DNF
                     }
                 }
 
-                function->arguments->children = std::move(new_children);
+                func->arguments->children = std::move(new_children);
             }
 
-            for (auto & child : function->arguments->children)
+            for (auto & child : func->arguments->children)
             {
                 normTree(child);
             }
@@ -558,25 +557,25 @@ class DNF
         {
             if (function->name == "and")
             {
-                const auto * expression_list = function->children[0]->as<ASTExpressionList>();
-                if (!expression_list)
+                const auto * func_args = function->arguments->as<ASTExpressionList>();
+                if (!func_args)
                 {
                     return node;
                 }
 
-                auto or_child = std::find_if(expression_list->children.begin(), expression_list->children.end(), [](ASTPtr arg)
+                auto or_child = std::find_if(func_args->children.begin(), func_args->children.end(), [](ASTPtr arg)
                     {
                         const auto * f = arg->as<ASTFunction>();
                         return f && f->name == "or" && f->children.size() == 1;
                     });
-                if (or_child == expression_list->children.end())
+                if (or_child == func_args->children.end())
                 {
                     return node;
                 }
 
                 ASTs rest_children;
 
-                for (const auto & arg : expression_list->children)
+                for (const auto & arg : func_args->children)
                 {
                     // LOG_DEBUG(&Poco::Logger::get("toDNF"), "IDs {} vs. {}", arg->getTreeHash(), (*or_child)->getTreeHash());
 

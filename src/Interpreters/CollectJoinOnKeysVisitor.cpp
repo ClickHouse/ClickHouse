@@ -32,21 +32,22 @@ bool isRightIdentifier(JoinIdentifierPos pos)
 
 }
 
-void CollectJoinOnKeysMatcher::Data::setDisjuncts(const ASTFunction & func)
+void CollectJoinOnKeysMatcher::Data::setDisjuncts(const ASTPtr & ast)
 {
-    const auto * expression_list = func.children.front()->as<ASTExpressionList>();
-    std::vector<const IAST*> v;
-    for (const auto & child : expression_list->children)
+    auto * func = ast->as<ASTFunction>();
+    const auto * func_args = func->arguments->as<ASTExpressionList>();
+    std::vector<const ASTPtr> v;
+    for (const auto & child : func_args->children)
     {
-        v.push_back(child.get());
+        v.push_back(child);
     }
 
     analyzed_join.setDisjuncts(std::move(v));
 }
 
-void CollectJoinOnKeysMatcher::Data::addDisjunct(const ASTFunction & func)
+void CollectJoinOnKeysMatcher::Data::addDisjunct(const ASTPtr & ast)
 {
-    analyzed_join.addDisjunct(static_cast<const IAST*>(&func));
+    analyzed_join.addDisjunct(std::move(ast));
 }
 
 void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos)
@@ -107,11 +108,11 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     if (func.name == "or")
     {
         // throw Exception("JOIN ON does not support OR. Unexpected '" + queryToString(ast) + "'", ErrorCodes::NOT_IMPLEMENTED);
-        data.setDisjuncts(func);
+        data.setDisjuncts(ast);
         return;
     }
 
-    data.addDisjunct(func);
+    data.addDisjunct(ast);
 
     if (func.name == "and")
         return; /// go into children
