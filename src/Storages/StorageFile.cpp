@@ -564,6 +564,8 @@ public:
             {}, format_settings);
     }
 
+    String getName() const override { return "StorageFileSink"; }
+
     void consume(Chunk chunk) override
     {
         if (!prefix_written)

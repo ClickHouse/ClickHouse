@@ -39,6 +39,7 @@ public:
         const String & backup_path_, const String & backup_tmp_path_,
         const String & backup_file_name_, bool persistent_);
 
+    String getName() const override { return "SetOrJoinSink"; }
     void consume(Chunk chunk) override;
     void onFinish() override;
 

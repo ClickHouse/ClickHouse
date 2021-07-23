@@ -18,7 +18,7 @@
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <common/logger_useful.h>
-
+#include <DataStreams/PushingToSinkBlockOutputStream.h>
 
 namespace DB
 {
@@ -127,8 +127,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     /// Do not push to destination table if the flag is set
     if (!no_destination)
     {
-        output = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), getContext());
-        replicated_output = dynamic_cast<ReplicatedMergeTreeBlockOutputStream *>(output.get());
+        auto sink = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), getContext());
+        replicated_output = dynamic_cast<ReplicatedMergeTreeSink *>(output.get());
+        output = std::make_shared<PushingToSinkBlockOutputStream>(std::move(sink));
     }
 }
 

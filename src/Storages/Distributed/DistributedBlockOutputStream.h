@@ -47,6 +47,7 @@ public:
         UInt64 insert_timeout_,
         StorageID main_table_);
 
+    String getName() const override { return "DistributedSink"; }
     void consume(Chunk chunk) override;
     void onFinish() override;
 

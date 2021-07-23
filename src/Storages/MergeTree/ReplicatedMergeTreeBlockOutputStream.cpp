@@ -33,7 +33,7 @@ namespace ErrorCodes
 }
 
 
-ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
+ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     StorageReplicatedMergeTree & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     size_t quorum_,
@@ -43,7 +43,8 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     bool deduplicate_,
     ContextPtr context_,
     bool is_attach_)
-    : storage(storage_)
+    : SinkToStorage(metadata_snapshot->getSampleBlock())
+    , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , quorum(quorum_)
     , quorum_timeout_ms(quorum_timeout_ms_)
@@ -60,12 +61,6 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
 }
 
 
-Block ReplicatedMergeTreeBlockOutputStream::getHeader() const
-{
-    return metadata_snapshot->getSampleBlock();
-}
-
-
 /// Allow to verify that the session in ZooKeeper is still alive.
 static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 {
@@ -77,7 +72,7 @@ static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper)
+void ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper)
 {
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
@@ -121,8 +116,16 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
+void ReplicatedMergeTreeSink::consume(Chunk chunk)
 {
+    if (is_first_chunk)
+    {
+        onStart();
+        is_first_chunk = false;
+    }
+
+    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+
     last_block_is_duplicate = false;
 
     auto zookeeper = storage.getZooKeeper();
@@ -183,7 +186,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
+void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
 {
     last_block_is_duplicate = false;
 
@@ -210,7 +213,7 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::commitPart(
+void ReplicatedMergeTreeSink::commitPart(
     zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
 {
     metadata_snapshot->check(part->getColumns());
@@ -507,7 +510,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
     }
 }
 
-void ReplicatedMergeTreeBlockOutputStream::writePrefix()
+void ReplicatedMergeTreeSink::onStart()
 {
     /// Only check "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
@@ -515,7 +518,7 @@ void ReplicatedMergeTreeBlockOutputStream::writePrefix()
 }
 
 
-void ReplicatedMergeTreeBlockOutputStream::waitForQuorum(
+void ReplicatedMergeTreeSink::waitForQuorum(
     zkutil::ZooKeeperPtr & zookeeper,
     const std::string & part_name,
     const std::string & quorum_path,
