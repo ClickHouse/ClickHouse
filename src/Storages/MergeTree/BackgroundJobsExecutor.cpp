@@ -26,7 +26,7 @@ IBackgroundJobExecutor::IBackgroundJobExecutor(
     for (const auto & pool_config : pools_configs_)
     {
         const auto max_pool_size = pool_config.get_max_pool_size();
-        pools.try_emplace(pool_config.pool_type, max_pool_size, 0, max_pool_size, false);
+        pools.try_emplace(pool_config.pool_type, max_pool_size, 0, 2 * max_pool_size, false);
         pools_configs.emplace(pool_config.pool_type, pool_config);
     }
 }
