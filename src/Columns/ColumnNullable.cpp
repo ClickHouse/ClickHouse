@@ -644,9 +644,22 @@ void ColumnNullable::checkConsistency() const
 
 ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
 {
-    /// TODO: check if default_field is null.
-    auto new_values = nested_column->createWithOffsets(offsets, default_field, total_rows, shift);
-    auto new_null_map = null_map->createWithOffsets(offsets, Field(1), total_rows, shift);
+    ColumnPtr new_values;
+    ColumnPtr new_null_map;
+
+    if (default_field.getType() == Field::Types::Null)
+    {
+        auto default_column = nested_column->cloneEmpty();
+        default_column->insertDefault();
+
+        new_values = nested_column->createWithOffsets(offsets, (*default_column)[0], total_rows, shift);
+        new_null_map = null_map->createWithOffsets(offsets, Field(1u), total_rows, shift);
+    }
+    else
+    {
+        new_values = nested_column->createWithOffsets(offsets, default_field, total_rows, shift);
+        new_null_map = null_map->createWithOffsets(offsets, Field(0u), total_rows, shift);
+    }
 
     return ColumnNullable::create(new_values, new_null_map);
 }
