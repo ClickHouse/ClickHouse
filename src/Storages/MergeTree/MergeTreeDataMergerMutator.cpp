@@ -426,7 +426,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     FutureMergedMutatedPartPtr future_part,
     const StorageMetadataPtr & metadata_snapshot,
     MergeList::Entry & merge_entry,
-    TableLockHolder & holder,
+    TableLockHolder holder,
     time_t time_of_merge,
     ContextPtr context,
     ReservationSharedPtr space_reservation,
@@ -1087,10 +1087,5 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     new_data_part->storage.lockSharedData(*new_data_part);
 }
 
-bool MergeTreeDataMergerMutator::checkOperationIsNotCanceled(const MergeListEntry &) const
-{
-
-    return true;
-}
 
 }

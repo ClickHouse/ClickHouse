@@ -27,6 +27,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
+#include <Storages/MergeTree/MergeFromLogEntryTask.h>
+#include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 
@@ -2974,6 +2976,12 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecuto
     else if (job_type == LogEntry::MERGE_PARTS)
     {
         auto task = std::make_shared<MergeFromLogEntryTask>(selected_entry, *this);
+        executor.executeMergeMutateTask(task);
+        return true;
+    }
+    else if (job_type == LogEntry::MUTATE_PART)
+    {
+        auto task = std::make_shared<MutateFromLogEntryTask>(selected_entry, *this);
         executor.executeMergeMutateTask(task);
         return true;
     }

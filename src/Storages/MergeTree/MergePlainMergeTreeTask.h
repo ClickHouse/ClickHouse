@@ -19,7 +19,7 @@ public:
         bool deduplicate_,
         Names deduplicate_by_columns_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
-        TableLockHolder & table_lock_holder_)
+        TableLockHolder table_lock_holder_)
         : BackgroundTask(0) // FIXME: equal priority
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
@@ -51,7 +51,7 @@ private:
     Names deduplicate_by_columns;
     std::shared_ptr<MergeMutateSelectedEntry> merge_mutate_entry{nullptr};
 
-    TableLockHolder & table_lock_holder;
+    TableLockHolder table_lock_holder;
 
     FutureMergedMutatedPartPtr future_part{nullptr};
     MergeTreeData::MutableDataPartPtr new_part;

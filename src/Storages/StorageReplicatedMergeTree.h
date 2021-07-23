@@ -283,6 +283,8 @@ private:
     friend class PartMovesBetweenShardsOrchestrator;
     friend class MergeTreeData;
     friend class MergeFromLogEntryTask;
+    friend class MutateFromLogEntryTask;
+    friend class ReplicatedMergeMutateTaskBase;
 
     using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;

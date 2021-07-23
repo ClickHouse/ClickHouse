@@ -32,6 +32,7 @@ private:
     friend class CurrentlyExecuting;
     friend class ReplicatedMergeTreeMergePredicate;
     friend class MergeFromLogEntryTask;
+    friend class ReplicatedMergeMutateTaskBase;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;

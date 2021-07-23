@@ -93,7 +93,7 @@ public:
         FutureMergedMutatedPartPtr future_part,
         const StorageMetadataPtr & metadata_snapshot,
         MergeListEntry & merge_entry,
-        TableLockHolder & table_lock_holder,
+        TableLockHolder table_lock_holder,
         time_t time_of_merge,
         ContextPtr context,
         ReservationSharedPtr space_reservation,
@@ -214,9 +214,6 @@ private:
         bool deduplicate,
         bool need_remove_expired_values,
         const MergeTreeData::MergingParams & merging_params) const;
-
-    bool checkOperationIsNotCanceled(const MergeListEntry & merge_entry) const;
-
 
 private:
     MergeTreeData & data;

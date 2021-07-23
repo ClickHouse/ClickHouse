@@ -6,60 +6,36 @@
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeMutateTaskBase.h>
 
 
 namespace DB
 {
 
 class StorageReplicatedMergeTree;
-
-
-class MergeFromLogEntryTask : public BackgroundTask
+class MergeFromLogEntryTask : public ReplicatedMergeMutateTaskBase
 {
 public:
     MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_);
 
-    bool execute() override;
+protected:
+    /// Both return false if we can't execute merge.
+    bool prepare() override;
+    bool finalize() override;
+
+    bool executeInnerTask() override
+    {
+        return merge_task->execute();
+    }
 
 private:
-
-    bool executeImpl();
-
-    /// Returs false if we can't execute merge.
-    bool prepare();
-    bool commit();
-
-
-    enum class State
-    {
-        NEED_PREPARE,
-        NEED_EXECUTE_INNER_MERGE,
-        NEED_COMMIT,
-
-        SUCCESS,
-
-        CANT_MERGE_NEED_FETCH
-    };
-
-    State state{State::NEED_PREPARE};
-
-
-    /// This is important not to execute the same merge in parallel
-    ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry;
-    ReplicatedMergeTreeLogEntry::Ptr entry;
-
-    MergeList::EntryPtr merge_entry{nullptr};
-
-    StorageReplicatedMergeTree & storage;
-    Poco::Logger * log;
+    TableLockHolder table_lock_holder{nullptr};
 
     MergeTreeData::DataPartsVector parts;
+    MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
 
-    std::unique_ptr<MergeTreeData::Transaction> transaction_ptr{nullptr};
-    std::unique_ptr<Stopwatch> stopwatch_ptr{nullptr};
+    StopwatchUniquePtr stopwatch_ptr{nullptr};
     MergeTreeData::MutableDataPartPtr part;
-
-    std::function<void(const ExecutionStatus &)> write_part_log;
 
     MergeTaskPtr merge_task;
 };

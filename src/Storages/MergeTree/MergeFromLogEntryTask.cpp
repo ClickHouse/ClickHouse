@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
+
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <common/logger_useful.h>
@@ -26,162 +27,10 @@ namespace ErrorCodes
 
 
 MergeFromLogEntryTask::MergeFromLogEntryTask(ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_, StorageReplicatedMergeTree & storage_)
-    : BackgroundTask(0), selected_entry(selected_entry_), entry(selected_entry->log_entry), storage(storage_)
+    : ReplicatedMergeMutateTaskBase(storage_.log, storage_, selected_entry_)
 {
-    log = storage.log;
 }
 
-
-bool MergeFromLogEntryTask::execute()
-{
-    std::exception_ptr saved_exception;
-
-    try
-    {
-        /// We don't have any backoff for failed entries
-        /// we just count amount of tries for each of them.
-
-        try
-        {
-            /// Returns false if
-            if (executeImpl())
-                return true;
-
-            if (state == State::SUCCESS)
-                storage.queue.removeProcessedEntry(storage.getZooKeeper(), entry);
-
-            return false;
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
-            {
-                /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
-                LOG_INFO(log, e.displayText());
-            }
-            else if (e.code() == ErrorCodes::ABORTED)
-            {
-                /// Interrupted merge or downloading a part is not an error.
-                LOG_INFO(log, e.message());
-            }
-            else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
-            {
-                /// Part cannot be added temporarily
-                LOG_INFO(log, e.displayText());
-                storage.cleanup_thread.wakeup();
-            }
-            else
-                tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
-            /** This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
-                 * The thread that performs this action will sleep a few seconds after the exception.
-                 * See `queue.processEntry` function.
-                 */
-            throw;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-            throw;
-        }
-
-    }
-    catch (...)
-    {
-        saved_exception = std::current_exception();
-    }
-
-
-    if (saved_exception)
-    {
-        std::lock_guard lock(storage.queue.state_mutex);
-        entry->exception = saved_exception;
-    }
-
-
-    return false;
-}
-
-
-bool MergeFromLogEntryTask::executeImpl()
-{
-    MemoryTrackerThreadSwitcherPtr switcher;
-    if (merge_entry)
-        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(&(*merge_entry)->memory_tracker);
-
-    switch (state)
-    {
-        case State::NEED_PREPARE :
-        {
-            if (!prepare())
-            {
-                state = State::CANT_MERGE_NEED_FETCH;
-                return true;
-            }
-
-            /// Depending on condition there is no need to execute a merge
-            if (state == State::SUCCESS)
-                return false;
-
-            state = State::NEED_EXECUTE_INNER_MERGE;
-            return true;
-        }
-        case State::NEED_EXECUTE_INNER_MERGE :
-        {
-            try
-            {
-                if (!merge_task->execute())
-                {
-                    state = State::NEED_COMMIT;
-                    return true;
-                }
-            }
-            catch (...)
-            {
-                /// Maybe part is nullptr here?
-                write_part_log(ExecutionStatus::fromCurrentException());
-                throw;
-            }
-
-            return true;
-        }
-        case State::NEED_COMMIT :
-        {
-            try
-            {
-                if (!commit())
-                {
-                    state = State::CANT_MERGE_NEED_FETCH;
-                    return true;
-                }
-            }
-            catch (...)
-            {
-                write_part_log(ExecutionStatus::fromCurrentException());
-                throw;
-            }
-
-            state = State::SUCCESS;
-            return true;
-        }
-        case State::CANT_MERGE_NEED_FETCH :
-        {
-            if (storage.executeFetch(*entry))
-            {
-                state = State::SUCCESS;
-                return true;
-            }
-
-            return false;
-        }
-        case State::SUCCESS :
-        {
-            /// Do nothing
-            return false;
-        }
-    }
-    return false;
-}
 
 
 bool MergeFromLogEntryTask::prepare()
@@ -189,15 +38,15 @@ bool MergeFromLogEntryTask::prepare()
     /// If we already have this part or a part covering it, we do not need to do anything.
     /// The part may be still in the PreCommitted -> Committed transition so we first search
     /// among PreCommitted parts to definitely find the desired part if it exists.
-    MergeTreeData::DataPartPtr existing_part = storage.getPartIfExists(entry->new_part_name, {MergeTreeDataPartState::PreCommitted});
+    MergeTreeData::DataPartPtr existing_part = storage.getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreCommitted});
 
     if (!existing_part)
-        existing_part = storage.getActiveContainingPart(entry->new_part_name);
+        existing_part = storage.getActiveContainingPart(entry.new_part_name);
 
     /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
     if (existing_part && storage.getZooKeeper()->exists(fs::path(storage.replica_path) / "parts" / existing_part->name))
     {
-        LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.", entry->new_part_name, existing_part->name);
+        LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.", entry.new_part_name, existing_part->name);
 
 
         /// We have to exit from all the execution process
@@ -206,23 +55,23 @@ bool MergeFromLogEntryTask::prepare()
     }
 
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
-        fmt::join(entry->source_parts, ", "), entry->new_part_name);
+        fmt::join(entry.source_parts, ", "), entry.new_part_name);
 
     const auto storage_settings_ptr = storage.getSettings();
 
     if (storage_settings_ptr->always_fetch_merged_part)
     {
-        LOG_INFO(log, "Will fetch part {} because setting 'always_fetch_merged_part' is true", entry->new_part_name);
+        LOG_INFO(log, "Will fetch part {} because setting 'always_fetch_merged_part' is true", entry.new_part_name);
         return false;
     }
 
-    if (entry->merge_type == MergeType::TTL_RECOMPRESS &&
-        (time(nullptr) - entry->create_time) <= storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds() &&
-        entry->source_replica != storage.replica_name)
+    if (entry.merge_type == MergeType::TTL_RECOMPRESS &&
+        (time(nullptr) - entry.create_time) <= storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds() &&
+        entry.source_replica != storage.replica_name)
     {
         LOG_INFO(log, "Will try to fetch part {} until '{}' because this part assigned to recompression merge. "
-            "Source replica {} will try to merge this part first", entry->new_part_name,
-            DateLUT::instance().timeToString(entry->create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry->source_replica);
+            "Source replica {} will try to merge this part first", entry.new_part_name,
+            DateLUT::instance().timeToString(entry.create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry.source_replica);
         return false;
     }
 
@@ -232,30 +81,30 @@ bool MergeFromLogEntryTask::prepare()
     std::optional<String> replica_to_execute_merge;
     bool replica_to_execute_merge_picked = false;
 
-    if (storage.merge_strategy_picker.shouldMergeOnSingleReplica(*entry)) // MAYBE FIXME
+    if (storage.merge_strategy_picker.shouldMergeOnSingleReplica(entry))
     {
-        replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(*entry); //MAYBE FIXME
+        replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
         replica_to_execute_merge_picked = true;
 
         if (replica_to_execute_merge)
         {
             LOG_DEBUG(log,
                 "Prefer fetching part {} from replica {} due to execute_merges_on_single_replica_time_threshold",
-                entry->new_part_name, replica_to_execute_merge.value());
+                entry.new_part_name, replica_to_execute_merge.value());
 
             return false;
         }
     }
 
 
-    for (const String & source_part_name : entry->source_parts)
+    for (const String & source_part_name : entry.source_parts)
     {
         MergeTreeData::DataPartPtr source_part_or_covering = storage.getActiveContainingPart(source_part_name);
 
         if (!source_part_or_covering)
         {
             /// We do not have one of source parts locally, try to take some already merged part from someone.
-            LOG_DEBUG(log, "Don't have all parts for merge {}; will try to fetch it instead", entry->new_part_name);
+            LOG_DEBUG(log, "Don't have all parts for merge {}; will try to fetch it instead", entry.new_part_name);
             return false;
         }
 
@@ -267,9 +116,9 @@ bool MergeFromLogEntryTask::prepare()
             /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
             /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
             constexpr const char * message = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
-            LOG_WARNING(log, message, source_part_name, source_part_or_covering->name, entry->new_part_name);
-            if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry->new_part_name, storage.format_version)))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry->new_part_name);
+            LOG_WARNING(log, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
+            if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
             return false;
         }
 
@@ -278,7 +127,7 @@ bool MergeFromLogEntryTask::prepare()
 
     /// All source parts are found locally, we can execute merge
 
-    if (entry->create_time + storage_settings_ptr->prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr))
+    if (entry.create_time + storage_settings_ptr->prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr))
     {
         /// If entry is old enough, and have enough size, and part are exists in any replica,
         ///  then prefer fetching of merged part from replica.
@@ -289,10 +138,10 @@ bool MergeFromLogEntryTask::prepare()
 
         if (sum_parts_bytes_on_disk >= storage_settings_ptr->prefer_fetch_merged_part_size_threshold)
         {
-            String replica = storage.findReplicaHavingPart(entry->new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
+            String replica = storage.findReplicaHavingPart(entry.new_part_name, true);    /// NOTE excessive ZK requests for same data later, may remove.
             if (!replica.empty())
             {
-                LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry->new_part_name, replica);
+                LOG_DEBUG(log, "Prefer to fetch {} from replica {}", entry.new_part_name, replica);
                 return false;
             }
         }
@@ -309,15 +158,17 @@ bool MergeFromLogEntryTask::prepare()
         ttl_infos.update(part_ptr->ttl_infos);
         max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
     }
-    auto table_lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
+
+    /// It will live until the whole task is being destroyed
+    table_lock_holder = storage.lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
 
     StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
 
-    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry->new_part_type);
-    if (future_merged_part->name != entry->new_part_name)
+    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_type);
+    if (future_merged_part->name != entry.new_part_name)
     {
         throw Exception("Future merged part name " + backQuote(future_merged_part->name) + " differs from part name in log entry: "
-            + backQuote(entry->new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
+            + backQuote(entry.new_part_name), ErrorCodes::BAD_DATA_PART_NAME);
     }
 
     std::optional<CurrentlySubmergingEmergingTagger> tagger;
@@ -335,24 +186,24 @@ bool MergeFromLogEntryTask::prepare()
         reserved_space = storage.reserveSpacePreferringTTLRules(
             metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
 
-    future_merged_part->uuid = entry->new_part_uuid;
+    future_merged_part->uuid = entry.new_part_uuid;
     future_merged_part->updatePath(storage, reserved_space.get());
-    future_merged_part->merge_type = entry->merge_type;
+    future_merged_part->merge_type = entry.merge_type;
 
     if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
         if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::Type::S3)
         {
-            if (storage.merge_strategy_picker.shouldMergeOnSingleReplicaShared(*entry)) // MAYBE FIXME
+            if (storage.merge_strategy_picker.shouldMergeOnSingleReplicaShared(entry))
             {
                 if (!replica_to_execute_merge_picked)
-                    replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(*entry);
+                    replica_to_execute_merge = storage.merge_strategy_picker.pickReplicaToExecuteMerge(entry);
 
                 if (replica_to_execute_merge)
                 {
                     LOG_DEBUG(log,
                         "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold",
-                        entry->new_part_name, replica_to_execute_merge.value());
+                        entry.new_part_name, replica_to_execute_merge.value());
                     return false;
                 }
             }
@@ -366,10 +217,10 @@ bool MergeFromLogEntryTask::prepare()
     auto table_id = storage.getStorageID();
 
     /// Add merge to list
-    merge_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_merged_part);
+    merge_mutate_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_merged_part);
 
     /// Adjust priority of the whole merge
-    setPriority((*merge_entry)->total_size_bytes_compressed);
+    setPriority((*merge_mutate_entry)->total_size_bytes_compressed);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage);
     stopwatch_ptr = std::make_unique<Stopwatch>();
@@ -378,26 +229,26 @@ bool MergeFromLogEntryTask::prepare()
     {
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
-            entry->new_part_name, part, parts, merge_entry.get());
+            entry.new_part_name, part, parts, merge_mutate_entry.get());
     };
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_merged_part,
             metadata_snapshot,
-            *merge_entry,
-            table_lock,
-            entry->create_time,
+            *merge_mutate_entry,
+            table_lock_holder,
+            entry.create_time,
             storage.getContext(),
             reserved_space,
-            entry->deduplicate,
-            entry->deduplicate_by_columns,
+            entry.deduplicate,
+            entry.deduplicate_by_columns,
             storage.merging_params);
 
     return true;
 }
 
 
-bool MergeFromLogEntryTask::commit()
+bool MergeFromLogEntryTask::finalize()
 {
     part = merge_task->getFuture().get();
 

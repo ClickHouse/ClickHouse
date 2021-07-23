@@ -273,6 +273,8 @@ public:
         void clear() { precommitted_parts.clear(); }
     };
 
+    using TransactionUniquePtr = std::unique_ptr<Transaction>;
+
     using PathWithDisk = std::pair<String, DiskPtr>;
 
     struct PartsTemporaryRename : private boost::noncopyable
