@@ -300,7 +300,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             replace_role = true;
         else
             replace_access = true;
-    }    
+    }
 
     if (!is_revoke)
         eraseNonGrantable(elements);
