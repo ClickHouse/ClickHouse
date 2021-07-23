@@ -29,15 +29,16 @@ class ClientBase : public Poco::Util::Application
 public:
     using Arguments = std::vector<String>;
 
-    int main(const std::vector<String> & /*args*/) override;
-
     void initialize(Poco::Util::Application & self) override;
 
-    int mainImpl();
-
+    /// Read args, process options, add args to config.
     void init(int argc, char ** argv);
 
+    int main(const std::vector<String> & /*args*/) override;
+
 protected:
+    virtual int childMainImpl() = 0;
+
     bool processMultiQuery(const String & all_queries_text);
 
     bool processQueryText(const String & text);
@@ -70,13 +71,9 @@ protected:
 
     virtual void reconnectIfNeeded() {}
 
-    virtual bool isInteractive() = 0;
-
     virtual void processMainImplException(const Exception & e) = 0;
 
     virtual void initializeChild() = 0;
-
-    virtual int childMainImpl() = 0;
 
     virtual void readArguments(int argc, char ** argv,
                                Arguments & common_arguments, std::vector<Arguments> &) = 0;
@@ -106,7 +103,7 @@ protected:
     virtual bool processWithFuzzing(const String &) { return true; }
 
     /// Process single file from non-interactive mode.
-    virtual bool processFile(const String & file) = 0;
+    virtual bool processMultiQueryFromFile(const String & file) = 0;
 
 private:
     static void clearTerminal();
@@ -197,6 +194,7 @@ private:
     NameSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж",
                          "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
 
+    int mainImpl();
 };
 
 }

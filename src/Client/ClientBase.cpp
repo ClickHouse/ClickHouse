@@ -4,16 +4,15 @@
 #include <iomanip>
 #include <filesystem>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
-
 #include <common/argsToConfig.h>
 #include <common/DateLUT.h>
 #include <common/LocalDate.h>
 #include <common/LineReader.h>
 #include <common/scope_guard_safe.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
@@ -38,6 +37,7 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/UseSSL.h>
 
 namespace fs = std::filesystem;
 
@@ -461,7 +461,7 @@ bool ClientBase::processQueryText(const String & text)
     if (exit_strings.end() != exit_strings.find(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
         return false;
 
-    if (!config().has("multiquery"))
+    if (!is_multiquery)
     {
         assert(!query_fuzzer_runs);
         prepareAndExecuteQuery(text);
@@ -596,10 +596,10 @@ void ClientBase::runNonInteractive()
         for (const auto & queries_file : queries_files)
         {
             for (const auto & interleave_file : interleave_queries_files)
-                if (!processFile(interleave_file))
+                if (!processMultiQueryFromFile(interleave_file))
                     return;
 
-            if (!processFile(queries_file))
+            if (!processMultiQueryFromFile(queries_file))
                 return;
         }
 
@@ -644,11 +644,7 @@ static void showClientVersion()
 
 int ClientBase::mainImpl()
 {
-    if (isInteractive())
-        is_interactive = true;
-
-    if (config().has("query") && !queries_files.empty())
-        throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
+    UseSSL use_ssl;
 
     processConfig();
 
@@ -660,16 +656,9 @@ int ClientBase::mainImpl()
         clearTerminal();
         showClientVersion();
     }
-    else
-    {
-        need_render_progress = config().getBool("progress", false);
-        echo_queries = config().getBool("echo", false);
-        ignore_error = config().getBool("ignore-error", false);
-    }
 
     return childMainImpl();
 }
-
 
 void ClientBase::initialize(Poco::Util::Application & self)
 {
@@ -755,8 +744,8 @@ void ClientBase::init(int argc, char ** argv)
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
 
     processOptions(options_description, options, external_tables_arguments);
-
     argsToConfig(common_arguments, config(), 100);
+
     if (supportPasswordOption())
         clearPasswordFromCommandLine(argc, argv);
 }

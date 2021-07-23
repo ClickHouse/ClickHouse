@@ -13,6 +13,8 @@ public:
     Client() = default;
 
 protected:
+    int childMainImpl() override;
+
     bool supportPasswordOption() const override { return true; }
 
     bool splitQueries() const override { return true; }
@@ -23,7 +25,7 @@ protected:
             connect();
     }
 
-    bool processFile(const String & file) override
+    bool processMultiQueryFromFile(const String & file) override
     {
         connection->setDefaultDatabase(connection_parameters.default_database);
         String text;
@@ -36,10 +38,9 @@ protected:
 
     void initializeChild() override;
     void processMainImplException(const Exception & e) override;
-    bool isInteractive() override;
     void loadSuggestionDataIfPossible() override;
     bool processQueryFromInteractive(const String & input) override;
-    int childMainImpl() override;
+
     bool checkErrorMatchesHints(const TestHint & test_hint, bool had_error) override;
     void reportQueryError() const override;
     bool processWithFuzzing(const String & text) override;

@@ -26,12 +26,10 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/UseSSL.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
-#include <Common/StatusFile.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -357,39 +355,13 @@ void LocalServer::setupUsers()
 
 int LocalServer::childMainImpl()
 {
-    Poco::Logger * log = &logger();
     ThreadStatus thread_status;
-    UseSSL use_ssl;
-
-    if (!is_interactive && !config().has("query") && !config().has("table-structure") && !config().has("queries-file")) /// Nothing to process
-    {
-        if (config().hasOption("verbose"))
-            std::cerr << "There are no queries to process." << '\n';
-
-        return Application::EXIT_OK;
-    }
-
-    if (config().has("query") && config().has("queries-file"))
-        throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
 
     /// Prompt may contain the following substitutions in a form of {name}.
     std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
-
     /// Quite suboptimal.
     for (const auto & [key, value] : prompt_substitutions)
         boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
-
-    shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
-
-    global_context->makeGlobalContext();
-    global_context->setApplicationType(Context::ApplicationType::LOCAL);
-
-    tryInitPath();
-
-    std::optional<StatusFile> status;
-
-    /// Skip temp path installation
 
     /// We will terminate process on error
     static KillingErrorHandler error_handler;
@@ -404,6 +376,82 @@ int LocalServer::childMainImpl()
     registerDictionaries();
     registerDisks();
     registerFormats();
+
+    /// we can't mutate global_context (can lead to races, as it was already passed to some background threads)
+    /// so we can't reuse it safely as a query context and need a copy here
+    query_context = Context::createCopy(global_context);
+
+    query_context->makeSessionContext();
+    query_context->makeQueryContext();
+
+    query_context->setUser("default", "", Poco::Net::SocketAddress{});
+    query_context->setCurrentQueryId("");
+    applyCmdSettings(query_context);
+
+    /// Use the same query_id (and thread group) for all queries
+    CurrentThread::QueryScope query_scope_holder(query_context);
+
+    if (need_render_progress)
+    {
+        /// Set progress callback, which can be run from multiple threads.
+        query_context->setProgressCallback([&](const Progress & value)
+        {
+            /// Write progress only if progress was updated
+            if (progress_indication.updateProgress(value))
+                progress_indication.writeProgress();
+        });
+
+        /// Set callback for file processing progress.
+        progress_indication.setFileProgressCallback(query_context);
+    }
+
+    if (is_interactive)
+    {
+        runInteractive();
+    }
+    else
+    {
+        runNonInteractive();
+    }
+
+    global_context->shutdown();
+    global_context.reset();
+
+    status.reset();
+    cleanup();
+
+    return Application::EXIT_OK;
+}
+
+
+void LocalServer::processConfig()
+{
+    if (stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty())
+    {
+        if (config().has("query") && config().has("queries-file"))
+            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
+
+        is_interactive = true;
+    }
+    else
+    {
+        /// For clickhouse-local non-interactive mode always assumes multiqeury can be used by default.
+        is_multiquery = true;
+
+        need_render_progress = config().getBool("progress", false);
+        echo_queries = config().getBool("echo", false);
+        ignore_error = config().getBool("ignore-error", false);
+    }
+
+    shared_context = Context::createShared();
+    global_context = Context::createGlobal(shared_context.get());
+
+    global_context->makeGlobalContext();
+    global_context->setApplicationType(Context::ApplicationType::LOCAL);
+
+    tryInitPath();
+
+    Poco::Logger * log = &logger();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -454,15 +502,17 @@ int LocalServer::childMainImpl()
         String path = global_context->getPath();
 
         /// Lock path directory before read
-        status.emplace(path + "status", StatusFile::write_full_info);
+        status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         fs::create_directories(fs::path(path) / "data/");
         fs::create_directories(fs::path(path) / "metadata/");
+
         loadMetadataSystem(global_context);
         attachSystemTables(global_context);
         loadMetadata(global_context);
         DatabaseCatalog::instance().loadDatabases();
+
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else if (!config().has("no-system-tables"))
@@ -470,53 +520,9 @@ int LocalServer::childMainImpl()
         attachSystemTables(global_context);
     }
 
-    if (!is_interactive)
-        is_multiquery = true;
-
-    /// we can't mutate global_context (can lead to races, as it was already passed to some background threads)
-    /// so we can't reuse it safely as a query context and need a copy here
-    query_context = Context::createCopy(global_context);
-
-    query_context->makeSessionContext();
-    query_context->makeQueryContext();
-
-    query_context->setUser("default", "", Poco::Net::SocketAddress{});
-    query_context->setCurrentQueryId("");
-    applyCmdSettings(query_context);
-
-    /// Use the same query_id (and thread group) for all queries
-    CurrentThread::QueryScope query_scope_holder(query_context);
-
-    if (need_render_progress)
-    {
-        /// Set progress callback, which can be run from multiple threads.
-        query_context->setProgressCallback([&](const Progress & value)
-        {
-            /// Write progress only if progress was updated
-            if (progress_indication.updateProgress(value))
-                progress_indication.writeProgress();
-        });
-
-        /// Set callback for file processing progress.
-        progress_indication.setFileProgressCallback(query_context);
-    }
-
-    if (is_interactive)
-    {
-        runInteractive();
-    }
-    else
-    {
-        processQueries();
-    }
-
-    global_context->shutdown();
-    global_context.reset();
-
-    status.reset();
-    cleanup();
-
-    return Application::EXIT_OK;
+    echo_queries = config().hasOption("echo") || config().hasOption("verbose");
+    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+    server_display_name = config().getString("display_name", getFQDNOrHostName());
 }
 
 
@@ -544,13 +550,6 @@ static std::string getHelpFooter()
         "clickhouse-local -S \"user String, mem Float64\" -q"
             " \"SELECT user, round(sum(mem), 2) as mem_total FROM table GROUP BY user ORDER"
             " BY mem_total DESC FORMAT PrettyCompact\"";
-}
-
-
-bool LocalServer::isInteractive()
-{
-    /// Nothing to process
-    return stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty();
 }
 
 
@@ -660,14 +659,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
 
     if (options.count("queries-file"))
         queries_files = options["queries-file"].as<std::vector<std::string>>();
-}
-
-
-void LocalServer::processConfig()
-{
-    echo_queries = config().hasOption("echo") || config().hasOption("verbose");
-    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
-    server_display_name = config().getString("display_name", getFQDNOrHostName());
 }
 
 }
