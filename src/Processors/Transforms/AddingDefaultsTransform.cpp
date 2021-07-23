@@ -2,7 +2,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/inplaceBlockConversions.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
@@ -128,31 +129,32 @@ static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
 }
 
 
-AddingDefaultsBlockInputStream::AddingDefaultsBlockInputStream(
-    const BlockInputStreamPtr & input,
+AddingDefaultsTransform::AddingDefaultsTransform(
+    const Block & header,
     const ColumnsDescription & columns_,
+    IInputFormat & input_format_,
     ContextPtr context_)
-    : columns(columns_)
+    : ISimpleTransform(header, header, true)
+    , columns(columns_)
     , column_defaults(columns.getDefaults())
+    , input_format(input_format_)
     , context(context_)
 {
-    children.push_back(input);
-    header = input->getHeader();
 }
 
 
-Block AddingDefaultsBlockInputStream::readImpl()
+void AddingDefaultsTransform::transform(Chunk & chunk)
 {
-    Block res = children.back()->read();
-    if (!res)
-        return res;
-
     if (column_defaults.empty())
-        return res;
+        return;
 
-    const BlockMissingValues & block_missing_values = children.back()->getMissingValues();
+    const BlockMissingValues & block_missing_values = input_format.getMissingValues();
     if (block_missing_values.empty())
-        return res;
+        return;
+
+    const auto & header = getOutputPort().getHeader();
+    size_t num_rows = chunk.getNumRows();
+    auto res = header.cloneWithColumns(chunk.detachColumns());
 
     /// res block already has all columns values, with default value for type
     /// (not value specified in table). We identify which columns we need to
@@ -170,7 +172,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
     }
 
     if (!evaluate_block.columns())
-        evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), res.rows()), std::make_shared<DataTypeUInt8>(), "_dummy"});
+        evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), num_rows), std::make_shared<DataTypeUInt8>(), "_dummy"});
 
     auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
     if (dag)
@@ -224,7 +226,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
         res.setColumns(std::move(mutation));
     }
 
-    return res;
+    chunk.setColumns(res.getColumns(), num_rows);
 }
 
 }

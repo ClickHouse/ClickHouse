@@ -1026,7 +1026,17 @@ bool TCPHandler::receivePacket()
             return false;
 
         case Protocol::Client::Cancel:
+        {
+            /// For testing connection collector.
+            const Settings & settings = query_context->getSettingsRef();
+            if (settings.sleep_in_receive_cancel_ms.totalMilliseconds())
+            {
+                std::chrono::milliseconds ms(settings.sleep_in_receive_cancel_ms.totalMilliseconds());
+                std::this_thread::sleep_for(ms);
+            }
+
             return false;
+        }
 
         case Protocol::Client::Hello:
             receiveUnexpectedHello();
@@ -1063,6 +1073,13 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         if (packet_type == Protocol::Client::Cancel)
         {
             state.is_cancelled = true;
+            /// For testing connection collector.
+            const Settings & settings = query_context->getSettingsRef();
+            if (settings.sleep_in_receive_cancel_ms.totalMilliseconds())
+            {
+                std::chrono::milliseconds ms(settings.sleep_in_receive_cancel_ms.totalMilliseconds());
+                std::this_thread::sleep_for(ms);
+            }
             return {};
         }
         else
@@ -1461,6 +1478,16 @@ bool TCPHandler::isQueryCancelled()
                     throw NetException("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
                 LOG_INFO(log, "Query was cancelled.");
                 state.is_cancelled = true;
+                /// For testing connection collector.
+                {
+                    const Settings & settings = query_context->getSettingsRef();
+                    if (settings.sleep_in_receive_cancel_ms.totalMilliseconds())
+                    {
+                        std::chrono::milliseconds ms(settings.sleep_in_receive_cancel_ms.totalMilliseconds());
+                        std::this_thread::sleep_for(ms);
+                    }
+                }
+
                 return true;
 
             default:
