@@ -590,6 +590,10 @@ CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vec
     assert(merge_aggregate_states_function);
     assert(insert_aggregate_states_function);
 
+    ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, compiled_module.size);
+    ProfileEvents::increment(ProfileEvents::CompileFunction);
+
     CompiledAggregateFunctions compiled_aggregate_functions
     {
         .create_aggregate_states_function = create_aggregate_states_function,
@@ -600,10 +604,6 @@ CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vec
         .functions_count = functions.size(),
         .compiled_module = std::move(compiled_module)
     };
-
-    ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
-    ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, compiled_module.size);
-    ProfileEvents::increment(ProfileEvents::CompileFunction);
 
     return compiled_aggregate_functions;
 }
