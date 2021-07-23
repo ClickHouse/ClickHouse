@@ -7,10 +7,6 @@ namespace DB
 
 class IStorage;
 
-class IMergeTreeDataPart;
-using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
-using DataPartsVector = std::vector<DataPartPtr>;
-
 // #if !defined(ARCADIA_BUILD)
 //     using NamesAndTypesMap = google::dense_hash_map<StringRef, DataTypePtr, StringRefHash>;
 // #else
@@ -19,12 +15,14 @@ using DataPartsVector = std::vector<DataPartPtr>;
 
 struct StorageSnapshot
 {
-    using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
-
     const IStorage & storage;
     const StorageMetadataPtr metadata;
-    const NameToTypeMap object_types;
-    const DataPartsVector parts;
+    const ColumnsDescription object_columns;
+
+    struct Data{};
+    using DataPtr = std::unique_ptr<const Data>;
+
+    const DataPtr data;
 
     /// TODO: fix
     mutable const ProjectionDescription * projection = nullptr;
@@ -40,8 +38,8 @@ struct StorageSnapshot
     StorageSnapshot(
         const IStorage & storage_,
         const StorageMetadataPtr & metadata_,
-        const NameToTypeMap & object_types_)
-        : storage(storage_), metadata(metadata_), object_types(object_types_)
+        const ColumnsDescription & object_columns_)
+        : storage(storage_), metadata(metadata_), object_columns(object_columns_)
     {
         init();
     }
@@ -49,9 +47,9 @@ struct StorageSnapshot
     StorageSnapshot(
         const IStorage & storage_,
         const StorageMetadataPtr & metadata_,
-        const NameToTypeMap & object_types_,
-        const DataPartsVector & parts_)
-        : storage(storage_), metadata(metadata_), object_types(object_types_), parts(parts_)
+        const ColumnsDescription & object_columns_,
+        DataPtr data_)
+        : storage(storage_), metadata(metadata_), object_columns(object_columns_), data(std::move(data_))
     {
         init();
     }
@@ -72,11 +70,12 @@ struct StorageSnapshot
 
     StorageMetadataPtr getMetadataForQuery() const { return (projection ? projection->metadata : metadata); }
 
+    bool isSubcolumnOfObject(const String & name) const;
+
 private:
     void init();
 
-    std::unordered_map<String, NameAndTypePair> object_subcolumns;
-    NameToTypeMap virtual_columns;
+    std::unordered_map<String, DataTypePtr> virtual_columns;
 };
 
 using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;

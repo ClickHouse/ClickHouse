@@ -8,6 +8,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <DataTypes/ObjectUtils.h>
 
 #include <common/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -35,10 +36,14 @@ namespace ClusterProxy
 
 SelectStreamFactory::SelectStreamFactory(
     const Block & header_,
+    const ColumnsDescriptionByShardNum & objects_by_shard_,
+    const StorageSnapshotPtr & storage_snapshot_,
     QueryProcessingStage::Enum processed_stage_,
     bool has_virtual_shard_num_column_)
     : header(header_),
-    processed_stage{processed_stage_},
+    objects_by_shard(objects_by_shard_),
+    storage_snapshot(storage_snapshot_),
+    processed_stage(processed_stage_),
     has_virtual_shard_num_column(has_virtual_shard_num_column_)
 {
 }
@@ -168,6 +173,10 @@ void SelectStreamFactory::createForShard(
                 modified_header.insert(std::move(col));
         }
     }
+
+    auto it = objects_by_shard.find(shard_info.shard_num);
+    if (it != objects_by_shard.end())
+        replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, modified_query_ast);
 
     auto emplace_local_stream = [&]()
     {

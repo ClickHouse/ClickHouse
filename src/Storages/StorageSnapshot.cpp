@@ -4,6 +4,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <sparsehash/dense_hash_map>
 #include <sparsehash/dense_hash_set>
+#include <DataTypes/NestedUtils.h>
 
 namespace DB
 {
@@ -16,49 +17,10 @@ namespace ErrorCodes
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
 }
 
-namespace
-{
-
-#if !defined(ARCADIA_BUILD)
-    using NamesAndTypesMap = google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash>;
-    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
-#else
-    using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash>;
-    using UniqueStrings = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
-#endif
-
-    NamesAndTypesMap getColumnsMap(const NamesAndTypesList & columns)
-    {
-        NamesAndTypesMap res;
-        res.set_empty_key(StringRef());
-
-        for (const auto & column : columns)
-            res.insert({column.name, &column.type});
-
-        return res;
-    }
-
-    UniqueStrings initUniqueStrings()
-    {
-        UniqueStrings strings;
-        strings.set_empty_key(StringRef());
-        return strings;
-    }
-}
-
 void StorageSnapshot::init()
 {
     for (const auto & [name, type] : storage.getVirtuals())
         virtual_columns[name] = type;
-
-    for (const auto & [name, type] : object_types)
-    {
-        for (const auto & subcolumn : type->getSubcolumnNames())
-        {
-            auto full_name = Nested::concatenateName(name, subcolumn);
-            object_subcolumns[full_name] = {name, subcolumn, type, type->getSubcolumnType(subcolumn)};
-        }
-    }
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
@@ -66,7 +28,7 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
     auto all_columns = getMetadataForQuery()->getColumns().get(options);
 
     if (options.with_extended_objects)
-        extendObjectColumns(all_columns, object_types, options.with_subcolumns);
+        extendObjectColumns(all_columns, object_columns, options.with_subcolumns);
 
     if (options.with_virtuals)
     {
@@ -102,21 +64,11 @@ NamesAndTypesList StorageSnapshot::getColumnsByNames(const GetColumnsOptions & o
 
         if (options.with_extended_objects)
         {
-            auto it = object_types.find(name);
-            if (it != object_types.end())
+            auto object_column = object_columns.tryGetColumn(options, name);
+            if (object_column)
             {
-                res.emplace_back(name, it->second);
+                res.emplace_back(std::move(*object_column));
                 continue;
-            }
-
-            if (options.with_subcolumns)
-            {
-                auto jt = object_subcolumns.find(name);
-                if (jt != object_subcolumns.end())
-                {
-                    res.emplace_back(jt->second);
-                    continue;
-                }
             }
         }
 
@@ -148,59 +100,68 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
         {
             res.insert({column->type->createColumn(), column->type, column->name});
         }
-        else if (auto it = object_types.find(name); it != object_types.end())
+        else if (auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
         {
-            const auto & type = it->second;
-            res.insert({type->createColumn(), type, name});
+            res.insert({object_column->type->createColumn(), object_column->type, object_column->name});
         }
-        else if (auto jt = object_subcolumns.find(name); jt != object_subcolumns.end())
-        {
-            const auto & type = jt->second.type;
-            res.insert({type->createColumn(), type, name});
-        }
-        else if (auto kt = virtual_columns.find(name); kt != virtual_columns.end())
+        else if (auto it = virtual_columns.find(name); it != virtual_columns.end())
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
-            const auto & type = kt->second;
+            const auto & type = it->second;
             res.insert({type->createColumn(), type, name});
         }
         else
+        {
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
                 "Column {} not found in table {}", backQuote(name), storage.getStorageID().getNameForLogs());
+        }
     }
 
     return res;
 }
 
+namespace
+{
+
+#if !defined(ARCADIA_BUILD)
+    using DenseHashSet = google::dense_hash_set<StringRef, StringRefHash>;
+#else
+    using DenseHashSet = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
+#endif
+
+}
+
 void StorageSnapshot::check(const Names & column_names) const
 {
     const auto & columns = getMetadataForQuery()->getColumns();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
 
     if (column_names.empty())
     {
-        auto list_of_columns = listOfColumns(columns.getAllPhysicalWithSubcolumns());
+        auto list_of_columns = listOfColumns(columns.get(options));
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
             "Empty list of columns queried. There are columns: {}", list_of_columns);
     }
 
-    const auto virtuals_map = getColumnsMap(storage.getVirtuals());
-    auto unique_names = initUniqueStrings();
+    DenseHashSet unique_names;
+    unique_names.set_empty_key(StringRef());
 
     for (const auto & name : column_names)
     {
         bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)
-            || object_subcolumns.count(name) || virtuals_map.count(name);
+            || object_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name)
+            || virtual_columns.count(name);
 
         if (!has_column)
         {
-            auto list_of_columns = listOfColumns(columns.getAllPhysicalWithSubcolumns());
+            auto list_of_columns = listOfColumns(columns.get(options));
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
                 "There is no column with name {} in table {}. There are columns: {}",
                 backQuote(name), storage.getStorageID().getNameForLogs(), list_of_columns);
         }
 
-        if (unique_names.end() != unique_names.find(name))
+        if (unique_names.count(name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE, "Column {} queried more than once", name);
 
         unique_names.insert(name);
@@ -209,11 +170,18 @@ void StorageSnapshot::check(const Names & column_names) const
 
 DataTypePtr StorageSnapshot::getConcreteType(const String & column_name) const
 {
-    auto it = object_types.find(column_name);
-    if (it != object_types.end())
-        return it->second;
+    auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+    if (object_column)
+        return object_column->type;
 
     return metadata->getColumns().get(column_name).type;
+}
+
+bool StorageSnapshot::isSubcolumnOfObject(const String & name) const
+{
+    auto split = Nested::splitName(name);
+    return !split.second.empty()
+        && object_columns.tryGetColumn(GetColumnsOptions::All, split.first);
 }
 
 }

@@ -5115,7 +5115,7 @@ ReservationPtr MergeTreeData::balancedReservation(
     return reserved_space;
 }
 
-StorageSnapshot::NameToTypeMap MergeTreeData::getObjectTypes(const DataPartsVector & parts, const NameSet & object_names)
+ColumnsDescription MergeTreeData::getObjectsDescription(const DataPartsVector & parts, const NameSet & object_names)
 {
     std::unordered_map<String, DataTypes> types_in_parts;
 
@@ -5139,21 +5139,23 @@ StorageSnapshot::NameToTypeMap MergeTreeData::getObjectTypes(const DataPartsVect
         }
     }
 
-    StorageSnapshot::NameToTypeMap object_types;
+    ColumnsDescription object_columns;
     for (const auto & [name, types] : types_in_parts)
-        object_types.emplace(name, getLeastCommonTypeForObject(types));
+        object_columns.add(ColumnDescription{name, getLeastCommonTypeForObject(types)});
 
-    return object_types;
+    return object_columns;
 }
 
 StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
 {
-    auto parts = getDataPartsVector();
-    auto object_types = getObjectTypes(
-        parts,
+    auto snapshot_data = std::make_unique<SnapshotData>();
+    snapshot_data->parts = getDataPartsVector();
+
+    auto object_columns = getObjectsDescription(
+        snapshot_data->parts,
         getNamesOfObjectColumns(metadata_snapshot->getColumns().getAll()));
 
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_types, parts);
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()

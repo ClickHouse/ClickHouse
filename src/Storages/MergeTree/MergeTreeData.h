@@ -394,6 +394,11 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
 
+    struct SnapshotData : public StorageSnapshot::Data
+    {
+        DataPartsVector parts;
+    };
+
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
@@ -636,7 +641,7 @@ public:
         return column_sizes;
     }
 
-    static StorageSnapshot::NameToTypeMap getObjectTypes(const DataPartsVector & parts, const NameSet & object_names);
+    static ColumnsDescription getObjectsDescription(const DataPartsVector & parts, const NameSet & object_names);
 
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;

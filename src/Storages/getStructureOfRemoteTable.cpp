@@ -149,9 +149,10 @@ ColumnsDescription getStructureOfRemoteTable(
         ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
 }
 
-std::vector<NamesAndTypesList> getExtendedColumnsOfRemoteTables(
+ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     const Cluster & cluster,
     const StorageID & remote_table_id,
+    const NameSet & names_of_objects,
     ContextPtr context)
 {
     const auto & shards_info = cluster.getShardsInfo();
@@ -176,7 +177,7 @@ std::vector<NamesAndTypesList> getExtendedColumnsOfRemoteTables(
         input->setMainTable(remote_table_id);
         input->readPrefix();
 
-        NamesAndTypesList res;
+        ColumnsDescription res;
         while (auto block = input->read())
         {
             const auto & name_col = *block.getByName("name").column;
@@ -188,14 +189,17 @@ std::vector<NamesAndTypesList> getExtendedColumnsOfRemoteTables(
                 auto name = name_col[i].template get<const String &>();
                 auto type_name = type_col[i].template get<const String &>();
 
-                res.emplace_back(std::move(name), DataTypeFactory::instance().get(type_name));
+                if (!names_of_objects.count(name))
+                    continue;
+
+                res.add(ColumnDescription(std::move(name), DataTypeFactory::instance().get(type_name)));
             }
         }
 
         return res;
     };
 
-    std::vector<NamesAndTypesList> columns;
+    ColumnsDescriptionByShardNum columns;
     for (const auto & shard_info : shards_info)
     {
         auto res = execute_query_on_shard(shard_info);
@@ -203,7 +207,7 @@ std::vector<NamesAndTypesList> getExtendedColumnsOfRemoteTables(
         /// Expect at least some columns.
         /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.
         if (!res.empty())
-            columns.emplace_back(std::move(res));
+            columns.emplace(shard_info.shard_num, std::move(res));
     }
 
     if (columns.empty())

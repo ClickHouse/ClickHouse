@@ -8,12 +8,17 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB
 {
@@ -79,7 +84,7 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get data type of column {}", column.getFamilyName());
 }
 
-template <int I, typename Tuple>
+template <size_t I, typename Tuple>
 static auto extractVector(const std::vector<Tuple> & vec)
 {
     static_assert(I < std::tuple_size_v<Tuple>);
@@ -200,29 +205,80 @@ NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list)
     return res;
 }
 
-void extendObjectColumns(NamesAndTypesList & columns_list, const NameToTypeMap & object_types, bool with_subcolumns)
+void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescription & object_columns, bool with_subcolumns)
 {
     NamesAndTypesList subcolumns_list;
     for (auto & column : columns_list)
     {
-        auto it = object_types.find(column.name);
-        if (it != object_types.end())
+        auto object_column = object_columns.tryGetColumn(GetColumnsOptions::All, column.name);
+        if (object_column)
         {
-            const auto & object_type = it->second;
-            column.type = object_type;
+            column.type = object_column->type;
 
             if (with_subcolumns)
+                subcolumns_list.splice(subcolumns_list.end(), object_columns.getSubcolumns(column.name));
+        }
+    }
+
+    columns_list.splice(columns_list.end(), std::move(subcolumns_list));
+}
+
+static void addConstantToWithClause(const ASTPtr & query, const String & column_name, const DataTypePtr & data_type)
+{
+    auto & select = query->as<ASTSelectQuery &>();
+    if (!select.with())
+        select.setExpression(ASTSelectQuery::Expression::WITH, std::make_shared<ASTExpressionList>());
+
+    auto literal = std::make_shared<ASTLiteral>(data_type->getDefault());
+    auto node = makeASTFunction("CAST", std::move(literal), std::make_shared<ASTLiteral>(data_type->getName()));
+
+    node->alias = column_name;
+    node->prefer_alias_to_column_name = true;
+    select.with()->children.push_back(std::move(node));
+}
+
+void replaceMissedSubcolumnsByConstants(
+    const ColumnsDescription & expected_columns,
+    const ColumnsDescription & available_columns,
+    ASTPtr query)
+{
+    NamesAndTypesList missed;
+    for (const auto & column : available_columns)
+    {
+        const auto * type_tuple = typeid_cast<const DataTypeTuple *>(column.type.get());
+        assert(type_tuple);
+
+        auto expected_column = expected_columns.getColumn(GetColumnsOptions::All, column.name);
+        const auto * expected_type_tuple = typeid_cast<const DataTypeTuple *>(expected_column.type.get());
+        assert(expected_type_tuple);
+
+        if (!type_tuple->equals(*expected_type_tuple))
+        {
+            const auto & names = type_tuple->getElementNames();
+            const auto & expected_names = expected_type_tuple->getElementNames();
+            const auto & expected_types = expected_type_tuple->getElements();
+
+            NameSet names_set(names.begin(), names.end());
+
+            for (size_t i = 0; i < expected_names.size(); ++i)
             {
-                for (const auto & subcolumn : object_type->getSubcolumnNames())
+                if (!names_set.count(expected_names[i]))
                 {
-                    subcolumns_list.emplace_back(column.name, subcolumn,
-                        object_type, object_type->getSubcolumnType(subcolumn));
+                    auto full_name = Nested::concatenateName(column.name, expected_names[i]);
+                    missed.emplace_back(std::move(full_name), expected_types[i]);
                 }
             }
         }
     }
 
-    columns_list.splice(columns_list.end(), std::move(subcolumns_list));
+    if (missed.empty())
+        return;
+
+    IdentifierNameSet identifiers;
+    query->collectIdentifierNames(identifiers);
+    for (const auto & [name, type] : missed)
+        if (identifiers.count(name))
+            addConstantToWithClause(query, name, type);
 }
 
 void finalizeObjectColumns(MutableColumns & columns)

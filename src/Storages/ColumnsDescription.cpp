@@ -359,17 +359,23 @@ NamesAndTypesList ColumnsDescription::getAll() const
     return ret;
 }
 
-static NamesAndTypesList getWithSubcolumns(NamesAndTypesList && source_list)
+NamesAndTypesList ColumnsDescription::getSubcolumns(const String & name_in_storage) const
 {
-    NamesAndTypesList ret;
+    auto range = subcolumns.get<1>().equal_range(name_in_storage);
+    return NamesAndTypesList(range.first, range.second);
+}
+
+void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
+{
+    NamesAndTypesList subcolumns_list;
     for (const auto & col : source_list)
     {
-        ret.emplace_back(col.name, col.type);
-        for (const auto & subcolumn : col.type->getSubcolumnNames())
-            ret.emplace_back(col.name, subcolumn, col.type, col.type->getSubcolumnType(subcolumn));
+        auto range = subcolumns.get<1>().equal_range(col.name);
+        if (range.first != range.second)
+            subcolumns_list.insert(subcolumns_list.end(), range.first, range.second);
     }
 
-    return ret;
+    source_list.splice(source_list.end(), std::move(subcolumns_list));
 }
 
 NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) const
@@ -395,7 +401,7 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
     }
 
     if (options.with_subcolumns)
-        res = getWithSubcolumns(std::move(res));
+        addSubcolumnsToList(res);
 
     return res;
 }
@@ -505,17 +511,19 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
     return {};
 }
 
+NameAndTypePair ColumnsDescription::getColumn(const GetColumnsOptions & options, const String & column_name) const
+{
+    auto column = tryGetColumn(options, column_name);
+    if (!column)
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "There is no column {} in table.", column_name);
+
+    return *column;
+}
+
 std::optional<NameAndTypePair> ColumnsDescription::tryGetColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
-    auto it = columns.get<1>().find(column_name);
-    if (it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind))
-        return NameAndTypePair(it->name, it->type);
-
-    auto jt = subcolumns.get<0>().find(column_name);
-    if (jt != subcolumns.get<0>().end())
-        return *jt;
-
-    return {};
+    return tryGetColumn(GetColumnsOptions(kind).withSubcolumns(), column_name);
 }
 
 NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
@@ -530,11 +538,7 @@ NameAndTypePair ColumnsDescription::getColumnOrSubcolumn(GetColumnsOptions::Kind
 
 std::optional<NameAndTypePair> ColumnsDescription::tryGetPhysical(const String & column_name) const
 {
-    auto it = columns.get<1>().find(column_name);
-    if (it == columns.get<1>().end() || it->default_desc.kind == ColumnDefaultKind::Alias)
-        return {};
-
-    return NameAndTypePair(it->name, it->type);
+    return tryGetColumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
 NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) const
@@ -559,30 +563,6 @@ bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, cons
     return (it != columns.get<1>().end()
         && (defaultKindToGetKind(it->default_desc.kind) & kind))
             || hasSubcolumn(column_name);
-}
-
-void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
-{
-    for (const auto & col : source_list)
-    {
-        auto range = subcolumns.get<1>().equal_range(col.name);
-        if (range.first != range.second)
-            source_list.insert(source_list.end(), range.first, range.second);
-    }
-}
-
-NamesAndTypesList ColumnsDescription::getAllWithSubcolumns() const
-{
-    auto columns_list = getAll();
-    addSubcolumnsToList(columns_list);
-    return columns_list;
-}
-
-NamesAndTypesList ColumnsDescription::getAllPhysicalWithSubcolumns() const
-{
-    auto columns_list = getAllPhysical();
-    addSubcolumnsToList(columns_list);
-    return columns_list;
 }
 
 bool ColumnsDescription::hasDefaults() const
