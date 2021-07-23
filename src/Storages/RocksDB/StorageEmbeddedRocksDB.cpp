@@ -333,10 +333,10 @@ Pipe StorageEmbeddedRocksDB::read(
     }
 }
 
-BlockOutputStreamPtr StorageEmbeddedRocksDB::write(
+SinkToStoragePtr StorageEmbeddedRocksDB::write(
     const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<EmbeddedRocksDBBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }
 
 

@@ -1,23 +1,23 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 
 
 namespace DB
 {
 
-class RabbitMQBlockOutputStream : public IBlockOutputStream
+class RabbitMQSink : public SinkToStorage
 {
 
 public:
-    explicit RabbitMQBlockOutputStream(StorageRabbitMQ & storage_, const StorageMetadataPtr & metadata_snapshot_, ContextPtr context_);
+    explicit RabbitMQSink(StorageRabbitMQ & storage_, const StorageMetadataPtr & metadata_snapshot_, ContextPtr context_);
 
-    Block getHeader() const override;
+    void onStart();
+    void consume(Chunk chunk) override;
+    void onFinish() override;
 
-    void writePrefix() override;
-    void write(const Block & block) override;
-    void writeSuffix() override;
+    String getName() const override { return "RabbitMQSink"; }
 
 private:
     StorageRabbitMQ & storage;
@@ -25,5 +25,7 @@ private:
     ContextPtr context;
     ProducerBufferPtr buffer;
     BlockOutputStreamPtr child;
+
+    bool is_first_chunk = true;
 };
 }

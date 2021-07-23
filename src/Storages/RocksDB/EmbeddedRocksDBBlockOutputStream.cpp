@@ -13,14 +13,14 @@ namespace ErrorCodes
     extern const int ROCKSDB_ERROR;
 }
 
-EmbeddedRocksDBBlockOutputStream::EmbeddedRocksDBBlockOutputStream(
+EmbeddedRocksDBSink::EmbeddedRocksDBSink(
     StorageEmbeddedRocksDB & storage_,
     const StorageMetadataPtr & metadata_snapshot_)
-    : storage(storage_)
+    : SinkToStorage(metadata_snapshot->getSampleBlock())
+    , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
 {
-    Block sample_block = metadata_snapshot->getSampleBlock();
-    for (const auto & elem : sample_block)
+    for (const auto & elem : getPort().getHeader())
     {
         if (elem.name == storage.primary_key)
             break;
@@ -28,15 +28,10 @@ EmbeddedRocksDBBlockOutputStream::EmbeddedRocksDBBlockOutputStream(
     }
 }
 
-Block EmbeddedRocksDBBlockOutputStream::getHeader() const
+void EmbeddedRocksDBSink::consume(Chunk chunk)
 {
-    return metadata_snapshot->getSampleBlock();
-}
-
-void EmbeddedRocksDBBlockOutputStream::write(const Block & block)
-{
-    metadata_snapshot->check(block, true);
-    auto rows = block.rows();
+    auto rows = chunk.getNumRows();
+    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     WriteBufferFromOwnString wb_key;
     WriteBufferFromOwnString wb_value;

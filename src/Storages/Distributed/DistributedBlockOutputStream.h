@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/formatAST.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
 #include <Common/PODArray.h>
@@ -34,10 +34,10 @@ class StorageDistributed;
  *  and the resulting blocks are written in a compressed Native format in separate directories for sending.
  *  For each destination address (each directory with data to send), a separate thread is created in StorageDistributed,
  *  which monitors the directory and sends data. */
-class DistributedBlockOutputStream : public IBlockOutputStream
+class DistributedSink : public SinkToStorage
 {
 public:
-    DistributedBlockOutputStream(
+    DistributedSink(
         ContextPtr context_,
         StorageDistributed & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
@@ -47,11 +47,8 @@ public:
         UInt64 insert_timeout_,
         StorageID main_table_);
 
-    Block getHeader() const override;
-    void write(const Block & block) override;
-    void writePrefix() override;
-
-    void writeSuffix() override;
+    void consume(Chunk chunk) override;
+    void onFinish() override;
 
 private:
     IColumn::Selector createSelector(const Block & source_block) const;
@@ -77,7 +74,7 @@ private:
     void initWritingJobs(const Block & first_block, size_t start, size_t end);
 
     struct JobReplica;
-    ThreadPool::Job runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block, size_t num_shards);
+    ThreadPool::Job runWritingJob(JobReplica & job, const Block & current_block, size_t num_shards);
 
     void waitForJobs();
 
@@ -96,6 +93,8 @@ private:
     bool insert_sync;
     bool random_shard_insert;
     bool allow_materialized;
+
+    bool is_first_chunk = true;
 
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds

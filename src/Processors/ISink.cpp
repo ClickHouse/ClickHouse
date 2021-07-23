@@ -16,7 +16,9 @@ ISink::Status ISink::prepare()
 
     if (input.isFinished())
     {
-        onFinish();
+        if (!was_on_finish_called)
+            return Status::Ready;
+
         return Status::Finished;
     }
 
@@ -31,9 +33,16 @@ ISink::Status ISink::prepare()
 
 void ISink::work()
 {
-    consume(std::move(current_chunk));
-    has_input = false;
+    if (has_input)
+    {
+        consume(std::move(current_chunk));
+        has_input = false;
+    }
+    else
+    {
+        onFinish();
+        was_on_finish_called = true;
+    }
 }
 
 }
-
