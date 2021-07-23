@@ -383,8 +383,8 @@ private:
             catch (...)
             {
                 std::lock_guard lock(mutex);
-                std::cerr << "An error occurred while processing the query '"
-                          << query << "'.\n";
+                std::cerr << "An error occurred while processing the query " << "'" << query << "'"
+                          << ": " << getCurrentExceptionMessage(false) << std::endl;
                 if (!continue_on_errors)
                 {
                     shutdown = true;
