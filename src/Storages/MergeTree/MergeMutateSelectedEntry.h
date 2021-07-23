@@ -38,9 +38,9 @@ struct MergeMutateSelectedEntry
 {
     FutureMergedMutatedPartPtr future_part;
     CurrentlyMergingPartsTaggerPtr tagger;
-    MutationCommands commands;
-    MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr && tagger_, const MutationCommands & commands_)
-        : future_part(std::move(future_part_))
+    MutationCommandsConstPtr commands;
+    MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_, MutationCommandsConstPtr commands_)
+        : future_part(future_part_)
         , tagger(std::move(tagger_))
         , commands(commands_)
     {}

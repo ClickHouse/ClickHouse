@@ -32,7 +32,7 @@ private:
     ReservationSharedPtr reserved_space{nullptr};
 
     MergeTreePartInfo new_part_info;
-    MutationCommands commands;
+    MutationCommandsConstPtr commands;
 
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     StopwatchUniquePtr stopwatch_ptr{nullptr};

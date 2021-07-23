@@ -24,7 +24,7 @@ public:
     (
         FutureMergedMutatedPartPtr future_part_,
         StorageMetadataPtr metadata_snapshot_,
-        MutationCommands commands_,
+        MutationCommandsConstPtr commands_,
         MergeListEntry & mutate_entry_,
         time_t time_of_mutation_,
         ContextPtr context_,
@@ -125,7 +125,7 @@ private:
 
     FutureMergedMutatedPartPtr future_part;
     StorageMetadataPtr metadata_snapshot;
-    MutationCommands commands;
+    MutationCommandsConstPtr commands;
     MergeListEntry & mutate_entry;
     time_t time_of_mutation;
     ContextPtr context;

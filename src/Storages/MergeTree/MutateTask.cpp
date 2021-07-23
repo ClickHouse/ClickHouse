@@ -67,7 +67,7 @@ MergeTreeData::MutableDataPartPtr MutateTask::main()
     context_for_reading->setSetting("force_primary_key", Field(0));
 
     MutationCommands commands_for_part;
-    for (const auto & command : commands)
+    for (const auto & command : *commands)
     {
         if (command.partition == nullptr || future_part->parts[0]->info.partition_id == data.getPartitionIDFromQuery(
                 command.partition, context_for_reading))
