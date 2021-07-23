@@ -12,7 +12,6 @@
 #include <Interpreters/join_common.h>
 #include <Interpreters/sortBlock.h>
 #include <Interpreters/join_common.h>
-#include <DataStreams/materializeBlock.h>
 #include <DataStreams/TemporaryFileStream.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <Processors/QueryPipeline.h>
