@@ -79,7 +79,7 @@ private:
     ASTsVector on_filter_condition_asts_right;
 private:
     size_t disjunct_num = 0;
-    std::vector<const IAST*> disjuncts;
+    std::vector<const ASTPtr> disjuncts;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -177,8 +177,8 @@ public:
 
     void resetCollected();
     void addUsingKey(const ASTPtr & ast);
-    void addDisjunct(const IAST*);
-    void setDisjuncts(std::vector<const IAST*>&&);
+    void setDisjuncts(std::vector<const ASTPtr>&&);
+    void addDisjunct(const ASTPtr &);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
     /* Conditions for left/right table from JOIN ON section.
