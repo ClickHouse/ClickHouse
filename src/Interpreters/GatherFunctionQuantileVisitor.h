@@ -7,22 +7,21 @@
 
 namespace DB
 {
-
- static const std::unordered_map<String, String> quantile_fuse_name_mapping = {
-        {NameQuantile::name, NameQuantiles::name},
-        {NameQuantileDeterministic::name, NameQuantilesDeterministic::name},
-        {NameQuantileExact::name, NameQuantilesExact::name},
-        {NameQuantileExactLow::name, NameQuantilesExactLow::name},
-        {NameQuantileExactHigh::name, NameQuantilesExactHigh::name},
-        {NameQuantileExactExclusive::name, NameQuantilesExactExclusive::name},
-        {NameQuantileExactInclusive::name, NameQuantilesExactInclusive::name},
-        {NameQuantileExactWeighted::name, NameQuantilesExactWeighted::name},
-        {NameQuantileTiming::name, NameQuantilesTiming::name},
-        {NameQuantileTimingWeighted::name, NameQuantilesTimingWeighted::name},
-        {NameQuantileTDigest::name, NameQuantilesTDigest::name},
-        {NameQuantileTDigestWeighted::name, NameQuantilesTDigestWeighted::name},
-        {NameQuantileBFloat16::name, NameQuantilesBFloat16::name}
-    };
+static const std::unordered_map<String, String> quantile_fuse_name_mapping = {
+    {NameQuantile::name, NameQuantiles::name},
+    {NameQuantileDeterministic::name, NameQuantilesDeterministic::name},
+    {NameQuantileExact::name, NameQuantilesExact::name},
+    {NameQuantileExactLow::name, NameQuantilesExactLow::name},
+    {NameQuantileExactHigh::name, NameQuantilesExactHigh::name},
+    {NameQuantileExactExclusive::name, NameQuantilesExactExclusive::name},
+    {NameQuantileExactInclusive::name, NameQuantilesExactInclusive::name},
+    {NameQuantileExactWeighted::name, NameQuantilesExactWeighted::name},
+    {NameQuantileTiming::name, NameQuantilesTiming::name},
+    {NameQuantileTimingWeighted::name, NameQuantilesTimingWeighted::name},
+    {NameQuantileTDigest::name, NameQuantilesTDigest::name},
+    {NameQuantileTDigestWeighted::name, NameQuantilesTDigestWeighted::name},
+    {NameQuantileBFloat16::name, NameQuantilesBFloat16::name}
+};
 
 /// Gather all the quantilexxx functions
 class GatherFunctionQuantileData
