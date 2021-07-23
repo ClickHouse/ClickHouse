@@ -209,7 +209,8 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     if (multiple_disjuncts)
     {
-        // required_right_keys_sources concept does not work well if multiple disjuncts
+        /// required right keys concept does not work well if multiple disjuncts,
+        /// we need all keys
         sample_block_with_columns_to_add = right_table_keys = materializeBlock(right_sample_block);
     }
     else
@@ -1052,22 +1053,23 @@ struct JoinFeatures
 template <bool multiple_disjuncts>
 class KnownRowsHolder;
 
-// TODO: helper to clean, instead of recreating
-
+/// Keep already joined rows to prevent duplication if many disjuncts
+///   if for a particular pair of rows condition looks like TRUE or TRUE or TRUE
+///   we want to have it once in resultset
 template<>
 class KnownRowsHolder<true>
 {
 public:
-    using Type = std::pair<const Block*, DB::RowRef::SizeT>;
+    using Type = std::pair<const Block *, DB::RowRef::SizeT>;
 
 private:
-    static const size_t MAX_LINEAR = 16;
-    using LinearHolder = std::array<Type, MAX_LINEAR>;
-    using LogHolder = std::set<Type>;
-    using LogHolderPtr = std::unique_ptr<LogHolder>;
+    static const size_t MAX_LINEAR = 16; // threshold to switch from Array to Set
+    using ArrayHolder = std::array<Type, MAX_LINEAR>;
+    using SetHolder = std::set<Type>;
+    using SetHolderPtr = std::unique_ptr<SetHolder>;
 
-    LinearHolder linh;
-    LogHolderPtr logh_ptr;
+    ArrayHolder array_holder;
+    SetHolderPtr set_holder_ptr;
 
     size_t items;
 
@@ -1081,19 +1083,19 @@ public:
     template<class InputIt>
     void add(InputIt from, InputIt to)
     {
-        size_t new_items = std::distance(from, to);
+        const size_t new_items = std::distance(from, to);
         if (items + new_items <= MAX_LINEAR)
         {
-            std::copy(from, to, &linh[items]);
+            std::copy(from, to, &array_holder[items]);
         }
         else
         {
             if (items <= MAX_LINEAR)
             {
-                logh_ptr = std::make_unique<LogHolder>();
-                logh_ptr->insert(std::cbegin(linh), std::cbegin(linh) + items);
+                set_holder_ptr = std::make_unique<SetHolder>();
+                set_holder_ptr->insert(std::cbegin(array_holder), std::cbegin(array_holder) + items);
             }
-            logh_ptr->insert(from, to);
+            set_holder_ptr->insert(from, to);
         }
         items += new_items;
     }
@@ -1102,8 +1104,8 @@ public:
     bool isKnown(const Needle & needle)
     {
         return items <= MAX_LINEAR
-            ? std::find(std::cbegin(linh), std::cbegin(linh) + items, needle) != std::cbegin(linh) + items
-            : logh_ptr->find(needle) != logh_ptr->end();
+            ? std::find(std::cbegin(array_holder), std::cbegin(array_holder) + items, needle) != std::cbegin(array_holder) + items
+            : set_holder_ptr->find(needle) != set_holder_ptr->end();
     }
 };
 
