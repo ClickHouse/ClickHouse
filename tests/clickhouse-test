@@ -155,7 +155,7 @@ def get_db_engine(args, database_name):
         return " ENGINE=" + args.db_engine
     return ""   # Will use default engine
 
-def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
+def configure_testcase_args(j2env, args, case_file, suite_tmp_dir, file_suffix):
     testcase_args = copy.deepcopy(args)
 
     testcase_args.testcase_start_time = datetime.now()
@@ -166,7 +166,6 @@ def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
         database = testcase_args.database
         os.environ.setdefault("CLICKHOUSE_DATABASE", database)
         os.environ.setdefault("CLICKHOUSE_TMP", suite_tmp_dir)
-
     else:
         # If --database is not specified, we will create temporary database with unique name
         # And we will recreate and drop it for each test
@@ -175,14 +174,24 @@ def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
             return ''.join(random.choice(alphabet) for _ in range(length))
         database = 'test_{suffix}'.format(suffix=random_str())
 
-        with open(stderr_file, 'w') as stderr:
+    testcase_args.testcase_database = database
+
+    case_file = render_test_template(j2env, case_file)
+    testcase_args.testcase_file = case_file
+
+    testcase_args.reference_file = get_reference_file(case_file)
+    testcase_args.stdout_file = os.path.join(suite_tmp_dir, case_file) + file_suffix + '.stdout'
+    testcase_args.stderr_file = os.path.join(suite_tmp_dir, case_file) + file_suffix + '.stderr'
+
+    if not testcase_args.database:
+        with open(testcase_args.stderr_file, 'w') as stderr:
             client_cmd = testcase_args.testcase_client + " " + get_additional_client_options(args)
-            clickhouse_proc_create = Popen(shlex.split(client_cmd), stdin=PIPE, stdout=PIPE, stderr=stderr, universal_newlines=True)
-            try:
-                clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(testcase_args, database)), timeout=testcase_args.timeout)
-            except TimeoutExpired:
-                total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
-                return clickhouse_proc_create, "", "Timeout creating database {} before test".format(database), total_time
+            with Popen(shlex.split(client_cmd), stdin=PIPE, stdout=PIPE, stderr=stderr, universal_newlines=True) as clickhouse_proc_create:
+                try:
+                    clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(testcase_args, database)), timeout=testcase_args.timeout)
+                except TimeoutExpired:
+                    total_time = (datetime.now() - testcase_args.testcase_start_time).total_seconds()
+                    return clickhouse_proc_create, "", "Timeout creating database {} before test".format(database), total_time
 
         os.environ["CLICKHOUSE_DATABASE"] = database
         # Set temporary directory to match the randomly generated database,
@@ -192,14 +201,14 @@ def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
         os.mkdir(testcase_args.test_tmp_dir)
         os.environ.setdefault("CLICKHOUSE_TMP", testcase_args.test_tmp_dir)
 
-    testcase_args.testcase_database = database
-
     return testcase_args
 
-def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
+def run_single_test(args, server_logs_level, client_options):
     client = args.testcase_client
     start_time = args.testcase_start_time
     database = args.testcase_database
+    case_file = args.testcase_file
+    (_, ext) = os.path.splitext(case_file)
 
     # This is for .sh tests
     os.environ["CLICKHOUSE_LOG_COMMENT"] = case_file
@@ -209,8 +218,8 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         'logs_level': server_logs_level,
         'options': client_options,
         'test': case_file,
-        'stdout': stdout_file,
-        'stderr': stderr_file,
+        'stdout': args.stdout_file,
+        'stderr': args.stderr_file,
     }
 
     # >> append to stderr (but not stdout since it is not used there),
@@ -236,7 +245,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         need_drop_database = not maybe_passed
 
     if need_drop_database:
-        with open(stderr_file, 'a') as stderr:
+        with open(args.stderr_file, 'a') as stderr:
             clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=stderr, universal_newlines=True)
         seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
         try:
@@ -261,19 +270,19 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     total_time = (datetime.now() - start_time).total_seconds()
 
     # Normalize randomized database names in stdout, stderr files.
-    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
+    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=args.stdout_file))
     if args.hide_db_name:
-        os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
+        os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=args.stderr_file))
     if args.replicated_database:
-        os.system("LC_ALL=C sed -i -e 's|/auto_{{shard}}||g' {file}".format(file=stdout_file))
-        os.system("LC_ALL=C sed -i -e 's|auto_{{replica}}||g' {file}".format(file=stdout_file))
+        os.system("LC_ALL=C sed -i -e 's|/auto_{{shard}}||g' {file}".format(file=args.stdout_file))
+        os.system("LC_ALL=C sed -i -e 's|auto_{{replica}}||g' {file}".format(file=args.stdout_file))
 
     # Normalize hostname in stdout file.
-    os.system("LC_ALL=C sed -i -e 's/{hostname}/localhost/g' {file}".format(hostname=socket.gethostname(), file=stdout_file))
+    os.system("LC_ALL=C sed -i -e 's/{hostname}/localhost/g' {file}".format(hostname=socket.gethostname(), file=args.stdout_file))
 
-    stdout = open(stdout_file, 'rb').read() if os.path.exists(stdout_file) else b''
+    stdout = open(args.stdout_file, 'rb').read() if os.path.exists(args.stdout_file) else b''
     stdout = str(stdout, errors='replace', encoding='utf-8')
-    stderr = open(stderr_file, 'rb').read() if os.path.exists(stderr_file) else b''
+    stderr = open(args.stderr_file, 'rb').read() if os.path.exists(args.stderr_file) else b''
     stderr = str(stderr, errors='replace', encoding='utf-8')
 
     return proc, stdout, stderr, total_time
@@ -385,6 +394,11 @@ def run_tests_array(all_tests_with_params):
 
     client_options = get_additional_client_options(args)
 
+    j2env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader(suite_dir),
+        keep_trailing_newline=True,
+    ) if USE_JINJA else None
+
     def print_test_time(test_time):
         if args.print_time:
             return " {0:.2f} sec.".format(test_time)
@@ -476,12 +490,8 @@ def run_tests_array(all_tests_with_params):
                             break
 
                     file_suffix = ('.' + str(os.getpid())) if is_concurrent and args.test_runs > 1 else ''
-                    reference_file = get_reference_file(suite_dir, name)
-                    stdout_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stdout'
-                    stderr_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stderr'
-
-                    testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
-                    proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+                    testcase_args = configure_testcase_args(j2env, args, case_file, suite_tmp_dir, file_suffix)
+                    proc, stdout, stderr, total_time = run_single_test(testcase_args, server_logs_level, client_options)
 
                     if proc.returncode is None:
                         try:
@@ -501,8 +511,8 @@ def run_tests_array(all_tests_with_params):
                         counter = 1
                         while need_retry(stdout, stderr):
                             restarted_tests.append((case_file, stderr))
-                            testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
-                            proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+                            testcase_args = configure_testcase_args(j2env, args, case_file, suite_tmp_dir, file_suffix)
+                            proc, stdout, stderr, total_time = run_single_test(testcase_args, server_logs_level, client_options)
                             sleep(2**counter)
                             counter += 1
                             if MAX_RETRIES < counter:
@@ -528,10 +538,10 @@ def run_tests_array(all_tests_with_params):
                             if testcase_args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                 server_died.set()
 
-                            if os.path.isfile(stdout_file):
+                            if os.path.isfile(testcase_args.stdout_file):
                                 status += ", result:\n\n"
                                 status += '\n'.join(
-                                    open(stdout_file).read().split('\n')[:100])
+                                    open(testcase_args.stdout_file).read().split('\n')[:100])
                                 status += '\n'
 
                             status += 'Database: ' + testcase_args.testcase_database
@@ -552,16 +562,16 @@ def run_tests_array(all_tests_with_params):
                             status += " - having exception:\n{}\n".format(
                                 '\n'.join(stdout.split('\n')[:100]))
                             status += 'Database: ' + testcase_args.testcase_database
-                        elif reference_file is None:
+                        elif testcase_args.reference_file is None:
                             status += MSG_UNKNOWN
                             status += print_test_time(total_time)
                             status += " - no reference file\n"
                             status += 'Database: ' + testcase_args.testcase_database
                         else:
-                            result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout=PIPE)
+                            result_is_different = subprocess.call(['diff', '-q', testcase_args.reference_file, testcase_args.stdout_file], stdout=PIPE)
 
                             if result_is_different:
-                                diff = Popen(['diff', '-U', str(testcase_args.unified), reference_file, stdout_file], stdout=PIPE, universal_newlines=True).communicate()[0]
+                                diff = Popen(['diff', '-U', str(testcase_args.unified), testcase_args.reference_file, testcase_args.stdout_file], stdout=PIPE, universal_newlines=True).communicate()[0]
                                 failures += 1
                                 status += MSG_FAIL
                                 status += print_test_time(total_time)
@@ -582,10 +592,10 @@ def run_tests_array(all_tests_with_params):
                                     status += MSG_OK
                                     status += print_test_time(total_time)
                                     status += "\n"
-                                    if os.path.exists(stdout_file):
-                                        os.remove(stdout_file)
-                                    if os.path.exists(stderr_file):
-                                        os.remove(stderr_file)
+                                    if os.path.exists(testcase_args.stdout_file):
+                                        os.remove(testcase_args.stdout_file)
+                                    if os.path.exists(testcase_args.stderr_file):
+                                        os.remove(testcase_args.stderr_file)
 
             if status and not status.endswith('\n'):
                 status += '\n'
@@ -798,40 +808,34 @@ def removesuffix(text, *suffixes):
     return text
 
 
-def render_test_template(j2env, suite_dir, test_name):
+def render_test_template(j2env, test_path):
     """
     Render template for test and reference file if needed
     """
 
     if j2env is None:
-        return test_name
+        return test_path
 
-    test_base_name = removesuffix(test_name, ".sql.j2", ".sql")
+    test_base_path = removesuffix(test_path, ".sql.j2", ".sql")
 
-    reference_file_name = test_base_name  + ".reference.j2"
-    reference_file_path = os.path.join(suite_dir, reference_file_name)
+    reference_file_path = test_base_path + ".reference.j2"
     if os.path.isfile(reference_file_path):
-        tpl = j2env.get_template(reference_file_name)
-        tpl.stream().dump(os.path.join(suite_dir, test_base_name) + ".gen.reference")
+        tpl = j2env.get_template(os.path.basename(reference_file_path))
+        tpl.stream().dump(test_base_path + ".gen.reference")
 
-    if test_name.endswith(".sql.j2"):
-        tpl = j2env.get_template(test_name)
-        generated_test_name = test_base_name + ".gen.sql"
-        tpl.stream().dump(os.path.join(suite_dir, generated_test_name))
-        return generated_test_name
+    if test_path.endswith(".sql.j2"):
+        tpl = j2env.get_template(os.path.basename(test_path))
+        generated_test_path = test_base_path + ".gen.sql"
+        tpl.stream().dump(generated_test_path)
+        return generated_test_path
 
-    return test_name
+    return test_path
 
 
 def get_selected_tests(suite_dir, patterns):
     """
     Find all files with tests, filter, render templates
     """
-
-    j2env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(suite_dir),
-        keep_trailing_newline=True,
-    ) if USE_JINJA else None
 
     for test_name in os.listdir(suite_dir):
         if not is_test_from_dir(suite_dir, test_name):
@@ -840,7 +844,6 @@ def get_selected_tests(suite_dir, patterns):
             continue
         if USE_JINJA and test_name.endswith(".gen.sql"):
             continue
-        test_name = render_test_template(j2env, suite_dir, test_name)
         yield test_name
 
 
@@ -855,16 +858,21 @@ def get_tests_list(suite_dir, patterns, test_runs, sort_key):
     return all_tests
 
 
-def get_reference_file(suite_dir, name):
+def get_reference_file(path):
     """
     Returns reference file name for specified test
     """
 
-    name = removesuffix(name, ".gen")
-    for ext in ['.reference', '.gen.reference']:
-        reference_file = os.path.join(suite_dir, name) + ext
-        if os.path.isfile(reference_file):
-            return reference_file
+    # removes .sql/.sh/.expect/.py and similar
+    (prefix, _) = os.path.splitext(path)
+    prefix = removesuffix(prefix, ".gen", ".sql")
+    # remove .PID in case of reference file is static (i.e. not a jinja template).
+    (static_prefix, _) = os.path.splitext(prefix)
+    for p in [prefix, static_prefix]:
+        for ext in ['.reference', '.gen.reference']:
+            reference_file = p + ext
+            if os.path.isfile(reference_file):
+                return reference_file
     return None
 
 
