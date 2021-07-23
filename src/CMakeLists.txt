@@ -65,6 +65,7 @@ add_subdirectory (Formats)
 add_subdirectory (Compression)
 add_subdirectory (Server)
 add_subdirectory (Coordination)
+add_subdirectory (Documentation)
 
 
 set(dbms_headers)
@@ -212,6 +213,7 @@ add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
+add_object_library(clickhouse_documentation Documentation)
 
 if (USE_NURAFT)
     add_object_library(clickhouse_coordination Coordination)
