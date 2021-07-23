@@ -29,51 +29,16 @@ class ClientBase : public Poco::Util::Application
 public:
     using Arguments = std::vector<String>;
 
-    void initialize(Poco::Util::Application & self) override;
-
-    /// Read args, process options, add args to config.
     void init(int argc, char ** argv);
 
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-    virtual int childMainImpl() = 0;
+    /// Prepare for and start either interactive or non-interactive mode.
+    virtual int mainImpl() = 0;
 
-    bool processMultiQuery(const String & all_queries_text);
-
-    bool processQueryText(const String & text);
-
-    void runInteractive();
-
-    void runNonInteractive();
-
-    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
-
-    void resetOutput();
-
-    virtual void executeParsedQueryPrefix() {}
-
-    virtual void executeParsedQueryImpl() = 0;
-
-    virtual void executeParsedQuerySuffix() {}
-
-    void prepareAndExecuteQuery(const String & query);
-
-    void executeParsedQuery(std::optional<bool> echo_query_ = {}, bool report_error = true);
-
-    virtual bool processQueryFromInteractive(const String & input) = 0;
-
-    virtual void reportQueryError() const = 0;
-
-    virtual void loadSuggestionDataIfPossible() {}
-
-    virtual bool checkErrorMatchesHints(const TestHint & /* test_hint */, bool /* had_error */) { return false; }
-
-    virtual void reconnectIfNeeded() {}
-
-    virtual void processMainImplException(const Exception & e) = 0;
-
-    virtual void initializeChild() = 0;
+    /// If some work is required on destroying.
+    virtual void shutdown() {}
 
     virtual void readArguments(int argc, char ** argv,
                                Arguments & common_arguments, std::vector<Arguments> &) = 0;
@@ -94,7 +59,44 @@ protected:
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
+
     virtual void processConfig() = 0;
+
+
+    void runInteractive();
+
+    void runNonInteractive();
+
+    bool processMultiQuery(const String & all_queries_text);
+
+    /// Process single file (with queries) from non-interactive mode.
+    virtual bool processMultiQueryFromFile(const String & file) = 0;
+
+    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+
+
+    void prepareAndExecuteQuery(const String & query);
+
+    void executeParsedQuery(std::optional<bool> echo_query_ = {}, bool report_error = true);
+
+    virtual void executeParsedQueryPrefix() {}
+
+    virtual void executeParsedQueryImpl() = 0;
+
+    virtual void executeParsedQuerySuffix() {}
+
+
+    void resetOutput();
+
+    virtual void checkExceptions() {}
+
+    virtual void reportQueryError() const = 0;
+
+    virtual void loadSuggestionDataIfPossible() {}
+
+    virtual bool checkErrorMatchesHints(const TestHint & /* test_hint */, bool /* had_error */) { return false; }
+
+    virtual void reconnectIfNeeded() {}
 
     virtual bool supportPasswordOption() const = 0;
 
@@ -102,18 +104,16 @@ protected:
 
     virtual bool processWithFuzzing(const String &) { return true; }
 
-    /// Process single file from non-interactive mode.
-    virtual bool processMultiQueryFromFile(const String & file) = 0;
-
 private:
-    static void clearTerminal();
-
     inline String prompt() const
     {
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
     }
 
     void outputQueryInfo(bool echo_query_);
+
+    /// Process query text (multiquery or single query) accroding to options.
+    bool processQueryText(const String & text);
 
 
 protected:
@@ -194,7 +194,6 @@ private:
     NameSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж",
                          "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
 
-    int mainImpl();
 };
 
 }

@@ -49,6 +49,7 @@ namespace ErrorCodes
 {
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int BAD_ARGUMENTS;
+    extern const int NETWORK_ERROR;
 }
 
 
@@ -572,8 +573,28 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
-        if (!processQueryFromInteractive(input))
-            break;
+        try
+        {
+            if (!processQueryText(input))
+                break;
+        }
+        catch (const Exception & e)
+        {
+            /// We don't need to handle the test hints in the interactive mode.
+            bool print_stack_trace = config().getBool("stacktrace", false);
+            std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+
+            client_exception = std::make_unique<Exception>(e);
+        }
+
+        if (client_exception)
+        {
+            /// client_exception may have been set above or elsewhere.
+            /// Client-side exception during query execution can result in the loss of
+            /// sync in the connection protocol.
+            /// So we reconnect and allow to enter the next query.
+            reconnectIfNeeded();
+        }
     }
     while (true);
 
@@ -622,10 +643,12 @@ void ClientBase::runNonInteractive()
         processWithFuzzing(text);
     else
         processQueryText(text);
+
+    checkExceptions();
 }
 
 
-void ClientBase::clearTerminal()
+static void clearTerminal()
 {
     /// Clear from cursor until end of screen.
     /// It is needed if garbage is left in terminal.
@@ -642,40 +665,31 @@ static void showClientVersion()
 }
 
 
-int ClientBase::mainImpl()
-{
-    UseSSL use_ssl;
-
-    processConfig();
-
-    std::cout << std::fixed << std::setprecision(3);
-    std::cerr << std::fixed << std::setprecision(3);
-
-    if (is_interactive)
-    {
-        clearTerminal();
-        showClientVersion();
-    }
-
-    return childMainImpl();
-}
-
-void ClientBase::initialize(Poco::Util::Application & self)
-{
-    Poco::Util::Application::initialize(self);
-    initializeChild();
-}
-
-
 int ClientBase::main(const std::vector<std::string> & /*args*/)
 {
     try
     {
+        UseSSL use_ssl;
+
+        processConfig();
+
+        std::cout << std::fixed << std::setprecision(3);
+        std::cerr << std::fixed << std::setprecision(3);
+
+        if (is_interactive)
+        {
+            clearTerminal();
+            showClientVersion();
+        }
+
         return mainImpl();
     }
     catch (const Exception & e)
     {
-        processMainImplException(e);
+        shutdown();
+
+        bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
+        std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
 
         /// If exception code isn't zero, we should return non-zero return code anyway.
         return e.code() ? e.code() : -1;

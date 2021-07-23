@@ -14,51 +14,40 @@
 #include <Poco/String.h>
 #include <filesystem>
 
+#include "Client.h"
+
+#include <common/argsToConfig.h>
+#include <common/find_symbols.h>
+
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
 #endif
-
-#include "Client.h"
-#include <Columns/ColumnString.h>
-#include <Poco/Util/Application.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Columns/ColumnString.h>
-#include <common/find_symbols.h>
-#include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
-#include <Common/UnicodeBar.h>
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
-#include <Common/Throttler.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/PODArray.h>
-#include <common/argsToConfig.h>
-
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
 #include <Common/InterruptListener.h>
 
-#include <Client/Connection.h>
-
 #include <Core/QueryProcessingStage.h>
+#include <Client/Connection.h>
+#include <Columns/ColumnString.h>
+#include <Poco/Util/Application.h>
 
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromMemory.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/QueryPipeline.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
+
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 
@@ -68,15 +57,10 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserQuery.h>
 
-#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 
@@ -84,8 +68,6 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Formats/FormatFactory.h>
-#include <Common/Config/configReadClient.h>
-#include <Storages/ColumnsDescription.h>
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -93,11 +75,11 @@
 
 namespace fs = std::filesystem;
 
+
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
@@ -184,8 +166,10 @@ std::vector<String> Client::loadWarningMessages()
 }
 
 
-void Client::initializeChild()
+void Client::initialize(Poco::Util::Application & self)
 {
+    Poco::Util::Application::initialize(self);
+
     const char * home_path_cstr = getenv("HOME");
     if (home_path_cstr)
         home_path = home_path_cstr;
@@ -209,13 +193,6 @@ void Client::initializeChild()
 }
 
 
-void Client::processMainImplException(const Exception & e)
-{
-    bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
-    std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-}
-
-
 void Client::loadSuggestionDataIfPossible()
 {
     if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
@@ -226,36 +203,7 @@ void Client::loadSuggestionDataIfPossible()
 }
 
 
-bool Client::processQueryFromInteractive(const String & input)
-{
-    try
-    {
-        return processQueryText(input);
-    }
-    catch (const Exception & e)
-    {
-        /// We don't need to handle the test hints in the interactive mode.
-        bool print_stack_trace = config().getBool("stacktrace", false);
-        std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-
-        client_exception = std::make_unique<Exception>(e);
-    }
-
-    if (client_exception)
-    {
-        /// client_exception may have been set above or elsewhere.
-        /// Client-side exception during query execution can result in the loss of
-        /// sync in the connection protocol.
-        /// So we reconnect and allow to enter the next query.
-        connect();
-    }
-
-    /// Continue processing queries.
-    return true;
-}
-
-
-int Client::childMainImpl()
+int Client::mainImpl()
 {
     registerFormats();
     registerFunctions();
@@ -289,19 +237,17 @@ int Client::childMainImpl()
     }
     else
     {
-        auto query_id = config().getString("query_id", "");
-        if (!query_id.empty())
-            global_context->setCurrentQueryId(query_id);
-
         runNonInteractive();
 
         // If exception code isn't zero, we should return non-zero return
         // code anyway.
         const auto * exception = server_exception ? server_exception.get() : client_exception.get();
+
         if (exception)
         {
             return exception->code() != 0 ? exception->code() : -1;
         }
+
         if (have_error)
         {
             // Shouldn't be set without an exception, but check it just in
@@ -1884,6 +1830,10 @@ void Client::processConfig()
         need_render_progress = config().getBool("progress", false);
         echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
+
+        auto query_id = config().getString("query_id", "");
+        if (!query_id.empty())
+            global_context->setCurrentQueryId(query_id);
     }
 
     if (config().has("multiquery"))
