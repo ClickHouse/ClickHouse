@@ -180,9 +180,9 @@ private:
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
-    ClusterPtr getOptimizedCluster(ContextPtr, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const;
+    ClusterPtr getOptimizedCluster(ContextPtr, const StorageSnapshotPtr & storage_snapshot, const ASTPtr & query_ptr) const;
     ClusterPtr
-    skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
+    skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
 
