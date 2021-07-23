@@ -21,7 +21,7 @@ void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, Context
     for (const auto & function_name : functions_names)
     {
         res_columns[0]->insert(function_name);
-        res_columns[0]->insert(doc_factory.tryGet(function_name));
+        res_columns[1]->insert(doc_factory.tryGet(function_name));
     }
 }
 

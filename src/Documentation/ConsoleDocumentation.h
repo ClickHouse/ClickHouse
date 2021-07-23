@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <Documentation/IDocumentation.h>
 #include "Common/Exception.h"
 
@@ -8,6 +9,10 @@ namespace DB
 
 class ConsoleDocumentation final: public IDocumentation
 {
+public:
+    ConsoleDocumentation(const String& doc_name, const String& doc_group) : IDocumentation(doc_name, doc_group) {}
+
+private:
     String createDocumentation() const override 
     {
         String documentation;
@@ -44,5 +49,7 @@ class ConsoleDocumentation final: public IDocumentation
         return header_name + ":\n\t";
     }
 };
+
+using ConsoleDocumentationPtr = std::shared_ptr<ConsoleDocumentation>;
 
 }

@@ -18,19 +18,20 @@ public:
     IDocumentation(const String& doc_name, const String& doc_group);
 
     String getDocumentation() const;
+
     const std::vector<String>& getOrder() const;
     const std::vector<String>& getExamples() const;
     const std::vector<String>& getSettings() const;
     const std::vector<String>& getReferences() const;
     const std::vector<String>& getDescriptions() const;
+
     virtual ~IDocumentation() = default;
 
-
-private:
     void addExample(const String& example);
     void addSetting(const String& setting);
     void addDescription(const String& description);
     void addReference(const String& reference);
+private:
 
     virtual String createDocumentation() const = 0;
     virtual String addHeader(const String& header_name) const = 0;

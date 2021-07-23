@@ -24,7 +24,7 @@ void TableDocumentationFactory::registerDocForFunction(const std::string& name, 
 std::string TableDocumentationFactory::tryGet(const std::string& name_param)
 {
     String name = getAliasToOrName(name_param);
-    IDocumentationPtr res;
+    IDocumentationPtr res = nullptr;
 
     auto it = documentations.find(name);
     if (documentations.end() != it)
