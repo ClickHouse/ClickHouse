@@ -59,7 +59,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/NullSink.h>
+#include <Processors/Sinks/EmptySink.h>
 
 #include <Core/Field.h>
 #include <Core/Settings.h>
@@ -631,7 +631,7 @@ void StorageDistributed::read(
 }
 
 
-BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
@@ -669,7 +669,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
         sample_block = metadata_snapshot->getSampleBlock();
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
-    return std::make_shared<DistributedBlockOutputStream>(
+    return std::make_shared<DistributedSink>(
         local_context, *this, metadata_snapshot,
         createInsertToRemoteTableQuery(remote_database, remote_table, sample_block),
         cluster, insert_sync, timeout, StorageID{remote_database, remote_table});

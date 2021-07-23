@@ -8,24 +8,19 @@
 namespace DB
 {
 
-RabbitMQBlockOutputStream::RabbitMQBlockOutputStream(
+RabbitMQSink::RabbitMQSink(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     ContextPtr context_)
-    : storage(storage_)
+    : SinkToStorage(metadata_snapshot->getSampleBlockNonMaterialized())
+    , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
 {
 }
 
 
-Block RabbitMQBlockOutputStream::getHeader() const
-{
-    return metadata_snapshot->getSampleBlockNonMaterialized();
-}
-
-
-void RabbitMQBlockOutputStream::writePrefix()
+void RabbitMQSink::onStart()
 {
     if (!storage.exchangeRemoved())
         storage.unbindExchange();
@@ -37,7 +32,7 @@ void RabbitMQBlockOutputStream::writePrefix()
     format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
     child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
-        getHeader(), context,
+        getPort().getHeader(), context,
         [this](const Columns & /* columns */, size_t /* rows */)
         {
             buffer->countRow();
@@ -46,13 +41,19 @@ void RabbitMQBlockOutputStream::writePrefix()
 }
 
 
-void RabbitMQBlockOutputStream::write(const Block & block)
+void RabbitMQSink::consume(Chunk chunk)
 {
-    child->write(block);
+    if (is_first_chunk)
+    {
+        onStart();
+        is_first_chunk = false;
+    }
+
+    child->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 
-void RabbitMQBlockOutputStream::writeSuffix()
+void RabbitMQSink::onFinish()
 {
     child->writeSuffix();
 

@@ -644,9 +644,9 @@ Pipe StorageRabbitMQ::read(
 }
 
 
-BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    return std::make_shared<RabbitMQBlockOutputStream>(*this, metadata_snapshot, local_context);
+    return std::make_shared<RabbitMQSink>(*this, metadata_snapshot, local_context);
 }
 
 
