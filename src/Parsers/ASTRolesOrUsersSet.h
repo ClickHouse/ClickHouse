@@ -25,6 +25,8 @@ public:
     bool id_mode = false;         /// whether this set keep UUIDs instead of names
     bool use_keyword_any = false; /// whether the keyword ANY should be used instead of the keyword ALL
 
+    bool none_role_parsed = false; /// whether keyword NONE has been parsed
+
     bool empty() const { return names.empty() && !current_user && !all; }
     void replaceCurrentUserTag(const String & current_user_name);
 

@@ -71,6 +71,10 @@
     M(PartsInMemory, "In-memory parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
+    M(AsyncDrainedConnections, "Number of connections drained asynchronously.") \
+    M(ActiveAsyncDrainedConnections, "Number of active connections drained asynchronously.") \
+    M(SyncDrainedConnections, "Number of connections drained synchronously.") \
+    M(ActiveSyncDrainedConnections, "Number of active connections drained synchronously.") \
 
 namespace CurrentMetrics
 {
