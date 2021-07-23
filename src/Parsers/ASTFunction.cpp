@@ -370,7 +370,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
-                // fuzzer sometimes may inserts tupleElement() created from ASTLiteral:
+                // fuzzer sometimes may insert tupleElement() created from ASTLiteral:
                 //
                 //     Function_tupleElement, 0xx
                 //     -ExpressionList_, 0xx

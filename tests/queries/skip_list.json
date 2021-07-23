@@ -175,7 +175,9 @@
         "00140_rename",
         /// Requires investigation
         "00953_zookeeper_suetin_deduplication_bug",
-        "01783_http_chunk_size"
+        "01783_http_chunk_size",
+        "01943_query_id_check",
+        "00166_explain_estimate"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
@@ -514,7 +516,9 @@
         "01915_create_or_replace_dictionary",
         "01925_test_storage_merge_aliases",
         "01933_client_replxx_convert_history", /// Uses non unique history file
+        "01999_grant_with_replace",
         "01902_table_function_merge_db_repr",
+        "01946_test_zstd_decompression_with_escape_sequence_at_the_end_of_buffer",
         "01946_test_wrong_host_name_access"
     ]
 }

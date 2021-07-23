@@ -14,12 +14,13 @@ using InitVector = FileEncryption::InitVector;
 ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     size_t buffer_size_,
     std::unique_ptr<ReadBufferFromFileBase> in_,
+    FileEncryption::Algorithm encryption_algorithm_,
     const String & key_,
     const InitVector & init_vector_)
     : ReadBufferFromFileBase(buffer_size_, nullptr, 0)
     , in(std::move(in_))
     , encrypted_buffer(buffer_size_)
-    , encryptor(key_, init_vector_)
+    , encryptor(encryption_algorithm_, key_, init_vector_)
 {
     /// We should start reading from `in` at the offset == InitVector::kSize.
     need_seek = true;

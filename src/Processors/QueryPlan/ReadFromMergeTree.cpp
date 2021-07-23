@@ -47,6 +47,9 @@ struct ReadFromMergeTree::AnalysisResult
     IndexStats index_stats;
     Names column_names_to_read;
     ReadFromMergeTree::ReadType read_type = ReadFromMergeTree::ReadType::Default;
+    UInt64 selected_rows = 0;
+    UInt64 selected_marks = 0;
+    UInt64 selected_parts = 0;
 };
 
 static MergeTreeReaderSettings getMergeTreeReaderSettings(const ContextPtr & context)
@@ -839,13 +842,17 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 
     size_t sum_marks = 0;
     size_t sum_ranges = 0;
+    size_t sum_rows = 0;
 
     for (const auto & part : result.parts_with_ranges)
     {
         sum_ranges += part.ranges.size();
         sum_marks += part.getMarksCount();
+        sum_rows += part.getRowsCount();
     }
-
+    result.selected_parts = result.parts_with_ranges.size();
+    result.selected_marks = sum_marks;
+    result.selected_rows  = sum_rows;
     LOG_DEBUG(
         log,
         "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
@@ -883,6 +890,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
         return;
     }
 
+    selected_marks = result.selected_marks;
+    selected_rows = result.selected_rows;
+    selected_parts = result.selected_parts;
     /// Projection, that needed to drop columns, which have appeared by execution
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.
