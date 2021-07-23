@@ -31,4 +31,4 @@ Columns:
 
 -   [SHOW USERS](../../sql-reference/statements/show.md#show-users-statement)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/users) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/users) <!--hide-->

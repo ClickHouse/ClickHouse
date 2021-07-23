@@ -52,7 +52,8 @@ namespace DB
         /// fields
 
         static std::string name();
-        static Block createBlock();
+        static NamesAndTypesList getNamesAndTypes();
+        static NamesAndAliases getNamesAndAliases();
         void appendToBlock(MutableColumns & columns) const;
     };
     */
@@ -451,10 +452,18 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// is called from single thread.
         prepareTable();
 
-        Block block = LogElement::createBlock();
+        ColumnsWithTypeAndName log_element_columns;
+        auto log_element_names_and_types = LogElement::getNamesAndTypes();
+
+        for (auto name_and_type : log_element_names_and_types)
+            log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
+
+        Block block(std::move(log_element_columns));
+
         MutableColumns columns = block.mutateColumns();
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
+
         block.setColumns(std::move(columns));
 
         /// We write to table indirectly, using InterpreterInsertQuery.
@@ -500,11 +509,14 @@ void SystemLog<LogElement>::prepareTable()
 
     if (table)
     {
-        auto metadata_snapshot = table->getInMemoryMetadataPtr();
-        const Block expected = LogElement::createBlock();
-        const Block actual = metadata_snapshot->getSampleBlockNonMaterialized();
+        auto metadata_columns = table->getInMemoryMetadataPtr()->getColumns();
+        auto old_query = InterpreterCreateQuery::formatColumns(metadata_columns);
 
-        if (!blocksHaveEqualStructure(actual, expected))
+        auto ordinary_columns = LogElement::getNamesAndTypes();
+        auto alias_columns = LogElement::getNamesAndAliases();
+        auto current_query = InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns);
+
+        if (old_query->getTreeHash() != current_query->getTreeHash())
         {
             /// Rename the existing table.
             int suffix = 0;
@@ -575,10 +587,10 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->database = table_id.database_name;
     create->table = table_id.table_name;
 
-    Block sample = LogElement::createBlock();
-
+    auto ordinary_columns = LogElement::getNamesAndTypes();
+    auto alias_columns = LogElement::getNamesAndAliases();
     auto new_columns_list = std::make_shared<ASTColumns>();
-    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
+    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
     create->set(create->columns_list, new_columns_list);
 
     ParserStorage storage_parser;

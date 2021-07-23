@@ -10,14 +10,20 @@
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -528,6 +534,7 @@ public:
     }
 };
 
+
 template <typename JSONParser>
 using JSONExtractInt8Impl = JSONExtractNumericImpl<JSONParser, Int8>;
 template <typename JSONParser>
@@ -600,6 +607,8 @@ public:
     }
 };
 
+template <typename JSONParser>
+class JSONExtractRawImpl;
 
 /// Nodes of the extract tree. We need the extract tree to extract from JSON complex values containing array, tuples or nullables.
 template <typename JSONParser>
@@ -625,12 +634,69 @@ struct JSONExtractTree
         }
     };
 
+    class LowCardinalityNode : public Node
+    {
+    public:
+        LowCardinalityNode(DataTypePtr dictionary_type_, std::unique_ptr<Node> impl_)
+            : dictionary_type(dictionary_type_), impl(std::move(impl_)) {}
+        bool insertResultToColumn(IColumn & dest, const Element & element) override
+        {
+            auto from_col = dictionary_type->createColumn();
+            if (impl->insertResultToColumn(*from_col, element))
+            {
+                StringRef value = from_col->getDataAt(0);
+                assert_cast<ColumnLowCardinality &>(dest).insertData(value.data, value.size);
+                return true;
+            }
+            return false;
+        }
+    private:
+        DataTypePtr dictionary_type;
+        std::unique_ptr<Node> impl;
+    };
+
+    class UUIDNode : public Node
+    {
+    public:
+        bool insertResultToColumn(IColumn & dest, const Element & element) override
+        {
+            if (!element.isString())
+                return false;
+
+            auto uuid = parseFromString<UUID>(element.getString());
+            assert_cast<ColumnUUID &>(dest).insert(uuid);
+            return true;
+        }
+    };
+
+    template <typename DecimalType>
+    class DecimalNode : public Node
+    {
+    public:
+        DecimalNode(DataTypePtr data_type_) : data_type(data_type_) {}
+        bool insertResultToColumn(IColumn & dest, const Element & element) override
+        {
+            if (!element.isDouble())
+                return false;
+
+            const auto * type = assert_cast<const DataTypeDecimal<DecimalType> *>(data_type.get());
+            auto result = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), type->getScale());
+            assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(result);
+            return true;
+        }
+    private:
+        DataTypePtr data_type;
+    };
+
     class StringNode : public Node
     {
     public:
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
+            if (element.isString())
+                return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
+            else
+                return JSONExtractRawImpl<JSONParser>::insertResultToColumn(dest, element, {});
         }
     };
 
@@ -864,6 +930,17 @@ struct JSONExtractTree
             case TypeIndex::Float64: return std::make_unique<NumericNode<Float64>>();
             case TypeIndex::String: return std::make_unique<StringNode>();
             case TypeIndex::FixedString: return std::make_unique<FixedStringNode>();
+            case TypeIndex::UUID: return std::make_unique<UUIDNode>();
+            case TypeIndex::LowCardinality:
+            {
+                auto dictionary_type = typeid_cast<const DataTypeLowCardinality *>(type.get())->getDictionaryType();
+                auto impl = build(function_name, dictionary_type);
+                return std::make_unique<LowCardinalityNode>(dictionary_type, std::move(impl));
+            }
+            case TypeIndex::Decimal256: return std::make_unique<DecimalNode<Decimal256>>(type);
+            case TypeIndex::Decimal128: return std::make_unique<DecimalNode<Decimal128>>(type);
+            case TypeIndex::Decimal64: return std::make_unique<DecimalNode<Decimal64>>(type);
+            case TypeIndex::Decimal32: return std::make_unique<DecimalNode<Decimal32>>(type);
             case TypeIndex::Enum8:
                 return std::make_unique<EnumNode<Int8>>(static_cast<const DataTypeEnum8 &>(*type).getValues());
             case TypeIndex::Enum16:

@@ -211,17 +211,17 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 6
 -   Тип данных [Interval](../../sql-reference/operators/index.md)
 -   Функции преобразования типов [toInterval](../../sql-reference/operators/index.md#function-tointerval)
 
-## Оператор логического отрицания {#operator-logicheskogo-otritsaniia}
+## Оператор логического "И" {#logical-and-operator}
 
-`NOT a` - функция `not(a)`
+Синтаксис `SELECT a AND b` — вычисляет логическую конъюнкцию между `a` и `b` функцией [and](../../sql-reference/functions/logical-functions.md#logical-and-function).
 
-## Оператор логического ‘И’ {#operator-logicheskogo-i}
+## Оператор логического "ИЛИ" {#logical-or-operator}
 
-`a AND b` - функция `and(a, b)`
+Синтаксис `SELECT a OR b` — вычисляет логическую дизъюнкцию между `a` и `b` функцией [or](../../sql-reference/functions/logical-functions.md#logical-or-function).
 
-## Оператор логического ‘ИЛИ’ {#operator-logicheskogo-ili}
+## Оператор логического отрицания {#logical-negation-operator}
 
-`a OR b` - функция `or(a, b)`
+Синтаксис `SELECT NOT a` — вычисляет логическое отрицание `a` функцией [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
 
 ## Условный оператор {#uslovnyi-operator}
 
@@ -283,6 +283,8 @@ ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL
     -   `0` в обратном случае.
 -   Для прочих значений оператор `IS NULL` всегда возвращает `0`.
 
+Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [null](../../sql-reference/data-types/nullable.md#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NULL FROM table` преобразуется к запросу `SELECT n.null FROM TABLE`.
+
 <!-- -->
 
 ``` sql
@@ -301,6 +303,8 @@ SELECT x+100 FROM t_null WHERE y IS NULL
     -   `0`, если значение — `NULL`.
     -   `1`, в обратном случае.
 -   Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.
+
+Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [null](../../sql-reference/data-types/nullable.md#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NOT NULL FROM table` преобразуется к запросу `SELECT NOT n.null FROM TABLE`.
 
 <!-- -->
 

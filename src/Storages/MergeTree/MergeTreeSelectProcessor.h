@@ -1,10 +1,10 @@
 #pragma once
-#include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/SelectQueryInfo.h>
+
 
 namespace DB
 {
@@ -27,6 +27,7 @@ public:
         MarkRanges mark_ranges,
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
+        ExpressionActionsSettings actions_settings,
         bool check_columns,
         const MergeTreeReaderSettings & reader_settings,
         const Names & virt_column_names = {},

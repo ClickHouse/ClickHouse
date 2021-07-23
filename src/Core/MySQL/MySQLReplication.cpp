@@ -298,7 +298,6 @@ namespace MySQLReplication
     }
 
     /// Types that do not used in the binlog event:
-    /// MYSQL_TYPE_ENUM
     /// MYSQL_TYPE_SET
     /// MYSQL_TYPE_TINY_BLOB
     /// MYSQL_TYPE_MEDIUM_BLOB
@@ -560,6 +559,22 @@ namespace MySQLReplication
                         };
 
                         row.push_back(dispatch((meta >> 8) & 0xFF, meta & 0xFF, read_decimal));
+                        break;
+                    }
+                    case MYSQL_TYPE_ENUM:
+                    {
+                        if ((meta & 0xFF) == 1)
+                        {
+                            UInt8 val = 0;
+                            payload.readStrict(reinterpret_cast<char *>(&val), 1);
+                            row.push_back(Field{UInt8{val}});
+                        }
+                        else
+                        {
+                            UInt16 val = 0;
+                            payload.readStrict(reinterpret_cast<char *>(&val), 2);
+                            row.push_back(Field{UInt16{val}});
+                        }
                         break;
                     }
                     case MYSQL_TYPE_VARCHAR:

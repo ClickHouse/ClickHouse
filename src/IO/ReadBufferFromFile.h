@@ -46,4 +46,18 @@ public:
     }
 };
 
+
+/** Similar to ReadBufferFromFile but it is using 'pread' instead of 'read'.
+  */
+class ReadBufferFromFilePRead : public ReadBufferFromFile
+{
+public:
+    ReadBufferFromFilePRead(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
+        char * existing_memory = nullptr, size_t alignment = 0)
+        : ReadBufferFromFile(file_name_, buf_size, flags, existing_memory, alignment)
+    {
+        use_pread = true;
+    }
+};
+
 }

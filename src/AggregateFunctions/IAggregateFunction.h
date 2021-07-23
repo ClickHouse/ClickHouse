@@ -9,11 +9,21 @@
 #include <Common/Exception.h>
 #include <common/types.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #include <cstddef>
 #include <memory>
 #include <vector>
 #include <type_traits>
 
+namespace llvm
+{
+    class LLVMContext;
+    class Value;
+    class IRBuilderBase;
+}
 
 namespace DB
 {
@@ -208,6 +218,26 @@ public:
         const IColumn ** columns,
         Arena * arena) const = 0;
 
+    /** Insert result of aggregate function into result column with batch size.
+      * If destroy_place_after_insert is true. Then implementation of this method
+      * must destroy aggregate place if insert state into result column was successful.
+      * All places that were not inserted must be destroyed if there was exception during insert into result column.
+      */
+    virtual void insertResultIntoBatch(
+        size_t batch_size,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        IColumn & to,
+        Arena * arena,
+        bool destroy_place_after_insert) const = 0;
+
+    /** Destroy batch of aggregate places.
+      */
+    virtual void destroyBatch(
+        size_t batch_size,
+        AggregateDataPtr * places,
+        size_t place_offset) const noexcept = 0;
+
     /** By default all NULLs are skipped during aggregation.
      *  If it returns nullptr, the default one will be used.
      *  If an aggregate function wants to use something instead of the default one, it overrides this function and returns its own null adapter.
@@ -240,6 +270,40 @@ public:
     // would be more logically correct, but more complex. We only have a handful
     // of true window functions, so this hack-ish interface suffices.
     virtual bool isOnlyWindowFunction() const { return false; }
+
+    /// Description of AggregateFunction in form of name(parameters)(argument_types).
+    String getDescription() const;
+
+#if USE_EMBEDDED_COMPILER
+
+    /// Is function JIT compilable
+    virtual bool isCompilable() const { return false; }
+
+    /// compileCreate should generate code for initialization of aggregate function state in aggregate_data_ptr
+    virtual void compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    /// compileAdd should generate code for updating aggregate function state stored in aggregate_data_ptr
+    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const DataTypes & /*arguments_types*/, const std::vector<llvm::Value *> & /*arguments_values*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    /// compileMerge should generate code for merging aggregate function states stored in aggregate_data_dst_ptr and aggregate_data_src_ptr
+    virtual void compileMerge(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_dst_ptr*/, llvm::Value * /*aggregate_data_src_ptr*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    /// compileGetResult should generate code for getting result value from aggregate function state stored in aggregate_data_ptr
+    virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+#endif
 
 protected:
     DataTypes argument_types;
@@ -413,6 +477,37 @@ public:
             if (unlikely(!place))
                 init(place);
             static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
+        }
+    }
+
+    void insertResultIntoBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset, IColumn & to, Arena * arena, bool destroy_place_after_insert) const override
+    {
+        size_t batch_index = 0;
+
+        try
+        {
+            for (; batch_index < batch_size; ++batch_index)
+            {
+                static_cast<const Derived *>(this)->insertResultInto(places[batch_index] + place_offset, to, arena);
+
+                if (destroy_place_after_insert)
+                    static_cast<const Derived *>(this)->destroy(places[batch_index] + place_offset);
+            }
+        }
+        catch (...)
+        {
+            for (size_t destroy_index = batch_index; destroy_index < batch_size; ++destroy_index)
+                static_cast<const Derived *>(this)->destroy(places[destroy_index] + place_offset);
+
+            throw;
+        }
+    }
+
+    void destroyBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset) const noexcept override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+        {
+            static_cast<const Derived *>(this)->destroy(places[i] + place_offset);
         }
     }
 };

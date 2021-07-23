@@ -29,7 +29,10 @@ from dict2xml import dict2xml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+
 from helpers.test_tools import assert_eq_with_retry
+from helpers import pytest_xdist_logging_to_separate_files
 
 import docker
 
@@ -56,22 +59,22 @@ def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=su
         subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, shell=shell)
         return
 
+    logging.debug(f"Command:{args}")
     res = subprocess.run(args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout)
     out = res.stdout.decode('utf-8')
     err = res.stderr.decode('utf-8')
-    if res.returncode != 0:
-        # check_call(...) from subprocess does not print stderr, so we do it manually
-        logging.debug(f"Command:{args}")
-        logging.debug(f"Stderr:{err}")
+    # check_call(...) from subprocess does not print stderr, so we do it manually
+    if out:
         logging.debug(f"Stdout:{out}")
-        logging.debug(f"Env: {env}")
+    if err:
+        logging.debug(f"Stderr:{err}")
+    if res.returncode != 0:
+        logging.debug(f"Exitcode:{res.returncode}")
+        if env:
+            logging.debug(f"Env:{env}")
         if not nothrow:
             raise Exception(f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}")
-    else:
-        logging.debug(f"Command:{args}")
-        logging.debug(f"Stderr: {err}")
-        logging.debug(f"Stdout: {out}")
-        return out
+    return out
 
 # Based on https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
 def get_free_port():
@@ -192,6 +195,7 @@ class ClickHouseCluster:
                  zookeeper_keyfile=None, zookeeper_certfile=None):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
+        self.base_path = base_path
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else ''
 
@@ -330,12 +334,16 @@ class ClickHouseCluster:
         # available when with_postgres == True
         self.postgres_host = "postgres1"
         self.postgres_ip = None
+        self.postgres_conn = None
         self.postgres2_host = "postgres2"
         self.postgres2_ip = None
+        self.postgres2_conn = None
         self.postgres3_host = "postgres3"
         self.postgres3_ip = None
+        self.postgres3_conn = None
         self.postgres4_host = "postgres4"
         self.postgres4_ip = None
+        self.postgres4_conn = None
         self.postgres_port = 5432
         self.postgres_dir = p.abspath(p.join(self.instances_dir, "postgres"))
         self.postgres_logs_dir = os.path.join(self.postgres_dir, "postgres1")
@@ -392,11 +400,13 @@ class ClickHouseCluster:
     def cleanup(self):
         # Just in case kill unstopped containers from previous launch
         try:
-            result = run_and_check(f'docker container list --all --filter name={self.project_name} | wc -l', shell=True)
+            # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
+            # https://stackoverflow.com/questions/48767760/how-to-make-docker-container-ls-f-name-filter-by-exact-name
+            result = run_and_check(f'docker container list --all --filter name=^/{self.project_name}$ | wc -l', shell=True)
             if int(result) > 1:
-                logging.debug(f"Trying to kill unstopped containers for project{self.project_name}...")
-                run_and_check(f'docker kill $(docker container list --all --quiet --filter name={self.project_name})', shell=True)
-                run_and_check(f'docker rm $(docker container list --all  --quiet --filter name={self.project_name})', shell=True)
+                logging.debug(f"Trying to kill unstopped containers for project {self.project_name}...")
+                run_and_check(f'docker kill $(docker container list --all --quiet --filter name=^/{self.project_name}$)', shell=True)
+                run_and_check(f'docker rm $(docker container list --all  --quiet --filter name=^/{self.project_name}$)', shell=True)
                 logging.debug("Unstopped containers killed")
                 run_and_check(['docker-compose', 'ps', '--services', '--all'])
             else:
@@ -1068,13 +1078,14 @@ class ClickHouseCluster:
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
-    def wait_postgres_to_start(self, timeout=180):
+    def wait_postgres_to_start(self, timeout=260):
         self.postgres_ip = self.get_instance_ip(self.postgres_host)
         start = time.time()
         while time.time() - start < timeout:
             try:
-                conn = psycopg2.connect(host=self.postgres_ip, port=self.postgres_port, user='postgres', password='mysecretpassword')
-                conn.close()
+                self.postgres_conn  = psycopg2.connect(host=self.postgres_ip, port=self.postgres_port, database='postgres', user='postgres', password='mysecretpassword')
+                self.postgres_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgres_conn.autocommit = True
                 logging.debug("Postgres Started")
                 return
             except Exception as ex:
@@ -1088,16 +1099,36 @@ class ClickHouseCluster:
         self.postgres3_ip = self.get_instance_ip(self.postgres3_host)
         self.postgres4_ip = self.get_instance_ip(self.postgres4_host)
         start = time.time()
-        for ip in [self.postgres2_ip, self.postgres3_ip, self.postgres4_ip]:
-            while time.time() - start < timeout:
-                try:
-                    conn = psycopg2.connect(host=ip, port=self.postgres_port, user='postgres', password='mysecretpassword')
-                    conn.close()
-                    logging.debug("Postgres Cluster Started")
-                    return
-                except Exception as ex:
-                    logging.debug("Can't connect to Postgres " + str(ex))
-                    time.sleep(0.5)
+        while time.time() - start < timeout:
+            try:
+                self.postgres2_conn = psycopg2.connect(host=self.postgres2_ip, port=self.postgres_port, database='postgres', user='postgres', password='mysecretpassword')
+                self.postgres2_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgres2_conn.autocommit = True
+                logging.debug("Postgres Cluster host 2 started")
+                break
+            except Exception as ex:
+                logging.debug("Can't connect to Postgres host 2" + str(ex))
+                time.sleep(0.5)
+        while time.time() - start < timeout:
+            try:
+                self.postgres3_conn = psycopg2.connect(host=self.postgres3_ip, port=self.postgres_port, database='postgres', user='postgres', password='mysecretpassword')
+                self.postgres3_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgres3_conn.autocommit = True
+                logging.debug("Postgres Cluster host 3 started")
+                break
+            except Exception as ex:
+                logging.debug("Can't connect to Postgres host 3" + str(ex))
+                time.sleep(0.5)
+        while time.time() - start < timeout:
+            try:
+                self.postgres4_conn = psycopg2.connect(host=self.postgres4_ip, port=self.postgres_port, database='postgres', user='postgres', password='mysecretpassword')
+                self.postgres4_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgres4_conn.autocommit = True
+                logging.debug("Postgres Cluster host 4 started")
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to Postgres host 4" + str(ex))
+                time.sleep(0.5)
 
         raise Exception("Cannot wait Postgres container")
 
@@ -1188,15 +1219,18 @@ class ClickHouseCluster:
                 time.sleep(1)
 
 
-    def wait_hdfs_to_start(self, timeout=300):
+    def wait_hdfs_to_start(self, timeout=300, check_marker=False):
         start = time.time()
         while time.time() - start < timeout:
             try:
                 self.hdfs_api.write_data("/somefilewithrandomname222", "1")
                 logging.debug("Connected to HDFS and SafeMode disabled! ")
+                if check_marker:
+                    self.hdfs_api.read_data("/preparations_done_marker")
+
                 return
             except Exception as ex:
-                logging.exception("Can't connect to HDFS " + str(ex))
+                logging.exception("Can't connect to HDFS or preparations are not done yet " + str(ex))
                 time.sleep(1)
 
         raise Exception("Can't wait HDFS to start")
@@ -1290,6 +1324,9 @@ class ClickHouseCluster:
         raise Exception("Can't wait Cassandra to start")
 
     def start(self, destroy_dirs=True):
+        pytest_xdist_logging_to_separate_files.setup()
+        logging.info("Running tests in {}".format(self.base_path))
+
         logging.debug("Cluster start called. is_up={}, destroy_dirs={}".format(self.is_up, destroy_dirs))
         if self.is_up:
             return
@@ -1443,7 +1480,7 @@ class ClickHouseCluster:
                 os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
                 self.make_hdfs_api(kerberized=True)
-                self.wait_hdfs_to_start()
+                self.wait_hdfs_to_start(check_marker=True)
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')
@@ -1489,9 +1526,9 @@ class ClickHouseCluster:
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
 
-                logging.debug("Waiting for ClickHouse start in {instance}, ip: {instance.ip_address}...")
+                logging.debug(f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}...")
                 instance.wait_for_start(start_timeout)
-                logging.debug("ClickHouse {instance} started")
+                logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(instance.ip_address, command=self.client_bin_path)
 
@@ -1771,12 +1808,14 @@ class ClickHouseInstance:
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
               ignore_error=False):
+        logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password,
                                  database=database, ignore_error=ignore_error)
 
     def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
                          ignore_error=False,
                          retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
+        logging.debug(f"Executing query {sql} on {self.name}")
         result = None
         for i in range(retry_count):
             try:
@@ -1794,23 +1833,27 @@ class ClickHouseInstance:
         raise Exception("Can't execute query {}".format(sql))
 
     # As query() but doesn't wait response and returns response handler
-    def get_query_request(self, *args, **kwargs):
-        return self.client.get_query_request(*args, **kwargs)
+    def get_query_request(self, sql, *args, **kwargs):
+        logging.debug(f"Executing query {sql} on {self.name}")
+        return self.client.get_query_request(sql, *args, **kwargs)
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument), expects an error and return its code
     def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None,
                             database=None):
+        logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_error(sql, stdin=stdin, timeout=timeout, settings=settings, user=user,
                                                password=password, database=database)
 
     # The same as query_and_get_error but ignores successful query.
     def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None,
                                         database=None):
+        logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_answer_with_error(sql, stdin=stdin, timeout=timeout, settings=settings,
                                                            user=user, password=password, database=database)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_query(self, sql, data=None, params=None, user=None, password=None, expect_fail_and_get_error=False):
+        logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         if params is None:
             params = {}
         else:
@@ -1845,11 +1888,13 @@ class ClickHouseInstance:
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_request(self, url, method='GET', params=None, data=None, headers=None):
+        logging.debug(f"Sending HTTP request {url} to {self.name}")
         url = "http://" + self.ip_address + ":8123/" + url
         return requests.request(method=method, url=url, params=params, data=data, headers=headers)
 
     # Connects to the instance via HTTP interface, sends a query, expects an error and return the error message
     def http_query_and_get_error(self, sql, data=None, params=None, user=None, password=None):
+        logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         return self.http_query(sql=sql, data=data, params=params, user=user, password=password,
                                expect_fail_and_get_error=True)
 

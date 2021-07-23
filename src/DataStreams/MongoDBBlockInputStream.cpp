@@ -243,6 +243,8 @@ namespace
                 insertNumber<Float64>(column, value, name);
                 break;
 
+            case ValueType::vtEnum8:
+            case ValueType::vtEnum16:
             case ValueType::vtString:
             {
                 if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)

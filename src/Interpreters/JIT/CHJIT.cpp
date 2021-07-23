@@ -80,6 +80,28 @@ private:
     llvm::TargetMachine & target_machine;
 };
 
+// class AssemblyPrinter
+// {
+// public:
+
+//     explicit AssemblyPrinter(llvm::TargetMachine &target_machine_)
+//     : target_machine(target_machine_)
+//     {
+//     }
+
+//     void print(llvm::Module & module)
+//     {
+//         llvm::legacy::PassManager pass_manager;
+//         target_machine.Options.MCOptions.AsmVerbose = true;
+//         if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+//             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
+
+//         pass_manager.run(module);
+//     }
+// private:
+//     llvm::TargetMachine & target_machine;
+// };
+
 /** MemoryManager for module.
   * Keep total allocated size during RuntimeDyld linker execution.
   * Actual compiled code memory is stored in llvm::SectionMemoryManager member, we cannot use ZeroBase optimization here
@@ -189,7 +211,7 @@ CHJIT::CHJIT()
 
 CHJIT::~CHJIT() = default;
 
-CHJIT::CompiledModuleInfo CHJIT::compileModule(std::function<void (llvm::Module &)> compile_function)
+CHJIT::CompiledModule CHJIT::compileModule(std::function<void (llvm::Module &)> compile_function)
 {
     std::lock_guard<std::mutex> lock(jit_lock);
 
@@ -210,7 +232,7 @@ std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
     return module;
 }
 
-CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
+CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 {
     runOptimizationPassesOnModule(*module);
 
@@ -234,7 +256,7 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
     dynamic_linker.resolveRelocations();
     module_memory_manager->getManager().finalizeMemory();
 
-    CompiledModuleInfo module_info;
+    CompiledModule compiled_module;
 
     for (const auto & function : *module)
     {
@@ -250,47 +272,29 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "DynamicLinker could not found symbol {} after compilation", function_name);
 
         auto * jit_symbol_address = reinterpret_cast<void *>(jit_symbol.getAddress());
-
-        std::string symbol_name = std::to_string(current_module_key) + '_' + function_name;
-        name_to_symbol[symbol_name] = jit_symbol_address;
-        module_info.compiled_functions.emplace_back(std::move(function_name));
+        compiled_module.function_name_to_symbol.emplace(std::move(function_name), jit_symbol_address);
     }
 
-    module_info.size = module_memory_manager->getAllocatedSize();
-    module_info.identifier = current_module_key;
+    compiled_module.size = module_memory_manager->getAllocatedSize();
+    compiled_module.identifier = current_module_key;
 
     module_identifier_to_memory_manager[current_module_key] = std::move(module_memory_manager);
 
-    compiled_code_size.fetch_add(module_info.size, std::memory_order_relaxed);
+    compiled_code_size.fetch_add(compiled_module.size, std::memory_order_relaxed);
 
-    return module_info;
+    return compiled_module;
 }
 
-void CHJIT::deleteCompiledModule(const CHJIT::CompiledModuleInfo & module_info)
+void CHJIT::deleteCompiledModule(const CHJIT::CompiledModule & module)
 {
     std::lock_guard<std::mutex> lock(jit_lock);
 
-    auto module_it = module_identifier_to_memory_manager.find(module_info.identifier);
+    auto module_it = module_identifier_to_memory_manager.find(module.identifier);
     if (module_it == module_identifier_to_memory_manager.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no compiled module with identifier {}", module_info.identifier);
-
-    for (const auto & function : module_info.compiled_functions)
-        name_to_symbol.erase(function);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no compiled module with identifier {}", module.identifier);
 
     module_identifier_to_memory_manager.erase(module_it);
-    compiled_code_size.fetch_sub(module_info.size, std::memory_order_relaxed);
-}
-
-void * CHJIT::findCompiledFunction(const CompiledModuleInfo & module_info, const std::string & function_name) const
-{
-    std::lock_guard<std::mutex> lock(jit_lock);
-
-    std::string symbol_name = std::to_string(module_info.identifier) + '_' + function_name;
-    auto it = name_to_symbol.find(symbol_name);
-    if (it != name_to_symbol.end())
-        return it->second;
-
-    return nullptr;
+    compiled_code_size.fetch_sub(module.size, std::memory_order_relaxed);
 }
 
 void CHJIT::registerExternalSymbol(const std::string & symbol_name, void * address)
