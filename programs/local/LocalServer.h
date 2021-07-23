@@ -3,12 +3,16 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+
+#include <Common/ProgressIndication.h>
+#include <Common/StatusFile.h>
+
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <loggers/Loggers.h>
-#include <Poco/Util/Application.h>
-#include <Common/ProgressIndication.h>
 #include <Client/ClientBase.h>
+#include <Poco/Util/Application.h>
+
 
 namespace DB
 {
@@ -53,8 +57,6 @@ protected:
 
     int childMainImpl() override;
 
-    bool isInteractive() override;
-
     bool processQueryFromInteractive(const String & input) override
     {
         return processQueryText(input);
@@ -77,7 +79,7 @@ protected:
 
     bool supportPasswordOption() const override { return false; }
 
-    bool processFile(const String & file) override
+    bool processMultiQueryFromFile(const String & file) override
     {
         auto text = getInitialCreateTableQuery();
         String queries_from_file;
@@ -89,6 +91,8 @@ protected:
 
 private:
     ContextMutablePtr query_context;
+
+    std::optional<StatusFile> status;
 
     std::exception_ptr exception;
 
