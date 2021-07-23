@@ -35,7 +35,6 @@ static const auto suffix = ".removed";
 static const auto cleaner_reschedule_ms = 60000;
 
 DatabasePostgreSQL::DatabasePostgreSQL(
-        ContextPtr context_,
         const String & metadata_path_,
         const ASTStorage * database_engine_define_,
         const String & dbname_,
@@ -43,14 +42,13 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_)
     : IDatabase(dbname_)
-    , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , dbname(postgres_dbname)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
 {
-    cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
+    cleaner_task = Context::getGlobal()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
 

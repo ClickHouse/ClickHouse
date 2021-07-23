@@ -129,8 +129,7 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
         String{},
         source_database_name_or_regexp,
         database_is_regexp,
-        getSourceDatabasesAndTables(context),
-        context);
+        getSourceDatabasesAndTables(context));
 
     res->startup();
     return res;

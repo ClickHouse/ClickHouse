@@ -51,10 +51,8 @@ StorageMySQL::StorageMySQL(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    ContextPtr context_,
     const MySQLSettings & mysql_settings_)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
     , replace_query{replace_query_}
@@ -157,7 +155,8 @@ public:
         sqlbuf << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer
+            = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), Context::getGlobal());
         writer->write(block);
 
         if (!storage.on_duplicate_clause.empty())
@@ -293,7 +292,6 @@ void registerStorageMySQL(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.comment,
-            args.getContext(),
             mysql_settings);
     },
     {

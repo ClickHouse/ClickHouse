@@ -15,11 +15,9 @@ namespace DB
 
 /// Holds ActionLocks for tables
 /// Does not store pointers to tables
-class ActionLocksManager : WithContext
+class ActionLocksManager
 {
 public:
-    explicit ActionLocksManager(ContextPtr context);
-
     /// Adds new locks for each table
     void add(StorageActionBlockType action_type, ContextPtr context);
     /// Add new lock for a table if it has not been already added

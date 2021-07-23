@@ -33,8 +33,6 @@ class IXDBCBridgeHelper : public IBridgeHelper
 {
 
 public:
-    explicit IXDBCBridgeHelper(ContextPtr context_) : IBridgeHelper(context_) {}
-
     virtual std::vector<std::pair<std::string, std::string>> getURLParams(UInt64 max_block_size) const = 0;
 
     virtual Poco::URI getColumnsInfoURI() const = 0;
@@ -60,14 +58,12 @@ public:
     static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
 
     XDBCBridgeHelper(
-        ContextPtr context_,
         Poco::Timespan http_timeout_,
         const std::string & connection_string_)
-    : IXDBCBridgeHelper(context_->getGlobalContext())
-    , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
+    : log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
     , connection_string(connection_string_)
     , http_timeout(http_timeout_)
-    , config(context_->getGlobalContext()->getConfigRef())
+    , config(Context::getGlobal()->getConfigRef())
 {
     bridge_host = config.getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
     bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
@@ -106,7 +102,7 @@ protected:
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override
     {
-        getContext()->addBridgeCommand(std::move(cmd));
+        Context::getGlobal()->addBridgeCommand(std::move(cmd));
     }
 
 
@@ -155,7 +151,8 @@ protected:
             uri.setPath(SCHEMA_ALLOWED_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
+            ReadWriteBufferFromHTTP buf(
+                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(Context::getGlobal()));
 
             bool res;
             readBoolText(res, buf);
@@ -175,7 +172,8 @@ protected:
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
+            ReadWriteBufferFromHTTP buf(
+                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(Context::getGlobal()));
 
             std::string character;
             readStringBinary(character, buf);

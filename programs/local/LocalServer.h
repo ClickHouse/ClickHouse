@@ -45,7 +45,6 @@ private:
 
 protected:
     SharedContextHolder shared_context;
-    ContextMutablePtr global_context;
 
     /// Settings specified via command line args
     Settings cmd_settings;

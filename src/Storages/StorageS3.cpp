@@ -348,7 +348,7 @@ StorageS3::StorageS3(
     , name(uri_.storage_name)
     , distributed_processing(distributed_processing_)
 {
-    context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
+    Context::getGlobal()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
@@ -476,7 +476,7 @@ void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAut
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         settings.region,
-        ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects);
+        ctx->getRemoteHostFilter(), Context::getGlobal()->getSettingsRef().s3_max_redirects);
 
     client_configuration.endpointOverride = upd.uri.endpoint;
     client_configuration.maxConnections = upd.max_connections;

@@ -49,7 +49,7 @@ class Pipe;
 using Pipes = std::vector<Pipe>;
 
 
-class StorageLiveView final : public shared_ptr_helper<StorageLiveView>, public IStorage, WithContext
+class StorageLiveView final : public shared_ptr_helper<StorageLiveView>, public IStorage
 {
 friend struct shared_ptr_helper<StorageLiveView>;
 friend class LiveViewBlockInputStream;
@@ -230,7 +230,6 @@ private:
 
     StorageLiveView(
         const StorageID & table_id_,
-        ContextPtr context_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns
     );

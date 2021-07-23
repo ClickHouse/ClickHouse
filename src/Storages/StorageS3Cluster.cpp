@@ -116,7 +116,7 @@ Pipe StorageS3Cluster::read(
         for (const auto & node : replicas)
         {
             connections.emplace_back(std::make_shared<Connection>(
-                node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
+                node.host_name, node.port, Context::getGlobal()->getCurrentDatabase(),
                 node.user, node.password, node.cluster, node.cluster_secret,
                 "S3ClusterInititiator",
                 node.compression,

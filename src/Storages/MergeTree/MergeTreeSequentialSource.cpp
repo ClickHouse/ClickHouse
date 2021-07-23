@@ -23,7 +23,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , data_part(std::move(data_part_))
     , columns_to_read(std::move(columns_to_read_))
     , read_with_direct_io(read_with_direct_io_)
-    , mark_cache(storage.getContext()->getMarkCache())
+    , mark_cache(Context::getGlobal()->getMarkCache())
 {
     if (!quiet)
     {

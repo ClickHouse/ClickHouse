@@ -86,7 +86,7 @@ private:
     String replica_path;
     DatabaseReplicatedSettings db_settings;
 
-    zkutil::ZooKeeperPtr getZooKeeper() const;
+    static zkutil::ZooKeeperPtr getZooKeeper();
 
     std::atomic_bool is_readonly = true;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;

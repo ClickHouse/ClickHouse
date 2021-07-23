@@ -26,14 +26,13 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     /// We have table structure, so it's CREATE AS table_function().
     /// We should use global context here because there will be no query context on server startup
     /// and because storage lifetime is bigger than query context lifetime.
-    auto global_context = context->getGlobalContext();
     if (hasStaticStructure() && cached_columns == getActualTableStructure(context))
-        return executeImpl(ast_function, global_context, table_name, std::move(cached_columns));
+        return executeImpl(ast_function, Context::getGlobal(), table_name, std::move(cached_columns));
 
     auto this_table_function = shared_from_this();
     auto get_storage = [=]() -> StoragePtr
     {
-        return this_table_function->executeImpl(ast_function, global_context, table_name, cached_columns);
+        return this_table_function->executeImpl(ast_function, Context::getGlobal(), table_name, cached_columns);
     };
 
     /// It will request actual table structure and create underlying storage lazily

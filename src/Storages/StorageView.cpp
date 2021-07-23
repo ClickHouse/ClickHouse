@@ -89,7 +89,7 @@ void StorageView::read(
     auto modified_context = Context::createCopy(context);
     /// Use settings from global context,
     /// because difference between settings set on VIEW creation and query execution can break queries
-    modified_context->setSettings(context->getGlobalContext()->getSettingsRef());
+    modified_context->setSettings(Context::getGlobal()->getSettingsRef());
 
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, modified_context, {}, column_names);
     interpreter.buildQueryPlan(query_plan);

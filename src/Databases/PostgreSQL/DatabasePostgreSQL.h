@@ -23,12 +23,11 @@ class Context;
  *  If `cache_tables` == 1 (default: 0) table structure is cached and not checked for being modififed,
  *  but it will be updated during detach->attach.
  */
-class DatabasePostgreSQL final : public IDatabase, WithContext
+class DatabasePostgreSQL final : public IDatabase
 {
 
 public:
     DatabasePostgreSQL(
-        ContextPtr context,
         const String & metadata_path_,
         const ASTStorage * database_engine_define,
         const String & dbname_,
@@ -79,7 +78,7 @@ private:
 
     bool checkPostgresTable(const String & table_name) const;
 
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, const bool table_checked) const;
+    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
 
     void removeOutdatedTables();
 

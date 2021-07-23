@@ -104,7 +104,8 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool h
 
         try
         {
-            auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
+            auto ast
+                = parseQueryFromMetadata(log, Context::getGlobal(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();

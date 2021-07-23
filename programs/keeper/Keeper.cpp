@@ -285,10 +285,9 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 #endif
 
     auto shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
+    Context::createGlobal(shared_context.get());
 
-    global_context->makeGlobalContext();
-    global_context->setApplicationType(Context::ApplicationType::KEEPER);
+    Context::getGlobal()->setApplicationType(Context::ApplicationType::KEEPER);
 
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
@@ -326,7 +325,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         }
     }
 
-    const Settings & settings = global_context->getSettingsRef();
+    const Settings & settings = Context::getGlobal()->getSettingsRef();
 
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 100));
 
@@ -356,7 +355,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
     /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-    global_context->initializeKeeperStorageDispatcher();
+    Context::getGlobal()->initializeKeeperStorageDispatcher();
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP Keeper
@@ -402,7 +401,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     SCOPE_EXIT({
         LOG_INFO(log, "Shutting down.");
 
-        global_context->shutdown();
+        Context::getGlobal()->shutdown();
 
         LOG_DEBUG(log, "Waiting for current connections to Keeper to finish.");
         int current_connections = 0;
@@ -425,7 +424,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        global_context->shutdownKeeperStorageDispatcher();
+        Context::getGlobal()->shutdownKeeperStorageDispatcher();
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
@@ -433,7 +432,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
-        global_context.reset();
+        Context::getGlobal().reset();
         shared_context.reset();
 
         LOG_DEBUG(log, "Destroyed global context.");

@@ -63,7 +63,7 @@ StorageMaterializedView::StorageMaterializedView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     bool attach_)
-    : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -120,7 +120,9 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, getContext())->getStorageID();
+        target_table_id = DatabaseCatalog::instance()
+                              .getTable({manual_create_query->database, manual_create_query->table}, Context::getGlobal())
+                              ->getStorageID();
     }
 
     if (!select.select_table_id.empty())
@@ -234,19 +236,19 @@ void StorageMaterializedView::drop()
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
 
-    dropInnerTableIfAny(true, getContext());
+    dropInnerTableIfAny(true, Context::getGlobal());
 }
 
 void StorageMaterializedView::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
 {
     if (has_inner_table && tryGetTargetTable())
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, Context::getGlobal(), local_context, target_table_id, no_delay);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
     if (has_inner_table)
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, target_table_id, true);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Truncate, Context::getGlobal(), local_context, target_table_id, true);
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const
@@ -375,7 +377,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         elem.to = to;
         rename->elements.emplace_back(elem);
 
-        InterpreterRenameQuery(rename, getContext()).execute();
+        InterpreterRenameQuery(rename, Context::getGlobal()).execute();
         target_table_id.database_name = new_table_id.database_name;
         target_table_id.table_name = new_target_table_name;
     }
@@ -403,13 +405,13 @@ void StorageMaterializedView::shutdown()
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
     checkStackSize();
-    return DatabaseCatalog::instance().getTable(target_table_id, getContext());
+    return DatabaseCatalog::instance().getTable(target_table_id, Context::getGlobal());
 }
 
 StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
     checkStackSize();
-    return DatabaseCatalog::instance().tryGetTable(target_table_id, getContext());
+    return DatabaseCatalog::instance().tryGetTable(target_table_id, Context::getGlobal());
 }
 
 Strings StorageMaterializedView::getDataPaths() const

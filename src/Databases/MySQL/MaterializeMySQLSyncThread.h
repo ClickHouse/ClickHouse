@@ -36,13 +36,12 @@ namespace DB
  *  real-time pull incremental data:
  *      We will pull the binlog event of MySQL to parse and execute when the full data synchronization is completed.
  */
-class MaterializeMySQLSyncThread : WithContext
+class MaterializeMySQLSyncThread
 {
 public:
     ~MaterializeMySQLSyncThread();
 
     MaterializeMySQLSyncThread(
-        ContextPtr context,
         const String & database_name_,
         const String & mysql_database_name_,
         mysqlxx::Pool && pool_,
@@ -91,7 +90,7 @@ private:
         using BufferAndSortingColumnsPtr = std::shared_ptr<BufferAndSortingColumns>;
         std::unordered_map<String, BufferAndSortingColumnsPtr> data;
 
-        Buffers(const String & database_) : database(database_) {}
+        explicit Buffers(const String & database_) : database(database_) {}
 
         void commit(ContextPtr context);
 

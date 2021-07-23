@@ -269,7 +269,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         }
 
         /// We use global context here, because storages lifetime is bigger than query context lifetime
-        database->loadStoredObjects(getContext()->getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach); //-V560
+        database->loadStoredObjects(Context::getGlobal(), has_force_restore_data_flag, create.attach && force_attach); //-V560
     }
     catch (...)
     {
@@ -1026,7 +1026,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             return false;
 
         String temporary_table_name = create.table;
-        auto temporary_table = TemporaryTableHolder(getContext(), properties.columns, properties.constraints, query_ptr);
+        auto temporary_table = TemporaryTableHolder(properties.columns, properties.constraints, query_ptr);
         getContext()->getSessionContext()->addExternalTable(temporary_table_name, std::move(temporary_table));
         return true;
     }
@@ -1070,7 +1070,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         res = StorageFactory::instance().get(create,
             data_path,
             getContext(),
-            getContext()->getGlobalContext(),
+            Context::getGlobal(),
             properties.columns,
             properties.constraints,
             false);

@@ -53,9 +53,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
-    : WithContext(context_->getGlobalContext())
-    , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
+TemporaryTableHolder::TemporaryTableHolder(const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
+    : temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
 {
     ASTPtr original_create;
     ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
@@ -77,19 +76,17 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     }
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
-    temporary_tables->createTable(getContext(), global_name, table, original_create);
+    temporary_tables->createTable(Context::getGlobal(), global_name, table, original_create);
     table->startup();
 }
 
 
 TemporaryTableHolder::TemporaryTableHolder(
-    ContextPtr context_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     const ASTPtr & query,
     bool create_for_global_subquery)
     : TemporaryTableHolder(
-        context_,
         [&](const StorageID & table_id)
         {
             auto storage = StorageMemory::create(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
@@ -103,13 +100,12 @@ TemporaryTableHolder::TemporaryTableHolder(
 {
 }
 
-TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs)
-        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id)
+TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) : temporary_tables(rhs.temporary_tables), id(rhs.id)
 {
     rhs.id = UUIDHelpers::Nil;
 }
 
-TemporaryTableHolder & TemporaryTableHolder::operator = (TemporaryTableHolder && rhs)
+TemporaryTableHolder & TemporaryTableHolder::operator=(TemporaryTableHolder && rhs)
 {
     id = rhs.id;
     rhs.id = UUIDHelpers::Nil;
@@ -119,7 +115,7 @@ TemporaryTableHolder & TemporaryTableHolder::operator = (TemporaryTableHolder &&
 TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
-        temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+        temporary_tables->dropTable(Context::getGlobal(), "_tmp_" + toString(id));
 }
 
 StorageID TemporaryTableHolder::getGlobalTableID() const
@@ -129,7 +125,7 @@ StorageID TemporaryTableHolder::getGlobalTableID() const
 
 StoragePtr TemporaryTableHolder::getTable() const
 {
-    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), getContext());
+    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), Context::getGlobal());
     if (!table)
         throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
     return table;
@@ -140,7 +136,7 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
 
-    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
+    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE);
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 }
 
@@ -241,7 +237,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #if USE_LIBPQXX
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {
-            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext());
+            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second));
         }
 #endif
 

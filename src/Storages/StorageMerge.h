@@ -12,7 +12,7 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge final : public shared_ptr_helper<StorageMerge>, public IStorage, WithContext
+class StorageMerge final : public shared_ptr_helper<StorageMerge>, public IStorage
 {
     friend struct shared_ptr_helper<StorageMerge>;
 public:
@@ -86,8 +86,7 @@ protected:
         const String & comment,
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
-        const DbToTableSetMap & source_databases_and_tables_,
-        ContextPtr context_);
+        const DbToTableSetMap & source_databases_and_tables_);
 
     StorageMerge(
         const StorageID & table_id_,
@@ -95,8 +94,7 @@ protected:
         const String & comment,
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
-        const String & source_table_regexp_,
-        ContextPtr context_);
+        const String & source_table_regexp_);
 
     struct AliasData
     {

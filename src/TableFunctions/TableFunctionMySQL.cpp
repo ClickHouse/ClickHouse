@@ -108,7 +108,6 @@ StoragePtr TableFunctionMySQL::executeImpl(
         columns,
         ConstraintsDescription{},
         String{},
-        context,
         MySQLSettings{});
 
     pool.reset();

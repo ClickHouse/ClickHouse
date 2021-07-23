@@ -16,8 +16,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
-    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
+DatabaseMemory::DatabaseMemory(const String & name_)
+    : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")")
     , data_path("data/" + escapeForFileName(database_name) + "/")
 {}
 
@@ -83,7 +83,7 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
 
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 {
-    if (auto table = tryGetTable(table_name, getContext()))
+    if (auto table = tryGetTable(table_name, Context::getGlobal()))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }

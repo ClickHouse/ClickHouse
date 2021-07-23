@@ -62,14 +62,13 @@ namespace DB
  *
 **/
 
-class StorageMaterializedPostgreSQL final : public shared_ptr_helper<StorageMaterializedPostgreSQL>, public IStorage, WithContext
+class StorageMaterializedPostgreSQL final : public shared_ptr_helper<StorageMaterializedPostgreSQL>, public IStorage
 {
     friend struct shared_ptr_helper<StorageMaterializedPostgreSQL>;
 
 public:
-    StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_);
-
-    StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_);
+    explicit StorageMaterializedPostgreSQL(const StorageID & table_id_);
+    explicit StorageMaterializedPostgreSQL(StoragePtr nested_storage_);
 
     String getName() const override { return "MaterializedPostgreSQL"; }
 
@@ -131,12 +130,10 @@ protected:
         const String & remote_table_name,
         const postgres::ConnectionInfo & connection_info,
         const StorageInMemoryMetadata & storage_metadata,
-        ContextPtr context_,
         std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
 
 private:
-    static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
-            const String name, const String type, UInt64 default_value);
+    static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(String name, String type, UInt64 default_value);
 
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 

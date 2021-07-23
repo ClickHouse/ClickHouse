@@ -47,13 +47,11 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     const String & remote_table_name_,
     const postgres::ConnectionInfo & connection_info,
     const StorageInMemoryMetadata & storage_metadata,
-    ContextPtr context_,
     std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
     , is_materialized_postgresql_database(false)
     , has_nested(false)
-    , nested_context(makeNestedTableContext(context_->getGlobalContext()))
+    , nested_context(makeNestedTableContext(Context::getGlobal()))
     , nested_table_id(StorageID(table_id_.database_name, getNestedTableName()))
     , remote_table_name(remote_table_name_)
     , is_attach(is_attach_)
@@ -69,7 +67,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             remote_database_name,
             table_id_.database_name,
             connection_info,
-            getContext(),
+            Context::getGlobal(),
             is_attach,
             replication_settings->materialized_postgresql_max_block_size.value,
             /* allow_automatic_update */ false, /* is_materialized_postgresql_database */false);
@@ -79,12 +77,11 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 /// For the case of MaterializePosgreSQL database engine.
 /// It is used when nested ReplacingMergeeTree table has not yet be created by replication thread.
 /// In this case this storage can't be used for read queries.
-StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_)
+StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(const StorageID & table_id_)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
     , is_materialized_postgresql_database(true)
     , has_nested(false)
-    , nested_context(makeNestedTableContext(context_->getGlobalContext()))
+    , nested_context(makeNestedTableContext(Context::getGlobal()))
 {
 }
 
@@ -92,12 +89,11 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(const StorageID & t
 /// Constructor for MaterializedPostgreSQL table engine - for the case of MaterializePosgreSQL database engine.
 /// It is used when nested ReplacingMergeeTree table has already been created by replication thread.
 /// This storage is ready to handle read queries.
-StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_)
+StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(StoragePtr nested_storage_)
     : IStorage(nested_storage_->getStorageID())
-    , WithContext(context_->getGlobalContext())
     , is_materialized_postgresql_database(true)
     , has_nested(true)
-    , nested_context(makeNestedTableContext(context_->getGlobalContext()))
+    , nested_context(makeNestedTableContext(Context::getGlobal()))
     , nested_table_id(nested_storage_->getStorageID())
 {
     setInMemoryMetadata(nested_storage_->getInMemoryMetadata());
@@ -115,12 +111,15 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
     auto tmp_storage = DatabaseCatalog::instance().tryGetTable(tmp_table_id, nested_context);
     if (tmp_storage)
     {
-        LOG_TRACE(&Poco::Logger::get("MaterializedPostgreSQLStorage"), "Temporary table {} already exists, dropping", tmp_table_id.getNameForLogs());
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), getContext(), tmp_table_id, /* no delay */true);
+        LOG_TRACE(
+            &Poco::Logger::get("MaterializedPostgreSQLStorage"),
+            "Temporary table {} already exists, dropping",
+            tmp_table_id.getNameForLogs());
+        InterpreterDropQuery::executeDropQuery(
+            ASTDropQuery::Kind::Drop, Context::getGlobal(), Context::getGlobal(), tmp_table_id, /* no delay */ true);
     }
 
-    auto new_context = Context::createCopy(context);
-    return StorageMaterializedPostgreSQL::create(tmp_table_id, new_context);
+    return StorageMaterializedPostgreSQL::create(tmp_table_id);
 }
 
 
@@ -243,7 +242,7 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPt
 
     auto nested_table = getNested();
     if (nested_table)
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), no_delay);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, Context::getGlobal(), local_context, getNestedStorageID(), no_delay);
 }
 
 
@@ -498,9 +497,13 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
 
         return StorageMaterializedPostgreSQL::create(
-                args.table_id, args.attach, remote_database, remote_table, connection_info,
-                metadata, args.getContext(),
-                std::move(postgresql_replication_settings));
+            args.table_id,
+            args.attach,
+            remote_database,
+            remote_table,
+            connection_info,
+            metadata,
+            std::move(postgresql_replication_settings));
     };
 
     factory.registerStorage(

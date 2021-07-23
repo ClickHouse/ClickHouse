@@ -59,7 +59,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             remote_database_name,
             database_name,
             connection_info,
-            getContext(),
+            Context::getGlobal(),
             is_attach,
             settings->materialized_postgresql_max_block_size.value,
             settings->materialized_postgresql_allow_automatic_update,
@@ -84,17 +84,17 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     for (const auto & table_name : tables_to_replicate)
     {
         /// Check nested ReplacingMergeTree table.
-        auto storage = DatabaseAtomic::tryGetTable(table_name, getContext());
+        auto storage = DatabaseAtomic::tryGetTable(table_name, Context::getGlobal());
 
         if (storage)
         {
             /// Nested table was already created and synchronized.
-            storage = StorageMaterializedPostgreSQL::create(storage, getContext());
+            storage = StorageMaterializedPostgreSQL::create(storage);
         }
         else
         {
             /// Nested table does not exist and will be created by replication thread.
-            storage = StorageMaterializedPostgreSQL::create(StorageID(database_name, table_name), getContext());
+            storage = StorageMaterializedPostgreSQL::create(StorageID(database_name, table_name));
         }
 
         /// Cache MaterializedPostgreSQL wrapper over nested table.

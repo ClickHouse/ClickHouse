@@ -83,15 +83,14 @@ using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 /// Such table can be accessed from everywhere by its ID.
 /// Removes the table from database on destruction.
 /// TemporaryTableHolder object can be attached to a query or session Context, so table will be accessible through the context.
-struct TemporaryTableHolder : boost::noncopyable, WithContext
+struct TemporaryTableHolder : boost::noncopyable
 {
     using Creator = std::function<StoragePtr (const StorageID &)>;
 
-    TemporaryTableHolder(ContextPtr context, const Creator & creator, const ASTPtr & query = {});
+    TemporaryTableHolder(const Creator & creator, const ASTPtr & query = {});
 
     /// Creates temporary table with Engine=Memory
     TemporaryTableHolder(
-        ContextPtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         const ASTPtr & query = {},

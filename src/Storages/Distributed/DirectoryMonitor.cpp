@@ -356,8 +356,8 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , should_batch_inserts(storage.getDistributedSettingsRef().monitor_batch_inserts)
     , split_batch_on_failure(storage.getDistributedSettingsRef().monitor_split_batch_on_failure)
     , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
-    , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
-    , min_batched_block_size_bytes(storage.getContext()->getSettingsRef().min_insert_block_size_bytes)
+    , min_batched_block_size_rows(Context::getGlobal()->getSettingsRef().min_insert_block_size_rows)
+    , min_batched_block_size_bytes(Context::getGlobal()->getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path(path + "current_batch.txt")
     , default_sleep_time(storage.getDistributedSettingsRef().monitor_sleep_time_ms.totalMilliseconds())
     , sleep_time(default_sleep_time)
@@ -542,7 +542,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
     auto pools = createPoolsForAddresses(name, pool_factory, storage.getCluster()->getShardsInfo(), storage.log);
 
-    const auto settings = storage.getContext()->getSettings();
+    const auto settings = Context::getGlobal()->getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
@@ -604,7 +604,7 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
     Stopwatch watch;
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.getContext()->getSettingsRef());
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(Context::getGlobal()->getSettingsRef());
 
     try
     {
@@ -742,7 +742,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
             fs::rename(tmp_file, parent.current_batch_file_path);
         }
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.getContext()->getSettingsRef());
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(Context::getGlobal()->getSettingsRef());
         auto connection = parent.pool->get(timeouts);
 
         bool batch_broken = false;

@@ -71,9 +71,11 @@ public:
         json_path(json_path_), confidence(confidence_), query_id(query_id_),
         query_to_execute(query_to_execute_), continue_on_errors(continue_on_errors_), reconnect(reconnect_),
         print_stacktrace(print_stacktrace_), settings(settings_),
-        shared_context(Context::createShared()), global_context(Context::createGlobal(shared_context.get())),
+        shared_context(Context::createShared()),
         pool(concurrency)
     {
+        Context::createGlobal(shared_context.get());
+
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
 
@@ -97,8 +99,7 @@ public:
             comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
 
-        global_context->makeGlobalContext();
-        global_context->setSettings(settings);
+        Context::getGlobal()->setSettings(settings);
 
         std::cerr << std::fixed << std::setprecision(3);
 
@@ -161,7 +162,6 @@ private:
     bool print_stacktrace;
     const Settings & settings;
     SharedContextHolder shared_context;
-    ContextMutablePtr global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
     /// Don't execute new queries after timelimit or SIGINT or exception
@@ -413,8 +413,7 @@ private:
         if (reconnect)
             connection.disconnect();
 
-        RemoteBlockInputStream stream(
-            connection, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+        RemoteBlockInputStream stream(connection, query, {}, Context::getGlobal(), nullptr, Scalars(), Tables(), query_processing_stage);
         if (!query_id.empty())
             stream.setQueryId(query_id);
 

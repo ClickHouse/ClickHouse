@@ -2,7 +2,6 @@
 
 #include <DataStreams/ITTLAlgorithm.h>
 #include <Interpreters/Aggregator.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
@@ -17,8 +16,7 @@ public:
         const TTLInfo & old_ttl_info_,
         time_t current_time_,
         bool force_,
-        const Block & header_,
-        const MergeTreeData & storage_);
+        const Block & header_);
 
     void execute(Block & block) override;
     void finalize(const MutableDataPartPtr & data_part) const override;

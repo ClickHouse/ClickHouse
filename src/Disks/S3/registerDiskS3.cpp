@@ -115,7 +115,7 @@ getClient(const Poco::Util::AbstractConfiguration & config, const String & confi
 {
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
-        context->getRemoteHostFilter(), context->getGlobalContext()->getSettingsRef().s3_max_redirects);
+        context->getRemoteHostFilter(), Context::getGlobal()->getSettingsRef().s3_max_redirects);
 
     S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
     if (uri.key.back() != '/')

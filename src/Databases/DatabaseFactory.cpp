@@ -121,9 +121,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     else if (engine_name == "Atomic")
         return std::make_shared<DatabaseAtomic>(database_name, metadata_path, uuid, context);
     else if (engine_name == "Memory")
-        return std::make_shared<DatabaseMemory>(database_name, context);
+        return std::make_shared<DatabaseMemory>(database_name);
     else if (engine_name == "Dictionary")
-        return std::make_shared<DatabaseDictionary>(database_name, context);
+        return std::make_shared<DatabaseDictionary>(database_name);
 
 #if USE_MYSQL
 
@@ -157,7 +157,12 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
 
                 return std::make_shared<DatabaseMySQL>(
-                    context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_database_settings), std::move(mysql_pool));
+                    database_name,
+                    metadata_path,
+                    engine_define,
+                    mysql_database_name,
+                    std::move(mysql_database_settings),
+                    std::move(mysql_pool));
             }
 
             const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
@@ -265,7 +270,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return std::make_shared<DatabasePostgreSQL>(
-            context, metadata_path, engine_define, database_name, postgres_database_name, connection_pool, use_table_cache);
+            metadata_path, engine_define, database_name, postgres_database_name, connection_pool, use_table_cache);
     }
     else if (engine_name == "MaterializedPostgreSQL")
     {
@@ -317,7 +322,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
 
-        return std::make_shared<DatabaseSQLite>(context, engine_define, database_path);
+        return std::make_shared<DatabaseSQLite>(engine_define, database_path);
     }
 #endif
 

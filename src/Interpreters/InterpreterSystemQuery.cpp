@@ -208,7 +208,7 @@ BlockIO InterpreterSystemQuery::execute()
     using Type = ASTSystemQuery::Type;
 
     /// Use global context with fresh system profile settings
-    auto system_context = Context::createCopy(getContext()->getGlobalContext());
+    auto system_context = Context::createCopy(Context::getGlobal());
     system_context->setSetting("profile", getContext()->getSystemProfileName());
 
     /// Make canonical query for simpler processing
@@ -504,7 +504,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     table = StorageFactory::instance().get(create,
         data_path,
         system_context,
-        system_context->getGlobalContext(),
+        Context::getGlobal(),
         columns,
         constraints,
         false);

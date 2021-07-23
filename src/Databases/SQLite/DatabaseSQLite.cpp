@@ -22,16 +22,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseSQLite::DatabaseSQLite(
-        ContextPtr context_,
-        const ASTStorage * database_engine_define_,
-        const String & database_path_)
-    : IDatabase("SQLite")
-    , WithContext(context_->getGlobalContext())
-    , database_engine_define(database_engine_define_->clone())
-    , log(&Poco::Logger::get("DatabaseSQLite"))
+DatabaseSQLite::DatabaseSQLite(const ASTStorage * database_engine_define_, const String & database_path_)
+    : IDatabase("SQLite"), database_engine_define(database_engine_define_->clone()), log(&Poco::Logger::get("DatabaseSQLite"))
 {
-    sqlite_db = openSQLiteDB(database_path_, context_);
+    sqlite_db = openSQLiteDB(database_path_, Context::getGlobal());
 }
 
 
@@ -42,14 +36,14 @@ bool DatabaseSQLite::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &)
+DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr, const IDatabase::FilterByNameFunction &)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
     Tables tables;
     auto table_names = fetchTablesList();
     for (const auto & table_name : table_names)
-        tables[table_name] = fetchTable(table_name, local_context, true);
+        tables[table_name] = fetchTable(table_name, true);
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
@@ -116,14 +110,14 @@ bool DatabaseSQLite::isTableExist(const String & table_name, ContextPtr) const
 }
 
 
-StoragePtr DatabaseSQLite::tryGetTable(const String & table_name, ContextPtr local_context) const
+StoragePtr DatabaseSQLite::tryGetTable(const String & table_name, ContextPtr) const
 {
     std::lock_guard<std::mutex> lock(mutex);
-    return fetchTable(table_name, local_context, false);
+    return fetchTable(table_name, false);
 }
 
 
-StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr local_context, bool table_checked) const
+StoragePtr DatabaseSQLite::fetchTable(const String & table_name, bool table_checked) const
 {
     if (!table_checked && !checkSQLiteTable(table_name))
         return StoragePtr{};
@@ -138,8 +132,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         sqlite_db,
         table_name,
         ColumnsDescription{*columns},
-        ConstraintsDescription{},
-        local_context);
+        ConstraintsDescription{});
 
     return storage;
 }
@@ -154,9 +147,9 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
 }
 
 
-ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
+ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
-    auto storage = fetchTable(table_name, local_context, false);
+    auto storage = fetchTable(table_name, false);
     if (!storage)
     {
         if (throw_on_error)

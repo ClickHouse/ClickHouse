@@ -14,7 +14,7 @@
 namespace DB
 {
 
-class StorageSQLite final : public shared_ptr_helper<StorageSQLite>, public IStorage, public WithContext
+class StorageSQLite final : public shared_ptr_helper<StorageSQLite>, public IStorage
 {
 friend struct shared_ptr_helper<StorageSQLite>;
 
@@ -26,8 +26,7 @@ public:
         SQLitePtr sqlite_db_,
         const String & remote_table_name_,
         const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        ContextPtr context_);
+        const ConstraintsDescription & constraints_);
 
     std::string getName() const override { return "SQLite"; }
 
@@ -44,7 +43,6 @@ public:
 
 private:
     String remote_table_name;
-    ContextPtr global_context;
     SQLitePtr sqlite_db;
 };
 

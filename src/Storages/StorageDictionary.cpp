@@ -97,9 +97,8 @@ StorageDictionary::StorageDictionary(
     const String & dictionary_name_,
     const ColumnsDescription & columns_,
     const String & comment,
-    Location location_,
-    ContextPtr context_)
-    : IStorage(table_id_), WithContext(context_->getGlobalContext()), dictionary_name(dictionary_name_), location(location_)
+    Location location_)
+    : IStorage(table_id_), dictionary_name(dictionary_name_), location(location_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -109,13 +108,8 @@ StorageDictionary::StorageDictionary(
 
 
 StorageDictionary::StorageDictionary(
-    const StorageID & table_id_,
-    const String & dictionary_name_,
-    const DictionaryStructure & dictionary_structure_,
-    Location location_,
-    ContextPtr context_)
-    : StorageDictionary(
-        table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, String{}, location_, context_)
+    const StorageID & table_id_, const String & dictionary_name_, const DictionaryStructure & dictionary_structure_, Location location_)
+    : StorageDictionary(table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, String{}, location_)
 {
 }
 
@@ -127,8 +121,7 @@ StorageDictionary::StorageDictionary(
         table_id,
         table_id.getFullNameNotQuoted(),
         context_->getExternalDictionariesLoader().getDictionaryStructure(*dictionary_configuration),
-        Location::SameDatabaseAndNameAsDictionary,
-        context_)
+        Location::SameDatabaseAndNameAsDictionary)
 {
     configuration = dictionary_configuration;
 
@@ -168,7 +161,7 @@ Pipe StorageDictionary::read(
     const unsigned /*threads*/)
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
-    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
+    auto dictionary = Context::getGlobal()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
     auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
     /// TODO: update dictionary interface for processors.
     return Pipe(std::make_shared<SourceFromInputStream>(stream));
@@ -181,12 +174,10 @@ void StorageDictionary::shutdown()
 
 void StorageDictionary::startup()
 {
-    auto global_context = getContext();
-
-    bool lazy_load = global_context->getConfigRef().getBool("dictionaries_lazy_load", true);
+    bool lazy_load = Context::getGlobal()->getConfigRef().getBool("dictionaries_lazy_load", true);
     if (!lazy_load)
     {
-        const auto & external_dictionaries_loader = global_context->getExternalDictionariesLoader();
+        const auto & external_dictionaries_loader = Context::getGlobal()->getExternalDictionariesLoader();
 
         /// reloadConfig() is called here to force loading the dictionary.
         external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
@@ -224,7 +215,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
 
-        const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
+        const auto & external_dictionaries_loader = Context::getGlobal()->getExternalDictionariesLoader();
         auto result = external_dictionaries_loader.getLoadResult(old_table_id.getInternalDictionaryName());
 
         if (result.object)
@@ -289,7 +280,7 @@ void registerStorageDictionary(StorageFactory & factory)
             }
 
             return StorageDictionary::create(
-                args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
+                args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom);
         }
     });
 }

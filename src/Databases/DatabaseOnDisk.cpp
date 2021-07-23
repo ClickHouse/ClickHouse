@@ -85,7 +85,7 @@ std::pair<String, StoragePtr> createTableFromAST(
             ast_create_query,
             table_data_path_relative,
             context,
-            context->getGlobalContext(),
+            Context::getGlobal(),
             columns,
             constraints,
             has_force_restore_data_flag)
@@ -197,7 +197,7 @@ DatabaseOnDisk::DatabaseOnDisk(
     const String & data_path_,
     const String & logger,
     ContextPtr local_context)
-    : DatabaseWithOwnTablesBase(name, logger, local_context)
+    : DatabaseWithOwnTablesBase(name, logger)
     , metadata_path(metadata_path_)
     , data_path(data_path_)
 {
@@ -228,7 +228,7 @@ void DatabaseOnDisk::createTable(
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
-    if (isTableExist(table_name, getContext()))
+    if (isTableExist(table_name, Context::getGlobal()))
         throw Exception(
             ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
 
@@ -424,7 +424,7 @@ void DatabaseOnDisk::renameTable(
     String table_metadata_path;
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
-    StoragePtr table = tryGetTable(table_name, getContext());
+    StoragePtr table = tryGetTable(table_name, Context::getGlobal());
     detachTable(table_name);
     UUID prev_uuid = UUIDHelpers::Nil;
     try
@@ -483,7 +483,7 @@ void DatabaseOnDisk::renameTable(
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
     ASTPtr ast;
-    bool has_table = tryGetTable(table_name, getContext()) != nullptr;
+    bool has_table = tryGetTable(table_name, Context::getGlobal()) != nullptr;
     auto table_metadata_path = getObjectMetadataPath(table_name);
     try
     {
@@ -504,11 +504,11 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
     ASTPtr ast;
 
-    auto settings = getContext()->getSettingsRef();
+    auto settings = Context::getGlobal()->getSettingsRef();
     {
         std::lock_guard lock(mutex);
-        auto database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
-        ast = parseQueryFromMetadata(log, getContext(), database_metadata_path, true);
+        auto database_metadata_path = Context::getGlobal()->getPath() + "metadata/" + escapeForFileName(database_name) + ".sql";
+        ast = parseQueryFromMetadata(log, Context::getGlobal(), database_metadata_path, true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
         ast_create_query.database = database_name;
@@ -687,7 +687,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
 
 ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metadata_path, bool throw_on_error) const
 {
-    ASTPtr ast = parseQueryFromMetadata(log, getContext(), database_metadata_path, throw_on_error);
+    ASTPtr ast = parseQueryFromMetadata(log, Context::getGlobal(), database_metadata_path, throw_on_error);
 
     if (ast)
     {

@@ -122,7 +122,8 @@ public:
                 current_path = uri + path;
 
                 auto compression = chooseCompressionMethod(path, compression_method);
-                read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri, path, getContext()->getGlobalContext()->getConfigRef()), compression);
+                read_buf = wrapReadBufferWithCompressionMethod(
+                    std::make_unique<ReadBufferFromHDFS>(uri, path, Context::getGlobal()->getConfigRef()), compression);
                 auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
 
                 reader = std::make_shared<InputStreamFromInputFormat>(input_format);
@@ -182,7 +183,8 @@ public:
         const CompressionMethod compression_method)
         : sample_block(sample_block_)
     {
-        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef()), compression_method, 3);
+        write_buf = wrapWriteBufferWithCompressionMethod(
+            std::make_unique<WriteBufferFromHDFS>(uri, Context::getGlobal()->getConfigRef()), compression_method, 3);
         writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
@@ -285,7 +287,7 @@ Pipe StorageHDFS::read(
     const String path_from_uri = uri.substr(begin_of_path);
     const String uri_without_path = uri.substr(0, begin_of_path);
 
-    HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_->getGlobalContext()->getConfigRef());
+    HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", Context::getGlobal()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
 
     auto sources_info = std::make_shared<HDFSSource::SourcesInfo>();
@@ -323,13 +325,13 @@ BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageM
         chooseCompressionMethod(uri, compression_method));
 }
 
-void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr context_, TableExclusiveLockHolder &)
+void StorageHDFS::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
     const String path = uri.substr(begin_of_path);
     const String url = uri.substr(0, begin_of_path);
 
-    HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", context_->getGlobalContext()->getConfigRef());
+    HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", Context::getGlobal()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
 
     int ret = hdfsDelete(fs.get(), path.data(), 0);

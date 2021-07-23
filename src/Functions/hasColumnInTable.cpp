@@ -25,17 +25,13 @@ namespace
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable : public IFunction, WithContext
+class FunctionHasColumnInTable : public IFunction
 {
 public:
     static constexpr auto name = "hasColumnInTable";
-    static FunctionPtr create(ContextPtr context_)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionHasColumnInTable>(context_->getGlobalContext());
-    }
-
-    explicit FunctionHasColumnInTable(ContextPtr global_context_) : WithContext(global_context_)
-    {
+        return std::make_shared<FunctionHasColumnInTable>();
     }
 
     bool isVariadic() const override
@@ -114,12 +110,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     bool has_column;
     if (host_name.empty())
     {
-        // FIXME this (probably) needs a non-constant access to query context,
-        // because it might initialized a storage. Ideally, the tables required
-        // by the query should be initialized at an earlier stage.
-        const StoragePtr & table = DatabaseCatalog::instance().getTable(
-            {database_name, table_name},
-            const_pointer_cast<Context>(getContext()));
+        const StoragePtr & table = DatabaseCatalog::instance().getTable({database_name, table_name}, Context::getGlobal());
         auto table_metadata = table->getInMemoryMetadataPtr();
         has_column = table_metadata->getColumns().hasPhysical(column_name);
     }
@@ -128,19 +119,14 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         std::vector<std::vector<String>> host_names = {{ host_name }};
 
         auto cluster = std::make_shared<Cluster>(
-            getContext()->getSettings(),
+            Context::getGlobal()->getSettings(),
             host_names,
             !user_name.empty() ? user_name : "default",
             password,
-            getContext()->getTCPPort(),
+            Context::getGlobal()->getTCPPort(),
             false);
 
-        // FIXME this (probably) needs a non-constant access to query context,
-        // because it might initialized a storage. Ideally, the tables required
-        // by the query should be initialized at an earlier stage.
-        auto remote_columns = getStructureOfRemoteTable(*cluster,
-            {database_name, table_name},
-            const_pointer_cast<Context>(getContext()));
+        auto remote_columns = getStructureOfRemoteTable(*cluster, {database_name, table_name}, Context::getGlobal());
 
         has_column = remote_columns.hasPhysical(column_name);
     }

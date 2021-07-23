@@ -96,9 +96,9 @@ try
     if (!reader)
     {
         if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
+            owned_uncompressed_cache = Context::getGlobal()->getUncompressedCache();
 
-        owned_mark_cache = storage.getContext()->getMarkCache();
+        owned_mark_cache = Context::getGlobal()->getMarkCache();
 
         reader = data_part->getReader(task_columns.columns, metadata_snapshot, all_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);

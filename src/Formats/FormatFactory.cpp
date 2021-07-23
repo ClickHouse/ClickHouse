@@ -99,7 +99,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.regexp.skip_unmatched = settings.format_regexp_skip_unmatched;
     format_settings.schema.format_schema = settings.format_schema;
     format_settings.schema.format_schema_path = context->getFormatSchemaPath();
-    format_settings.schema.is_server = context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER);
+    format_settings.schema.is_server = (Context::getGlobal()->getApplicationType() == Context::ApplicationType::SERVER);
     format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;

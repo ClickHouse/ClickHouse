@@ -103,8 +103,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     const Block & sample_block_,
     ContextPtr context_,
     const BridgeHelperPtr bridge_)
-    : WithContext(context_->getGlobalContext())
-    , log(&Poco::Logger::get(bridge_->getName() + "DictionarySource"))
+    : log(&Poco::Logger::get(bridge_->getName() + "DictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
@@ -122,8 +121,7 @@ XDBCDictionarySource::XDBCDictionarySource(
 
 /// copy-constructor is provided in order to support cloneability
 XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
-    : WithContext(other.getContext())
-    , log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
+    : log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
     , update_time(other.update_time)
     , dict_struct(other.dict_struct)
     , configuration(other.configuration)
@@ -255,7 +253,7 @@ BlockInputStreamPtr XDBCDictionarySource::loadFromQuery(const Poco::URI & url, c
         url,
         write_body_callback,
         required_sample_block,
-        getContext(),
+        Context::getGlobal(),
         max_block_size,
         timeouts,
         bridge_helper->getName() + "BlockInputStream");
@@ -273,7 +271,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                    bool /* check_config */) -> DictionarySourcePtr {
 #if USE_ODBC
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
-            context, context->getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
+            context->getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
 
         std::string settings_config_prefix = config_prefix + ".odbc";
 

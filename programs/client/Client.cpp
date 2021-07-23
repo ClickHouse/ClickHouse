@@ -184,7 +184,6 @@ private:
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
     SharedContextHolder shared_context = Context::createShared();
-    ContextMutablePtr context = Context::createGlobal(shared_context.get());
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
@@ -266,20 +265,20 @@ private:
 
         configReadClient(config(), home_path);
 
-        context->setApplicationType(Context::ApplicationType::CLIENT);
-        context->setQueryParameters(query_parameters);
+        Context::getGlobal()->setApplicationType(Context::ApplicationType::CLIENT);
+        Context::getGlobal()->setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-        for (const auto & setting : context->getSettingsRef().allUnchanged())
+        for (const auto & setting : Context::getGlobal()->getSettingsRef().allUnchanged())
         {
             const auto & name = setting.getName();
             if (config().has(name))
-                context->setSetting(name, config().getString(name));
+                Context::getGlobal()->setSetting(name, config().getString(name));
         }
 
         /// Set path for format schema files
         if (config().has("format_schema_path"))
-            context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+            Context::getGlobal()->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
 
         /// Initialize query_id_formats if any
         if (config().has("query_id_formats"))
@@ -555,15 +554,15 @@ private:
         else
             format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
 
-        format_max_block_size = config().getInt("format_max_block_size", context->getSettingsRef().max_block_size);
+        format_max_block_size = config().getInt("format_max_block_size", Context::getGlobal()->getSettingsRef().max_block_size);
 
         insert_format = "Values";
 
         /// Setting value from cmd arg overrides one from config
-        if (context->getSettingsRef().max_insert_block_size.changed)
-            insert_format_max_block_size = context->getSettingsRef().max_insert_block_size;
+        if (Context::getGlobal()->getSettingsRef().max_insert_block_size.changed)
+            insert_format_max_block_size = Context::getGlobal()->getSettingsRef().max_insert_block_size;
         else
-            insert_format_max_block_size = config().getInt("insert_format_max_block_size", context->getSettingsRef().max_insert_block_size);
+            insert_format_max_block_size = config().getInt("insert_format_max_block_size", Context::getGlobal()->getSettingsRef().max_insert_block_size);
 
         if (!is_interactive)
         {
@@ -572,7 +571,7 @@ private:
             ignore_error = config().getBool("ignore-error", false);
         }
 
-        ClientInfo & client_info = context->getClientInfo();
+        ClientInfo & client_info = Context::getGlobal()->getClientInfo();
         client_info.setInitialQuery();
         client_info.quota_key = config().getString("quota_key", "");
 
@@ -712,7 +711,7 @@ private:
         {
             auto query_id = config().getString("query_id", "");
             if (!query_id.empty())
-                context->setCurrentQueryId(query_id);
+                Context::getGlobal()->setCurrentQueryId(query_id);
 
             nonInteractive();
 
@@ -802,7 +801,7 @@ private:
             }
         }
 
-        if (!context->getSettingsRef().use_client_time_zone)
+        if (!Context::getGlobal()->getSettingsRef().use_client_time_zone)
         {
             const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
             if (!time_zone.empty())
@@ -1051,7 +1050,7 @@ private:
             // and it makes more sense to treat them as such.
             {
                 Tokens tokens(this_query_begin, all_queries_end);
-                IParser::Pos token_iterator(tokens, context->getSettingsRef().max_parser_depth);
+                IParser::Pos token_iterator(tokens, Context::getGlobal()->getSettingsRef().max_parser_depth);
                 if (!token_iterator.isValid())
                 {
                     break;
@@ -1097,7 +1096,7 @@ private:
                 if (ignore_error)
                 {
                     Tokens tokens(this_query_begin, all_queries_end);
-                    IParser::Pos token_iterator(tokens, context->getSettingsRef().max_parser_depth);
+                    IParser::Pos token_iterator(tokens, Context::getGlobal()->getSettingsRef().max_parser_depth);
                     while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                         ++token_iterator;
                     this_query_begin = token_iterator->end;
@@ -1137,7 +1136,7 @@ private:
             // after we have processed the query. But even this guess is
             // beneficial so that we see proper trailing comments in "echo" and
             // server log.
-            adjustQueryEnd(this_query_end, all_queries_end, context->getSettingsRef().max_parser_depth);
+            adjustQueryEnd(this_query_end, all_queries_end, Context::getGlobal()->getSettingsRef().max_parser_depth);
 
             // full_query is the query + inline INSERT data + trailing comments
             // (the latter is our best guess for now).
@@ -1184,7 +1183,7 @@ private:
             if (insert_ast && insert_ast->data)
             {
                 this_query_end = insert_ast->end;
-                adjustQueryEnd(this_query_end, all_queries_end, context->getSettingsRef().max_parser_depth);
+                adjustQueryEnd(this_query_end, all_queries_end, Context::getGlobal()->getSettingsRef().max_parser_depth);
             }
 
             // Check whether the error (or its absence) matches the test hints
@@ -1282,9 +1281,9 @@ private:
     }
 
     // Prints changed settings to stderr. Useful for debugging fuzzing failures.
-    void printChangedSettings() const
+    static void printChangedSettings()
     {
-        const auto & changes = context->getSettingsRef().changes();
+        const auto & changes = Context::getGlobal()->getSettingsRef().changes();
         if (!changes.empty())
         {
             fmt::print(stderr, "Changed settings: ");
@@ -1625,11 +1624,11 @@ private:
         if (is_interactive)
         {
             // Generate a new query_id
-            context->setCurrentQueryId("");
+            Context::getGlobal()->setCurrentQueryId("");
             for (const auto & query_id_format : query_id_formats)
             {
                 writeString(query_id_format.first, std_out);
-                writeString(fmt::format(query_id_format.second, fmt::arg("query_id", context->getCurrentQueryId())), std_out);
+                writeString(fmt::format(query_id_format.second, fmt::arg("query_id", Context::getGlobal()->getCurrentQueryId())), std_out);
                 writeChar('\n', std_out);
                 std_out.next();
             }
@@ -1644,13 +1643,13 @@ private:
             std::optional<Settings> old_settings;
             SCOPE_EXIT_SAFE({
                 if (old_settings)
-                    context->setSettings(*old_settings);
+                    Context::getGlobal()->setSettings(*old_settings);
             });
             auto apply_query_settings = [&](const IAST & settings_ast)
             {
                 if (!old_settings)
-                    old_settings.emplace(context->getSettingsRef());
-                context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
+                    old_settings.emplace(Context::getGlobal()->getSettingsRef());
+                Context::getGlobal()->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
             };
             const auto * insert = parsed_query->as<ASTInsertQuery>();
             if (insert && insert->settings_ast)
@@ -1689,7 +1688,7 @@ private:
                     if (change.name == "profile")
                         current_profile = change.value.safeGet<String>();
                     else
-                        context->applySettingChange(change);
+                        Context::getGlobal()->applySettingChange(change);
                 }
             }
 
@@ -1727,7 +1726,7 @@ private:
 
         std::vector<ExternalTableDataPtr> data;
         for (auto & table : external_tables)
-            data.emplace_back(table.getData(context));
+            data.emplace_back(table.getData(Context::getGlobal()));
 
         connection->sendExternalTablesData(data);
     }
@@ -1759,10 +1758,10 @@ private:
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query_to_send,
-                    context->getCurrentQueryId(),
+                    Context::getGlobal()->getCurrentQueryId(),
                     query_processing_stage,
-                    &context->getSettingsRef(),
-                    &context->getClientInfo(),
+                    &Context::getGlobal()->getSettingsRef(),
+                    &Context::getGlobal()->getClientInfo(),
                     true);
 
                 sendExternalTables();
@@ -1798,10 +1797,10 @@ private:
         connection->sendQuery(
             connection_parameters.timeouts,
             query_to_send,
-            context->getCurrentQueryId(),
+            Context::getGlobal()->getCurrentQueryId(),
             query_processing_stage,
-            &context->getSettingsRef(),
-            &context->getClientInfo(),
+            &Context::getGlobal()->getSettingsRef(),
+            &Context::getGlobal()->getClientInfo(),
             true);
 
         sendExternalTables();
@@ -1819,12 +1818,12 @@ private:
     }
 
 
-    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements)
+    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
     {
         ParserQuery parser(end);
         ASTPtr res;
 
-        const auto & settings = context->getSettingsRef();
+        const auto & settings = Context::getGlobal()->getSettingsRef();
         size_t max_length = 0;
         if (!allow_multi_statements)
             max_length = settings.max_query_size;
@@ -1895,10 +1894,10 @@ private:
                     progress_indication.updateProgress(Progress(file_progress));
 
                     /// Set callback to be called on file progress.
-                    progress_indication.setFileProgressCallback(context, true);
+                    progress_indication.setFileProgressCallback(Context::getGlobal(), true);
 
                     /// Add callback to track reading from fd.
-                    std_in.setProgressCallback(context);
+                    std_in.setProgressCallback(Context::getGlobal());
                 }
 
                 sendDataFrom(std_in, sample, columns_description);
@@ -1925,10 +1924,10 @@ private:
                 current_format = insert->format;
         }
 
-        BlockInputStreamPtr block_input = context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+        BlockInputStreamPtr block_input = Context::getGlobal()->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
 
         if (columns_description.hasDefaults())
-            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns_description, context);
+            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns_description, Context::getGlobal());
 
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 
@@ -2251,9 +2250,9 @@ private:
 
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
             if (!need_render_progress)
-                block_out_stream = context->getOutputStreamParallelIfPossible(current_format, *out_buf, block);
+                block_out_stream = Context::getGlobal()->getOutputStreamParallelIfPossible(current_format, *out_buf, block);
             else
-                block_out_stream = context->getOutputStream(current_format, *out_buf, block);
+                block_out_stream = Context::getGlobal()->getOutputStream(current_format, *out_buf, block);
 
             block_out_stream->writePrefix();
         }
@@ -2642,12 +2641,12 @@ public:
             }
         }
 
-        context->makeGlobalContext();
-        context->setSettings(cmd_settings);
+        Context::createGlobal(shared_context.get());
+        Context::getGlobal()->setSettings(cmd_settings);
 
         /// Copy settings-related program options to config.
         /// TODO: Is this code necessary?
-        for (const auto & setting : context->getSettingsRef().all())
+        for (const auto & setting : Context::getGlobal()->getSettingsRef().all())
         {
             const auto & name = setting.getName();
             if (options.count(name))
@@ -2741,7 +2740,7 @@ public:
         {
             std::string traceparent = options["opentelemetry-traceparent"].as<std::string>();
             std::string error;
-            if (!context->getClientInfo().client_trace_context.parseTraceparentHeader(traceparent, error))
+            if (!Context::getGlobal()->getClientInfo().client_trace_context.parseTraceparentHeader(traceparent, error))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse OpenTelemetry traceparent '{}': {}", traceparent, error);
             }
@@ -2749,7 +2748,7 @@ public:
 
         if (options.count("opentelemetry-tracestate"))
         {
-            context->getClientInfo().client_trace_context.tracestate = options["opentelemetry-tracestate"].as<std::string>();
+            Context::getGlobal()->getClientInfo().client_trace_context.tracestate = options["opentelemetry-tracestate"].as<std::string>();
         }
 
         argsToConfig(common_arguments, config(), 100);

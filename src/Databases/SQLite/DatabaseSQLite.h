@@ -1,25 +1,26 @@
 #pragma once
 
 #if !defined(ARCADIA_BUILD)
-#include "config_core.h"
+#    include "config_core.h"
 #endif
 
 #if USE_SQLITE
-#include <Core/Names.h>
-#include <Databases/DatabasesCommon.h>
-#include <Parsers/ASTCreateQuery.h>
+#    include <Core/Names.h>
+#    include <Databases/DatabasesCommon.h>
+#    include <Parsers/ASTCreateQuery.h>
 
-#include <sqlite3.h> // Y_IGNORE
+#    include <sqlite3.h> // Y_IGNORE
 
 
 namespace DB
 {
+
 class DatabaseSQLite final : public IDatabase, protected WithContext
 {
 public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
 
-    DatabaseSQLite(ContextPtr context_, const ASTStorage * database_engine_define_, const String & database_path_);
+    DatabaseSQLite(const ASTStorage * database_engine_define_, const String & database_path_);
 
     String getEngineName() const override { return "SQLite"; }
 
@@ -31,9 +32,9 @@ public:
 
     bool isTableExist(const String & name, ContextPtr context) const override;
 
-    StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
+    StoragePtr tryGetTable(const String & name, ContextPtr) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) override;
 
     bool empty() const override;
 
@@ -42,7 +43,7 @@ public:
     void shutdown() override {}
 
 protected:
-    ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
+    ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const override;
 
 private:
     ASTPtr database_engine_define;
@@ -55,7 +56,7 @@ private:
 
     NameSet fetchTablesList() const;
 
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
+    StoragePtr fetchTable(const String & table_name, bool table_checked) const;
 
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };

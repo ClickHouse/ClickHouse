@@ -63,9 +63,9 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     column_name_set = NameSet{column_names.begin(), column_names.end()};
 
     if (use_uncompressed_cache)
-        owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
+        owned_uncompressed_cache = Context::getGlobal()->getUncompressedCache();
 
-    owned_mark_cache = storage.getContext()->getMarkCache();
+    owned_mark_cache = Context::getGlobal()->getMarkCache();
 
     reader = data_part->getReader(task_columns.columns, metadata_snapshot,
         all_mark_ranges, owned_uncompressed_cache.get(),

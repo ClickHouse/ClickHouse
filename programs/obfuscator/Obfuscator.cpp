@@ -1133,8 +1133,7 @@ try
     }
 
     SharedContextHolder shared_context = Context::createShared();
-    auto context = Context::createGlobal(shared_context.get());
-    context->makeGlobalContext();
+    Context::createGlobal(shared_context.get());
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
@@ -1156,7 +1155,7 @@ try
         if (!silent)
             std::cerr << "Training models\n";
 
-        BlockInputStreamPtr input = context->getInputFormat(input_format, file_in, header, max_block_size);
+        BlockInputStreamPtr input = Context::getGlobal()->getInputFormat(input_format, file_in, header, max_block_size);
 
         input->readPrefix();
         while (Block block = input->read())
@@ -1183,8 +1182,8 @@ try
 
         file_in.seek(0, SEEK_SET);
 
-        BlockInputStreamPtr input = context->getInputFormat(input_format, file_in, header, max_block_size);
-        BlockOutputStreamPtr output = context->getOutputStreamParallelIfPossible(output_format, file_out, header);
+        BlockInputStreamPtr input = Context::getGlobal()->getInputFormat(input_format, file_in, header, max_block_size);
+        BlockOutputStreamPtr output = Context::getGlobal()->getOutputStreamParallelIfPossible(output_format, file_out, header);
 
         if (processed_rows + source_rows > limit)
             input = std::make_shared<LimitBlockInputStream>(input, limit - processed_rows, 0);

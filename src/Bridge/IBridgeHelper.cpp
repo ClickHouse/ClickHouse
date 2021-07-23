@@ -38,7 +38,7 @@ bool IBridgeHelper::checkBridgeIsRunning() const
     try
     {
         ReadWriteBufferFromHTTP buf(
-            getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
+            getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(Context::getGlobal()));
         return checkString(PING_OK_ANSWER, buf);
     }
     catch (...)

@@ -12,7 +12,7 @@ namespace DB
 struct DictionaryStructure;
 class TableFunctionDictionary;
 
-class StorageDictionary final : public shared_ptr_helper<StorageDictionary>, public IStorage, public WithContext
+class StorageDictionary final : public shared_ptr_helper<StorageDictionary>, public IStorage
 {
     friend struct shared_ptr_helper<StorageDictionary>;
     friend class TableFunctionDictionary;
@@ -83,15 +83,13 @@ private:
         const String & dictionary_name_,
         const ColumnsDescription & columns_,
         const String & comment,
-        Location location_,
-        ContextPtr context_);
+        Location location_);
 
     StorageDictionary(
         const StorageID & table_id_,
         const String & dictionary_name_,
         const DictionaryStructure & dictionary_structure,
-        Location location_,
-        ContextPtr context_);
+        Location location_);
 
     StorageDictionary(
         const StorageID & table_id_,

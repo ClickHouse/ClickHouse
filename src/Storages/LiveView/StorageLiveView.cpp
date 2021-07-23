@@ -136,7 +136,7 @@ Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
 {
     //FIXME it's dangerous to create Context on stack
-    auto block_context = Context::createCopy(getContext());
+    auto block_context = Context::createCopy(Context::getGlobal());
     block_context->makeQueryContext();
 
     auto creator = [&](const StorageID & blocks_id_global)
@@ -146,7 +146,7 @@ BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
             blocks_id_global, parent_table_metadata->getColumns(),
             std::move(pipes), QueryProcessingStage::WithMergeableState);
     };
-    block_context->addExternalTable(getBlocksTableName(), TemporaryTableHolder(getContext(), creator));
+    block_context->addExternalTable(getBlocksTableName(), TemporaryTableHolder(creator));
 
     InterpreterSelectQuery select(getInnerBlocksQuery(), block_context, StoragePtr(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete));
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().getInputStream());
@@ -155,8 +155,8 @@ BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
     data = std::make_shared<SquashingBlockInputStream>(
-        data, getContext()->getSettingsRef().min_insert_block_size_rows,
-        getContext()->getSettingsRef().min_insert_block_size_bytes);
+        data, Context::getGlobal()->getSettingsRef().min_insert_block_size_rows,
+        Context::getGlobal()->getSettingsRef().min_insert_block_size_bytes);
 
     return data;
 }
@@ -189,7 +189,8 @@ void StorageLiveView::writeIntoLiveView(
         std::lock_guard lock(live_view.mutex);
 
         mergeable_blocks = live_view.getMergeableBlocks();
-        if (!mergeable_blocks || mergeable_blocks->blocks->size() >= local_context->getGlobalContext()->getSettingsRef().max_live_view_insert_blocks_before_refresh)
+        if (!mergeable_blocks
+            || mergeable_blocks->blocks->size() >= Context::getGlobal()->getSettingsRef().max_live_view_insert_blocks_before_refresh)
         {
             mergeable_blocks = live_view.collectMergeableBlocks(local_context);
             live_view.setMergeableBlocks(mergeable_blocks);
@@ -215,7 +216,7 @@ void StorageLiveView::writeIntoLiveView(
                 blocks_id_global, parent_metadata->getColumns(),
                 std::move(pipes), QueryProcessingStage::FetchColumns);
         };
-        TemporaryTableHolder blocks_storage(local_context, creator);
+        TemporaryTableHolder blocks_storage(creator);
 
         InterpreterSelectQuery select_block(mergeable_query, local_context, blocks_storage.getTable(), blocks_storage.getTable()->getInMemoryMetadataPtr(),
             QueryProcessingStage::WithMergeableState);
@@ -245,13 +246,11 @@ void StorageLiveView::writeIntoLiveView(
 
 StorageLiveView::StorageLiveView(
     const StorageID & table_id_,
-    ContextPtr context_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
 {
-    live_view_context = Context::createCopy(getContext());
+    live_view_context = Context::createCopy(Context::getGlobal());
     live_view_context->makeQueryContext();
 
     log = &Poco::Logger::get("StorageLiveView (" + table_id_.database_name + "." + table_id_.table_name + ")");
@@ -270,7 +269,7 @@ StorageLiveView::StorageLiveView(
     inner_query = query.select->list_of_selects->children.at(0);
 
     auto inner_query_tmp = inner_query->clone();
-    select_table_id = extractDependentTable(inner_query_tmp, getContext(), table_id_.table_name, inner_subquery);
+    select_table_id = extractDependentTable(inner_query_tmp, Context::getGlobal(), table_id_.table_name, inner_subquery);
 
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
@@ -290,7 +289,7 @@ StorageLiveView::StorageLiveView(
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
 
-    periodic_refresh_task = getContext()->getSchedulePool().createTask("LieViewPeriodicRefreshTask", [this]{ periodicRefreshTaskFunc(); });
+    periodic_refresh_task = Context::getGlobal()->getSchedulePool().createTask("LieViewPeriodicRefreshTask", [this]{ periodicRefreshTaskFunc(); });
     periodic_refresh_task->deactivate();
 }
 
@@ -317,7 +316,7 @@ Block StorageLiveView::getHeader() const
 
 StoragePtr StorageLiveView::getParentStorage() const
 {
-    return DatabaseCatalog::instance().getTable(select_table_id, getContext());
+    return DatabaseCatalog::instance().getTable(select_table_id, Context::getGlobal());
 }
 
 ASTPtr StorageLiveView::getInnerBlocksQuery()
@@ -331,7 +330,7 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
         /// which is not loaded yet during server startup, so we do it lazily
         InterpreterSelectQuery(inner_blocks_query, live_view_context, SelectQueryOptions().modify().analyze()); // NOLINT
         auto table_id = getStorageID();
-        extractDependentTable(inner_blocks_query, getContext(), table_id.table_name, inner_subquery);
+        extractDependentTable(inner_blocks_query, Context::getGlobal(), table_id.table_name, inner_subquery);
     }
     return inner_blocks_query->clone();
 }
@@ -582,7 +581,7 @@ void registerStorageLiveView(StorageFactory & factory)
                 "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')",
                 ErrorCodes::SUPPORT_IS_DISABLED);
 
-        return StorageLiveView::create(args.table_id, args.getLocalContext(), args.query, args.columns);
+        return StorageLiveView::create(args.table_id, args.query, args.columns);
     });
 }
 

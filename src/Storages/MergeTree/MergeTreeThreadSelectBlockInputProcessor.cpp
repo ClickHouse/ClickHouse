@@ -71,8 +71,8 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
         auto rest_mark_ranges = pool->getRestMarks(*task->data_part, task->mark_ranges[0]);
 
         if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
-        owned_mark_cache = storage.getContext()->getMarkCache();
+            owned_uncompressed_cache = Context::getGlobal()->getUncompressedCache();
+        owned_mark_cache = Context::getGlobal()->getMarkCache();
 
         reader = task->data_part->getReader(task->columns, metadata_snapshot, rest_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,

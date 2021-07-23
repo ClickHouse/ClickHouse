@@ -80,7 +80,6 @@ StorageExternalDistributed::StorageExternalDistributed(
                     columns_,
                     constraints_,
                     String{},
-                    context,
                     MySQLSettings{});
                 break;
             }

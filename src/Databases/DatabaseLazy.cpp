@@ -234,9 +234,9 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
     try
     {
         StoragePtr table;
-        auto context_copy = Context::createCopy(context); /// some tables can change context, but not LogTables
+        auto context_copy = Context::createCopy(Context::getGlobal()); /// some tables can change context, but not LogTables
 
-        auto ast = parseQueryFromMetadata(log, getContext(), table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
+        auto ast = parseQueryFromMetadata(log, Context::getGlobal(), table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
         if (ast)
         {
             const auto & ast_create = ast->as<const ASTCreateQuery &>();

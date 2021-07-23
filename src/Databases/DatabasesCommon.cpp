@@ -20,8 +20,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
 }
 
-DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(&Poco::Logger::get(logger))
+DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger)
+    : IDatabase(name_), log(&Poco::Logger::get(logger))
 {
 }
 

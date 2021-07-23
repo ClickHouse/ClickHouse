@@ -47,11 +47,11 @@ public:
     }
 
 private:
-    BridgeHelperPtr createBridgeHelper(ContextPtr context,
+    BridgeHelperPtr createBridgeHelper(ContextPtr,
         Poco::Timespan http_timeout_,
         const std::string & connection_string_) const override
     {
-        return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_);
+        return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(http_timeout_, connection_string_);
     }
 
     const char * getStorageTypeName() const override { return "JDBC"; }
@@ -67,11 +67,11 @@ public:
     }
 
 private:
-    BridgeHelperPtr createBridgeHelper(ContextPtr context,
+    BridgeHelperPtr createBridgeHelper(ContextPtr,
         Poco::Timespan http_timeout_,
         const std::string & connection_string_) const override
     {
-        return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_);
+        return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(http_timeout_, connection_string_);
     }
 
     const char * getStorageTypeName() const override { return "ODBC"; }

@@ -16,7 +16,7 @@ class Context;
 class HTTPServer : public Poco::Net::TCPServer
 {
 public:
-    explicit HTTPServer(
+    HTTPServer(
         ContextPtr context,
         HTTPRequestHandlerFactoryPtr factory,
         UInt16 port_number = 80,

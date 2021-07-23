@@ -918,7 +918,7 @@ namespace
                         column.type = DataTypeFactory::instance().get(name_and_type.type());
                         columns.emplace_back(std::move(column));
                     }
-                    auto temporary_table = TemporaryTableHolder(query_context, ColumnsDescription{columns}, {});
+                    auto temporary_table = TemporaryTableHolder(ColumnsDescription{columns}, {});
                     storage = temporary_table.getTable();
                     query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
                 }

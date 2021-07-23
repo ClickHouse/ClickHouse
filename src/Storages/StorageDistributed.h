@@ -36,7 +36,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
+class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, public IStorage
 {
     friend struct shared_ptr_helper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
@@ -129,7 +129,6 @@ private:
         const String & remote_database_,
         const String & remote_table_,
         const String & cluster_name_,
-        ContextPtr context_,
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
@@ -143,7 +142,6 @@ private:
         const ConstraintsDescription & constraints_,
         ASTPtr remote_table_function_ptr_,
         const String & cluster_name_,
-        ContextPtr context_,
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,

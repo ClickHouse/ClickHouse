@@ -20,7 +20,7 @@ namespace DB
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
   * Read only.
   */
-class StorageMySQL final : public shared_ptr_helper<StorageMySQL>, public IStorage, WithContext
+class StorageMySQL final : public shared_ptr_helper<StorageMySQL>, public IStorage
 {
     friend struct shared_ptr_helper<StorageMySQL>;
 public:
@@ -34,7 +34,6 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_,
         const MySQLSettings & mysql_settings_);
 
     std::string getName() const override { return "MySQL"; }

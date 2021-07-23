@@ -20,10 +20,10 @@ namespace DB
 /* Database to store StorageDictionary tables
  * automatically creates tables for all dictionaries
  */
-class DatabaseDictionary final : public IDatabase, WithContext
+class DatabaseDictionary final : public IDatabase
 {
 public:
-    DatabaseDictionary(const String & name_, ContextPtr context_);
+    explicit DatabaseDictionary(const String & name_);
 
     String getEngineName() const override
     {

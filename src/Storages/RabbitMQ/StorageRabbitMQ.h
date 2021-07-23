@@ -21,7 +21,7 @@ namespace DB
 
 using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
-class StorageRabbitMQ final: public shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
+class StorageRabbitMQ final: public shared_ptr_helper<StorageRabbitMQ>, public IStorage
 {
     friend struct shared_ptr_helper<StorageRabbitMQ>;
 
@@ -74,7 +74,6 @@ public:
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
-            ContextPtr context_,
             const ColumnsDescription & columns_,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
 
@@ -168,7 +167,7 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
-    String getRandomName() const
+    static String getRandomName()
     {
         std::uniform_int_distribution<int> distribution('a', 'z');
         String random_str(32, ' ');

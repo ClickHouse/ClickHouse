@@ -951,7 +951,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     {
         const auto & indices = metadata_snapshot->getSecondaryIndices();
         merged_stream = std::make_shared<ExpressionBlockInputStream>(
-            merged_stream, indices.getSingleExpressionForIndices(metadata_snapshot->getColumns(), data.getContext()));
+            merged_stream, indices.getSingleExpressionForIndices(metadata_snapshot->getColumns(), Context::getGlobal()));
         merged_stream = std::make_shared<MaterializingBlockInputStream>(merged_stream);
     }
 

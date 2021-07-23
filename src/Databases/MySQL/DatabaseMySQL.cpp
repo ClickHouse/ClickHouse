@@ -47,7 +47,6 @@ static constexpr const std::chrono::seconds cleaner_sleep_time{30};
 static const std::chrono::seconds lock_acquire_timeout{10};
 
 DatabaseMySQL::DatabaseMySQL(
-    ContextPtr context_,
     const String & database_name_,
     const String & metadata_path_,
     const ASTStorage * database_engine_define_,
@@ -55,7 +54,6 @@ DatabaseMySQL::DatabaseMySQL(
     std::unique_ptr<ConnectionMySQLSettings> settings_,
     mysqlxx::PoolWithFailover && pool)
     : IDatabase(database_name_)
-    , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
@@ -70,7 +68,7 @@ bool DatabaseMySQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache(getContext());
+    fetchTablesIntoLocalCache(Context::getGlobal());
 
     if (local_tables_cache.empty())
         return true;
@@ -181,7 +179,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    fetchTablesIntoLocalCache(getContext());
+    fetchTablesIntoLocalCache(Context::getGlobal());
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
         throw Exception("MySQL table " + database_name_in_mysql + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
@@ -259,7 +257,6 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
                 ColumnsDescription{columns_name_and_type},
                 ConstraintsDescription{},
                 String{},
-                getContext(),
                 MySQLSettings{}));
     }
 }
@@ -486,7 +483,7 @@ void DatabaseMySQL::createTable(ContextPtr, const String & table_name, const Sto
     /// XXX: hack
     /// In order to prevent users from broken the table structure by executing attach table database_name.table_name (...)
     /// we should compare the old and new create_query to make them completely consistent
-    const auto & origin_create_query = getCreateTableQuery(table_name, getContext());
+    const auto & origin_create_query = getCreateTableQuery(table_name, Context::getGlobal());
     origin_create_query->as<ASTCreateQuery>()->attach = true;
 
     if (queryToString(origin_create_query) != queryToString(create_query))

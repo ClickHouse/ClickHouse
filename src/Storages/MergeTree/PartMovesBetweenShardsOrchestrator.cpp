@@ -16,7 +16,7 @@ PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageRe
     , entries_znode_path(zookeeper_path + "/part_moves_shard")
 {
     /// Schedule pool is not designed for long-running tasks. TODO replace with a separate thread?
-    task = storage.getContext()->getSchedulePool().createTask(logger_name, [this]{ run(); });
+    task = Context::getGlobal()->getSchedulePool().createTask(logger_name, [this]{ run(); });
 }
 
 void PartMovesBetweenShardsOrchestrator::run()

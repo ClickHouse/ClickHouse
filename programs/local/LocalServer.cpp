@@ -62,8 +62,7 @@ LocalServer::LocalServer() = default;
 
 LocalServer::~LocalServer()
 {
-    if (global_context)
-        global_context->shutdown(); /// required for properly exception handling
+    Context::getGlobal()->shutdown(); /// required for properly exception handling
 }
 
 
@@ -168,22 +167,22 @@ void LocalServer::tryInitPath()
     if (path.back() != '/')
         path += '/';
 
-    global_context->setPath(path);
+    Context::getGlobal()->setPath(path);
 
-    global_context->setTemporaryStorage(path + "tmp");
-    global_context->setFlagsPath(path + "flags");
+    Context::getGlobal()->setTemporaryStorage(path + "tmp");
+    Context::getGlobal()->setFlagsPath(path + "flags");
 
-    global_context->setUserFilesPath(""); // user's files are everywhere
+    Context::getGlobal()->setUserFilesPath(""); // user's files are everywhere
 }
 
 
-static void attachSystemTables(ContextPtr context)
+static void attachSystemTables()
 {
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
+        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE);
         DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
     }
 
@@ -212,9 +211,8 @@ try
     }
 
     shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
-    global_context->makeGlobalContext();
-    global_context->setApplicationType(Context::ApplicationType::LOCAL);
+    Context::createGlobal(shared_context.get());
+    Context::getGlobal()->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();
 
     std::optional<StatusFile> status;
@@ -237,37 +235,37 @@ try
 
     /// Maybe useless
     if (config().has("macros"))
-        global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
+        Context::getGlobal()->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
     /// Skip networking
 
     /// Sets external authenticators config (LDAP, Kerberos).
-    global_context->setExternalAuthenticatorsConfig(config());
+    Context::getGlobal()->setExternalAuthenticatorsConfig(config());
 
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
     /// There is no need for concurrent queries, override max_concurrent_queries.
-    global_context->getProcessList().setMaxSize(0);
+    Context::getGlobal()->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_size);
+        Context::getGlobal()->setUncompressedCache(uncompressed_cache_size);
 
     /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
     /// Specify default value for mark_cache_size explicitly!
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size);
+        Context::getGlobal()->setMarkCache(mark_cache_size);
 
     /// A cache for mmapped files.
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
     if (mmap_cache_size)
-        global_context->setMMappedFileCache(mmap_cache_size);
+        Context::getGlobal()->setMMappedFileCache(mmap_cache_size);
 
     /// Load global settings from default_profile and system_profile.
-    global_context->setDefaultProfiles(config());
+    Context::getGlobal()->setDefaultProfiles(config());
 
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
@@ -275,13 +273,13 @@ try
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
-    global_context->setCurrentDatabase(default_database);
-    applyCmdOptions(global_context);
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
+    Context::getGlobal()->setCurrentDatabase(default_database);
+    applyCmdOptions(Context::getGlobal());
 
     if (config().has("path"))
     {
-        String path = global_context->getPath();
+        String path = Context::getGlobal()->getPath();
 
         /// Lock path directory before read
         status.emplace(path + "status", StatusFile::write_full_info);
@@ -289,21 +287,21 @@ try
         LOG_DEBUG(log, "Loading metadata from {}", path);
         fs::create_directories(fs::path(path) / "data/");
         fs::create_directories(fs::path(path) / "metadata/");
-        loadMetadataSystem(global_context);
-        attachSystemTables(global_context);
-        loadMetadata(global_context);
+        loadMetadataSystem(Context::getGlobal());
+        attachSystemTables();
+        loadMetadata(Context::getGlobal());
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else if (!config().has("no-system-tables"))
     {
-        attachSystemTables(global_context);
+        attachSystemTables();
     }
 
     processQueries();
 
-    global_context->shutdown();
-    global_context.reset();
+    Context::getGlobal()->shutdown();
+    Context::getGlobal().reset();
 
     status.reset();
     cleanup();
@@ -366,7 +364,7 @@ void LocalServer::processQueries()
         queries_str += queries_from_file;
     }
 
-    const auto & settings = global_context->getSettingsRef();
+    const auto & settings = Context::getGlobal()->getSettingsRef();
 
     std::vector<String> queries;
     auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
@@ -374,9 +372,9 @@ void LocalServer::processQueries()
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
-    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
+    /// we can't mutate global Context::getGlobal() (can lead to races, as it was already passed to some background threads)
     /// so we can't reuse it safely as a query context and need a copy here
-    auto context = Context::createCopy(global_context);
+    auto context = Context::createCopy(Context::getGlobal());
 
     context->makeSessionContext();
     context->makeQueryContext();
@@ -498,7 +496,7 @@ void LocalServer::setupUsers()
     }
 
     if (users_config)
-        global_context->setUsersConfig(users_config);
+        Context::getGlobal()->setUsersConfig(users_config);
     else
         throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
 }

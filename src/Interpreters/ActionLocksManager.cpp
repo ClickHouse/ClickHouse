@@ -19,10 +19,6 @@ namespace ActionLocks
 }
 
 
-ActionLocksManager::ActionLocksManager(ContextPtr context_) : WithContext(context_->getGlobalContext())
-{
-}
-
 template <typename F>
 inline void forEachTable(F && f, ContextPtr context)
 {
@@ -39,7 +35,7 @@ void ActionLocksManager::add(StorageActionBlockType action_type, ContextPtr cont
 
 void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType action_type)
 {
-    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext()))
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, Context::getGlobal()))
         add(table, action_type);
 }
 
@@ -64,7 +60,7 @@ void ActionLocksManager::remove(StorageActionBlockType action_type)
 
 void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockType action_type)
 {
-    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext()))
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, Context::getGlobal()))
         remove(table, action_type);
 }
 

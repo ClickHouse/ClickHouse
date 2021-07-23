@@ -109,7 +109,6 @@ public:
             NamesAndTypesList columns = sample.getNamesAndTypesList();
 
             auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
-                getContext(),
                 ColumnsDescription{columns},
                 ConstraintsDescription{},
                 nullptr,

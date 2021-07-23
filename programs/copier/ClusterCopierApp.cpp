@@ -113,17 +113,16 @@ void ClusterCopierApp::mainImpl()
         if (is_status_mode)
         {
             SharedContextHolder shared_context = Context::createShared();
-            auto context = Context::createGlobal(shared_context.get());
-            context->makeGlobalContext();
-            SCOPE_EXIT_SAFE(context->shutdown());
+            Context::createGlobal(shared_context.get());
+            SCOPE_EXIT_SAFE(Context::getGlobal()->shutdown());
 
-            auto zookeeper = context->getZooKeeper();
+            auto zookeeper = Context::getGlobal()->getZooKeeper();
             auto status_json = zookeeper->get(task_path + "/status");
 
             LOG_INFO(&logger(), "{}", status_json);
             std::cout << status_json << std::endl;
 
-            context->resetZooKeeper();
+            Context::getGlobal()->resetZooKeeper();
             return;
         }
     }
@@ -134,13 +133,12 @@ void ClusterCopierApp::mainImpl()
     LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::getVersionRevision());
 
     SharedContextHolder shared_context = Context::createShared();
-    auto context = Context::createGlobal(shared_context.get());
-    context->makeGlobalContext();
-    SCOPE_EXIT_SAFE(context->shutdown());
+    Context::createGlobal(shared_context.get());
+    SCOPE_EXIT_SAFE(Context::getGlobal()->shutdown());
 
-    context->setConfig(loaded_config.configuration);
-    context->setApplicationType(Context::ApplicationType::LOCAL);
-    context->setPath(process_path + "/");
+    Context::getGlobal()->setConfig(loaded_config.configuration);
+    Context::getGlobal()->setApplicationType(Context::ApplicationType::LOCAL);
+    Context::getGlobal()->setPath(process_path + "/");
 
     registerFunctions();
     registerAggregateFunctions();
@@ -151,13 +149,13 @@ void ClusterCopierApp::mainImpl()
     registerFormats();
 
     static const std::string default_database = "_local";
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, context));
-    context->setCurrentDatabase(default_database);
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
+    Context::getGlobal()->setCurrentDatabase(default_database);
 
     /// Initialize query scope just in case.
-    CurrentThread::QueryScope query_scope(context);
+    CurrentThread::QueryScope query_scope(Context::getGlobal());
 
-    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, context, log);
+    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, Context::getGlobal(), log);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->setMoveFaultProbability(move_fault_probability);
@@ -169,11 +167,11 @@ void ClusterCopierApp::mainImpl()
         copier->uploadTaskDescription(task_path, task_file, config().getBool("task-upload-force", false));
 
     copier->init();
-    copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef()));
+    copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(Context::getGlobal()->getSettingsRef()));
 
     /// Reset ZooKeeper before removing ClusterCopier.
     /// Otherwise zookeeper watch can call callback which use already removed ClusterCopier object.
-    context->resetZooKeeper();
+    Context::getGlobal()->resetZooKeeper();
 }
 
 

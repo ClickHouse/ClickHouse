@@ -533,16 +533,18 @@ SharedContextHolder::SharedContextHolder(SharedContextHolder &&) noexcept = defa
 SharedContextHolder & SharedContextHolder::operator=(SharedContextHolder &&) = default;
 SharedContextHolder::SharedContextHolder() = default;
 SharedContextHolder::~SharedContextHolder() = default;
-SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextSharedPart> shared_context)
-    : shared(std::move(shared_context)) {}
+SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextSharedPart> shared_context) : shared(std::move(shared_context)) {}
 
 void SharedContextHolder::reset() { shared.reset(); }
 
-ContextMutablePtr Context::createGlobal(ContextSharedPart * shared)
+ContextMutablePtr Context::global;
+
+// static
+void Context::createGlobal(ContextSharedPart * shared)
 {
-    auto res = std::shared_ptr<Context>(new Context);
-    res->shared = shared;
-    return res;
+    global = std::shared_ptr<Context>(new Context);
+    global->shared = shared;
+    global->initGlobal();
 }
 
 void Context::initGlobal()
@@ -1237,7 +1239,7 @@ String Context::getInitialQueryId() const
 
 void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
 {
-    if (!isGlobalContext())
+    if (global.get() != this)
         throw Exception("Cannot set current database for non global context, this method should be used during server initialization",
                         ErrorCodes::LOGICAL_ERROR);
     auto lock = getLock();
@@ -1366,13 +1368,6 @@ ContextMutablePtr Context::getSessionContext() const
     return ptr;
 }
 
-ContextMutablePtr Context::getGlobalContext() const
-{
-    auto ptr = global_context.lock();
-    if (!ptr) throw Exception("There is no global context or global context has expired", ErrorCodes::LOGICAL_ERROR);
-    return ptr;
-}
-
 ContextMutablePtr Context::getBufferContext() const
 {
     if (!buffer_context) throw Exception("There is no buffer context", ErrorCodes::LOGICAL_ERROR);
@@ -1400,7 +1395,7 @@ ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
 {
     std::lock_guard lock(shared->external_dictionaries_mutex);
     if (!shared->external_dictionaries_loader)
-        shared->external_dictionaries_loader.emplace(getGlobalContext());
+        shared->external_dictionaries_loader.emplace(Context::getGlobal());
     return *shared->external_dictionaries_loader;
 }
 
@@ -1419,7 +1414,7 @@ ExternalModelsLoader & Context::getExternalModelsLoader()
 ExternalModelsLoader & Context::getExternalModelsLoaderUnlocked()
 {
     if (!shared->external_models_loader)
-        shared->external_models_loader.emplace(getGlobalContext());
+        shared->external_models_loader.emplace(Context::getGlobal());
     return *shared->external_models_loader;
 }
 
@@ -1447,7 +1442,7 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 
         shared->embedded_dictionaries.emplace(
             std::move(geo_dictionaries_loader),
-            getGlobalContext(),
+            Context::getGlobal(),
             throw_on_error);
     }
 
@@ -1997,7 +1992,7 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
-    shared->system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
+    shared->system_logs = std::make_unique<SystemLogs>(getGlobal(), getConfigRef());
 }
 
 void Context::initializeTraceCollector()
@@ -2487,7 +2482,7 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
     auto lock = getLock();
 
     if (!shared->action_locks_manager)
-        shared->action_locks_manager = std::make_shared<ActionLocksManager>(shared_from_this());
+        shared->action_locks_manager = std::make_shared<ActionLocksManager>();
 
     return shared->action_locks_manager;
 }

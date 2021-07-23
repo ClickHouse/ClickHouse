@@ -431,7 +431,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
-    auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
+    auto compression_codec = Context::getGlobal()->chooseCompressionCodec(0, 0);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
@@ -506,7 +506,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
-    auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
+    auto compression_codec = Context::getGlobal()->chooseCompressionCodec(0, 0);
 
     MergedBlockOutputStream out(
         new_data_part,

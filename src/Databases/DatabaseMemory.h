@@ -19,7 +19,7 @@ namespace DB
 class DatabaseMemory final : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseMemory(const String & name_, ContextPtr context);
+    explicit DatabaseMemory(const String & name_);
 
     String getEngineName() const override { return "Memory"; }
 

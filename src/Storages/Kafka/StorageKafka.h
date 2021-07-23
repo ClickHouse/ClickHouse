@@ -28,7 +28,7 @@ struct StorageKafkaInterceptors;
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public shared_ptr_helper<StorageKafka>, public IStorage, WithContext
+class StorageKafka final : public shared_ptr_helper<StorageKafka>, public IStorage
 {
     friend struct shared_ptr_helper<StorageKafka>;
     friend struct StorageKafkaInterceptors;
@@ -69,7 +69,6 @@ public:
 protected:
     StorageKafka(
         const StorageID & table_id_,
-        ContextPtr context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<KafkaSettings> kafka_settings_);
 
@@ -117,7 +116,7 @@ private:
     HandleKafkaErrorMode handle_error_mode;
 
     SettingsChanges createSettingsAdjustments();
-    ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
+    ConsumerBufferPtr createReadBuffer(size_t consumer_number);
 
     // Update Kafka configuration with values from CH user configuration.
     void updateConfiguration(cppkafka::Configuration & conf);

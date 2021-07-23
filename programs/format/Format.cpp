@@ -102,8 +102,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             }
 
             SharedContextHolder shared_context = Context::createShared();
-            auto context = Context::createGlobal(shared_context.get());
-            context->makeGlobalContext();
+            Context::createGlobal(shared_context.get());
 
             registerFunctions();
             registerAggregateFunctions();
@@ -122,7 +121,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 std::string what(name);
 
-                return FunctionFactory::instance().tryGet(what, context) != nullptr
+                return FunctionFactory::instance().tryGet(what, Context::getGlobal()) != nullptr
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
                     || additional_names.count(what);

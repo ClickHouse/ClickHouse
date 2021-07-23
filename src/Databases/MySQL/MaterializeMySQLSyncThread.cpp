@@ -143,14 +143,12 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
 }
 
 MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
-    ContextPtr context_,
     const String & database_name_,
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
     MaterializeMySQLSettings * settings_)
-    : WithContext(context_->getGlobalContext())
-    , log(&Poco::Logger::get("MaterializeMySQLSyncThread"))
+    : log(&Poco::Logger::get("MaterializeMySQLSyncThread"))
     , database_name(database_name_)
     , mysql_database_name(mysql_database_name_)
     , pool(std::move(pool_))
@@ -167,7 +165,7 @@ void MaterializeMySQLSyncThread::synchronization()
     try
     {
         MaterializeMetadata metadata(
-            DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata", getContext()->getSettingsRef());
+            DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata", Context::getGlobal()->getSettingsRef());
         bool need_reconnect = true;
 
         Stopwatch watch;
@@ -240,7 +238,7 @@ void MaterializeMySQLSyncThread::assertMySQLAvailable()
 {
     try
     {
-        checkMySQLVariables(pool.get(), getContext()->getSettingsRef());
+        checkMySQLVariables(pool.get(), Context::getGlobal()->getSettingsRef());
     }
     catch (const mysqlxx::ConnectionFailed & e)
     {
@@ -376,7 +374,7 @@ bool MaterializeMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metad
 
             opened_transaction = false;
 
-            checkMySQLVariables(connection, getContext()->getSettingsRef());
+            checkMySQLVariables(connection, Context::getGlobal()->getSettingsRef());
             std::unordered_map<String, String> need_dumping_tables;
             metadata.startReplication(connection, mysql_database_name, opened_transaction, need_dumping_tables);
 
@@ -387,9 +385,9 @@ bool MaterializeMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metad
 
                 metadata.transaction(position, [&]()
                 {
-                    cleanOutdatedTables(database_name, getContext());
+                    cleanOutdatedTables(database_name, Context::getGlobal());
                     dumpDataForTables(
-                        connection, need_dumping_tables, query_prefix, database_name, mysql_database_name, getContext(), [this]
+                        connection, need_dumping_tables, query_prefix, database_name, mysql_database_name, Context::getGlobal(), [this]
                         {
                             return isCancelled();
                         });
@@ -446,7 +444,7 @@ void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, Materialize
     if (buffers.data.empty())
         return;
 
-    metadata.transaction(client.getPosition(), [&]() { buffers.commit(getContext()); });
+    metadata.transaction(client.getPosition(), [&]() { buffers.commit(Context::getGlobal()); });
 
     const auto & position_message = [&]()
     {
@@ -679,21 +677,21 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
     if (receive_event->type() == MYSQL_WRITE_ROWS_EVENT)
     {
         WriteRowsEvent & write_rows_event = static_cast<WriteRowsEvent &>(*receive_event);
-        Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(write_rows_event.table, getContext());
+        Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(write_rows_event.table, Context::getGlobal());
         size_t bytes = onWriteOrDeleteData<1>(write_rows_event.rows, buffer->first, ++metadata.data_version);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), write_rows_event.rows.size(), bytes);
     }
     else if (receive_event->type() == MYSQL_UPDATE_ROWS_EVENT)
     {
         UpdateRowsEvent & update_rows_event = static_cast<UpdateRowsEvent &>(*receive_event);
-        Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(update_rows_event.table, getContext());
+        Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(update_rows_event.table, Context::getGlobal());
         size_t bytes = onUpdateData(update_rows_event.rows, buffer->first, ++metadata.data_version, buffer->second);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), update_rows_event.rows.size(), bytes);
     }
     else if (receive_event->type() == MYSQL_DELETE_ROWS_EVENT)
     {
         DeleteRowsEvent & delete_rows_event = static_cast<DeleteRowsEvent &>(*receive_event);
-        Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(delete_rows_event.table, getContext());
+        Buffers::BufferAndSortingColumnsPtr buffer = buffers.getTableDataBuffer(delete_rows_event.table, Context::getGlobal());
         size_t bytes = onWriteOrDeleteData<-1>(delete_rows_event.rows, buffer->first, ++metadata.data_version);
         buffers.add(buffer->first.rows(), buffer->first.bytes(), delete_rows_event.rows.size(), bytes);
     }
@@ -702,7 +700,7 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         QueryEvent & query_event = static_cast<QueryEvent &>(*receive_event);
         Position position_before_ddl;
         position_before_ddl.update(metadata.binlog_position, metadata.binlog_file, metadata.executed_gtid_set);
-        metadata.transaction(position_before_ddl, [&]() { buffers.commit(getContext()); });
+        metadata.transaction(position_before_ddl, [&]() { buffers.commit(Context::getGlobal()); });
         metadata.transaction(client.getPosition(),[&](){ executeDDLAtomic(query_event); });
     }
     else
@@ -733,7 +731,7 @@ void MaterializeMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_event
 {
     try
     {
-        auto query_context = createQueryContext(getContext());
+        auto query_context = createQueryContext(Context::getGlobal());
         String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
         String event_database = query_event.schema == mysql_database_name ? database_name : "";
         tryToExecuteQuery(query_prefix + query_event.query, query_context, event_database, comment);

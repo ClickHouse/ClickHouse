@@ -38,8 +38,8 @@ public:
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_)
     : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", logger_name, context_)
-    , path_to_table_symlinks(fs::path(getContext()->getPath()) / "data" / escapeForFileName(name_) / "")
-    , path_to_metadata_symlink(fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(name_))
+    , path_to_table_symlinks(fs::path(Context::getGlobal()->getPath()) / "data" / escapeForFileName(name_) / "")
+    , path_to_metadata_symlink(fs::path(Context::getGlobal()->getPath()) / "metadata" / escapeForFileName(name_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
@@ -411,7 +411,7 @@ DatabaseAtomic::getTablesIterator(ContextPtr local_context, const IDatabase::Fil
 
 UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
 {
-    if (auto table = tryGetTable(table_name, getContext()))
+    if (auto table = tryGetTable(table_name, Context::getGlobal()))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }
@@ -454,7 +454,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     try
     {
         String link = path_to_table_symlinks + escapeForFileName(table_name);
-        fs::path data = fs::canonical(getContext()->getPath()) / actual_data_path;
+        fs::path data = fs::canonical(Context::getGlobal()->getPath()) / actual_data_path;
         if (!if_data_path_exist || fs::exists(data))
             fs::create_directory_symlink(data, link);
     }
@@ -514,8 +514,8 @@ void DatabaseAtomic::renameDatabase(const String & new_name)
     }
 
     auto new_name_escaped = escapeForFileName(new_name);
-    auto old_database_metadata_path = getContext()->getPath() + "metadata/" + escapeForFileName(getDatabaseName()) + ".sql";
-    auto new_database_metadata_path = getContext()->getPath() + "metadata/" + new_name_escaped + ".sql";
+    auto old_database_metadata_path = Context::getGlobal()->getPath() + "metadata/" + escapeForFileName(getDatabaseName()) + ".sql";
+    auto new_database_metadata_path = Context::getGlobal()->getPath() + "metadata/" + new_name_escaped + ".sql";
     renameNoReplace(old_database_metadata_path, new_database_metadata_path);
 
     String old_path_to_table_symlinks;
@@ -532,9 +532,9 @@ void DatabaseAtomic::renameDatabase(const String & new_name)
             table.second->renameInMemory(table_id);
         }
 
-        path_to_metadata_symlink = getContext()->getPath() + "metadata/" + new_name_escaped;
+        path_to_metadata_symlink = Context::getGlobal()->getPath() + "metadata/" + new_name_escaped;
         old_path_to_table_symlinks = path_to_table_symlinks;
-        path_to_table_symlinks = getContext()->getPath() + "data/" + new_name_escaped + "/";
+        path_to_table_symlinks = Context::getGlobal()->getPath() + "data/" + new_name_escaped + "/";
     }
 
     fs::rename(old_path_to_table_symlinks, path_to_table_symlinks);

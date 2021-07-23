@@ -16,7 +16,7 @@ namespace DB
 class Context;
 
 /// A base class for databases that manage their own list of tables.
-class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
+class DatabaseWithOwnTablesBase : public IDatabase
 {
 public:
     bool isTableExist(const String & table_name, ContextPtr context) const override;
@@ -39,7 +39,7 @@ protected:
     Tables tables;
     Poco::Logger * log;
 
-    DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
+    DatabaseWithOwnTablesBase(const String & name_, const String & logger);
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> & lock);
     StoragePtr detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock);

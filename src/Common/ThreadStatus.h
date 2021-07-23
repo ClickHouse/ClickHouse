@@ -58,7 +58,6 @@ public:
     MemoryTracker memory_tracker{VariableContext::Process};
 
     ContextWeakPtr query_context;
-    ContextWeakPtr global_context;
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
     std::function<void()> fatal_error_callback;
@@ -120,8 +119,6 @@ protected:
 
     std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
 
-    /// Is set once
-    ContextWeakPtr global_context;
     /// Use it only from current thread
     ContextWeakPtr query_context;
 

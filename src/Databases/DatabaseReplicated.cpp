@@ -46,9 +46,10 @@ static constexpr const char * DROPPED_MARK = "DROPPED";
 static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
 
 
-zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
+// static
+zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper()
 {
-    return getContext()->getZooKeeper();
+    return Context::getGlobal()->getZooKeeper();
 }
 
 static inline String getHostID(ContextPtr global_context, const UUID & db_uuid)
@@ -127,7 +128,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
     Strings hosts;
     Strings host_ids;
 
-    auto zookeeper = getContext()->getZooKeeper();
+    auto zookeeper = Context::getGlobal()->getZooKeeper();
     constexpr int max_retries = 10;
     int iteration = 0;
     bool success = false;
@@ -190,22 +191,22 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
 
     String username = db_settings.cluster_username;
     String password = db_settings.cluster_password;
-    UInt16 default_port = getContext()->getTCPPort();
+    UInt16 default_port = Context::getGlobal()->getTCPPort();
     bool secure = db_settings.cluster_secure_connection;
 
-    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, username, password, default_port, false, secure);
+    return std::make_shared<Cluster>(Context::getGlobal()->getSettingsRef(), shards, username, password, default_port, false, secure);
 }
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
 {
     try
     {
-        if (!getContext()->hasZooKeeper())
+        if (!Context::getGlobal()->hasZooKeeper())
         {
             throw Exception("Can't create replicated database without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
         }
 
-        auto current_zookeeper = getContext()->getZooKeeper();
+        auto current_zookeeper = Context::getGlobal()->getZooKeeper();
 
         if (!current_zookeeper->exists(zookeeper_path))
         {
@@ -218,7 +219,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
         String replica_host_id;
         if (current_zookeeper->tryGet(replica_path, replica_host_id))
         {
-            String host_id = getHostID(getContext(), db_uuid);
+            String host_id = getHostID(Context::getGlobal(), db_uuid);
             if (replica_host_id != host_id)
                 throw Exception(ErrorCodes::REPLICA_IS_ALREADY_EXIST,
                                 "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
@@ -284,7 +285,7 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
 void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
 {
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
-    auto host_id = getHostID(getContext(), db_uuid);
+    auto host_id = getHostID(Context::getGlobal(), db_uuid);
 
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
@@ -299,7 +300,7 @@ void DatabaseReplicated::loadStoredObjects(ContextMutablePtr local_context, bool
 
     DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
 
-    ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
+    ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, Context::getGlobal());
     ddl_worker->startup();
 }
 
@@ -356,7 +357,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             info.expanded_other = false;
             query_context->getMacros()->expand(maybe_replica, info);
             bool maybe_replica_macros = info.expanded_other;
-            bool enable_functional_tests_helper = getContext()->getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
+            bool enable_functional_tests_helper = Context::getGlobal()->getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
 
             if (!enable_functional_tests_helper)
                 LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
@@ -465,7 +466,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     std::unordered_map<UUID, String> zk_replicated_id_to_name;
     for (const auto & zk_table : table_name_to_metadata)
     {
-        UUID zk_replicated_id = getTableUUIDIfReplicated(zk_table.second, getContext());
+        UUID zk_replicated_id = getTableUUIDIfReplicated(zk_table.second, Context::getGlobal());
         if (zk_replicated_id != UUIDHelpers::Nil)
             zk_replicated_id_to_name.emplace(zk_replicated_id, zk_table.first);
     }
@@ -475,7 +476,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     std::vector<std::pair<String, String>> replicated_tables_to_rename;
     size_t total_tables = 0;
     std::vector<UUID> replicated_ids;
-    for (auto existing_tables_it = getTablesIterator(getContext(), {}); existing_tables_it->isValid();
+    for (auto existing_tables_it = getTablesIterator(Context::getGlobal(), {}); existing_tables_it->isValid();
          existing_tables_it->next(), ++total_tables)
     {
         String name = existing_tables_it->name();
@@ -515,7 +516,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// We use Ordinary engine for destination database, because it's the only way to discard table UUID
         /// and make possible creation of new table with the same UUID.
         String query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Ordinary", backQuoteIfNeed(to_db_name));
-        auto query_context = Context::createCopy(getContext());
+        auto query_context = Context::createCopy(Context::getGlobal());
         executeQuery(query, query_context, true);
     }
 
@@ -529,7 +530,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         if (getDatabaseName() != db_name)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed, will retry");
 
-        auto table = tryGetTable(table_name, getContext());
+        auto table = tryGetTable(table_name, Context::getGlobal());
 
         if (!table->storesDataOnDisk())
         {
@@ -538,7 +539,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             dropped_dictionaries += table->isDictionary();
 
             table->flushAndShutdown();
-            DatabaseAtomic::dropTable(getContext(), table_name, true);
+            DatabaseAtomic::dropTable(Context::getGlobal(), table_name, true);
         }
         else
         {
@@ -548,7 +549,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             assert(db_name < to_db_name);
             DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_db_name, to_name);
             auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_db_name);
-            DatabaseAtomic::renameTable(getContext(), table_name, *to_db_ptr, to_name, false, false);
+            DatabaseAtomic::renameTable(Context::getGlobal(), table_name, *to_db_ptr, to_name, false, false);
             ++moved_tables;
         }
     }
@@ -567,7 +568,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// TODO Maybe we should do it in two steps: rename all tables to temporary names and then rename them to actual names?
         DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to));
         DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::max(from, to));
-        DatabaseAtomic::renameTable(getContext(), from, *this, to, false, false);
+        DatabaseAtomic::renameTable(Context::getGlobal(), from, *this, to, false, false);
     }
 
     for (const auto & id : dropped_tables)
@@ -575,7 +576,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     for (const auto & name_and_meta : table_name_to_metadata)
     {
-        if (isTableExist(name_and_meta.first, getContext()))
+        if (isTableExist(name_and_meta.first, Context::getGlobal()))
         {
             assert(name_and_meta.second == readMetadataFile(name_and_meta.first));
             continue;
@@ -583,7 +584,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
         auto query_ast = parseQueryFromMetadataInZooKeeper(name_and_meta.first, name_and_meta.second);
 
-        auto query_context = Context::createCopy(getContext());
+        auto query_context = Context::createCopy(Context::getGlobal());
         query_context->makeQueryContext();
         query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         query_context->setCurrentDatabase(database_name);
@@ -649,7 +650,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 {
     ParserCreateQuery parser;
     String description = "in ZooKeeper " + zookeeper_path + "/metadata/" + node_name;
-    auto ast = parseQuery(parser, query, description, 0, getContext()->getSettingsRef().max_parser_depth);
+    auto ast = parseQuery(parser, query, description, 0, Context::getGlobal()->getSettingsRef().max_parser_depth);
 
     auto & create = ast->as<ASTCreateQuery &>();
     if (create.uuid == UUIDHelpers::Nil || create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER || !create.database.empty())

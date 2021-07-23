@@ -114,7 +114,7 @@ namespace ErrorCodes
 /// - MergeTreeDataWriter
 /// - MergeTreeDataMergerMutator
 
-class MergeTreeData : public IStorage, public WithMutableContext
+class MergeTreeData : public IStorage
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
@@ -239,7 +239,7 @@ public:
     class Transaction : private boost::noncopyable
     {
     public:
-        Transaction(MergeTreeData & data_) : data(data_) {}
+        explicit Transaction(MergeTreeData & data_) : data(data_) {}
 
         DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
@@ -354,7 +354,6 @@ public:
     MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,
                   const StorageInMemoryMetadata & metadata_,
-                  ContextMutablePtr context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,

@@ -71,11 +71,9 @@ namespace ExchangeType
 
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
-        ContextPtr context_,
         const ColumnsDescription & columns_,
         std::unique_ptr<RabbitMQSettings> rabbitmq_settings_)
         : IStorage(table_id_)
-        , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
         , exchange_name(rabbitmq_settings->rabbitmq_exchange_name.value)
         , format_name(rabbitmq_settings->rabbitmq_format.value)
@@ -94,9 +92,9 @@ StorageRabbitMQ::StorageRabbitMQ(
         , address(rabbitmq_settings->rabbitmq_host_port.value)
         , parsed_address(parseAddress(address, 5672))
         , login_password(std::make_pair(
-                    getContext()->getConfigRef().getString("rabbitmq.username"),
-                    getContext()->getConfigRef().getString("rabbitmq.password")))
-        , vhost(getContext()->getConfigRef().getString("rabbitmq.vhost", rabbitmq_settings->rabbitmq_vhost.value))
+                    Context::getGlobal()->getConfigRef().getString("rabbitmq.username"),
+                    Context::getGlobal()->getConfigRef().getString("rabbitmq.password")))
+        , vhost(Context::getGlobal()->getConfigRef().getString("rabbitmq.vhost", rabbitmq_settings->rabbitmq_vhost.value))
         , semaphore(0, num_consumers)
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
@@ -109,18 +107,18 @@ StorageRabbitMQ::StorageRabbitMQ(
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
-    rabbitmq_context = addSettings(getContext());
+    rabbitmq_context = addSettings(Context::getGlobal());
     rabbitmq_context->makeQueryContext();
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
     event_handler->updateLoopState(Loop::STOP);
-    looping_task = getContext()->getMessageBrokerSchedulePool().createTask("RabbitMQLoopingTask", [this]{ loopingFunc(); });
+    looping_task = Context::getGlobal()->getMessageBrokerSchedulePool().createTask("RabbitMQLoopingTask", [this]{ loopingFunc(); });
     looping_task->deactivate();
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
+    streaming_task = Context::getGlobal()->getMessageBrokerSchedulePool().createTask("RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    connection_task = getContext()->getMessageBrokerSchedulePool().createTask("RabbitMQConnectionTask", [this]{ connectionFunc(); });
+    connection_task = Context::getGlobal()->getMessageBrokerSchedulePool().createTask("RabbitMQConnectionTask", [this]{ connectionFunc(); });
     connection_task->deactivate();
 
     if (queue_base.empty())
@@ -258,7 +256,7 @@ size_t StorageRabbitMQ::getMaxBlockSize() const
 {
      return rabbitmq_settings->rabbitmq_max_block_size.changed
          ? rabbitmq_settings->rabbitmq_max_block_size.value
-         : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
+         : (Context::getGlobal()->getSettingsRef().max_insert_block_size.value / num_consumers);
 }
 
 
@@ -810,7 +808,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     return std::make_shared<WriteBufferToRabbitMQProducer>(
-        parsed_address, getContext(), login_password, vhost, routing_keys, exchange_name, exchange_type,
+        parsed_address, Context::getGlobal(), login_password, vhost, routing_keys, exchange_name, exchange_type,
         producer_id.fetch_add(1), persistent, wait_confirm, log,
         row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
@@ -826,7 +824,7 @@ bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
     // Check the dependencies are ready?
     for (const auto & db_tab : dependencies)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, getContext());
+        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, Context::getGlobal());
         if (!table)
             return false;
 
@@ -905,7 +903,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
 bool StorageRabbitMQ::streamToViews()
 {
     auto table_id = getStorageID();
-    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto table = DatabaseCatalog::instance().getTable(table_id, Context::getGlobal());
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 
@@ -938,7 +936,7 @@ bool StorageRabbitMQ::streamToViews()
 
         limits.speed_limits.max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
                                                   ? rabbitmq_settings->rabbitmq_flush_interval_ms
-                                                  : getContext()->getSettingsRef().stream_flush_interval_ms;
+                                                  : Context::getGlobal()->getSettingsRef().stream_flush_interval_ms;
 
         limits.timeout_overflow_mode = OverflowMode::BREAK;
 
@@ -1098,7 +1096,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         #undef CHECK_RABBITMQ_STORAGE_ARGUMENT
 
-        return StorageRabbitMQ::create(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings));
+        return StorageRabbitMQ::create(args.table_id, args.columns, std::move(rabbitmq_settings));
     };
 
     factory.registerStorage("RabbitMQ", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

@@ -11,19 +11,21 @@
 
 namespace Poco
 {
+
 namespace Util
 {
     class AbstractConfiguration;
 }
 
 class Logger;
+
 }
 
 
 namespace DB
 {
 /// Allows loading dictionaries from a XDBC source via bridges
-class XDBCDictionarySource final : public IDictionarySource, WithContext
+class XDBCDictionarySource final : public IDictionarySource
 {
 public:
 

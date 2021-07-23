@@ -146,16 +146,15 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 TYPED_TEST(StorageLogTest, testReadWrite)
 {
     using namespace DB;
-    const auto & context_holder = getContext();
 
     std::string data;
 
     // Write several chunks of data.
-    data += writeData(10, this->getTable(), context_holder.context);
+    data += writeData(10, this->getTable(), Context::getGlobal());
     data += ",";
-    data += writeData(20, this->getTable(), context_holder.context);
+    data += writeData(20, this->getTable(), Context::getGlobal());
     data += ",";
-    data += writeData(10, this->getTable(), context_holder.context);
+    data += writeData(10, this->getTable(), Context::getGlobal());
 
-    ASSERT_EQ(data, readData(this->getTable(), context_holder.context));
+    ASSERT_EQ(data, readData(this->getTable(), Context::getGlobal()));
 }

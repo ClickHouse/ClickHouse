@@ -481,10 +481,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
     auto shared_context = Context::createShared();
-    global_context = Context::createGlobal(shared_context.get());
+    Context::createGlobal(shared_context.get());
 
-    global_context->makeGlobalContext();
-    global_context->setApplicationType(Context::ApplicationType::SERVER);
+    Context::getGlobal()->setApplicationType(Context::ApplicationType::SERVER);
 
 #if !defined(NDEBUG) || !defined(__OPTIMIZE__)
     global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");

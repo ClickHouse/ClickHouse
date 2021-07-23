@@ -111,7 +111,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
     result.query_ast = query.cloneToASTSelect();
 
-    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
+    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(columns, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
         result.query_ast, query_context, storage, {}, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias());

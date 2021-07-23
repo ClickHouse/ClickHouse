@@ -82,7 +82,7 @@ public:
         const ASTCreateQuery & query,
         const String & relative_data_path,
         ContextMutablePtr local_context,
-        ContextMutablePtr context,
+        ContextMutablePtr context,  /// FIXME: check if this is always global context
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         bool has_force_restore_data_flag) const;

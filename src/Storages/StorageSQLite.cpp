@@ -31,12 +31,9 @@ StorageSQLite::StorageSQLite(
     SQLitePtr sqlite_db_,
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_,
-    ContextPtr context_)
+    const ConstraintsDescription & constraints_)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
-    , global_context(context_)
     , sqlite_db(sqlite_db_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -81,12 +78,10 @@ class SQLiteBlockOutputStream : public IBlockOutputStream
 {
 public:
     explicit SQLiteBlockOutputStream(
-        const StorageSQLite & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         StorageSQLite::SQLitePtr sqlite_db_,
         const String & remote_table_name_)
-        : storage{storage_}
-        , metadata_snapshot(metadata_snapshot_)
+        : metadata_snapshot(metadata_snapshot_)
         , sqlite_db(sqlite_db_)
         , remote_table_name(remote_table_name_)
     {
@@ -111,7 +106,8 @@ public:
 
         sqlbuf << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer
+            = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), Context::getGlobal());
         writer->write(block);
 
         sqlbuf << ";";
@@ -130,7 +126,6 @@ public:
     }
 
 private:
-    const StorageSQLite & storage;
     StorageMetadataPtr metadata_snapshot;
     StorageSQLite::SQLitePtr sqlite_db;
     String remote_table_name;
@@ -139,7 +134,7 @@ private:
 
 BlockOutputStreamPtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
 {
-    return std::make_shared<SQLiteBlockOutputStream>(*this, metadata_snapshot, sqlite_db, remote_table_name);
+    return std::make_shared<SQLiteBlockOutputStream>(metadata_snapshot, sqlite_db, remote_table_name);
 }
 
 
@@ -161,8 +156,7 @@ void registerStorageSQLite(StorageFactory & factory)
 
         auto sqlite_db = openSQLiteDB(database_path, args.getContext());
 
-        return StorageSQLite::create(args.table_id, sqlite_db,
-                                     table_name, args.columns, args.constraints, args.getContext());
+        return StorageSQLite::create(args.table_id, sqlite_db, table_name, args.columns, args.constraints);
     },
     {
         .source_access_type = AccessType::SQLITE,

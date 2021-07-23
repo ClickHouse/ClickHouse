@@ -74,10 +74,10 @@ private:
     };
 
     explicit State()
-        : context(Context::createCopy(getContext().context))
+        : context(Context::createCopy(Context::getGlobal()))
     {
         tryRegisterFunctions();
-        DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
+        DatabasePtr database = std::make_shared<DatabaseMemory>("test");
 
         for (const auto & tab : tables)
         {

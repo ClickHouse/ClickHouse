@@ -400,7 +400,6 @@ StorageDistributed::StorageDistributed(
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
-    ContextPtr context_,
     const ASTPtr & sharding_key_,
     const String & storage_policy_name_,
     const String & relative_data_path_,
@@ -408,12 +407,11 @@ StorageDistributed::StorageDistributed(
     bool attach_,
     ClusterPtr owned_cluster_)
     : IStorage(id_)
-    , WithContext(context_->getGlobalContext())
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
-    , cluster_name(getContext()->getMacros()->expand(cluster_name_))
+    , cluster_name(Context::getGlobal()->getMacros()->expand(cluster_name_))
     , has_sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
     , distributed_settings(distributed_settings_)
@@ -427,14 +425,15 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
-        sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
+        sharding_key_expr
+            = buildShardingKeyExpression(sharding_key_, Context::getGlobal(), storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
     }
 
     if (!relative_data_path.empty())
     {
-        storage_policy = getContext()->getStoragePolicy(storage_policy_name_);
+        storage_policy = Context::getGlobal()->getStoragePolicy(storage_policy_name_);
         data_volume = storage_policy->getVolume(0);
         if (storage_policy->getVolumes().size() > 1)
             LOG_WARNING(log, "Storage policy for Distributed table has multiple volumes. "
@@ -444,7 +443,7 @@ StorageDistributed::StorageDistributed(
     /// Sanity check. Skip check if the table is already created to allow the server to start.
     if (!attach_ && !cluster_name.empty())
     {
-        size_t num_local_shards = getContext()->getCluster(cluster_name)->getLocalShardCount();
+        size_t num_local_shards = Context::getGlobal()->getCluster(cluster_name)->getLocalShardCount();
         if (num_local_shards && remote_database == id_.database_name && remote_table == id_.table_name)
             throw Exception("Distributed table " + id_.table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
@@ -457,7 +456,6 @@ StorageDistributed::StorageDistributed(
     const ConstraintsDescription & constraints_,
     ASTPtr remote_table_function_ptr_,
     const String & cluster_name_,
-    ContextPtr context_,
     const ASTPtr & sharding_key_,
     const String & storage_policy_name_,
     const String & relative_data_path_,
@@ -472,7 +470,6 @@ StorageDistributed::StorageDistributed(
         String{},
         String{},
         cluster_name_,
-        context_,
         sharding_key_,
         storage_policy_name_,
         relative_data_path_,
@@ -948,7 +945,7 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
             *this, disk, relative_data_path + name,
             data.connection_pool,
             monitors_blocker,
-            getContext()->getDistributedSchedulePool());
+            Context::getGlobal()->getDistributedSchedulePool());
         return data;
     };
 
@@ -999,7 +996,7 @@ size_t StorageDistributed::getShardCount() const
 
 ClusterPtr StorageDistributed::getCluster() const
 {
-    return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
+    return owned_cluster ? owned_cluster : Context::getGlobal()->getCluster(cluster_name);
 }
 
 ClusterPtr StorageDistributed::getOptimizedCluster(
@@ -1216,7 +1213,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
         !distributed_settings.bytes_to_delay_insert)
         return;
 
-    UInt64 total_bytes = *totalBytes(getContext()->getSettingsRef());
+    UInt64 total_bytes = *totalBytes(Context::getGlobal()->getSettingsRef());
 
     if (distributed_settings.bytes_to_throw_insert && total_bytes > distributed_settings.bytes_to_throw_insert)
     {
@@ -1237,12 +1234,12 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
         do {
             delayed_ms += step_ms;
             std::this_thread::sleep_for(std::chrono::milliseconds(step_ms));
-        } while (*totalBytes(getContext()->getSettingsRef()) > distributed_settings.bytes_to_delay_insert && delayed_ms < distributed_settings.max_delay_to_insert*1000);
+        } while (*totalBytes(Context::getGlobal()->getSettingsRef()) > distributed_settings.bytes_to_delay_insert && delayed_ms < distributed_settings.max_delay_to_insert*1000);
 
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInserts);
         ProfileEvents::increment(ProfileEvents::DistributedDelayedInsertsMilliseconds, delayed_ms);
 
-        UInt64 new_total_bytes = *totalBytes(getContext()->getSettingsRef());
+        UInt64 new_total_bytes = *totalBytes(Context::getGlobal()->getSettingsRef());
         LOG_INFO(log, "Too many bytes pending for async INSERT: was {}, now {}, INSERT was delayed to {} ms",
             formatReadableSizeWithBinarySuffix(total_bytes),
             formatReadableSizeWithBinarySuffix(new_total_bytes),
@@ -1356,7 +1353,6 @@ void registerStorageDistributed(StorageFactory & factory)
             remote_database,
             remote_table,
             cluster_name,
-            context,
             sharding_key,
             storage_policy,
             args.relative_data_path,

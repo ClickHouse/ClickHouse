@@ -49,10 +49,8 @@ StorageMerge::StorageMerge(
     const String & comment,
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
-    const DbToTableSetMap & source_databases_and_tables_,
-    ContextPtr context_)
+    const DbToTableSetMap & source_databases_and_tables_)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
     , source_database_regexp(source_database_name_or_regexp_)
     , source_databases_and_tables(source_databases_and_tables_)
     , source_database_name_or_regexp(source_database_name_or_regexp_)
@@ -70,10 +68,8 @@ StorageMerge::StorageMerge(
     const String & comment,
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
-    const String & source_table_regexp_,
-    ContextPtr context_)
+    const String & source_table_regexp_)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
     , source_database_regexp(source_database_name_or_regexp_)
     , source_table_regexp(source_table_regexp_)
     , source_database_name_or_regexp(source_database_name_or_regexp_)
@@ -88,7 +84,7 @@ StorageMerge::StorageMerge(
 template <typename F>
 StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
-    auto database_table_iterators = getDatabaseIterators(getContext());
+    auto database_table_iterators = getDatabaseIterators(Context::getGlobal());
 
     for (auto & iterator : database_table_iterators)
     {
@@ -497,7 +493,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
 
     const Settings & settings = query_context->getSettingsRef();
     StorageListWithLocks selected_tables;
-    DatabaseTablesIterators database_table_iterators = getDatabaseIterators(getContext());
+    DatabaseTablesIterators database_table_iterators = getDatabaseIterators(Context::getGlobal());
 
     MutableColumnPtr database_name_virtual_column;
     MutableColumnPtr table_name_virtual_column;
@@ -758,7 +754,7 @@ void registerStorageMerge(StorageFactory & factory)
         String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageMerge::create(
-            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getContext());
+            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp);
     });
 }
 

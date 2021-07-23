@@ -49,7 +49,7 @@ TEST(ConvertDictionaryAST, SimpleDictConfiguration)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, Context::getGlobal());
 
     /// name
     EXPECT_EQ(config->getString("dictionary.database"), "test");
@@ -117,7 +117,7 @@ TEST(ConvertDictionaryAST, TrickyAttributes)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, Context::getGlobal());
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config->keys("dictionary.structure", keys);
@@ -162,7 +162,7 @@ TEST(ConvertDictionaryAST, ComplexKeyAndLayoutWithParams)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, Context::getGlobal());
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config->keys("dictionary.structure.key", keys);
@@ -213,7 +213,7 @@ TEST(ConvertDictionaryAST, ComplexSource)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, getContext().context);
+    DictionaryConfigurationPtr config = getDictionaryConfigurationFromAST(*create, Context::getGlobal());
     /// source
     EXPECT_EQ(config->getString("dictionary.source.mysql.host"), "localhost");
     EXPECT_EQ(config->getInt("dictionary.source.mysql.port"), 9000);

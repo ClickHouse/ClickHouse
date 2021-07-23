@@ -23,11 +23,10 @@ LibraryBridgeHelper::LibraryBridgeHelper(
         ContextPtr context_,
         const Block & sample_block_,
         const Field & dictionary_id_)
-    : IBridgeHelper(context_->getGlobalContext())
-    , log(&Poco::Logger::get("LibraryBridgeHelper"))
+    : log(&Poco::Logger::get("LibraryBridgeHelper"))
     , sample_block(sample_block_)
     , config(context_->getConfigRef())
-    , http_timeout(context_->getGlobalContext()->getSettingsRef().http_receive_timeout.value)
+    , http_timeout(Context::getGlobal()->getSettingsRef().http_receive_timeout.value)
     , dictionary_id(dictionary_id_)
 {
     bridge_port = config.getUInt("library_bridge.port", DEFAULT_PORT);
@@ -56,7 +55,7 @@ Poco::URI LibraryBridgeHelper::createBaseURI() const
 
 void LibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
 {
-    getContext()->addBridgeCommand(std::move(cmd));
+    Context::getGlobal()->addBridgeCommand(std::move(cmd));
 }
 
 
@@ -67,7 +66,7 @@ bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const st
 
     /// Sample block must contain null values
     WriteBufferFromOwnString out;
-    auto output_stream = getContext()->getOutputStream(LibraryBridgeHelper::DEFAULT_FORMAT, out, sample_block);
+    auto output_stream = Context::getGlobal()->getOutputStream(LibraryBridgeHelper::DEFAULT_FORMAT, out, sample_block);
     formatBlock(output_stream, sample_block);
     auto block_string = out.str();
 
@@ -141,7 +140,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadKeys(const Block & requested_block)
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [requested_block, this](std::ostream & os)
     {
         WriteBufferFromOStream out_buffer(os);
-        auto output_stream = getContext()->getOutputStream(LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, sample_block);
+        auto output_stream = Context::getGlobal()->getOutputStream(LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, sample_block);
         formatBlock(output_stream, requested_block);
     };
     return loadBase(uri, out_stream_callback);
@@ -154,7 +153,7 @@ bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferF
         uri,
         Poco::Net::HTTPRequest::HTTP_POST,
         std::move(out_stream_callback),
-        ConnectionTimeouts::getHTTPTimeouts(getContext()));
+        ConnectionTimeouts::getHTTPTimeouts(Context::getGlobal()));
 
     bool res;
     readBoolText(res, buf);
@@ -168,13 +167,13 @@ BlockInputStreamPtr LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWri
         uri,
         Poco::Net::HTTPRequest::HTTP_POST,
         std::move(out_stream_callback),
-        ConnectionTimeouts::getHTTPTimeouts(getContext()),
+        ConnectionTimeouts::getHTTPTimeouts(Context::getGlobal()),
         0,
         Poco::Net::HTTPBasicCredentials{},
         DBMS_DEFAULT_BUFFER_SIZE,
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
 
-    auto input_stream = getContext()->getInputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, DEFAULT_BLOCK_SIZE);
+    auto input_stream = Context::getGlobal()->getInputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, DEFAULT_BLOCK_SIZE);
     return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(read_buf_ptr));
 }
 

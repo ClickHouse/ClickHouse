@@ -262,7 +262,6 @@ private:
 
     ContextWeakMutablePtr query_context;
     ContextWeakMutablePtr session_context;  /// Session context or nullptr. Could be equal to this.
-    ContextWeakMutablePtr global_context;   /// Global context. Could be equal to this.
 
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
@@ -302,9 +301,14 @@ private:
     Context(const Context &);
     Context & operator=(const Context &);
 
+    static ContextMutablePtr global;
+
 public:
+    static ContextMutablePtr getGlobal() { assert(global); return global; }
+    static void resetGlobal() { assert(global); global.reset(); }
+
     /// Create initial Context with ContextShared and etc.
-    static ContextMutablePtr createGlobal(ContextSharedPart * shared);
+    static void createGlobal(ContextSharedPart * shared);
     static ContextMutablePtr createCopy(const ContextWeakPtr & other);
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
@@ -577,14 +581,6 @@ public:
     ContextMutablePtr getSessionContext() const;
     bool hasSessionContext() const { return !session_context.expired(); }
 
-    ContextMutablePtr getGlobalContext() const;
-    bool hasGlobalContext() const { return !global_context.expired(); }
-    bool isGlobalContext() const
-    {
-        auto ptr = global_context.lock();
-        return ptr && ptr.get() == this;
-    }
-
     ContextMutablePtr getBufferContext() const;
 
     void setQueryContext(ContextMutablePtr context_) { query_context = context_; }
@@ -592,7 +588,6 @@ public:
 
     void makeQueryContext() { query_context = shared_from_this(); }
     void makeSessionContext() { session_context = shared_from_this(); }
-    void makeGlobalContext() { initGlobal(); global_context = shared_from_this(); }
 
     const Settings & getSettingsRef() const { return settings; }
 

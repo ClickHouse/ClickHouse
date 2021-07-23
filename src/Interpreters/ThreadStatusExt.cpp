@@ -64,16 +64,10 @@ void ThreadStatus::attachQueryContext(ContextPtr query_context_)
 {
     query_context = query_context_;
 
-    if (global_context.expired())
-        global_context = query_context_->getGlobalContext();
-
     if (thread_group)
     {
         std::lock_guard lock(thread_group->mutex);
-
         thread_group->query_context = query_context;
-        if (thread_group->global_context.expired())
-            thread_group->global_context = global_context;
     }
 
     // Generate new span for thread manually here, because we can't depend
@@ -114,9 +108,6 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
         logs_queue_ptr = thread_group->logs_queue_ptr;
         fatal_error_callback = thread_group->fatal_error_callback;
         query_context = thread_group->query_context;
-
-        if (global_context.expired())
-            global_context = thread_group->global_context;
     }
 
     if (auto query_context_ptr = query_context.lock())
@@ -264,9 +255,8 @@ void ThreadStatus::finalizePerformanceCounters()
 
     try
     {
-        auto global_context_ptr = global_context.lock();
         auto query_context_ptr = query_context.lock();
-        if (global_context_ptr && query_context_ptr)
+        if (Context::getGlobal() && query_context_ptr)
         {
             const auto & settings = query_context_ptr->getSettingsRef();
             if (settings.log_queries && settings.log_query_threads)
@@ -275,7 +265,7 @@ void ThreadStatus::finalizePerformanceCounters()
                 Int64 query_duration_ms = (time_in_microseconds(now) - query_start_time_microseconds) / 1000;
                 if (query_duration_ms >= settings.log_queries_min_query_duration_ms.totalMilliseconds())
                 {
-                    if (auto thread_log = global_context_ptr->getQueryThreadLog())
+                    if (auto thread_log = Context::getGlobal()->getQueryThreadLog())
                         logToQueryThreadLog(*thread_log, query_context_ptr->getCurrentDatabase(), now);
                 }
             }
@@ -290,8 +280,7 @@ void ThreadStatus::finalizePerformanceCounters()
 void ThreadStatus::initQueryProfiler()
 {
     /// query profilers are useless without trace collector
-    auto global_context_ptr = global_context.lock();
-    if (!global_context_ptr || !global_context_ptr->hasTraceCollector())
+    if (!Context::getGlobal() || !Context::getGlobal()->hasTraceCollector())
         return;
 
     auto query_context_ptr = query_context.lock();
