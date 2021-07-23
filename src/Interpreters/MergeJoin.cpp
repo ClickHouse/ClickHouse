@@ -11,8 +11,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/join_common.h>
 #include <Interpreters/sortBlock.h>
-#include <Interpreters/join_common.h>
-#include <DataStreams/TemporaryFileStream.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
