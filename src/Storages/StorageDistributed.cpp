@@ -276,9 +276,9 @@ void replaceConstantExpressions(
     ContextPtr context,
     const NamesAndTypesList & columns,
     ConstStoragePtr storage,
-    const StorageMetadataPtr & metadata_snapshot)
+    const StorageSnapshotPtr & storage_snapshot)
 {
-    auto syntax_result = TreeRewriter(context).analyze(node, columns, storage, storage->getStorageSnapshot(metadata_snapshot));
+    auto syntax_result = TreeRewriter(context).analyze(node, columns, storage, storage_snapshot);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
     InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
@@ -500,7 +500,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     /// (Anyway it will be calculated in the read())
     if (getClusterQueriedNodes(settings, cluster) > 1 && settings.optimize_skip_unused_shards)
     {
-        ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot->metadata, query_info.query);
+        ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info.query);
         if (optimized_cluster)
         {
             LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
@@ -1040,7 +1040,7 @@ ClusterPtr StorageDistributed::getCluster() const
 }
 
 ClusterPtr StorageDistributed::getOptimizedCluster(
-    ContextPtr local_context, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const
+    ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot, const ASTPtr & query_ptr) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
@@ -1049,7 +1049,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 
     if (has_sharding_key && sharding_key_is_usable)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, metadata_snapshot, local_context);
+        ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, storage_snapshot, local_context);
         if (optimized)
             return optimized;
     }
@@ -1105,7 +1105,7 @@ IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, c
 ClusterPtr StorageDistributed::skipUnusedShards(
     ClusterPtr cluster,
     const ASTPtr & query_ptr,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     ContextPtr local_context) const
 {
     const auto & select = query_ptr->as<ASTSelectQuery &>();
@@ -1125,7 +1125,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
     }
 
-    replaceConstantExpressions(condition_ast, local_context, metadata_snapshot->getColumns().getAll(), shared_from_this(), metadata_snapshot);
+    replaceConstantExpressions(condition_ast, local_context, storage_snapshot->metadata->getColumns().getAll(), shared_from_this(), storage_snapshot);
 
     size_t limit = local_context->getSettingsRef().optimize_skip_unused_shards_limit;
     if (!limit || limit > SSIZE_MAX)
