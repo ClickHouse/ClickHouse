@@ -1,0 +1,17 @@
+1	(1,2,NULL)	Tuple(k1 Nullable(Int8), k2 Nullable(Int8), k3 Nullable(Int8))
+2	(NULL,3,4)	Tuple(k1 Nullable(Int8), k2 Nullable(Int8), k3 Nullable(Int8))
+1	1	2	\N
+2	\N	3	4
+1	(1,2,NULL)	Tuple(k1 Nullable(Int8), k2 Nullable(Int8), k3 Nullable(String))
+2	(NULL,3,'4')	Tuple(k1 Nullable(Int8), k2 Nullable(Int8), k3 Nullable(String))
+3	(NULL,NULL,'10')	Tuple(k1 Nullable(Int8), k2 Nullable(Int8), k3 Nullable(String))
+4	(NULL,5,'str')	Tuple(k1 Nullable(Int8), k2 Nullable(Int8), k3 Nullable(String))
+1	1	2	\N
+2	\N	3	4
+3	\N	\N	10
+4	\N	5	str
+============
+1	([11,NULL],[NULL,22],[])	Tuple(`k1.k2` Array(Nullable(Int8)), `k1.k3` Array(Nullable(Int8)), `k1.k4` Array(Nullable(Int8)))
+2	([],[33,NULL,55],[NULL,44,66])	Tuple(`k1.k2` Array(Nullable(Int8)), `k1.k3` Array(Nullable(Int8)), `k1.k4` Array(Nullable(Int8)))
+1	[11,NULL]	[NULL,22]	[]
+2	[]	[33,NULL,55]	[NULL,44,66]

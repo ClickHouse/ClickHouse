@@ -17,16 +17,17 @@ class DataTypeObject : public IDataType
 {
 private:
     String schema_format;
+    bool is_nullable;
     SerializationPtr default_serialization;
 
 public:
-    DataTypeObject(const String & schema_format_);
+    DataTypeObject(const String & schema_format_, bool is_nullable_);
 
     const char * getFamilyName() const override { return "Object"; }
     String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::Object; }
 
-    MutableColumnPtr createColumn() const override { return ColumnObject::create(); }
+    MutableColumnPtr createColumn() const override { return ColumnObject::create(is_nullable); }
 
     Field getDefault() const override
     {

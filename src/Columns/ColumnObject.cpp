@@ -157,6 +157,7 @@ private:
 
 ColumnObject::Subcolumn::Subcolumn(const Subcolumn & other)
     : least_common_type(other.least_common_type)
+    , is_nullable(other.is_nullable)
     , data(other.data)
     , num_of_defaults_in_prefix(other.num_of_defaults_in_prefix)
 {
@@ -164,12 +165,14 @@ ColumnObject::Subcolumn::Subcolumn(const Subcolumn & other)
 
 ColumnObject::Subcolumn::Subcolumn(MutableColumnPtr && data_)
     : least_common_type(getDataTypeByColumn(*data_))
+    , is_nullable(least_common_type->isNullable())
 {
     data.push_back(std::move(data_));
 }
 
-ColumnObject::Subcolumn::Subcolumn(size_t size_)
+ColumnObject::Subcolumn::Subcolumn(size_t size_, bool is_nullable_)
     : least_common_type(std::make_shared<DataTypeNothing>())
+    , is_nullable(is_nullable_)
     , num_of_defaults_in_prefix(size_)
 {
 }
@@ -235,8 +238,10 @@ void ColumnObject::Subcolumn::insert(Field && field)
         return;
     }
 
-    DataTypePtr value_type;
-    if (base_type->isNullable())
+    if (is_nullable && !base_type->isNullable())
+        base_type = makeNullable(base_type);
+
+    if (!is_nullable && base_type->isNullable())
     {
         base_type = removeNullable(base_type);
         if (isNothing(base_type))
@@ -246,14 +251,11 @@ void ColumnObject::Subcolumn::insert(Field && field)
         }
 
         field = applyVisitor(FieldVisitorReplaceNull(base_type->getDefault()), std::move(field));
-        value_type = createArrayOfType(base_type, value_dim);
-    }
-    else
-    {
-        value_type = createArrayOfType(base_type, value_dim);
     }
 
+    auto value_type = createArrayOfType(base_type, value_dim);
     bool type_changed = false;
+
     if (data.empty())
     {
         data.push_back(value_type->createColumn());
@@ -347,8 +349,14 @@ const ColumnPtr & ColumnObject::Subcolumn::getFinalizedColumnPtr() const
     return data[0];
 }
 
-ColumnObject::ColumnObject(SubcolumnsMap && subcolumns_)
+ColumnObject::ColumnObject(bool is_nullable_)
+    : is_nullable(is_nullable_)
+{
+}
+
+ColumnObject::ColumnObject(SubcolumnsMap && subcolumns_, bool is_nullable_)
     : subcolumns(std::move(subcolumns_))
+    , is_nullable(is_nullable_)
 {
     checkConsistency();
 }
@@ -384,7 +392,7 @@ MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "ColumnObject doesn't support resize to non-zero length");
 
-    return ColumnObject::create();
+    return ColumnObject::create(is_nullable);
 }
 
 size_t ColumnObject::byteSize() const
@@ -442,7 +450,7 @@ void ColumnObject::addSubcolumn(const String & key, size_t new_size, bool check_
             "Cannot add subcolumn '{}' with {} rows to ColumnObject with {} rows",
             key, new_size, size());
 
-    subcolumns[key] = Subcolumn(new_size);
+    subcolumns[key] = Subcolumn(new_size, is_nullable);
 }
 
 void ColumnObject::addSubcolumn(const String & key, Subcolumn && subcolumn, bool check_size)

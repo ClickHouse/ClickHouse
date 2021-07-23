@@ -23,7 +23,7 @@ public:
     {
     public:
         Subcolumn() = default;
-        Subcolumn(size_t size_);
+        Subcolumn(size_t size_, bool is_nullable);
         Subcolumn(MutableColumnPtr && data_);
         Subcolumn(const Subcolumn & other);
         Subcolumn & operator=(Subcolumn && other) = default;
@@ -46,6 +46,7 @@ public:
 
     private:
         DataTypePtr least_common_type;
+        bool is_nullable = false;
         std::vector<WrappedPtr> data;
         size_t num_of_defaults_in_prefix = 0;
     };
@@ -54,12 +55,13 @@ public:
 
 private:
     SubcolumnsMap subcolumns;
+    bool is_nullable;
 
 public:
     static constexpr auto COLUMN_NAME_DUMMY = "_dummy";
 
-    ColumnObject() = default;
-    ColumnObject(SubcolumnsMap && subcolumns_);
+    ColumnObject(bool is_nullable);
+    ColumnObject(SubcolumnsMap && subcolumns_, bool is_nullable_);
 
     void checkConsistency() const;
 
