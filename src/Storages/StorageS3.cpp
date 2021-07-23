@@ -19,14 +19,19 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/narrowBlockInputStreams.h>
+
+#include <Processors/QueryPipeline.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <DataTypes/DataTypeString.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/CopyObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
 
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
@@ -62,7 +67,7 @@ public:
 
         const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
 
-        /// We don't have to list bucket, because there is no asterics.
+        /// We don't have to list bucket, because there is no asterisks.
         if (key_prefix.size() == globbed_uri.key.size())
         {
             buffer.emplace_back(globbed_uri.key);
@@ -204,10 +209,18 @@ bool StorageS3Source::initialize()
     read_buf = wrapReadBufferWithCompressionMethod(
         std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries), chooseCompressionMethod(current_key, compression_hint));
     auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
-    reader = std::make_shared<InputStreamFromInputFormat>(input_format);
+    pipeline = std::make_unique<QueryPipeline>();
+    pipeline->init(Pipe(input_format));
 
     if (columns_desc.hasDefaults())
-        reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_desc, getContext());
+    {
+        pipeline->addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext());
+        });
+    }
+
+    reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     initialized = false;
     return true;
@@ -223,31 +236,25 @@ Chunk StorageS3Source::generate()
     if (!reader)
         return {};
 
-    if (!initialized)
+    Chunk chunk;
+    if (reader->pull(chunk))
     {
-        reader->readPrefix();
-        initialized = true;
-    }
-
-    if (auto block = reader->read())
-    {
-        auto columns = block.getColumns();
-        UInt64 num_rows = block.rows();
+        UInt64 num_rows = chunk.getNumRows();
 
         if (with_path_column)
-            columns.push_back(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+            chunk.addColumn(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
         if (with_file_column)
         {
             size_t last_slash_pos = file_path.find_last_of('/');
-            columns.push_back(DataTypeString().createColumnConst(num_rows, file_path.substr(
+            chunk.addColumn(DataTypeString().createColumnConst(num_rows, file_path.substr(
                     last_slash_pos + 1))->convertToFullColumnIfConst());
         }
 
-        return Chunk(std::move(columns), num_rows);
+        return chunk;
     }
 
-    reader->readSuffix();
     reader.reset();
+    pipeline.reset();
     read_buf.reset();
 
     if (!initialize())
@@ -434,7 +441,31 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
         max_single_part_upload_size);
 }
 
-void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAuthentificaiton & upd)
+
+void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
+{
+    updateClientAndAuthSettings(local_context, client_auth);
+
+    Aws::S3::Model::ObjectIdentifier obj;
+    obj.SetKey(client_auth.uri.key);
+
+    Aws::S3::Model::Delete delkeys;
+    delkeys.AddObjects(std::move(obj));
+
+    Aws::S3::Model::DeleteObjectsRequest request;
+    request.SetBucket(client_auth.uri.bucket);
+    request.SetDelete(delkeys);
+
+    auto response = client_auth.client->DeleteObjects(request);
+    if (!response.IsSuccess())
+    {
+        const auto & err = response.GetError();
+        throw Exception(std::to_string(static_cast<int>(err.GetErrorType())) + ": " + err.GetMessage(), ErrorCodes::S3_ERROR);
+    }
+}
+
+
+void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAuthentication & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
     if (upd.client && (!upd.access_key_id.empty() || settings == upd.auth_settings))

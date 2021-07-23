@@ -153,11 +153,6 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (arg_num < args.size())
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    /// ExpressionAnalyzer will be created in InterpreterSelectQuery that will meet these `Identifier` when processing the request.
-    /// We need to mark them as the name of the database or table, because the default value is column.
-    for (auto ast : args)
-        setIdentifierSpecial(ast);
-
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config

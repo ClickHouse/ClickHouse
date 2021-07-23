@@ -41,6 +41,11 @@ ln -sf $SRC_PATH/users.d/database_atomic_drop_detach_sync.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/users.d/opentelemetry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/remote_queries.xml $DEST_SERVER_PATH/users.d/
 
+# FIXME DataPartsExchange may hang for http_send_timeout seconds
+# when nobody is going to read from the other side of socket (due to "Fetching of part was cancelled"),
+# but socket is owned by HTTPSessionPool, so it's not closed.
+ln -sf $SRC_PATH/users.d/timeouts.xml $DEST_SERVER_PATH/users.d/
+
 ln -sf $SRC_PATH/ints_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/strings_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/decimals_dictionary.xml $DEST_SERVER_PATH/

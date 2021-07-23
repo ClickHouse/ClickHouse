@@ -98,12 +98,12 @@ Block getHeaderForProcessingStage(
 
                 if (prewhere_info.row_level_filter)
                 {
-                    prewhere_info.row_level_filter->execute(header);
+                    header = prewhere_info.row_level_filter->updateHeader(std::move(header));
                     header.erase(prewhere_info.row_level_column_name);
                 }
 
                 if (prewhere_info.prewhere_actions)
-                    prewhere_info.prewhere_actions->execute(header);
+                    header = prewhere_info.prewhere_actions->updateHeader(std::move(header));
 
                 if (prewhere_info.remove_prewhere_column)
                     header.erase(prewhere_info.prewhere_column_name);

@@ -31,7 +31,10 @@ namespace ErrorCodes
 
 
 StorageView::StorageView(
-    const StorageID & table_id_, const ASTCreateQuery & query, const ColumnsDescription & columns_, const String & comment)
+    const StorageID & table_id_,
+    const ASTCreateQuery & query,
+    const ColumnsDescription & columns_,
+    const String & comment)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -40,7 +43,6 @@ StorageView::StorageView(
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
-
     SelectQueryDescription description;
 
     description.inner_query = query.select->ptr();
@@ -84,7 +86,12 @@ void StorageView::read(
         current_inner_query = query_info.view_query->clone();
     }
 
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
+    auto modified_context = Context::createCopy(context);
+    /// Use settings from global context,
+    /// because difference between settings set on VIEW creation and query execution can break queries
+    modified_context->setSettings(context->getGlobalContext()->getSettingsRef());
+
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, modified_context, {}, column_names);
     interpreter.buildQueryPlan(query_plan);
 
     /// It's expected that the columns read from storage are not constant.

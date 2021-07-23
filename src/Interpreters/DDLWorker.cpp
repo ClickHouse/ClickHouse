@@ -377,8 +377,8 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     /// The following message is too verbose, but it can be useful too debug mysterious test failures in CI
     LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
                    "entries={}..{}, "
-                   "first_failed_task_name={}, current_tasks_size={},"
-                   "last_current_task={},"
+                   "first_failed_task_name={}, current_tasks_size={}, "
+                   "last_current_task={}, "
                    "last_skipped_entry_name={}",
                    initialized, size_before_filtering, queue_nodes.size(),
                    queue_nodes.empty() ? "none" : queue_nodes.front(), queue_nodes.empty() ? "none" : queue_nodes.back(),

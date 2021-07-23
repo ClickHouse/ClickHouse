@@ -19,6 +19,8 @@ The following operations with [partitions](../../../engines/table-engines/merget
 -   [UNFREEZE PARTITION](#alter_unfreeze-partition) — Removes a backup of a partition.
 -   [FETCH PARTITION\|PART](#alter_fetch-partition) — Downloads a part or partition from another server.
 -   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
+-   [UPDATE IN PARTITION](#update-in-partition) — Update data inside the partition by condition.
+-   [DELETE IN PARTITION](#delete-in-partition) — Delete data inside the partition by condition.
 
 <!-- -->
 

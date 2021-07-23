@@ -223,6 +223,15 @@ def test_materialize_with_column_comments(started_cluster, started_mysql_8_0, st
     materialize_with_ddl.materialize_with_column_comments_test(clickhouse_node, started_mysql_5_7, "mysql57")
     materialize_with_ddl.materialize_with_column_comments_test(clickhouse_node, started_mysql_8_0, "mysql80")
 
+@pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
+def test_materialize_with_enum(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.materialize_with_enum8_test(clickhouse_node, started_mysql_5_7, "mysql57")
+    materialize_with_ddl.materialize_with_enum16_test(clickhouse_node, started_mysql_5_7, "mysql57")
+    materialize_with_ddl.alter_enum8_to_enum16_test(clickhouse_node, started_mysql_5_7, "mysql57")
+    materialize_with_ddl.materialize_with_enum8_test(clickhouse_node, started_mysql_8_0, "mysql80")
+    materialize_with_ddl.materialize_with_enum16_test(clickhouse_node, started_mysql_8_0, "mysql80")
+    materialize_with_ddl.alter_enum8_to_enum16_test(clickhouse_node, started_mysql_8_0, "mysql80")
+
 
 @pytest.mark.parametrize(('clickhouse_node'), [node_disable_bytes_settings, node_disable_rows_settings])
 def test_mysql_settings(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):

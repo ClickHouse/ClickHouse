@@ -60,7 +60,8 @@ struct ThreadStack
     void * getData() const { return data; }
 
 private:
-    static constexpr size_t size = 16 << 10; /// 16 KiB - not too big but enough to handle error.
+    /// 16 KiB - not too big but enough to handle error.
+    static constexpr size_t size = std::max<size_t>(16 << 10, MINSIGSTKSZ);
     void * data;
 };
 

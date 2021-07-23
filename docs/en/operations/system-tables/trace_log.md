@@ -55,4 +55,3 @@ size:                    5244400
 ```
 
  [Original article](https://clickhouse.tech/docs/en/operations/system-tables/trace_log) <!--hide-->
- 

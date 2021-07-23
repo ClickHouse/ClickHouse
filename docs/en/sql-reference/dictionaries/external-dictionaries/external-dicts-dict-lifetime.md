@@ -57,7 +57,7 @@ In this case, ClickHouse can reload the dictionary earlier if the dictionary con
 When updating the dictionaries, the ClickHouse server applies different logic depending on the type of [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md):
 
 -   For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
--   For MySQL source, the time of modification is checked using a `SHOW TABLE STATUS` query (in case of MySQL 8 you need to disable meta-information caching in MySQL by `set global information_schema_stats_expiry=0`.
+-   For MySQL source, the time of modification is checked using a `SHOW TABLE STATUS` query (in case of MySQL 8 you need to disable meta-information caching in MySQL by `set global information_schema_stats_expiry=0`).
 -   Dictionaries from other sources are updated every time by default.
 
 For other sources (ODBC, PostgreSQL, ClickHouse, etc), you can set up a query that will update the dictionaries only if they really changed, rather than each time. To do this, follow these steps:
@@ -88,13 +88,13 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 
 For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronious and asynchronious updates are supported.
 
-It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to only request data that was changed after previous update. If `update_field` is specified in as part of dictionary source configuration value of previous update time in seconds will be added to data request. Depends of source type Executable, HTTP, MySQL, PostgreSQL, ClickHouse, ODBC different logic will be applied to `update_field` before request data from external source.
+It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to only request data that was changed after the previous update. If `update_field` is specified as part of the dictionary source configuration, value of the previous update time in seconds will be added to the data request. Depends on source type (Executable, HTTP, MySQL, PostgreSQL, ClickHouse, or ODBC) different logic will be applied to `update_field` before request data from an external source.
 
--   If source is HTTP then `update_field` will be added as query parameter with last update time as parameter value.
--   If source is Executable then `update_field` will be added as executable script argument with last update time as argument value.
--   If source is ClickHouse, MySQL, PostgreSQL, ODBC there will be additional part of WHERE, where `update_field` is compared as greater or equal with last update time.
+-   If the source is HTTP then `update_field` will be added as a query parameter with the last update time as the parameter value.
+-   If the source is Executable then `update_field` will be added as an executable script argument with the last update time as the argument value.
+-   If the source is ClickHouse, MySQL, PostgreSQL, ODBC there will be an additional part of `WHERE`, where `update_field` is compared as greater or equal with the last update time.
 
-If `update_field` option is set. Additional option `update_lag` can be set. Value of `update_lag` option is subtracted from previous update time before request updated data.
+If `update_field` option is set, additional option `update_lag` can be set. Value of `update_lag` option is subtracted from previous update time before request updated data.
 
 Example of settings:
 

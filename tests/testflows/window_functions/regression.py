@@ -41,6 +41,8 @@ xfails = {
         [(Fail, "not supported, https://github.com/ClickHouse/ClickHouse/issues/19857")],
     "tests/:/misc/window functions in subquery":
         [(Fail, "not supported, https://github.com/ClickHouse/ClickHouse/issues/19857")],
+    "tests/:/misc/in view":
+        [(Fail, "bug, https://github.com/ClickHouse/ClickHouse/issues/26001")],
     "tests/:/frame clause/range frame/order by decimal":
         [(Fail, "Exception: The RANGE OFFSET frame for 'DB::ColumnDecimal<DB::Decimal<long> >' ORDER BY column is not implemented")],
     "tests/:/frame clause/range frame/with nulls":

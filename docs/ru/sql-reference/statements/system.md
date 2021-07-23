@@ -5,14 +5,14 @@ toc_title: SYSTEM
 
 # Запросы SYSTEM {#query-language-system}
 
--   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries) 
+-   [RELOAD EMBEDDED DICTIONARIES](#query_language-system-reload-emdedded-dictionaries)
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
 -   [RELOAD MODELS](#query_language-system-reload-models)
 -   [RELOAD MODEL](#query_language-system-reload-model)
 -   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
 -   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
--   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache) 
+-   [DROP UNCOMPRESSED CACHE](#query_language-system-drop-uncompressed-cache)
 -   [DROP COMPILED EXPRESSION CACHE](#query_language-system-drop-compiled-expression-cache)
 -   [DROP REPLICA](#query_language-system-drop-replica)
 -   [FLUSH LOGS](#query_language-system-flush_logs)
@@ -24,10 +24,10 @@ toc_title: SYSTEM
 -   [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
 -   [STOP MERGES](#query_language-system-stop-merges)
 -   [START MERGES](#query_language-system-start-merges)
--   [STOP TTL MERGES](#query_language-stop-ttl-merges) 
--   [START TTL MERGES](#query_language-start-ttl-merges) 
--   [STOP MOVES](#query_language-stop-moves) 
--   [START MOVES](#query_language-start-moves) 
+-   [STOP TTL MERGES](#query_language-stop-ttl-merges)
+-   [START TTL MERGES](#query_language-start-ttl-merges)
+-   [STOP MOVES](#query_language-stop-moves)
+-   [START MOVES](#query_language-start-moves)
 -   [STOP FETCHES](#query_language-system-stop-fetches)
 -   [START FETCHES](#query_language-system-start-fetches)
 -   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
@@ -36,13 +36,13 @@ toc_title: SYSTEM
 -   [START REPLICATION QUEUES](#query_language-system-start-replication-queues)
 -   [SYNC REPLICA](#query_language-system-sync-replica)
 -   [RESTART REPLICA](#query_language-system-restart-replica)
--   [RESTART REPLICAS](#query_language-system-restart-replicas) 
+-   [RESTART REPLICAS](#query_language-system-restart-replicas)
 
-## RELOAD EMBEDDED DICTIONARIES] {#query_language-system-reload-emdedded-dictionaries} 
+## RELOAD EMBEDDED DICTIONARIES] {#query_language-system-reload-emdedded-dictionaries}
 Перегружает все [Встроенные словари](../dictionaries/internal-dicts.md).
-По умолчанию встроенные словари выключены. 
+По умолчанию встроенные словари выключены.
 Всегда возвращает `Ok.`, вне зависимости от результата обновления встроенных словарей.
-   
+
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
 Перегружает все словари, которые были успешно загружены до этого.
@@ -115,7 +115,7 @@ SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
 
 ## DROP COMPILED EXPRESSION CACHE {#query_language-system-drop-compiled-expression-cache}
 Сбрасывает кеш скомпилированных выражений. Используется при разработке ClickHouse и тестах производительности.
-Компилированные выражения используются когда включена настройка уровня запрос/пользователь/профиль [compile](../../operations/settings/settings.md#compile)
+Cкомпилированные выражения используются когда включена настройка уровня запрос/пользователь/профиль [compile-expressions](../../operations/settings/settings.md#compile-expressions)
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
@@ -194,7 +194,7 @@ SYSTEM START MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name
 SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
 ```
 
-### START TTL MERGES {#query_language-start-ttl-merges} 
+### START TTL MERGES {#query_language-start-ttl-merges}
 
 Запускает фоновые процессы удаления старых данных основанные на [выражениях TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) для таблиц семейства MergeTree:
 Возвращает `Ok.` даже если указана несуществующая таблица или таблица имеет тип отличный от MergeTree. Возвращает ошибку если указана не существующая база данных:
@@ -203,7 +203,7 @@ SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
 SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
 ```
 
-### STOP MOVES {#query_language-stop-moves} 
+### STOP MOVES {#query_language-stop-moves}
 
 Позволяет остановить фоновые процессы переноса данных основанные [табличных выражениях TTL с использованием TO VOLUME или TO DISK](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) for tables in the MergeTree family:
 Возвращает `Ok.` даже если указана несуществующая таблица или таблица имеет тип отличный от MergeTree. Возвращает ошибку если указана не существующая база данных:
@@ -212,7 +212,7 @@ SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
 SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 ```
 
-### START MOVES {#query_language-start-moves} 
+### START MOVES {#query_language-start-moves}
 
 Запускает фоновые процессы переноса данных основанные [табличных выражениях TTL с использованием TO VOLUME или TO DISK](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) for tables in the MergeTree family:
 Возвращает `Ok.` даже если указана несуществующая таблица или таблица имеет тип отличный от MergeTree. Возвращает ошибку если указана не существующая база данных:
@@ -261,7 +261,7 @@ SYSTEM START REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 
 ### STOP REPLICATION QUEUES {#query_language-system-stop-replication-queues}
 
-Останавливает фоновые процессы разбора заданий из очереди репликации которая хранится в Zookeeper для таблиц семейства `ReplicatedMergeTree`. Возможные типы заданий - merges, fetches, mutation, DDL запросы с ON CLUSTER: 
+Останавливает фоновые процессы разбора заданий из очереди репликации которая хранится в Zookeeper для таблиц семейства `ReplicatedMergeTree`. Возможные типы заданий - merges, fetches, mutation, DDL запросы с ON CLUSTER:
 
 ``` sql
 SYSTEM STOP REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
@@ -269,7 +269,7 @@ SYSTEM STOP REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 
 ### START REPLICATION QUEUES {#query_language-system-start-replication-queues}
 
-Запускает фоновые процессы разбора заданий из очереди репликации которая хранится в Zookeeper для таблиц семейства `ReplicatedMergeTree`. Возможные типы заданий - merges, fetches, mutation, DDL запросы с ON CLUSTER: 
+Запускает фоновые процессы разбора заданий из очереди репликации которая хранится в Zookeeper для таблиц семейства `ReplicatedMergeTree`. Возможные типы заданий - merges, fetches, mutation, DDL запросы с ON CLUSTER:
 
 ``` sql
 SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
@@ -277,7 +277,7 @@ SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 
 ### SYNC REPLICA {#query_language-system-sync-replica}
 
-Ждет когда таблица семейства `ReplicatedMergeTree` будет синхронизирована с другими репликами в кластере, будет работать до достижения `receive_timeout`, если синхронизация для таблицы отключена в настоящий момент времени:  
+Ждет когда таблица семейства `ReplicatedMergeTree` будет синхронизирована с другими репликами в кластере, будет работать до достижения `receive_timeout`, если синхронизация для таблицы отключена в настоящий момент времени:
 
 ``` sql
 SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name

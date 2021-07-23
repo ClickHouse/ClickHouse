@@ -348,7 +348,7 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
 Включает или отключает инициализацию [значениями по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) ячеек с [NULL](../../sql-reference/syntax.md#null-literal), если тип данных столбца не позволяет [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
-Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки. 
+Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
 Эта настройка используется для запросов [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) для текстовых входных форматов.
 
@@ -361,7 +361,7 @@ INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
 
 ## insert_null_as_default {#insert_null_as_default}
 
-Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable). 
+Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
 Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
 Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
@@ -489,6 +489,23 @@ ClickHouse может парсить только базовый формат `Y
 -   `Пустая строка` — если `ALL` или `ANY` не указаны в запросе, то ClickHouse генерирует исключение.
 
 Значение по умолчанию: `ALL`.
+
+## join_algorithm {#settings-join_algorithm}
+
+Определяет алгоритм выполнения запроса [JOIN](../../sql-reference/statements/select/join.md).
+
+Возможные значения:
+
+- `hash` — используется [алгоритм соединения хешированием](https://ru.wikipedia.org/wiki/Алгоритм_соединения_хешированием).
+- `partial_merge` — используется [алгоритм соединения слиянием сортированных списков](https://ru.wikipedia.org/wiki/Алгоритм_соединения_слиянием_сортированных_списков).
+- `prefer_partial_merge` — используется алгоритм соединения слиянием сортированных списков, когда это возможно.
+- `auto` — сервер ClickHouse пытается на лету заменить алгоритм `hash` на `merge`, чтобы избежать переполнения памяти.
+
+Значение по умолчанию: `hash`.
+
+При использовании алгоритма `hash` правая часть `JOIN` загружается в оперативную память. 
+
+При использовании алгоритма `partial_merge` сервер сортирует данные и сбрасывает их на диск. Работа алгоритма `merge` в ClickHouse немного отличается от классической реализации. Сначала ClickHouse сортирует правую таблицу по блокам на основе [ключей соединения](../../sql-reference/statements/select/join.md#select-join) и для отсортированных блоков строит индексы min-max. Затем он сортирует куски левой таблицы на основе ключей соединения и объединяет их с правой таблицей операцией `JOIN`. Созданные min-max индексы используются для пропуска тех блоков из правой таблицы, которые не участвуют в данной операции `JOIN`.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
@@ -1181,22 +1198,22 @@ load_balancing = round_robin
 !!! warning "Предупреждение"
     Параллельное выполнение запроса может привести к неверному результату, если в запросе есть объединение или подзапросы и при этом таблицы не удовлетворяют определенным требованиям. Подробности смотрите в разделе [Распределенные подзапросы и max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries).
 
+## compile_expressions {#compile-expressions}
 
-## compile {#compile}
+Включает или выключает компиляцию часто используемых функций и операторов. Компиляция производится в нативный код платформы с помощью LLVM во время выполнения.
 
-Включить компиляцию запросов. По умолчанию - 0 (выключено).
+Возможные значения:
 
-Компиляция предусмотрена только для части конвейера обработки запроса - для первой стадии агрегации (GROUP BY).
-В случае, если эта часть конвейера была скомпилирована, запрос может работать быстрее, за счёт разворачивания коротких циклов и инлайнинга вызовов агрегатных функций. Максимальный прирост производительности (до четырёх раз в редких случаях) достигается на запросах с несколькими простыми агрегатными функциями. Как правило, прирост производительности незначителен. В очень редких случаях возможно замедление выполнения запроса.
+- 0 — компиляция выключена.
+- 1 — компиляция включена.
 
-## min_count_to_compile {#min-count-to-compile}
+Значение по умолчанию: `1`.
 
-После скольких раз, когда скомпилированный кусок кода мог пригодиться, выполнить его компиляцию. По умолчанию - 3.
-Для тестирования можно установить значение 0: компиляция выполняется синхронно, и запрос ожидает окончания процесса компиляции перед продолжением выполнения. Во всех остальных случаях используйте значения, начинающиеся с 1. Как правило, компиляция занимает по времени около 5-10 секунд.
-В случае, если значение равно 1 или больше, компиляция выполняется асинхронно, в отдельном потоке. При готовности результата, он сразу же будет использован, в том числе, уже выполняющимися в данный момент запросами.
+## min_count_to_compile_expression {#min-count-to-compile-expression}
 
-Скомпилированный код требуется для каждого разного сочетания используемых в запросе агрегатных функций и вида ключей в GROUP BY.
-Результаты компиляции сохраняются в директории build в виде .so файлов. Количество результатов компиляции не ограничено, так как они не занимают много места. При перезапуске сервера, старые результаты будут использованы, за исключением случая обновления сервера - тогда старые результаты удаляются.
+Минимальное количество выполнений одного и того же выражения до его компиляции.
+
+Значение по умолчанию: `3`.
 
 ## input_format_skip_unknown_fields {#input-format-skip-unknown-fields}
 
@@ -1204,8 +1221,15 @@ load_balancing = round_robin
 Работает для форматов JSONEachRow и TSKV.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
+Управляет кавычками при выводе 64-битных или более [целых чисел](../../sql-reference/data-types/int-uint.md) (например, `UInt64` или `Int128`) в формате [JSON](../../interfaces/formats.md#json).
+По умолчанию такие числа заключаются в кавычки. Это поведение соответствует большинству реализаций JavaScript.
 
-Если значение истинно, то при использовании JSON\* форматов UInt64 и Int64 числа выводятся в кавычках (из соображений совместимости с большинством реализаций JavaScript), иначе - без кавычек.
+Возможные значения:
+
+-   0 — числа выводятся без кавычек.
+-   1 — числа выводятся в кавычках.
+
+Значение по умолчанию: 1.
 
 ## output_format_json_quote_denormals {#settings-output_format_json_quote_denormals}
 
@@ -1606,6 +1630,28 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0.
 
+## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
+
+Включает или отключает оптимизацию путем преобразования некоторых функций к чтению подстолбцов, таким образом уменьшая объем данных для чтения.
+
+Могут быть преобразованы следующие функции:
+
+-   [length](../../sql-reference/functions/array-functions.md#array_functions-length) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [empty](../../sql-reference/functions/array-functions.md#function-empty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size).
+-   [isNull](../../sql-reference/operators/index.md#operator-is-null) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [isNotNull](../../sql-reference/operators/index.md#is-not-null) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [count](../../sql-reference/aggregate-functions/reference/count.md) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
+-   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) к чтению подстолбца [keys](../../sql-reference/data-types/map.md#map-subcolumns).
+-   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) к чтению подстолбца [values](../../sql-reference/data-types/map.md#map-subcolumns).
+
+Возможные значения:
+
+-   0 — оптимизация отключена.
+-   1 — оптимизация включена.
+
+Значение по умолчанию: `0`.
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Тип: секунды
@@ -1792,7 +1838,7 @@ ClickHouse генерирует исключение
 
 Тип: unsigned int
 
-озможные значения: 32 (32 байта) - 1073741824 (1 GiB)
+Возможные значения: 32 (32 байта) - 1073741824 (1 GiB)
 
 Значение по умолчанию: 32768 (32 KiB)
 
@@ -1805,6 +1851,16 @@ ClickHouse генерирует исключение
 -   Положительное целое число.
 
 Значение по умолчанию: 16.
+
+## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
+
+Время ожидания для слияния выборки, если ни один кусок не выбран. Снижение времени ожидания приводит к частому выбору задач в пуле `background_schedule_pool` и увеличению количества запросов к Zookeeper в крупных кластерах.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `5000`.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
@@ -2721,7 +2777,7 @@ SELECT * FROM test2;
 - 0 — запрос `INSERT` добавляет данные в конец файла после существующих.
 - 1 — `INSERT` удаляет имеющиеся в файле данные и замещает их новыми.
 
-Значение по умолчанию: `0`. 
+Значение по умолчанию: `0`.
 
 ## allow_experimental_geo_types {#allow-experimental-geo-types}
 
@@ -2735,7 +2791,7 @@ SELECT * FROM test2;
 
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
-Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`. 
+Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`.
 
 Возможные значения:
 
@@ -2813,7 +2869,7 @@ SELECT * FROM test2;
 
 **Пример**
 
-Какие изменения привносит включение и выключение настройки: 
+Какие изменения привносит включение и выключение настройки:
 
 Запрос:
 
@@ -2957,6 +3013,53 @@ SELECT
 FROM fuse_tbl
 ```
 
+## allow_experimental_database_replicated {#allow_experimental_database_replicated}
+
+Позволяет создавать базы данных с движком [Replicated](../../engines/database-engines/replicated.md).
+
+Возможные значения:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Значение по умолчанию: `0`.
+
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
+
+Устанавливает, как долго начальный DDL-запрос должен ждать, пока реплицированная база данных прецессирует предыдущие записи очереди DDL в секундах.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — Не ограничено.
+
+Значение по умолчанию: `300`.
+
+## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
+
+Устанавливает тайм-аут для ответов на DDL-запросы от всех хостов в кластере. Если DDL-запрос не был выполнен на всех хостах, ответ будет содержать ошибку тайм-аута, и запрос будет выполнен в асинхронном режиме.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — Асинхронный режим.
+-   Отрицательное число — бесконечный тайм-аут.
+
+Значение по умолчанию: `180`.
+
+## distributed_ddl_output_mode {#distributed_ddl_output_mode}
+
+Задает формат результата распределенного DDL-запроса.
+
+Возможные значения:
+
+-   `throw` — возвращает набор результатов со статусом выполнения запросов для всех хостов, где завершен запрос. Если запрос не выполнился на некоторых хостах, то будет выброшено исключение. Если запрос еще не закончен на некоторых хостах и таймаут [distributed_ddl_task_timeout](#distributed_ddl_task_timeout) превышен, то выбрасывается исключение `TIMEOUT_EXCEEDED`.
+-   `none` — идентично `throw`, но распределенный DDL-запрос не возвращает набор результатов.
+-   `null_status_on_timeout` — возвращает `NULL` в качестве статуса выполнения в некоторых строках набора результатов вместо выбрасывания `TIMEOUT_EXCEEDED`, если запрос не закончен на соответствующих хостах.
+-   `never_throw` — не выбрасывает исключение и `TIMEOUT_EXCEEDED`, если запрос не удался на некоторых хостах.
+
+Значение по умолчанию: `throw`.
+
 ## flatten_nested {#flatten-nested}
 
 Устанавливает формат данных у [вложенных](../../sql-reference/data-types/nested-data-structures/nested.md) столбцов.
@@ -3023,4 +3126,28 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
+## external_table_functions_use_nulls {#external-table-functions-use-nulls}
+
+Определяет, как табличные функции [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) и [odbc](../../sql-reference/table-functions/odbc.md)] используют Nullable столбцы.
+
+Возможные значения:
+
+-   0 — табличная функция явно использует Nullable столбцы.
+-   1 — табличная функция неявно использует Nullable столбцы.
+
+Значение по умолчанию: `1`.
+
+**Использование**
+
+Если установлено значение `0`, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.
+
+## output_format_arrow_low_cardinality_as_dictionary {#output-format-arrow-low-cardinality-as-dictionary}
+
+Позволяет конвертировать тип [LowCardinality](../../sql-reference/data-types/lowcardinality.md) в тип `DICTIONARY` формата [Arrow](../../interfaces/formats.md#data-format-arrow) для запросов `SELECT`.
+
+Возможные значения:
+
+-   0 — тип `LowCardinality` не конвертируется в тип `DICTIONARY`.
+-   1 — тип `LowCardinality` конвертируется в тип `DICTIONARY`.
+
+Значение по умолчанию: `0`.

@@ -44,6 +44,7 @@ public:
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
+    bool group_by_with_constant_keys = false;
     bool limit_with_ties = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
@@ -91,6 +92,8 @@ public:
     void replaceDatabaseAndTable(const StorageID & table_id);
     void addTableFunction(ASTPtr & table_function_ptr);
     void updateTreeHashImpl(SipHash & hash_state) const override;
+
+    void setFinal();
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
