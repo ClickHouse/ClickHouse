@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
+#include <Storages/MutationCommands.h>
 
 
 namespace DB
@@ -22,8 +23,8 @@ public:
     MutateTask
     (
         FutureMergedMutatedPartPtr future_part_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const MutationCommands & commands_,
+        StorageMetadataPtr metadata_snapshot_,
+        MutationCommands commands_,
         MergeListEntry & mutate_entry_,
         time_t time_of_mutation_,
         ContextPtr context_,
@@ -123,8 +124,8 @@ private:
     std::promise<MergeTreeData::MutableDataPartPtr> promise;
 
     FutureMergedMutatedPartPtr future_part;
-    const StorageMetadataPtr & metadata_snapshot;
-    const MutationCommands & commands;
+    StorageMetadataPtr metadata_snapshot;
+    MutationCommands commands;
     MergeListEntry & mutate_entry;
     time_t time_of_mutation;
     ContextPtr context;

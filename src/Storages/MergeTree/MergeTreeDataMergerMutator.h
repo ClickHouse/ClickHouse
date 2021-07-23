@@ -106,8 +106,8 @@ public:
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MutateTaskPtr mutatePartToTemporaryPart(
         FutureMergedMutatedPartPtr future_part,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MutationCommands & commands,
+        StorageMetadataPtr metadata_snapshot,
+        MutationCommands commands,
         MergeListEntry & merge_entry,
         time_t time_of_mutation,
         ContextPtr context,

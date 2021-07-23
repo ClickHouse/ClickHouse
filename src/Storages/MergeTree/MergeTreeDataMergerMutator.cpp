@@ -457,8 +457,8 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
 
 MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     FutureMergedMutatedPartPtr future_part,
-    const StorageMetadataPtr & metadata_snapshot,
-    const MutationCommands & commands,
+    StorageMetadataPtr metadata_snapshot,
+    MutationCommands commands,
     MergeListEntry & merge_entry,
     time_t time_of_mutation,
     ContextPtr context,
