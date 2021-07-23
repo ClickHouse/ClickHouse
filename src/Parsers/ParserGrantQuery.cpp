@@ -293,41 +293,14 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 
     bool replace_access = false;
+    bool replace_role = false;
     if (is_replace)
     {
         if (roles)
-        {   // assigning role mode
-             if (!roles->empty() && roles->none_role_parsed)
-                throw Exception("In assigning role WITH REPLACE OPTION sql, 'NONE' can only be used alone to rovoke all roles", ErrorCodes::SYNTAX_ERROR);
-        }
+            replace_role = true;
         else
-        {
-            // granting privilege mode
             replace_access = true;
-            bool new_access = false;
-            bool none_on_all = false;
-            for (auto & element : elements)
-            {
-                if (element.access_flags.isEmpty())
-                {
-                    if (element.any_database)
-                        none_on_all = true;
-                    else
-                        throw Exception("In granting privilege WITH REPLACE OPTION sql, 'NONE ON db.*' should be 'NONE ON *.*', and can only be used alone to drop all privileges on any database", ErrorCodes::SYNTAX_ERROR);
-                }
-                else
-                {
-                    new_access = true;
-                }
-            }
-
-            if (new_access && none_on_all)
-                throw Exception("In granting privilege WITH REPLACE OPTION sql, 'NONE ON db.*' should be 'NONE ON *.*', and can only be used alone to drop all privileges on any database", ErrorCodes::SYNTAX_ERROR);
-        }
-    }
-
-    if (is_replace && !replace_access && roles && !roles->empty() && roles->none_role_parsed)
-        throw Exception("In REPLACE GRANT assigning role sql, 'NONE' can only be used alone to rovoke all roles", ErrorCodes::SYNTAX_ERROR);
+    }    
 
     if (!is_revoke)
         eraseNonGrantable(elements);
@@ -343,7 +316,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->grantees = std::move(grantees);
     query->admin_option = admin_option;
     query->replace_access = replace_access;
-    query->replace_granted_roles = (is_replace && !replace_access);
+    query->replace_granted_roles = replace_role;
 
     return true;
 }
