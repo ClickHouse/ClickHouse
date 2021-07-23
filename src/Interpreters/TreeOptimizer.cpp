@@ -593,20 +593,20 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & me
 ///    rewrite to : SELECT quantiles(0.5, 0.9, 0.95)(x)[1], quantiles(0.5, 0.9, 0.95)(x)[2], quantiles(0.5, 0.9, 0.95)(x)[3] FROM ...
 void fuseCandidate(std::unordered_map<String, GatherFunctionQuantileData::FuseQuantileAggregatesData> & fuse_quantile)
 {
-    for (auto candidate : fuse_quantile)
+    for (const auto & candidate : fuse_quantile)
     {
         String func_name = candidate.first;
         GatherFunctionQuantileData::FuseQuantileAggregatesData args_to_functions = candidate.second;
 
         // Try to fuse multiply quantilexxx Function to one
-        for (auto it : args_to_functions.arg_map_function)
+        for (const auto & it : args_to_functions.arg_map_function)
         {
             std::vector<ASTFunction *> functions = it.second;
             size_t count = functions.size();
             if (count > 1)
             {
                 auto param_exp_list = std::make_shared<ASTExpressionList>();
-                for (auto func : functions)
+                for (auto * func : functions)
                 {
                     const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
                     assert(parameters.size() == 1);
@@ -617,7 +617,7 @@ void fuseCandidate(std::unordered_map<String, GatherFunctionQuantileData::FuseQu
                 auto func_base = functions[0]->clone();
 
                 size_t idx = 0;
-                for (auto func : functions)
+                for (auto * func : functions)
                 {
                     func->name = "arrayElement";
                     auto func_exp_list = std::make_shared<ASTExpressionList>();
