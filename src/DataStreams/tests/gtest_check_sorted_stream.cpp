@@ -106,7 +106,7 @@ TEST(CheckSortedBlockInputStream, CheckGoodCase)
     EXPECT_NO_THROW(executor.pull(chunk));
     EXPECT_NO_THROW(executor.pull(chunk));
     EXPECT_NO_THROW(executor.pull(chunk));
-    EXPECT_TRUE(executor.pull(chunk));
+    EXPECT_FALSE(executor.pull(chunk));
 }
 
 TEST(CheckSortedBlockInputStream, CheckBadLastRow)
