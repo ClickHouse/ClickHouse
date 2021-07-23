@@ -129,6 +129,9 @@ void Block::insert(size_t position, ColumnWithTypeAndName elem)
         throw Exception("Position out of bound in Block::insert(), max position = "
         + toString(data.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
 
+    if (elem.name.empty())
+        throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+
     for (auto & name_pos : index_by_name)
         if (name_pos.second >= position)
             ++name_pos.second;
@@ -144,6 +147,9 @@ void Block::insert(size_t position, ColumnWithTypeAndName elem)
 
 void Block::insert(ColumnWithTypeAndName elem)
 {
+    if (elem.name.empty())
+        throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+
     auto [it, inserted] = index_by_name.emplace(elem.name, data.size());
     if (!inserted)
         checkColumnStructure<void>(elem, data[it->second],
@@ -155,6 +161,9 @@ void Block::insert(ColumnWithTypeAndName elem)
 
 void Block::insertUnique(ColumnWithTypeAndName elem)
 {
+    if (elem.name.empty())
+        throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+
     if (index_by_name.end() == index_by_name.find(elem.name))
         insert(std::move(elem));
 }
