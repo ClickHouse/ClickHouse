@@ -7,6 +7,7 @@
 #include <Common/SettingsChanges.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -927,7 +928,7 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    auto out_stream = storage->write(ASTPtr(), metadata_snapshot, query_context);
+                    auto out_stream = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
                     ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
                     String format = external_table.format();
                     if (format.empty())

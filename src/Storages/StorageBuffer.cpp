@@ -528,6 +528,8 @@ public:
         metadata_snapshot->check(getPort().getHeader(), true);
     }
 
+    String getName() const override { return "BufferSink"; }
+
     void consume(Chunk chunk) override
     {
         size_t rows = chunk.getNumRows();
@@ -643,7 +645,7 @@ private:
 
 SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<BufferSource>(*this, metadata_snapshot);
+    return std::make_shared<BufferSink>(*this, metadata_snapshot);
 }
 
 

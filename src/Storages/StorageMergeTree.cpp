@@ -223,11 +223,11 @@ std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
     return getTotalActiveSizeInBytes();
 }
 
-BlockOutputStreamPtr
+SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     const auto & settings = local_context->getSettingsRef();
-    return std::make_shared<MergeTreeBlockOutputStream>(
+    return std::make_shared<MergeTreeSink>(
         *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
 }
 

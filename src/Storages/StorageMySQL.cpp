@@ -18,6 +18,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 
@@ -108,17 +109,18 @@ Pipe StorageMySQL::read(
 }
 
 
-class StorageMySQLBlockOutputStream : public IBlockOutputStream
+class StorageMySQLSink : public SinkToStorage
 {
 public:
-    explicit StorageMySQLBlockOutputStream(
+    explicit StorageMySQLSink(
         const StorageMySQL & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
-        : storage{storage_}
+        : SinkToStorage(metadata_snapshot->getSampleBlock())
+        , storage{storage_}
         , metadata_snapshot{metadata_snapshot_}
         , remote_database_name{remote_database_name_}
         , remote_table_name{remote_table_name_}
@@ -127,10 +129,11 @@ public:
     {
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    String getName() const override { return "StorageMySQLSink"; }
 
-    void write(const Block & block) override
+    void consume(Chunk chunk) override
     {
+        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
         auto blocks = splitBlocks(block, max_batch_rows);
         mysqlxx::Transaction trans(entry);
         try
@@ -221,9 +224,9 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    return std::make_shared<StorageMySQLBlockOutputStream>(
+    return std::make_shared<StorageMySQLSink>(
         *this,
         metadata_snapshot,
         remote_database_name,

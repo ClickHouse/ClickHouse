@@ -94,6 +94,8 @@ public:
     {
     }
 
+    String getName() const override { return "SQLiteSink"; }
+
     void consume(Chunk chunk) override
     {
         auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
