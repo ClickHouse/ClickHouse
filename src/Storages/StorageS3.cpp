@@ -43,6 +43,7 @@
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>
 
+#include <common/find_symbols.h>
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
 #include <re2/re2.h>
@@ -396,7 +397,7 @@ public:
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
             auto value = key_column->getDataAt(row);
-            validateParitionKey(value);
+            validatePartitionKey(value);
             auto [it, inserted] = sub_chunks_indices.emplace(value, sub_chunks_indices.size());
             selector.push_back(it->second);
         }
@@ -476,24 +477,32 @@ private:
         return sinks[partition_id];
     }
 
-    static void validateParitionKey(const StringRef & str)
+    static void validatePartitionKey(const StringRef & str)
     {
-        if (str.size == 0)
-            throw DB::Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Illegal empty partition key");
+        const char * end = str.data + str.size;
 
-        static constexpr std::array<char, 8> valid_chars = {'/', '.', '!', '(', ')', '\'', '_', '-'};
-        for (const char * p = str.data; static_cast<size_t>(p - str.data) < str.size; ++p)
+        const char * first_symbol = find_first_symbols<
+                '\x00', '\x01', '\x02', '\x03', '\x04', '\x05', '\x06', '\x07',
+                '\x08', '\x09', '\x0A', '\x0B', '\x0C', '\x0D', '\x0E', '\x0F'>(str.data, end);
+        if (first_symbol == end)
         {
-            bool is_valid = isWordCharASCII(*p) || std::any_of(valid_chars.begin(), valid_chars.end(), [p](char v){ return v == *p; });
-            if (unlikely(!is_valid))
+            first_symbol = find_first_symbols<
+                    '\x10', '\x11', '\x12', '\x13', '\x14', '\x15', '\x16', '\x17',
+                    '\x18', '\x19', '\x1A', '\x1B', '\x1C', '\x1D', '\x1E', '\x1F'
+                >(str.data, end);
+            if (first_symbol == end)
             {
-                /// need to convert to uint32 because uint8 can't be passed to format due to "mixing character types is disallowed"
-                UInt32 invalid_char_byte = static_cast<UInt32>(static_cast<UInt8>(*p));
-                throw DB::Exception(
-                    ErrorCodes::CANNOT_PARSE_TEXT,
-                    "Illegal character '\\x{0:02x}' in partition key. Allowed symbols: [a-zA-Z0-9{1}]", invalid_char_byte, fmt::join(valid_chars, ""));
+                first_symbol = find_first_symbols<'{', '}', '*', '?'>(str.data, end);
+                if (first_symbol == end)
+                {
+                    return;
+                }
             }
         }
+
+        /// Need to convert to UInt32 because UInt8 can't be passed to format due to "mixing character types is disallowed".
+        UInt32 invalid_char_byte = static_cast<UInt32>(static_cast<UInt8>(*first_symbol));
+        throw DB::Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Illegal character '\\x{0:02x}' in partition key.", invalid_char_byte);
     }
 };
 
