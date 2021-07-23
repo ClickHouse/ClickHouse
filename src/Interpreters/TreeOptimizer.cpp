@@ -40,7 +40,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_QUERY_PARAMETER;
 }
 
 namespace
@@ -617,16 +616,17 @@ void fuseCandidate(std::unordered_map<String, GatherFunctionQuantileData::FuseQu
                 functions[0]->name = quantile_fuse_name_mapping.find(func_name)->second;
                 auto func_base = functions[0]->clone();
 
-                for (size_t i = 0; i < count; ++i)
+                size_t idx = 0;
+                for (auto func : functions)
                 {
-                    functions[i]->name = "arrayElement";
+                    func->name = "arrayElement";
                     auto func_exp_list = std::make_shared<ASTExpressionList>();
                     func_exp_list->children.push_back(func_base);
-                    func_exp_list->children.push_back(std::make_shared<ASTLiteral>(i + 1));
-                    functions[i]->children.clear();
-                    functions[i]->parameters = nullptr;
-                    functions[i]->arguments = func_exp_list;
-                    functions[i]->children.push_back(func_exp_list);
+                    func_exp_list->children.push_back(std::make_shared<ASTLiteral>(++idx));
+                    func->children.clear();
+                    func->parameters = nullptr;
+                    func->arguments = func_exp_list;
+                    func->children.push_back(func_exp_list);
                 }
             }
         }
