@@ -213,7 +213,7 @@ namespace
 
             Disjunction result;
 
-            auto add_dnf = [&](const auto &dnf)
+            auto add_dnf = [&](const auto & dnf)
             {
                 if (dnf.size() > limit)
                 {
