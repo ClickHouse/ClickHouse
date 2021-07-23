@@ -567,24 +567,30 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataP
     if (names_of_objects.empty())
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 
-    auto columns_in_tables = getExtendedColumnsOfRemoteTables(*getCluster(), StorageID{remote_database, remote_table}, getContext());
-    assert(!columns_in_tables.empty());
+    auto snapshot_data = std::make_unique<SnapshotData>();
+    snapshot_data->objects_by_shard = getExtendedObjectsOfRemoteTables(
+        *getCluster(),
+        StorageID{remote_database, remote_table},
+        names_of_objects,
+        getContext());
+
+    assert(!snapshot_data->objects_by_shard.empty());
 
     std::unordered_map<String, DataTypes> types_in_tables;
-    for (const auto & columns : columns_in_tables)
+    for (const auto & [_, columns] : snapshot_data->objects_by_shard)
     {
-        for (const auto & [name, type] : columns)
+        for (const auto & column : columns)
         {
-            if (names_of_objects.count(name))
-                types_in_tables[name].push_back(type);
+            assert(names_of_objects.count(column.name));
+            types_in_tables[column.name].push_back(column.type);
         }
     }
 
-    StorageSnapshot::NameToTypeMap object_types;
+    ColumnsDescription object_columns;
     for (const auto & [name, types] : types_in_tables)
-        object_types.emplace(name, getLeastCommonTypeForObject(types));
+        object_columns.add(ColumnDescription(name, getLeastCommonTypeForObject(types)));
 
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_types);
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
 }
 
 Pipe StorageDistributed::read(
@@ -638,9 +644,12 @@ void StorageDistributed::read(
     if (!remote_table_function_ptr)
         main_table = StorageID{remote_database, remote_table};
 
+    const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
     ClusterProxy::SelectStreamFactory select_stream_factory =
         ClusterProxy::SelectStreamFactory(
             header,
+            snapshot_data.objects_by_shard,
+            storage_snapshot,
             processed_stage,
             has_virtual_shard_num_column);
 
@@ -1399,3 +1408,4 @@ void registerStorageDistributed(StorageFactory & factory)
 }
 
 }
+

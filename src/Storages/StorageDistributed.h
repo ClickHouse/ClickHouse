@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/getStructureOfRemoteTable.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -55,6 +56,11 @@ public:
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool isRemote() const override { return true; }
+
+    struct SnapshotData : public StorageSnapshot::Data
+    {
+        ColumnsDescriptionByShardNum objects_by_shard;
+    };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const override;
 

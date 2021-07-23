@@ -133,8 +133,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
     const auto & settings = context->getSettingsRef();
-    const auto & parts = storage_snapshot->parts;
     const auto & metadata_for_reading = storage_snapshot->getMetadataForQuery();
+
+    const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+    const auto & parts = snapshot_data.parts;
 
     if (!query_info.projection)
     {

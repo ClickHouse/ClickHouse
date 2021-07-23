@@ -34,3 +34,11 @@ def test_distributed_type_object(started_cluster):
 
     expected = TSV("10\n20\nstr1\n")
     assert TSV(node1.query("SELECT data.k1 FROM dist_table ORDER BY id")) == expected
+
+    node1.query('INSERT INTO local_table FORMAT JSONEachRow {"id": 4, "data": {"k2": 30}}')
+
+    expected = TSV("10\t0\n20\t0\nstr1\t0\n\t30")
+    assert TSV(node1.query("SELECT data.k1, data.k2 FROM dist_table ORDER BY id")) == expected
+
+    expected = TSV("120\n")
+    assert TSV(node1.query("SELECT sum(data.k2 * id) FROM dist_table SETTINGS optimize_arithmetic_operations_in_aggregate_functions = 0")) == expected

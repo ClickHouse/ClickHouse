@@ -315,6 +315,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     }
 
     MergeTreeReadTaskColumns result;
+    NamesAndTypesList all_columns;
 
     if (check_columns)
     {
@@ -329,7 +330,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     }
 
     result.should_reorder = should_reorder;
-
     return result;
 }
 

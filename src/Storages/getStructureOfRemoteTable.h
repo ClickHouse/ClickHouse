@@ -20,9 +20,13 @@ ColumnsDescription getStructureOfRemoteTable(
     ContextPtr context,
     const ASTPtr & table_func_ptr = nullptr);
 
-std::vector<NamesAndTypesList> getExtendedColumnsOfRemoteTables(
+
+using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
+
+ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     const Cluster & cluster,
     const StorageID & remote_table_id,
+    const NameSet & names_of_objects,
     ContextPtr context);
 
 }
