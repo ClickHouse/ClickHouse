@@ -23,12 +23,63 @@ namespace DB
 class LocalServer : public ClientBase, public Loggers
 {
 public:
-    LocalServer();
+    LocalServer() = default;
+
+    void initialize(Poco::Util::Application & self) override;
 
     ~LocalServer() override
     {
         if (global_context)
             global_context->shutdown(); /// required for properly exception handling
+    }
+
+protected:
+    void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &) override;
+
+    void addOptions(OptionsDescription & options_description) override;
+
+    void processOptions(const OptionsDescription & options_description,
+                        const CommandLineOptions & options,
+                        const std::vector<Arguments> &) override;
+
+    void processConfig() override;
+
+    int mainImpl() override;
+
+    void shutdown() override
+    {
+        try
+        {
+            cleanup();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    void executeParsedQueryImpl() override;
+
+    void reportQueryError() const override {}
+
+    void printHelpMessage(const OptionsDescription & options_description) override;
+
+    bool supportPasswordOption() const override { return false; }
+
+    bool processMultiQueryFromFile(const String & file) override
+    {
+        auto text = getInitialCreateTableQuery();
+        String queries_from_file;
+        ReadBufferFromFile in(file);
+        readStringUntilEOF(queries_from_file, in);
+        text += queries_from_file;
+        return processMultiQuery(text);
+    }
+
+    void checkExceptions() override
+    {
+        if (exception)
+            std::rethrow_exception(exception);
     }
 
 private:
@@ -50,46 +101,6 @@ private:
 
     void cleanup();
 
-protected:
-    void processMainImplException(const Exception & e) override;
-
-    void initializeChild() override;
-
-    int childMainImpl() override;
-
-    bool processQueryFromInteractive(const String & input) override
-    {
-        return processQueryText(input);
-    }
-
-    void executeParsedQueryImpl() override;
-
-    void reportQueryError() const override;
-
-    void printHelpMessage(const OptionsDescription & options_description) override;
-
-    void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &) override;
-
-    void addOptions(OptionsDescription & options_description) override;
-
-    void processOptions(const OptionsDescription & options_description,
-                        const CommandLineOptions & options,
-                        const std::vector<Arguments> &) override;
-    void processConfig() override;
-
-    bool supportPasswordOption() const override { return false; }
-
-    bool processMultiQueryFromFile(const String & file) override
-    {
-        auto text = getInitialCreateTableQuery();
-        String queries_from_file;
-        ReadBufferFromFile in(file);
-        readStringUntilEOF(queries_from_file, in);
-        text += queries_from_file;
-        return processMultiQuery(text);
-    }
-
-private:
     ContextMutablePtr query_context;
 
     std::optional<StatusFile> status;

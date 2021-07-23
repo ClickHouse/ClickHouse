@@ -59,10 +59,10 @@ namespace ErrorCodes
 }
 
 
-LocalServer::LocalServer() = default;
-
-void LocalServer::initializeChild()
+void LocalServer::initialize(Poco::Util::Application & self)
 {
+    Poco::Util::Application::initialize(self);
+
     /// Load config files if exists
     if (config().has("config-file") || fs::exists("config.xml"))
     {
@@ -126,7 +126,7 @@ void LocalServer::tryInitPath()
             parent_folder = std::filesystem::temp_directory_path();
 
         }
-        catch (const std::filesystem::filesystem_error& e)
+        catch (const fs::filesystem_error& e)
         {
             // tmp folder don't exists? misconfiguration? chroot?
             LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
@@ -192,26 +192,6 @@ void LocalServer::cleanup()
 }
 
 
-void LocalServer::processMainImplException(const Exception &)
-{
-    try
-    {
-        cleanup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
-}
-
-
-void LocalServer::reportQueryError() const
-{
-}
-
-
 std::string LocalServer::getInitialCreateTableQuery()
 {
     if (!config().has("table-structure"))
@@ -270,37 +250,6 @@ void LocalServer::executeParsedQueryImpl()
 }
 
 
-void LocalServer::processQueries()
-{
-    String initial_create_query = getInitialCreateTableQuery();
-    String queries_str = initial_create_query;
-
-    if (config().has("query"))
-        queries_str += config().getRawString("query");
-    else
-    {
-        String queries_from_file;
-        ReadBufferFromFile in(config().getString("queries-file"));
-        readStringUntilEOF(queries_from_file, in);
-        queries_str += queries_from_file;
-    }
-
-    const auto & settings = global_context->getSettingsRef();
-
-    std::vector<String> queries;
-    auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
-
-    if (!parse_res.second)
-        throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
-
-    for (const auto & query : queries)
-        prepareAndExecuteQuery(query);
-
-    if (exception)
-        std::rethrow_exception(exception);
-}
-
-
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
     std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -353,22 +302,22 @@ void LocalServer::setupUsers()
 }
 
 
-int LocalServer::childMainImpl()
+int LocalServer::mainImpl()
 {
     ThreadStatus thread_status;
 
-    /// Prompt may contain the following substitutions in a form of {name}.
-    std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
-    /// Quite suboptimal.
-    for (const auto & [key, value] : prompt_substitutions)
-        boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
+    if (is_interactive)
+    {
+        std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
+        for (const auto & [key, value] : prompt_substitutions)
+            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
+    }
 
     /// We will terminate process on error
     static KillingErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
 
     /// Don't initialize DateLUT
-
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -380,14 +329,12 @@ int LocalServer::childMainImpl()
     /// we can't mutate global_context (can lead to races, as it was already passed to some background threads)
     /// so we can't reuse it safely as a query context and need a copy here
     query_context = Context::createCopy(global_context);
-
     query_context->makeSessionContext();
     query_context->makeQueryContext();
-
     query_context->setUser("default", "", Poco::Net::SocketAddress{});
     query_context->setCurrentQueryId("");
-    applyCmdSettings(query_context);
 
+    applyCmdSettings(query_context);
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(query_context);
 
@@ -406,13 +353,9 @@ int LocalServer::childMainImpl()
     }
 
     if (is_interactive)
-    {
         runInteractive();
-    }
     else
-    {
         runNonInteractive();
-    }
 
     global_context->shutdown();
     global_context.reset();

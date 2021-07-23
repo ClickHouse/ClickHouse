@@ -12,8 +12,10 @@ class Client : public ClientBase
 public:
     Client() = default;
 
+    void initialize(Poco::Util::Application & self) override;
+
 protected:
-    int childMainImpl() override;
+    int mainImpl() override;
 
     bool supportPasswordOption() const override { return true; }
 
@@ -36,14 +38,13 @@ protected:
 
     std::vector<String> loadWarningMessages();
 
-    void initializeChild() override;
-    void processMainImplException(const Exception & e) override;
     void loadSuggestionDataIfPossible() override;
-    bool processQueryFromInteractive(const String & input) override;
 
     bool checkErrorMatchesHints(const TestHint & test_hint, bool had_error) override;
     void reportQueryError() const override;
+
     bool processWithFuzzing(const String & text) override;
+
     void executeParsedQueryPrefix() override;
     void executeParsedQueryImpl() override;
     void executeParsedQuerySuffix() override;
@@ -80,8 +81,6 @@ private:
     NameToNameMap query_parameters;
 
     ConnectionParameters connection_parameters;
-
-    void nonInteractive();
 
     void connect();
     void printChangedSettings() const;
