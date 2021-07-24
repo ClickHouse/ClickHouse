@@ -23,14 +23,14 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
         max_connections, host, port, default_database, user, password, cluster, cluster_secret, client_name, compression, secure, priority};
 
     std::unique_lock lock(mutex);
-    auto it = pool.find(key);
-    ConnectionPoolPtr ret;
-    if (it != pool.end())
-        ret = it->second.lock();
+    auto [it, inserted] = pools.emplace(key, ConnectionPoolPtr{});
+    if (!inserted)
+        if (auto res = it->second.lock())
+            return res;
 
-    if (!ret)
+    ConnectionPoolPtr ret
     {
-        ret = std::make_shared<ConnectionPool>(
+        new ConnectionPool(
             max_connections,
             host,
             port,
@@ -42,12 +42,17 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
             client_name,
             compression,
             secure,
-            priority);
-        if (it == pool.end())
-            pool.emplace(key, ConnectionPoolWeakPtr(ret));
-        else
-            it->second = ConnectionPoolWeakPtr(ret);
-    }
+            priority),
+        [key, this](auto ptr)
+        {
+            {
+                std::lock_guard another_lock(mutex);
+                pools.erase(key);
+            }
+            delete ptr;
+        }
+    };
+    it->second = ConnectionPoolWeakPtr(ret);
     return ret;
 }
 
