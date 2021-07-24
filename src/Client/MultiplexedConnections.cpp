@@ -29,6 +29,20 @@ MultiplexedConnections::MultiplexedConnections(Connection & connection, const Se
     active_connection_count = 1;
 }
 
+
+MultiplexedConnections::MultiplexedConnections(std::shared_ptr<Connection> connection_ptr_, const Settings & settings_, const ThrottlerPtr & throttler)
+    : settings(settings_), drain_timeout(settings.drain_timeout), receive_timeout(settings.receive_timeout)
+    , connection_ptr(connection_ptr_)
+{
+    connection_ptr->setThrottler(throttler);
+
+    ReplicaState replica_state;
+    replica_state.connection = connection_ptr.get();
+    replica_states.push_back(replica_state);
+
+    active_connection_count = 1;
+}
+
 MultiplexedConnections::MultiplexedConnections(
     std::vector<IConnectionPool::Entry> && connections, const Settings & settings_, const ThrottlerPtr & throttler)
     : settings(settings_), drain_timeout(settings.drain_timeout), receive_timeout(settings.receive_timeout)
