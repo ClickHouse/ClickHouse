@@ -41,7 +41,8 @@
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01955_clickhouse_benchmark_connection_hang" /// Limits RLIMIT_NOFILE, see comment in the test
     ],
     "memory-sanitizer": [
         "capnproto",
