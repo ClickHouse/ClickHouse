@@ -9,6 +9,7 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -24,6 +25,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -55,6 +57,8 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_STAT;
 }
 
 namespace
@@ -298,23 +302,6 @@ public:
     {
         if (storage->use_table_fd)
         {
-            unique_lock = std::unique_lock(storage->rwlock, getLockTimeout(context));
-            if (!unique_lock)
-                throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
-            /// We could use common ReadBuffer and WriteBuffer in storage to leverage cache
-            ///  and add ability to seek unseekable files, but cache sync isn't supported.
-
-            if (storage->table_fd_was_used) /// We need seek to initial position
-            {
-                if (storage->table_fd_init_offset < 0)
-                    throw Exception("File descriptor isn't seekable, inside " + storage->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-
-                /// ReadBuffer's seek() doesn't make sense, since cache is empty
-                if (lseek(storage->table_fd, storage->table_fd_init_offset, SEEK_SET) < 0)
-                    throwFromErrno("Cannot seek file descriptor, inside " + storage->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-            }
-
             storage->table_fd_was_used = true;
         }
         else
@@ -497,6 +484,7 @@ Pipe StorageFile::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
+    ReadBufferFromFileDescriptorPRead table_fd_seek(this_ptr->table_fd);
 
     if (num_streams > paths.size())
         num_streams = paths.size();
@@ -519,6 +507,27 @@ Pipe StorageFile::read(
             else
                 return metadata_snapshot->getColumns();
         };
+        // if we do multiple reads from pipe, we want to check if pipe is a regular file or a pipe
+        if (this_ptr->table_fd_was_used)
+        {
+            struct stat fd_stat;
+            if (fstat(this_ptr->table_fd, &fd_stat) == -1)
+            {
+                throw Exception("Cannot stat table file descriptor, inside " + this_ptr->getName(), ErrorCodes::CANNOT_STAT);
+            }
+            if (S_ISREG(fd_stat.st_mode))
+            {
+                if (this_ptr->table_fd_init_offset < 0)
+                {
+                    throw Exception("File descriptor isn't seekable, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                }
+            }
+            else
+            {
+                // else if fd is not a regular file, then throw an Exception
+                throw Exception("Cannot read from a pipe twice", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            }
+        }
         pipes.emplace_back(std::make_shared<StorageFileSource>(
             this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format()));
     }
