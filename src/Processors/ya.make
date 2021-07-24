@@ -144,6 +144,7 @@ SRCS(
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ArrayJoinTransform.cpp
+    Transforms/CheckSortedTransform.cpp
     Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
