@@ -469,7 +469,7 @@ private:
                 for (const auto & conn : connections)
                 {
                     if (!connection_description.empty())
-                        connection_description += ",";
+                        connection_description += ", ";
                     connection_description += conn->getDescription();
                 }
             }
