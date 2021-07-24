@@ -5,7 +5,6 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -31,6 +30,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+
 
 namespace ProfileEvents
 {

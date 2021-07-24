@@ -19,6 +19,7 @@ public:
     ReadBufferFromEncryptedFile(
         size_t buffer_size_,
         std::unique_ptr<ReadBufferFromFileBase> in_,
+        FileEncryption::Algorithm encryption_algorithm_,
         const String & key_,
         const FileEncryption::InitVector & init_vector_);
 

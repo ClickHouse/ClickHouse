@@ -231,6 +231,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (attach_mode && !ParserKeyword{"ATTACH"}.ignore(pos, expected))
         return false;
 
+    bool is_replace = false;
     bool is_revoke = false;
     if (ParserKeyword{"REVOKE"}.ignore(pos, expected))
         is_revoke = true;
@@ -271,6 +272,9 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             grant_option = true;
         else if (ParserKeyword{"WITH ADMIN OPTION"}.ignore(pos, expected))
             admin_option = true;
+
+        if (ParserKeyword{"WITH REPLACE OPTION"}.ignore(pos, expected))
+            is_replace = true;
     }
 
     if (cluster.empty())
@@ -287,6 +291,44 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             element.grant_option = true;
     }
 
+
+    bool replace_access = false;
+    if (is_replace)
+    {
+        if (roles)
+        {   // assigning role mode
+             if (!roles->empty() && roles->none_role_parsed)
+                throw Exception("In assigning role WITH REPLACE OPTION sql, 'NONE' can only be used alone to rovoke all roles", ErrorCodes::SYNTAX_ERROR);
+        }
+        else
+        {
+            // granting privilege mode
+            replace_access = true;
+            bool new_access = false;
+            bool none_on_all = false;
+            for (auto & element : elements)
+            {
+                if (element.access_flags.isEmpty())
+                {
+                    if (element.any_database)
+                        none_on_all = true;
+                    else
+                        throw Exception("In granting privilege WITH REPLACE OPTION sql, 'NONE ON db.*' should be 'NONE ON *.*', and can only be used alone to drop all privileges on any database", ErrorCodes::SYNTAX_ERROR);
+                }
+                else
+                {
+                    new_access = true;
+                }
+            }
+
+            if (new_access && none_on_all)
+                throw Exception("In granting privilege WITH REPLACE OPTION sql, 'NONE ON db.*' should be 'NONE ON *.*', and can only be used alone to drop all privileges on any database", ErrorCodes::SYNTAX_ERROR);
+        }
+    }
+
+    if (is_replace && !replace_access && roles && !roles->empty() && roles->none_role_parsed)
+        throw Exception("In REPLACE GRANT assigning role sql, 'NONE' can only be used alone to rovoke all roles", ErrorCodes::SYNTAX_ERROR);
+
     if (!is_revoke)
         eraseNonGrantable(elements);
 
@@ -300,6 +342,8 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->roles = std::move(roles);
     query->grantees = std::move(grantees);
     query->admin_option = admin_option;
+    query->replace_access = replace_access;
+    query->replace_granted_roles = (is_replace && !replace_access);
 
     return true;
 }

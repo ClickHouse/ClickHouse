@@ -6,6 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <cassert>
 #include <random>
 
@@ -15,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int DATA_ENCRYPTION_ERROR;
 }
 
@@ -23,6 +25,41 @@ namespace FileEncryption
 
 namespace
 {
+    const EVP_CIPHER * getCipher(Algorithm algorithm)
+    {
+        switch (algorithm)
+        {
+            case Algorithm::AES_128_CTR: return EVP_aes_128_ctr();
+            case Algorithm::AES_192_CTR: return EVP_aes_192_ctr();
+            case Algorithm::AES_256_CTR: return EVP_aes_256_ctr();
+        }
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Encryption algorithm {} is not supported, specify one of the following: aes_128_ctr, aes_192_ctr, aes_256_ctr",
+            std::to_string(static_cast<int>(algorithm)));
+    }
+
+    void checkKeySize(const EVP_CIPHER * evp_cipher, size_t key_size)
+    {
+        if (!key_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encryption key must not be empty");
+        size_t expected_key_size = static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
+        if (key_size != expected_key_size)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Got an encryption key with unexpected size {}, the size should be {}", key_size, expected_key_size);
+    }
+
+    void checkInitVectorSize(const EVP_CIPHER * evp_cipher)
+    {
+        size_t expected_iv_length = static_cast<size_t>(EVP_CIPHER_iv_length(evp_cipher));
+        if (InitVector::kSize != expected_iv_length)
+            throw Exception(
+                ErrorCodes::DATA_ENCRYPTION_ERROR,
+                "Got an initialization vector with unexpected size {}, the size should be {}",
+                InitVector::kSize,
+                expected_iv_length);
+    }
+
     constexpr const size_t kBlockSize = 16;
 
     size_t blockOffset(size_t pos) { return pos % kBlockSize; }
@@ -145,6 +182,39 @@ namespace
     }
 }
 
+
+String toString(Algorithm algorithm)
+{
+    switch (algorithm)
+    {
+        case Algorithm::AES_128_CTR: return "aes_128_ctr";
+        case Algorithm::AES_192_CTR: return "aes_192_ctr";
+        case Algorithm::AES_256_CTR: return "aes_256_ctr";
+    }
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Encryption algorithm {} is not supported, specify one of the following: aes_128_ctr, aes_192_ctr, aes_256_ctr",
+        std::to_string(static_cast<int>(algorithm)));
+}
+
+void parseFromString(Algorithm & algorithm, const String & str)
+{
+    if (boost::iequals(str, "aes_128_ctr"))
+        algorithm = Algorithm::AES_128_CTR;
+    else if (boost::iequals(str, "aes_192_ctr"))
+        algorithm = Algorithm::AES_192_CTR;
+    else if (boost::iequals(str, "aes_256_ctr"))
+        algorithm = Algorithm::AES_256_CTR;
+    else
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Encryption algorithm '{}' is not supported, specify one of the following: aes_128_ctr, aes_192_ctr, aes_256_ctr",
+            str);
+}
+
+void checkKeySize(Algorithm algorithm, size_t key_size) { checkKeySize(getCipher(algorithm), key_size); }
+
+
 String InitVector::toString() const
 {
     static_assert(sizeof(counter) == InitVector::kSize);
@@ -156,7 +226,7 @@ String InitVector::toString() const
 InitVector InitVector::fromString(const String & str)
 {
     if (str.length() != InitVector::kSize)
-        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Expected iv with size {}, got iv with size {}", InitVector::kSize, str.length());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected iv with size {}, got iv with size {}", InitVector::kSize, str.length());
     ReadBufferFromMemory in{str.data(), str.length()};
     UInt128 counter;
     readBinaryBigEndian(counter, in);
@@ -185,26 +255,13 @@ InitVector InitVector::random()
 }
 
 
-Encryptor::Encryptor(const String & key_, const InitVector & iv_)
+Encryptor::Encryptor(Algorithm algorithm_, const String & key_, const InitVector & iv_)
     : key(key_)
     , init_vector(iv_)
+    , evp_cipher(getCipher(algorithm_))
 {
-    if (key_.length() == 16)
-        evp_cipher = EVP_aes_128_ctr();
-    else if (key_.length() == 24)
-        evp_cipher = EVP_aes_192_ctr();
-    else if (key_.length() == 32)
-        evp_cipher = EVP_aes_256_ctr();
-    else
-        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Key length {} is not supported, supported only keys of length 128, 192, or 256 bits", key_.length());
-
-    size_t cipher_key_length = static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
-    if (cipher_key_length != key_.length())
-        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Got unexpected key length from cipher: {} != {}", cipher_key_length, key_.length());
-
-    size_t cipher_iv_length = static_cast<size_t>(EVP_CIPHER_iv_length(evp_cipher));
-    if (cipher_iv_length != InitVector::kSize)
-        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Got unexpected init vector's length from cipher: {} != {}", cipher_iv_length, InitVector::kSize);
+    checkKeySize(evp_cipher, key.size());
+    checkInitVectorSize(evp_cipher);
 }
 
 void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)

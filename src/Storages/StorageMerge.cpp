@@ -388,6 +388,13 @@ Pipe StorageMerge::createSources(
         return pipe;
     }
 
+    if (!modified_select.final() && storage->needRewriteQueryWithFinal(real_column_names))
+    {
+        /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
+        /// However, it's needed for MaterializeMySQL and it's unlikely that someone will use it with Merge tables.
+        modified_select.setFinal();
+    }
+
     auto storage_stage
         = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, metadata_snapshot, modified_query_info);
     if (processed_stage <= storage_stage)

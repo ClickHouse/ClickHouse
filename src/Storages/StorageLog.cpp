@@ -16,7 +16,6 @@
 
 #include <DataTypes/NestedUtils.h>
 
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>

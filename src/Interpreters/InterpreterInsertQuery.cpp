@@ -4,8 +4,7 @@
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
-#include <DataStreams/InputStreamFromASTInsertQuery.h>
-#include <DataStreams/NullAndDoCopyBlockInputStream.h>
+#include <Processors/Transforms/getSourceFromFromASTInsertQuery.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
@@ -351,9 +350,13 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (query.data && !query.has_tail) /// can execute without additional data
     {
-        // res.out = std::move(out_streams.at(0));
-        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, getContext(), nullptr);
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out_streams.at(0));
+        auto pipe = getSourceFromFromASTInsertQuery(query_ptr, nullptr, query_sample_block, getContext(), nullptr);
+        res.pipeline.init(std::move(pipe));
+        res.pipeline.resize(1);
+        res.pipeline.setSinks([&](const Block &, Pipe::StreamType)
+        {
+            return std::make_shared<SinkToOutputStream>(out_streams.at(0));
+        });
     }
     else
         res.out = std::move(out_streams.at(0));
