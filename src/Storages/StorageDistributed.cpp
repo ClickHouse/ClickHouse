@@ -563,11 +563,11 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
 StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const
 {
+    auto snapshot_data = std::make_unique<SnapshotData>();
     auto names_of_objects = getNamesOfObjectColumns(metadata_snapshot->getColumns().getAllPhysical());
     if (names_of_objects.empty())
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
 
-    auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->objects_by_shard = getExtendedObjectsOfRemoteTables(
         *getCluster(),
         StorageID{remote_database, remote_table},
