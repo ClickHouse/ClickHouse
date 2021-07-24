@@ -1,13 +1,16 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/InputStreamFromASTInsertQuery.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/getSourceFromFromASTInsertQuery.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <Processors/Pipe.h>
+#include <Processors/Formats/IInputFormat.h>
 
 
 namespace DB
@@ -20,7 +23,7 @@ namespace ErrorCodes
 }
 
 
-InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
+Pipe getSourceFromFromASTInsertQuery(
     const ASTPtr & ast,
     ReadBuffer * input_buffer_tail_part,
     const Block & header,
@@ -42,7 +45,7 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
 
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
 
-    input_buffer_ast_part = std::make_unique<ReadBufferFromMemory>(
+    auto input_buffer_ast_part = std::make_unique<ReadBufferFromMemory>(
         ast_insert_query->data, ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0);
 
     ConcatReadBuffer::ReadBuffers buffers;
@@ -56,9 +59,10 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
         * - because 'query.data' could refer to memory piece, used as buffer for 'input_buffer_tail_part'.
         */
 
-    input_buffer_contacenated = std::make_unique<ConcatReadBuffer>(buffers);
+    auto input_buffer_contacenated = std::make_unique<ConcatReadBuffer>(buffers);
 
-    res_stream = context->getInputFormat(format, *input_buffer_contacenated, header, context->getSettings().max_insert_block_size);
+    auto source = FormatFactory::instance().getInput(format, *input_buffer_contacenated, header, context, context->getSettings().max_insert_block_size);
+    Pipe pipe(source);
 
     if (context->getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
     {
@@ -66,8 +70,18 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         const auto & columns = metadata_snapshot->getColumns();
         if (columns.hasDefaults())
-            res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, columns, context);
+        {
+            pipe.addSimpleTransform([&](const Block & cur_header)
+            {
+                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, context);
+            });
+        }
     }
+
+    source->addBuffer(std::move(input_buffer_ast_part));
+    source->addBuffer(std::move(input_buffer_contacenated));
+
+    return pipe;
 }
 
 }

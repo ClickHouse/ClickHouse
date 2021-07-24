@@ -271,7 +271,8 @@ private:
 
             if (max_time > 0 && total_watch.elapsedSeconds() >= max_time)
             {
-                std::cout << "Stopping launch of queries. Requested time limit is exhausted.\n";
+                std::cout << "Stopping launch of queries."
+                          << " Requested time limit " << max_time << " seconds is exhausted.\n";
                 return false;
             }
 
@@ -313,6 +314,7 @@ private:
         }
         catch (...)
         {
+            shutdown = true;
             pool.wait();
             throw;
         }
@@ -368,8 +370,7 @@ private:
             {
                 extracted = queue.tryPop(query, 100);
 
-                if (shutdown
-                    || (max_iterations && queries_executed == max_iterations))
+                if (shutdown || (max_iterations && queries_executed == max_iterations))
                 {
                     return;
                 }
@@ -382,8 +383,9 @@ private:
             }
             catch (...)
             {
-                std::cerr << "An error occurred while processing the query '"
-                          << query << "'.\n";
+                std::lock_guard lock(mutex);
+                std::cerr << "An error occurred while processing the query " << "'" << query << "'"
+                          << ": " << getCurrentExceptionMessage(false) << std::endl;
                 if (!continue_on_errors)
                 {
                     shutdown = true;
