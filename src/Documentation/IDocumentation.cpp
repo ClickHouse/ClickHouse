@@ -1,4 +1,5 @@
 #include <Documentation/IDocumentation.h>
+#include "Common/Exception.h"
 #include "common/types.h"
 
 namespace DB
@@ -6,35 +7,48 @@ namespace DB
 
 IDocumentation::IDocumentation(const String& doc_name, const String& doc_group): name(doc_name), group(doc_group) {}
 
-void IDocumentation::addDescription(const String& description)
+String IDocumentation::getDocumentation() const { return documentation; }
+
+String IDocumentation::createCodeSection(const String &code) { return code; }
+
+void IDocumentation::addExample(const String& input, const String& query, const String& result)
 {
-    order.push_back("Description");
-    descriptions.push_back(description);
+    inputs.push_back(input);
+    queries.push_back(query);
+    results.push_back(result);
+    addHeader("Example");
+    if (!input.empty())
+        addDescription("Input", createCodeSection(input));
+    addDescription("Query", createCodeSection(query));
+    addDescription("Result", createCodeSection(result));
 }
 
-void IDocumentation::addExample(const String& example)
+void IDocumentation::addReference(const String& ref_name, const String& source)
 {
-    order.push_back("Example");
-    examples.push_back(example);
+    references.push_back(ref_name);
+    sources.push_back(source);
+    documentation += createReference(ref_name, source);
 }
 
-void IDocumentation::addSetting(const String& setting)
+void IDocumentation::addDescription(const String& header, const String& description)
 {
-    order.push_back("Setting");
-    settings.push_back(setting);
+    if (!header.empty())
+        addHeader(header);
+    documentation += description;
 }
 
-void IDocumentation::addReference(const String& reference)
+void IDocumentation::addReferencesToDocs()
 {
-    order.push_back("See also");
-    references.push_back(reference);
+    addHeader("See also");
+    for (size_t i = 0; i < references.size(); ++i)
+    {
+        documentation += references[i] + ":" + sources[i] + "\n\t";
+    }
 }
 
-String IDocumentation::getDocumentation() const { return createDocumentation(); }
+void IDocumentation::addHeader(const String &header_name)
+{
+    documentation += createHeader(header_name);
+}
 
-const std::vector<String>& IDocumentation::getOrder()        const { return order; } 
-const std::vector<String>& IDocumentation::getReferences()   const { return references; } 
-const std::vector<String>& IDocumentation::getDescriptions() const { return descriptions; } 
-const std::vector<String>& IDocumentation::getExamples()     const { return examples; } 
-const std::vector<String>& IDocumentation::getSettings()     const { return settings; } 
 }

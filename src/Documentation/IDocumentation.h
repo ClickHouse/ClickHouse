@@ -18,32 +18,44 @@ public:
     IDocumentation(const String& doc_name, const String& doc_group);
 
     String getDocumentation() const;
-
-    const std::vector<String>& getOrder() const;
-    const std::vector<String>& getExamples() const;
-    const std::vector<String>& getSettings() const;
-    const std::vector<String>& getReferences() const;
-    const std::vector<String>& getDescriptions() const;
-
     virtual ~IDocumentation() = default;
 
-    void addExample(const String& example);
-    void addSetting(const String& setting);
-    void addDescription(const String& description);
-    void addReference(const String& reference);
-private:
+    ///add examples in documentation and remember example
+    void addExample(const String& input, const String& query, const String& result);
+    
+    /// Simple adding description part
+    void addDescription(const String& header, const String& description);
+    
+    /// Add reference in correct style
+    void addReference(const String& ref_name, const String& source);
+    
+    /// Use this function to add sources to the end of documentation
+    void addReferencesToDocs();
 
-    virtual String createDocumentation() const = 0;
-    virtual String addHeader(const String& header_name) const = 0;
+    /// Add header in correct style (depends on output type)
+    void addHeader(const String& header_name);
+
+    static String createCodeSection(const String& code);
+
+private:
+    /// Create header in correct style (depends on output type)
+    virtual String createHeader(const String& header_name) const = 0;
+
+    /// Create correct type of reference (for example markdown)
+    virtual String createReference(const String& ref_name, const String& source) const = 0;
 
     String name;
     String group;
+    String documentation;
 
-    std::vector<String> order;
-    std::vector<String> settings;
-    std::vector<String> examples;
-    std::vector<String> descriptions;
+    /// Example consists of this three fields.
+    /// Separate them from other documentation make test generation easier
+    std::vector<String> inputs;
+    std::vector<String> queries;
+    std::vector<String> results;
+    
     std::vector<String> references;
+    std::vector<String> sources;
 };
 
 using IDocumentationPtr = std::shared_ptr<IDocumentation>;
