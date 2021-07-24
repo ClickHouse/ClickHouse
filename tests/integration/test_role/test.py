@@ -166,6 +166,20 @@ def test_set_role():
     assert instance.http_query('SHOW CURRENT ROLES', user='A', params={'session_id':session_id}) == TSV([["R1", 0, 1], ["R2", 0, 1]])
 
 
+def test_changing_default_roles_affects_new_sessions_only():
+    instance.query("CREATE USER A")
+    instance.query("CREATE ROLE R1, R2")
+    instance.query("GRANT R1, R2 TO A")
+
+    session_id = new_session_id()
+    assert instance.http_query('SHOW CURRENT ROLES', user='A', params={'session_id':session_id}) == TSV([["R1", 0, 1], ["R2", 0, 1]])
+    instance.query('SET DEFAULT ROLE R2 TO A')
+    assert instance.http_query('SHOW CURRENT ROLES', user='A', params={'session_id':session_id}) == TSV([["R1", 0, 0], ["R2", 0, 1]])
+
+    other_session_id = new_session_id()
+    assert instance.http_query('SHOW CURRENT ROLES', user='A', params={'session_id':other_session_id}) == TSV([["R2", 0, 1]])
+
+
 def test_introspection():
     instance.query("CREATE USER A")
     instance.query("CREATE USER B")
