@@ -6,6 +6,13 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance')
 
 
+session_id_counter = 0
+def new_session_id():
+    global session_id_counter
+    session_id_counter += 1
+    return 'session #' + str(session_id_counter)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
@@ -136,6 +143,27 @@ def test_revoke_requires_admin_option():
     assert instance.query("SHOW GRANTS FOR B") == "GRANT R1, R2 TO B\n"
     instance.query("REVOKE ALL FROM B", user='A')
     assert instance.query("SHOW GRANTS FOR B") == ""
+
+
+def test_set_role():
+    instance.query("CREATE USER A")
+    instance.query("CREATE ROLE R1, R2")
+    instance.query("GRANT R1, R2 TO A")
+
+    session_id = new_session_id()
+    assert instance.http_query('SHOW CURRENT ROLES', user='A', params={'session_id':session_id}) == TSV([["R1", 0, 1], ["R2", 0, 1]])
+
+    instance.http_query('SET ROLE R1', user='A', params={'session_id':session_id})
+    assert instance.http_query('SHOW CURRENT ROLES', user='A', params={'session_id':session_id}) == TSV([["R1", 0, 1]])
+
+    instance.http_query('SET ROLE R2', user='A', params={'session_id':session_id})
+    assert instance.http_query('SHOW CURRENT ROLES', user='A', params={'session_id':session_id}) == TSV([["R2", 0, 1]])
+
+    instance.http_query('SET ROLE NONE', user='A', params={'session_id':session_id})
+    assert instance.http_query('SHOW CURRENT ROLES', user='A', params={'session_id':session_id}) == TSV([])
+
+    instance.http_query('SET ROLE DEFAULT', user='A', params={'session_id':session_id})
+    assert instance.http_query('SHOW CURRENT ROLES', user='A', params={'session_id':session_id}) == TSV([["R1", 0, 1], ["R2", 0, 1]])
 
 
 def test_introspection():
