@@ -1,11 +1,11 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
+
 
 namespace DB
 {

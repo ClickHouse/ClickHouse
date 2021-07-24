@@ -1,11 +1,10 @@
 #include <gtest/gtest.h>
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
-#include <DataStreams/BlocksListBlockInputStream.h>
+#include <Processors/Sources/BlocksListSource.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Processors/QueryPipeline.h>
@@ -40,7 +39,7 @@ static Pipe getInputStreams(const std::vector<std::string> & column_names, const
         size_t start = stride;
         while (blocks_count--)
             blocks.push_back(getBlockWithSize(column_names, block_size_in_bytes, stride, start));
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<BlocksListBlockInputStream>(std::move(blocks))));
+        pipes.emplace_back(std::make_shared<BlocksListSource>(std::move(blocks)));
     }
     return Pipe::unitePipes(std::move(pipes));
 
@@ -57,7 +56,7 @@ static Pipe getInputStreamsEqualStride(const std::vector<std::string> & column_n
         size_t start = i;
         while (blocks_count--)
             blocks.push_back(getBlockWithSize(column_names, block_size_in_bytes, stride, start));
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<BlocksListBlockInputStream>(std::move(blocks))));
+        pipes.emplace_back(std::make_shared<BlocksListSource>(std::move(blocks)));
         i++;
     }
     return Pipe::unitePipes(std::move(pipes));

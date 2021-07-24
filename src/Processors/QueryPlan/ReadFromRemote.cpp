@@ -172,7 +172,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
             String query_string = formattedAST(query);
 
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage);
+                pool, std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage);
 
             return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
         }
