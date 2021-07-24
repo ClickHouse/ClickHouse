@@ -265,6 +265,9 @@ size_t StorageRabbitMQ::getMaxBlockSize() const
 
 void StorageRabbitMQ::initRabbitMQ()
 {
+    if (stream_cancelled)
+        return;
+
     if (use_user_setup)
     {
         queues.emplace_back(queue_base);
@@ -704,10 +707,6 @@ void StorageRabbitMQ::shutdown()
     while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
         event_handler->iterateLoop();
 
-    /// Should actually force closure, if not yet closed, but it generates distracting error logs
-    //if (!connection->closed())
-    //    connection->close(true);
-
     for (size_t i = 0; i < num_created_consumers; ++i)
         popReadBuffer();
 }
@@ -719,6 +718,22 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
 {
     if (use_user_setup)
         return;
+
+    if (!event_handler->connectionRunning())
+    {
+        String queue_names;
+        for (const auto & queue : queues)
+        {
+            if (!queue_names.empty())
+                queue_names += ", ";
+            queue_names += queue;
+        }
+        LOG_WARNING(log,
+                    "RabbitMQ clean up not done, because there is no connection in table's shutdown."
+                    "There are {} queues ({}), which might need to be deleted manually. Exchanges will be auto-deleted",
+                    queues.size(), queue_names);
+        return;
+    }
 
     AMQP::TcpChannel rabbit_channel(connection.get());
     for (const auto & queue : queues)
