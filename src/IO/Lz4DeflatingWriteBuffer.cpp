@@ -15,6 +15,19 @@ Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
     : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(std::move(out_))
 {
     count_in = 0;
+    kPrefs = {
+        {LZ4F_max256KB,
+         LZ4F_blockLinked,
+         LZ4F_noContentChecksum,
+         LZ4F_frame,
+         0 /* unknown content size */,
+         0 /* no dictID */,
+         LZ4F_noBlockChecksum},
+        0, /* compression level; 0 == default */
+        0, /* autoflush */
+        0, /* favor decompression speed */
+        {0, 0, 0}, /* reserved, must be set to 0 */
+    };
     compression_ctx = LZ4F_createCompressionContext(&ctx, LZ4F_VERSION);
     if (LZ4F_isError(compression_ctx))
     {
@@ -44,27 +57,32 @@ void Lz4DeflatingWriteBuffer::nextImpl()
 
     try
     {
+        out->nextIfAtEnd();
+
+        out_buff = reinterpret_cast<void *>(out->position());
+        out_capacity = out->buffer().end() - out->position();
+
+        /// write frame header and check for errors
+
+        size_t const header_size = LZ4F_compressBegin(ctx, out_buff, out_capacity, &kPrefs);
+
+        if (LZ4F_isError(header_size))
+        {
+            throw Exception(
+                ErrorCodes::LZ4_ENCODER_FAILED,
+                "LZ4 failed to start stream encoding. LZ4F version: {}",
+                LZ4F_VERSION,
+                ErrorCodes::LZ4_ENCODER_FAILED);
+        }
+        count_out = header_size;
+        out->position() = out->buffer().begin() + count_out;
+
         do
         {
             out->nextIfAtEnd();
 
-            out_buff = reinterpret_cast<void *>(out->buffer().begin());
+            out_buff = reinterpret_cast<void *>(out->position());
             out_capacity = out->buffer().end() - out->position();
-
-            /// write frame header and check for errors
-            {
-                size_t const header_size = LZ4F_compressBegin(ctx, out_buff, out_capacity, nullptr);
-
-                if (LZ4F_isError(header_size))
-                {
-                    throw Exception(
-                        ErrorCodes::LZ4_ENCODER_FAILED,
-                        "LZ4 failed to start stream encoding. LZ4F version: {}",
-                        LZ4F_VERSION,
-                        ErrorCodes::LZ4_ENCODER_FAILED);
-                }
-                count_out = header_size;
-            }
 
 
             /// compress begin
@@ -81,7 +99,8 @@ void Lz4DeflatingWriteBuffer::nextImpl()
                 }
                 count_out += compressed_size;
             }
-            out->position() = out->buffer().end() - count_out;
+            out->position() = out->buffer().begin() + count_out;
+
         } while (count_out < count_in);
     }
     catch (...)

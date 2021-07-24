@@ -46,5 +46,7 @@ private:
 
     uint64_t count_in;
     uint64_t count_out;
+
+    LZ4F_preferences_t kPrefs;
 };
 }
