@@ -214,11 +214,14 @@ def test_show_profiles():
 
 
 def test_set_profile():
-    instance.query("CREATE SETTINGS PROFILE P1 SETTINGS max_memory_usage=10000000001")
+    instance.query("CREATE SETTINGS PROFILE P1 SETTINGS max_memory_usage=10000000001 MAX 20000000002")
 
     session_id = new_session_id()
     instance.http_query("SET profile='P1'", user='robin', params={'session_id':session_id})
     assert instance.http_query("SELECT getSetting('max_memory_usage')", user='robin', params={'session_id':session_id}) == "10000000001\n"
+
+    expected_error = "max_memory_usage shouldn't be greater than 20000000002"
+    assert expected_error in instance.http_query_and_get_error("SET max_memory_usage=20000000003", user='robin', params={'session_id':session_id})
 
 
 def test_changing_default_profiles_affects_new_sessions_only():
