@@ -35,16 +35,36 @@ namespace ErrorCodes
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
+    const String & query_, const Block & header_, ContextPtr context_,
+    const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    : header(header_), query(query_), context(context_), scalars(scalars_)
+    , external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
+{}
+
+RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
     const String & query_, const Block & header_, ContextPtr context_,
     ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
     QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
-    : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_), sync_draining(true)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_)
 {
     create_connections = [this, &connection, throttler]()
     {
         return std::make_shared<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
+    };
+}
+
+RemoteQueryExecutor::RemoteQueryExecutor(
+    std::shared_ptr<Connection> connection_ptr,
+    const String & query_, const Block & header_, ContextPtr context_,
+    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_)
+{
+    create_connections = [this, connection_ptr, throttler]()
+    {
+        return std::make_shared<MultiplexedConnections>(connection_ptr, context->getSettingsRef(), throttler);
     };
 }
 
