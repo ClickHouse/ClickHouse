@@ -32,7 +32,13 @@ SettingsProfilesInfo::getConstraintsAndProfileIDs(const std::shared_ptr<const Se
     auto res = std::make_shared<SettingsConstraintsAndProfileIDs>(manager);
     res->current_profiles = profiles;
 
-    res->constraints = previous ? previous->constraints : constraints;
+    if (previous)
+    {
+        res->constraints = previous->constraints;
+        res->constraints.merge(constraints);
+    }
+    else
+        res->constraints = constraints;
 
     if (previous)
     {

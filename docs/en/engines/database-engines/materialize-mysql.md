@@ -5,6 +5,8 @@ toc_title: MaterializeMySQL
 
 # MaterializeMySQL {#materialize-mysql}
 
+**This is experimental feature that should not be used in production.**
+
 Creates ClickHouse database with all the tables existing in MySQL, and all the data in those tables.
 
 ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries.
