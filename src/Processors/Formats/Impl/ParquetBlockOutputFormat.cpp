@@ -37,7 +37,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
     if (!ch_column_to_arrow_column)
     {
         const Block & header = getPort(PortKind::Main).getHeader();
-        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Parquet");
+        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Parquet", false);
     }
 
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
