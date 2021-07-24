@@ -391,7 +391,7 @@ namespace DB
     {
         const String column_type_name = column_type->getFamilyName();
 
-        if ("Nullable" == column_type_name)
+        if (column_type->isNullable())
         {
             const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
             ColumnPtr nested_column = column_nullable->getNestedColumnPtr();
@@ -400,35 +400,35 @@ namespace DB
             const PaddedPODArray<UInt8> & bytemap = assert_cast<const ColumnVector<UInt8> &>(*null_column).getData();
             fillArrowArray(column_name, nested_column, nested_type, &bytemap, array_builder, format_name, start, end, dictionary_values);
         }
-        else if ("String" == column_type_name)
+        else if (isString(column_type))
         {
             fillArrowArrayWithStringColumnData<ColumnString>(column, null_bytemap, format_name, array_builder, start, end);
         }
-        else if ("FixedString" == column_type_name)
+        else if (isFixedString(column_type))
         {
             fillArrowArrayWithStringColumnData<ColumnFixedString>(column, null_bytemap, format_name, array_builder, start, end);
         }
-        else if ("Date" == column_type_name)
+        else if (isDate(column_type))
         {
             fillArrowArrayWithDateColumnData(column, null_bytemap, format_name, array_builder, start, end);
         }
-        else if ("DateTime" == column_type_name)
+        else if (isDateTime(column_type))
         {
             fillArrowArrayWithDateTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
         }
-        else if ("Array" == column_type_name)
+        else if (isArray(column_type))
         {
             fillArrowArrayWithArrayColumnData<arrow::ListBuilder>(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values);
         }
-        else if ("Tuple" == column_type_name)
+        else if (isTuple(column_type))
         {
             fillArrowArrayWithTupleColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values);
         }
-        else if ("LowCardinality" == column_type_name)
+        else if (column_type->getTypeId() == TypeIndex::LowCardinality)
         {
             fillArrowArrayWithLowCardinalityColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values);
         }
-        else if ("Map" == column_type_name)
+        else if (isMap(column_type))
         {
             ColumnPtr column_array = assert_cast<const ColumnMap *>(column.get())->getNestedColumnPtr();
             DataTypePtr array_type = assert_cast<const DataTypeMap *>(column_type.get())->getNestedType();
@@ -461,10 +461,10 @@ namespace DB
                 throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array with decimal data with type {}", column_type_name};
         }
     #define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
-                else if (#CPP_NUMERIC_TYPE == column_type_name) \
-                { \
-                    fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(column, null_bytemap, format_name, array_builder, start, end); \
-                }
+        else if (#CPP_NUMERIC_TYPE == column_type_name) \
+        { \
+            fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(column, null_bytemap, format_name, array_builder, start, end); \
+        }
 
         FOR_INTERNAL_NUMERIC_TYPES(DISPATCH)
     #undef DISPATCH
@@ -472,7 +472,7 @@ namespace DB
         {
             throw Exception
                 {
-                    fmt::format(R"(Internal type "{}" of a column "{}" is not supported for conversion into a {} data format.)", column_type_name, column_name, format_name),
+                    fmt::format("Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name),
                     ErrorCodes::UNKNOWN_TYPE
                 };
         }
@@ -618,7 +618,7 @@ namespace DB
             return arrow_type_it->second;
         }
 
-        throw Exception{fmt::format(R"(The type "{}" of a column "{}" is not supported for conversion into a {} data format.)", column_type->getName(), column_name, format_name),
+        throw Exception{fmt::format("The type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type->getName(), column_name, format_name),
                              ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -662,7 +662,8 @@ namespace DB
             arrow::Status status = MakeBuilder(pool, arrow_fields[column_i]->type(), &array_builder);
             checkStatus(status, column->getName(), format_name);
 
-            fillArrowArray(header_column.name, column, header_column.type, nullptr, array_builder.get(), format_name, 0, column->size(), dictionary_values);
+            fillArrowArray(
+                header_column.name, column, header_column.type, nullptr, array_builder.get(), format_name, 0, column->size(), dictionary_values);
 
             std::shared_ptr<arrow::Array> arrow_array;
             status = array_builder->Finish(&arrow_array);
