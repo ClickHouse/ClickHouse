@@ -22,6 +22,8 @@ class MultiplexedConnections final : public IConnections
 public:
     /// Accepts ready connection.
     MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler_);
+    /// Accepts ready connection and keep it alive before drain
+    MultiplexedConnections(std::shared_ptr<Connection> connection_, const Settings & settings_, const ThrottlerPtr & throttler_);
 
     /// Accepts a vector of connections to replicas of one shard already taken from pool.
     MultiplexedConnections(
@@ -79,7 +81,6 @@ private:
     /// Mark the replica as invalid.
     void invalidateReplica(ReplicaState & replica_state);
 
-private:
     const Settings & settings;
 
     /// The following two fields are from settings but can be referenced outside the lifetime of
@@ -95,6 +96,8 @@ private:
 
     /// Connection that received last block.
     Connection * current_connection = nullptr;
+    /// Shared connection, may be empty. Used to keep object alive before draining.
+    std::shared_ptr<Connection> connection_ptr;
 
     bool sent_query = false;
     bool cancelled = false;
