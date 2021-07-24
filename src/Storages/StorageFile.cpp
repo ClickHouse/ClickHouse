@@ -57,7 +57,6 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
-    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int CANNOT_STAT;
 }
 
