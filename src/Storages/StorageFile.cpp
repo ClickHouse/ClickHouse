@@ -173,10 +173,6 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
     is_db_table = false;
     use_table_fd = true;
     table_fd = table_fd_;
-
-    /// Save initial offset, it will be used for repeating SELECTs
-    /// If FD isn't seekable (lseek returns -1), then the second and subsequent SELECTs will fail.
-    table_fd_init_offset = lseek(table_fd, 0, SEEK_CUR);
 }
 
 StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args)
@@ -280,7 +276,8 @@ public:
         const FilesInfoPtr & files_info)
     {
         if (storage->isColumnOriented())
-            return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
+            return metadata_snapshot->getSampleBlockForColumns(
+                columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
         else
             return getHeader(metadata_snapshot, files_info->need_path_column, files_info->need_file_column);
     }
@@ -300,11 +297,7 @@ public:
         , context(context_)
         , max_block_size(max_block_size_)
     {
-        if (storage->use_table_fd)
-        {
-            storage->table_fd_was_used = true;
-        }
-        else
+        if (!storage->use_table_fd)
         {
             shared_lock = std::shared_lock(storage->rwlock, getLockTimeout(context));
             if (!shared_lock)
@@ -345,14 +338,32 @@ public:
                 std::unique_ptr<ReadBuffer> nested_buffer;
                 CompressionMethod method;
 
+                struct stat file_stat{};
+
                 if (storage->use_table_fd)
                 {
-                    nested_buffer = std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd);
+                    /// Check if file descriptor allows random reads (and reading it twice).
+                    if (0 != fstat(storage->table_fd, &file_stat))
+                        throwFromErrno("Cannot stat table file descriptor, inside " + storage->getName(), ErrorCodes::CANNOT_STAT);
+
+                    if (S_ISREG(file_stat.st_mode))
+                        nested_buffer = std::make_unique<ReadBufferFromFileDescriptorPRead>(storage->table_fd);
+                    else
+                        nested_buffer = std::make_unique<ReadBufferFromFileDescriptor>(storage->table_fd);
+
                     method = chooseCompressionMethod("", storage->compression_method);
                 }
                 else
                 {
-                    nested_buffer = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
+                    /// Check if file descriptor allows random reads (and reading it twice).
+                    if (0 != stat(current_path.c_str(), &file_stat))
+                        throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
+
+                    if (S_ISREG(file_stat.st_mode))
+                        nested_buffer = std::make_unique<ReadBufferFromFilePRead>(current_path, context->getSettingsRef().max_read_buffer_size);
+                    else
+                        nested_buffer = std::make_unique<ReadBufferFromFile>(current_path, context->getSettingsRef().max_read_buffer_size);
+
                     method = chooseCompressionMethod(current_path, storage->compression_method);
                 }
 
@@ -446,8 +457,8 @@ private:
     bool finished_generate = false;
 
     std::shared_lock<std::shared_timed_mutex> shared_lock;
-    std::unique_lock<std::shared_timed_mutex> unique_lock;
 };
+
 
 Pipe StorageFile::read(
     const Names & column_names,
@@ -463,6 +474,7 @@ Pipe StorageFile::read(
     if (use_table_fd)   /// need to call ctr BlockInputStream
         paths = {""};   /// when use fd, paths are empty
     else
+    {
         if (paths.size() == 1 && !fs::exists(paths[0]))
         {
             if (context->getSettingsRef().engine_file_empty_if_not_exists)
@@ -470,7 +482,7 @@ Pipe StorageFile::read(
             else
                 throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
         }
-
+    }
 
     auto files_info = std::make_shared<StorageFileSource::FilesInfo>();
     files_info->files = paths;
@@ -484,7 +496,6 @@ Pipe StorageFile::read(
     }
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
-    ReadBufferFromFileDescriptorPRead table_fd_seek(this_ptr->table_fd);
 
     if (num_streams > paths.size())
         num_streams = paths.size();
@@ -507,27 +518,7 @@ Pipe StorageFile::read(
             else
                 return metadata_snapshot->getColumns();
         };
-        // if we do multiple reads from pipe, we want to check if pipe is a regular file or a pipe
-        if (this_ptr->table_fd_was_used)
-        {
-            struct stat fd_stat;
-            if (fstat(this_ptr->table_fd, &fd_stat) == -1)
-            {
-                throw Exception("Cannot stat table file descriptor, inside " + this_ptr->getName(), ErrorCodes::CANNOT_STAT);
-            }
-            if (S_ISREG(fd_stat.st_mode))
-            {
-                if (this_ptr->table_fd_init_offset < 0)
-                {
-                    throw Exception("File descriptor isn't seekable, inside " + this_ptr->getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-                }
-            }
-            else
-            {
-                // else if fd is not a regular file, then throw an Exception
-                throw Exception("Cannot read from a pipe twice", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
-            }
-        }
+
         pipes.emplace_back(std::make_shared<StorageFileSource>(
             this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format()));
     }
@@ -557,11 +548,6 @@ public:
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
         if (storage.use_table_fd)
         {
-            /** NOTE: Using real file bounded to FD may be misleading:
-              * SELECT *; INSERT insert_data; SELECT *; last SELECT returns initil_fd_data + insert_data
-              * INSERT data; SELECT *; last SELECT returns only insert_data
-              */
-            storage.table_fd_was_used = true;
             naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd, DBMS_DEFAULT_BUFFER_SIZE);
         }
         else
