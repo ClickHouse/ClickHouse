@@ -1,6 +1,5 @@
 # Statement name (for example, SHOW USER) {#statement-name-in-lower-case}
 
-Brief description of what the statement does.
 
 **Syntax**
 
