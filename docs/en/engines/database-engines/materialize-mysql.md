@@ -25,6 +25,21 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 -   `user` — MySQL user.
 -   `password` — User password.
 
+**Engine Settings**
+-   `max_rows_in_buffer` — Max rows that data is allowed to cache in memory(for single table and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `65505`.
+-   `max_bytes_in_buffer` —  Max bytes that data is allowed to cache in memory(for single table and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `1048576`.
+-   `max_rows_in_buffers` — Max rows that data is allowed to cache in memory(for database and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `65505`.
+-   `max_bytes_in_buffers` — Max bytes that data is allowed to cache in memory(for database and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `1048576`.
+-   `max_flush_data_time` — Max milliseconds that data is allowed to cache in memory(for database and the cache data unable to query). when this time is exceeded, the data will be materialized. Default: `1000`.
+-   `max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disable retry. Default: `1000`.
+-   `allows_query_when_mysql_lost` — Allow query materialized table when mysql is lost. Default: `0` (`false`).
+```
+CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', '***') 
+     SETTINGS 
+        allows_query_when_mysql_lost=true,
+        max_wait_time_when_mysql_unavailable=10000;
+```
+
 ## Virtual columns {#virtual-columns}
 
 When working with the `MaterializeMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
