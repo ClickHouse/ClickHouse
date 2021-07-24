@@ -180,7 +180,7 @@ public:
 private:
     mutable std::mutex mutex;
     using ConnectionPoolWeakPtr = std::weak_ptr<IConnectionPool>;
-    std::unordered_map<Key, ConnectionPoolWeakPtr, KeyHash> pool;
+    std::unordered_map<Key, ConnectionPoolWeakPtr, KeyHash> pools;
 };
 
 inline bool operator==(const ConnectionPoolFactory::Key & lhs, const ConnectionPoolFactory::Key & rhs)
