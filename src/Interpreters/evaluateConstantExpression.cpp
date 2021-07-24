@@ -121,6 +121,7 @@ std::tuple<bool, ASTPtr> evaluateDatabaseNameForMergeEngine(const ASTPtr & node,
     return std::tuple{false, ast};
 }
 
+
 namespace
 {
     using Conjunction = ColumnsWithTypeAndName;
@@ -368,7 +369,30 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
 
         for (const auto & conjunct : dnf)
         {
-            Block block(conjunct);
+            Block block;
+
+            for (const auto & elem : conjunct)
+            {
+                if (!block.has(elem.name))
+                {
+                    block.insert(elem);
+                }
+                else
+                {
+                    /// Conjunction of condition on column equality to distinct values can never be satisfied.
+
+                    const ColumnWithTypeAndName & prev = block.getByName(elem.name);
+
+                    if (isColumnConst(*prev.column) && isColumnConst(*elem.column))
+                    {
+                        Field prev_value = assert_cast<const ColumnConst &>(*prev.column).getField();
+                        Field curr_value = assert_cast<const ColumnConst &>(*elem.column).getField();
+
+                        if (prev_value != curr_value)
+                            return Blocks{};
+                    }
+                }
+            }
 
             // Block should contain all required columns from `target_expr`
             if (!has_required_columns(block))
