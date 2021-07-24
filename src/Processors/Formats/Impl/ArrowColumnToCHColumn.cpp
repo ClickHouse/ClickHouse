@@ -580,7 +580,7 @@ static DataTypePtr getInternalType(
     if (arrow_type->id() == arrow::Type::UINT16
         && (isDate(column_type) || isDateTime(column_type) || isDate32(column_type) || isDateTime64(column_type)))
     {
-        /// Read UInt16 as Date. It will allow correct conversion to DateTime futher.
+        /// Read UInt16 as Date. It will allow correct conversion to DateTime further.
         return std::make_shared<DataTypeDate>();
     }
 
