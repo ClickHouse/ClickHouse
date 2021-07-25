@@ -35,7 +35,7 @@ SELECT * FROM test_database.table1;
 
 1. Настройка [wal_level](https://postgrespro.ru/docs/postgrespro/10/runtime-config-wal) должна иметь значение `logical`, параметр `max_replication_slots` должен быть равен по меньшей мере `2` в конфигурационном файле в PostgreSQL.
 
-2. Каждая реплицируемая таблица должна иметь один из следующих **идентификаторов реплики**:
+2. Каждая реплицируемая таблица должна иметь один из следующих [репликационных идентификаторов](https://postgrespro.ru/docs/postgresql/10/sql-altertable#SQL-CREATETABLE-REPLICA-IDENTITY):
 
 -   первичный ключ (по умолчанию)
 
