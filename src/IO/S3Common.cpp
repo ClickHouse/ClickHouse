@@ -2,9 +2,11 @@
 
 #if USE_AWS_S3
 
+#    include <IO/S3Common.h>
+
 #    include <Common/quoteString.h>
 
-#    include <IO/S3Common.h>
+#    include <Functions/isValidUTF8.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <Storages/StorageS3Settings.h>
 
@@ -616,55 +618,82 @@ namespace S3
         uri = uri_;
         storage_name = S3;
 
-        if (uri.getHost().empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI: {}", uri.toString());
-
-        String name;
-        String endpoint_authority_from_uri;
-
-        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
+        try
         {
-            is_virtual_hosted_style = true;
-            endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
+            if (uri.getHost().empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
-            /// S3 specification requires at least 3 and at most 63 characters in bucket name.
-            /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
-            if (bucket.length() < 3 || bucket.length() > 63)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Bucket name length is out of bounds in virtual hosted style S3 URI: {} ({})", quoteString(bucket), uri.toString());
+            String name;
+            String endpoint_authority_from_uri;
 
-            if (!uri.getPath().empty())
+            if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
             {
-                /// Remove leading '/' from path to extract key.
-                key = uri.getPath().substr(1);
+                is_virtual_hosted_style = true;
+                endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
+
+                if (!uri.getPath().empty())
+                {
+                    /// Remove leading '/' from path to extract key.
+                    key = uri.getPath().substr(1);
+                }
+
+                boost::to_upper(name);
+                if (name != S3 && name != COS)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
+                }
+                if (name == S3)
+                {
+                    storage_name = name;
+                }
+                else
+                {
+                    storage_name = COSN;
+                }
             }
-
-            boost::to_upper(name);
-            if (name != S3 && name != COS)
+            else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {} ({})", quoteString(name), uri.toString());
-            }
-            if (name == S3)
-            {
-                storage_name = name;
+                is_virtual_hosted_style = false;
+                endpoint = uri.getScheme() + "://" + uri.getAuthority();
             }
             else
-            {
-                storage_name = COSN;
-            }
-        }
-        else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
-        {
-            is_virtual_hosted_style = false;
-            endpoint = uri.getScheme() + "://" + uri.getAuthority();
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
 
-            /// S3 specification requires at least 3 and at most 63 characters in bucket name.
-            /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
-            if (bucket.length() < 3 || bucket.length() > 63)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI: {} ({})", quoteString(bucket), uri.toString());
+            validateBucket(bucket);
+            validateKey(key);
         }
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI: {}", uri.toString());
+        catch(const Exception & e)
+        {
+            throw Exception(e.code(), "{} ({})", e.message(), uri.toString());
+        }
+    }
+
+    void URI::validateBucket(const String & bucket)
+    {
+        /// See:
+        /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
+        /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#createbucket
+
+        if (bucket.length() < 3 || bucket.length() > 222)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Bucket name length is out of bounds in virtual hosted style S3 URI: {}", quoteString(bucket));
+    }
+
+    void URI::validateKey(const String & /*key*/)
+    {
+        /// See:
+        /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
+        /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#putobject
+
+        /// The following is valid for AWS S3:
+        ///     if (key.length() > 1024)
+        ///         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name is too long (showing first 1024 characters): {}", quoteString(key.substr(0, 1024) + "..."));
+        ///     if (!ValidUTF8Impl::isValidUTF8(key.data(), key.size()))
+        ///         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name must be valid UTF-8 string: {}", quoteString(key));
+
+        /// The following is valid for IBM COS:
+        ///     if (key.length() < 1)
+        ///         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name is too short (0 bytes long)");
     }
 }
 
