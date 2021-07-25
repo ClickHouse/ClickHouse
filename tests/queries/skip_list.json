@@ -512,6 +512,7 @@
         "01915_create_or_replace_dictionary",
         "01925_test_storage_merge_aliases",
         "01933_client_replxx_convert_history", /// Uses non unique history file
-        "01902_table_function_merge_db_repr"
+        "01902_table_function_merge_db_repr",
+        "01946_test_zstd_decompression_with_escape_sequence_at_the_end_of_buffer"
     ]
 }
