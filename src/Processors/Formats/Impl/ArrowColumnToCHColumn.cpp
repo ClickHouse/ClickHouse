@@ -123,7 +123,7 @@ static void fillColumnWithStringData(std::shared_ptr<arrow::ChunkedArray> & arro
     size_t chars_t_size = 0;
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::BinaryArray & chunk = assert_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         const size_t chunk_length = chunk.length();
 
         if (chunk_length > 0)
@@ -138,7 +138,7 @@ static void fillColumnWithStringData(std::shared_ptr<arrow::ChunkedArray> & arro
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::BinaryArray & chunk = assert_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
 
@@ -163,7 +163,7 @@ static void fillColumnWithBooleanData(std::shared_ptr<arrow::ChunkedArray> & arr
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::BooleanArray & chunk = assert_cast<arrow::BooleanArray &>(*(arrow_column->chunk(chunk_i)));
+        arrow::BooleanArray & chunk = dynamic_cast<arrow::BooleanArray &>(*(arrow_column->chunk(chunk_i)));
         /// buffers[0] is a null bitmap and buffers[1] are actual values
         std::shared_ptr<arrow::Buffer> buffer = chunk.data()->buffers[1];
 
@@ -180,7 +180,7 @@ static void fillColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arro
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::Date32Array & chunk = assert_cast<arrow::Date32Array &>(*(arrow_column->chunk(chunk_i)));
+        arrow::Date32Array & chunk = dynamic_cast<arrow::Date32Array &>(*(arrow_column->chunk(chunk_i)));
 
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
@@ -203,7 +203,7 @@ static void fillDate32ColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> 
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::Date32Array & chunk = assert_cast<arrow::Date32Array &>(*(arrow_column->chunk(chunk_i)));
+        arrow::Date32Array & chunk = dynamic_cast<arrow::Date32Array &>(*(arrow_column->chunk(chunk_i)));
 
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
@@ -225,7 +225,7 @@ static void fillColumnWithDate64Data(std::shared_ptr<arrow::ChunkedArray> & arro
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        auto & chunk = assert_cast<arrow::Date64Array &>(*(arrow_column->chunk(chunk_i)));
+        auto & chunk = dynamic_cast<arrow::Date64Array &>(*(arrow_column->chunk(chunk_i)));
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // Always? in ms
@@ -241,7 +241,7 @@ static void fillColumnWithTimestampData(std::shared_ptr<arrow::ChunkedArray> & a
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        auto & chunk = assert_cast<arrow::TimestampArray &>(*(arrow_column->chunk(chunk_i)));
+        auto & chunk = dynamic_cast<arrow::TimestampArray &>(*(arrow_column->chunk(chunk_i)));
         const auto & type = static_cast<const ::arrow::TimestampType &>(*chunk.type());
 
         UInt32 divide = 1;
@@ -309,9 +309,9 @@ static void fillOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedArray> 
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::ListArray & list_chunk = assert_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+        arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
         auto arrow_offsets_array = list_chunk.offsets();
-        auto & arrow_offsets = assert_cast<arrow::Int32Array &>(*arrow_offsets_array);
+        auto & arrow_offsets = dynamic_cast<arrow::Int32Array &>(*arrow_offsets_array);
         auto start = offsets_data.back();
         for (int64_t i = 1; i < arrow_offsets.length(); ++i)
             offsets_data.emplace_back(start + arrow_offsets.Value(i));
@@ -402,7 +402,7 @@ static void readColumnFromArrowColumn(
             array_vector.reserve(arrow_column->num_chunks());
             for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
             {
-                arrow::ListArray & list_chunk = assert_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
+                arrow::ListArray & list_chunk = dynamic_cast<arrow::ListArray &>(*(arrow_column->chunk(chunk_i)));
                 std::shared_ptr<arrow::Array> chunk = list_chunk.values();
                 array_vector.emplace_back(std::move(chunk));
             }
@@ -425,7 +425,7 @@ static void readColumnFromArrowColumn(
             std::vector<arrow::ArrayVector> nested_arrow_columns(fields_count);
             for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
             {
-                arrow::StructArray & struct_chunk = assert_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
+                arrow::StructArray & struct_chunk = dynamic_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
                 for (int i = 0; i < fields_count; ++i)
                     nested_arrow_columns[i].emplace_back(struct_chunk.field(i));
             }
@@ -449,7 +449,7 @@ static void readColumnFromArrowColumn(
                 arrow::ArrayVector dict_array;
                 for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
                 {
-                    arrow::DictionaryArray & dict_chunk = assert_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
+                    arrow::DictionaryArray & dict_chunk = dynamic_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
                     dict_array.emplace_back(dict_chunk.dictionary());
                 }
                 auto arrow_dict_column = std::make_shared<arrow::ChunkedArray>(dict_array);
@@ -466,7 +466,7 @@ static void readColumnFromArrowColumn(
             arrow::ArrayVector indexes_array;
             for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
             {
-                arrow::DictionaryArray & dict_chunk = assert_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
+                arrow::DictionaryArray & dict_chunk = dynamic_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
                 indexes_array.emplace_back(dict_chunk.indices());
             }
 
