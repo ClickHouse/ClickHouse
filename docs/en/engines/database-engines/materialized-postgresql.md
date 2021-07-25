@@ -63,4 +63,4 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 !!! warning "Warning"
-    **TOAST** values conversion is not supported. Default value for the data type will be used.
+    Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. Default value for the data type will be used.
