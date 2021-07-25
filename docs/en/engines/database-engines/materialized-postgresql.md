@@ -16,11 +16,11 @@ SELECT * FROM test_database.postgres_table;
 
 ## Settings {#settings}
 
-1. `materialized_postgresql_max_block_size` — Number of rows collected before flushing data into table. Default: `65536`.
+1. `materialized_postgresql_max_block_size` — Number of rows collected in memory before flushing data into table. Default: `65536`.
 
-2. `materialized_postgresql_tables_list` — List of tables for MaterializedPostgreSQL database engine. Default: `whole database`.
+2. `materialized_postgresql_tables_list` — A comma-separated list of PostgreSQL database tables, which will be replicated via MaterializedPostgreSQL database engine. Default: empty list - means whole PostgreSQL database will be replicated.
 
-3. `materialized_postgresql_allow_automatic_update` — Allow to reload table in the background, when schema changes are detected. Default: `0` (`false`).
+3. `materialized_postgresql_allow_automatic_update` — Allow to reload table in the background, when schema changes are detected. Default: `0` (`false`). DDL queries on PostgreSQL side are not replicated via ClickHouse `MaterializedPostgreSQL` engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactioanlly. In this case the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
 
 ``` sql
 CREATE DATABASE test_database
