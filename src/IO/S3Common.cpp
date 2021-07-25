@@ -679,21 +679,25 @@ namespace S3
                 "Bucket name length is out of bounds in virtual hosted style S3 URI: {}", quoteString(bucket));
     }
 
-    void URI::validateKey(const String & /*key*/)
+    void URI::validateKey(const String & key)
     {
         /// See:
         /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
         /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#putobject
 
+#if 0
         /// The following is valid for AWS S3:
-        ///     if (key.length() > 1024)
-        ///         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name is too long (showing first 1024 characters): {}", quoteString(key.substr(0, 1024) + "..."));
-        ///     if (!ValidUTF8Impl::isValidUTF8(key.data(), key.size()))
-        ///         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name must be valid UTF-8 string: {}", quoteString(key));
+        if (key.length() > 1024)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name is too long (showing first 1024 characters): {}", quoteString(key.substr(0, 1024) + "..."));
+        if (!ValidUTF8Impl::isValidUTF8(reinterpret_cast<const UInt8 *>(key.data()), key.size()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name must be valid UTF-8 string: {}", quoteString(key));
+#endif
 
+#if 0
         /// The following is valid for IBM COS:
-        ///     if (key.length() < 1)
-        ///         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name is too short (0 bytes long)");
+        if (key.length() < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name is too short (0 bytes long)");
+#endif
     }
 }
 
