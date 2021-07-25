@@ -507,20 +507,20 @@ static DataTypePtr getInternalType(
 
     if (arrow_type->id() == arrow::Type::DECIMAL128)
     {
-        const auto * decimal_type = assert_cast<arrow::DecimalType *>(arrow_type.get());
-        return std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->precision(), decimal_type->scale());
+        const auto & decimal_type = dynamic_cast<const arrow::DecimalType &>(*arrow_type);
+        return std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type.precision(), decimal_type.scale());
     }
 
     if (arrow_type->id() == arrow::Type::DECIMAL256)
     {
-        const auto * decimal_type = assert_cast<arrow::DecimalType *>(arrow_type.get());
-        return std::make_shared<DataTypeDecimal<Decimal256>>(decimal_type->precision(), decimal_type->scale());
+        const auto & decimal_type = dynamic_cast<const arrow::DecimalType &>(*arrow_type);
+        return std::make_shared<DataTypeDecimal<Decimal256>>(decimal_type.precision(), decimal_type.scale());
     }
 
     if (arrow_type->id() == arrow::Type::LIST)
     {
-        const auto * list_type = assert_cast<arrow::ListType *>(arrow_type.get());
-        auto list_nested_type = list_type->value_type();
+        const auto & list_type = dynamic_cast<const arrow::ListType &>(*arrow_type);
+        auto list_nested_type = list_type.value_type();
 
         const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(column_type.get());
         if (!array_type)
@@ -532,7 +532,7 @@ static DataTypePtr getInternalType(
 
     if (arrow_type->id() == arrow::Type::STRUCT)
     {
-        const auto * struct_type = assert_cast<arrow::StructType *>(arrow_type.get());
+        const auto & struct_type = dynamic_cast<const arrow::StructType &>(*arrow_type);
         const DataTypeTuple * tuple_type = typeid_cast<const DataTypeTuple *>(column_type.get());
         if (!tuple_type)
             throw Exception{ErrorCodes::CANNOT_CONVERT_TYPE,
@@ -541,40 +541,40 @@ static DataTypePtr getInternalType(
         const DataTypes & tuple_nested_types = tuple_type->getElements();
         int internal_fields_num = tuple_nested_types.size();
         /// If internal column has less elements then arrow struct, we will select only first internal_fields_num columns.
-        if (internal_fields_num > struct_type->num_fields())
+        if (internal_fields_num > struct_type.num_fields())
             throw Exception(
                     ErrorCodes::CANNOT_CONVERT_TYPE,
                     "Cannot convert arrow STRUCT with {} fields to a ClickHouse Tuple with {} elements: {}.",
-                    struct_type->num_fields(),
+                    struct_type.num_fields(),
                     internal_fields_num,
                     column_type->getName());
 
         DataTypes nested_types;
         for (int i = 0; i < internal_fields_num; ++i)
-            nested_types.push_back(getInternalType(struct_type->field(i)->type(), tuple_nested_types[i], column_name, format_name));
+            nested_types.push_back(getInternalType(struct_type.field(i)->type(), tuple_nested_types[i], column_name, format_name));
 
         return std::make_shared<DataTypeTuple>(std::move(nested_types));
     }
 
     if (arrow_type->id() == arrow::Type::DICTIONARY)
     {
-        const auto * arrow_dict_type = assert_cast<arrow::DictionaryType *>(arrow_type.get());
+        const auto & arrow_dict_type = dynamic_cast<const arrow::DictionaryType &>(*arrow_type);
         const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
         /// We allow to insert arrow dictionary into a non-LowCardinality column.
         const auto & dict_type = lc_type ? lc_type->getDictionaryType() : column_type;
-        return std::make_shared<DataTypeLowCardinality>(getInternalType(arrow_dict_type->value_type(), dict_type, column_name, format_name));
+        return std::make_shared<DataTypeLowCardinality>(getInternalType(arrow_dict_type.value_type(), dict_type, column_name, format_name));
     }
 
     if (arrow_type->id() == arrow::Type::MAP)
     {
-        const auto * arrow_map_type = typeid_cast<arrow::MapType *>(arrow_type.get());
+        const auto & arrow_map_type = typeid_cast<const arrow::MapType &>(*arrow_type);
         const auto * map_type = typeid_cast<const DataTypeMap *>(column_type.get());
         if (!map_type)
             throw Exception{ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert arrow MAP type to a not Map ClickHouse type {}.", column_type->getName()};
 
         return std::make_shared<DataTypeMap>(
-            getInternalType(arrow_map_type->key_type(), map_type->getKeyType(), column_name, format_name),
-            getInternalType(arrow_map_type->item_type(), map_type->getValueType(), column_name, format_name));
+            getInternalType(arrow_map_type.key_type(), map_type->getKeyType(), column_name, format_name),
+            getInternalType(arrow_map_type.item_type(), map_type->getValueType(), column_name, format_name));
     }
 
     if (arrow_type->id() == arrow::Type::UINT16
