@@ -48,7 +48,7 @@ namespace ErrorCodes
 
 static constexpr size_t small_buffer_size = 4096;
 
-static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out)
+static void openFileIfExists(const char * filename, std::optional<ReadBufferFromFile> & out)
 {
     /// Ignoring time of check is not time of use cases, as procfs/sysfs files are fairly persistent.
 
@@ -57,11 +57,11 @@ static void openFileIfExists(const char * filename, std::optional<ReadBufferFrom
         out.emplace(filename, small_buffer_size);
 }
 
-static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename)
+static std::unique_ptr<ReadBufferFromFile> openFileIfExists(const std::string & filename)
 {
     std::error_code ec;
     if (std::filesystem::is_regular_file(filename, ec))
-        return std::make_unique<ReadBufferFromFilePRead>(filename, small_buffer_size);
+        return std::make_unique<ReadBufferFromFile>(filename, small_buffer_size);
     return {};
 }
 
@@ -89,7 +89,7 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     for (size_t thermal_device_index = 0;; ++thermal_device_index)
     {
-        std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(fmt::format("/sys/class/thermal/thermal_zone{}/temp", thermal_device_index));
+        std::unique_ptr<ReadBufferFromFile> file = openFileIfExists(fmt::format("/sys/class/thermal/thermal_zone{}/temp", thermal_device_index));
         if (!file)
         {
             /// Sometimes indices are from zero sometimes from one.
@@ -113,7 +113,7 @@ AsynchronousMetrics::AsynchronousMetrics(
         }
 
         String hwmon_name;
-        ReadBufferFromFilePRead hwmon_name_in(hwmon_name_file, small_buffer_size);
+        ReadBufferFromFile hwmon_name_in(hwmon_name_file, small_buffer_size);
         readText(hwmon_name, hwmon_name_in);
         std::replace(hwmon_name.begin(), hwmon_name.end(), ' ', '_');
 
@@ -134,14 +134,14 @@ AsynchronousMetrics::AsynchronousMetrics(
                     break;
             }
 
-            std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(sensor_value_file);
+            std::unique_ptr<ReadBufferFromFile> file = openFileIfExists(sensor_value_file);
             if (!file)
                 continue;
 
             String sensor_name;
             if (sensor_name_file_exists)
             {
-                ReadBufferFromFilePRead sensor_name_in(sensor_name_file, small_buffer_size);
+                ReadBufferFromFile sensor_name_in(sensor_name_file, small_buffer_size);
                 readText(sensor_name, sensor_name_in);
                 std::replace(sensor_name.begin(), sensor_name.end(), ' ', '_');
             }
@@ -184,7 +184,7 @@ AsynchronousMetrics::AsynchronousMetrics(
             if (device_name.starts_with("loop"))
                 continue;
 
-            std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(device_dir.path() / "stat");
+            std::unique_ptr<ReadBufferFromFile> file = openFileIfExists(device_dir.path() / "stat");
             if (!file)
                 continue;
 
@@ -546,16 +546,13 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             Int64 peak = total_memory_tracker.getPeak();
             Int64 new_amount = data.resident;
 
-            Int64 difference = new_amount - amount;
-
-            /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
-            if (difference >= 1048576 || difference <= -1048576)
-                LOG_TRACE(&Poco::Logger::get("AsynchronousMetrics"),
-                    "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
-                    ReadableSize(amount),
-                    ReadableSize(peak),
-                    ReadableSize(new_amount),
-                    ReadableSize(difference));
+            LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"),
+                "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
+                ReadableSize(amount),
+                ReadableSize(peak),
+                ReadableSize(new_amount),
+                ReadableSize(new_amount - amount)
+            );
 
             total_memory_tracker.set(new_amount);
             CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
@@ -1024,7 +1021,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     {
         try
         {
-            ReadBufferFromFilePRead & in = *thermal[i];
+            ReadBufferFromFile & in = *thermal[i];
 
             in.rewind();
             Int64 temperature = 0;
@@ -1068,7 +1065,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         {
             if (edac[i].first)
             {
-                ReadBufferFromFilePRead & in = *edac[i].first;
+                ReadBufferFromFile & in = *edac[i].first;
                 in.rewind();
                 uint64_t errors = 0;
                 readText(errors, in);
@@ -1077,7 +1074,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
             if (edac[i].second)
             {
-                ReadBufferFromFilePRead & in = *edac[i].second;
+                ReadBufferFromFile & in = *edac[i].second;
                 in.rewind();
                 uint64_t errors = 0;
                 readText(errors, in);
@@ -1182,7 +1179,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                     total_number_of_parts += table_merge_tree->getPartsCount();
                 }
 
-                if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
+                if (StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
                 {
                     StorageReplicatedMergeTree::Status status;
                     table_replicated_merge_tree->getStatus(status, false);

@@ -15,6 +15,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 

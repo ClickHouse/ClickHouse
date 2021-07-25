@@ -174,7 +174,6 @@ public:
 
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
-    /// If 'check_limits = true' it will throw exception if the amount of data exceed the limits from settings.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
         MergeTreeData::DataPartsVector && parts,
         StorageMetadataPtr metadata_snapshot,
@@ -185,8 +184,7 @@ public:
         Poco::Logger * log,
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
-        bool use_skip_indexes,
-        bool check_limits);
+        bool use_skip_indexes);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

@@ -104,7 +104,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
@@ -126,36 +125,12 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
-static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
+
+static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key)
 {
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
     if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
-
-    if (!check_sample_column_is_correct)
-        return;
-
-    const auto & sampling_key = metadata.getSamplingKey();
-    DataTypePtr sampling_column_type = sampling_key.data_types[0];
-
-    bool is_correct_sample_condition = false;
-    if (sampling_key.data_types.size() == 1)
-    {
-        if (typeid_cast<const DataTypeUInt64 *>(sampling_column_type.get()))
-            is_correct_sample_condition = true;
-        else if (typeid_cast<const DataTypeUInt32 *>(sampling_column_type.get()))
-            is_correct_sample_condition = true;
-        else if (typeid_cast<const DataTypeUInt16 *>(sampling_column_type.get()))
-            is_correct_sample_condition = true;
-        else if (typeid_cast<const DataTypeUInt8 *>(sampling_column_type.get()))
-            is_correct_sample_condition = true;
-    }
-
-    if (!is_correct_sample_condition)
-        throw Exception(
-            "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
-            + ". Must be one unsigned integer type",
-            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 }
 
 MergeTreeData::MergeTreeData(
@@ -225,8 +200,7 @@ MergeTreeData::MergeTreeData(
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
         /// This is for backward compatibility.
-        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key,
-                              settings->check_sample_column_is_correct);
+        checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key);
     }
 
     checkTTLExpressions(metadata_, metadata_);
@@ -296,17 +270,19 @@ StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
-    if (expr.hasArrayJoin())
-        throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
+    for (const auto & action : expr.getActions())
+    {
+        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
 
-    try
-    {
-        expr.assertDeterministic();
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format("for {} key", key_name));
-        throw;
+        if (action.node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            IFunctionBase & func = *action.node->function_base;
+            if (!func.isDeterministic())
+                throw Exception(key_name + " key cannot contain non-deterministic functions, "
+                    "but contains function " + func.getName(),
+                    ErrorCodes::BAD_ARGUMENTS);
+        }
     }
 
     for (const ColumnWithTypeAndName & element : sample_block)
@@ -442,6 +418,7 @@ void MergeTreeData::checkProperties(
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key);
+
 }
 
 void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata, bool attach)
@@ -1111,7 +1088,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
 }
 
 
-void MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds)
+void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -1120,7 +1097,9 @@ void MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifet
 
     const auto settings = getSettings();
     time_t current_time = time(nullptr);
-    ssize_t deadline = current_time - custom_directories_lifetime_seconds;
+    ssize_t deadline = (custom_directories_lifetime_seconds >= 0)
+        ? current_time - custom_directories_lifetime_seconds
+        : current_time - settings->temporary_directories_lifetime.totalSeconds();
 
     /// Delete temporary directories older than a day.
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
@@ -1538,7 +1517,6 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     if ((which_old_type.isInt() && !which_new_type.isInt())
         || (which_old_type.isUInt() && !which_new_type.isUInt())
         || (which_old_type.isDate() && !which_new_type.isDate())
-        || (which_old_type.isDate32() && !which_new_type.isDate32())
         || (which_old_type.isDateTime() && !which_new_type.isDateTime())
         || (which_old_type.isFloat() && !which_new_type.isFloat()))
     {
@@ -1697,8 +1675,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "ALTER MODIFY SAMPLE BY is not supported for default-partitioned tables created with the old syntax",
                     ErrorCodes::BAD_ARGUMENTS);
 
-            checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key,
-                                  getSettings()->check_sample_column_is_correct);
+            checkSampleExpression(new_metadata, getSettings()->compatibility_allow_sampling_expression_not_in_primary_key);
         }
         if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
         {
@@ -2773,17 +2750,19 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             if (active_part_it == data_parts_by_info.end())
                 throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
 
-            /// We do not check allow_remote_fs_zero_copy_replication here because data may be shared
-            /// when allow_remote_fs_zero_copy_replication turned on and off again
+            /// We do not check allow_s3_zero_copy_replication here because data may be shared
+            /// when allow_s3_zero_copy_replication turned on and off again
 
             original_active_part->force_keep_shared_data = false;
 
-            if (original_active_part->volume->getDisk()->supportZeroCopyReplication() &&
-                part_copy->volume->getDisk()->supportZeroCopyReplication() &&
-                original_active_part->getUniqueId() == part_copy->getUniqueId())
+            if (original_active_part->volume->getDisk()->getType() == DiskType::Type::S3)
             {
-                /// May be when several volumes use the same S3/HDFS storage
-                original_active_part->force_keep_shared_data = true;
+                if (part_copy->volume->getDisk()->getType() == DiskType::Type::S3
+                        && original_active_part->getUniqueId() == part_copy->getUniqueId())
+                {
+                    /// May be when several volumes use the same S3 storage
+                    original_active_part->force_keep_shared_data = true;
+                }
             }
 
             modifyPartState(original_active_part, DataPartState::DeleteOnDestroy);
@@ -3358,25 +3337,20 @@ MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_st
     return res;
 }
 
-std::vector<DetachedPartInfo> MergeTreeData::getDetachedParts() const
+std::vector<DetachedPartInfo>
+MergeTreeData::getDetachedParts() const
 {
     std::vector<DetachedPartInfo> res;
 
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
-        String detached_path = fs::path(path) / MergeTreeData::DETACHED_DIR_NAME;
-
-        /// Note: we don't care about TOCTOU issue here.
-        if (disk->exists(detached_path))
+        for (auto it = disk->iterateDirectory(fs::path(path) / MergeTreeData::DETACHED_DIR_NAME); it->isValid(); it->next())
         {
-            for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
-            {
-                res.emplace_back();
-                auto & part = res.back();
+            res.emplace_back();
+            auto & part = res.back();
 
-                DetachedPartInfo::tryParseDetachedPartName(it->name(), part, format_version);
-                part.disk = disk->getName();
-            }
+            DetachedPartInfo::tryParseDetachedPartName(it->name(), part, format_version);
+            part.disk = disk->getName();
         }
     }
     return res;
@@ -3854,20 +3828,16 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
                 if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(item))
                     return true;
-            for (const auto & projection : metadata_snapshot->getProjections())
-            {
-                if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
-                    return true;
-            }
+            if (metadata_snapshot->selected_projection
+                && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
+                return true;
         }
         /// The tuple itself may be part of the primary key, so check that as a last resort.
         if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot))
             return true;
-        for (const auto & projection : metadata_snapshot->getProjections())
-        {
-            if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
-                return true;
-        }
+        if (metadata_snapshot->selected_projection
+            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+            return true;
         return false;
     }
     else
@@ -3876,11 +3846,10 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(left_in_operand))
                 return true;
 
-        for (const auto & projection : metadata_snapshot->getProjections())
-        {
-            if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
-                return true;
-        }
+        if (metadata_snapshot->selected_projection
+            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+            return true;
+
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot);
     }
 }
@@ -3920,7 +3889,7 @@ static void selectBestProjection(
         candidate.required_columns,
         metadata_snapshot,
         candidate.desc->metadata,
-        query_info,
+        query_info, // TODO syntax_analysis_result set in index
         query_context,
         settings.max_threads,
         max_added_blocks);
@@ -3938,7 +3907,7 @@ static void selectBestProjection(
             required_columns,
             metadata_snapshot,
             metadata_snapshot,
-            query_info,
+            query_info, // TODO syntax_analysis_result set in index
             query_context,
             settings.max_threads,
             max_added_blocks);
@@ -4196,7 +4165,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                 analysis_result.required_columns,
                 metadata_snapshot,
                 metadata_snapshot,
-                query_info,
+                query_info, // TODO syntax_analysis_result set in index
                 query_context,
                 settings.max_threads,
                 max_added_blocks);

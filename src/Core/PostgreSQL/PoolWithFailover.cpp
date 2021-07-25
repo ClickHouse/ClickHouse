@@ -1,7 +1,4 @@
 #include "PoolWithFailover.h"
-
-#if USE_LIBPQXX
-
 #include "Utils.h"
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
@@ -139,5 +136,3 @@ ConnectionHolderPtr PoolWithFailover::get()
     throw DB::Exception(DB::ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, "Unable to connect to any of the replicas");
 }
 }
-
-#endif
