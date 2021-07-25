@@ -11,3 +11,4 @@ VALUE
 VALUE
 \nvalue1\nvalue2\nvalue3\n
 \'\\xc3\\x28\'
+\'\\xc3\\x28\'

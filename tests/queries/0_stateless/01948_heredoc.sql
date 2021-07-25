@@ -19,3 +19,4 @@ value3
 $$;
 
 SELECT $doc$'\xc3\x28'$doc$;
+SELECT $\xc3\x28$'\xc3\x28'$\xc3\x28$;
