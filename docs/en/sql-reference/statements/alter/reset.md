@@ -1,23 +1,28 @@
-# Statement name (for example, SHOW USER) {#statement-name-in-lower-case}
+# RESET SETTING {#alter_reset_setting}
 
+This query resets table settings to their default values. Several settings may be reset in a single query. 
+If a setting was set previously then it is removed from table's metadata. If a setting has default value already then no action is taken.
+The query raises an exception if the setting does not exist.
+
+!!! note "Note"
+    `RESET` statement can be applied only to [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
 **Syntax**
 
 ```sql
-Syntax of the statement.
+ALTER TABLE [db.]table RESET SETTING setting_name [, ...];
 ```
 
-## Other necessary sections of the description (Optional) {#anchor}
+**Example**
 
-Examples of descriptions with a complicated structure:
+```sql
+CREATE TABLE example_table (id UInt32, data String) 
+    ENGINE=MergeTree() ORDER BY id
+    SETTINGS max_part_loading_threads=8;
+    
+ALTER TABLE example_table RESET SETTING max_part_loading_threads;
+```
 
-- https://clickhouse.tech/docs/en/sql-reference/statements/grant/
-- https://clickhouse.tech/docs/en/sql-reference/statements/revoke/
-- https://clickhouse.tech/docs/en/sql-reference/statements/select/join/
+**See Also** 
 
-
-**See Also** (Optional)
-
-Links to related topics as a list.
-
--   [link](#)
+-   [MergeTree settings](../../../operations/settings/merge-tree-settings.md)
