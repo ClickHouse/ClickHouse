@@ -42,7 +42,7 @@ public:
 
     ContextMutablePtr context() const override
     {
-        return global_context;
+        return Context::getGlobal();
     }
 
     bool isCancelled() const override
@@ -64,7 +64,6 @@ protected:
     std::string getDefaultCorePath() const override;
 
 private:
-    ContextMutablePtr global_context;
     Poco::Net::SocketAddress socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = false) const;
 
     using CreateServerFunc = std::function<void(UInt16)>;

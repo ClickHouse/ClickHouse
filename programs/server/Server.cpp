@@ -487,14 +487,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     Context::getGlobal()->setApplicationType(Context::ApplicationType::SERVER);
 
 #if !defined(NDEBUG) || !defined(__OPTIMIZE__)
-    global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");
+    Context::getGlobal()->addWarningMessage("Server was built in debug mode. It will work slowly.");
 #endif
 
 if (ThreadFuzzer::instance().isEffective())
-    global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
+    Context::getGlobal()->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
 #if defined(SANITIZER)
-    global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
+    Context::getGlobal()->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
 
@@ -503,11 +503,11 @@ if (ThreadFuzzer::instance().isEffective())
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
-    ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
+    ConnectionCollector::init(Context::getGlobal(), config().getUInt("max_threads_for_connection_collector", 10));
 
     bool has_zookeeper = config().has("zookeeper");
 
-    zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
+    zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return Context::getGlobal()->getZooKeeper(); });
     zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
     {
@@ -555,7 +555,7 @@ if (ThreadFuzzer::instance().isEffective())
             if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
             {
                 /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
-                global_context->addWarningMessage(
+                Context::getGlobal()->addWarningMessage(
                     fmt::format("Server is run under debugger and its binary image is modified (most likely with breakpoints).",
                     calculated_binary_hash)
                 );
@@ -620,7 +620,7 @@ if (ThreadFuzzer::instance().isEffective())
     }
 #endif
 
-    global_context->setRemoteHostFilter(config());
+    Context::getGlobal()->setRemoteHostFilter(config());
 
     std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
@@ -641,11 +641,11 @@ if (ThreadFuzzer::instance().isEffective())
         }
         else
         {
-            global_context->addWarningMessage(message);
+            Context::getGlobal()->addWarningMessage(message);
         }
     }
 
-    global_context->setPath(path);
+    Context::getGlobal()->setPath(path);
 
     StatusFile status{path + "status", StatusFile::write_full_info};
 
@@ -683,7 +683,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
         std::string tmp_path = config().getString("tmp_path", path + "tmp/");
         std::string tmp_policy = config().getString("tmp_policy", "");
-        const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
+        const VolumePtr & volume = Context::getGlobal()->setTemporaryStorage(tmp_path, tmp_policy);
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
@@ -695,7 +695,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
         auto flags_path = fs::path(path) / "flags/";
         fs::create_directories(flags_path);
-        global_context->setFlagsPath(flags_path);
+        Context::getGlobal()->setFlagsPath(flags_path);
     }
 
     /** Directory with user provided files that are usable by 'file' table function.
@@ -703,13 +703,13 @@ if (ThreadFuzzer::instance().isEffective())
     {
 
         std::string user_files_path = config().getString("user_files_path", fs::path(path) / "user_files/");
-        global_context->setUserFilesPath(user_files_path);
+        Context::getGlobal()->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
     }
 
     {
         std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", fs::path(path) / "dictionaries_lib/");
-        global_context->setDictionariesLibPath(dictionaries_lib_path);
+        Context::getGlobal()->setDictionariesLibPath(dictionaries_lib_path);
         fs::create_directories(dictionaries_lib_path);
     }
 
@@ -755,16 +755,16 @@ if (ThreadFuzzer::instance().isEffective())
             if (port < 0 || port > 0xFFFF)
                 throw Exception("Out of range '" + String(port_tag) + "': " + toString(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-            global_context->setInterserverIOAddress(this_host, port);
-            global_context->setInterserverScheme(scheme);
+            Context::getGlobal()->setInterserverIOAddress(this_host, port);
+            Context::getGlobal()->setInterserverScheme(scheme);
         }
     }
 
     LOG_DEBUG(log, "Initiailizing interserver credentials.");
-    global_context->updateInterserverCredentials(config());
+    Context::getGlobal()->updateInterserverCredentials(config());
 
     if (config().has("macros"))
-        global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
+        Context::getGlobal()->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
@@ -817,51 +817,51 @@ if (ThreadFuzzer::instance().isEffective())
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
-            //setTextLog(global_context->getTextLog());
+            //setTextLog(Context::getGlobal()->getTextLog());
             //buildLoggers(*config, logger());
-            global_context->setClustersConfig(config);
-            global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
-            global_context->setExternalAuthenticatorsConfig(*config);
-            global_context->setExternalModelsConfig(config);
+            Context::getGlobal()->setClustersConfig(config);
+            Context::getGlobal()->setMacros(std::make_unique<Macros>(*config, "macros", log));
+            Context::getGlobal()->setExternalAuthenticatorsConfig(*config);
+            Context::getGlobal()->setExternalModelsConfig(config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
-                global_context->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
+                Context::getGlobal()->setMaxTableSizeToDrop(config->getUInt64("max_table_size_to_drop"));
 
             if (config->has("max_partition_size_to_drop"))
-                global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
+                Context::getGlobal()->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
                 if (config->has("zookeeper"))
-                    global_context->reloadZooKeeperIfChanged(config);
+                    Context::getGlobal()->reloadZooKeeperIfChanged(config);
 
-                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
+                Context::getGlobal()->reloadAuxiliaryZooKeepersConfigIfChanged(config);
             }
 
-            global_context->updateStorageConfiguration(*config);
-            global_context->updateInterserverCredentials(*config);
+            Context::getGlobal()->updateStorageConfiguration(*config);
+            Context::getGlobal()->updateInterserverCredentials(*config);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
-    auto & access_control = global_context->getAccessControlManager();
+    auto & access_control = Context::getGlobal()->getAccessControlManager();
     if (config().has("custom_settings_prefixes"))
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
 
     /// Initialize access storages.
-    access_control.addStoragesFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+    access_control.addStoragesFromMainConfig(config(), config_path, [&] { return Context::getGlobal()->getZooKeeper(); });
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
-    global_context->setConfigReloadCallback([&]()
+    Context::getGlobal()->setConfigReloadCallback([&]()
     {
         main_config_reloader->reload();
         access_control.reloadUsersConfigs();
     });
 
     /// Limit on total number of concurrently executed queries.
-    global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
+    Context::getGlobal()->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
 
     /// Set up caches.
 
@@ -877,11 +877,11 @@ if (ThreadFuzzer::instance().isEffective())
         LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_size);
+    Context::getGlobal()->setUncompressedCache(uncompressed_cache_size);
 
     /// Load global settings from default_profile and system_profile.
-    global_context->setDefaultProfiles(config());
-    const Settings & settings = global_context->getSettingsRef();
+    Context::getGlobal()->setDefaultProfiles(config());
+    const Settings & settings = Context::getGlobal()->getSettingsRef();
 
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
@@ -893,12 +893,12 @@ if (ThreadFuzzer::instance().isEffective())
         LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_size);
+    Context::getGlobal()->setMarkCache(mark_cache_size);
 
     /// A cache for mmapped files.
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
     if (mmap_cache_size)
-        global_context->setMMappedFileCache(mmap_cache_size);
+        Context::getGlobal()->setMMappedFileCache(mmap_cache_size);
 
 #if USE_EMBEDDED_COMPILER
     constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 1024;
@@ -908,12 +908,12 @@ if (ThreadFuzzer::instance().isEffective())
 
     /// Set path for format schema files
     fs::path format_schema_path(config().getString("format_schema_path", fs::path(path) / "format_schemas/"));
-    global_context->setFormatSchemaPath(format_schema_path);
+    Context::getGlobal()->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
     /// Check sanity of MergeTreeSettings on server startup
-    global_context->getMergeTreeSettings().sanityCheck(settings);
-    global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
+    Context::getGlobal()->getMergeTreeSettings().sanityCheck(settings);
+    Context::getGlobal()->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
     Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
@@ -938,7 +938,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
 #if USE_NURAFT
         /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperStorageDispatcher();
+        Context::getGlobal()->initializeKeeperStorageDispatcher();
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -994,7 +994,7 @@ if (ThreadFuzzer::instance().isEffective())
           */
         LOG_INFO(log, "Shutting down storages.");
 
-        global_context->shutdown();
+        Context::getGlobal()->shutdown();
 
         LOG_DEBUG(log, "Shut down storages.");
 
@@ -1021,7 +1021,7 @@ if (ThreadFuzzer::instance().isEffective())
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
 
-            global_context->shutdownKeeperStorageDispatcher();
+            Context::getGlobal()->shutdownKeeperStorageDispatcher();
         }
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
@@ -1030,29 +1030,29 @@ if (ThreadFuzzer::instance().isEffective())
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
-        global_context.reset();
+        Context::resetGlobal();
         shared_context.reset();
         LOG_DEBUG(log, "Destroyed global context.");
     });
 
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
-    global_context->setCurrentDatabaseNameInGlobalContext(default_database);
+    Context::getGlobal()->setCurrentDatabaseNameInGlobalContext(default_database);
 
     LOG_INFO(log, "Loading metadata from {}", path);
 
     try
     {
-        loadMetadataSystem(global_context);
+        loadMetadataSystem(Context::getGlobal());
         /// After attaching system databases we can initialize system log.
-        global_context->initializeSystemLogs();
+        Context::getGlobal()->initializeSystemLogs();
         auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
         /// Then, load remaining databases
-        loadMetadata(global_context, default_database);
+        loadMetadata(Context::getGlobal(), default_database);
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
@@ -1081,7 +1081,7 @@ if (ThreadFuzzer::instance().isEffective())
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
-        global_context->initializeTraceCollector();
+        Context::getGlobal()->initializeTraceCollector();
 
         /// Set up server-wide memory profiler (for total memory tracker).
         UInt64 total_memory_profiler_step = config().getUInt64("total_memory_profiler_step", 0);
@@ -1132,7 +1132,7 @@ if (ThreadFuzzer::instance().isEffective())
     else
     {
         /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(global_context, config().getInt("dns_cache_update_period", 15));
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(Context::getGlobal(), config().getInt("dns_cache_update_period", 15));
     }
 
 #if defined(OS_LINUX)
@@ -1164,7 +1164,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(
-            global_context, config().getUInt("asynchronous_metrics_update_period_s", 1), servers_to_start_before_tables, servers);
+            Context::getGlobal(), config().getUInt("asynchronous_metrics_update_period_s", 1), servers_to_start_before_tables, servers);
         attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)
@@ -1378,12 +1378,12 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
-        global_context->enableNamedSessions();
+        Context::getGlobal()->enableNamedSessions();
 
         {
             String level_str = config().getString("text_log.level", "");
             int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
-            setTextLog(global_context->getTextLog(), level);
+            setTextLog(Context::getGlobal()->getTextLog(), level);
         }
 
         buildLoggers(config(), logger());
@@ -1403,7 +1403,7 @@ if (ThreadFuzzer::instance().isEffective())
         /// try to load dictionaries immediately, throw on error and die
         try
         {
-            global_context->loadDictionaries(config());
+            Context::getGlobal()->loadDictionaries(config());
         }
         catch (...)
         {
@@ -1418,8 +1418,14 @@ if (ThreadFuzzer::instance().isEffective())
             int pool_size = config().getInt("distributed_ddl.pool_size", 1);
             if (pool_size < 1)
                 throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-            global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
-                                                                     "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
+            Context::getGlobal()->setDDLWorker(std::make_unique<DDLWorker>(
+                pool_size,
+                ddl_zookeeper_path,
+                Context::getGlobal(),
+                &config(),
+                "distributed_ddl",
+                "DDLWorker",
+                &CurrentMetrics::MaxDDLEntryID));
         }
 
         for (auto & server : *servers)
@@ -1445,7 +1451,7 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Killing remaining queries.
-            global_context->getProcessList().killAllQueries();
+            Context::getGlobal()->getProcessList().killAllQueries();
 
             if (current_connections)
                 current_connections = waitServersToFinish(*servers, config().getInt("shutdown_wait_unfinished", 5));
@@ -1477,7 +1483,7 @@ if (ThreadFuzzer::instance().isEffective())
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
-                global_context->getConfigRef(), graphite_key, async_metrics));
+                Context::getGlobal()->getConfigRef(), graphite_key, async_metrics));
         }
 
         waitForTerminationRequest();
