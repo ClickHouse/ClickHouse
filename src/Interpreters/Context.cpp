@@ -45,6 +45,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -73,7 +74,6 @@
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <filesystem>
@@ -386,7 +386,6 @@ struct ContextSharedPart
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::unique_ptr<SystemLogs> system_logs;                /// Used to log queries and operations on parts
     std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
-    std::vector<String> warnings;                           /// Store warning messages about server configuration.
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
@@ -515,13 +514,6 @@ struct ContextSharedPart
 
         trace_collector.emplace(std::move(trace_log));
     }
-
-    void addWarningMessage(const String & message)
-    {
-        /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        log->warning(message);
-        warnings.push_back(message);
-    }
 };
 
 
@@ -643,12 +635,6 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
-std::vector<String> Context::getWarnings() const
-{
-    auto lock = getLock();
-    return shared->warnings;
-}
-
 VolumePtr Context::getTemporaryVolume() const
 {
     auto lock = getLock();
@@ -718,12 +704,6 @@ void Context::setDictionariesLibPath(const String & path)
 {
     auto lock = getLock();
     shared->dictionaries_lib_path = path;
-}
-
-void Context::addWarningMessage(const String & msg)
-{
-    auto lock = getLock();
-    shared->addWarningMessage(msg);
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -2721,6 +2701,20 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
         const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
+}
+
+void Context::setMySQLProtocolContext(MySQLWireContext * mysql_context)
+{
+    assert(session_context.lock().get() == this);
+    assert(!mysql_protocol_context);
+    assert(mysql_context);
+    mysql_protocol_context = mysql_context;
+}
+
+MySQLWireContext * Context::getMySQLProtocolContext() const
+{
+    assert(!mysql_protocol_context || session_context.lock().get());
+    return mysql_protocol_context;
 }
 
 }

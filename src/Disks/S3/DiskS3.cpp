@@ -158,6 +158,15 @@ DiskS3::DiskS3(
 {
 }
 
+String DiskS3::getUniqueId(const String & path) const
+{
+    Metadata metadata(remote_fs_root_path, metadata_path, path);
+    String id;
+    if (!metadata.remote_fs_objects.empty())
+        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
+    return id;
+}
+
 RemoteFSPathKeeperPtr DiskS3::createFSPathKeeper() const
 {
     auto settings = current_settings.get();
@@ -921,7 +930,7 @@ void DiskS3::onFreeze(const String & path)
     revision_file_buf.finalize();
 }
 
-void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &)
+void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context)
 {
     auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context);
 

@@ -94,7 +94,7 @@ public:
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
-    bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
+    std::optional<JobAndPool> getDataProcessingJob() override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 private:
@@ -196,7 +196,6 @@ private:
         bool final,
         String * disable_reason,
         TableLockHolder & table_lock_holder,
-        std::unique_lock<std::mutex> & lock,
         bool optimize_skip_merged_partitions = false,
         SelectPartsDecision * select_decision_out = nullptr);
 
@@ -235,8 +234,6 @@ private:
     std::optional<MergeTreeMutationStatus> getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids = nullptr) const;
 
     void startBackgroundMovesIfNeeded() override;
-
-    std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     friend class MergeTreeProjectionBlockOutputStream;
     friend class MergeTreeBlockOutputStream;

@@ -1,6 +1,8 @@
 #include <cassert>
 #include <Common/Exception.h>
 
+#include <DataStreams/IBlockInputStream.h>
+
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
@@ -33,7 +35,7 @@ public:
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names_and_types(metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names_, true))
+        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
@@ -261,7 +263,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
 
-    /// When max_threads > 1, the order of returning blocks is uncertain,
+    /// When max_threads > 1, the order of returning blocks is uncentain,
     /// which will lead to inconsistency after updateBlockData.
     auto new_context = Context::createCopy(context);
     new_context->setSetting("max_streams_to_max_threads_ratio", 1);

@@ -8,9 +8,11 @@ toc_title: Map(key, value)
 `Map(key, value)` data type stores `key:value` pairs. 
 
 **Parameters** 
+-   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md) or [Integer](../../sql-reference/data-types/int-uint.md).
+-   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) or [Array](../../sql-reference/data-types/array.md).
 
--   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), or [FixedString](../../sql-reference/data-types/fixedstring.md).
--   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [Array](../../sql-reference/data-types/array.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), or [FixedString](../../sql-reference/data-types/fixedstring.md).
+!!! warning "Warning"
+    Currently `Map` data type is an experimental feature. To work with it you must set `allow_experimental_map_type = 1`.
 
 To get the value from an `a Map('key', 'value')` column, use `a['key']` syntax. This lookup works now with a linear complexity.
 
@@ -71,36 +73,6 @@ SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map
 ┌─map───────────────────────────┐
 │ {1:'Ready',2:'Steady',3:'Go'} │
 └───────────────────────────────┘
-```
-
-## Map.keys and Map.values Subcolumns {#map-subcolumns}
-
-To optimize `Map` column processing, in some cases you can use the `keys` and `values` subcolumns instead of reading the whole column.
-
-**Example**
-
-Query:
-
-``` sql
-CREATE TABLE t_map (`a` Map(String, UInt64)) ENGINE = Memory;
-
-INSERT INTO t_map VALUES (map('key1', 1, 'key2', 2, 'key3', 3));
-
-SELECT a.keys FROM t_map;
-
-SELECT a.values FROM t_map;
-```
-
-Result:
-
-``` text
-┌─a.keys─────────────────┐
-│ ['key1','key2','key3'] │
-└────────────────────────┘
-
-┌─a.values─┐
-│ [1,2,3]  │
-└──────────┘
 ```
 
 **See Also**

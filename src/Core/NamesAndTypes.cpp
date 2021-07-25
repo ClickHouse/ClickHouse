@@ -6,7 +6,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <sparsehash/dense_hash_map>
 
 
 namespace DB
@@ -162,24 +161,18 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
-    /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
-#if !defined(ARCADIA_BUILD)
-    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
-#else
-    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
-#endif
-    types.set_empty_key(StringRef());
+    std::unordered_map<std::string_view, const NameAndTypePair *> self_columns;
 
     for (const auto & column : *this)
-        types[column.name] = &column.type;
+        self_columns[column.name] = &column;
 
     NamesAndTypesList res;
     for (const String & name : names)
     {
-        auto it = types.find(name);
-        if (it == types.end())
+        auto it = self_columns.find(name);
+        if (it == self_columns.end())
             throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
-        res.emplace_back(name, *it->second);
+        res.emplace_back(*it->second);
     }
 
     return res;

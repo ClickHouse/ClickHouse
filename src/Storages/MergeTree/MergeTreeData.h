@@ -57,7 +57,6 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
-class IBackgroundJobExecutor;
 
 namespace ErrorCodes
 {
@@ -526,8 +525,9 @@ public:
     void clearOldWriteAheadLogs();
 
     /// Delete all directories which names begin with "tmp"
-    /// Must be called with locked lockForShare() because it's using relative_data_path.
-    void clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds);
+    /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
+    /// Must be called with locked lockForShare() because use relative_data_path.
+    void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
     void clearEmptyParts();
 
@@ -807,17 +807,17 @@ public:
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
-    /// Schedules background job to like merge/mutate/fetch an executor
-    virtual bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) = 0;
-    /// Schedules job to move parts between disks/volumes and so on.
-    bool scheduleDataMovingJob(IBackgroundJobExecutor & executor);
+    /// Return main processing background job, like merge/mutate/fetch and so on
+    virtual std::optional<JobAndPool> getDataProcessingJob() = 0;
+    /// Return job to move parts between disks/volumes and so on.
+    std::optional<JobAndPool> getDataMovingJob();
     bool areBackgroundMovesNeeded() const;
 
-    /// Lock part in zookeeper for shared data in several nodes
+    /// Lock part in zookeeper for use common S3 data in several nodes
     /// Overridden in StorageReplicatedMergeTree
     virtual void lockSharedData(const IMergeTreeDataPart &) const {}
 
-    /// Unlock shared data part in zookeeper
+    /// Unlock common S3 data part in zookeeper
     /// Overridden in StorageReplicatedMergeTree
     virtual bool unlockSharedData(const IMergeTreeDataPart &) const { return true; }
 
@@ -1086,9 +1086,6 @@ private:
 
     // Get partition matcher for FREEZE / UNFREEZE queries.
     MatcherFn getPartitionMatcher(const ASTPtr & partition, ContextPtr context) const;
-
-    /// Returns default settings for storage with possible changes from global config.
-    virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
