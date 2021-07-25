@@ -33,13 +33,13 @@ SELECT * FROM test_database.table1;
 
 ## Требования {#requirements}
 
--   Настройка `wal_level` должна иметь значение `logical`, настройка `max_replication_slots` должна быть равна по меньшей мере `2` в конфигурационном файле в PostgreSQL.
+1. Настройка [wal_level](https://postgrespro.ru/docs/postgrespro/10/runtime-config-wal) должна иметь значение `logical`, параметр `max_replication_slots` должен быть равен по меньшей мере `2` в конфигурационном файле в PostgreSQL.
 
--   Каждая реплицируемая таблица должна иметь один из следующих **идентификаторов реплики**:
+2. Каждая реплицируемая таблица должна иметь один из следующих **идентификаторов реплики**:
 
-1. **по умолчанию** (первичный ключ)
+-   первичный ключ (по умолчанию)
 
-2. **индекс**
+-   индекс
 
 ``` bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
@@ -62,6 +62,5 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-## Предупреждение {#warning}
-
-1.  Преобразование **TOAST**-значений не поддерживается. Для типа данных будет использоваться значение по умолчанию.
+!!! warning "Предупреждение"
+    Преобразование **TOAST**-значений не поддерживается. Для типа данных будет использоваться значение по умолчанию.

@@ -33,13 +33,13 @@ SELECT * FROM test_database.table1;
 
 ## Requirements {#requirements}
 
--   Setting `wal_level` to `logical` and `max_replication_slots` to at least `2` in the PostgreSQL config file.
+1. Setting [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) to `logical` and `max_replication_slots` to at least `2` in the PostgreSQL config file.
 
--   Each replicated table must have one of the following **replica identity**:
+2. Each replicated table must have one of the following **replica identity**:
 
-1. **default** (primary key)
+-   primary key (by default)
 
-2. **index**
+-   index
 
 ``` bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
@@ -62,6 +62,5 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-## Warning {#warning}
-
-1. **TOAST** values conversion is not supported. Default value for the data type will be used.
+!!! warning "Warning"
+    **TOAST** values conversion is not supported. Default value for the data type will be used.
