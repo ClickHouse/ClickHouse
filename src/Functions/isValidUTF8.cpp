@@ -1,3 +1,5 @@
+#include <Functions/isValidUTF8.h>
+
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
@@ -10,15 +12,17 @@
 #    include <tmmintrin.h>
 #endif
 
+
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
+
+    namespace ErrorCodes
+    {
+        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    }
+
+
 /// inspired by https://github.com/cyb70289/utf8/
-struct ValidUTF8Impl
-{
     /*
 MIT License
 
@@ -71,7 +75,7 @@ SOFTWARE.
  * +--------------------+------------+-------------+------------+-------------+
  */
 
-    static inline UInt8 isValidUTF8Naive(const UInt8 * data, UInt64 len)
+    inline UInt8 ValidUTF8Impl::isValidUTF8Naive(const UInt8 * data, UInt64 len)
     {
         while (len)
         {
@@ -139,9 +143,9 @@ SOFTWARE.
     }
 
 #ifndef __SSE4_1__
-    static inline UInt8 isValidUTF8(const UInt8 * data, UInt64 len) { return isValidUTF8Naive(data, len); }
+    inline UInt8 ValidUTF8Impl::isValidUTF8(const UInt8 * data, UInt64 len) { return isValidUTF8Naive(data, len); }
 #else
-    static inline UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
+    inline UInt8 ValidUTF8Impl::isValidUTF8(const UInt8 * data, UInt64 len)
     {
         /*
         * Map high nibble of "First Byte" to legal character length minus 1
@@ -291,9 +295,7 @@ SOFTWARE.
     }
 #endif
 
-    static constexpr bool is_fixed_to_constant = false;
-
-    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
+    void ValidUTF8Impl::vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
     {
         size_t size = offsets.size();
         size_t prev_offset = 0;
@@ -304,35 +306,34 @@ SOFTWARE.
         }
     }
 
-    static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt8 & /*res*/) {}
+    void ValidUTF8Impl::vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt8 & /*res*/) {}
 
-    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res)
+    void ValidUTF8Impl::vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res)
     {
         size_t size = data.size() / n;
         for (size_t i = 0; i < size; ++i)
             res[i] = isValidUTF8(data.data() + i * n, n);
     }
 
-    [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt8> &)
+    [[noreturn]] void ValidUTF8Impl::array(const ColumnString::Offsets &, PaddedPODArray<UInt8> &)
     {
         throw Exception("Cannot apply function isValidUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt8> &)
+    [[noreturn]] void ValidUTF8Impl::uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt8> &)
     {
         throw Exception("Cannot apply function isValidUTF8 to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
-};
 
-struct NameIsValidUTF8
-{
-    static constexpr auto name = "isValidUTF8";
-};
-using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameIsValidUTF8, UInt8>;
+    struct NameIsValidUTF8
+    {
+        static constexpr auto name = "isValidUTF8";
+    };
+    using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameIsValidUTF8, UInt8>;
 
-void registerFunctionIsValidUTF8(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionValidUTF8>();
-}
+    void registerFunctionIsValidUTF8(FunctionFactory & factory)
+    {
+        factory.registerFunction<FunctionValidUTF8>();
+    }
 
 }
