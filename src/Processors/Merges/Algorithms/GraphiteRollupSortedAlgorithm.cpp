@@ -1,6 +1,7 @@
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <common/DateLUTImpl.h>
+#include <common/DateLUT.h>
 #include <DataTypes/DataTypeDateTime.h>
 
 
@@ -148,7 +149,10 @@ static time_t roundTimeToPrecision(const DateLUTImpl & date_lut, time_t time, UI
 
 IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 {
-    const DateLUTImpl & date_lut = dynamic_cast<const TimezoneMixin &>(*columns_definition.time_column_type).getTimeZone();
+    /// Timestamp column can be DateTime or UInt32. If it is DateTime, we can use its timezone for calculations.
+    const TimezoneMixin * timezone = dynamic_cast<const TimezoneMixin *>(columns_definition.time_column_type.get());
+
+    const DateLUTImpl & date_lut = timezone ? timezone->getTimeZone() : DateLUT::instance();
 
     /// Take rows in needed order and put them into `merged_data` until we get `max_block_size` rows.
     ///
