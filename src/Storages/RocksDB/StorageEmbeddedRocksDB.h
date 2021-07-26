@@ -17,7 +17,7 @@ namespace DB
 
 class Context;
 
-class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage
+class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage, WithContext
 {
     friend struct shared_ptr_helper<StorageEmbeddedRocksDB>;
     friend class EmbeddedRocksDBSource;
