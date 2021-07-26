@@ -44,7 +44,7 @@ If a setting is in a default state then no action is taken.
 **Syntax**
 
 ```sql
-RESET SETTING setting_name [, ...];
+RESET SETTING setting_name [, ...]
 ```
 
 **Example**
