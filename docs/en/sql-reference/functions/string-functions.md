@@ -13,13 +13,14 @@ toc_title: Strings
 Returns 1 for an empty string or 0 for a non-empty string.
 The result type is UInt8.
 A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
-The function also works for arrays.
+The function also works for arrays or UUID.
+UUID is empty if it is all zeros (nil UUID).
 
 ## notEmpty {#notempty}
 
 Returns 0 for an empty string or 1 for a non-empty string.
 The result type is UInt8.
-The function also works for arrays.
+The function also works for arrays or UUID.
 
 ## length {#length}
 
