@@ -4,7 +4,6 @@
 
 #include <map>
 #include <cassert>
-#include <chrono>
 
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -23,6 +22,7 @@
 
 #include <DataTypes/NestedUtils.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
@@ -386,7 +386,6 @@ StorageTinyLog::StorageTinyLog(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     bool attach,
     size_t max_compress_block_size_)
     : IStorage(table_id_)
@@ -399,7 +398,6 @@ StorageTinyLog::StorageTinyLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -488,7 +486,7 @@ Pipe StorageTinyLog::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    auto all_columns = metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names, true);
+    auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
 
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
@@ -523,34 +521,6 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, ContextPtr co
     return file_checker.check();
 }
 
-IStorage::ColumnSizeByName StorageTinyLog::getColumnSizes() const
-{
-    std::shared_lock lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
-    if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
-    ColumnSizeByName column_sizes;
-    FileChecker::Map file_sizes = file_checker.getFileSizes();
-
-    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
-    {
-        ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
-        {
-            String stream_name = ISerialization::getFileNameForStream(column, substream_path);
-            ColumnSize & size = column_sizes[column.name];
-            auto it = files.find(stream_name);
-            if (it != files.end())
-                size.data_compressed += file_sizes[fileName(it->second.data_file_path)];
-        };
-
-        ISerialization::SubstreamPath substream_path;
-        auto serialization = column.type->getDefaultSerialization();
-        serialization->enumerateStreams(stream_callback, substream_path);
-    }
-
-    return column_sizes;
-}
-
 void StorageTinyLog::truncate(
     const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
@@ -581,14 +551,8 @@ void registerStorageTinyLog(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return StorageTinyLog::create(
-            disk,
-            args.relative_data_path,
-            args.table_id,
-            args.columns,
-            args.constraints,
-            args.comment,
-            args.attach,
-            args.getContext()->getSettings().max_compress_block_size);
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
+            args.attach, args.getContext()->getSettings().max_compress_block_size);
     }, features);
 }
 

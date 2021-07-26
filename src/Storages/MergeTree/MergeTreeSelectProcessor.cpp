@@ -23,7 +23,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MarkRanges mark_ranges_,
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
-    ExpressionActionsSettings actions_settings,
     bool check_columns_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
@@ -32,7 +31,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     :
     MergeTreeBaseSelectProcessor{
         metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
-        storage_, metadata_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
+        storage_, metadata_snapshot_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
@@ -72,17 +71,9 @@ try
         storage, metadata_snapshot, data_part,
         required_columns, prewhere_info, check_columns);
 
-    std::unique_ptr<MergeTreeBlockSizePredictor> size_predictor;
-    if (preferred_block_size_bytes)
-    {
-        const auto & required_column_names = task_columns.columns.getNames();
-        const auto & required_pre_column_names = task_columns.pre_columns.getNames();
-        NameSet complete_column_names(required_column_names.begin(), required_column_names.end());
-        complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
-
-        size_predictor = std::make_unique<MergeTreeBlockSizePredictor>(
-            data_part, Names(complete_column_names.begin(), complete_column_names.end()), metadata_snapshot->getSampleBlock());
-    }
+    auto size_predictor = (preferred_block_size_bytes == 0)
+        ? nullptr
+        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, metadata_snapshot->getSampleBlock());
 
     /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();

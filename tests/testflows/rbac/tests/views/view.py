@@ -1150,9 +1150,13 @@ def feature(self, stress=None, parallel=None, node="clickhouse1"):
         self.context.stress = parallel
 
     tasks = []
-    with Pool(3) as pool:
+    pool = Pool(3)
+
+    try:
         try:
             for suite in loads(current_module(), Suite):
                 run_scenario(pool, tasks, suite)
         finally:
             join(tasks)
+    finally:
+        pool.close()

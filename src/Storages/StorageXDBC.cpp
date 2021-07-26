@@ -8,6 +8,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Path.h>
 #include <Processors/Pipe.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
@@ -29,20 +30,17 @@ StorageXDBC::StorageXDBC(
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
     const ColumnsDescription & columns_,
-    const String & comment,
     ContextPtr context_,
     const BridgeHelperPtr bridge_helper_)
     /// Please add support for constraints as soon as StorageODBC or JDBC will support insertion.
-    : IStorageURLBase(
-        Poco::URI(),
-        context_,
-        table_id_,
-        IXDBCBridgeHelper::DEFAULT_FORMAT,
-        getFormatSettings(context_),
-        columns_,
-        ConstraintsDescription{},
-        comment,
-        "" /* CompressionMethod */)
+    : IStorageURLBase(Poco::URI(),
+                      context_,
+                      table_id_,
+                      IXDBCBridgeHelper::DEFAULT_FORMAT,
+                      getFormatSettings(context_),
+                      columns_,
+                      ConstraintsDescription{},
+                      "" /* CompressionMethod */)
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
@@ -169,12 +167,10 @@ namespace
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.getContext(),
                 args.getContext()->getSettingsRef().http_receive_timeout.value,
                 engine_args[0]->as<ASTLiteral &>().value.safeGet<String>());
-            return std::make_shared<StorageXDBC>(
-                args.table_id,
+            return std::make_shared<StorageXDBC>(args.table_id,
                 engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
                 engine_args[2]->as<ASTLiteral &>().value.safeGet<String>(),
                 args.columns,
-                args.comment,
                 args.getContext(),
                 bridge_helper);
 

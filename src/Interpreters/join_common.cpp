@@ -49,70 +49,20 @@ ColumnPtr changeLowCardinality(const ColumnPtr & column, const ColumnPtr & dst_s
 namespace JoinCommon
 {
 
-void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
+void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability)
 {
-    if (column.type->lowCardinality())
-    {
-        column.type = recursiveRemoveLowCardinality(column.type);
-        column.column = column.column->convertToFullColumnIfLowCardinality();
-    }
-    else
-    {
-        column.type = std::make_shared<DataTypeLowCardinality>(column.type);
-        MutableColumnPtr lc = column.type->createColumn();
-        typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column.column, 0, column.column->size());
-        column.column = std::move(lc);
-    }
-}
-
-bool canBecomeNullable(const DataTypePtr & type)
-{
-    bool can_be_inside = type->canBeInsideNullable();
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        can_be_inside |= low_cardinality_type->getDictionaryType()->canBeInsideNullable();
-    return can_be_inside;
-}
-
-/// Add nullability to type.
-/// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
-DataTypePtr convertTypeToNullable(const DataTypePtr & type)
-{
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-    {
-        const auto & dict_type = low_cardinality_type->getDictionaryType();
-        if (dict_type->canBeInsideNullable())
-            return std::make_shared<DataTypeLowCardinality>(makeNullable(dict_type));
-    }
-    return makeNullable(type);
-}
-
-void convertColumnToNullable(ColumnWithTypeAndName & column, bool remove_low_card)
-{
-    if (remove_low_card && column.type->lowCardinality())
+    if (low_card_nullability && column.type->lowCardinality())
     {
         column.column = recursiveRemoveLowCardinality(column.column);
         column.type = recursiveRemoveLowCardinality(column.type);
     }
 
-    if (column.type->isNullable() || !canBecomeNullable(column.type))
+    if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
 
-    column.type = convertTypeToNullable(column.type);
-
+    column.type = makeNullable(column.type);
     if (column.column)
-    {
-        if (column.column->lowCardinality())
-        {
-            /// Convert nested to nullable, not LowCardinality itself
-            auto mut_col = IColumn::mutate(std::move(column.column));
-            ColumnLowCardinality * col_as_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
-            if (!col_as_lc->nestedIsNullable())
-                col_as_lc->nestedToNullable();
-            column.column = std::move(mut_col);
-        }
-        else
-            column.column = makeNullable(column.column);
-    }
+        column.column = makeNullable(column.column);
 }
 
 void convertColumnsToNullable(Block & block, size_t starting_pos)
@@ -124,24 +74,6 @@ void convertColumnsToNullable(Block & block, size_t starting_pos)
 /// @warning It assumes that every NULL has default value in nested column (or it does not matter)
 void removeColumnNullability(ColumnWithTypeAndName & column)
 {
-    if (column.type->lowCardinality())
-    {
-        /// LowCardinality(Nullable(T)) case
-        const auto & dict_type = typeid_cast<const DataTypeLowCardinality *>(column.type.get())->getDictionaryType();
-        column.type = std::make_shared<DataTypeLowCardinality>(removeNullable(dict_type));
-
-        if (column.column && column.column->lowCardinality())
-        {
-            auto mut_col = IColumn::mutate(std::move(column.column));
-            ColumnLowCardinality * col_as_lc = typeid_cast<ColumnLowCardinality *>(mut_col.get());
-            if (col_as_lc && col_as_lc->nestedIsNullable())
-                col_as_lc->nestedRemoveNullable();
-            column.column = std::move(mut_col);
-        }
-
-        return;
-    }
-
     if (!column.type->isNullable())
         return;
 
@@ -164,7 +96,7 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
     ColumnPtr dst_not_null = JoinCommon::emptyNotNullableClone(dst_column);
     bool lowcard_src = JoinCommon::emptyNotNullableClone(src_column)->lowCardinality();
     bool lowcard_dst = dst_not_null->lowCardinality();
-    bool change_lowcard = lowcard_src != lowcard_dst;
+    bool change_lowcard = (!lowcard_src && lowcard_dst) || (lowcard_src && !lowcard_dst);
 
     if (nullable_src && !nullable_dst)
     {
@@ -316,32 +248,47 @@ void createMissedColumns(Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & column = block.getByPosition(i);
-        if (!column.column) //-V1051
+        if (!column.column)
             column.column = column.type->createColumn();
     }
 }
 
 /// Append totals from right to left block, correct types if needed
-void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_join, Block & out_block)
+void joinTotals(const Block & totals, const Block & columns_to_add, const TableJoin & table_join, Block & block)
 {
     if (table_join.forceNullableLeft())
-        JoinCommon::convertColumnsToNullable(left_totals);
+        convertColumnsToNullable(block);
 
-    if (table_join.forceNullableRight())
-        JoinCommon::convertColumnsToNullable(right_totals);
-
-    for (auto & col : out_block)
+    if (Block totals_without_keys = totals)
     {
-        if (const auto * left_col = left_totals.findByName(col.name))
-            col = *left_col;
-        else if (const auto * right_col = right_totals.findByName(col.name))
-            col = *right_col;
-        else
-            col.column = col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+        for (const auto & name : table_join.keyNamesRight())
+            totals_without_keys.erase(totals_without_keys.getPositionByName(name));
 
-        /// In case of using `arrayJoin` we can get more or less rows than one
-        if (col.column->size() != 1)
-            col.column = col.column->cloneResized(1);
+        for (auto & col : totals_without_keys)
+        {
+            if (table_join.rightBecomeNullable(col.type))
+                JoinCommon::convertColumnToNullable(col);
+
+            /// In case of arrayJoin it can be not one row
+            if (col.column->size() != 1)
+                col.column = col.column->cloneResized(1);
+        }
+
+        for (size_t i = 0; i < totals_without_keys.columns(); ++i)
+            block.insert(totals_without_keys.safeGetByPosition(i));
+    }
+    else
+    {
+        /// We will join empty `totals` - from one row with the default values.
+
+        for (size_t i = 0; i < columns_to_add.columns(); ++i)
+        {
+            const auto & col = columns_to_add.getByPosition(i);
+            block.insert({
+                col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(),
+                col.type,
+                col.name});
+        }
     }
 }
 

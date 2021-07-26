@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Functions/TargetSpecific.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 
 #include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>

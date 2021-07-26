@@ -282,7 +282,7 @@ GRANT INSERT(x,y) ON db.table TO john
             - `ALTER MATERIALIZE TTL`. Уровень: `TABLE`. Алиасы: `MATERIALIZE TTL`
         - `ALTER SETTINGS`. Уровень: `TABLE`. Алиасы: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
         - `ALTER MOVE PARTITION`. Уровень: `TABLE`. Алиасы: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
-        - `ALTER FETCH PARTITION`. Уровень: `TABLE`. Алиасы: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
+        - `ALTER FETCH PARTITION`. Уровень: `TABLE`. Алиасы: `FETCH PARTITION`
         - `ALTER FREEZE PARTITION`. Уровень: `TABLE`. Алиасы: `FREEZE PARTITION`
     - `ALTER VIEW` Уровень: `GROUP`
         - `ALTER VIEW REFRESH `. Уровень: `VIEW`. Алиасы: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
@@ -319,11 +319,12 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Разрешает выполнять запросы [DROP](misc.md#drop) и [DETACH](misc.md#detach-statement) в соответствии со следующей иерархией привилегий:
 
-- `DROP`. Уровень: `GROUP`
+- `DROP`. Уровень: 
     - `DROP DATABASE`. Уровень: `DATABASE`
     - `DROP TABLE`. Уровень: `TABLE`
     - `DROP VIEW`. Уровень: `VIEW`
     - `DROP DICTIONARY`. Уровень: `DICTIONARY`
+
 
 ### TRUNCATE {#grant-truncate}
 

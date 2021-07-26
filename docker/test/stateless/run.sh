@@ -35,7 +35,7 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     # simpliest way to forward env variables to server
     sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
 else
-    sudo clickhouse start
+    service clickhouse-server start
 fi
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
@@ -80,8 +80,6 @@ function run_tests()
 
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
-        ADDITIONAL_OPTIONS+=('--jobs')
-        ADDITIONAL_OPTIONS+=('2')
     else
         # Too many tests fail for DatabaseReplicated in parallel. All other
         # configurations are OK.
@@ -103,33 +101,9 @@ timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
 clickhouse-client -q "system flush logs" ||:
 
-grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
 clickhouse-client -q "select * from system.query_log format TSVWithNamesAndTypes" | pigz > /test_output/query-log.tsv.gz &
 clickhouse-client -q "select * from system.query_thread_log format TSVWithNamesAndTypes" | pigz > /test_output/query-thread-log.tsv.gz &
-clickhouse-client --allow_introspection_functions=1 -q "
-    WITH
-        arrayMap(x -> concat(demangle(addressToSymbol(x)), ':', addressToLine(x)), trace) AS trace_array,
-        arrayStringConcat(trace_array, '\n') AS trace_string
-    SELECT * EXCEPT(trace), trace_string FROM system.trace_log FORMAT TSVWithNamesAndTypes
-" | pigz > /test_output/trace-log.tsv.gz &
-
-# Also export trace log in flamegraph-friendly format.
-for trace_type in CPU Memory Real
-do
-    clickhouse-client -q "
-            select
-                arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
-                count(*) AS samples
-            from system.trace_log
-            where trace_type = '$trace_type'
-            group by trace
-            order by samples desc
-            settings allow_introspection_functions = 1
-            format TabSeparated" \
-        | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" &
-done
-
 wait ||:
 
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
@@ -141,8 +115,6 @@ tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_l
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-  grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
-  grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
     pigz < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.gz ||:
     pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
