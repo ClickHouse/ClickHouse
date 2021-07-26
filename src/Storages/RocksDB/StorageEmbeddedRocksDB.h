@@ -8,6 +8,7 @@
 namespace rocksdb
 {
     class DB;
+    class Statistics;
 }
 
 
@@ -47,6 +48,8 @@ public:
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {rocksdb_dir}; }
+
+    std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
 
 protected:
     StorageEmbeddedRocksDB(const StorageID & table_id_,

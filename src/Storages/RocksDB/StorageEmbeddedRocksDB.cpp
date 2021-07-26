@@ -275,6 +275,7 @@ void StorageEmbeddedRocksDB::initDb()
     rocksdb::DB * db;
     options.create_if_missing = true;
     options.compression = rocksdb::CompressionType::kZSTD;
+    options.statistics = rocksdb::CreateDBStatistics();
 
     /// It is too verbose by default, and in fact we don't care about rocksdb logs at all.
     options.info_log_level = rocksdb::ERROR_LEVEL;
@@ -368,6 +369,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     return StorageEmbeddedRocksDB::create(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0]);
 }
 
+std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
+{
+    return rocksdb_ptr->GetOptions().statistics;
+}
 
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
