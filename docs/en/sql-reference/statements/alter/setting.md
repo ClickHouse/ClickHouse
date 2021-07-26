@@ -5,7 +5,7 @@ toc_title: SETTING
 
 # Table Settings Manipulations {#table_settings_manipulations}
 
-A set of queries to change table settings. You can modify settings or reset them to default values. A single query can change several settings at once. 
+There is a set of queries to change table settings. You can modify settings or reset them to default values. A single query can change several settings at once. 
 If a setting with the specified name does not exist, then the query raises an exception.
 
 **Syntax**
