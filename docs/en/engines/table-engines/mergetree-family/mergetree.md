@@ -389,7 +389,7 @@ Functions with a constant argument that is less than ngram size can’t be used 
     -   `NOT startsWith(s, 'test')`
 
 ### Projections {#projections}
-Projections are like materialized views, but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
+Projections are like materialized views but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
 #### Query {#projection-query}
 A projection query is what defines a projection. It has the following grammar:
