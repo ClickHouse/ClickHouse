@@ -20,7 +20,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Required parameters:
 
--  `primary_key_name` – any column name in the column list.
+- `primary_key_name` – any column name in the column list.
 - `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `rocksdb key`.
 - columns other than the primary key will be serialized in binary as `rocksdb` value in corresponding order.
 - queries with key `equals` or `in` filtering will be optimized to multi keys lookup from `rocksdb`.
@@ -37,6 +37,22 @@ CREATE TABLE test
 )
 ENGINE = EmbeddedRocksDB
 PRIMARY KEY key
+```
+
+## Metrics
+
+There is also `system.rocksdb` table, that expose rocksdb statistics:
+
+```sql
+SELECT
+    name,
+    value
+FROM system.rocksdb
+
+┌─name──────────────────────┬─value─┐
+│ no.file.opens             │     1 │
+│ number.block.decompressed │     1 │
+└───────────────────────────┴───────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/embedded-rocksdb/) <!--hide-->
