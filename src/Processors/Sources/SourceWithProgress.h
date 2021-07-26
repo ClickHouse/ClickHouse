@@ -51,7 +51,7 @@ public:
     void setLimits(const StreamLocalLimits & limits_) final { limits = limits_; }
     void setLeafLimits(const SizeLimits & leaf_limits_) final {leaf_limits = leaf_limits_; }
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) final { quota = quota_; }
-    void setProcessListElement(QueryStatus * elem) final;
+    void setProcessListElement(QueryStatus * elem) final { process_list_elem = elem; }
     void setProgressCallback(const ProgressCallback & callback) final { progress_callback = callback; }
     void addTotalRowsApprox(size_t value) final { total_rows_approx += value; }
 

@@ -24,7 +24,7 @@ public:
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context)>;
+        ContextConstPtr context)>;
 
     static DiskFactory & instance();
 
@@ -34,7 +34,7 @@ public:
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context) const;
+        ContextConstPtr context) const;
 
 private:
     using DiskTypeRegistry = std::unordered_map<String, Creator>;

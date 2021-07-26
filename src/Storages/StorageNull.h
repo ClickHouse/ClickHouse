@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
@@ -15,9 +15,9 @@ namespace DB
 /** When writing, does nothing.
   * When reading, returns nothing.
   */
-class StorageNull final : public shared_ptr_helper<StorageNull>, public IStorage
+class StorageNull final : public ext::shared_ptr_helper<StorageNull>, public IStorage
 {
-    friend struct shared_ptr_helper<StorageNull>;
+    friend struct ext::shared_ptr_helper<StorageNull>;
 public:
     std::string getName() const override { return "Null"; }
 
@@ -57,14 +57,12 @@ public:
 private:
 
 protected:
-    StorageNull(
-        const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const String & comment)
+    StorageNull(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
         : IStorage(table_id_)
     {
         StorageInMemoryMetadata metadata_;
         metadata_.setColumns(columns_description_);
         metadata_.setConstraints(constraints_);
-        metadata_.setComment(comment);
         setInMemoryMetadata(metadata_);
     }
 };

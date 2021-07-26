@@ -1,14 +1,8 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#include <Common/config.h>
-#endif
-
-#if USE_AWS_S3
-
 #include <utility>
 #include <common/types.h>
-#include <aws/core/client/ClientConfiguration.h> // Y_IGNORE
+#include <aws/core/client/ClientConfiguration.h>
 #include <Poco/URI.h>
 
 namespace DB::S3
@@ -22,5 +16,3 @@ public:
 };
 
 }
-
-#endif

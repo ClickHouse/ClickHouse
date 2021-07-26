@@ -30,6 +30,7 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
 ///
@@ -57,7 +58,6 @@ public:
         size_t result_position;
 
         std::string toString() const;
-        JSONBuilder::ItemPtr toTree() const;
     };
 
     using Actions = std::vector<Action>;
@@ -103,13 +103,11 @@ public:
     void execute(Block & block, bool dry_run = false) const;
 
     bool hasArrayJoin() const;
-    void assertDeterministic() const;
 
     /// Obtain a sample block that contains the names and types of result columns.
     const Block & getSampleBlock() const { return sample_block; }
 
     std::string dumpActions() const;
-    JSONBuilder::ItemPtr toTree() const;
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
@@ -254,7 +252,7 @@ struct ExpressionActionsChain : WithContext
         steps.clear();
     }
 
-    ActionsDAGPtr getLastActions(bool allow_empty = false)  // -V1071
+    ActionsDAGPtr getLastActions(bool allow_empty = false)
     {
         if (steps.empty())
         {

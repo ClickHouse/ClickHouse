@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 CFLAGS(
-    -DUSE_SSL -DUSE_XXHASH
+    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
@@ -15,7 +15,6 @@ ADDINCL(
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
-    GLOBAL contrib/restricted/murmurhash
 )
 
 PEERDIR(
@@ -31,7 +30,6 @@ PEERDIR(
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
-    contrib/restricted/murmurhash
     library/cpp/consistent_hashing
 )
 
@@ -44,7 +42,6 @@ SRCS(
     FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
-    FunctionSQLJSON.cpp
     FunctionsAES.cpp
     FunctionsCoding.cpp
     FunctionsConversion.cpp
@@ -77,12 +74,6 @@ SRCS(
     GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
     GeoHash.cpp
     IFunction.cpp
-    JSONPath/Parsers/ParserJSONPath.cpp
-    JSONPath/Parsers/ParserJSONPathMemberAccess.cpp
-    JSONPath/Parsers/ParserJSONPathQuery.cpp
-    JSONPath/Parsers/ParserJSONPathRange.cpp
-    JSONPath/Parsers/ParserJSONPathRoot.cpp
-    JSONPath/Parsers/ParserJSONPathStar.cpp
     TargetSpecific.cpp
     URL/URLHierarchy.cpp
     URL/URLPathHierarchy.cpp
@@ -153,6 +144,7 @@ SRCS(
     array/arrayFirst.cpp
     array/arrayFirstIndex.cpp
     array/arrayFlatten.cpp
+    array/arrayFold.cpp
     array/arrayIntersect.cpp
     array/arrayJoin.cpp
     array/arrayMap.cpp
@@ -231,7 +223,6 @@ SRCS(
     currentDatabase.cpp
     currentUser.cpp
     dateDiff.cpp
-    dateName.cpp
     date_trunc.cpp
     decodeXMLComponent.cpp
     decrypt.cpp
@@ -313,7 +304,6 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
-    indexHint.cpp
     initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -387,7 +377,6 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
-    padString.cpp
     partitionId.cpp
     pi.cpp
     plus.cpp
@@ -494,7 +483,6 @@ SRCS(
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp
-    toJSONString.cpp
     toLowCardinality.cpp
     toMinute.cpp
     toModifiedJulianDay.cpp
@@ -545,7 +533,6 @@ SRCS(
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
-    validateNestedArraySizes.cpp
     version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp

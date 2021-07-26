@@ -325,7 +325,7 @@ class Task_self_copy:
 def execute_task(started_cluster, task, cmd_options):
     task.start()
 
-    zk = started_cluster.get_kazoo_client('zoo1')
+    zk = cluster.get_kazoo_client('zoo1')
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
 
@@ -335,7 +335,7 @@ def execute_task(started_cluster, task, cmd_options):
         print("No node /clickhouse-copier. It is Ok in first test.")
 
     # Run cluster-copier processes on each node
-    docker_api = started_cluster.docker_client.api
+    docker_api = docker.from_env().api
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
@@ -351,7 +351,7 @@ def execute_task(started_cluster, task, cmd_options):
     copiers = random.sample(list(started_cluster.instances.keys()), 3)
 
     for instance_name in copiers:
-        instance = started_cluster.instances[instance_name]
+        instance = cluster.instances[instance_name]
         container = instance.get_docker_handle()
         instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs/config-copier.xml"),
                                         "/etc/clickhouse-server/config-copier.xml")
@@ -364,7 +364,7 @@ def execute_task(started_cluster, task, cmd_options):
 
     # Wait for copiers stopping and check their return codes
     for exec_id, instance_name in zip(copiers_exec_ids, copiers):
-        instance = started_cluster.instances[instance_name]
+        instance = cluster.instances[instance_name]
         while True:
             res = docker_api.exec_inspect(exec_id)
             if not res['Running']:
