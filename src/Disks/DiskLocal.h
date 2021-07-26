@@ -100,6 +100,8 @@ public:
 
     DiskType::Type getType() const override { return DiskType::Type::Local; }
 
+    bool supportZeroCopyReplication() const override { return false; }
+
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
 private:

@@ -39,6 +39,7 @@ PEERDIR(
 
 SRCS(
     CRC.cpp
+    FunctionChar.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
     FunctionFile.cpp
@@ -46,7 +47,10 @@ SRCS(
     FunctionJoinGet.cpp
     FunctionSQLJSON.cpp
     FunctionsAES.cpp
-    FunctionsCoding.cpp
+    FunctionsBinaryRepr.cpp
+    FunctionsBitToArray.cpp
+    FunctionsCodingIP.cpp
+    FunctionsCodingUUID.cpp
     FunctionsConversion.cpp
     FunctionsEmbeddedDictionaries.cpp
     FunctionsExternalDictionaries.cpp
@@ -209,7 +213,6 @@ SRCS(
     bitTestAny.cpp
     bitWrapperFunc.cpp
     bitXor.cpp
-    bitmaskToList.cpp
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
@@ -277,6 +280,7 @@ SRCS(
     gcd.cpp
     generateUUIDv4.cpp
     geoToH3.cpp
+    geoToS2.cpp
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp
@@ -456,6 +460,15 @@ SRCS(
     runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
+    s2CapContains.cpp
+    s2CapUnion.cpp
+    s2CellsIntersect.cpp
+    s2GetNeighbors.cpp
+    s2RectAdd.cpp
+    s2RectContains.cpp
+    s2RectIntersection.cpp
+    s2RectUnion.cpp
+    s2ToGeo.cpp
     sigmoid.cpp
     sign.cpp
     sin.cpp
@@ -464,6 +477,7 @@ SRCS(
     sleepEachRow.cpp
     sqrt.cpp
     startsWith.cpp
+    stringCutToZero.cpp
     stringToH3.cpp
     substring.cpp
     subtractDays.cpp
