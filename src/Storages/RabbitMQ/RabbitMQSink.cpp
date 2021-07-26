@@ -1,4 +1,4 @@
-#include <Storages/RabbitMQ/RabbitMQBlockOutputStream.h>
+#include <Storages/RabbitMQ/RabbitMQSink.h>
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Formats/FormatFactory.h>

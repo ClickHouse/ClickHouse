@@ -13,7 +13,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/checkStackSize.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/StorageMaterializedView.h>

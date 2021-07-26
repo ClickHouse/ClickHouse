@@ -14,7 +14,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
-#include <Storages/RabbitMQ/RabbitMQBlockOutputStream.h>
+#include <Storages/RabbitMQ/RabbitMQSink.h>
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/StorageFactory.h>

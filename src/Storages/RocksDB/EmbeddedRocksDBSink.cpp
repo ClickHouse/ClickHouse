@@ -1,4 +1,4 @@
-#include <Storages/RocksDB/EmbeddedRocksDBBlockOutputStream.h>
+#include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <IO/WriteBufferFromString.h>
 

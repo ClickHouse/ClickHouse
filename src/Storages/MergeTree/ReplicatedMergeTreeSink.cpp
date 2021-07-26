@@ -1,6 +1,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Interpreters/PartLog.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Common/SipHash.h>

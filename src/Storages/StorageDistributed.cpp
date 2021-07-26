@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Storages/Distributed/DistributedBlockOutputStream.h>
+#include <Storages/Distributed/DistributedSink.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
 
