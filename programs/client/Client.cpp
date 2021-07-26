@@ -1,4 +1,6 @@
+#include <string>
 #include "Common/MemoryTracker.h"
+#include "Columns/ColumnsNumber.h"
 #include "ConnectionParameters.h"
 #include "QueryFuzzer.h"
 #include "Suggest.h"
@@ -535,6 +537,53 @@ private:
 
                 case Protocol::Server::EndOfStream:
                     return messages;
+
+                default:
+                    throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                        packet.type, connection->getDescription());
+            }
+        }
+    }
+
+    void updateHardLimit()
+    {
+        connection->sendQuery(connection_parameters.timeouts, "SELECT value FROM system.settings WHERE name='max_memory_usage'");
+        while (true)
+        {
+            Packet packet = connection->receivePacket();
+            switch (packet.type)
+            {
+                case Protocol::Server::Data:
+                    if (packet.block)
+                    {
+                        const ColumnString & column = typeid_cast<const ColumnString &>(*packet.block.getByPosition(0).column);
+                        
+                        size_t rows = packet.block.rows();
+                        if (rows != 0)
+                        {
+                            total_memory_tracker.setHardLimit(std::stoll(column.getDataAt(0).toString()));
+                            return;
+                        }
+                    }
+                    continue;
+
+                case Protocol::Server::Progress:
+                    continue;
+                case Protocol::Server::ProfileInfo:
+                    continue;
+                case Protocol::Server::Totals:
+                    continue;
+                case Protocol::Server::Extremes:
+                    continue;
+                case Protocol::Server::Log:
+                    continue;
+
+                case Protocol::Server::Exception:
+                    packet.exception->rethrow();
+                    return;
+
+                case Protocol::Server::EndOfStream:
+                    return;
 
                 default:
                     throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
@@ -1802,6 +1851,8 @@ private:
             query_to_send = serializeAST(*parsed_query);
         }
 
+        bool set_max_memory_usage_query = query_to_send.starts_with("Set") && (query_to_send.find("max_memory_usage") != std::string::npos);
+
         int retries_left = 10;
         for (;;)
         {
@@ -1820,6 +1871,11 @@ private:
 
                 sendExternalTables();
                 receiveResult();
+
+                if (set_max_memory_usage_query)
+                {
+                    updateHardLimit();
+                }
 
                 break;
             }
