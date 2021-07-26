@@ -44,7 +44,8 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 private:
-    String remote_table_name, database_path;
+    String remote_table_name;
+    String database_path;
     ContextPtr global_context;
     SQLitePtr sqlite_db;
 };
