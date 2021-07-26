@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/System/StorageSystemProcesses.h>
@@ -44,8 +43,6 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
 
         {"http_method", std::make_shared<DataTypeUInt8>()},
         {"http_user_agent", std::make_shared<DataTypeString>()},
-        {"http_referer", std::make_shared<DataTypeString>()},
-        {"forwarded_for", std::make_shared<DataTypeString>()},
 
         {"quota_key", std::make_shared<DataTypeString>()},
 
@@ -61,25 +58,17 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"query", std::make_shared<DataTypeString>()},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
-        {"Settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
-
-        {"current_database", std::make_shared<DataTypeString>()},
+        {"ProfileEvents.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"ProfileEvents.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"Settings.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"Settings.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     };
 }
 
-NamesAndAliases StorageSystemProcesses::getNamesAndAliases()
-{
-    return
-    {
-        {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
-        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}
-    };
-}
 
-void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    ProcessList::Info info = context->getProcessList().getInfo(true, true, true);
+    ProcessList::Info info = context.getProcessList().getInfo(true, true, true);
 
     for (const auto & process : info)
     {
@@ -102,15 +91,13 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.client_info.os_user);
         res_columns[i++]->insert(process.client_info.client_hostname);
         res_columns[i++]->insert(process.client_info.client_name);
-        res_columns[i++]->insert(process.client_info.client_tcp_protocol_version);
+        res_columns[i++]->insert(process.client_info.client_revision);
         res_columns[i++]->insert(process.client_info.client_version_major);
         res_columns[i++]->insert(process.client_info.client_version_minor);
         res_columns[i++]->insert(process.client_info.client_version_patch);
 
         res_columns[i++]->insert(UInt64(process.client_info.http_method));
         res_columns[i++]->insert(process.client_info.http_user_agent);
-        res_columns[i++]->insert(process.client_info.http_referer);
-        res_columns[i++]->insert(process.client_info.forwarded_for);
 
         res_columns[i++]->insert(process.client_info.quota_key);
 
@@ -134,28 +121,30 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         }
 
         {
-            IColumn * column = res_columns[i++].get();
+            IColumn * column_profile_events_names = res_columns[i++].get();
+            IColumn * column_profile_events_values = res_columns[i++].get();
 
             if (process.profile_counters)
-                ProfileEvents::dumpToMapColumn(*process.profile_counters, column, true);
+                ProfileEvents::dumpToArrayColumns(*process.profile_counters, column_profile_events_names, column_profile_events_values, true);
             else
             {
-                column->insertDefault();
+                column_profile_events_names->insertDefault();
+                column_profile_events_values->insertDefault();
             }
         }
 
         {
-            IColumn * column = res_columns[i++].get();
+            IColumn * column_settings_names = res_columns[i++].get();
+            IColumn * column_settings_values = res_columns[i++].get();
 
             if (process.query_settings)
-                process.query_settings->dumpToMapColumn(column, true);
+                process.query_settings->dumpToArrayColumns(column_settings_names, column_settings_values, true);
             else
             {
-                column->insertDefault();
+                column_settings_names->insertDefault();
+                column_settings_values->insertDefault();
             }
         }
-
-        res_columns[i++]->insert(process.current_database);
     }
 }
 

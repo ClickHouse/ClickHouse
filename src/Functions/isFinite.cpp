@@ -1,12 +1,10 @@
 #include <Functions/FunctionNumericPredicate.h>
 #include <Functions/FunctionFactory.h>
-#include <common/bit_cast.h>
+#include <ext/bit_cast.h>
 #include <type_traits>
 
 
 namespace DB
-{
-namespace
 {
 
 struct IsFiniteImpl
@@ -20,11 +18,11 @@ struct IsFiniteImpl
     static bool execute(const T t)
     {
         if constexpr (std::is_same_v<T, float>)
-            return (bit_cast<uint32_t>(t)
+            return (ext::bit_cast<uint32_t>(t)
                  & 0b01111111100000000000000000000000)
                 != 0b01111111100000000000000000000000;
         else if constexpr (std::is_same_v<T, double>)
-            return (bit_cast<uint64_t>(t)
+            return (ext::bit_cast<uint64_t>(t)
                  & 0b0111111111110000000000000000000000000000000000000000000000000000)
                 != 0b0111111111110000000000000000000000000000000000000000000000000000;
         else
@@ -37,7 +35,6 @@ struct IsFiniteImpl
 
 using FunctionIsFinite = FunctionNumericPredicate<IsFiniteImpl>;
 
-}
 
 void registerFunctionIsFinite(FunctionFactory & factory)
 {

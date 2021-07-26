@@ -1,6 +1,6 @@
 #include <Parsers/ASTWithAlias.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -46,19 +46,6 @@ void ASTWithAlias::appendColumnName(WriteBuffer & ostr) const
         writeString(alias, ostr);
     else
         appendColumnNameImpl(ostr);
-}
-
-void ASTWithAlias::appendColumnName(WriteBuffer & ostr, const Settings & settings) const
-{
-    if (prefer_alias_to_column_name && !alias.empty())
-        writeString(alias, ostr);
-    else
-        appendColumnNameImpl(ostr, settings);
-}
-
-void ASTWithAlias::appendColumnNameWithoutAlias(WriteBuffer & ostr) const
-{
-    appendColumnNameImpl(ostr);
 }
 
 }

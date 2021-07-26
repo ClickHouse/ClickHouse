@@ -30,8 +30,7 @@ def test_authentication_pass():
 
 def test_authentication_fail():
     # User doesn't exist.
-    assert "vasya: Authentication failed" in instance.query_and_get_error("SELECT currentUser()", user='vasya')
-
+    assert "vasya: Authentication failed" in instance.query_and_get_error("SELECT currentUser()", user = 'vasya')
+    
     # Wrong password.
-    assert "masha: Authentication failed" in instance.query_and_get_error("SELECT currentUser()", user='masha',
-                                                                          password='123')
+    assert "masha: Authentication failed" in instance.query_and_get_error("SELECT currentUser()", user = 'masha', password = '123')

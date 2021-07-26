@@ -27,14 +27,10 @@ public:
 
     String getName() const override { return "Aggregating"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
-
-    void describeActions(JSONBuilder::JSONMap & map) const override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
     void describeActions(FormatSettings &) const override;
     void describePipeline(FormatSettings & settings) const override;
-
-    const Aggregator::Params & getParams() const { return params; }
 
 private:
     Aggregator::Params params;

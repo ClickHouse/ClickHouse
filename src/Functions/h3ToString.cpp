@@ -1,9 +1,3 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
-#if USE_H3
-
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -20,16 +14,12 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
-
 class FunctionH3ToString : public IFunction
 {
 public:
     static constexpr auto name = "h3ToString";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToString>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3ToString>(); }
 
     std::string getName() const override { return name; }
 
@@ -42,16 +32,15 @@ public:
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
+        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
         auto col_res = ColumnString::create();
         auto & vec_res = col_res->getChars();
@@ -67,23 +56,24 @@ public:
         {
             const UInt64 hindex = col_hindex->getUInt(i);
 
-            if (!isValidCell(hindex))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid H3 index: {}", hindex);
-
+            if (!h3IsValid(hindex))
+            {
+                throw Exception("Invalid H3 index: " + std::to_string(hindex), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
             h3ToString(hindex, pos, H3_INDEX_STRING_LENGTH);
 
             // move to end of the index
             while (*pos != '\0')
+            {
                 pos++;
-
+            }
             vec_offsets[i] = ++pos - begin;
         }
         vec_res.resize(pos - begin);
-        return col_res;
+        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
-}
 
 void registerFunctionH3ToString(FunctionFactory & factory)
 {
@@ -91,5 +81,3 @@ void registerFunctionH3ToString(FunctionFactory & factory)
 }
 
 }
-
-#endif

@@ -11,22 +11,25 @@ if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
 endif ()
 
+if (USE_DEBUG_HELPERS)
+    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/base -include ${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
+endif ()
+
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
-# Intended for exploration of new compiler warnings that may be found useful.
-# Applies to clang only
-option (WEVERYTHING "Enable -Weverything option with some exceptions." ON)
+
+option (WEVERYTHING "Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang." ON)
 
 # Control maximum size of stack frames. It can be important if the code is run in fibers with small stack size.
 # Only in release build because debug has too large stack frames.
-if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE) AND (NOT CMAKE_CXX_COMPILER_ID MATCHES "AppleClang"))
-    add_warning(frame-larger-than=65536)
+if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE))
+    add_warning(frame-larger-than=16384)
 endif ()
 
 if (COMPILER_CLANG)
     add_warning(pedantic)
     no_warning(vla-extension)
     no_warning(zero-length-array)
-    no_warning(c11-extensions)
 
     add_warning(comma)
     add_warning(conditional-uninitialized)
@@ -53,10 +56,7 @@ if (COMPILER_CLANG)
     add_warning(unused-exception-parameter)
     add_warning(unused-macros)
     add_warning(unused-member-function)
-    # XXX: libstdc++ has some of these for 3way compare
-    if (USE_LIBCXX)
-        add_warning(zero-as-null-pointer-constant)
-    endif()
+    add_warning(zero-as-null-pointer-constant)
 
     if (WEVERYTHING)
         add_warning(everything)
@@ -86,11 +86,6 @@ if (COMPILER_CLANG)
         no_warning(vla)
         no_warning(weak-template-vtables)
         no_warning(weak-vtables)
-
-        # XXX: libstdc++ has some of these for 3way compare
-        if (NOT USE_LIBCXX)
-            no_warning(zero-as-null-pointer-constant)
-        endif()
 
         # TODO Enable conversion, sign-conversion, double-promotion warnings.
     endif ()
@@ -171,25 +166,12 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wtrampolines)
     # Obvious
     add_cxx_compile_options(-Wunused)
-    add_cxx_compile_options(-Wundef)
     # Warn if vector operation is not implemented via SIMD capabilities of the architecture
     add_cxx_compile_options(-Wvector-operation-performance)
-    # XXX: libstdc++ has some of these for 3way compare
-    if (USE_LIBCXX)
-        # Warn when a literal 0 is used as null pointer constant.
-        add_cxx_compile_options(-Wzero-as-null-pointer-constant)
-    endif()
 
+    # XXX: gcc10 stuck with this option while compiling GatherUtils code
+    # (anyway there are builds with clang, that will warn)
     if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
-        # XXX: gcc10 stuck with this option while compiling GatherUtils code
-        # (anyway there are builds with clang, that will warn)
         add_cxx_compile_options(-Wno-sequence-point)
-        # XXX: gcc10 false positive with this warning in MergeTreePartition.cpp
-        #     inlined from 'void writeHexByteLowercase(UInt8, void*)' at ../src/Common/hex.h:39:11,
-        #     inlined from 'DB::String DB::MergeTreePartition::getID(const DB::Block&) const' at ../src/Storages/MergeTree/MergeTreePartition.cpp:85:30:
-        #     ../contrib/libc-headers/x86_64-linux-gnu/bits/string_fortified.h:34:33: error: writing 2 bytes into a region of size 0 [-Werror=stringop-overflow=]
-        #     34 |   return __builtin___memcpy_chk (__dest, __src, __len, __bos0 (__dest));
-        # For some reason (bug in gcc?) macro 'GCC diagnostic ignored "-Wstringop-overflow"' doesn't help.
-        add_cxx_compile_options(-Wno-stringop-overflow)
     endif()
 endif ()

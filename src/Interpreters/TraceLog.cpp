@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <Common/ClickHouseRevision.h>
 
 
@@ -21,20 +20,19 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"MemorySample", static_cast<UInt8>(TraceType::MemorySample)},
 };
 
-NamesAndTypesList TraceLogElement::getNamesAndTypes()
+Block TraceLogElement::createBlock()
 {
     return
     {
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
-        {"timestamp_ns", std::make_shared<DataTypeUInt64>()},
-        {"revision", std::make_shared<DataTypeUInt32>()},
-        {"trace_type", std::make_shared<TraceDataType>(trace_values)},
-        {"thread_id", std::make_shared<DataTypeUInt64>()},
-        {"query_id", std::make_shared<DataTypeString>()},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"size", std::make_shared<DataTypeInt64>()},
+        {std::make_shared<DataTypeDate>(),                                    "event_date"},
+        {std::make_shared<DataTypeDateTime>(),                                "event_time"},
+        {std::make_shared<DataTypeUInt64>(),                                  "timestamp_ns"},
+        {std::make_shared<DataTypeUInt32>(),                                  "revision"},
+        {std::make_shared<TraceDataType>(trace_values),                       "trace_type"},
+        {std::make_shared<DataTypeUInt64>(),                                  "thread_id"},
+        {std::make_shared<DataTypeString>(),                                  "query_id"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "trace"},
+        {std::make_shared<DataTypeInt64>(),                                   "size"},
     };
 }
 
@@ -42,11 +40,10 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
-    columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(timestamp_ns);
-    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
+    columns[i++]->insert(ClickHouseRevision::get());
     columns[i++]->insert(static_cast<UInt8>(trace_type));
     columns[i++]->insert(thread_id);
     columns[i++]->insertData(query_id.data(), query_id.size());

@@ -17,31 +17,6 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
 }
 
-NameAndTypePair::NameAndTypePair(
-    const String & name_in_storage_, const String & subcolumn_name_,
-    const DataTypePtr & type_in_storage_, const DataTypePtr & subcolumn_type_)
-    : name(name_in_storage_ + (subcolumn_name_.empty() ? "" : "." + subcolumn_name_))
-    , type(subcolumn_type_)
-    , type_in_storage(type_in_storage_)
-    , subcolumn_delimiter_position(subcolumn_name_.empty() ? std::nullopt : std::make_optional(name_in_storage_.size()))
-{
-}
-
-String NameAndTypePair::getNameInStorage() const
-{
-    if (!subcolumn_delimiter_position)
-        return name;
-
-    return name.substr(0, *subcolumn_delimiter_position);
-}
-
-String NameAndTypePair::getSubcolumnName() const
-{
-    if (!subcolumn_delimiter_position)
-        return "";
-
-    return name.substr(*subcolumn_delimiter_position + 1, name.size() - *subcolumn_delimiter_position);
-}
 
 void NamesAndTypesList::readText(ReadBuffer & buf)
 {
@@ -170,7 +145,7 @@ NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 #endif
     types.set_empty_key(StringRef());
 
-    for (const auto & column : *this)
+    for (const NameAndTypePair & column : *this)
         types[column.name] = &column.type;
 
     NamesAndTypesList res;
@@ -181,7 +156,6 @@ NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
             throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
         res.emplace_back(name, *it->second);
     }
-
     return res;
 }
 

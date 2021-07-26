@@ -36,6 +36,8 @@ public:
     {
     }
 
+    bool empty() const { return data.empty(); }
+
     /** Set can be created either from AST or from a stream of data (subquery result).
       */
 
@@ -56,9 +58,8 @@ public:
       */
     ColumnPtr execute(const Block & block, bool negative) const;
 
-    bool empty() const;
-    size_t getTotalRowCount() const;
-    size_t getTotalByteCount() const;
+    size_t getTotalRowCount() const { return data.getTotalRowCount(); }
+    size_t getTotalByteCount() const { return data.getTotalByteCount(); }
 
     const DataTypes & getDataTypes() const { return data_types; }
     const DataTypes & getElementsTypes() const { return set_elements_types; }
@@ -126,6 +127,8 @@ private:
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
+      *  and StorageSet calls only these two functions.
+      * Therefore, the rest of the functions for working with set are not protected.
       */
     mutable std::shared_mutex rwlock;
 
@@ -178,19 +181,29 @@ using FunctionPtr = std::shared_ptr<IFunction>;
   * Single field is stored in column for more optimal inplace comparisons with other regular columns.
   * Extracting fields from columns and further their comparison is suboptimal and requires extra copying.
   */
-struct FieldValue
+class ValueWithInfinity
 {
-    FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
+public:
+    enum Type
+    {
+        MINUS_INFINITY = -1,
+        NORMAL = 0,
+        PLUS_INFINITY = 1
+    };
+
+    ValueWithInfinity(MutableColumnPtr && column_)
+        : column(std::move(column_)), type(NORMAL) {}
+
     void update(const Field & x);
+    void update(Type type_) { type = type_; }
 
-    bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
-    bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
-    bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
+    const IColumn & getColumnIfFinite() const;
 
-    Field value; // Null, -Inf, +Inf
+    Type getType() const { return type; }
 
-    // If value is Null, uses the actual value in column
+private:
     MutableColumnPtr column;
+    Type type;
 };
 
 
@@ -220,7 +233,7 @@ private:
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 
-    using FieldValues = std::vector<FieldValue>;
+    using ColumnsWithInfinity = std::vector<ValueWithInfinity>;
 };
 
 }

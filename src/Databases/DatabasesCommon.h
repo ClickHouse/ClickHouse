@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
@@ -16,12 +16,12 @@ namespace DB
 class Context;
 
 /// A base class for databases that manage their own list of tables.
-class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
+class DatabaseWithOwnTablesBase : public IDatabase
 {
 public:
-    bool isTableExist(const String & table_name, ContextPtr context) const override;
+    bool isTableExist(const String & table_name, const Context & context) const override;
 
-    StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
+    StoragePtr tryGetTable(const String & table_name, const Context & context) const override;
 
     bool empty() const override;
 
@@ -29,7 +29,7 @@ public:
 
     StoragePtr detachTable(const String & table_name) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
 
     void shutdown() override;
 
@@ -38,8 +38,9 @@ public:
 protected:
     Tables tables;
     Poco::Logger * log;
+    const Context & global_context;
 
-    DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
+    DatabaseWithOwnTablesBase(const String & name_, const String & logger, const Context & context);
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> & lock);
     StoragePtr detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock);

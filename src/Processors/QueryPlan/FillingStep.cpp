@@ -2,7 +2,6 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Processors/QueryPipeline.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -29,19 +28,18 @@ static ITransformingStep::Traits getTraits()
 }
 
 FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_description_)
-    : ITransformingStep(input_stream_, FillingTransform::transformHeader(input_stream_.header, sort_description_), getTraits())
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , sort_description(std::move(sort_description_))
 {
     if (!input_stream_.has_single_port)
         throw Exception("FillingStep expects single input", ErrorCodes::LOGICAL_ERROR);
 }
 
-void FillingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void FillingStep::transformPipeline(QueryPipeline & pipeline)
 {
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header)
     {
-        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
-        return std::make_shared<FillingTransform>(header, sort_description, on_totals);
+        return std::make_shared<FillingTransform>(header, sort_description);
     });
 }
 
@@ -50,11 +48,6 @@ void FillingStep::describeActions(FormatSettings & settings) const
     settings.out << String(settings.offset, ' ');
     dumpSortDescription(sort_description, input_streams.front().header, settings.out);
     settings.out << '\n';
-}
-
-void FillingStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    map.add("Sort Description", explainSortDescription(sort_description, input_streams.front().header));
 }
 
 }

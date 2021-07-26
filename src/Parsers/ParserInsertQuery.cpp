@@ -9,7 +9,6 @@
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
 
 
@@ -37,7 +36,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
-    ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
 
     ASTPtr database;
@@ -128,14 +127,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    if (select)
-    {
-        /// Copy SETTINGS from the INSERT ... SELECT ... SETTINGS
-        InsertQuerySettingsPushDownVisitor::Data visitor_data{settings_ast};
-        InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
-    }
-
-
     if (format)
     {
         Pos last_token = pos;
@@ -198,12 +189,5 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserInsertElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    return ParserColumnsMatcher().parse(pos, node, expected)
-        || ParserQualifiedAsterisk().parse(pos, node, expected)
-        || ParserAsterisk().parse(pos, node, expected)
-        || ParserCompoundIdentifier().parse(pos, node, expected);
-}
 
 }
