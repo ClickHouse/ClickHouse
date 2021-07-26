@@ -16,13 +16,13 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class StorageMaterializeMySQL final : public shared_ptr_helper<StorageMaterializeMySQL>, public StorageProxy
+class StorageMaterializedMySQL final : public shared_ptr_helper<StorageMaterializedMySQL>, public StorageProxy
 {
-    friend struct shared_ptr_helper<StorageMaterializeMySQL>;
+    friend struct shared_ptr_helper<StorageMaterializedMySQL>;
 public:
-    String getName() const override { return "MaterializeMySQL"; }
+    String getName() const override { return "MaterializedMySQL"; }
 
-    StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_);
+    StorageMaterializedMySQL(const StoragePtr & nested_storage_, const IDatabase * database_);
 
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
@@ -42,7 +42,7 @@ public:
 private:
     [[noreturn]] void throwNotAllowed() const
     {
-        throw Exception("This method is not allowed for MaterializeMySQL", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("This method is not allowed for MaterializedMySQL", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     StoragePtr nested_storage;

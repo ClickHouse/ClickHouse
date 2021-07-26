@@ -1732,7 +1732,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         syntax_analyzer_result->optimize_trivial_count
         && (settings.max_parallel_replicas <= 1)
         && storage
-        && storage->getName() != "MaterializeMySQL"
+        && storage->getName() != "MaterializedMySQL"
         && !row_policy_filter
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()

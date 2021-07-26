@@ -7,8 +7,8 @@
 #include <mysqlxx/Pool.h>
 #include <Core/MySQL/MySQLClient.h>
 #include <Databases/IDatabase.h>
-#include <Databases/MySQL/MaterializeMySQLSettings.h>
-#include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#include <Databases/MySQL/MaterializedMySQLSettings.h>
+#include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 
 namespace DB
 {
@@ -18,30 +18,30 @@ namespace DB
  *  All table structure and data will be written to the local file system
  */
 template<typename Base>
-class DatabaseMaterializeMySQL : public Base
+class DatabaseMaterializedMySQL : public Base
 {
 public:
 
-    DatabaseMaterializeMySQL(
+    DatabaseMaterializedMySQL(
         ContextPtr context, const String & database_name_, const String & metadata_path_, UUID uuid,
         const String & mysql_database_name_, mysqlxx::Pool && pool_,
-        MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_);
+        MySQLClient && client_, std::unique_ptr<MaterializedMySQLSettings> settings_);
 
     void rethrowExceptionIfNeed() const;
 
     void setException(const std::exception_ptr & exception);
 protected:
 
-    std::unique_ptr<MaterializeMySQLSettings> settings;
+    std::unique_ptr<MaterializedMySQLSettings> settings;
 
-    MaterializeMySQLSyncThread materialize_thread;
+    MaterializedMySQLSyncThread materialize_thread;
 
     std::exception_ptr exception;
 
     std::atomic_bool started_up{false};
 
 public:
-    String getEngineName() const override { return "MaterializeMySQL"; }
+    String getEngineName() const override { return "MaterializedMySQL"; }
 
     void loadStoredObjects(ContextMutablePtr context_, bool has_force_restore_data_flag, bool force_attach) override;
 
@@ -67,13 +67,13 @@ public:
 
     void shutdownSynchronizationThread();
 
-    friend class DatabaseMaterializeTablesIterator;
+    friend class DatabaseMaterializedTablesIterator;
 };
 
 
-void setSynchronizationThreadException(const DatabasePtr & materialize_mysql_db, const std::exception_ptr & exception);
-void stopDatabaseSynchronization(const DatabasePtr & materialize_mysql_db);
-void rethrowSyncExceptionIfNeed(const IDatabase * materialize_mysql_db);
+void setSynchronizationThreadException(const DatabasePtr & materialized_mysql_db, const std::exception_ptr & exception);
+void stopDatabaseSynchronization(const DatabasePtr & materialized_mysql_db);
+void rethrowSyncExceptionIfNeed(const IDatabase * materialized_mysql_db);
 
 }
 

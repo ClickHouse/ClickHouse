@@ -1,18 +1,18 @@
 #pragma once
 
 #include <Databases/IDatabase.h>
-#include <Storages/StorageMaterializeMySQL.h>
+#include <Storages/StorageMaterializedMySQL.h>
 
 namespace DB
 {
 
-/** MaterializeMySQL database table iterator
+/** MaterializedMySQL database table iterator
  *
  * The iterator returns different storage engine types depending on the visitor.
  * When MySQLSync thread accesses, it always returns MergeTree
- * Other cases always convert MergeTree to StorageMaterializeMySQL
+ * Other cases always convert MergeTree to StorageMaterializedMySQL
  */
-class DatabaseMaterializeTablesIterator final : public IDatabaseTablesIterator
+class DatabaseMaterializedTablesIterator final : public IDatabaseTablesIterator
 {
 public:
     void next() override { nested_iterator->next(); }
@@ -23,13 +23,13 @@ public:
 
     const StoragePtr & table() const override
     {
-        StoragePtr storage = std::make_shared<StorageMaterializeMySQL>(nested_iterator->table(), database);
+        StoragePtr storage = std::make_shared<StorageMaterializedMySQL>(nested_iterator->table(), database);
         return tables.emplace_back(storage);
     }
 
     UUID uuid() const override { return nested_iterator->uuid(); }
 
-    DatabaseMaterializeTablesIterator(DatabaseTablesIteratorPtr nested_iterator_, const IDatabase * database_)
+    DatabaseMaterializedTablesIterator(DatabaseTablesIteratorPtr nested_iterator_, const IDatabase * database_)
         : IDatabaseTablesIterator(database_->getDatabaseName()), nested_iterator(std::move(nested_iterator_)), database(database_)
     {
     }

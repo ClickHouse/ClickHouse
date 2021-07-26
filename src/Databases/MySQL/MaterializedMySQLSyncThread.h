@@ -14,7 +14,7 @@
 #    include <Databases/DatabaseOrdinary.h>
 #    include <Databases/IDatabase.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
-#    include <Databases/MySQL/MaterializeMySQLSettings.h>
+#    include <Databases/MySQL/MaterializedMySQLSettings.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <mysqlxx/Pool.h>
 #    include <mysqlxx/PoolWithFailover.h>
@@ -36,18 +36,18 @@ namespace DB
  *  real-time pull incremental data:
  *      We will pull the binlog event of MySQL to parse and execute when the full data synchronization is completed.
  */
-class MaterializeMySQLSyncThread : WithContext
+class MaterializedMySQLSyncThread : WithContext
 {
 public:
-    ~MaterializeMySQLSyncThread();
+    ~MaterializedMySQLSyncThread();
 
-    MaterializeMySQLSyncThread(
+    MaterializedMySQLSyncThread(
         ContextPtr context,
         const String & database_name_,
         const String & mysql_database_name_,
         mysqlxx::Pool && pool_,
         MySQLClient && client_,
-        MaterializeMySQLSettings * settings_);
+        MaterializedMySQLSettings * settings_);
 
     void stopSynchronization();
 
@@ -65,7 +65,7 @@ private:
 
     mutable mysqlxx::Pool pool;
     mutable MySQLClient client;
-    MaterializeMySQLSettings * settings;
+    MaterializedMySQLSettings * settings;
     String query_prefix;
 
     // USE MySQL ERROR CODE:

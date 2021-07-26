@@ -134,7 +134,7 @@ SRCS(
     StorageJoin.cpp
     StorageLog.cpp
     StorageLogSettings.cpp
-    StorageMaterializeMySQL.cpp
+    StorageMaterializedMySQL.cpp
     StorageMaterializedView.cpp
     StorageMemory.cpp
     StorageMerge.cpp
