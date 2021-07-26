@@ -129,7 +129,7 @@ void IBackgroundJobExecutor::executeMergeJob(BackgroundTaskPtr merge_task)
     auto & pool_for_merges = pools[PoolType::MERGE_MUTATE];
 
     const auto priority = merge_task->getPriority();
-    pool_for_merges.scheduleOrThrowOnError([this, merge_task]()
+    pool_for_merges.scheduleContinuation([this, merge_task]()
     {
         auto pool_config = pools_configs[PoolType::MERGE_MUTATE];
         try

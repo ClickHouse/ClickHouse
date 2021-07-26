@@ -56,6 +56,10 @@ public:
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
     void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0);
 
+    /// Use this method only for submitting a task from inside a current pool.
+    /// Otherwise, it may cause deadlock, because other method could block thread in order not grow the queue.
+    void scheduleContinuation(Job job, int priority);
+
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
     /// If any thread was throw an exception, first exception will be rethrown from this method,

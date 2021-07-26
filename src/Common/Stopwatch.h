@@ -4,6 +4,7 @@
 #include <common/types.h>
 
 #include <atomic>
+#include <memory>
 
 
 inline UInt64 clock_gettime_ns(clockid_t clock_type = CLOCK_MONOTONIC)

@@ -153,6 +153,17 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
     return ReturnType(true);
 }
 
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleContinuation(Job job, int priority)
+{
+    std::lock_guard lock(mutex);
+
+    jobs.emplace(std::move(job), priority);
+    ++scheduled_jobs;
+    new_job_or_shutdown.notify_one();
+}
+
 template <typename Thread>
 void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, int priority)
 {
