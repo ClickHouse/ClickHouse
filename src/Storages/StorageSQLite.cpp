@@ -29,6 +29,7 @@ namespace ErrorCodes
 StorageSQLite::StorageSQLite(
     const StorageID & table_id_,
     SQLitePtr sqlite_db_,
+    const String & database_path_,
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -36,6 +37,7 @@ StorageSQLite::StorageSQLite(
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
+    , database_path(database_path_)
     , global_context(context_)
     , sqlite_db(sqlite_db_)
 {
@@ -55,6 +57,9 @@ Pipe StorageSQLite::read(
     size_t max_block_size,
     unsigned int)
 {
+    if (!sqlite_db)
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     String query = transformQueryForExternalDatabase(
@@ -139,6 +144,8 @@ private:
 
 BlockOutputStreamPtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
 {
+    if (!sqlite_db)
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
     return std::make_shared<SQLiteBlockOutputStream>(*this, metadata_snapshot, sqlite_db, remote_table_name);
 }
 
@@ -159,9 +166,9 @@ void registerStorageSQLite(StorageFactory & factory)
         const auto database_path = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         const auto table_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        auto sqlite_db = openSQLiteDB(database_path, args.getContext());
+        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */!args.attach);
 
-        return StorageSQLite::create(args.table_id, sqlite_db,
+        return StorageSQLite::create(args.table_id, sqlite_db, database_path,
                                      table_name, args.columns, args.constraints, args.getContext());
     },
     {

@@ -24,6 +24,7 @@ public:
     StorageSQLite(
         const StorageID & table_id_,
         SQLitePtr sqlite_db_,
+        const String & database_path_,
         const String & remote_table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -43,7 +44,7 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 private:
-    String remote_table_name;
+    String remote_table_name, database_path;
     ContextPtr global_context;
     SQLitePtr sqlite_db;
 };
