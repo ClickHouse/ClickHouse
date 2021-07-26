@@ -152,7 +152,10 @@ public:
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
                 io.pipeline.resize(1);
-                io.pipeline.setSinks([&](const Block &, Pipe::StreamType) -> ProcessorPtr { return table_out; } );
+                io.pipeline.setSinks([&](const Block &, Pipe::StreamType) -> ProcessorPtr
+                {
+                    return table_out;
+                });
                 auto executor = io.pipeline.execute();
                 executor->execute(io.pipeline.getNumStreams());
             }
