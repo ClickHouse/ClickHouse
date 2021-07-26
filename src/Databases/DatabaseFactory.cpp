@@ -1,17 +1,17 @@
 #include <Databases/DatabaseFactory.h>
 
 #include <Databases/DatabaseAtomic.h>
-#include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseDictionary.h>
 #include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabaseReplicated.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/formatAST.h>
-#include <Interpreters/Context.h>
 #include <Common/Macros.h>
 #include <filesystem>
 
@@ -38,6 +38,10 @@
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
+#endif
+
+#if USE_SQLITE
+#include <Databases/SQLite/DatabaseSQLite.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -100,7 +104,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const UUID & uuid = create.uuid;
 
     bool engine_may_have_arguments = engine_name == "MySQL" || engine_name == "MaterializeMySQL" || engine_name == "Lazy" ||
-                                     engine_name == "Replicated" || engine_name == "PostgreSQL" || engine_name == "MaterializedPostgreSQL";
+                                     engine_name == "Replicated" || engine_name == "PostgreSQL" || engine_name == "MaterializedPostgreSQL" || engine_name == "SQLite";
     if (engine_define->engine->arguments && !engine_may_have_arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
@@ -299,6 +303,22 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     }
 
 
+#endif
+
+#if USE_SQLITE
+    else if (engine_name == "SQLite")
+    {
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 1)
+            throw Exception("SQLite database requires 1 argument: database path", ErrorCodes::BAD_ARGUMENTS);
+
+        const auto & arguments = engine->arguments->children;
+
+        String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
+
+        return std::make_shared<DatabaseSQLite>(context, engine_define, database_path);
+    }
 #endif
 
     throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);

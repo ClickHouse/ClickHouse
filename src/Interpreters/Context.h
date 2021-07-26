@@ -89,7 +89,7 @@ class ICompressionCodec;
 class AccessControlManager;
 class Credentials;
 class GSSAcceptorContext;
-class SettingsConstraints;
+struct SettingsConstraintsAndProfileIDs;
 class RemoteHostFilter;
 struct StorageID;
 class IDisk;
@@ -175,8 +175,8 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::optional<UUID> user_id;
-    std::vector<UUID> current_roles;
-    bool use_default_roles = false;
+    std::shared_ptr<std::vector<UUID>> current_roles;
+    std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
     String current_database;
@@ -319,12 +319,17 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
+    /// A list of warnings about server configuration to place in `system.warnings` table.
+    std::vector<String> getWarnings() const;
+
     VolumePtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
+
+    void addWarningMessage(const String & msg);
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
@@ -372,6 +377,11 @@ public:
     boost::container::flat_set<UUID> getCurrentRoles() const;
     boost::container::flat_set<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
+
+    void setCurrentProfile(const String & profile_name);
+    void setCurrentProfile(const UUID & profile_id);
+    std::vector<UUID> getCurrentProfiles() const;
+    std::vector<UUID> getEnabledProfiles() const;
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -511,7 +521,7 @@ public:
     void clampToSettingsConstraints(SettingsChanges & changes) const;
 
     /// Returns the current constraints (can return null).
-    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
+    std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
@@ -533,7 +543,6 @@ public:
     BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
 
@@ -791,15 +800,6 @@ public:
     /// Removes context of current distributed DDL.
     void resetZooKeeperMetadataTransaction();
 
-    struct MySQLWireContext
-    {
-        uint8_t sequence_id = 0;
-        uint32_t client_capabilities = 0;
-        size_t max_packet_size = 0;
-    };
-
-    MySQLWireContext mysql;
-
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
 
@@ -816,8 +816,6 @@ private:
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;
-
-    void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 

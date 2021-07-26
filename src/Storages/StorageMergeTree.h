@@ -236,6 +236,8 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
 
+    std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
+
     friend class MergeTreeProjectionBlockOutputStream;
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;

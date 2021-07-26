@@ -27,6 +27,7 @@ namespace Aws::S3
 namespace DB
 {
 
+class PullingPipelineExecutor;
 class StorageS3SequentialSource;
 class StorageS3Source : public SourceWithProgress, WithContext
 {
@@ -79,7 +80,8 @@ private:
 
 
     std::unique_ptr<ReadBuffer> read_buf;
-    BlockInputStreamPtr reader;
+    std::unique_ptr<QueryPipeline> pipeline;
+    std::unique_ptr<PullingPipelineExecutor> reader;
     bool initialized = false;
     bool with_file_column = false;
     bool with_path_column = false;
@@ -129,6 +131,8 @@ public:
         unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+
+    void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
     NamesAndTypesList getVirtuals() const override;
 

@@ -20,9 +20,7 @@ class ClickHouseDictionarySource final : public IDictionarySource
 public:
     struct Configuration
     {
-        const bool secure;
         const std::string host;
-        const UInt16 port;
         const std::string user;
         const std::string password;
         const std::string db;
@@ -31,7 +29,9 @@ public:
         const std::string invalidate_query;
         const std::string update_field;
         const UInt64 update_lag;
+        const UInt16 port;
         const bool is_local;
+        const bool secure;
     };
 
     ClickHouseDictionarySource(
