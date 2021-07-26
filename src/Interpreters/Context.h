@@ -116,6 +116,8 @@ struct BackgroundTaskSchedulingSettings;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
+struct MySQLWireContext;
+
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
 #endif
@@ -287,6 +289,8 @@ private:
                                                     /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
+
+    MySQLWireContext * mysql_protocol_context = nullptr;
 
     Context();
     Context(const Context &);
@@ -518,7 +522,6 @@ public:
     BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
 
@@ -764,14 +767,10 @@ public:
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
 
-    struct MySQLWireContext
-    {
-        uint8_t sequence_id = 0;
-        uint32_t client_capabilities = 0;
-        size_t max_packet_size = 0;
-    };
-
-    MySQLWireContext mysql;
+    /// Caller is responsible for lifetime of mysql_context.
+    /// Used in MySQLHandler for session context.
+    void setMySQLProtocolContext(MySQLWireContext * mysql_context);
+    MySQLWireContext * getMySQLProtocolContext() const;
 
     PartUUIDsPtr getPartUUIDs();
     PartUUIDsPtr getIgnoredPartUUIDs();
