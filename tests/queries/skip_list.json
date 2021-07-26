@@ -727,6 +727,7 @@
         "01710_projection_fetch",
         "01870_modulo_partition_key",
         "01870_buffer_flush", // creates database
-        "01889_postgresql_protocol_null_fields"
+        "01889_postgresql_protocol_null_fields",
+        "01946_test_zstd_decompression_with_escape_sequence_at_the_end_of_buffer"
     ]
 }
