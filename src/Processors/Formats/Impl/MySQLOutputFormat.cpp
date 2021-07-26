@@ -17,7 +17,7 @@ MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, 
 {
 }
 
-void MySQLOutputFormat::setContext(ContextPtr context_)
+void MySQLOutputFormat::setContext(ContextConstPtr context_)
 {
     context = context_;
     /// MySQlWire is a special format that is usually used as output format for MySQL protocol connections.
