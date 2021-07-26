@@ -43,12 +43,6 @@ void RabbitMQSink::onStart()
 
 void RabbitMQSink::consume(Chunk chunk)
 {
-    if (is_first_chunk)
-    {
-        onStart();
-        is_first_chunk = false;
-    }
-
     child->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 

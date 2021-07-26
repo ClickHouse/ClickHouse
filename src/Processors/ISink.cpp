@@ -11,6 +11,9 @@ ISink::ISink(Block header)
 
 ISink::Status ISink::prepare()
 {
+    if (!was_on_start_called)
+        return Status::Ready;
+
     if (has_input)
         return Status::Ready;
 
@@ -33,15 +36,20 @@ ISink::Status ISink::prepare()
 
 void ISink::work()
 {
-    if (has_input)
+    if (!was_on_start_called)
     {
-        consume(std::move(current_chunk));
-        has_input = false;
+        was_on_start_called = true;
+        onStart();
     }
-    else
+    else if (has_input)
     {
-        onFinish();
+        has_input = false;
+        consume(std::move(current_chunk));
+    }
+    else if (!was_on_finish_called)
+    {
         was_on_finish_called = true;
+        onFinish();
     }
 }
 

@@ -17,11 +17,6 @@ void MergeTreeSink::onStart()
 
 void MergeTreeSink::consume(Chunk chunk)
 {
-    if (is_first_chunk)
-    {
-        onStart();
-        is_first_chunk = false;
-    }
     auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);

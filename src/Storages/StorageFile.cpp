@@ -516,7 +516,7 @@ Pipe StorageFile::read(
 }
 
 
-class StorageFileSink : public SinkToStorage
+class StorageFileSink final : public SinkToStorage
 {
 public:
     explicit StorageFileSink(
@@ -566,12 +566,15 @@ public:
 
     String getName() const override { return "StorageFileSink"; }
 
-    void consume(Chunk chunk) override
+    void onStart() override
     {
         if (!prefix_written)
             writer->writePrefix();
         prefix_written = true;
+    }
 
+    void consume(Chunk chunk) override
+    {
         writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 

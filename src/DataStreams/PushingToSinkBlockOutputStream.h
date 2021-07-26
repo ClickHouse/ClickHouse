@@ -1,7 +1,7 @@
 #pragma once
 #include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
-
+#include <iostream>
 namespace DB
 {
 
@@ -19,17 +19,21 @@ public:
         if (!port.isConnected())
             writePrefix();
 
+        if (!block)
+            return;
+
         size_t num_rows = block.rows();
         Chunk chunk(block.getColumns(), num_rows);
         port.push(std::move(chunk));
 
         while (true)
         {
-            switch (auto status = sink->prepare())
+            auto status = sink->prepare();
+            switch (status)
             {
                 case IProcessor::Status::Ready:
                     sink->work();
-                    break;
+                    continue;
                 case IProcessor::Status::NeedData:
                     return;
                 case IProcessor::Status::Async: [[fallthrough]];
@@ -50,11 +54,12 @@ public:
 
         while (true)
         {
-            switch (auto status = sink->prepare())
+            auto status = sink->prepare();
+            switch (status)
             {
                 case IProcessor::Status::Ready:
                     sink->work();
-                    break;
+                    continue;
                 case IProcessor::Status::NeedData:
                     return;
                 case IProcessor::Status::Async: [[fallthrough]];
@@ -71,15 +76,18 @@ public:
 
     void writeSuffix() override
     {
-        sink->getPort().close();
+        port.finish();
         while (true)
         {
-            switch (auto status = sink->prepare())
+            auto status = sink->prepare();
+            switch (status)
             {
                 case IProcessor::Status::Ready:
                     sink->work();
-                    break;
+                    continue;
                 case IProcessor::Status::Finished:
+
+                    ///flush();
                     return;
                 case IProcessor::Status::NeedData:
                 case IProcessor::Status::Async:

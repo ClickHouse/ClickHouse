@@ -35,7 +35,7 @@ public:
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false);
 
-    void onStart();
+    void onStart() override;
     void consume(Chunk chunk) override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
@@ -80,7 +80,6 @@ private:
     bool quorum_parallel = false;
     bool deduplicate = true;
     bool last_block_is_duplicate = false;
-    bool is_first_chunk = true;
 
     using Logger = Poco::Logger;
     Poco::Logger * log;
