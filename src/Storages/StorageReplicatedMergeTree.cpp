@@ -1567,7 +1567,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             /// We surely don't have this part locally as we've checked it before, so download it.
             [[fallthrough]];
         case LogEntry::GET_PART:
-            do_fetch = true;
+            return executeFetch(entry);
+            // do_fetch = true;
             break;
         case LogEntry::MERGE_PARTS:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
@@ -1584,9 +1585,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected log entry type: {}", static_cast<int>(entry.type));
     }
-
-    if (do_fetch)
-        return executeFetch(entry);
 
     return true;
 }
