@@ -24,6 +24,7 @@ public:
     StorageSQLite(
         const StorageID & table_id_,
         SQLitePtr sqlite_db_,
+        const String & database_path_,
         const String & remote_table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -44,6 +45,7 @@ public:
 
 private:
     String remote_table_name;
+    String database_path;
     ContextPtr global_context;
     SQLitePtr sqlite_db;
 };
