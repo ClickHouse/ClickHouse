@@ -8,9 +8,6 @@ namespace arrow::adapters::orc { class ORCFileReader; }
 
 namespace DB
 {
-
-class ArrowColumnToCHColumn;
-
 class ORCBlockInputFormat : public IInputFormat
 {
 public:
@@ -28,8 +25,6 @@ private:
     // TODO: check that this class implements every part of its parent
 
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
-
-    std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
 
     int stripe_total = 0;
 

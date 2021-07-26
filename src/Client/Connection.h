@@ -185,9 +185,6 @@ public:
 
     bool isConnected() const { return connected; }
 
-    /// Check if connection is still active with ping request.
-    bool checkConnected() { return connected && ping(); }
-
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);
 

@@ -89,8 +89,8 @@ namespace ErrorCodes
 
 namespace fs = std::filesystem;
 
-InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
-    : WithMutableContext(context_), query_ptr(query_ptr_)
+InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextPtr context_)
+    : WithContext(context_), query_ptr(query_ptr_)
 {
 }
 
@@ -151,7 +151,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
     }
 
-    if (create.storage->engine->name == "Atomic" || create.storage->engine->name == "Replicated" || create.storage->engine->name == "MaterializedPostgreSQL")
+    if (create.storage->engine->name == "Atomic" || create.storage->engine->name == "Replicated")
     {
         if (create.attach && create.uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "UUID must be specified for ATTACH. "
@@ -217,12 +217,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_replicated to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
-    if (create.storage->engine->name == "MaterializedPostgreSQL" && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql && !internal)
-    {
-        throw Exception("MaterializedPostgreSQL is an experimental database engine. "
-                        "Enable allow_experimental_database_postgresql_replica to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
-    }
-
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", getContext());
 
     if (create.uuid != UUIDHelpers::Nil)
@@ -269,7 +263,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         }
 
         /// We use global context here, because storages lifetime is bigger than query context lifetime
-        database->loadStoredObjects(getContext()->getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach); //-V560
+        database->loadStoredObjects(getContext()->getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach);
     }
     catch (...)
     {
@@ -302,35 +296,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
         const char * pos = type_name.data();
         const char * end = pos + type_name.size();
         column_declaration->type = parseQuery(type_parser, pos, end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-        columns_list->children.emplace_back(column_declaration);
-    }
-
-    return columns_list;
-}
-
-ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, const NamesAndAliases & alias_columns)
-{
-    std::shared_ptr<ASTExpressionList> columns_list = std::static_pointer_cast<ASTExpressionList>(formatColumns(columns));
-
-    for (const auto & alias_column : alias_columns)
-    {
-        const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
-        column_declaration->name = alias_column.name;
-
-        ParserDataType type_parser;
-        String type_name = alias_column.type->getName();
-        const char * type_pos = type_name.data();
-        const char * type_end = type_pos + type_name.size();
-        column_declaration->type = parseQuery(type_parser, type_pos, type_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-
-        column_declaration->default_specifier = "ALIAS";
-
-        const auto & alias = alias_column.expression;
-        const char * alias_pos = alias.data();
-        const char * alias_end = alias_pos + alias.size();
-        ParserExpression expression_parser;
-        column_declaration->default_expression = parseQuery(expression_parser, alias_pos, alias_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -482,8 +447,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
 
     bool sanity_check_compression_codecs = !attach && !context_->getSettingsRef().allow_suspicious_codecs;
-    bool allow_experimental_codecs = attach || context_->getSettingsRef().allow_experimental_codecs;
-
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
     for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
@@ -518,7 +481,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::BAD_ARGUMENTS};
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
+                col_decl.codec, column.type, sanity_check_compression_codecs);
         }
 
         if (col_decl.ttl)
@@ -680,6 +643,39 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
         }
+    }
+
+    if (!create.attach && !settings.allow_experimental_bigint_types)
+    {
+        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
+        {
+            WhichDataType which(*name_and_type_pair.type);
+            if (which.IsBigIntOrDeimal())
+            {
+                const auto & type_name = name_and_type_pair.type->getName();
+                String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
+                                 + type_name + "' because experimental bigint types are not allowed. "
+                                 + "Set 'allow_experimental_bigint_types' setting to enable.";
+                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+    }
+
+    if (!create.attach && !settings.allow_experimental_map_type)
+    {
+        for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
+        {
+            WhichDataType which(*name_and_type_pair.type);
+            if (which.isMap())
+            {
+                const auto & type_name = name_and_type_pair.type->getName();
+                String message = "Cannot create table with column '" + name_and_type_pair.name + "' which type is '"
+                                 + type_name + "' because experimental Map type is not allowed. "
+                                 + "Set 'allow_experimental_map_type = 1' setting to enable";
+                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+
     }
 }
 
@@ -849,17 +845,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.attach && !create.storage && !create.columns_list)
     {
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
-
         if (database->getEngineName() == "Replicated")
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.table);
-
-            if (auto* ptr = typeid_cast<DatabaseReplicated *>(database.get());
-                ptr && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+            if (typeid_cast<DatabaseReplicated *>(database.get()) && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
             {
                 create.database = database_name;
                 guard->releaseTableLock();
-                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
+                return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
             }
         }
 
@@ -947,13 +940,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && database->getEngineName() == "Replicated")
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
-
-        if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
-            ptr && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+        if (typeid_cast<DatabaseReplicated *>(database.get()) && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
         {
             assertOrSetUUID(create, database);
             guard->releaseTableLock();
-            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
+            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
         }
     }
 
@@ -1015,10 +1006,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
 
         data_path = database->getTableDataPath(create);
-
         if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
-            throw Exception(storage_already_exists_error_code,
-                "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
+            throw Exception(storage_already_exists_error_code, "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
     }
     else
     {
@@ -1119,7 +1108,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         [[maybe_unused]] bool done = doCreateTable(create, properties);
         assert(done);
         ast_drop->table = create.table;
-        ast_drop->is_dictionary = create.is_dictionary;
         ast_drop->database = create.database;
         ast_drop->kind = ASTDropQuery::Drop;
         created = true;
@@ -1132,18 +1120,14 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ASTRenameQuery::Table{create.database, create.table},
             ASTRenameQuery::Table{create.database, table_to_replace_name}
         };
-
         ast_rename->elements.push_back(std::move(elem));
         ast_rename->exchange = true;
-        ast_rename->dictionary = create.is_dictionary;
-
         InterpreterRenameQuery(ast_rename, getContext()).execute();
         replaced = true;
 
         InterpreterDropQuery(ast_drop, getContext()).execute();
 
         create.table = table_to_replace_name;
-
         return fillTableIfNeeded(create);
     }
     catch (...)

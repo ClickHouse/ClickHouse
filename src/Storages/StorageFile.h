@@ -1,11 +1,15 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+
+#include <Poco/File.h>
+#include <Poco/Path.h>
+
 #include <common/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 
 namespace DB
@@ -14,9 +18,9 @@ namespace DB
 class StorageFileBlockInputStream;
 class StorageFileBlockOutputStream;
 
-class StorageFile final : public shared_ptr_helper<StorageFile>, public IStorage
+class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public IStorage
 {
-    friend struct shared_ptr_helper<StorageFile>;
+    friend struct ext::shared_ptr_helper<StorageFile>;
 public:
     std::string getName() const override { return "File"; }
 
@@ -58,7 +62,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
+    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context);
 
     /// Check if the format is column-oriented.
     /// Is is useful because column oriented formats could effectively skip unknown columns
@@ -103,9 +107,6 @@ private:
     mutable std::shared_timed_mutex rwlock;
 
     Poco::Logger * log = &Poco::Logger::get("StorageFile");
-
-    /// Total number of bytes to read (sums for multiple files in case of globs). Needed for progress bar.
-    size_t total_bytes_to_read = 0;
 };
 
 }

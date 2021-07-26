@@ -114,12 +114,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     bool has_column;
     if (host_name.empty())
     {
-        // FIXME this (probably) needs a non-constant access to query context,
-        // because it might initialized a storage. Ideally, the tables required
-        // by the query should be initialized at an earlier stage.
-        const StoragePtr & table = DatabaseCatalog::instance().getTable(
-            {database_name, table_name},
-            const_pointer_cast<Context>(getContext()));
+        const StoragePtr & table = DatabaseCatalog::instance().getTable({database_name, table_name}, getContext());
         auto table_metadata = table->getInMemoryMetadataPtr();
         has_column = table_metadata->getColumns().hasPhysical(column_name);
     }
@@ -135,13 +130,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
             getContext()->getTCPPort(),
             false);
 
-        // FIXME this (probably) needs a non-constant access to query context,
-        // because it might initialized a storage. Ideally, the tables required
-        // by the query should be initialized at an earlier stage.
-        auto remote_columns = getStructureOfRemoteTable(*cluster,
-            {database_name, table_name},
-            const_pointer_cast<Context>(getContext()));
-
+        auto remote_columns = getStructureOfRemoteTable(*cluster, {database_name, table_name}, getContext());
         has_column = remote_columns.hasPhysical(column_name);
     }
 

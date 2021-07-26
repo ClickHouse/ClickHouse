@@ -6,7 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <common/map.h>
+#include <ext/map.h>
 
 
 namespace DB

@@ -2,6 +2,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
+#include <Poco/File.h>
 
 
 namespace DB

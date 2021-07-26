@@ -162,12 +162,6 @@ private:
 #pragma GCC diagnostic pop
 #endif
 
-template <typename T> constexpr bool is_decimal_field = false;
-template <> constexpr inline bool is_decimal_field<DecimalField<Decimal32>> = true;
-template <> constexpr inline bool is_decimal_field<DecimalField<Decimal64>> = true;
-template <> constexpr inline bool is_decimal_field<DecimalField<Decimal128>> = true;
-template <> constexpr inline bool is_decimal_field<DecimalField<Decimal256>> = true;
-
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
 /// signedness of char is different in Linux on x86 and Linux on ARM.
@@ -218,8 +212,6 @@ template <> struct NearestFieldTypeImpl<Tuple> { using Type = Tuple; };
 template <> struct NearestFieldTypeImpl<Map> { using Type = Map; };
 template <> struct NearestFieldTypeImpl<bool> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
-template <> struct NearestFieldTypeImpl<NegativeInfinity> { using Type = NegativeInfinity; };
-template <> struct NearestFieldTypeImpl<PositiveInfinity> { using Type = PositiveInfinity; };
 
 template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 
@@ -271,10 +263,6 @@ public:
             Int256  = 25,
             Map = 26,
             UUID = 27,
-
-            // Special types for index analysis
-            NegativeInfinity = 254,
-            PositiveInfinity = 255,
         };
 
         static const char * toString(Which which)
@@ -282,8 +270,6 @@ public:
             switch (which)
             {
                 case Null:    return "Null";
-                case NegativeInfinity: return "-Inf";
-                case PositiveInfinity: return "+Inf";
                 case UInt64:  return "UInt64";
                 case UInt128: return "UInt128";
                 case UInt256: return "UInt256";
@@ -412,10 +398,7 @@ public:
     Types::Which getType() const { return which; }
     const char * getTypeName() const { return Types::toString(which); }
 
-    // Non-valued field are all denoted as Null
-    bool isNull() const { return which == Types::Null || which == Types::NegativeInfinity || which == Types::PositiveInfinity; }
-    bool isNegativeInfinity() const { return which == Types::NegativeInfinity; }
-    bool isPositiveInfinity() const { return which == Types::PositiveInfinity; }
+    bool isNull() const { return which == Types::Null; }
 
 
     template <typename T>
@@ -470,10 +453,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:
-            case Types::NegativeInfinity:
-            case Types::PositiveInfinity:
-                return false;
+            case Types::Null:    return false;
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
             case Types::UInt256: return get<UInt256>() < rhs.get<UInt256>();
@@ -510,10 +490,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:
-            case Types::NegativeInfinity:
-            case Types::PositiveInfinity:
-                return true;
+            case Types::Null:    return true;
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
             case Types::UInt256: return get<UInt256>() <= rhs.get<UInt256>();
@@ -550,11 +527,8 @@ public:
 
         switch (which)
         {
-            case Types::Null:
-            case Types::NegativeInfinity:
-            case Types::PositiveInfinity:
-                return true;
-            case Types::UInt64: return get<UInt64>() == rhs.get<UInt64>();
+            case Types::Null:    return true;
+            case Types::UInt64:  return get<UInt64>() == rhs.get<UInt64>();
             case Types::Int64:   return get<Int64>() == rhs.get<Int64>();
             case Types::Float64:
             {
@@ -593,8 +567,6 @@ public:
         switch (field.which)
         {
             case Types::Null:    return f(field.template get<Null>());
-            case Types::NegativeInfinity:    return f(field.template get<NegativeInfinity>());
-            case Types::PositiveInfinity:    return f(field.template get<PositiveInfinity>());
 // gcc 8.2.1
 #if !defined(__clang__)
 #pragma GCC diagnostic push
@@ -749,12 +721,7 @@ private:
 #undef DBMS_MIN_FIELD_SIZE
 
 
-using Row = std::vector<Field>;
-
-
 template <> struct Field::TypeToEnum<Null>    { static const Types::Which value = Types::Null; };
-template <> struct Field::TypeToEnum<NegativeInfinity>    { static const Types::Which value = Types::NegativeInfinity; };
-template <> struct Field::TypeToEnum<PositiveInfinity>    { static const Types::Which value = Types::PositiveInfinity; };
 template <> struct Field::TypeToEnum<UInt64>  { static const Types::Which value = Types::UInt64; };
 template <> struct Field::TypeToEnum<UInt128> { static const Types::Which value = Types::UInt128; };
 template <> struct Field::TypeToEnum<UInt256> { static const Types::Which value = Types::UInt256; };
@@ -775,8 +742,6 @@ template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static const Typ
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static const Types::Which value = Types::AggregateFunctionState; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
-template <> struct Field::EnumToType<Field::Types::NegativeInfinity>    { using Type = NegativeInfinity; };
-template <> struct Field::EnumToType<Field::Types::PositiveInfinity>    { using Type = PositiveInfinity; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
 template <> struct Field::EnumToType<Field::Types::UInt128> { using Type = UInt128; };
 template <> struct Field::EnumToType<Field::Types::UInt256> { using Type = UInt256; };

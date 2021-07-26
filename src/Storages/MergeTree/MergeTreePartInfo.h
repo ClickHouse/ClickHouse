@@ -1,6 +1,5 @@
 #pragma once
 
-#include <limits>
 #include <tuple>
 #include <common/types.h>
 #include <common/DayNum.h>
@@ -86,7 +85,7 @@ struct MergeTreePartInfo
         return static_cast<UInt64>(max_block - min_block + 1);
     }
 
-    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);  // -V1071
+    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
 
     static bool tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
 

@@ -16,6 +16,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Poco/DirectoryIterator.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
@@ -34,7 +35,7 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 namespace
 {
     void tryAttachTable(
-        ContextMutablePtr context,
+        ContextPtr context,
         const ASTCreateQuery & query,
         DatabaseOrdinary & database,
         const String & database_name,
@@ -83,7 +84,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool /*force_attach*/)
+void DatabaseOrdinary::loadStoredObjects(ContextPtr local_context, bool has_force_restore_data_flag, bool /*force_attach*/)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -110,7 +111,8 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool h
                 auto * create_query = ast->as<ASTCreateQuery>();
                 create_query->database = database_name;
 
-                if (fs::exists(full_path.string() + detached_suffix))
+                auto detached_permanently_flag = Poco::File(full_path.string() + detached_suffix);
+                if (detached_permanently_flag.exists())
                 {
                     /// FIXME: even if we don't load the table we can still mark the uuid of it as taken.
                     /// if (create_query->uuid != UUIDHelpers::Nil)
@@ -279,11 +281,11 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     try
     {
         /// rename atomically replaces the old file with the new one.
-        fs::rename(table_metadata_tmp_path, table_metadata_path);
+        Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
     }
     catch (...)
     {
-        fs::remove(table_metadata_tmp_path);
+        Poco::File(table_metadata_tmp_path).remove();
         throw;
     }
 }
