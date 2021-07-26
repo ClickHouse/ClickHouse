@@ -24,7 +24,8 @@ names = ['dictionary',
 'clusterAllReplicas',
 'cluster',
 'file',
-'merge']
+'merge',
+'null']
 
 text = ""
 
@@ -42,9 +43,13 @@ for name in names:
       fl.write('namespace DB\n')
       fl.write('{\n')
       fl.write('\n')
+      fl.write('namespace ' +  name.title() + "Doc" + '\n')
+      fl.write('{\n')
       fl.write('const char * doc = R"(\n')
       fl.write(text)
       fl.write('\n)";\n')
+      fl.write('\n')
+      fl.write('}\n')
       fl.write('\n')
       fl.write('}\n')
   except Exception:

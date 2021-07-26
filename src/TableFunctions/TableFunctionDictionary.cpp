@@ -62,7 +62,7 @@ StoragePtr TableFunctionDictionary::executeImpl(
 
 void registerTableFunctionDictionary(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionDictionary>(TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction<TableFunctionDictionary>(TableFunctionFactory::CaseInsensitive, DictionaryDoc::doc);
 }
 
 }

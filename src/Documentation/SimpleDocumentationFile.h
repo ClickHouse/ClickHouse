@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace FileDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 37
@@ -137,5 +139,7 @@ SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String,
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/file/) <!--hide-->
 
 )";
+
+}
 
 }

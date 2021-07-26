@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace RemoteDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 40
@@ -117,5 +119,7 @@ SELECT * FROM remote_table;
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/remote/) <!--hide-->
 
 )";
+
+}
 
 }

@@ -168,7 +168,7 @@ TableFunctionMerge::getMatchedTablesWithAccess(const String & database_name, con
 
 void registerTableFunctionMerge(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionMerge>(TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction<TableFunctionMerge>(TableFunctionFactory::CaseInsensitive, MergeDoc::doc);
 }
 
 }

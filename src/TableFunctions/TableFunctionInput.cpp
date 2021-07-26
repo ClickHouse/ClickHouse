@@ -53,7 +53,7 @@ StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionInput(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionInput>(TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction<TableFunctionInput>(TableFunctionFactory::CaseInsensitive, InputDoc::doc);
 }
 
 }

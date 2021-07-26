@@ -273,10 +273,10 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
 
 void registerTableFunctionRemote(TableFunctionFactory & factory)
 {
-    factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); }, TableFunctionFactory::CaseInsensitive, doc);
-    factory.registerFunction("remoteSecure", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, TableFunctionFactory::CaseInsensitive, doc);
-    factory.registerFunction("cluster", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); });
-    factory.registerFunction("clusterAllReplicas", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); }, TableFunctionFactory::CaseInsensitive, RemoteDoc::doc);
+    factory.registerFunction("remoteSecure", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, TableFunctionFactory::CaseInsensitive, RemoteDoc::doc);
+    factory.registerFunction("cluster", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, TableFunctionFactory::CaseInsensitive, RemoteDoc::doc);
+    factory.registerFunction("clusterAllReplicas", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, TableFunctionFactory::CaseInsensitive, RemoteDoc::doc);
 }
 
 }

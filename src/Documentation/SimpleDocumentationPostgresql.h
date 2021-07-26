@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace PostgresqlDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 42
@@ -140,5 +142,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/postgresql/) <!--hide-->
 
 )";
+
+}
 
 }

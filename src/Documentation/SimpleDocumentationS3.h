@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace S3Doc
+{
 const char * doc = R"(
 ---
 toc_priority: 45
@@ -140,5 +142,7 @@ SELECT name, value FROM existing_table;
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/s3/) <!--hide-->
 
 )";
+
+}
 
 }

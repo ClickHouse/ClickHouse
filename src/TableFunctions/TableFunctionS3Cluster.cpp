@@ -149,7 +149,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
 
 void registerTableFunctionS3Cluster(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionS3Cluster>(TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction<TableFunctionS3Cluster>(TableFunctionFactory::CaseInsensitive, S3ClusterDoc::doc);
 }
 
 

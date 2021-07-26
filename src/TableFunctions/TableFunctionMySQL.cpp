@@ -121,7 +121,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
 
 void registerTableFunctionMySQL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionMySQL>(TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction<TableFunctionMySQL>(TableFunctionFactory::CaseInsensitive, MysqlDoc::doc);
 }
 }
 

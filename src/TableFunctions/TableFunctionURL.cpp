@@ -48,6 +48,6 @@ StoragePtr TableFunctionURL::getStorage(
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionURL>(TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction<TableFunctionURL>(TableFunctionFactory::CaseInsensitive, UrlDoc::doc);
 }
 }

@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace NullDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 53
@@ -49,6 +51,9 @@ See also:
 -   [Null table engine](../../engines/table-engines/special/null.md)
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/null/) <!--hide-->
+
 )";
+
+}
 
 }

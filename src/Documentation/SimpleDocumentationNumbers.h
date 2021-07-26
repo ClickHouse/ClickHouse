@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace NumbersDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 39
@@ -35,5 +37,7 @@ select toDate('2010-01-01') + number as d FROM numbers(365);
 
 
 )";
+
+}
 
 }

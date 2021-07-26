@@ -29,7 +29,7 @@ StoragePtr TableFunctionHDFS::getStorage(
 #if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionHDFS>(TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction<TableFunctionHDFS>(TableFunctionFactory::CaseInsensitive, HdfsDoc::doc);
 }
 #endif
 }

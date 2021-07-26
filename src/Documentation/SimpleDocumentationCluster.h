@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace ClusterDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 50
@@ -48,5 +50,7 @@ Connection settings like `host`, `port`, `user`, `password`, `compression`, `sec
 -   [load_balancing](../../operations/settings/settings.md#settings-load_balancing)
 
 )";
+
+}
 
 }

@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace JdbcDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 43
@@ -46,5 +48,7 @@ INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.
 [Original article](https://clickhouse.tech/docs/en/query_language/table_functions/jdbc/) <!--hide-->
 
 )";
+
+}
 
 }

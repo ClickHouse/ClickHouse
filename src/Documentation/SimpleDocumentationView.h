@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace ViewDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 51
@@ -76,5 +78,7 @@ SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/view/) <!--hide-->
 
 )";
+
+}
 
 }

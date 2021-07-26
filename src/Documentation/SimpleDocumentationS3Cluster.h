@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace S3ClusterDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 55
@@ -56,5 +58,7 @@ SELECT count(*) FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/{
 -   [s3 table function](../../sql-reference/table-functions/s3.md)
 
 )";
+
+}
 
 }

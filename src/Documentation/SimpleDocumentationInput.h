@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace InputDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 46
@@ -52,5 +54,7 @@ $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input
 
 
 )";
+
+}
 
 }

@@ -50,7 +50,7 @@ StoragePtr TableFunctionView::executeImpl(
 
 void registerTableFunctionView(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionView>(TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction<TableFunctionView>(TableFunctionFactory::CaseInsensitive, ViewDoc::doc);
 }
 
 }

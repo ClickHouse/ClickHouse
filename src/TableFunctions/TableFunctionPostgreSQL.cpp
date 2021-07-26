@@ -97,7 +97,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
 
 void registerTableFunctionPostgreSQL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionPostgreSQL>(TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction<TableFunctionPostgreSQL>(TableFunctionFactory::CaseInsensitive, PostgresqlDoc::doc);
 }
 
 }

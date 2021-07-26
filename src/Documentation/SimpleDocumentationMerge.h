@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace MergeDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 38
@@ -19,5 +21,7 @@ The table structure is taken from the first table encountered that matches the r
 
 
 )";
+
+}
 
 }

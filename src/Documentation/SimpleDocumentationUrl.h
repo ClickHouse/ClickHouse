@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace UrlDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 41
@@ -52,5 +54,7 @@ SELECT * FROM test_table;
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/url/) <!--hide-->
 
 )";
+
+}
 
 }

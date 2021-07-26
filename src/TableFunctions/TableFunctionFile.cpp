@@ -34,6 +34,6 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
 
 void registerTableFunctionFile(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFile>(TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction<TableFunctionFile>(TableFunctionFactory::CaseInsensitive, FileDoc::doc);
 }
 }

@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace DictionaryDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 54
@@ -67,5 +69,7 @@ Result:
 -   [Dictionary engine](../../engines/table-engines/special/dictionary.md#dictionary)
 
 )";
+
+}
 
 }

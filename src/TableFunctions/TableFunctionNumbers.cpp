@@ -53,8 +53,8 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_f
 
 void registerTableFunctionNumbers(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNumbers<true>>(TableFunctionFactory::CaseInsensitive, doc);
-    factory.registerFunction<TableFunctionNumbers<false>>(TableFunctionFactory::CaseInsensitive, doc);
+    factory.registerFunction<TableFunctionNumbers<true>>(TableFunctionFactory::CaseInsensitive, NumbersDoc::doc);
+    factory.registerFunction<TableFunctionNumbers<false>>(TableFunctionFactory::CaseInsensitive, NumbersDoc::doc);
 }
 
 template <bool multithreaded>

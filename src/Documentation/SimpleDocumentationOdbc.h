@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace OdbcDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 44
@@ -112,5 +114,7 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 -   [ODBC table engine](../../engines/table-engines/integrations/odbc.md).
 
 )";
+
+}
 
 }

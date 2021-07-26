@@ -5,6 +5,8 @@
 namespace DB
 {
 
+namespace MysqlDoc
+{
 const char * doc = R"(
 ---
 toc_priority: 42
@@ -121,5 +123,7 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 [Original article](https://clickhouse.tech/docs/en/sql-reference/table_functions/mysql/) <!--hide-->
 
 )";
+
+}
 
 }
