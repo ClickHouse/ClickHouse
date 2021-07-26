@@ -25,7 +25,7 @@ Changes table settings.
 **Syntax**
 
 ```sql
-MODIFY SETTING setting_name=value [, ...];
+MODIFY SETTING setting_name=value [, ...]
 ```
 
 **Example**
