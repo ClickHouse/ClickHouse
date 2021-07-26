@@ -103,8 +103,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;
 
-    bool engine_may_have_arguments = engine_name == "MySQL" || engine_name == "MaterializedMySQL" || engine_name == "Lazy" ||
-                                     engine_name == "Replicated" || engine_name == "PostgreSQL" || engine_name == "MaterializedPostgreSQL" || engine_name == "SQLite";
+    bool engine_may_have_arguments = engine_name == "MySQL" || engine_name == "MaterializeMySQL" || engine_name == "MaterializedMySQL" ||
+                                     engine_name == "Lazy" || engine_name == "Replicated" || engine_name == "PostgreSQL" ||
+                                     engine_name == "MaterializedPostgreSQL" || engine_name == "SQLite";
     if (engine_define->engine->arguments && !engine_may_have_arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
@@ -127,7 +128,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
 #if USE_MYSQL
 
-    else if (engine_name == "MySQL" || engine_name == "MaterializedMySQL")
+    else if (engine_name == "MySQL" || engine_name == "MaterializeMySQL" || engine_name == "MaterializedMySQL")
     {
         const ASTFunction * engine = engine_define->engine;
         if (!engine->arguments || engine->arguments->children.size() != 4)

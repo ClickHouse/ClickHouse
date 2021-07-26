@@ -57,7 +57,7 @@ def dml_with_materialized_mysql_database(clickhouse_node, mysql_node, service_na
         '2020-01-01', '2020-01-01 00:00:00', '2020-01-01 00:00:00', true);
         """)
     clickhouse_node.query(
-        "CREATE DATABASE test_database_dml ENGINE = MaterializedMySQL('{}:3306', 'test_database_dml', 'root', 'clickhouse')".format(
+        "CREATE DATABASE test_database_dml ENGINE = MaterializeMySQL('{}:3306', 'test_database_dml', 'root', 'clickhouse')".format(
             service_name))
 
     assert "test_database_dml" in clickhouse_node.query("SHOW DATABASES")
