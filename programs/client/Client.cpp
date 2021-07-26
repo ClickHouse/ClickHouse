@@ -92,131 +92,6 @@ namespace ErrorCodes
 }
 
 
-void Client::processParsedSingleQuery(std::optional<bool> echo_query)
-{
-    resetOutput();
-    client_exception.reset();
-    server_exception.reset();
-    have_error = false;
-    if (echo_query.value_or(echo_queries))
-    {
-        writeString(full_query, std_out);
-        writeChar('\n', std_out);
-        std_out.next();
-    }
-    if (is_interactive)
-    {
-        // Generate a new query_id
-        global_context->setCurrentQueryId("");
-        for (const auto & query_id_format : query_id_formats)
-        {
-            writeString(query_id_format.first, std_out);
-            writeString(fmt::format(query_id_format.second, fmt::arg("query_id", global_context->getCurrentQueryId())), std_out);
-            writeChar('\n', std_out);
-            std_out.next();
-        }
-    }
-    processed_rows = 0;
-    written_first_block = false;
-    progress_indication.resetProgress();
-    {
-        /// Temporarily apply query settings to context.
-        std::optional<Settings> old_settings;
-        SCOPE_EXIT_SAFE({
-            if (old_settings)
-                global_context->setSettings(*old_settings);
-        });
-        auto apply_query_settings = [&](const IAST & settings_ast)
-        {
-            if (!old_settings)
-                old_settings.emplace(global_context->getSettingsRef());
-            global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-        };
-        const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (insert && insert->settings_ast)
-            apply_query_settings(*insert->settings_ast);
-        /// FIXME: try to prettify this cast using `as<>()`
-        const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
-        if (with_output && with_output->settings_ast)
-            apply_query_settings(*with_output->settings_ast);
-        if (!connection->checkConnected())
-            connect();
-        ASTPtr input_function;
-        if (insert && insert->select)
-            insert->tryFindInputFunction(input_function);
-        /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !insert->watch)
-        {
-            if (input_function && insert->format.empty())
-                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
-            executeInsertQuery();
-        }
-        else
-            executeOrdinaryQuery();
-    }
-    /// Do not change context (current DB, settings) in case of an exception.
-    if (!have_error)
-    {
-        if (const auto * set_query = parsed_query->as<ASTSetQuery>())
-        {
-            /// Save all changes in settings to avoid losing them if the connection is lost.
-            for (const auto & change : set_query->changes)
-            {
-                if (change.name == "profile")
-                    current_profile = change.value.safeGet<String>();
-                else
-                    global_context->applySettingChange(change);
-            }
-        }
-        if (const auto * use_query = parsed_query->as<ASTUseQuery>())
-        {
-            const String & new_database = use_query->database;
-            /// If the client initiates the reconnection, it takes the settings from the config.
-            config().setString("database", new_database);
-            /// If the connection initiates the reconnection, it uses its variable.
-            connection->setDefaultDatabase(new_database);
-        }
-    }
-    if (is_interactive)
-    {
-        std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
-        /// Write final progress if it makes sense to do so.
-        writeFinalProgress();
-        std::cout << std::endl << std::endl;
-    }
-    else if (print_time_to_stderr)
-    {
-        std::cerr << progress_indication.elapsedSeconds() << "\n";
-    }
-}
-
-void Client::processTextAsSingleQuery(const String & text_)
-{
-    full_query = text_;
-    /// Some parts of a query (result output and formatting) are executed
-    /// client-side. Thus we need to parse the query.
-    const char * begin = full_query.data();
-    parsed_query = parseQuery(begin, begin + full_query.size(), false);
-    if (!parsed_query)
-        return;
-    // An INSERT query may have the data that follow query text. Remove the
-    /// Send part of query without data, because data will be sent separately.
-    auto * insert = parsed_query->as<ASTInsertQuery>();
-    if (insert && insert->data)
-    {
-        query_to_execute = full_query.substr(0, insert->data - full_query.data());
-    }
-    else
-    {
-        query_to_execute = full_query;
-    }
-    processParsedSingleQuery();
-    if (have_error)
-    {
-        reportQueryError();
-    }
-}
-
 bool Client::processMultiQuery(const String & all_queries_text)
 {
     // It makes sense not to base any control flow on this, so that it is
@@ -227,9 +102,10 @@ bool Client::processMultiQuery(const String & all_queries_text)
         /// disable logs if expects errors
         TestHint test_hint(test_mode, all_queries_text);
         if (test_hint.clientError() || test_hint.serverError())
-            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
+            prepareAndExecuteQuery("SET send_logs_level = 'fatal'");
     }
 
+    bool echo_query = echo_queries;
     auto process_single_query = [&](const String & query)
     {
         // Now we know for sure where the query ends.
@@ -240,17 +116,16 @@ bool Client::processMultiQuery(const String & all_queries_text)
         TestHint test_hint(test_mode, query);
         // Echo all queries if asked; makes for a more readable reference
         // file.
-        auto echo_query = test_hint.echoQueries().value_or(echo_queries);
+        echo_query = test_hint.echoQueries().value_or(echo_query);
         try
         {
-            processParsedSingleQuery(echo_query);
+            executeParsedQuery(echo_query, false);
         }
         catch (...)
         {
             // Surprisingly, this is a client error. A server error would
             // have been reported w/o throwing (see onReceiveSeverException()).
             client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-            std::cerr << "\n\nReceived exception, setting have_error.\n\n";
             have_error = true;
         }
         // Check whether the error (or its absence) matches the test hints
