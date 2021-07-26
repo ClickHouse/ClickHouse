@@ -38,8 +38,7 @@ ALTER TABLE example_table MODIFY SETTING max_part_loading_threads=8, max_parts_i
 
 ## RESET SETTING {#alter_reset_setting}
 
-Resets table settings to their default values.
-If a setting is in a default state then no action is taken. 
+Resets table settings to their default values. If a setting is in a default state, then no action is taken. 
 
 **Syntax**
 
