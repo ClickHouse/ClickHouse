@@ -26,6 +26,7 @@
 
 #include <Databases/MySQL/DatabaseMySQL.h> // for fetchTablesColumnsList
 #include <Common/parseRemoteDescription.h>
+#include <Documentation/SimpleDocumentationMysql.h>
 
 
 namespace DB
@@ -120,7 +121,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
 
 void registerTableFunctionMySQL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionMySQL>();
+    factory.registerFunction<TableFunctionMySQL>(TableFunctionFactory::CaseInsensitive, doc);
 }
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
+#include "common/types.h"
 #include <Common/IFactoryWithAliases.h>
 #include <Common/NamePrompter.h>
 
@@ -10,6 +11,7 @@
 #include <string>
 #include <unordered_map>
 #include <boost/noncopyable.hpp>
+#include <Documentation/IDocumentation.h>
 
 
 namespace DB
@@ -28,16 +30,16 @@ public:
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
-    void registerFunction(const std::string & name, Value creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    void registerFunction(const std::string & name, Value creator, CaseSensitiveness case_sensitiveness = CaseSensitive, const char* documentation="Not found");
 
     template <typename Function>
-    void registerFunction(CaseSensitiveness case_sensitiveness = CaseSensitive)
+    void registerFunction(CaseSensitiveness case_sensitiveness = CaseSensitive, const char* documentation="Not found")
     {
         auto creator = [] () -> TableFunctionPtr
         {
             return std::make_shared<Function>();
         };
-        registerFunction(Function::name, std::move(creator), case_sensitiveness);
+        registerFunction(Function::name, std::move(creator), case_sensitiveness, documentation);
     }
 
     /// Throws an exception if not found.
@@ -48,8 +50,11 @@ public:
 
     bool isTableFunctionName(const std::string & name) const;
 
+    /// If there will be no documentation returns "Not found"
+    const char* getDocumetation(const std::string & name) const;
 private:
     using TableFunctions = std::unordered_map<std::string, Value>;
+    using TableFunctionsDocs = std::unordered_map<std::string, IDocumentationPtr>;
 
     const TableFunctions & getMap() const override { return table_functions; }
 
@@ -59,6 +64,9 @@ private:
 
     TableFunctions table_functions;
     TableFunctions case_insensitive_table_functions;
+    
+    TableFunctionsDocs table_docs;
+    TableFunctionsDocs case_insensitive_table_docs;
 };
 
 }

@@ -6,6 +6,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
+#include <Documentation/SimpleDocumentationHdfs.h>
 
 namespace DB
 {
@@ -28,7 +29,7 @@ StoragePtr TableFunctionHDFS::getStorage(
 #if USE_HDFS
 void registerTableFunctionHDFS(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionHDFS>();
+    factory.registerFunction<TableFunctionHDFS>(TableFunctionFactory::CaseInsensitive, doc);
 }
 #endif
 }

@@ -1,3 +1,4 @@
+#include <memory>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Interpreters/Context.h>
@@ -17,16 +18,19 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionFactory::registerFunction(const std::string & name, Value creator, CaseSensitiveness case_sensitiveness)
+void TableFunctionFactory::registerFunction(const std::string & name, Value creator, CaseSensitiveness case_sensitiveness, const char* documentation)
 {
+    IDocumentation* docs = new IDocumentation(documentation);
     if (!table_functions.emplace(name, creator).second)
         throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
+    else table_docs.emplace(name, docs);
 
     if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_table_functions.emplace(Poco::toLower(name), creator).second)
         throw Exception("TableFunctionFactory: the case insensitive table function name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
+    else case_insensitive_table_docs.emplace(name, docs);
 }
 
 TableFunctionPtr TableFunctionFactory::get(
@@ -76,6 +80,30 @@ TableFunctionPtr TableFunctionFactory::tryGet(
     }
 
     return res;
+}
+
+const char* TableFunctionFactory::getDocumetation(const std::string & name_param) const
+{
+    String name = getAliasToOrName(name_param);
+
+    auto it = table_docs.find(name);
+    if (table_docs.end() != it)
+        return it->second->getDocumentation();
+    else
+    {
+        it = case_insensitive_table_docs.find(Poco::toLower(name));
+        if (case_insensitive_table_docs.end() != it)
+            return it->second->getDocumentation();
+    }
+
+    if (CurrentThread::isInitialized())
+    {
+        auto query_context = CurrentThread::get().getQueryContext();
+        if (query_context && query_context->getSettingsRef().log_queries)
+            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, name);
+    }
+
+    return "Not found anywhere";
 }
 
 bool TableFunctionFactory::isTableFunctionName(const std::string & name) const

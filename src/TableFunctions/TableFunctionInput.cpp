@@ -11,6 +11,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <boost/algorithm/string.hpp>
 #include "registerTableFunctions.h"
+#include <Documentation/SimpleDocumentationInput.h>
 
 
 namespace DB
@@ -52,7 +53,7 @@ StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionInput(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionInput>();
+    factory.registerFunction<TableFunctionInput>(TableFunctionFactory::CaseInsensitive, doc);
 }
 
 }

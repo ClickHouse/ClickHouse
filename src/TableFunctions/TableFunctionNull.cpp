@@ -1,3 +1,4 @@
+#include <memory>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -8,6 +9,7 @@
 #include <TableFunctions/TableFunctionNull.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include "registerTableFunctions.h"
+#include <Documentation/SimpleDocumentationNull.h>
 
 
 namespace DB
@@ -45,6 +47,6 @@ StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, Conte
 
 void registerTableFunctionNull(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNull>();
+    factory.registerFunction<TableFunctionNull>(TableFunctionFactory::CaseInsensitive, doc);
 }
 }

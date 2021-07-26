@@ -22,6 +22,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Documentation/SimpleDocumentationS3Cluster.h>
 
 #include "registerTableFunctions.h"
 
@@ -148,7 +149,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
 
 void registerTableFunctionS3Cluster(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionS3Cluster>();
+    factory.registerFunction<TableFunctionS3Cluster>(TableFunctionFactory::CaseInsensitive, doc);
 }
 
 

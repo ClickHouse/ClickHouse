@@ -14,6 +14,7 @@
 #include "registerTableFunctions.h"
 #include <Common/quoteString.h>
 #include <Common/parseRemoteDescription.h>
+#include <Documentation/SimpleDocumentationPostgresql.h>
 
 
 namespace DB
@@ -96,7 +97,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
 
 void registerTableFunctionPostgreSQL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionPostgreSQL>();
+    factory.registerFunction<TableFunctionPostgreSQL>(TableFunctionFactory::CaseInsensitive, doc);
 }
 
 }
