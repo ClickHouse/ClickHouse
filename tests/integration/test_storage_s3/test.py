@@ -146,7 +146,7 @@ def test_put(started_cluster, maybe_auth, positive, compression):
         assert values_csv == get_s3_file_content(started_cluster, bucket, filename)
 
 
-def test_distributed_put(cluster):
+def test_distributed_put(started_cluster):
     bucket = cluster.minio_bucket
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
@@ -158,9 +158,9 @@ def test_distributed_put(cluster):
 
     run_query(instance, put_query)
 
-    assert "1,2,3\n" == get_s3_file_content(cluster, bucket, "test_3.csv")
-    assert "3,2,1\n" == get_s3_file_content(cluster, bucket, "test_1.csv")
-    assert "78,43,45\n" == get_s3_file_content(cluster, bucket, "test_45.csv")
+    assert "1,2,3\n" == get_s3_file_content(started_cluster, bucket, "test_3.csv")
+    assert "3,2,1\n" == get_s3_file_content(started_cluster, bucket, "test_1.csv")
+    assert "78,43,45\n" == get_s3_file_content(started_cluster, bucket, "test_45.csv")
 
 
 @pytest.mark.parametrize("special", [
