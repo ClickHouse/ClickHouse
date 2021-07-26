@@ -63,6 +63,15 @@ protected:
         return getInitialCreateTableQuery();
     }
 
+    bool processMultiQuery(const String & all_queries_text) override
+    {
+        auto process_single_query = [&](const String & query)
+        {
+            prepareAndExecuteQuery(query);
+        };
+        return processMultiQueryImpl(all_queries_text, process_single_query);
+    }
+
     void executeParsedQueryImpl() override;
 
     void reportQueryError() const override {}

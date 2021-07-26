@@ -25,6 +25,11 @@ protected:
             connect();
     }
 
+    bool processMultiQuery(const String & all_queries_text) override;
+
+    void processParsedSingleQuery(std::optional<bool> echo_query = {});
+    void processTextAsSingleQuery(const String & text_);
+
     bool processMultiQueryFromFile(const String & file) override
     {
         connection->setDefaultDatabase(connection_parameters.default_database);
@@ -33,6 +38,8 @@ protected:
         readStringUntilEOF(text, in);
         return processMultiQuery(text);
     }
+
+    bool validateParsedOptions() override { return true; }
 
     std::vector<String> loadWarningMessages();
 
