@@ -5,7 +5,7 @@
       <source>
          <mysql >
             <db>test</db>
-            <host>mysql57</host>
+            <host>mysql1</host>
             <port>3306</port>
             <user>root</user>
             <password>clickhouse</password>
@@ -42,7 +42,7 @@
       <source>
          <mysql >
             <db>test</db>
-            <host>mysql57</host>
+            <host>mysql1</host>
             <port>3306</port>
             <user>root</user>
             <password>clickhouse</password>
@@ -78,7 +78,7 @@
       <source>
          <mysql >
             <db>test</db>
-            <host>mysql57</host>
+            <host>mysql1</host>
             <port>3306</port>
             <user>root</user>
             <password>clickhouse</password>

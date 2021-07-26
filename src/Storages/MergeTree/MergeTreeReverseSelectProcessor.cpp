@@ -23,7 +23,6 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     MarkRanges mark_ranges_,
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
-    ExpressionActionsSettings actions_settings,
     bool check_columns,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
@@ -32,7 +31,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     :
     MergeTreeBaseSelectProcessor{
         metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
-        storage_, metadata_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
+        storage_, metadata_snapshot_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
@@ -48,7 +47,7 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     size_t total_rows = data_part->index_granularity.getRowsCountInRanges(all_mark_ranges);
 
     if (!quiet)
-        LOG_DEBUG(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
+        LOG_TRACE(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
             all_mark_ranges.size(), data_part->name, total_rows,
             data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
@@ -63,9 +62,9 @@ MergeTreeReverseSelectProcessor::MergeTreeReverseSelectProcessor(
     column_name_set = NameSet{column_names.begin(), column_names.end()};
 
     if (use_uncompressed_cache)
-        owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
+        owned_uncompressed_cache = storage.global_context.getUncompressedCache();
 
-    owned_mark_cache = storage.getContext()->getMarkCache();
+    owned_mark_cache = storage.global_context.getMarkCache();
 
     reader = data_part->getReader(task_columns.columns, metadata_snapshot,
         all_mark_ranges, owned_uncompressed_cache.get(),
@@ -94,17 +93,9 @@ try
     MarkRanges mark_ranges_for_task = { all_mark_ranges.back() };
     all_mark_ranges.pop_back();
 
-    std::unique_ptr<MergeTreeBlockSizePredictor> size_predictor;
-    if (preferred_block_size_bytes)
-    {
-        const auto & required_column_names = task_columns.columns.getNames();
-        const auto & required_pre_column_names = task_columns.pre_columns.getNames();
-        NameSet complete_column_names(required_column_names.begin(), required_column_names.end());
-        complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
-
-        size_predictor = std::make_unique<MergeTreeBlockSizePredictor>(
-            data_part, Names(complete_column_names.begin(), complete_column_names.end()), metadata_snapshot->getSampleBlock());
-    }
+    auto size_predictor = (preferred_block_size_bytes == 0)
+        ? nullptr
+        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, metadata_snapshot->getSampleBlock());
 
     task = std::make_unique<MergeTreeReadTask>(
         data_part, mark_ranges_for_task, part_index_in_query, ordered_names, column_name_set,

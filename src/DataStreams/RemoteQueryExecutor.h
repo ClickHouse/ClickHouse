@@ -26,9 +26,6 @@ using ProfileInfoCallback = std::function<void(const BlockStreamProfileInfo & in
 
 class RemoteQueryExecutorReadContext;
 
-/// This is the same type as StorageS3Source::IteratorWrapper
-using TaskIterator = std::function<String()>;
-
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
 {
@@ -36,27 +33,25 @@ public:
     using ReadContext = RemoteQueryExecutorReadContext;
 
     /// Takes already set connection.
-    /// We don't own connection, thus we have to drain it synchronously.
     RemoteQueryExecutor(
         Connection & connection,
-        const String & query_, const Block & header_, ContextPtr context_,
+        const String & query_, const Block & header_, const Context & context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
-        const ConnectionPoolWithFailoverPtr & pool,
         std::vector<IConnectionPool::Entry> && connections_,
-        const String & query_, const Block & header_, ContextPtr context_,
+        const String & query_, const Block & header_, const Context & context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_, const Block & header_, ContextPtr context_,
+        const String & query_, const Block & header_, const Context & context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     ~RemoteQueryExecutor();
 
@@ -109,9 +104,12 @@ private:
     Block totals;
     Block extremes;
 
+    std::function<std::unique_ptr<IConnections>()> create_connections;
+    std::unique_ptr<IConnections> connections;
+
     const String query;
-    String query_id;
-    ContextPtr context;
+    String query_id = "";
+    Context context;
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
@@ -121,17 +119,6 @@ private:
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
-    /// Initiator identifier for distributed task processing
-    std::shared_ptr<TaskIterator> task_iterator;
-
-    /// Drain connection synchronously when finishing.
-    bool sync_draining = false;
-
-    std::function<std::shared_ptr<IConnections>()> create_connections;
-    /// Hold a shared reference to the connection pool so that asynchronous connection draining will
-    /// work safely. Make sure it's the first member so that we don't destruct it too early.
-    const ConnectionPoolWithFailoverPtr pool;
-    std::shared_ptr<IConnections> connections;
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
@@ -158,10 +145,6 @@ private:
       */
     std::atomic<bool> was_cancelled { false };
     std::mutex was_cancelled_mutex;
-
-    /** Thread-safe connection draining.
-      */
-    std::mutex connection_draining_mutex;
 
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution
@@ -195,8 +178,6 @@ private:
     /// Set part uuids to a query context, collected from remote replicas.
     /// Return true if duplicates found.
     bool setPartUUIDs(const std::vector<UUID> & uuids);
-
-    void processReadTaskRequest();
 
     /// Cancell query and restart it with info about duplicated UUIDs
     /// only for `allow_experimental_query_deduplication`.

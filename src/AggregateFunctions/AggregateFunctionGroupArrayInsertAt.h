@@ -9,8 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 
-#include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -21,7 +20,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -57,8 +55,7 @@ class AggregateFunctionGroupArrayInsertAtGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>
 {
 private:
-    DataTypePtr type;
-    SerializationPtr serialization;
+    DataTypePtr & type;
     Field default_value;
     UInt64 length_to_resize = 0;    /// zero means - do not do resizing.
 
@@ -66,7 +63,6 @@ public:
     AggregateFunctionGroupArrayInsertAtGeneric(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>(arguments, params)
         , type(argument_types[0])
-        , serialization(type->getDefaultSerialization())
     {
         if (!params.empty())
         {
@@ -105,8 +101,6 @@ public:
     {
         return std::make_shared<DataTypeArray>(type);
     }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -160,7 +154,7 @@ public:
             else
             {
                 writeBinary(UInt8(0), buf);
-                serialization->serializeBinary(elem, buf);
+                type->serializeBinary(elem, buf);
             }
         }
     }
@@ -181,7 +175,7 @@ public:
             UInt8 is_null = 0;
             readBinary(is_null, buf);
             if (!is_null)
-                serialization->deserializeBinary(arr[i], buf);
+                type->deserializeBinary(arr[i], buf);
         }
     }
 
