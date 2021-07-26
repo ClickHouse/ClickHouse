@@ -28,6 +28,7 @@ private:
     size_t size_compressed = 0;
 
     bool nextImpl() override;
+    void prefetch() override;
 
 public:
     CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);

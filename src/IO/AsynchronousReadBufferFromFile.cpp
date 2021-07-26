@@ -1,6 +1,6 @@
 #include <fcntl.h>
 
-#include <IO/ReadBufferFromFile.h>
+#include <IO/AsynchronousReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
 #include <errno.h>
@@ -23,13 +23,14 @@ namespace ErrorCodes
 }
 
 
-ReadBufferFromFile::ReadBufferFromFile(
+AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
+    AsynchronousReaderPtr reader_,
     const std::string & file_name_,
     size_t buf_size,
     int flags,
     char * existing_memory,
     size_t alignment)
-    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment), file_name(file_name_)
+    : AsynchronousReadBufferFromFileDescriptor(std::move(reader_), -1, buf_size, existing_memory, alignment), file_name(file_name_)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -53,21 +54,22 @@ ReadBufferFromFile::ReadBufferFromFile(
 }
 
 
-ReadBufferFromFile::ReadBufferFromFile(
+AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
+    AsynchronousReaderPtr reader_,
     int & fd_,
     const std::string & original_file_name,
     size_t buf_size,
     char * existing_memory,
     size_t alignment)
     :
-    ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment),
+    AsynchronousReadBufferFromFileDescriptor(std::move(reader_), fd_, buf_size, existing_memory, alignment),
     file_name(original_file_name.empty() ? "(fd = " + toString(fd_) + ")" : original_file_name)
 {
     fd_ = -1;
 }
 
 
-ReadBufferFromFile::~ReadBufferFromFile()
+AsynchronousReadBufferFromFile::~AsynchronousReadBufferFromFile()
 {
     if (fd < 0)
         return;
@@ -76,7 +78,7 @@ ReadBufferFromFile::~ReadBufferFromFile()
 }
 
 
-void ReadBufferFromFile::close()
+void AsynchronousReadBufferFromFile::close()
 {
     if (fd < 0)
         return;
@@ -85,7 +87,7 @@ void ReadBufferFromFile::close()
         throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 
     fd = -1;
-    metric_increment.destroy();
 }
 
 }
+

@@ -197,6 +197,11 @@ public:
         return read(to, n);
     }
 
+    /** Do something to allow faster subsequent call to 'nextImpl' if possible.
+      * It's used for asynchronous readers with double-buffering.
+      */
+    virtual void prefetch() {}
+
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),
