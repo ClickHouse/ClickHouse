@@ -139,6 +139,12 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
 void AsynchronousReadBufferFromFileDescriptor::rewind()
 {
+    if (prefetch_request_id)
+    {
+        reader->wait(*prefetch_request_id, {});
+        prefetch_request_id.reset();
+    }
+
     /// Clearing the buffer with existing data. New data will be read on subsequent call to 'next'.
     working_buffer.resize(0);
     pos = working_buffer.begin();
