@@ -126,7 +126,7 @@ void MemoryTracker::checkMemoryUsage() const
     if (hard_limit != 0 && hard_limit < amount)
     {
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
-        
+
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock(VariableContext::Global);
 
