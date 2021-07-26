@@ -60,7 +60,8 @@ struct TaskTable
     /// Each piece will be copied independently. (10 by default)
     size_t number_of_splits;
 
-    bool allow_to_copy_alias_and_materialized_columns{false};
+    bool allow_to_copy_aliases{false};
+    bool allow_to_copy_materialized_columns{false};
     bool allow_to_drop_target_partitions{false};
 
     String name_in_config;
@@ -269,7 +270,8 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
 
     number_of_splits = config.getUInt64(table_prefix + "number_of_splits", 3);
 
-    allow_to_copy_alias_and_materialized_columns = config.getBool(table_prefix + "allow_to_copy_alias_and_materialized_columns", false);
+    allow_to_copy_materialized_columns = config.getBool(table_prefix + "allow_to_copy_materialized_columns", false);
+    allow_to_copy_aliases = config.getBool(table_prefix + "allow_to_copy_aliases", false);
     allow_to_drop_target_partitions = config.getBool(table_prefix + "allow_to_drop_target_partitions", false);
 
     cluster_pull_name = config.getString(table_prefix + "cluster_pull");

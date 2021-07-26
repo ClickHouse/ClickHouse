@@ -690,7 +690,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
 /// Removes column's TTL expression from `CREATE` query
 /// Removes MATEREALIZED or ALIAS columns not to copy additional and useless data over the network.
 /// Removes data skipping indices.
-ASTPtr ClusterCopier::removeAliasMaterializedAndTTLColumnsFromCreateQuery(const ASTPtr & query_ast, bool allow_to_copy_alias_and_materialized_columns)
+ASTPtr ClusterCopier::removeAliasMaterializedAndTTLColumnsFromCreateQuery(const ASTPtr & query_ast, bool allow_to_copy_materialized_columns, bool allow_to_copy_aliases)
 {
     const ASTs & column_asts = query_ast->as<ASTCreateQuery &>().columns_list->columns->children;
     auto new_columns = std::make_shared<ASTExpressionList>();
@@ -700,10 +700,12 @@ ASTPtr ClusterCopier::removeAliasMaterializedAndTTLColumnsFromCreateQuery(const 
         const auto & column = column_ast->as<ASTColumnDeclaration &>();
 
         /// Skip this columns
-        if (!column.default_specifier.empty() && !allow_to_copy_alias_and_materialized_columns)
+        if (!column.default_specifier.empty())
         {
             ColumnDefaultKind kind = columnDefaultKindFromString(column.default_specifier);
-            if (kind == ColumnDefaultKind::Materialized || kind == ColumnDefaultKind::Alias)
+            if (kind == ColumnDefaultKind::Materialized && !allow_to_copy_materialized_columns)
+                continue;
+            if (kind == ColumnDefaultKind::Alias && !allow_to_copy_aliases)
                 continue;
         }
 
@@ -1760,7 +1762,8 @@ void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeout
 
     auto create_query_ast = removeAliasMaterializedAndTTLColumnsFromCreateQuery(
         task_shard.current_pull_table_create_query,
-        task_table.allow_to_copy_alias_and_materialized_columns);
+        task_table.allow_to_copy_materialized_columns,
+        task_table.allow_to_copy_aliases);
 
     auto create_table_pull_ast = rewriteCreateQueryStorage(create_query_ast, task_shard.table_read_shard, storage_shard_ast);
     dropAndCreateLocalTable(create_table_pull_ast);
