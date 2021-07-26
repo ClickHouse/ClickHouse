@@ -103,7 +103,7 @@ public:
         postgres::ConnectionHolderPtr connection_holder_,
         const String & remote_table_name_,
         const String & remote_table_schema_)
-        : SinkToStorage(metadata_snapshot->getSampleBlock())
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , metadata_snapshot(metadata_snapshot_)
         , connection_holder(std::move(connection_holder_))
         , remote_table_name(remote_table_name_)

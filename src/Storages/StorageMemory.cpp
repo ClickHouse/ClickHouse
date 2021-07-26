@@ -105,7 +105,7 @@ public:
     MemorySink(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : SinkToStorage(metadata_snapshot->getSampleBlock())
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
     {

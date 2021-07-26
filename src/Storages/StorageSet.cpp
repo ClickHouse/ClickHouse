@@ -63,7 +63,7 @@ SetOrJoinSink::SetOrJoinSink(
     const String & backup_tmp_path_,
     const String & backup_file_name_,
     bool persistent_)
-    : SinkToStorage(metadata_snapshot->getSampleBlock())
+    : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , table(table_)
     , metadata_snapshot(metadata_snapshot_)
     , backup_path(backup_path_)
