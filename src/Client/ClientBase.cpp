@@ -210,12 +210,15 @@ void ClientBase::prepareAndExecuteQuery(const String & query)
 
 void ClientBase::executeParsedQuery(std::optional<bool> echo_query_, bool report_error)
 {
+    resetOutput();
+    client_exception.reset();
+    server_exception.reset();
+
     have_error = false;
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();
 
-    resetOutput();
     outputQueryInfo(echo_query_.value_or(echo_queries));
 
     executeParsedQueryImpl();
@@ -237,22 +240,15 @@ void ClientBase::executeParsedQuery(std::optional<bool> echo_query_, bool report
 }
 
 
-bool ClientBase::processMultiQuery(const String & all_queries_text)
+bool ClientBase::processMultiQueryImpl(const String & all_queries_text,
+                                       std::function<void(const String &)> process_single_query,
+                                       std::function<void(const String &, Exception &)> process_parse_query_error)
 {
-    // It makes sense not to base any control flow on this, so that it is
-    // the same in tests and in normal usage. The only difference is that in
-    // normal mode we ignore the test hints.
-    const bool test_mode = config().has("testmode");
 
-    {
-        /// disable logs if expects errors
-        TestHint test_hint(test_mode, all_queries_text);
-        if (test_hint.clientError() || test_hint.serverError())
-            prepareAndExecuteQuery("SET send_logs_level = 'fatal'");
-    }
-
-    bool echo_query = echo_queries;
-
+    /// Several queries separated by ';'.
+    /// INSERT data is ended by the end of line, not ';'.
+    /// An exception is VALUES format where we also support semicolon in
+    /// addition to end of line.
     const char * this_query_begin = all_queries_text.data();
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
@@ -278,10 +274,11 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
             Tokens tokens(this_query_begin, all_queries_end);
             IParser::Pos token_iterator(tokens, global_context->getSettingsRef().max_parser_depth);
             if (!token_iterator.isValid())
+            {
                 break;
+            }
         }
 
-        // Try to parse the query.
         const char * this_query_end = this_query_begin;
         try
         {
@@ -289,27 +286,9 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
         }
         catch (Exception & e)
         {
-            // Try to find test hint for syntax error. We don't know where
-            // the query ends because we failed to parse it, so we consume
-            // the entire line.
             this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-            TestHint hint(test_mode, String(this_query_begin, this_query_end - this_query_begin));
-
-            if (hint.serverError())
-            {
-                // Syntax errors are considered as client errors
-                e.addMessage("\nExpected server error '{}'.", hint.serverError());
-                throw;
-            }
-
-            if (hint.clientError() != e.code())
-            {
-                if (hint.clientError())
-                    e.addMessage("\nExpected client error: " + std::to_string(hint.clientError()));
-                throw;
-            }
-
-            /// It's expected syntax error, skip the line.
+            process_parse_query_error(String(this_query_begin, this_query_end - this_query_begin), e);
+            /// It's expected syntax error, skip the line
             this_query_begin = this_query_end;
             continue;
         }
@@ -320,11 +299,9 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
             {
                 Tokens tokens(this_query_begin, all_queries_end);
                 IParser::Pos token_iterator(tokens, global_context->getSettingsRef().max_parser_depth);
-
                 while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                     ++token_iterator;
                 this_query_begin = token_iterator->end;
-
                 continue;
             }
 
@@ -365,86 +342,43 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
         // full_query is the query + inline INSERT data + trailing comments
         // (the latter is our best guess for now).
         full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
-
         if (query_fuzzer_runs)
         {
             if (!processWithFuzzing(full_query))
                 return false;
-
             this_query_begin = this_query_end;
             continue;
         }
 
-        // Now we know for sure where the query ends.
-        // Look for the hint in the text of query + insert data + trailing
-        // comments,
-        // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-        // Use the updated query boundaries we just calculated.
-        TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
+        process_single_query(String(this_query_begin, this_query_end - this_query_begin));
 
-        // Echo all queries if asked; makes for a more readable reference
-        // file.
-        echo_query = test_hint.echoQueries().value_or(echo_query);
-
-        try
-        {
-            executeParsedQuery(echo_query, false);
-        }
-        catch (...)
-        {
-            // Surprisingly, this is a client error. A server error would
-            // have been reported w/o throwing (see onReceiveSeverException()).
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-            have_error = true;
-        }
-
-        // For INSERTs with inline data: use the end of inline data as reported by the format
-        // parser (it is saved in sendData()). This allows us to handle queries like:
-        // insert into t values (1); select 1, where the inline data is delimited by semicolon
-        // and not by a newline.
-        /// TODO: Better way
+        // For INSERTs with inline data: use the end of inline data as
+        // reported by the format parser (it is saved in sendData()).
+        // This allows us to handle queries like:
+        //   insert into t values (1); select 1
+        // , where the inline data is delimited by semicolon and not by a
+        // newline.
         if (insert_ast && insert_ast->data)
         {
             this_query_end = insert_ast->end;
             adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
         }
 
-        // Check whether the error (or its absence) matches the test hints
-        // (or their absence).
-        bool error_matches_hint = checkErrorMatchesHints(test_hint, have_error);
-
-        // If the error is expected, force reconnect and ignore it.
-        if (have_error && error_matches_hint)
-        {
-            client_exception.reset();
-            server_exception.reset();
-            have_error = false;
-
-            reconnectIfNeeded();
-        }
-
         // Report error.
         if (have_error)
-        {
             reportQueryError();
-        }
 
         // Stop processing queries if needed.
         if (have_error && !ignore_error)
         {
             if (is_interactive)
-            {
                 break;
-            }
             else
-            {
                 return false;
-            }
         }
 
         this_query_begin = this_query_end;
     }
-
     return true;
 }
 
@@ -703,7 +637,7 @@ void ClientBase::init(int argc, char ** argv)
     /// Don't parse options with Poco library, we prefer neat boost::program_options.
     stopOptionsProcessing();
 
-    Arguments common_arguments{}; /// 0th argument is ignored.
+    Arguments common_arguments{""}; /// 0th argument is ignored.
     std::vector<Arguments> external_tables_arguments;
     readArguments(argc, argv, common_arguments, external_tables_arguments);
 
@@ -719,10 +653,9 @@ void ClientBase::init(int argc, char ** argv)
 
     /// Parse main commandline options.
     po::parsed_options parsed = po::command_line_parser(common_arguments).options(options_description.main_description.value()).run();
-
-    //auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-    //if (!unrecognized_options.empty())
-    //    throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+    if (validateParsedOptions() && unrecognized_options.size() > 1)
+        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[1]);
 
     po::variables_map options;
     po::store(parsed, options);
