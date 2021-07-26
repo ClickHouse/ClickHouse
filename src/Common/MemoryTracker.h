@@ -158,6 +158,10 @@ public:
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage() const;
 
+    /// Check memory usage to prevent using more memory than hard_limit
+    /// Used when memory is traking in new and delete, where exceptions could lead to memory leak
+    void checkMemoryUsage() const;
+
     /// To be able to temporarily stop memory tracking from current thread.
     struct BlockerInThread
     {

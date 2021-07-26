@@ -1,3 +1,4 @@
+#include "Common/MemoryTracker.h"
 #include "ConnectionParameters.h"
 #include "QueryFuzzer.h"
 #include "Suggest.h"
@@ -551,9 +552,12 @@ private:
         /// Limit on total memory usage
         size_t max_client_memory_usage = config().getUInt64("max_memory_usage", 0);
 
-        total_memory_tracker.setHardLimit(max_client_memory_usage);
-        total_memory_tracker.setDescription("(total)");
-        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+        if (max_client_memory_usage != 0)
+        {
+            total_memory_tracker.setHardLimit(max_client_memory_usage);
+            total_memory_tracker.setDescription("(total)");
+            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+        }
 
         registerFormats();
         registerFunctions();

@@ -12,6 +12,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
+#include "Common/MemoryTracker.h"
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -773,6 +774,8 @@ Packet Connection::receivePacket()
     try
     {
         Packet res;
+
+        total_memory_tracker.checkMemoryUsage();
 
         /// Have we already read packet type?
         if (last_input_packet_type)

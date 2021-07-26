@@ -1,7 +1,6 @@
 #include "Common/ThreadStatus.h"
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <iostream>
 #include <Common/CurrentMemoryTracker.h>
 
 namespace
@@ -35,7 +34,6 @@ namespace
         //std::cout << "Got in AllocImpl in currentMemoryTracker" << std::endl;
         if (auto * memory_tracker = getMemoryTracker())
         {
-            if (memory_tracker == &total_memory_tracker) std::cout << "Traker is total."  << std::endl;
             if (current_thread)
             {
                 current_thread->untracked_memory += size;
@@ -59,7 +57,6 @@ namespace
 
 void alloc(Int64 size)
 {
-    std::cout << "Alloc " << size <<std::endl;
     bool throw_if_memory_exceeded = true;
     allocImpl(size, throw_if_memory_exceeded);
 }

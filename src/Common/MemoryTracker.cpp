@@ -121,6 +121,27 @@ void MemoryTracker::logPeakMemoryUsage() const
         "Peak memory usage{}: {}.", (description ? " " + std::string(description) : ""), ReadableSize(peak));
 }
 
+void MemoryTracker::checkMemoryUsage() const
+{
+    if (hard_limit != 0 && hard_limit < amount)
+    {
+        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+        
+        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+        BlockerInThread untrack_lock(VariableContext::Global);
+
+        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+        const auto * description = description_ptr.load(std::memory_order_relaxed);
+        throw DB::Exception(
+            DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+            "Memory tracker{}{}: fault injected. It uses {}, maximum: {}",
+            description ? " " : "",
+            description ? description : "",
+            formatReadableSizeWithBinarySuffix(amount),
+            formatReadableSizeWithBinarySuffix(hard_limit));
+    }
+}
+
 void MemoryTracker::logMemoryUsage(Int64 current) const
 {
     const auto * description = description_ptr.load(std::memory_order_relaxed);
@@ -131,13 +152,11 @@ void MemoryTracker::logMemoryUsage(Int64 current) const
 
 void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
 {
-    std::cout << "AllocImpl for size " << size << " when current hard limit is " << hard_limit.load() << " in " << (description_ptr.load()==nullptr ?  "" : std::string(description_ptr.load())) << std::endl;
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
 
     if (BlockerInThread::isBlocked(level))
     {
-        std::cout << "isBlocked"<< std::endl;
         /// Since the BlockerInThread should respect the level, we should go to the next parent.
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
             loaded_next->allocImpl(size, throw_if_memory_exceeded);
