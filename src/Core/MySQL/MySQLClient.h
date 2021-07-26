@@ -45,9 +45,7 @@ private:
     String password;
 
     bool connected = false;
-    UInt32 client_capability_flags = 0;
-
-    uint8_t seq = 0;
+    MySQLWireContext mysql_context;
     const UInt8 charset_utf8 = 33;
     const String mysql_native_password = "mysql_native_password";
 
