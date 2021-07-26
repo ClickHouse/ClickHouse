@@ -9,6 +9,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
@@ -89,6 +90,9 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtDate:
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});
             break;
+        case ExternalResultDescription::ValueType::vtDate32:
+            assert_cast<ColumnInt32 &>(column).insertValue(Int32{LocalDate{std::string(value)}.getExtenedDayNum()});
+            break;
         case ExternalResultDescription::ValueType::vtDateTime:
         {
             ReadBufferFromString in(value);
@@ -99,7 +103,16 @@ void insertPostgreSQLValue(
             assert_cast<ColumnUInt32 &>(column).insertValue(time);
             break;
         }
-        case ExternalResultDescription::ValueType::vtDateTime64:[[fallthrough]];
+        case ExternalResultDescription::ValueType::vtDateTime64:
+        {
+            ReadBufferFromString in(value);
+            DateTime64 time = 0;
+            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
+            if (time < 0)
+                time = 0;
+            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(time);
+            break;
+        }
         case ExternalResultDescription::ValueType::vtDecimal32: [[fallthrough]];
         case ExternalResultDescription::ValueType::vtDecimal64: [[fallthrough]];
         case ExternalResultDescription::ValueType::vtDecimal128: [[fallthrough]];
@@ -201,6 +214,18 @@ void preparePostgreSQLArrayInfo(
             ReadBufferFromString in(field);
             time_t time = 0;
             readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(nested.get())->getTimeZone());
+            if (time < 0)
+                time = 0;
+            return time;
+        };
+    else if (which.isDateTime64())
+        parser = [nested](std::string & field) -> Field
+        {
+            ReadBufferFromString in(field);
+            DateTime64 time = 0;
+            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(nested.get())->getTimeZone());
+            if (time < 0)
+                time = 0;
             return time;
         };
     else if (which.isDecimal32())

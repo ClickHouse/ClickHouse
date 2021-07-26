@@ -61,6 +61,7 @@ struct FormatSettings
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
+        String string_column_pattern;
     } avro;
 
     struct CSV
@@ -133,6 +134,13 @@ struct FormatSettings
 
     struct
     {
+        uint32_t client_capabilities = 0;
+        size_t max_packet_size = 0;
+        uint8_t * sequence_id = nullptr; /// Not null if it's MySQLWire output format used to handle MySQL protocol connections.
+    } mysql_wire;
+
+    struct
+    {
         std::string regexp;
         std::string escaping_rule;
         bool skip_unmatched = false;
@@ -169,4 +177,3 @@ struct FormatSettings
 };
 
 }
-

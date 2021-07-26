@@ -1178,11 +1178,11 @@ create view right_async_metric_log as
 -- Use the right log as time reference because it may have higher precision.
 create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     with (select min(event_time) from right_async_metric_log) as min_time
-    select name metric, r.event_time - min_time event_time, l.value as left, r.value as right
+    select metric, r.event_time - min_time event_time, l.value as left, r.value as right
     from right_async_metric_log r
     asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes,
         '$(cat left-async-metric-log.tsv.columns)') l
-    on l.name = r.name and r.event_time <= l.event_time
+    on l.metric = r.metric and r.event_time <= l.event_time
     order by metric, event_time
     ;
 
@@ -1196,7 +1196,7 @@ create table changes engine File(TSV, 'metrics/changes.tsv') as
             if(left > right, left / right, right / left) times_diff
         from metrics
         group by metric
-        having abs(diff) > 0.05 and isFinite(diff)
+        having abs(diff) > 0.05 and isFinite(diff) and isFinite(times_diff)
     )
     order by diff desc
     ;

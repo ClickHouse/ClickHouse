@@ -72,9 +72,17 @@ try
         storage, metadata_snapshot, data_part,
         required_columns, prewhere_info, check_columns);
 
-    auto size_predictor = (preferred_block_size_bytes == 0)
-        ? nullptr
-        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, metadata_snapshot->getSampleBlock());
+    std::unique_ptr<MergeTreeBlockSizePredictor> size_predictor;
+    if (preferred_block_size_bytes)
+    {
+        const auto & required_column_names = task_columns.columns.getNames();
+        const auto & required_pre_column_names = task_columns.pre_columns.getNames();
+        NameSet complete_column_names(required_column_names.begin(), required_column_names.end());
+        complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
+
+        size_predictor = std::make_unique<MergeTreeBlockSizePredictor>(
+            data_part, Names(complete_column_names.begin(), complete_column_names.end()), metadata_snapshot->getSampleBlock());
+    }
 
     /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
