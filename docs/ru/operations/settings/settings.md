@@ -2777,7 +2777,7 @@ SELECT * FROM test2;
 └─────────────┘
 ```
 
-Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
+Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md).
 
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 
