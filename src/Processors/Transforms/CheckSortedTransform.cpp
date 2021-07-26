@@ -1,4 +1,4 @@
-#include <DataStreams/CheckSortedBlockInputStream.h>
+#include <Processors/Transforms/CheckSortedTransform.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/quoteString.h>
 #include <Core/SortDescription.h>
@@ -12,20 +12,20 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-CheckSortedBlockInputStream::CheckSortedBlockInputStream(
-    const BlockInputStreamPtr & input_,
+CheckSortedTransform::CheckSortedTransform(
+    const Block & header_,
     const SortDescription & sort_description_)
-    : header(input_->getHeader())
+    : ISimpleTransform(header_, header_, false)
     , sort_description_map(addPositionsToSortDescriptions(sort_description_))
 {
-    children.push_back(input_);
 }
 
 SortDescriptionsWithPositions
-CheckSortedBlockInputStream::addPositionsToSortDescriptions(const SortDescription & sort_description)
+CheckSortedTransform::addPositionsToSortDescriptions(const SortDescription & sort_description)
 {
     SortDescriptionsWithPositions result;
     result.reserve(sort_description.size());
+    const auto & header = getInputPort().getHeader();
 
     for (SortColumnDescription description_copy : sort_description)
     {
@@ -39,11 +39,11 @@ CheckSortedBlockInputStream::addPositionsToSortDescriptions(const SortDescriptio
 }
 
 
-Block CheckSortedBlockInputStream::readImpl()
+void CheckSortedTransform::transform(Chunk & chunk)
 {
-    Block block = children.back()->read();
-    if (!block || block.rows() == 0)
-        return block;
+    size_t num_rows = chunk.getNumRows();
+    if (num_rows == 0)
+        return;
 
     auto check = [this](const Columns & left, size_t left_index, const Columns & right, size_t right_index)
     {
@@ -70,23 +70,20 @@ Block CheckSortedBlockInputStream::readImpl()
         }
     };
 
-    auto block_columns = block.getColumns();
+    const auto & chunk_columns = chunk.getColumns();
     if (!last_row.empty())
-        check(last_row, 0, block_columns, 0);
+        check(last_row, 0, chunk_columns, 0);
 
-    size_t rows = block.rows();
-    for (size_t i = 1; i < rows; ++i)
-        check(block_columns, i - 1, block_columns, i);
+    for (size_t i = 1; i < num_rows; ++i)
+        check(chunk_columns, i - 1, chunk_columns, i);
 
     last_row.clear();
-    for (size_t i = 0; i < block.columns(); ++i)
+    for (const auto & chunk_column : chunk_columns)
     {
-        auto column = block_columns[i]->cloneEmpty();
-        column->insertFrom(*block_columns[i], rows - 1);
+        auto column = chunk_column->cloneEmpty();
+        column->insertFrom(*chunk_column, num_rows - 1);
         last_row.emplace_back(std::move(column));
     }
-
-    return block;
 }
 
 }

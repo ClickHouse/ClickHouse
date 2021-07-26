@@ -28,6 +28,15 @@ namespace
         const ASTGrantQuery & query,
         const std::vector<UUID> & roles_to_grant_or_revoke)
     {
+        if (!query.is_revoke)
+        {
+            if (query.replace_access)
+                grantee.access = {};
+            if (query.replace_granted_roles)
+                grantee.granted_roles = {};
+        }
+
+
         if (!query.access_rights_elements.empty())
         {
             if (query.is_revoke)
