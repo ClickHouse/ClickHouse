@@ -1,6 +1,9 @@
 #include <IO/createReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileWithCache.h>
+#include <IO/AsynchronousReadBufferFromFile.h>
+#include <IO/ThreadPoolReader.h>
+#include <IO/SynchronousReader.h>
 #include <Common/ProfileEvents.h>
 
 
@@ -35,6 +38,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMapFailed);
         }
     }
+
+    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);
+    //static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
 
 #if defined(OS_LINUX) || defined(__FreeBSD__)
     if (direct_io_threshold && estimated_size >= direct_io_threshold)
@@ -75,7 +81,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         /// Attempt to open a file with O_DIRECT
         try
         {
-            auto res = std::make_unique<ReadBufferFromFilePReadWithCache>(
+            auto res = std::make_unique<AsynchronousReadBufferFromFileWithCache>(
+                reader,
                 filename, buffer_size, (flags == -1 ? O_RDONLY | O_CLOEXEC : flags) | O_DIRECT, existing_memory, alignment);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
             return res;
@@ -92,7 +99,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 #endif
 
     ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-    return std::make_unique<ReadBufferFromFilePReadWithCache>(filename, buffer_size, flags, existing_memory, alignment);
+    return std::make_unique<AsynchronousReadBufferFromFileWithCache>(
+        reader,
+        filename, buffer_size, flags, existing_memory, alignment);
 }
 
 }

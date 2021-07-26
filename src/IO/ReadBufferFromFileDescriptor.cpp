@@ -6,12 +6,8 @@
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <sys/stat.h>
-#include <Common/UnicodeBar.h>
-#include <Common/TerminalSize.h>
-#include <IO/Operators.h>
 
 
 namespace ProfileEvents
@@ -38,6 +34,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_SELECT;
     extern const int CANNOT_FSTAT;
+    extern const int CANNOT_ADVISE;
 }
 
 
@@ -107,6 +104,18 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         return false;
 
     return true;
+}
+
+
+void ReadBufferFromFileDescriptor::prefetch()
+{
+    /// For direct IO, loading data into page cache is pointless.
+    if (required_alignment)
+        return;
+
+    /// Ask OS to prefetch data into page cache.
+    if (0 != posix_fadvise(fd, file_offset_of_buffer_end, internal_buffer.size(), POSIX_FADV_WILLNEED))
+        throwFromErrno("Cannot posix_fadvise", ErrorCodes::CANNOT_ADVISE);
 }
 
 
