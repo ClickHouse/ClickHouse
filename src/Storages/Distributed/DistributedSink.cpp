@@ -1,4 +1,4 @@
-#include <Storages/Distributed/DistributedBlockOutputStream.h>
+#include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
