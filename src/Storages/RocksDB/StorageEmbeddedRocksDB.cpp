@@ -275,6 +275,10 @@ void StorageEmbeddedRocksDB::initDb()
     rocksdb::DB * db;
     options.create_if_missing = true;
     options.compression = rocksdb::CompressionType::kZSTD;
+
+    /// It is too verbose by default, and in fact we don't care about rocksdb logs at all.
+    options.info_log_level = rocksdb::ERROR_LEVEL;
+
     rocksdb::Status status = rocksdb::DB::Open(options, rocksdb_dir, &db);
 
     if (status != rocksdb::Status::OK())

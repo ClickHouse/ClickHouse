@@ -329,7 +329,7 @@ Clusters::Impl Clusters::getContainer() const
 Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                  const Settings & settings,
                  const String & config_prefix_,
-                 const String & cluster_name)
+                 const String & cluster_name) : name(cluster_name)
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -366,7 +366,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
-            ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
+            auto pool = ConnectionPoolFactory::instance().get(
                 settings.distributed_connections_pool_size,
                 address.host_name, address.port,
                 address.default_database, address.user, address.password,
@@ -439,7 +439,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             for (const auto & replica : replica_addresses)
             {
-                auto replica_pool = std::make_shared<ConnectionPool>(
+                auto replica_pool = ConnectionPoolFactory::instance().get(
                     settings.distributed_connections_pool_size,
                     replica.host_name, replica.port,
                     replica.default_database, replica.user, replica.password,
@@ -502,7 +502,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
 
         for (const auto & replica : current)
         {
-            auto replica_pool = std::make_shared<ConnectionPool>(
+            auto replica_pool = ConnectionPoolFactory::instance().get(
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port,
                         replica.default_database, replica.user, replica.password,
@@ -606,7 +606,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
-            ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
+            auto pool = ConnectionPoolFactory::instance().get(
                 settings.distributed_connections_pool_size,
                 address.host_name,
                 address.port,
