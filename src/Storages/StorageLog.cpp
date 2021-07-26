@@ -210,7 +210,7 @@ class LogSink final : public SinkToStorage
 public:
     explicit LogSink(
         StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_, std::unique_lock<std::shared_timed_mutex> && lock_)
-        : SinkToStorage(metadata_snapshot->getSampleBlock())
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))

@@ -527,7 +527,7 @@ public:
         ContextPtr context,
         const std::optional<FormatSettings> & format_settings,
         int & flags)
-        : SinkToStorage(metadata_snapshot->getSampleBlock())
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))

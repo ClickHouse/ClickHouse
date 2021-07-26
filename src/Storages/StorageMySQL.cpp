@@ -119,7 +119,7 @@ public:
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
-        : SinkToStorage(metadata_snapshot->getSampleBlock())
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage{storage_}
         , metadata_snapshot{metadata_snapshot_}
         , remote_database_name{remote_database_name_}

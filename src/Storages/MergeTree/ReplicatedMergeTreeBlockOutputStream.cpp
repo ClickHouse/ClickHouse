@@ -43,7 +43,7 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     bool deduplicate_,
     ContextPtr context_,
     bool is_attach_)
-    : SinkToStorage(metadata_snapshot->getSampleBlock())
+    : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , quorum(quorum_)

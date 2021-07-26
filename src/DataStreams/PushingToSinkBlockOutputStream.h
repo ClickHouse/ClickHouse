@@ -15,6 +15,10 @@ public:
 
     void write(const Block & block) override
     {
+        /// In case writePrefix was not called.
+        if (!port.isConnected())
+            writePrefix();
+
         size_t num_rows = block.rows();
         Chunk chunk(block.getColumns(), num_rows);
         port.push(std::move(chunk));
