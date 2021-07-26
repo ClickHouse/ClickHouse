@@ -837,10 +837,6 @@ Configuration markup:
                 <type>hdfs</type>
                 <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
             </hdfs>
-            <hdd>
-                <type>local</type>
-                <path>/</path>
-            </hdd>
         </disks>
         <policies>
             <hdfs>
@@ -848,9 +844,6 @@ Configuration markup:
                     <main>
                         <disk>hdfs</disk>
                     </main>
-                    <external>
-                        <disk>hdd</disk>
-                    </external>
                 </volumes>
             </hdfs>
         </policies>
