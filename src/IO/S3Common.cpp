@@ -662,7 +662,7 @@ namespace S3
             validateBucket(bucket);
             validateKey(key);
         }
-        catch(const Exception & e)
+        catch (const Exception & e)
         {
             throw Exception(e.code(), "{} ({})", e.message(), uri.toString());
         }
@@ -679,7 +679,7 @@ namespace S3
                 "Bucket name length is out of bounds in virtual hosted style S3 URI: {}", quoteString(bucket));
     }
 
-    void URI::validateKey(const String & key)
+    void URI::validateKey(const String & /*key*/)
     {
         /// See:
         /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
