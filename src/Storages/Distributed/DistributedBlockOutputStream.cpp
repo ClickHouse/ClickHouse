@@ -95,10 +95,7 @@ DistributedSink::DistributedSink(
     bool insert_sync_,
     UInt64 insert_timeout_,
     StorageID main_table_)
-    : SinkToStorage(
-        context_->getSettingsRef().insert_allow_materialized_columns
-        ? metadata_snapshot_->getSampleBlock()
-        : metadata_snapshot_->getSampleBlockNonMaterialized())
+    : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)

@@ -29,14 +29,13 @@ public:
 
     String getName() const override { return "MergeTreeSink"; }
     void consume(Chunk chunk) override;
-    void onStart();
+    void onStart() override;
 
 private:
     StorageMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
     size_t max_parts_per_block;
     ContextPtr context;
-    bool is_first_chunk = true;
 };
 
 }

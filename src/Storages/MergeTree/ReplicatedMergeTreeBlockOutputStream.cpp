@@ -118,12 +118,6 @@ void ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & zoo
 
 void ReplicatedMergeTreeSink::consume(Chunk chunk)
 {
-    if (is_first_chunk)
-    {
-        onStart();
-        is_first_chunk = false;
-    }
-
     auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     last_block_is_duplicate = false;

@@ -128,7 +128,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     if (!no_destination)
     {
         auto sink = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), getContext());
-        replicated_output = dynamic_cast<ReplicatedMergeTreeSink *>(output.get());
+        replicated_output = dynamic_cast<ReplicatedMergeTreeSink *>(sink.get());
         output = std::make_shared<PushingToSinkBlockOutputStream>(std::move(sink));
     }
 }

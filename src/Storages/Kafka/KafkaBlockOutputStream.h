@@ -15,7 +15,7 @@ public:
         const std::shared_ptr<const Context> & context_);
 
     void consume(Chunk chunk) override;
-    void onStart();
+    void onStart() override;
     void onFinish() override;
     String getName() const override { return "KafkaSink"; }
 
@@ -27,8 +27,6 @@ private:
     const std::shared_ptr<const Context> context;
     ProducerBufferPtr buffer;
     BlockOutputStreamPtr child;
-
-    bool is_first_chunk = true;
 };
 
 }
