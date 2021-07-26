@@ -9,6 +9,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
+
 namespace DB
 {
 
@@ -1574,12 +1575,6 @@ struct WindowFunctionNthValue final : public WindowFunction
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} cannot be parameterized", name_);
-        }
-
-        if (argument_types.empty())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} takes at least one argument", name_);
         }
 
         if (argument_types.size() != 2)
