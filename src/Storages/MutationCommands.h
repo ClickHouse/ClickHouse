@@ -1,5 +1,7 @@
 #pragma once
 
+#include <common/shared_ptr_helper.h>
+
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>
@@ -67,7 +69,7 @@ struct MutationCommand
 };
 
 /// Multiple mutation commands, possible from different ALTER queries
-class MutationCommands : public std::vector<MutationCommand>
+class MutationCommands : public shared_ptr_helper<MutationCommands>, public std::vector<MutationCommand>
 {
 public:
     std::shared_ptr<ASTExpressionList> ast() const;

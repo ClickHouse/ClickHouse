@@ -789,7 +789,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
         getContext()->getMergeList().bookMergeWithTTL();
 
     merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part->parts), *this, metadata_snapshot, false);
-    return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), std::make_shared<MutationCommands>());
+    return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), MutationCommands::create());
 }
 
 bool StorageMergeTree::merge(
@@ -858,7 +858,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
     if (storage_settings.get()->assign_part_uuids)
         future_part->uuid = UUIDHelpers::generateV4();
 
-    MutationCommands commands;
+    auto commands = MutationCommands::create();
 
     CurrentlyMergingPartsTaggerPtr tagger;
 
@@ -927,7 +927,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
                 break;
 
             current_ast_elements += commands_size;
-            commands.insert(commands.end(), it->second.commands.begin(), it->second.commands.end());
+            commands->insert(commands->end(), it->second.commands.begin(), it->second.commands.end());
         }
 
         auto new_part_info = part->info;
@@ -939,7 +939,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         future_part->type = part->getType();
 
         tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
-        return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+        return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::move(commands));
     }
     return {};
 }
