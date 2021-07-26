@@ -19,8 +19,6 @@ protected:
 
     bool supportPasswordOption() const override { return true; }
 
-    bool splitQueries() const override { return true; }
-
     void reconnectIfNeeded() override
     {
         if (!connection->checkConnected())

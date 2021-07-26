@@ -253,11 +253,6 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
 
     bool echo_query = echo_queries;
 
-    /// Several queries separated by ';'.
-    /// INSERT data is ended by the end of line, not ';'.
-    /// An exception is VALUES format where we also support semicolon in
-    /// addition to end of line.
-
     const char * this_query_begin = all_queries_text.data();
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
@@ -298,7 +293,6 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
             // the query ends because we failed to parse it, so we consume
             // the entire line.
             this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-
             TestHint hint(test_mode, String(this_query_begin, this_query_end - this_query_begin));
 
             if (hint.serverError())
@@ -315,7 +309,7 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
                 throw;
             }
 
-            /// It's expected syntax error, skip the line
+            /// It's expected syntax error, skip the line.
             this_query_begin = this_query_end;
             continue;
         }
@@ -326,10 +320,11 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
             {
                 Tokens tokens(this_query_begin, all_queries_end);
                 IParser::Pos token_iterator(tokens, global_context->getSettingsRef().max_parser_depth);
+
                 while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                     ++token_iterator;
-
                 this_query_begin = token_iterator->end;
+
                 continue;
             }
 
@@ -348,8 +343,7 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
         // row input formats (e.g. TSV) can't tell when the input stops,
         // unlike VALUES.
         auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-        /// But do not split query for clickhouse-local.
-        if (splitQueries() && insert_ast && insert_ast->data)
+        if (insert_ast && insert_ast->data)
         {
             this_query_end = find_first_symbols<'\n'>(insert_ast->data, all_queries_end);
             insert_ast->end = this_query_end;
@@ -404,14 +398,12 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
             have_error = true;
         }
 
-        // For INSERTs with inline data: use the end of inline data as
-        // reported by the format parser (it is saved in sendData()).
-        // This allows us to handle queries like:
-        //   insert into t values (1); select 1
-        // , where the inline data is delimited by semicolon and not by a
-        // newline.
+        // For INSERTs with inline data: use the end of inline data as reported by the format
+        // parser (it is saved in sendData()). This allows us to handle queries like:
+        // insert into t values (1); select 1, where the inline data is delimited by semicolon
+        // and not by a newline.
         /// TODO: Better way
-        if (splitQueries() && insert_ast && insert_ast->data)
+        if (insert_ast && insert_ast->data)
         {
             this_query_end = insert_ast->end;
             adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
@@ -609,8 +601,6 @@ void ClientBase::runInteractive()
 
 void ClientBase::runNonInteractive()
 {
-    String text;
-
     if (!queries_files.empty())
     {
         /// Read all queries into `text`.
@@ -627,9 +617,13 @@ void ClientBase::runNonInteractive()
         return;
     }
 
+    String text;
+    if (is_multiquery)
+        text = getQueryTextPrefix();
+
     if (config().has("query"))
     {
-        text = config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
+        text += config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
     }
     else
     {
