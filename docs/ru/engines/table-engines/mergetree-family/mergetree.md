@@ -751,7 +751,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 Обязательные параметры:
 
--   `endpoint` — URL точки приема запроса на стороне S3 в [форматах](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) `path` или `virtual hosted`. URL точки должен содержать путь к корневой директории на сервере, где хранятся данные.
+-   `endpoint` — URL точки приема запроса на стороне S3 в [форматах](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) `path` или `virtual hosted`. URL точки должен содержать бакет и путь к корневой директории на сервере, где хранятся данные.
 -   `access_key_id` — id ключа доступа к S3.
 -   `secret_access_key` — секретный ключ доступа к S3.
 

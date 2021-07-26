@@ -763,7 +763,7 @@ Configuration markup:
 
 Required parameters:
 
--   `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a root path to store data.
+-   `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a bucket and root path to store data.
 -   `access_key_id` — S3 access key id.
 -   `secret_access_key` — S3 secret access key.
 
