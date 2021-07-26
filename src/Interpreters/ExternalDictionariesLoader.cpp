@@ -38,8 +38,8 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
 {
     /// For dictionaries from databases (created with DDL queries) we have to perform
     /// additional checks, so we identify them here.
-    bool created_from_ddl = !repository_name.empty();
-    return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), created_from_ddl);
+    bool dictionary_from_database = !repository_name.empty();
+    return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), dictionary_from_database);
 }
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
@@ -116,10 +116,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     std::string maybe_database_name = name.substr(0, pos);
     std::string maybe_table_name = name.substr(pos + 1);
 
-    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
-        {maybe_database_name, maybe_table_name},
-        const_pointer_cast<Context>(getContext()));
-
+    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, getContext());
     if (!db)
         return name;
     assert(table);

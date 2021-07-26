@@ -8,6 +8,7 @@
 #include <Functions/materialize.h>
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -26,7 +27,6 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int BAD_ARGUMENTS;
 }
 
 const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
@@ -203,34 +203,36 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.function_base = function->build(arguments);
     node.result_type = node.function_base->getResultType();
     node.function = node.function_base->prepare(arguments);
-    node.is_deterministic = node.function_base->isDeterministic();
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-    if (node.function_base->isSuitableForConstantFolding())
+    if (all_const && node.function_base->isSuitableForConstantFolding())
     {
-        ColumnPtr column;
-
-        if (all_const)
-        {
-            size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
-            column = node.function->execute(arguments, node.result_type, num_rows, true);
-        }
-        else
-        {
-            column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
-        }
+        size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
+        auto col = node.function->execute(arguments, node.result_type, num_rows, true);
 
         /// If the result is not a constant, just in case, we will consider the result as unknown.
-        if (column && isColumnConst(*column))
+        if (isColumnConst(*col))
         {
             /// All constant (literal) columns in block are added with size 1.
             /// But if there was no columns in block before executing a function, the result has size 0.
             /// Change the size to 1.
 
-            if (column->empty())
-                column = column->cloneResized(1);
+            if (col->empty())
+                col = col->cloneResized(1);
 
-            node.column = std::move(column);
+            node.column = std::move(col);
+        }
+    }
+
+    /// Some functions like ignore(), indexHint() or getTypeName() always return constant result even if arguments are not constant.
+    /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
+    /// unnecessary materialization.
+    if (!node.column && node.function_base->isSuitableForConstantFolding())
+    {
+        if (auto col = node.function_base->getResultIfAlwaysReturnsConstantAndHasArguments(arguments))
+        {
+            node.column = std::move(col);
+            node.allow_constant_folding = false;
         }
     }
 
@@ -406,10 +408,13 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
 
     for (auto & node : nodes)
     {
+        /// We cannot remove function with side effects even if it returns constant (e.g. ignore(...)).
+        bool prevent_constant_folding = node.column && isColumnConst(*node.column) && !node.allow_constant_folding;
         /// We cannot remove arrayJoin because it changes the number of rows.
         bool is_array_join = node.type == ActionType::ARRAY_JOIN;
 
-        if (is_array_join && visited_nodes.count(&node) == 0)
+        bool must_keep_node = is_array_join || prevent_constant_folding;
+        if (must_keep_node && visited_nodes.count(&node) == 0)
         {
             visited_nodes.insert(&node);
             stack.push(&node);
@@ -424,20 +429,10 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
         auto * node = stack.top();
         stack.pop();
 
-        if (!node->children.empty() && node->column && isColumnConst(*node->column))
+        if (!node->children.empty() && node->column && isColumnConst(*node->column) && node->allow_constant_folding)
         {
             /// Constant folding.
             node->type = ActionsDAG::ActionType::COLUMN;
-
-            for (const auto & child : node->children)
-            {
-                if (!child->is_deterministic)
-                {
-                    node->is_deterministic = false;
-                    break;
-                }
-            }
-
             node->children.clear();
         }
 
@@ -545,7 +540,7 @@ Block ActionsDAG::updateHeader(Block header) const
 
     struct Frame
     {
-        const Node * node = nullptr;
+        const Node * node;
         size_t next_child = 0;
     };
 
@@ -592,7 +587,8 @@ Block ActionsDAG::updateHeader(Block header) const
                 }
             }
 
-            if (node_to_column[output].column)
+            auto & column = node_to_column[output];
+            if (column.column)
                 result_columns.push_back(node_to_column[output]);
         }
     }
@@ -993,14 +989,6 @@ bool ActionsDAG::trivial() const
     return true;
 }
 
-void ActionsDAG::assertDeterministic() const
-{
-    for (const auto & node : nodes)
-        if (!node.is_deterministic)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Expression must be deterministic but it contains non-deterministic part `{}`", node.result_name);
-}
-
 void ActionsDAG::addMaterializingOutputActions()
 {
     for (auto & node : index)
@@ -1064,19 +1052,11 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             {
                 auto & input = inputs[res_elem.name];
                 if (input.empty())
-                {
-                    const auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get());
-                    if (ignore_constant_values && res_const)
-                        src_node = dst_node = &actions_dag->addColumn(res_elem);
-                    else
-                        throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
-                                        ErrorCodes::THERE_IS_NO_COLUMN);
-                }
-                else
-                {
-                    src_node = dst_node = actions_dag->inputs[input.front()];
-                    input.pop_front();
-                }
+                    throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
+                                    ErrorCodes::THERE_IS_NO_COLUMN);
+
+                src_node = dst_node = actions_dag->inputs[input.front()];
+                input.pop_front();
                 break;
             }
         }
@@ -1533,7 +1513,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
 
     auto res = split(split_nodes);
     /// Do not remove array joined columns if they are not used.
-    /// res.first->project_input = false;
+    res.first->project_input = false;
     return res;
 }
 
@@ -1546,9 +1526,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
                         column_name, dumpDAG());
 
     std::unordered_set<const Node *> split_nodes = {node};
-    auto res = split(split_nodes);
-    res.second->project_input = project_input;
-    return res;
+    return split(split_nodes);
 }
 
 namespace

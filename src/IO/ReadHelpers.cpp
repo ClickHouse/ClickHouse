@@ -765,7 +765,7 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 
     auto ignore_delimiter = [&]
     {
-        if (!buf.eof() && !isNumericASCII(*buf.position()))
+        if (!buf.eof())
         {
             ++buf.position();
             return true;

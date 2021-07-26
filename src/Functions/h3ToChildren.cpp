@@ -12,7 +12,7 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <common/range.h>
+#include <ext/range.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -75,7 +75,7 @@ public:
 
         std::vector<H3Index> hindex_vec;
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (const auto row : ext::range(0, input_rows_count))
         {
             const UInt64 parent_hindex = col_hindex->getUInt(row);
             const UInt8 child_resolution = col_resolution->getUInt(row);
@@ -84,14 +84,14 @@ public:
                 throw Exception("The argument 'resolution' (" + toString(child_resolution) + ") of function " + getName()
                     + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-            const size_t vec_size = cellToChildrenSize(parent_hindex, child_resolution);
+            const size_t vec_size = maxH3ToChildrenSize(parent_hindex, child_resolution);
             if (vec_size > MAX_ARRAY_SIZE)
                 throw Exception("The result of function" + getName()
                     + " (array of " + toString(vec_size) + " elements) will be too large with resolution argument = "
                     + toString(child_resolution), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
             hindex_vec.resize(vec_size);
-            cellToChildren(parent_hindex, child_resolution, hindex_vec.data());
+            h3ToChildren(parent_hindex, child_resolution, hindex_vec.data());
 
             dst_data.reserve(dst_data.size() + vec_size);
             for (auto hindex : hindex_vec)

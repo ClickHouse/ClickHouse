@@ -27,7 +27,6 @@ public:
         MarkRanges mark_ranges,
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
-        ExpressionActionsSettings actions_settings,
         bool check_columns,
         const MergeTreeReaderSettings & reader_settings,
         const Names & virt_column_names = {},

@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log)
+ContextPtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -149,7 +149,6 @@ void executeQuery(
 
             OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
                 sharding_key_expr,
-                sharding_key_expr->getSampleBlock().getByPosition(0).type,
                 sharding_key_column_name,
                 shard_info,
                 not_optimized_cluster->getSlotToShard(),

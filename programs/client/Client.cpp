@@ -21,14 +21,16 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
-#include <common/scope_guard_safe.h>
+#include <ext/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
+#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <Common/UnicodeBar.h>
@@ -84,9 +86,7 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/ProgressIndication.h>
-#include <filesystem>
-#include <Common/filesystemHelpers.h>
+#include <Common/ProgressBar.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -96,7 +96,6 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -112,7 +111,6 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int SYNTAX_ERROR;
-    extern const int TOO_DEEP_RECURSION;
 }
 
 
@@ -183,7 +181,7 @@ private:
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
     SharedContextHolder shared_context = Context::createShared();
-    ContextMutablePtr context = Context::createGlobal(shared_context.get());
+    ContextPtr context = Context::createGlobal(shared_context.get());
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
@@ -230,13 +228,13 @@ private:
     String server_version;
     String server_display_name;
 
-    /// true by default - for interactive mode, might be changed when --progress option is checked for
-    /// non-interactive mode.
-    bool need_render_progress = true;
+    Stopwatch watch;
 
-    bool written_first_block = false;
+    /// The server periodically sends information about how much data was read since last time.
+    Progress progress;
 
-    ProgressIndication progress_indication;
+    /// Progress bar
+    ProgressBar progress_bar;
 
     /// External tables info.
     std::list<ExternalTable> external_tables;
@@ -278,7 +276,7 @@ private:
 
         /// Set path for format schema files
         if (config().has("format_schema_path"))
-            context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+            context->setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
 
         /// Initialize query_id_formats if any
         if (config().has("query_id_formats"))
@@ -430,7 +428,6 @@ private:
                {TokenType::ClosingRoundBracket, Replxx::Color::BROWN},
                {TokenType::OpeningSquareBracket, Replxx::Color::BROWN},
                {TokenType::ClosingSquareBracket, Replxx::Color::BROWN},
-               {TokenType::DoubleColon, Replxx::Color::BROWN},
                {TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE},
                {TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE},
 
@@ -537,7 +534,7 @@ private:
 
         if (!is_interactive)
         {
-            need_render_progress = config().getBool("progress", false);
+            progress_bar.need_render_progress = config().getBool("progress", false);
             echo_queries = config().getBool("echo", false);
             ignore_error = config().getBool("ignore-error", false);
         }
@@ -550,6 +547,65 @@ private:
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
         const auto local_tz = DateLUT::instance().getTimeZone();
+        if (!context->getSettingsRef().use_client_time_zone)
+        {
+            const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
+            if (!time_zone.empty())
+            {
+                try
+                {
+                    DateLUT::setDefaultTimezone(time_zone);
+                }
+                catch (...)
+                {
+                    std::cerr << "Warning: could not switch to server time zone: " << time_zone
+                              << ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
+                              << "Proceeding with local time zone." << std::endl
+                              << std::endl;
+                }
+            }
+            else
+            {
+                std::cerr << "Warning: could not determine server time zone. "
+                          << "Proceeding with local time zone." << std::endl
+                          << std::endl;
+            }
+        }
+
+        Strings keys;
+
+        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+
+        config().keys("prompt_by_server_display_name", keys);
+
+        for (const String & key : keys)
+        {
+            if (key != "default" && server_display_name.find(key) != std::string::npos)
+            {
+                prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
+                break;
+            }
+        }
+
+        /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
+        {
+            String unescaped_prompt_by_server_display_name;
+            ReadBufferFromString in(prompt_by_server_display_name);
+            readEscapedString(unescaped_prompt_by_server_display_name, in);
+            prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
+        }
+
+        /// Prompt may contain the following substitutions in a form of {name}.
+        std::map<String, String> prompt_substitutions{
+            {"host", connection_parameters.host},
+            {"port", toString(connection_parameters.port)},
+            {"user", connection_parameters.user},
+            {"display_name", server_display_name},
+        };
+
+        /// Quite suboptimal.
+        for (const auto & [key, value] : prompt_substitutions)
+            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
         if (is_interactive)
         {
@@ -577,19 +633,8 @@ private:
                     history_file = home_path + "/.clickhouse-client-history";
             }
 
-            if (!history_file.empty() && !fs::exists(history_file))
-            {
-                /// Avoid TOCTOU issue.
-                try
-                {
-                    FS::createFile(history_file);
-                }
-                catch (const ErrnoException & e)
-                {
-                    if (e.getErrno() != EEXIST)
-                        throw;
-                }
-            }
+            if (!history_file.empty() && !Poco::File(history_file).exists())
+                Poco::File(history_file).createFile();
 
             LineReader::Patterns query_extenders = {"\\"};
             LineReader::Patterns query_delimiters = {";", "\\G"};
@@ -758,66 +803,6 @@ private:
                           << std::endl;
             }
         }
-
-        if (!context->getSettingsRef().use_client_time_zone)
-        {
-            const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
-            if (!time_zone.empty())
-            {
-                try
-                {
-                    DateLUT::setDefaultTimezone(time_zone);
-                }
-                catch (...)
-                {
-                    std::cerr << "Warning: could not switch to server time zone: " << time_zone
-                              << ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
-                              << "Proceeding with local time zone." << std::endl
-                              << std::endl;
-                }
-            }
-            else
-            {
-                std::cerr << "Warning: could not determine server time zone. "
-                          << "Proceeding with local time zone." << std::endl
-                          << std::endl;
-            }
-        }
-
-        Strings keys;
-
-        prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
-
-        config().keys("prompt_by_server_display_name", keys);
-
-        for (const String & key : keys)
-        {
-            if (key != "default" && server_display_name.find(key) != std::string::npos)
-            {
-                prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name." + key);
-                break;
-            }
-        }
-
-        /// Prompt may contain escape sequences including \e[ or \x1b[ sequences to set terminal color.
-        {
-            String unescaped_prompt_by_server_display_name;
-            ReadBufferFromString in(prompt_by_server_display_name);
-            readEscapedString(unescaped_prompt_by_server_display_name, in);
-            prompt_by_server_display_name = std::move(unescaped_prompt_by_server_display_name);
-        }
-
-        /// Prompt may contain the following substitutions in a form of {name}.
-        std::map<String, String> prompt_substitutions{
-            {"host", connection_parameters.host},
-            {"port", toString(connection_parameters.port)},
-            {"user", connection_parameters.user},
-            {"display_name", server_display_name},
-        };
-
-        /// Quite suboptimal.
-        for (const auto & [key, value] : prompt_substitutions)
-            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
     }
 
 
@@ -980,9 +965,12 @@ private:
             TestHint test_hint(test_mode, all_queries_text);
             if (test_hint.clientError() || test_hint.serverError())
                 processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-        }
 
-        bool echo_query = echo_queries;
+            // Echo all queries if asked; makes for a more readable reference
+            // file.
+            if (test_hint.echoQueries())
+                echo_queries = true;
+        }
 
         /// Several queries separated by ';'.
         /// INSERT data is ended by the end of line, not ';'.
@@ -1116,20 +1104,9 @@ private:
                 continue;
             }
 
-            // Now we know for sure where the query ends.
-            // Look for the hint in the text of query + insert data + trailing
-            // comments,
-            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-            // Use the updated query boundaries we just calculated.
-            TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
-
-            // Echo all queries if asked; makes for a more readable reference
-            // file.
-            echo_query = test_hint.echoQueries().value_or(echo_query);
-
             try
             {
-                processParsedSingleQuery(echo_query);
+                processParsedSingleQuery();
             }
             catch (...)
             {
@@ -1150,6 +1127,13 @@ private:
                 this_query_end = insert_ast->end;
                 adjustQueryEnd(this_query_end, all_queries_end, context->getSettingsRef().max_parser_depth);
             }
+
+            // Now we know for sure where the query ends.
+            // Look for the hint in the text of query + insert data + trailing
+            // comments,
+            // e.g. insert into t format CSV 'a' -- { serverError 123 }.
+            // Use the updated query boundaries we just calculated.
+            TestHint test_hint(test_mode, std::string(this_query_begin, this_query_end - this_query_begin));
 
             // Check whether the error (or its absence) matches the test hints
             // (or their absence).
@@ -1215,9 +1199,7 @@ private:
                 client_exception.reset();
                 server_exception.reset();
                 have_error = false;
-
-                if (!connection->checkConnected())
-                    connect();
+                connection->forceConnected(connection_parameters.timeouts);
             }
 
             // Report error.
@@ -1280,8 +1262,7 @@ private:
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::SYNTAX_ERROR &&
-                e.code() != ErrorCodes::TOO_DEEP_RECURSION)
+            if (e.code() != ErrorCodes::SYNTAX_ERROR)
                 throw;
         }
 
@@ -1353,7 +1334,7 @@ private:
 
                     fmt::print(
                         stderr,
-                        "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
+                        "IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent node doesn't implement clone() correctly.");
 
                     exit(1);
                 }
@@ -1381,41 +1362,10 @@ private:
                 have_error = true;
             }
 
-            const auto * exception = server_exception ? server_exception.get() : client_exception.get();
-            // Sometimes you may get TOO_DEEP_RECURSION from the server,
-            // and TOO_DEEP_RECURSION should not fail the fuzzer check.
-            if (have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
-            {
-                have_error = false;
-                server_exception.reset();
-                client_exception.reset();
-                return true;
-            }
-
             if (have_error)
             {
+                const auto * exception = server_exception ? server_exception.get() : client_exception.get();
                 fmt::print(stderr, "Error on processing query '{}': {}\n", ast_to_process->formatForErrorMessage(), exception->message());
-
-                // Try to reconnect after errors, for two reasons:
-                // 1. We might not have realized that the server died, e.g. if
-                //    it sent us a <Fatal> trace and closed connection properly.
-                // 2. The connection might have gotten into a wrong state and
-                //    the next query will get false positive about
-                //    "Unknown packet from server".
-                try
-                {
-                    connection->forceConnected(connection_parameters.timeouts);
-                }
-                catch (...)
-                {
-                    // Just report it, we'll terminate below.
-                    fmt::print(stderr,
-                        "Error while reconnecting to the server: Code: {}: {}\n",
-                        getCurrentExceptionCode(),
-                        getCurrentExceptionMessage(true));
-
-                    assert(!connection->isConnected());
-                }
             }
 
             if (!connection->isConnected())
@@ -1473,9 +1423,10 @@ private:
                 }
                 catch (Exception & e)
                 {
-                    if (e.code() != ErrorCodes::SYNTAX_ERROR &&
-                        e.code() != ErrorCodes::TOO_DEEP_RECURSION)
+                    if (e.code() != ErrorCodes::SYNTAX_ERROR)
+                    {
                         throw;
+                    }
                 }
 
                 if (ast_2)
@@ -1487,7 +1438,7 @@ private:
                     const auto text_3 = ast_3->formatForErrorMessage();
                     if (text_3 != text_2)
                     {
-                        fmt::print(stderr, "Found error: The query formatting is broken.\n");
+                        fmt::print(stderr, "The query formatting is broken.\n");
 
                         printChangedSettings();
 
@@ -1518,6 +1469,11 @@ private:
                 server_exception.reset();
                 client_exception.reset();
                 have_error = false;
+
+                // We have to reinitialize connection after errors, because it
+                // might have gotten into a wrong state and we'll get false
+                // positives about "Unknown packet from server".
+                connection->forceConnected(connection_parameters.timeouts);
             }
             else if (ast_to_process->formatForErrorMessage().size() > 500)
             {
@@ -1573,14 +1529,14 @@ private:
     // 'query_to_send' -- the query text that is sent to server,
     // 'full_query' -- for INSERT queries, contains the query and the data that
     // follow it. Its memory is referenced by ASTInsertQuery::begin, end.
-    void processParsedSingleQuery(std::optional<bool> echo_query = {})
+    void processParsedSingleQuery()
     {
         resetOutput();
         client_exception.reset();
         server_exception.reset();
         have_error = false;
 
-        if (echo_query.value_or(echo_queries))
+        if (echo_queries)
         {
             writeString(full_query, std_out);
             writeChar('\n', std_out);
@@ -1600,9 +1556,12 @@ private:
             }
         }
 
+        watch.restart();
         processed_rows = 0;
-        written_first_block = false;
-        progress_indication.resetProgress();
+        progress.reset();
+        progress_bar.show_progress_bar = false;
+        progress_bar.written_progress_chars = 0;
+        progress_bar.written_first_block = false;
 
         {
             /// Temporarily apply query settings to context.
@@ -1625,8 +1584,7 @@ private:
             if (with_output && with_output->settings_ast)
                 apply_query_settings(*with_output->settings_ast);
 
-            if (!connection->checkConnected())
-                connect();
+            connection->forceConnected(connection_parameters.timeouts);
 
             ASTPtr input_function;
             if (insert && insert->select)
@@ -1670,15 +1628,16 @@ private:
 
         if (is_interactive)
         {
-            std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
-            /// Write final progress if it makes sense to do so.
-            writeFinalProgress();
+            std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec. ";
+
+            if (progress.read_rows >= 1000)
+                writeFinalProgress();
 
             std::cout << std::endl << std::endl;
         }
         else if (print_time_to_stderr)
         {
-            std::cerr << progress_indication.elapsedSeconds() << "\n";
+            std::cerr << watch.elapsedSeconds() << "\n";
         }
     }
 
@@ -1853,19 +1812,6 @@ private:
             /// Send data read from stdin.
             try
             {
-                if (need_render_progress)
-                {
-                    /// Set total_bytes_to_read for current fd.
-                    FileProgress file_progress(0, std_in.size());
-                    progress_indication.updateProgress(Progress(file_progress));
-
-                    /// Set callback to be called on file progress.
-                    progress_indication.setFileProgressCallback(context, true);
-
-                    /// Add callback to track reading from fd.
-                    std_in.setProgressCallback(context);
-                }
-
                 sendDataFrom(std_in, sample, columns_description);
             }
             catch (Exception & e)
@@ -1988,7 +1934,7 @@ private:
                         cancelled = true;
                         if (is_interactive)
                         {
-                            progress_indication.clearProgressOutput();
+                            progress_bar.clearProgress();
                             std::cout << "Cancelling query." << std::endl;
                         }
 
@@ -2215,7 +2161,7 @@ private:
                 current_format = "Vertical";
 
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-            if (!need_render_progress)
+            if (!progress_bar.need_render_progress)
                 block_out_stream = context->getOutputStreamParallelIfPossible(current_format, *out_buf, block);
             else
                 block_out_stream = context->getOutputStream(current_format, *out_buf, block);
@@ -2274,25 +2220,25 @@ private:
         if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
             return;
 
-        if (need_render_progress)
-            progress_indication.clearProgressOutput();
+        if (progress_bar.need_render_progress)
+            progress_bar.clearProgress();
 
         block_out_stream->write(block);
-        written_first_block = true;
+        progress_bar.written_first_block = true;
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (need_render_progress)
-            progress_indication.writeProgress();
+        if (progress_bar.need_render_progress)
+            progress_bar.writeProgress(progress, watch.elapsed());
     }
 
 
     void onLogData(Block & block)
     {
         initLogsOutputStream();
-        progress_indication.clearProgressOutput();
+        progress_bar.clearProgress();
         logs_out_stream->write(block);
         logs_out_stream->flush();
     }
@@ -2313,23 +2259,28 @@ private:
 
     void onProgress(const Progress & value)
     {
-        if (!progress_indication.updateProgress(value))
+        if (!progress_bar.updateProgress(progress, value))
         {
             // Just a keep-alive update.
             return;
         }
-
         if (block_out_stream)
             block_out_stream->onProgress(value);
-
-        if (need_render_progress)
-            progress_indication.writeProgress();
+        progress_bar.writeProgress(progress, watch.elapsed());
     }
 
 
     void writeFinalProgress()
     {
-        progress_indication.writeFinalProgress();
+        std::cout << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
+                  << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
+
+        size_t elapsed_ns = watch.elapsed();
+        if (elapsed_ns)
+            std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
+                      << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
+        else
+            std::cout << ". ";
     }
 
 
@@ -2350,7 +2301,7 @@ private:
 
     void onEndOfStream()
     {
-        progress_indication.clearProgressOutput();
+        progress_bar.clearProgress();
 
         if (block_out_stream)
             block_out_stream->writeSuffix();
@@ -2360,9 +2311,9 @@ private:
 
         resetOutput();
 
-        if (is_interactive && !written_first_block)
+        if (is_interactive && !progress_bar.written_first_block)
         {
-            progress_indication.clearProgressOutput();
+            progress_bar.clearProgress();
             std::cout << "Ok." << std::endl;
         }
     }
@@ -2457,8 +2408,6 @@ public:
                     {
                         /// param_name value
                         ++arg_num;
-                        if (arg_num >= argc)
-                            throw Exception("Parameter requires value", ErrorCodes::BAD_ARGUMENTS);
                         arg = argv[arg_num];
                         query_parameters.emplace(String(param_continuation), String(arg));
                     }
@@ -2496,7 +2445,7 @@ public:
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
             ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-            ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
+            ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")

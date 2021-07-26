@@ -15,7 +15,7 @@ ClickHouse cannot work or build on a 32-bit system. You should acquire access to
 
 To start working with ClickHouse repository you will need a GitHub account.
 
-You probably already have one, but if you do not, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
+You probably already have one, but if you don’t, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
 
 Create a fork of ClickHouse repository. To do that please click on the “fork” button in the upper right corner at https://github.com/ClickHouse/ClickHouse. It will fork your own copy of ClickHouse/ClickHouse to your account.
 
@@ -236,8 +236,6 @@ Just in case, it is worth mentioning that CLion creates `build` path on its own,
 The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
 
 The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
-
-Adding third-party libraries: https://clickhouse.tech/docs/en/development/contrib/#adding-third-party-libraries
 
 Writing tests: https://clickhouse.tech/docs/en/development/tests/
 

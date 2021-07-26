@@ -3,7 +3,7 @@ toc_priority: 38
 toc_title: "Функции преобразования типов"
 ---
 
-# Функции преобразования типов {#type-conversion-functions}
+# Функции преобразования типов {#funktsii-preobrazovaniia-tipov}
 
 ## Общие проблемы преобразования чисел {#numeric-conversion-issues}
 

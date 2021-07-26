@@ -177,7 +177,8 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     auto projection = std::make_shared<ASTProjectionDeclaration>();
     projection->name = name->as<ASTIdentifier &>().name();
-    projection->set(projection->query, query);
+    projection->query = query;
+    projection->children.emplace_back(projection->query);
     node = projection;
 
     return true;
@@ -492,7 +493,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
     }
 
-    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
+    StorageID table_id = getTableIdentifier(table);
 
     // Shortcut for ATTACH a previously detached table
     bool short_attach = attach && !from_path;
@@ -729,14 +730,14 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->if_not_exists = if_not_exists;
     query->is_live_view = true;
 
-    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
+    StorageID table_id = getTableIdentifier(table);
     query->database = table_id.database_name;
     query->table = table_id.table_name;
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
     if (to_table)
-        query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
+        query->to_table_id = getTableIdentifier(to_table);
 
     query->set(query->columns_list, columns_list);
 
@@ -945,14 +946,14 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->replace_view = replace_view;
 
-    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
+    StorageID table_id = getTableIdentifier(table);
     query->database = table_id.database_name;
     query->table = table_id.table_name;
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
     if (to_table)
-        query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
+        query->to_table_id = getTableIdentifier(to_table);
     if (to_inner_uuid)
         query->to_inner_uuid = parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.get<String>());
 
@@ -971,8 +972,6 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
 {
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
-    ParserKeyword s_replace("REPLACE");
-    ParserKeyword s_or_replace("OR REPLACE");
     ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_on("ON");
@@ -984,8 +983,6 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserDictionary dictionary_p;
 
     bool if_not_exists = false;
-    bool replace = false;
-    bool or_replace = false;
 
     ASTPtr name;
     ASTPtr attributes;
@@ -993,21 +990,13 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     String cluster_str;
 
     bool attach = false;
-
-    if (s_create.ignore(pos, expected))
+    if (!s_create.ignore(pos, expected))
     {
-        if (s_or_replace.ignore(pos, expected))
-        {
-            replace = true;
-            or_replace = true;
-        }
+        if (s_attach.ignore(pos, expected))
+            attach = true;
+        else
+            return false;
     }
-    else if (s_attach.ignore(pos, expected))
-        attach = true;
-    else if (s_replace.ignore(pos, expected))
-        replace = true;
-    else
-        return false;
 
     if (!s_dictionary.ignore(pos, expected))
         return false;
@@ -1043,10 +1032,8 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     node = query;
     query->is_dictionary = true;
     query->attach = attach;
-    query->create_or_replace = or_replace;
-    query->replace_table = replace;
 
-    auto dict_id = name->as<ASTTableIdentifier>()->getTableId();
+    StorageID dict_id = getTableIdentifier(name);
     query->database = dict_id.database_name;
     query->table = dict_id.table_name;
     query->uuid = dict_id.uuid;

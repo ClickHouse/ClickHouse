@@ -36,7 +36,6 @@ public:
         MODIFY_TTL,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
-        RESET_SETTING,
         MODIFY_QUERY,
         REMOVE_TTL,
 
@@ -141,9 +140,6 @@ public:
 
     /// FOR MODIFY_SETTING
     ASTPtr settings_changes;
-
-    /// FOR RESET_SETTING
-    ASTPtr settings_resets;
 
     /// For MODIFY_QUERY
     ASTPtr select;

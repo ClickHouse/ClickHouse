@@ -65,8 +65,6 @@ ClickHouse хранит метаинформацию о репликах в [Apa
 
 Репликация асинхронная, мульти-мастер. Запросы `INSERT` и `ALTER` можно направлять на любой доступный сервер. Данные вставятся на сервер, где выполнен запрос, а затем скопируются на остальные серверы. В связи с асинхронностью, только что вставленные данные появляются на остальных репликах с небольшой задержкой. Если часть реплик недоступна, данные на них запишутся тогда, когда они станут доступны. Если реплика доступна, то задержка составляет столько времени, сколько требуется для передачи блока сжатых данных по сети. Количество потоков для выполнения фоновых задач можно задать с помощью настройки [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size).
 
-Движок `ReplicatedMergeTree` использует отдельный пул потоков для скачивания кусков данных. Размер пула ограничен настройкой [background_fetches_pool_size](../../../operations/settings/settings.md#background_fetches_pool_size), которую можно указать при перезапуске сервера. 
-
 По умолчанию, запрос INSERT ждёт подтверждения записи только от одной реплики. Если данные были успешно записаны только на одну реплику, и сервер с этой репликой перестал существовать, то записанные данные будут потеряны. Вы можете включить подтверждение записи от нескольких реплик, используя настройку `insert_quorum`.
 
 Каждый блок данных записывается атомарно. Запрос INSERT разбивается на блоки данных размером до `max_insert_block_size = 1048576` строк. То есть, если в запросе `INSERT` менее 1048576 строк, то он делается атомарно.
@@ -251,6 +249,5 @@ $ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 **Смотрите также**
 
 -   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
--   [background_fetches_pool_size](../../../operations/settings/settings.md#background_fetches_pool_size)
 -   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
 

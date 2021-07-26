@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
+#include <Poco/File.h>
 #include <Poco/Logger.h>
 #include <common/logger_useful.h>
 
@@ -78,7 +79,7 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
 
     new_data_part->uuid = uuid;
     new_data_part->setColumns(columns);
-    new_data_part->partition.value = partition.value;
+    new_data_part->partition.value.assign(partition.value);
     new_data_part->minmax_idx = minmax_idx;
 
     if (disk->exists(destination_path))

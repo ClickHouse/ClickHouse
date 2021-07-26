@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 ADDINCL(
-    contrib/libs/zstd/include
+    contrib/libs/zstd
     contrib/restricted/fast_float
 )
 
@@ -44,6 +44,7 @@ SRCS(
     NullWriteBuffer.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
+    ReadBufferAIO.cpp
     ReadBufferFromFile.cpp
     ReadBufferFromFileBase.cpp
     ReadBufferFromFileDecorator.cpp

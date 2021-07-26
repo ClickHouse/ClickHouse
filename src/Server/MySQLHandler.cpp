@@ -1,7 +1,7 @@
 #include "MySQLHandler.h"
 
 #include <limits>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 #include <Columns/ColumnVector.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
@@ -66,7 +66,6 @@ static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 static String selectEmptyReplacementQuery(const String & query);
 static String showTableStatusReplacementQuery(const String & query);
 static String killConnectionIdReplacementQuery(const String & query);
-static String selectLimitReplacementQuery(const String & query);
 
 MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, size_t connection_id_)
@@ -84,7 +83,6 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
     replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
     replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
-    replacements.emplace("SET SQL_SELECT_LIMIT", selectLimitReplacementQuery);
 }
 
 void MySQLHandler::run()
@@ -132,8 +130,6 @@ void MySQLHandler::run()
             throw Exception("Required capability: CLIENT_PROTOCOL_41.", ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
-
-        connection_context->getClientInfo().initial_user = handshake_response.username;
 
         try
         {
@@ -224,7 +220,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
             int ret = socket().receiveBytes(buf + pos, packet_size - pos);
             if (ret == 0)
             {
-                throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 3", ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 3.", ErrorCodes::CANNOT_READ_ALL_DATA);
             }
             pos += ret;
         }
@@ -461,14 +457,6 @@ static String showTableStatusReplacementQuery(const String & query)
             " WHERE name LIKE "
             + suffix);
     }
-    return query;
-}
-
-static String selectLimitReplacementQuery(const String & query)
-{
-    const String prefix = "SET SQL_SELECT_LIMIT";
-    if (query.starts_with(prefix))
-        return "SET limit" + std::string(query.data() + prefix.length());
     return query;
 }
 

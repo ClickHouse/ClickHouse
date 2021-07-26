@@ -39,7 +39,7 @@ public:
         const String & path,
         size_t buf_size,
         size_t estimated_size,
-        size_t direct_io_threshold,
+        size_t aio_threshold,
         size_t mmap_threshold,
         MMappedFileCache * mmap_cache) const override;
 
@@ -69,7 +69,7 @@ public:
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;
     void startup() override;
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context) override;
 
 protected:
     Executor & getExecutor() override;

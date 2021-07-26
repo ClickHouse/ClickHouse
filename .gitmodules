@@ -103,7 +103,7 @@
 	url = https://github.com/ClickHouse-Extras/fastops
 [submodule "contrib/orc"]
 	path = contrib/orc
-	url = https://github.com/ClickHouse-Extras/orc
+	url = https://github.com/apache/orc
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11.git
@@ -168,6 +168,9 @@
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt.git
+[submodule "contrib/antlr4-runtime"]
+	path = contrib/antlr4-runtime
+	url = https://github.com/ClickHouse-Extras/antlr4-runtime.git
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
 	url = https://github.com/ClickHouse-Extras/sentry-native.git
@@ -207,6 +210,9 @@
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
+[submodule "contrib/libpqxx"]
+	path = contrib/libpqxx
+	url = https://github.com/jtv/libpqxx
 [submodule "contrib/libpq"]
 	path = contrib/libpq
 	url = https://github.com/ClickHouse-Extras/libpq
@@ -222,12 +228,3 @@
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
 	url = https://github.com/ClickHouse-Extras/datasketches-cpp.git
-[submodule "contrib/yaml-cpp"]
-	path = contrib/yaml-cpp
-	url = https://github.com/ClickHouse-Extras/yaml-cpp.git
-[submodule "contrib/libpqxx"]
-	path = contrib/libpqxx
-	url = https://github.com/ClickHouse-Extras/libpqxx.git
-[submodule "contrib/sqlite-amalgamation"]
-	path = contrib/sqlite-amalgamation
-	url = https://github.com/azadkuh/sqlite-amalgamation

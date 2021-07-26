@@ -12,7 +12,6 @@ namespace ErrorCodes
 
 namespace DB
 {
-struct Settings;
 
 namespace
 {
@@ -56,7 +55,7 @@ struct StudentTTestData : public TTestMoments<Float64>
 };
 
 AggregateFunctionPtr createAggregateFunctionStudentTTest(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertBinary(name, argument_types);
     assertNoParameters(name, parameters);

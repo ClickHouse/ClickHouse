@@ -30,7 +30,6 @@ SRCS(
     MergeTree/BackgroundJobsExecutor.cpp
     MergeTree/BoolMask.cpp
     MergeTree/DataPartsExchange.cpp
-    MergeTree/DropPartsRanges.cpp
     MergeTree/EphemeralLockInZooKeeper.cpp
     MergeTree/IMergeTreeDataPart.cpp
     MergeTree/IMergeTreeDataPartWriter.cpp
@@ -93,9 +92,7 @@ SRCS(
     MergeTree/MergeType.cpp
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
-    MergeTree/PartMovesBetweenShardsOrchestrator.cpp
     MergeTree/PartitionPruner.cpp
-    MergeTree/PinnedPartUUIDs.cpp
     MergeTree/ReplicatedFetchList.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
@@ -115,10 +112,8 @@ SRCS(
     MergeTree/localBackup.cpp
     MergeTree/registerStorageMergeTree.cpp
     MutationCommands.cpp
-    MySQL/MySQLSettings.cpp
     PartitionCommands.cpp
     ProjectionsDescription.cpp
-    ReadFinalForExternalReplicaStorage.cpp
     ReadInOrderOptimizer.cpp
     SelectQueryDescription.cpp
     SetSettings.cpp
@@ -143,7 +138,6 @@ SRCS(
     StorageMySQL.cpp
     StorageNull.cpp
     StorageReplicatedMergeTree.cpp
-    StorageSQLite.cpp
     StorageSet.cpp
     StorageStripeLog.cpp
     StorageTinyLog.cpp
@@ -161,7 +155,6 @@ SRCS(
     System/StorageSystemContributors.generated.cpp
     System/StorageSystemCurrentRoles.cpp
     System/StorageSystemDDLWorkerQueue.cpp
-    System/StorageSystemDataSkippingIndices.cpp
     System/StorageSystemDataTypeFamilies.cpp
     System/StorageSystemDatabases.cpp
     System/StorageSystemDetachedParts.cpp
@@ -183,7 +176,6 @@ SRCS(
     System/StorageSystemMutations.cpp
     System/StorageSystemNumbers.cpp
     System/StorageSystemOne.cpp
-    System/StorageSystemPartMovesBetweenShards.cpp
     System/StorageSystemParts.cpp
     System/StorageSystemPartsBase.cpp
     System/StorageSystemPartsColumns.cpp

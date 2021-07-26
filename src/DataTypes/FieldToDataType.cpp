@@ -11,6 +11,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
+#include <ext/size.h>
 
 
 namespace DB
@@ -120,7 +121,7 @@ DataTypePtr FieldToDataType::operator() (const Tuple & tuple) const
         throw Exception("Cannot infer type of an empty tuple", ErrorCodes::EMPTY_DATA_PASSED);
 
     DataTypes element_types;
-    element_types.reserve(tuple.size());
+    element_types.reserve(ext::size(tuple));
 
     for (const auto & element : tuple)
         element_types.push_back(applyVisitor(FieldToDataType(), element));

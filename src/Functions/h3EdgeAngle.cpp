@@ -10,7 +10,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include <common/range.h>
+#include <ext/range.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -58,7 +58,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (const auto row : ext::range(0, input_rows_count))
         {
             const int resolution = col_hindex->getUInt(row);
             if (resolution > MAX_H3_RES)
@@ -66,7 +66,7 @@ public:
                     + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
             // Numerical constant is 180 degrees / pi / Earth radius, Earth radius is from h3 sources
-            Float64 res = 8.99320592271288084e-6 * getHexagonEdgeLengthAvgM(resolution);
+            Float64 res = 8.99320592271288084e-6 * edgeLengthM(resolution);
 
             dst_data[row] = res;
         }
