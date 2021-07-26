@@ -274,7 +274,7 @@ This modifier also can be combined with [LIMIT … WITH TIES modifier](../../../
 `WITH FILL` modifier can be set after `ORDER BY expr` with optional `FROM expr`, `TO expr` and `STEP expr` parameters.
 All missed values of `expr` column will be filled sequentially and other columns will be filled as defaults.
 
-Use following syntax for filling multiple columns add `WITH FILL` modifier with optional parameters after each field name in `ORDER BY` section.
+To fill multiple columns, add `WITH FILL` modifier with optional parameters after each field name in `ORDER BY` section.
 
 ``` sql
 ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr]
@@ -286,16 +286,16 @@ When `TO const_expr` not defined sequence of filling use maximum `expr` field va
 When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types as `days` for Date type and as `seconds` for DateTime type.
 When `STEP const_numeric_expr` omitted then sequence of filling use `1.0` for numeric type, `1 day` for Date type and `1 second` for DateTime type.
 
-For example, the following query
+Example query without `WITH FILL`:
 
 ``` sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
-) ORDER BY n
+) ORDER BY n;
 ```
 
-returns
+Result:
 
 ``` text
 ┌─n─┬─source───┐
@@ -305,16 +305,16 @@ returns
 └───┴──────────┘
 ```
 
-but after apply `WITH FILL` modifier
+Same query after applying `WITH FILL` modifier:
 
 ``` sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
-) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5
+) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5;
 ```
 
-returns
+Result:
 
 ``` text
 ┌───n─┬─source───┐
@@ -334,7 +334,7 @@ returns
 └─────┴──────────┘
 ```
 
-For the case when we have multiple fields `ORDER BY field2 WITH FILL, field1 WITH FILL` order of filling will follow the order of fields in `ORDER BY` clause.
+For the case with multiple fields `ORDER BY field2 WITH FILL, field1 WITH FILL` order of filling will follow the order of fields in `ORDER BY` clause.
 
 Example:
 
@@ -350,7 +350,7 @@ ORDER BY
     d1 WITH FILL STEP 5;
 ```
 
-returns
+Result:
 
 ``` text
 ┌───d1───────┬───d2───────┬─source───┐
@@ -366,7 +366,7 @@ returns
 
 Field `d1` does not fill and use default value cause we do not have repeated values for `d2` value, and sequence for `d1` can’t be properly calculated.
 
-The following query with a changed field in `ORDER BY`
+The following query with a changed field in `ORDER BY`:
 
 ``` sql
 SELECT
@@ -380,7 +380,7 @@ ORDER BY
     d2 WITH FILL;
 ```
 
-returns
+Result:
 
 ``` text
 ┌───d1───────┬───d2───────┬─source───┐
