@@ -58,6 +58,11 @@ protected:
         }
     }
 
+    String getQueryTextPrefix() override
+    {
+        return getInitialCreateTableQuery();
+    }
+
     void executeParsedQueryImpl() override;
 
     void reportQueryError() const override {}

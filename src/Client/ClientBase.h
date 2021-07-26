@@ -67,11 +67,21 @@ protected:
 
     void runNonInteractive();
 
+    /*
+     * Process multiquery - several queries separated by ';'.
+     * Also in case of clickhouse-server:
+     * - INSERT data is ended by the end of line, not ';'.
+     * - An exception is VALUES format where we also support semicolon in addition to end of line.
+    **/
     bool processMultiQuery(const String & all_queries_text);
 
     /// Process single file (with queries) from non-interactive mode.
     virtual bool processMultiQueryFromFile(const String & file) = 0;
 
+    /// For non-interactive multiquery mode get queries text prefix.
+    virtual String getQueryTextPrefix() { return ""; }
+
+    /// Parse query text for multiquery mode.
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
 
 
@@ -99,8 +109,6 @@ protected:
     virtual void reconnectIfNeeded() {}
 
     virtual bool supportPasswordOption() const = 0;
-
-    virtual bool splitQueries() const { return false; }
 
     virtual bool processWithFuzzing(const String &) { return true; }
 
