@@ -379,7 +379,19 @@ settings max_block_size = 3;
 -- careful with auto-application of Null combinator
 select lagInFrame(toNullable(1)) over ();
 select lagInFrameOrNull(1) over (); -- { serverError 36 }
+-- this is the same as `select max(Null::Nullable(Nothing))`
 select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
+-- to make lagInFrame return null for out-of-frame rows, cast the argument to
+-- Nullable; otherwise, it returns default values.
+SELECT
+    number,
+    lagInFrame(toNullable(number), 1) OVER w,
+    lagInFrame(toNullable(number), 2) OVER w,
+    lagInFrame(number, 1) OVER w,
+    lagInFrame(number, 2) OVER w
+FROM numbers(4)
+WINDOW w AS (ORDER BY number ASC)
+;
 
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select

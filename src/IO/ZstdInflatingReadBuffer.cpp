@@ -56,6 +56,13 @@ bool ZstdInflatingReadBuffer::nextImpl()
         eof = true;
         return !working_buffer.empty();
     }
+    else if (output.pos == 0)
+    {
+        /// It is possible, that input buffer is not at eof yet, but nothing was decompressed in current iteration.
+        /// But there are cases, when such behaviour is not allowed - i.e. if input buffer is not eof, then
+        /// it has to be guaranteed that working_buffer is not empty. So if it is empty, continue.
+        return nextImpl();
+    }
 
     return true;
 }

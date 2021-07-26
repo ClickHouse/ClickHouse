@@ -72,12 +72,16 @@ public:
     size_t getCurrentUnitNumber() const { return current_unit_number; }
     void setCurrentUnitNumber(size_t current_unit_number_) { current_unit_number = current_unit_number_; }
 
+    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
+
 protected:
     ColumnMappingPtr column_mapping{};
 
 private:
     /// Number of currently parsed chunk (if parallel parsing is enabled)
     size_t current_unit_number = 0;
+
+    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
 
 }

@@ -278,4 +278,16 @@ Possible values:
 
 Default value: `0`.
 
+## check_sample_column_is_correct {#check_sample_column_is_correct}
+
+Enables to check column for sampling or sampling expression is correct at table creation.
+
+Possible values:
+
+-   true  — Check column or sampling expression is correct at table creation.
+-   false — Do not check column or sampling expression is correct at table creation.
+
+Default value: `true`.
+
+By default, the ClickHouse server check column for sampling or sampling expression at table creation. If you already had tables with incorrect sampling expression, set value `false` to make ClickHouse server do not raise exception when ClickHouse server is starting.
 [Original article](https://clickhouse.tech/docs/en/operations/settings/merge_tree_settings/) <!--hide-->
