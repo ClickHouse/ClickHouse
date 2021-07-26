@@ -825,10 +825,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
                 <type>hdfs</type>
                 <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
             </hdfs>
-            <hdd>
-                <type>local</type>
-                <path>/</path>
-            </hdd>
         </disks>
         <policies>
             <hdfs>
@@ -836,9 +832,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
                     <main>
                         <disk>hdfs</disk>
                     </main>
-                    <external>
-                        <disk>hdd</disk>
-                    </external>
                 </volumes>
             </hdfs>
         </policies>
