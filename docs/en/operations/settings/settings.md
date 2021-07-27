@@ -109,6 +109,10 @@ Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/func
 
 It makes sense to disable it if the server has millions of tiny tables that are constantly being created and destroyed.
 
+## function_range_max_elements_in_block {#settings-function_range_max_elements_in_block}
+
+
+
 ## enable_http_compression {#settings-enable_http_compression}
 
 Enables or disables data compression in the response to an HTTP request.
