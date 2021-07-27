@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 
 
 namespace DB
@@ -10,15 +10,15 @@ class StorageEmbeddedRocksDB;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
-class EmbeddedRocksDBBlockOutputStream : public IBlockOutputStream
+class EmbeddedRocksDBSink : public SinkToStorage
 {
 public:
-    EmbeddedRocksDBBlockOutputStream(
+    EmbeddedRocksDBSink(
         StorageEmbeddedRocksDB & storage_,
         const StorageMetadataPtr & metadata_snapshot_);
 
-    Block getHeader() const override;
-    void write(const Block & block) override;
+    void consume(Chunk chunk) override;
+    String getName() const override { return "EmbeddedRocksDBSink"; }
 
 private:
     StorageEmbeddedRocksDB & storage;

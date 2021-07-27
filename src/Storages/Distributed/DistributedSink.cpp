@@ -1,4 +1,4 @@
-#include <Storages/Distributed/DistributedBlockOutputStream.h>
+#include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
@@ -86,7 +86,7 @@ static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & bl
 }
 
 
-DistributedBlockOutputStream::DistributedBlockOutputStream(
+DistributedSink::DistributedSink(
     ContextPtr context_,
     StorageDistributed & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -95,7 +95,8 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
     bool insert_sync_,
     UInt64 insert_timeout_,
     StorageID main_table_)
-    : context(Context::createCopy(context_))
+    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , query_ast(query_ast_)
@@ -115,24 +116,15 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(
 }
 
 
-Block DistributedBlockOutputStream::getHeader() const
+void DistributedSink::consume(Chunk chunk)
 {
-    if (!allow_materialized)
-        return metadata_snapshot->getSampleBlockNonMaterialized();
-    else
-        return metadata_snapshot->getSampleBlock();
-}
+    if (is_first_chunk)
+    {
+        storage.delayInsertOrThrowIfNeeded();
+        is_first_chunk = false;
+    }
 
-
-void DistributedBlockOutputStream::writePrefix()
-{
-    storage.delayInsertOrThrowIfNeeded();
-}
-
-
-void DistributedBlockOutputStream::write(const Block & block)
-{
-    Block ordinary_block{ block };
+    auto ordinary_block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (!allow_materialized)
     {
@@ -155,7 +147,7 @@ void DistributedBlockOutputStream::write(const Block & block)
         writeAsync(ordinary_block);
 }
 
-void DistributedBlockOutputStream::writeAsync(const Block & block)
+void DistributedSink::writeAsync(const Block & block)
 {
     if (random_shard_insert)
     {
@@ -174,7 +166,7 @@ void DistributedBlockOutputStream::writeAsync(const Block & block)
 }
 
 
-std::string DistributedBlockOutputStream::getCurrentStateDescription()
+std::string DistributedSink::getCurrentStateDescription()
 {
     WriteBufferFromOwnString buffer;
     const auto & addresses = cluster->getShardsAddresses();
@@ -203,7 +195,7 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 }
 
 
-void DistributedBlockOutputStream::initWritingJobs(const Block & first_block, size_t start, size_t end)
+void DistributedSink::initWritingJobs(const Block & first_block, size_t start, size_t end)
 {
     const Settings & settings = context->getSettingsRef();
     const auto & addresses_with_failovers = cluster->getShardsAddresses();
@@ -249,7 +241,7 @@ void DistributedBlockOutputStream::initWritingJobs(const Block & first_block, si
 }
 
 
-void DistributedBlockOutputStream::waitForJobs()
+void DistributedSink::waitForJobs()
 {
     pool->wait();
 
@@ -279,7 +271,7 @@ void DistributedBlockOutputStream::waitForJobs()
 
 
 ThreadPool::Job
-DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block, size_t num_shards)
+DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, size_t num_shards)
 {
     auto thread_group = CurrentThread::getGroup();
     return [this, thread_group, &job, &current_block, num_shards]()
@@ -403,7 +395,7 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
 }
 
 
-void DistributedBlockOutputStream::writeSync(const Block & block)
+void DistributedSink::writeSync(const Block & block)
 {
     const Settings & settings = context->getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
@@ -487,7 +479,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 }
 
 
-void DistributedBlockOutputStream::writeSuffix()
+void DistributedSink::onFinish()
 {
     auto log_performance = [this]()
     {
@@ -537,7 +529,7 @@ void DistributedBlockOutputStream::writeSuffix()
 }
 
 
-IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block) const
+IColumn::Selector DistributedSink::createSelector(const Block & source_block) const
 {
     Block current_block_with_sharding_key_expr = source_block;
     storage.getShardingKeyExpr()->execute(current_block_with_sharding_key_expr);
@@ -548,7 +540,7 @@ IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & sou
 }
 
 
-Blocks DistributedBlockOutputStream::splitBlock(const Block & block)
+Blocks DistributedSink::splitBlock(const Block & block)
 {
     auto selector = createSelector(block);
 
@@ -572,7 +564,7 @@ Blocks DistributedBlockOutputStream::splitBlock(const Block & block)
 }
 
 
-void DistributedBlockOutputStream::writeSplitAsync(const Block & block)
+void DistributedSink::writeSplitAsync(const Block & block)
 {
     Blocks splitted_blocks = splitBlock(block);
     const size_t num_shards = splitted_blocks.size();
@@ -585,7 +577,7 @@ void DistributedBlockOutputStream::writeSplitAsync(const Block & block)
 }
 
 
-void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, size_t shard_id)
+void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 {
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context->getSettingsRef();
@@ -621,7 +613,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, size_t sh
 }
 
 
-void DistributedBlockOutputStream::writeToLocal(const Block & block, size_t repeats)
+void DistributedSink::writeToLocal(const Block & block, size_t repeats)
 {
     InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
@@ -633,7 +625,7 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, size_t repe
 }
 
 
-void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
+void DistributedSink::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
