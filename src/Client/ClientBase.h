@@ -64,6 +64,7 @@ protected:
 
     virtual bool validateParsedOptions() { return false; }
 
+
     void runInteractive();
 
     void runNonInteractive();
@@ -74,10 +75,12 @@ protected:
      * - INSERT data is ended by the end of line, not ';'.
      * - An exception is VALUES format where we also support semicolon in addition to end of line.
     **/
-    virtual bool processMultiQuery(const String & all_queries_text) = 0;
     bool processMultiQueryImpl(const String & all_queries_text,
                                std::function<void(const String &)> process_single_query,
                                std::function<void(const String &, Exception &)> process_parse_query_error = {});
+
+    /// Method to implement multi-query processing. Must call processMultiQueryImpl.
+    virtual bool processMultiQuery(const String & all_queries_text) = 0;
 
     /// Process single file (with queries) from non-interactive mode.
     virtual bool processMultiQueryFromFile(const String & file) = 0;
@@ -101,8 +104,6 @@ protected:
 
 
     void resetOutput();
-
-    virtual void checkExceptions() {}
 
     virtual void reportQueryError() const = 0;
 

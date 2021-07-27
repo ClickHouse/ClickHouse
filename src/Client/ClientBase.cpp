@@ -49,7 +49,6 @@ namespace ErrorCodes
 {
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int BAD_ARGUMENTS;
-    extern const int NETWORK_ERROR;
 }
 
 
@@ -571,8 +570,6 @@ void ClientBase::runNonInteractive()
         processWithFuzzing(text);
     else
         processQueryText(text);
-
-    checkExceptions();
 }
 
 
@@ -595,38 +592,18 @@ static void showClientVersion()
 
 int ClientBase::main(const std::vector<std::string> & /*args*/)
 {
-    try
+    UseSSL use_ssl;
+
+    std::cout << std::fixed << std::setprecision(3);
+    std::cerr << std::fixed << std::setprecision(3);
+
+    if (is_interactive)
     {
-        UseSSL use_ssl;
-
-        processConfig();
-
-        std::cout << std::fixed << std::setprecision(3);
-        std::cerr << std::fixed << std::setprecision(3);
-
-        if (is_interactive)
-        {
-            clearTerminal();
-            showClientVersion();
-        }
-
-        return mainImpl();
+        clearTerminal();
+        showClientVersion();
     }
-    catch (const Exception & e)
-    {
-        shutdown();
 
-        bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
-        std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-
-        /// If exception code isn't zero, we should return non-zero return code anyway.
-        return e.code() ? e.code() : -1;
-    }
-    catch (...)
-    {
-        std::cerr << getCurrentExceptionMessage(false) << std::endl;
-        return getCurrentExceptionCode();
-    }
+    return mainImpl();
 }
 
 

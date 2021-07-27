@@ -242,8 +242,8 @@ void LocalServer::executeParsedQueryImpl()
         if (!config().hasOption("ignore-error"))
             throw;
 
-        if (!exception)
-            exception = std::current_exception();
+        if (!local_server_exception)
+            local_server_exception = std::current_exception();
 
         std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
     }
@@ -304,66 +304,93 @@ void LocalServer::setupUsers()
 
 int LocalServer::mainImpl()
 {
-    ThreadStatus thread_status;
-
-    if (is_interactive)
+    try
     {
-        std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
-        for (const auto & [key, value] : prompt_substitutions)
-            boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
-    }
+        ThreadStatus thread_status;
 
-    /// We will terminate process on error
-    static KillingErrorHandler error_handler;
-    Poco::ErrorHandler::set(&error_handler);
-
-    /// Don't initialize DateLUT
-    registerFunctions();
-    registerAggregateFunctions();
-    registerTableFunctions();
-    registerStorages();
-    registerDictionaries();
-    registerDisks();
-    registerFormats();
-
-    /// we can't mutate global_context (can lead to races, as it was already passed to some background threads)
-    /// so we can't reuse it safely as a query context and need a copy here
-    query_context = Context::createCopy(global_context);
-    query_context->makeSessionContext();
-    query_context->makeQueryContext();
-    query_context->setUser("default", "", Poco::Net::SocketAddress{});
-    query_context->setCurrentQueryId("");
-
-    applyCmdSettings(query_context);
-    /// Use the same query_id (and thread group) for all queries
-    CurrentThread::QueryScope query_scope_holder(query_context);
-
-    if (need_render_progress)
-    {
-        /// Set progress callback, which can be run from multiple threads.
-        query_context->setProgressCallback([&](const Progress & value)
+        if (is_interactive)
         {
-            /// Write progress only if progress was updated
-            if (progress_indication.updateProgress(value))
-                progress_indication.writeProgress();
-        });
+            std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
+            for (const auto & [key, value] : prompt_substitutions)
+                boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
+        }
 
-        /// Set callback for file processing progress.
-        progress_indication.setFileProgressCallback(query_context);
+        /// We will terminate process on error
+        static KillingErrorHandler error_handler;
+        Poco::ErrorHandler::set(&error_handler);
+
+        /// Don't initialize DateLUT
+        registerFunctions();
+        registerAggregateFunctions();
+        registerTableFunctions();
+        registerStorages();
+        registerDictionaries();
+        registerDisks();
+        registerFormats();
+
+        processConfig();
+
+        /// we can't mutate global_context (can lead to races, as it was already passed to some background threads)
+        /// so we can't reuse it safely as a query context and need a copy here
+        query_context = Context::createCopy(global_context);
+        query_context->makeSessionContext();
+        query_context->makeQueryContext();
+        query_context->setUser("default", "", Poco::Net::SocketAddress{});
+        query_context->setCurrentQueryId("");
+
+        applyCmdSettings(query_context);
+        /// Use the same query_id (and thread group) for all queries
+        CurrentThread::QueryScope query_scope_holder(query_context);
+
+        if (need_render_progress)
+        {
+            /// Set progress callback, which can be run from multiple threads.
+            query_context->setProgressCallback([&](const Progress & value)
+            {
+                /// Write progress only if progress was updated
+                if (progress_indication.updateProgress(value))
+                    progress_indication.writeProgress();
+            });
+
+            /// Set callback for file processing progress.
+            progress_indication.setFileProgressCallback(query_context);
+        }
+
+        if (is_interactive)
+        {
+            runInteractive();
+        }
+        else
+        {
+            runNonInteractive();
+
+            if (local_server_exception)
+                std::rethrow_exception(local_server_exception);
+        }
+
+        global_context->shutdown();
+        global_context.reset();
+
+        status.reset();
+        cleanup();
+
+        return Application::EXIT_OK;
     }
+    catch (const Exception & e)
+    {
+        try
+        {
+            cleanup();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
 
-    if (is_interactive)
-        runInteractive();
-    else
-        runNonInteractive();
-
-    global_context->shutdown();
-    global_context.reset();
-
-    status.reset();
-    cleanup();
-
-    return Application::EXIT_OK;
+        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
+        /// If exception code isn't zero, we should return non-zero return code anyway.
+        return e.code() ? e.code() : -1;
+    }
 }
 
 

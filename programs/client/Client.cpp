@@ -89,6 +89,7 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
     extern const int SYNTAX_ERROR;
     extern const int TOO_DEEP_RECURSION;
+    extern const int NETWORK_ERROR;
 }
 
 
@@ -330,55 +331,71 @@ void Client::loadSuggestionDataIfPossible()
 
 int Client::mainImpl()
 {
-    registerFormats();
-    registerFunctions();
-    registerAggregateFunctions();
-
-    connect();
-
-    if (is_interactive)
+    try
     {
-        /// Load Warnings at the beginning of connection
-        if (!config().has("no-warnings"))
+        registerFormats();
+        registerFunctions();
+        registerAggregateFunctions();
+
+        processConfig();
+        connect();
+
+        if (is_interactive)
         {
-            try
+            /// Load Warnings at the beginning of connection
+            if (!config().has("no-warnings"))
             {
-                std::vector<String> messages = loadWarningMessages();
-                if (!messages.empty())
+                try
                 {
-                    std::cout << "Warnings:" << std::endl;
-                    for (const auto & message : messages)
-                        std::cout << " * " << message << std::endl;
-                    std::cout << std::endl;
+                    std::vector<String> messages = loadWarningMessages();
+                    if (!messages.empty())
+                    {
+                        std::cout << "Warnings:" << std::endl;
+                        for (const auto & message : messages)
+                            std::cout << " * " << message << std::endl;
+                        std::cout << std::endl;
+                    }
+                }
+                catch (...)
+                {
+                    /// Ignore exception
                 }
             }
-            catch (...)
+
+            runInteractive();
+        }
+        else
+        {
+            runNonInteractive();
+
+            // If exception code isn't zero, we should return non-zero return
+            // code anyway.
+            const auto * exception = server_exception ? server_exception.get() : client_exception.get();
+
+            if (exception)
             {
-                /// Ignore exception
+                return exception->code() != 0 ? exception->code() : -1;
+            }
+
+            if (have_error)
+            {
+                // Shouldn't be set without an exception, but check it just in
+                // case so that at least we don't lose an error.
+                return -1;
             }
         }
-
-        runInteractive();
     }
-    else
+    catch (const Exception & e)
     {
-        runNonInteractive();
-
-        // If exception code isn't zero, we should return non-zero return
-        // code anyway.
-        const auto * exception = server_exception ? server_exception.get() : client_exception.get();
-
-        if (exception)
-        {
-            return exception->code() != 0 ? exception->code() : -1;
-        }
-
-        if (have_error)
-        {
-            // Shouldn't be set without an exception, but check it just in
-            // case so that at least we don't lose an error.
-            return -1;
-        }
+        bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
+        std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+        /// If exception code isn't zero, we should return non-zero return code anyway.
+        return e.code() ? e.code() : -1;
+    }
+    catch (...)
+    {
+        std::cerr << getCurrentExceptionMessage(false) << std::endl;
+        return getCurrentExceptionCode();
     }
 
     return 0;
