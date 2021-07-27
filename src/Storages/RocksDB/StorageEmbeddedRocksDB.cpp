@@ -1,5 +1,5 @@
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
-#include <Storages/RocksDB/EmbeddedRocksDBBlockOutputStream.h>
+#include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 #include <Storages/RocksDB/EmbeddedRocksDBBlockInputStream.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -337,10 +337,10 @@ Pipe StorageEmbeddedRocksDB::read(
     }
 }
 
-BlockOutputStreamPtr StorageEmbeddedRocksDB::write(
+SinkToStoragePtr StorageEmbeddedRocksDB::write(
     const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<EmbeddedRocksDBBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }
 
 

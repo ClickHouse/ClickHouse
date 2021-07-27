@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
@@ -7,13 +7,7 @@
 namespace DB
 {
 
-Block MergeTreeBlockOutputStream::getHeader() const
-{
-    return metadata_snapshot->getSampleBlock();
-}
-
-
-void MergeTreeBlockOutputStream::writePrefix()
+void MergeTreeSink::onStart()
 {
     /// Only check "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
@@ -21,8 +15,10 @@ void MergeTreeBlockOutputStream::writePrefix()
 }
 
 
-void MergeTreeBlockOutputStream::write(const Block & block)
+void MergeTreeSink::consume(Chunk chunk)
 {
+    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
     for (auto & current_block : part_blocks)
     {
