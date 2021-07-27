@@ -90,12 +90,6 @@ protected:
         return processMultiQuery(text);
     }
 
-    void checkExceptions() override
-    {
-        if (exception)
-            std::rethrow_exception(exception);
-    }
-
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
       * This query will be executed first, before queries passed through --query argument
@@ -119,7 +113,7 @@ private:
 
     std::optional<StatusFile> status;
 
-    std::exception_ptr exception;
+    std::exception_ptr local_server_exception;
 
     void processQuery(const String & query, std::exception_ptr exception);
 
