@@ -244,5 +244,7 @@ TRAP(lgammaf32)
 TRAP(lgammaf32x)
 TRAP(lgammaf64)
 TRAP(lgammaf64x)
+/// Dangerous due to page fault storm, sharing of rng seeds, etc.
+TRAP(fork)
 
 #endif
