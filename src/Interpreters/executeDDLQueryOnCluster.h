@@ -29,6 +29,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, c
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, AccessRightsElements && query_requires_access);
 
 BlockIO getDistributedDDLStatus(
-    const String & node_path, const DDLLogEntry & entry, ContextPtr context, const std::optional<Strings> & hosts_to_wait = {});
+    const String & node_path, const DDLLogEntry & entry, ContextPtr context, const std::optional<Strings> & hosts_to_wait = {},
+    const std::optional<String> & cluster = "");
 
 }

@@ -164,15 +164,41 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     entry.setSettingsIfRequired(context);
     String node_path = ddl_worker.enqueueQuery(entry);
 
-    return getDistributedDDLStatus(node_path, entry, context);
+    return getDistributedDDLStatus(node_path, entry, context, {}, query->cluster);
 }
 
+class Shard
+{
+public:
+    NameSet replica_hosts; /// Replica hosts of the current shard
+    NameSet finished_hosts; /// Finished hosts of the current shard
+    NameSet inactive_hosts; /// Inactive hosts of the current shard
+
+    void setFinishedHost(const std::string & host_id)
+    {
+        finished_hosts.emplace(host_id);
+        auto it = inactive_hosts.find(host_id);
+        if (it != inactive_hosts.end())
+        {
+            inactive_hosts.erase(it);
+        }
+    }
+
+    bool overQuorum()
+    {
+        /// 1. Except for inactive hosts, execute successfully
+        /// 2. The number of successful hosts must be greater than or equal to inactive hosts
+        return (replica_hosts.size() - finished_hosts.size() == inactive_hosts.size() &&
+                finished_hosts.size() >= inactive_hosts.size());
+    }
+};
 
 class DDLQueryStatusSource final : public SourceWithProgress
 {
 public:
     DDLQueryStatusSource(
-        const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const std::optional<Strings> & hosts_to_wait = {});
+        const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const std::optional<Strings> & hosts_to_wait = {},
+        const std::optional<String> & cluster = "");
 
     String getName() const override { return "DDLQueryStatus"; }
     Chunk generate() override;
@@ -185,6 +211,8 @@ private:
 
     std::pair<String, UInt16> parseHostAndPort(const String & host_id) const;
 
+    bool checkShardQuorum();
+
     String node_path;
     ContextPtr context;
     Stopwatch watch;
@@ -193,6 +221,10 @@ private:
     NameSet waiting_hosts;  /// hosts from task host list
     NameSet finished_hosts; /// finished hosts from host list
     NameSet ignoring_hosts; /// appeared hosts that are not in hosts list
+
+    std::vector<std::shared_ptr<Shard>> cluster_shards; /// All shards of the current cluster
+    std::unordered_map<String, std::shared_ptr<Shard>> host_shards; /// The shard to which the host belongs
+
     Strings current_active_hosts; /// Hosts that were in active state at the last check
     size_t num_hosts_finished = 0;
 
@@ -203,16 +235,19 @@ private:
     bool by_hostname = true;
     bool throw_on_timeout = true;
     bool timeout_exceeded = false;
+    bool quorum_execute = false;
+    bool over_quorum = false;
 };
 
 
-BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context, const std::optional<Strings> & hosts_to_wait)
+BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context, const std::optional<Strings> & hosts_to_wait,
+                                const std::optional<String> & cluster)
 {
     BlockIO io;
     if (context->getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
-    ProcessorPtr processor = std::make_shared<DDLQueryStatusSource>(node_path, entry, context, hosts_to_wait);
+    ProcessorPtr processor = std::make_shared<DDLQueryStatusSource>(node_path, entry, context, hosts_to_wait, cluster);
     io.pipeline.init(Pipe{processor});
 
     if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
@@ -248,7 +283,8 @@ static Block getSampleBlock(ContextPtr context_, bool hosts_to_wait)
 }
 
 DDLQueryStatusSource::DDLQueryStatusSource(
-    const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const std::optional<Strings> & hosts_to_wait)
+    const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_, const std::optional<Strings> & hosts_to_wait,
+    const std::optional<String> & cluster)
     : SourceWithProgress(getSampleBlock(context_, hosts_to_wait.has_value()), true)
     , node_path(zk_node_path)
     , context(context_)
@@ -256,7 +292,42 @@ DDLQueryStatusSource::DDLQueryStatusSource(
     , log(&Poco::Logger::get("DDLQueryStatusInputStream"))
 {
     auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
-    throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
+
+    quorum_execute = output_mode == DistributedDDLOutputMode::QUORUM;
+    throw_on_timeout = quorum_execute ? true : output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
+
+    if (quorum_execute && cluster.has_value())
+    {
+        auto zookeeper = context->getZooKeeper();
+        String host_dir = context->getConfigRef().getString("distributed_ddl.host_path", "/clickhouse/task_queue/host/");
+
+        LOG_DEBUG(log, "Host path {} in zookeeper and execute query on cluster {}", host_dir, cluster.value());
+
+        ClusterPtr cluster_ptr = context_->getCluster(cluster.value());
+        const auto & shards = cluster_ptr->getShardsAddresses();
+        for (const auto & address_vec : shards)
+        {
+            auto shard = std::make_shared<Shard>();
+            for (const auto & address : address_vec)
+            {
+                HostID host;
+                host.host_name = address.host_name;
+                host.port = address.port;
+                String host_str = host.toString();
+                shard->replica_hosts.emplace(host_str);
+
+                String host_path = fs::path(host_dir) / host_str;
+                Coordination::Stat stat;
+                bool exist_host = zookeeper->exists(host_path, &stat);
+                if (!exist_host)
+                    shard->inactive_hosts.emplace(host_str);
+
+                LOG_DEBUG(log, "Register host id {} from config", host_str);
+                host_shards[host_str] = shard;
+            }
+            cluster_shards.emplace_back(shard);
+        }
+    }
 
     if (hosts_to_wait)
     {
@@ -293,7 +364,7 @@ Chunk DDLQueryStatusSource::generate()
     /// Seems like num_hosts_finished cannot be strictly greater than waiting_hosts.size()
     assert(num_hosts_finished <= waiting_hosts.size());
 
-    if (all_hosts_finished || timeout_exceeded)
+    if (all_hosts_finished || over_quorum || timeout_exceeded)
         return {};
 
     auto zookeeper = context->getZooKeeper();
@@ -304,25 +375,41 @@ Chunk DDLQueryStatusSource::generate()
         if (isCancelled())
             return {};
 
-        if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)
-        {
+        /// Each shard of the current cluster exceeds the quorum or reach the timetout.
+        /// In either case, the unfinished hosts can be outputted.
+        if (quorum_execute && checkShardQuorum())
+            over_quorum = true;
+        else if (timeout_seconds >= 0 && watch.elapsedSeconds() > timeout_seconds)
             timeout_exceeded = true;
 
+        if (over_quorum || timeout_exceeded)
+        {
             size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
             size_t num_active_hosts = current_active_hosts.size();
 
-            constexpr const char * msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
-                                                "There are {} unfinished hosts ({} of them are currently active), "
-                                                "they are going to execute the query in background";
-            if (throw_on_timeout)
+            if (over_quorum)
             {
-                if (!first_exception)
-                    first_exception = std::make_unique<Exception>(ErrorCodes::TIMEOUT_EXCEEDED, msg_format,
-                        node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
-                return {};
+                size_t inactive_hosts = 0;
+                for (auto shard : cluster_shards)
+                    inactive_hosts += shard->inactive_hosts.size();
+                LOG_INFO(log, "The query of distributed DDL exceeds the number of quorum, there are {} inactive hosts and {} unfinished hosts",
+                              inactive_hosts, num_unfinished_hosts);
             }
+            else if (timeout_exceeded)
+            {
+                constexpr const char * msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
+                                                    "There are {} unfinished hosts ({} of them are currently active), "
+                                                    "they are going to execute the query in background";
+                if (throw_on_timeout)
+                {
+                    if (!first_exception)
+                        first_exception = std::make_unique<Exception>(ErrorCodes::TIMEOUT_EXCEEDED, msg_format,
+                            node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+                    return {};
+                }
 
-            LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+                LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+            }
 
             NameSet unfinished_hosts = waiting_hosts;
             for (const auto & host_id : finished_hosts)
@@ -452,11 +539,28 @@ Strings DDLQueryStatusSource::getNewAndUpdate(const Strings & current_list_of_fi
         {
             diff.emplace_back(host);
             finished_hosts.emplace(host);
+            if (quorum_execute)
+            {
+                auto shard_it = host_shards.find(host);
+                if (shard_it != host_shards.end())
+                    shard_it->second->setFinishedHost(host);
+                else
+                    LOG_DEBUG(log, "Can't find {} in host_shards.", host);
+            }
         }
     }
 
     return diff;
 }
 
+bool DDLQueryStatusSource::checkShardQuorum()
+{
+    for (auto shard : cluster_shards)
+    {
+        if (!shard->overQuorum())
+            return false;
+    }
+    return true;
+}
 
 }

@@ -1,0 +1,7 @@
+<yandex>
+    <profiles>
+        <default>
+            <distributed_ddl_output_mode>quorum</distributed_ddl_output_mode>
+        </default>
+    </profiles>
+</yandex>
