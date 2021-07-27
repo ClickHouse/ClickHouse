@@ -23,11 +23,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TYPE_MISMATCH;
-}
-
 PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     const StoragePtr & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
