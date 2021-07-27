@@ -39,7 +39,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
 {
     friend struct shared_ptr_helper<StorageDistributed>;
-    friend class DistributedBlockOutputStream;
+    friend class DistributedSink;
     friend class StorageDistributedDirectoryMonitor;
     friend class StorageSystemDistributionQueue;
 
@@ -81,7 +81,7 @@ public:
     bool supportsParallelInsert() const override { return true; }
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     QueryPipelinePtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 

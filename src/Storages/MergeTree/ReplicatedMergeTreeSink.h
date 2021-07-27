@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <common/types.h>
 
@@ -19,10 +19,10 @@ namespace DB
 class StorageReplicatedMergeTree;
 
 
-class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
+class ReplicatedMergeTreeSink : public SinkToStorage
 {
 public:
-    ReplicatedMergeTreeBlockOutputStream(
+    ReplicatedMergeTreeSink(
         StorageReplicatedMergeTree & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         size_t quorum_,
@@ -35,9 +35,10 @@ public:
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false);
 
-    Block getHeader() const override;
-    void writePrefix() override;
-    void write(const Block & block) override;
+    void onStart() override;
+    void consume(Chunk chunk) override;
+
+    String getName() const override { return "ReplicatedMergeTreeSink"; }
 
     /// For ATTACHing existing data on filesystem.
     void writeExistingPart(MergeTreeData::MutableDataPartPtr & part);

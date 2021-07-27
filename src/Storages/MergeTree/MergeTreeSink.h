@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 
@@ -11,24 +11,25 @@ class Block;
 class StorageMergeTree;
 
 
-class MergeTreeBlockOutputStream : public IBlockOutputStream
+class MergeTreeSink : public SinkToStorage
 {
 public:
-    MergeTreeBlockOutputStream(
+    MergeTreeSink(
         StorageMergeTree & storage_,
         const StorageMetadataPtr metadata_snapshot_,
         size_t max_parts_per_block_,
         ContextPtr context_)
-        : storage(storage_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , max_parts_per_block(max_parts_per_block_)
         , context(context_)
     {
     }
 
-    Block getHeader() const override;
-    void write(const Block & block) override;
-    void writePrefix() override;
+    String getName() const override { return "MergeTreeSink"; }
+    void consume(Chunk chunk) override;
+    void onStart() override;
 
 private:
     StorageMergeTree & storage;
