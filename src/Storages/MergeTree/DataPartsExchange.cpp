@@ -170,7 +170,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
         bool try_use_s3_copy = false;
 
-        if (data_settings->allow_s3_zero_copy_replication
+        if (data_settings->allow_remote_fs_zero_copy_replication
                 && client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_S3_COPY)
         { /// if source and destination are in the same S3 storage we try to use S3 CopyObject request first
             int send_s3_metadata = parse<int>(params.get("send_s3_metadata", "0"));
@@ -426,7 +426,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     Disks disks_s3;
 
-    if (!data_settings->allow_s3_zero_copy_replication)
+    if (!data_settings->allow_remote_fs_zero_copy_replication)
         try_use_s3_copy = false;
 
     if (try_use_s3_copy)

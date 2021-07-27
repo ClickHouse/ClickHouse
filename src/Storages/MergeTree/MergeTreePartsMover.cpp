@@ -201,7 +201,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
 
     auto disk = moving_part.reserved_space->getDisk();
     const String directory_to_move = "moving";
-    if (settings->allow_s3_zero_copy_replication)
+    if (settings->allow_remote_fs_zero_copy_replication)
     {
         /// Try to fetch part from S3 without copy and fallback to default copy
         /// if it's not possible
