@@ -1,8 +1,4 @@
 #pragma once
-
-#include <common/range.h>
-#include <common/map.h>
-
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
@@ -16,6 +12,8 @@
 #include <Columns/ColumnConst.h>
 #include <Interpreters/castColumn.h>
 #include <Common/typeid_cast.h>
+#include <ext/range.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -41,7 +39,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (auto i : collections::range(0, arguments.size()))
+        for (auto i : ext::range(0, arguments.size()))
         {
             auto array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
             if (!array_type)
@@ -56,7 +54,7 @@ public:
     {
         size_t num_args = arguments.size();
 
-        DataTypePtr common_type = getLeastSupertype(collections::map(arguments, [](auto & arg) { return arg.type; }));
+        DataTypePtr common_type = getLeastSupertype(ext::map(arguments, [](auto & arg) { return arg.type; }));
 
         Columns preprocessed_columns(num_args);
         for (size_t i = 0; i < num_args; ++i)

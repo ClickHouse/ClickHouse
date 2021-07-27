@@ -123,19 +123,6 @@ The `Insert` command creates one or more blocks (parts). When inserting into Rep
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the inserted part (stream of bytes).
 
-## non_replicated_deduplication_window {#non-replicated-deduplication-window}
-
-The number of the most recently inserted blocks in the non-replicated [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table for which hash sums are stored to check for duplicates.
-
-Possible values:
-
--   Any positive integer.
--   0 (disable deduplication).
-
-Default value: 0.
-
-A deduplication mechanism is used, similar to replicated tables (see [replicated_deduplication_window](#replicated-deduplication-window) setting). The hash sums of the created parts are written to a local file on a disk.
-
 ## replicated_deduplication_window_seconds {#replicated-deduplication-window-seconds}
 
 The number of seconds after which the hash sums of the inserted blocks are removed from Zookeeper.
@@ -191,11 +178,9 @@ Possible values:
 
 Default value: 480.
 
-After merging several parts into a new part, ClickHouse marks the original parts as inactive and deletes them only after `old_parts_lifetime` seconds.
-Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is zero.
-
 `fsync` is not called for new parts, so for some time new parts exist only in the server's RAM (OS cache). If the server is rebooted spontaneously, new parts can be lost or damaged.
-To protect data inactive parts are not deleted immediately.
+To protect data parts created by merges source parts are not deleted immediately. After merging several parts into a new part, ClickHouse marks the original parts as inactive and deletes them only after `old_parts_lifetime` seconds.
+Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is zero.
 
 During startup ClickHouse checks the integrity of the parts.
 If the merged part is damaged ClickHouse returns the inactive parts to the active list, and later merges them again. Then the damaged part is renamed (the `broken_` prefix is added) and moved to the `detached` folder.
@@ -216,7 +201,7 @@ Default value: 161061273600 (150 GB).
 
 The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there is enough free resources in the pool, it starts background merges. Merges occur until the total size of the source parts is less than `max_bytes_to_merge_at_max_space_in_pool`.
 
-Merges initiated by [OPTIMIZE FINAL](../../sql-reference/statements/optimize.md) ignore `max_bytes_to_merge_at_max_space_in_pool` and merge parts only taking into account available resources (free disk's space) until one part remains in the partition.
+Merges initiated by `optimize final` ignore `max_bytes_to_merge_at_max_space_in_pool` and merge parts only taking into account available resources (free disk's space) until one part remains in the partition.
 
 ## max_bytes_to_merge_at_min_space_in_pool {#max-bytes-to-merge-at-min-space-in-pool}
 
@@ -254,7 +239,6 @@ Possible values:
 Default value: auto (number of CPU cores).
 
 During startup ClickHouse reads all parts of all tables (reads files with metadata of parts) to build a list of all parts in memory. In some systems with a large number of parts this process can take a long time, and this time might be shortened by increasing `max_part_loading_threads` (if this process is not CPU and disk I/O bound).
-
 ## max_partitions_to_read {#max-partitions-to-read}
 
 Limits the maximum number of partitions that can be accessed in one query.
@@ -267,26 +251,4 @@ Possible values:
 
 Default value: -1 (unlimited).
 
-## allow_floating_point_partition_key {#allow_floating_point_partition_key}
-
-Enables to allow floating-point number as a partition key.
-
-Possible values:
-
--   0 — Floating-point partition key not allowed.
--   1 — Floating-point partition key allowed.
-
-Default value: `0`.
-
-## check_sample_column_is_correct {#check_sample_column_is_correct}
-
-Enables the check at table creation, that the data type of a column for sampling or sampling expression is correct. The data type must be one of unsigned [integer types](../../sql-reference/data-types/int-uint.md): `UInt8`, `UInt16`, `UInt32`, `UInt64`.
-
-Possible values:
-
--   true  — The check is enabled.
--   false — The check is disabled at table creation.
-
-Default value: `true`.
-
-By default, the ClickHouse server checks at table creation the data type of a column for sampling or sampling expression. If you already have tables with incorrect sampling expression and do not want the server to raise an exception during startup, set `check_sample_column_is_correct` to `false`.
+[Original article](https://clickhouse.tech/docs/en/operations/settings/merge_tree_settings/) <!--hide-->

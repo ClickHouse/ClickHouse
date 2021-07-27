@@ -4,7 +4,8 @@
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
-#include <Processors/Transforms/getSourceFromFromASTInsertQuery.h>
+#include <DataStreams/InputStreamFromASTInsertQuery.h>
+#include <DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
@@ -188,11 +189,12 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & union_modes = select_query.list_of_modes;
 
                 /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
-                const auto mode_is_all = [](const auto & mode) { return mode == ASTSelectWithUnionQuery::Mode::ALL; };
-
-                is_trivial_insert_select =
-                    std::all_of(union_modes.begin(), union_modes.end(), std::move(mode_is_all))
-                    && std::all_of(selects.begin(), selects.end(), isTrivialSelect);
+                is_trivial_insert_select
+                    = std::all_of(
+                          union_modes.begin(),
+                          union_modes.end(),
+                          [](const ASTSelectWithUnionQuery::Mode & mode) { return mode == ASTSelectWithUnionQuery::Mode::ALL; })
+                    && std::all_of(selects.begin(), selects.end(), [](const ASTPtr & select) { return isTrivialSelect(select); });
             }
 
             if (is_trivial_insert_select)
@@ -350,13 +352,9 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (query.data && !query.has_tail) /// can execute without additional data
     {
-        auto pipe = getSourceFromFromASTInsertQuery(query_ptr, nullptr, query_sample_block, getContext(), nullptr);
-        res.pipeline.init(std::move(pipe));
-        res.pipeline.resize(1);
-        res.pipeline.setSinks([&](const Block &, Pipe::StreamType)
-        {
-            return std::make_shared<SinkToOutputStream>(out_streams.at(0));
-        });
+        // res.out = std::move(out_streams.at(0));
+        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, getContext(), nullptr);
+        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, out_streams.at(0));
     }
     else
         res.out = std::move(out_streams.at(0));

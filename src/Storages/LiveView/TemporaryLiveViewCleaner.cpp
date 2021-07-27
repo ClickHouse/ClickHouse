@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 namespace
 {
-    void executeDropQuery(const StorageID & storage_id, ContextMutablePtr context)
+    void executeDropQuery(const StorageID & storage_id, ContextPtr context)
     {
         if (!DatabaseCatalog::instance().isTableExist(storage_id, context))
             return;
@@ -42,7 +42,7 @@ namespace
 std::unique_ptr<TemporaryLiveViewCleaner> TemporaryLiveViewCleaner::the_instance;
 
 
-void TemporaryLiveViewCleaner::init(ContextMutablePtr global_context_)
+void TemporaryLiveViewCleaner::init(ContextPtr global_context_)
 {
     if (the_instance)
         throw Exception("TemporaryLiveViewCleaner already initialized", ErrorCodes::LOGICAL_ERROR);
@@ -63,7 +63,7 @@ void TemporaryLiveViewCleaner::shutdown()
     the_instance.reset();
 }
 
-TemporaryLiveViewCleaner::TemporaryLiveViewCleaner(ContextMutablePtr global_context_) : WithMutableContext(global_context_)
+TemporaryLiveViewCleaner::TemporaryLiveViewCleaner(ContextPtr global_context_) : WithContext(global_context_)
 {
 }
 

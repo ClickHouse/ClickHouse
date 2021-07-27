@@ -16,15 +16,13 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class StorageMaterializeMySQL final : public shared_ptr_helper<StorageMaterializeMySQL>, public StorageProxy
+class StorageMaterializeMySQL final : public ext::shared_ptr_helper<StorageMaterializeMySQL>, public StorageProxy
 {
-    friend struct shared_ptr_helper<StorageMaterializeMySQL>;
+    friend struct ext::shared_ptr_helper<StorageMaterializeMySQL>;
 public:
     String getName() const override { return "MaterializeMySQL"; }
 
     StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_);
-
-    bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
     Pipe read(
         const Names & column_names, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info,

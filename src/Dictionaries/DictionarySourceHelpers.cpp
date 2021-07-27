@@ -67,7 +67,7 @@ Block blockForKeys(
     return block;
 }
 
-ContextMutablePtr copyContextAndApplySettings(
+ContextPtr copyContextAndApplySettings(
     const std::string & config_prefix,
     ContextPtr context,
     const Poco::Util::AbstractConfiguration & config)

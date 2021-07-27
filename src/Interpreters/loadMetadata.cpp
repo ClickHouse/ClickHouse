@@ -18,16 +18,14 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
 
 static void executeCreateQuery(
     const String & query,
-    ContextMutablePtr context,
+    ContextPtr context,
     const String & database,
     const String & file_name,
     bool has_force_restore_data_flag)
@@ -48,7 +46,7 @@ static void executeCreateQuery(
 
 
 static void loadDatabase(
-    ContextMutablePtr context,
+    ContextPtr context,
     const String & database,
     const String & database_path,
     bool force_restore_data)
@@ -56,13 +54,13 @@ static void loadDatabase(
     String database_attach_query;
     String database_metadata_file = database_path + ".sql";
 
-    if (fs::exists(fs::path(database_metadata_file)))
+    if (Poco::File(database_metadata_file).exists())
     {
         /// There is .sql file with database creation statement.
         ReadBufferFromFile in(database_metadata_file, 1024);
         readStringUntilEOF(database_attach_query, in);
     }
-    else if (fs::exists(fs::path(database_path)))
+    else if (Poco::File(database_path).exists())
     {
         /// Database exists, but .sql file is absent. It's old-style Ordinary database (e.g. system or default)
         database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database) + " ENGINE = Ordinary";
@@ -86,7 +84,7 @@ static void loadDatabase(
 }
 
 
-void loadMetadata(ContextMutablePtr context, const String & default_database_name)
+void loadMetadata(ContextPtr context, const String & default_database_name)
 {
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");
 
@@ -97,35 +95,34 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
       * This file is deleted after successful loading of tables.
       * (flag is "one-shot")
       */
-    auto force_restore_data_flag_file = fs::path(context->getFlagsPath()) / "force_restore_data";
-    bool has_force_restore_data_flag = fs::exists(force_restore_data_flag_file);
+    Poco::File force_restore_data_flag_file(context->getFlagsPath() + "force_restore_data");
+    bool has_force_restore_data_flag = force_restore_data_flag_file.exists();
 
     /// Loop over databases.
     std::map<String, String> databases;
-    fs::directory_iterator dir_end;
-    for (fs::directory_iterator it(path); it != dir_end; ++it)
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
     {
-        if (it->is_symlink())
+        if (it->isLink())
             continue;
 
-        const auto current_file = it->path().filename().string();
-        if (!it->is_directory())
+        if (!it->isDirectory())
         {
             /// TODO: DETACH DATABASE PERMANENTLY ?
-            if (fs::path(current_file).extension() == ".sql")
+            if (endsWith(it.name(), ".sql"))
             {
-                String db_name = fs::path(current_file).stem();
+                String db_name = it.name().substr(0, it.name().size() - 4);
                 if (db_name != DatabaseCatalog::SYSTEM_DATABASE)
-                    databases.emplace(unescapeForFileName(db_name), fs::path(path) / db_name);
+                    databases.emplace(unescapeForFileName(db_name), path + "/" + db_name);
             }
 
             /// Temporary fails may be left from previous server runs.
-            if (fs::path(current_file).extension() == ".tmp")
+            if (endsWith(it.name(), ".tmp"))
             {
-                LOG_WARNING(log, "Removing temporary file {}", it->path().string());
+                LOG_WARNING(log, "Removing temporary file {}", it->path());
                 try
                 {
-                    fs::remove(it->path());
+                    it->remove();
                 }
                 catch (...)
                 {
@@ -138,13 +135,13 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
         }
 
         /// For '.svn', '.gitignore' directory and similar.
-        if (current_file.at(0) == '.')
+        if (it.name().at(0) == '.')
             continue;
 
-        if (current_file == DatabaseCatalog::SYSTEM_DATABASE)
+        if (it.name() == DatabaseCatalog::SYSTEM_DATABASE)
             continue;
 
-        databases.emplace(unescapeForFileName(current_file), it->path().string());
+        databases.emplace(unescapeForFileName(it.name()), it.path().toString());
     }
 
     /// clickhouse-local creates DatabaseMemory as default database by itself
@@ -161,7 +158,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     {
         try
         {
-            fs::remove(force_restore_data_flag_file);
+            force_restore_data_flag_file.remove();
         }
         catch (...)
         {
@@ -171,11 +168,11 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
 }
 
 
-void loadMetadataSystem(ContextMutablePtr context)
+void loadMetadataSystem(ContextPtr context)
 {
     String path = context->getPath() + "metadata/" + DatabaseCatalog::SYSTEM_DATABASE;
     String metadata_file = path + ".sql";
-    if (fs::exists(fs::path(path)) || fs::exists(fs::path(metadata_file)))
+    if (Poco::File(path).exists() || Poco::File(metadata_file).exists())
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
         loadDatabase(context, DatabaseCatalog::SYSTEM_DATABASE, path, true);
