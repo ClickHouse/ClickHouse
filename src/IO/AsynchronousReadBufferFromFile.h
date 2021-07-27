@@ -58,6 +58,8 @@ public:
         fd = file->getFD();
     }
 
+    ~AsynchronousReadBufferFromFileWithCache() override;
+
     std::string getFileName() const override
     {
         return file_name;
