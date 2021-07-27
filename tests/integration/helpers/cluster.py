@@ -1105,7 +1105,7 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait Postgres container")
 
-    def wait_rabbitmq_to_start(self, timeout=180):
+    def wait_rabbitmq_to_start(self, timeout=180, throw=True):
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
         start = time.time()
@@ -1115,13 +1115,15 @@ class ClickHouseCluster:
                     logging.debug("RabbitMQ is available")
                     if enable_consistent_hash_plugin(self.rabbitmq_docker_id):
                         logging.debug("RabbitMQ consistent hash plugin is available")
-                        return
+                        return True
                 time.sleep(0.5)
             except Exception as ex:
                 logging.debug("Can't connect to RabbitMQ " + str(ex))
                 time.sleep(0.5)
 
-        raise Exception("Cannot wait RabbitMQ container")
+        if throw:
+            raise Exception("Cannot wait RabbitMQ container")
+        return False
 
     def wait_zookeeper_secure_to_start(self, timeout=20):
         logging.debug("Wait ZooKeeper Secure to start")
@@ -1435,9 +1437,13 @@ class ClickHouseCluster:
                 logging.debug('Setup RabbitMQ')
                 os.makedirs(self.rabbitmq_logs_dir)
                 os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXO)
-                subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
-                self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
-                self.wait_rabbitmq_to_start()
+
+                for i in range(5):
+                    subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
+                    self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
+                    logging.debug(f"RabbitMQ checking container try: {i}")
+                    if self.wait_rabbitmq_to_start(throw=(i==4)):
+                        break
 
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug('Setup HDFS')
