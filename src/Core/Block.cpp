@@ -1,5 +1,5 @@
 #include <Common/Exception.h>
-#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 
 #include <Core/Block.h>
 
@@ -40,11 +40,25 @@ Block::Block(const ColumnsWithTypeAndName & data_) : data{data_}
 void Block::initializeIndexByName()
 {
     for (size_t i = 0, size = data.size(); i < size; ++i)
-        index_by_name.emplace(data[i].name, i);
+        index_by_name[data[i].name] = i;
 }
 
 
-void Block::insert(size_t position, ColumnWithTypeAndName elem)
+void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
+{
+    if (position > data.size())
+        throw Exception("Position out of bound in Block::insert(), max position = "
+            + toString(data.size()), ErrorCodes::POSITION_OUT_OF_BOUND);
+
+    for (auto & name_pos : index_by_name)
+        if (name_pos.second >= position)
+            ++name_pos.second;
+
+    index_by_name.emplace(elem.name, position);
+    data.emplace(data.begin() + position, elem);
+}
+
+void Block::insert(size_t position, ColumnWithTypeAndName && elem)
 {
     if (position > data.size())
         throw Exception("Position out of bound in Block::insert(), max position = "
@@ -59,14 +73,26 @@ void Block::insert(size_t position, ColumnWithTypeAndName elem)
 }
 
 
-void Block::insert(ColumnWithTypeAndName elem)
+void Block::insert(const ColumnWithTypeAndName & elem)
+{
+    index_by_name.emplace(elem.name, data.size());
+    data.emplace_back(elem);
+}
+
+void Block::insert(ColumnWithTypeAndName && elem)
 {
     index_by_name.emplace(elem.name, data.size());
     data.emplace_back(std::move(elem));
 }
 
 
-void Block::insertUnique(ColumnWithTypeAndName elem)
+void Block::insertUnique(const ColumnWithTypeAndName & elem)
+{
+    if (index_by_name.end() == index_by_name.find(elem.name))
+        insert(elem);
+}
+
+void Block::insertUnique(ColumnWithTypeAndName && elem)
 {
     if (index_by_name.end() == index_by_name.find(elem.name))
         insert(std::move(elem));
@@ -269,20 +295,6 @@ std::string Block::dumpStructure() const
     return out.str();
 }
 
-std::string Block::dumpIndex() const
-{
-    WriteBufferFromOwnString out;
-    bool first = true;
-    for (const auto & [name, pos] : index_by_name)
-    {
-        if (!first)
-            out << ", ";
-        first = false;
-
-        out << name << ' ' << pos;
-    }
-    return out.str();
-}
 
 Block Block::cloneEmpty() const
 {
@@ -343,22 +355,6 @@ void Block::setColumns(const Columns & columns)
 }
 
 
-void Block::setColumn(size_t position, ColumnWithTypeAndName column)
-{
-    if (position >= data.size())
-        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Block::setColumn(), max position {}",
-                        position, toString(data.size()));
-
-    if (data[position].name != column.name)
-    {
-        index_by_name.erase(data[position].name);
-        index_by_name.emplace(column.name, position);
-    }
-
-    data[position] = std::move(column);
-}
-
-
 Block Block::cloneWithColumns(MutableColumns && columns) const
 {
     Block res;
@@ -399,22 +395,13 @@ Block Block::cloneWithoutColumns() const
     return res;
 }
 
-Block Block::cloneWithCutColumns(size_t start, size_t length) const
-{
-    Block copy = *this;
-
-    for (auto & column_to_cut : copy.data)
-        column_to_cut.column = column_to_cut.column->cut(start, length);
-
-    return copy;
-}
 
 Block Block::sortColumns() const
 {
     Block sorted_block;
 
     /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
-    std::vector<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
+    std::vector<decltype(index_by_name.begin())> sorted_index_by_name(index_by_name.size());
     {
         size_t i = 0;
         for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
@@ -474,7 +461,7 @@ DataTypes Block::getDataTypes() const
 
 
 template <typename ReturnType>
-static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description, bool allow_remove_constants)
+static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description)
 {
     auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
@@ -505,16 +492,7 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
         if (!actual.column || !expected.column)
             continue;
 
-        const IColumn * actual_column = actual.column.get();
-
-        /// If we allow to remove constants, and expected column is not const, then unwrap actual constant column.
-        if (allow_remove_constants && !isColumnConst(*expected.column))
-        {
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
-                actual_column = &column_const->getDataColumn();
-        }
-
-        if (actual_column->getName() != expected.column->getName())
+        if (actual.column->getName() != expected.column->getName())
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
@@ -536,25 +514,13 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
 
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 {
-    return checkBlockStructure<bool>(lhs, rhs, {}, false);
+    return checkBlockStructure<bool>(lhs, rhs, {});
 }
 
 
 void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, const std::string & context_description)
 {
-    checkBlockStructure<void>(lhs, rhs, context_description, false);
-}
-
-
-bool isCompatibleHeader(const Block & actual, const Block & desired)
-{
-    return checkBlockStructure<bool>(actual, desired, {}, true);
-}
-
-
-void assertCompatibleHeader(const Block & actual, const Block & desired, const std::string & context_description)
-{
-    checkBlockStructure<void>(actual, desired, context_description, true);
+    checkBlockStructure<void>(lhs, rhs, context_description);
 }
 
 

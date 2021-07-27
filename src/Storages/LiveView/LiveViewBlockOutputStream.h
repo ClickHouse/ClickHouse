@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/LiveView/StorageLiveView.h>
-#include <Common/hex.h>
 
 
 namespace DB
@@ -26,8 +25,8 @@ public:
         UInt128 key;
         String key_str;
 
-        new_hash->get128(key);
-        key_str = getHexUIntLowercase(key);
+        new_hash->get128(key.low, key.high);
+        key_str = key.toHexString();
 
         std::lock_guard lock(storage.mutex);
 
@@ -35,7 +34,6 @@ public:
         {
             new_blocks_metadata->hash = key_str;
             new_blocks_metadata->version = storage.getBlocksVersion() + 1;
-            new_blocks_metadata->time = std::chrono::system_clock::now();
 
             for (auto & block : *new_blocks)
             {
@@ -49,15 +47,6 @@ public:
             (*storage.blocks_metadata_ptr) = new_blocks_metadata;
 
             storage.condition.notify_all();
-        }
-        else
-        {
-            // only update blocks time
-            new_blocks_metadata->hash = storage.getBlocksHashKey();
-            new_blocks_metadata->version = storage.getBlocksVersion();
-            new_blocks_metadata->time = std::chrono::system_clock::now();
-
-            (*storage.blocks_metadata_ptr) = new_blocks_metadata;
         }
 
         new_blocks.reset();

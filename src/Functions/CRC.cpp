@@ -72,9 +72,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
-
 template <class Impl>
 struct CRCFunctionWrapper
 {
@@ -110,11 +107,6 @@ struct CRCFunctionWrapper
         throw Exception("Cannot apply function " + std::string(Impl::name) + " to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    [[noreturn]] static void uuid(const ColumnUUID::Container & /*offsets*/, size_t /*n*/, PaddedPODArray<ReturnType> & /*res*/)
-    {
-        throw Exception("Cannot apply function " + std::string(Impl::name) + " to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
 private:
     static ReturnType doCRC(const ColumnString::Chars & buf, size_t offset, size_t size)
     {
@@ -134,8 +126,6 @@ using FunctionCRC32ZLIB = FunctionCRC<CRC32ZLIBImpl>;
 using FunctionCRC32IEEE = FunctionCRC<CRC32IEEEImpl>;
 // Uses CRC-64-ECMA polynomial
 using FunctionCRC64ECMA = FunctionCRC<CRC64ECMAImpl>;
-
-}
 
 template <class T>
 void registerFunctionCRCImpl(FunctionFactory & factory)

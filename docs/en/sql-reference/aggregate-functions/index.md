@@ -44,6 +44,8 @@ SELECT sum(y) FROM t_null_big
 └────────┘
 ```
 
+The `sum` function interprets `NULL` as `0`. In particular, this means that if the function receives input of a selection where all the values are `NULL`, then the result will be `0`, not `NULL`.
+
 Now you can use the `groupArray` function to create an array from the `y` column:
 
 ``` sql
@@ -59,3 +61,4 @@ SELECT groupArray(y) FROM t_null_big
 `groupArray` does not include `NULL` in the resulting array.
 
 
+[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/) <!--hide-->

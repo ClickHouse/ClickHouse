@@ -1,5 +1,5 @@
 ---
-toc_priority: 33
+toc_priority: 34
 toc_title: INSERT INTO
 ---
 
@@ -13,54 +13,12 @@ Basic query format:
 INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
-You can specify a list of columns to insert using  the `(c1, c2, c3)`. You can also use an expression with column [matcher](../../sql-reference/statements/select/index.md#asterisk) such as `*` and/or [modifiers](../../sql-reference/statements/select/index.md#select-modifiers) such as [APPLY](../../sql-reference/statements/select/index.md#apply-modifier), [EXCEPT](../../sql-reference/statements/select/index.md#except-modifier), [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier).
-
-For example, consider the table:
-
-``` sql
-SHOW CREATE insert_select_testtable;
-```
-
-```text
-CREATE TABLE insert_select_testtable
-(
-    `a` Int8,
-    `b` String,
-    `c` Int8
-)
-ENGINE = MergeTree()
-ORDER BY a
-```
-
-``` sql
-INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) ;
-```
-
-If you want to insert data in all the columns, except 'b', you need to pass so many values how many columns you chose in parenthesis then:
-
-``` sql
-INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
-```
-
-``` sql
-SELECT * FROM insert_select_testtable;
-```
-
-```
-┌─a─┬─b─┬─c─┐
-│ 2 │   │ 2 │
-└───┴───┴───┘
-┌─a─┬─b─┬─c─┐
-│ 1 │ a │ 1 │
-└───┴───┴───┘
-```
-
-In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default.
-
-If a list of columns does not include all existing columns, the rest of the columns are filled with:
+The query can specify a list of columns to insert `[(c1, c2, c3)]`. In this case, the rest of the columns are filled with:
 
 -   The values calculated from the `DEFAULT` expressions specified in the table definition.
 -   Zeros and empty strings, if `DEFAULT` expressions are not defined.
+
+If [strict\_insert\_defaults=1](../../operations/settings/settings.md), columns that do not have `DEFAULT` defined must be listed in the query.
 
 Data can be passed to the INSERT in any [format](../../interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
@@ -105,8 +63,6 @@ However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
 `FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](../../sql-reference/table-functions/input.md).
 
-To insert a default value instead of `NULL` into a column with not nullable data type, enable [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.   
-
 ### Performance Considerations {#performance-considerations}
 
 `INSERT` sorts the input data by primary key and splits them into partitions by a partition key. If you insert data into several partitions at once, it can significantly reduce the performance of the `INSERT` query. To avoid this:
@@ -119,3 +75,4 @@ Performance will not decrease if:
 -   Data is added in real time.
 -   You upload data that is usually sorted by time.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/insert_into/) <!--hide-->

@@ -1,9 +1,3 @@
----
-toc_priority: 70
-toc_title: "Используемые сторонние библиотеки"
----
-
-
 # Используемые сторонние библиотеки {#ispolzuemye-storonnie-biblioteki}
 
 | Библиотека          | Лицензия                                                                                                                                     |
@@ -18,6 +12,7 @@ toc_title: "Используемые сторонние библиотеки"
 | googletest          | [BSD 3-Clause License](https://github.com/google/googletest/blob/master/LICENSE)                                                             |
 | h3                  | [Apache License 2.0](https://github.com/uber/h3/blob/master/LICENSE)                                                                         |
 | hyperscan           | [BSD 3-Clause License](https://github.com/intel/hyperscan/blob/master/LICENSE)                                                               |
+| libbtrie            | [BSD 2-Clause License](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libbtrie/LICENSE)                                        |
 | libcxxabi           | [BSD + MIT](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libglibc-compatibility/libcxxabi/LICENSE.TXT)                          |
 | libdivide           | [Zlib License](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libdivide/LICENSE.txt)                                           |
 | libgsasl            | [LGPL v2.1](https://github.com/ClickHouse-Extras/libgsasl/blob/3b8948a4042e34fb00b4fb987535dc9e02e39040/LICENSE)                             |
@@ -26,7 +21,7 @@ toc_title: "Используемые сторонние библиотеки"
 | libpcg-random       | [Apache License 2.0](https://github.com/ClickHouse/ClickHouse/blob/master/contrib/libpcg-random/LICENSE-APACHE.txt)                          |
 | libressl            | [OpenSSL License](https://github.com/ClickHouse-Extras/ssl/blob/master/COPYING)                                                              |
 | librdkafka          | [BSD 2-Clause License](https://github.com/edenhill/librdkafka/blob/363dcad5a23dc29381cc626620e68ae418b3af19/LICENSE)                         |
-| libwidechar_width  | [CC0 1.0 Universal](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                     |
+| libwidechar\_width  | [CC0 1.0 Universal](https://github.com/ClickHouse/ClickHouse/blob/master/libs/libwidechar_width/LICENSE)                                     |
 | llvm                | [BSD 3-Clause License](https://github.com/ClickHouse-Extras/llvm/blob/163def217817c90fb982a6daf384744d8472b92b/llvm/LICENSE.TXT)             |
 | lz4                 | [BSD 2-Clause License](https://github.com/lz4/lz4/blob/c10863b98e1503af90616ae99725ecd120265dfb/LICENSE)                                     |
 | mariadb-connector-c | [LGPL v2.1](https://github.com/ClickHouse-Extras/mariadb-connector-c/blob/3.1/COPYING.LIB)                                                   |
@@ -38,15 +33,3 @@ toc_title: "Используемые сторонние библиотеки"
 | UnixODBC            | [LGPL v2.1](https://github.com/ClickHouse-Extras/UnixODBC/tree/b0ad30f7f6289c12b76f04bfb9d466374bb32168)                                     |
 | zlib-ng             | [Zlib License](https://github.com/ClickHouse-Extras/zlib-ng/blob/develop/LICENSE.md)                                                         |
 | zstd                | [BSD 3-Clause License](https://github.com/facebook/zstd/blob/dev/LICENSE)                                                                    |
-
-## Рекомендации по добавлению сторонних библиотек и поддержанию в них пользовательских изменений {#adding-third-party-libraries}
-
-1. Весь внешний сторонний код должен находиться в отдельных папках внутри папки `contrib` репозитория ClickHouse. По возможности, используйте сабмодули Git.
-2. Клонируйте официальный репозиторий [Clickhouse-extras](https://github.com/ClickHouse-Extras). Используйте официальные репозитории GitHub, если они доступны.
-3. Создавайте новую ветку на основе той ветки, которую вы хотите интегрировать: например, `master` -> `clickhouse/master` или `release/vX.Y.Z` -> `clickhouse/release/vX.Y.Z`.
-4. Все копии [Clickhouse-extras](https://github.com/ClickHouse-Extras) можно автоматически синхронизировать с удаленными репозиториями. Ветки `clickhouse/...` останутся незатронутыми, поскольку скорее всего никто не будет использовать этот шаблон именования в своих репозиториях.
-5. Добавьте сабмодули в папку `contrib` репозитория ClickHouse, на который ссылаются клонированные репозитории. Настройте сабмодули для отслеживания изменений в соответствующих ветках `clickhouse/...`.
-6. Каждый раз, когда необходимо внести изменения в код библиотеки, следует создавать отдельную ветку, например `clickhouse/my-fix`. Затем эта ветка должна быть слита (`merge`) в ветку, отслеживаемую сабмодулем, например, в `clickhouse/master` или `clickhouse/release/vX.Y.Z`.
-7. Не добавляйте код в клоны репозитория [Clickhouse-extras](https://github.com/ClickHouse-Extras), если имя ветки не соответствует шаблону `clickhouse/...`.
-8. Всегда вносите изменения с учетом того, что они попадут в официальный репозиторий. После того как PR будет влит из (ветки разработки/исправлений) вашего личного клона репозитория в  [Clickhouse-extras](https://github.com/ClickHouse-Extras), и сабмодуль будет добавлен в репозиторий ClickHouse, рекомендуется сделать еще один PR из (ветки разработки/исправлений) репозитория [Clickhouse-extras](https://github.com/ClickHouse-Extras) в официальный репозиторий библиотеки. Таким образом будут решены следующие задачи: 1) публикуемый код может быть использован многократно и будет иметь более высокую ценность; 2) другие пользователи также смогут использовать его в своих целях; 3) поддержкой кода будут заниматься не только разработчики ClickHouse.
-9. Чтобы сабмодуль начал использовать новый код из исходной ветки (например, `master`), сначала следует аккуратно выполнить слияние (`master` -> `clickhouse/master`), и только после этого изменения могут быть добавлены в основной репозиторий ClickHouse. Это связано с тем, что в отслеживаемую ветку (например, `clickhouse/master`) могут быть внесены изменения, и поэтому ветка может отличаться от первоисточника (`master`). 

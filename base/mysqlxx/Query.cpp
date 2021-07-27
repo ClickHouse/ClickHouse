@@ -2,7 +2,7 @@
 #include <errmsg.h>
 #include <mysql.h>
 #else
-#include <mysql/errmsg.h> //Y_IGNORE
+#include <mysql/errmsg.h>
 #include <mysql/mysql.h>
 #endif
 
@@ -90,6 +90,16 @@ UseQueryResult Query::use()
         onError(conn->getDriver());
 
     return UseQueryResult(res, conn, this);
+}
+
+StoreQueryResult Query::store()
+{
+    executeImpl();
+    MYSQL_RES * res = mysql_store_result(conn->getDriver());
+    if (!res)
+        checkError(conn->getDriver());
+
+    return StoreQueryResult(res, conn, this);
 }
 
 void Query::execute()

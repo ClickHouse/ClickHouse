@@ -1,8 +1,3 @@
----
-toc_priority: 45
-toc_title: "Иерархические словари"
----
-
 # Иерархические словари {#ierarkhicheskie-slovari}
 
 ClickHouse поддерживает иерархические словари с [числовыми ключом](external-dicts-dict-structure.md#ext_dict-numeric-key).
@@ -25,7 +20,7 @@ ClickHouse поддерживает иерархические словари с
 
 Эту иерархию можно выразить в виде следующей таблицы-словаря.
 
-| region_id | parent_region | region_name  |
+| region\_id | parent\_region | region\_name  |
 |------------|----------------|---------------|
 | 1          | 0              | Russia        |
 | 2          | 1              | Moscow        |
@@ -65,3 +60,4 @@ ClickHouse поддерживает свойство [hierarchical](external-dic
 </dictionary>
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->

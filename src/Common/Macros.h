@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/Names.h>
 #include <Interpreters/StorageID.h>
 
@@ -40,7 +40,6 @@ public:
         bool expanded_database = false;
         bool expanded_table = false;
         bool expanded_uuid = false;
-        bool expanded_other = false;
         bool has_unknown = false;
     };
 

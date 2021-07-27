@@ -3,62 +3,67 @@
   */
 {
     "thread-sanitizer": [
+        "00281",
         "00877",
+        "00985",
+        "avx2",
         "query_profiler",
         "memory_profiler",
+        /// 01083 and 00505 and 00505 are critical and temproray disabled
+        "01083_expressions_in_engine_arguments",
+        "00505_shard_secure",
+        "00505_secure",
         "01103_check_cpu_instructions_at_startup",
+        "01098_temporary_and_external_tables", /// race in openssl (should be enabled as fast as possible)
         "00152_insert_different_granularity",
         "00151_replace_partition_with_different_granularity",
         "00157_cache_dictionary",
         "01193_metadata_loading",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
-        "01474_executable_dictionary", /// informational stderr from sanitizer at start
-        "functions_bad_arguments", /// Too long for TSan
-        "01603_read_with_backoff_bug", /// Too long for TSan
-        "01646_system_restart_replicas_smoke", /// RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
-        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
+        "01474_executable_dictionary" /// informational stderr from sanitizer at start
     ],
     "address-sanitizer": [
+        "00281",
         "00877",
+        "avx2",
         "query_profiler",
         "memory_profiler",
         "odbc_roundtrip",
         "01103_check_cpu_instructions_at_startup",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
-        "01193_metadata_loading",
-        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
+        "01193_metadata_loading"
     ],
     "ub-sanitizer": [
+        "00281",
         "capnproto",
+        "avx2",
         "query_profiler",
         "memory_profiler",
         "01103_check_cpu_instructions_at_startup",
         "00900_orc_load",
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
-        "01193_metadata_loading",
-        "01955_clickhouse_benchmark_connection_hang" /// Limits RLIMIT_NOFILE, see comment in the test
+        "01193_metadata_loading"
     ],
     "memory-sanitizer": [
+        "00281",
         "capnproto",
+        "avx2",
         "query_profiler",
         "memory_profiler",
-        "01175_distributed_ddl_output_mode_long",  /// issue 21600
         "01103_check_cpu_instructions_at_startup",
         "01086_odbc_roundtrip", /// can't pass because odbc libraries are not instrumented
         "00877_memory_limit_for_new_delete", /// memory limits don't work correctly under msan because it replaces malloc/free
+        "01114_mysql_database_engine_segfault", /// it fails in _nss_files_parse_servent while using NSS from GLibc to authenticate (need to get rid of it)
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
-        "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
-        "01193_metadata_loading",
-        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
+        "01193_metadata_loading"
     ],
     "debug-build": [
+        "00281",
+        "avx2",
         "query_profiler",
         "memory_profiler",
         "00899_long_attach",
@@ -70,15 +75,16 @@
         "01037_polygon_dicts_",
         "hyperscan",
         "01193_metadata_loading",
-        "01473_event_time_microseconds",
         "01396_inactive_replica_cleanup_nodes"
     ],
     "unbundled-build": [
         "00429",
+        "00428",
         "00877",
         "pocopatch",
         "parquet",
         "xxhash",
+        "avx2",
         "_h3",
         "query_profiler",
         "memory_profiler",
@@ -97,171 +103,36 @@
         "01300_client_save_history_when_terminated",
         "orc_output",
         "01370_client_autocomplete_word_break_characters",
-        "01676_clickhouse_client_autocomplete",
         "01193_metadata_loading",
-        "01455_time_zones",
-        "01755_client_highlight_multi_line_comment_regression"
+        "01455_time_zones"
     ],
     "release-build": [
+        "avx2"
     ],
-    "database-ordinary": [
-        "00604_show_create_database",
+    "database-atomic": [
+        "00065_loyalty_with_storage_join",
+        "avx",
+        /// Inner tables of materialized views have different names
+        "00738_lock_for_inner_table",
+        "00699_materialized_view_mutations",
         "00609_mv_index_in_in",
         "00510_materizlized_view_and_deduplication_zookeeper",
-        "00738_lock_for_inner_table",
-        "01153_attach_mv_uuid",
-        /// Sometimes cannot lock file most likely due to concurrent or adjacent tests, but we don't care how it works in Ordinary database.
-        "rocksdb",
-        "01914_exchange_dictionaries" /// Requires Atomic database
-    ],
-    "database-replicated": [
-        /// Unclassified
-        "memory_tracking",
-        "memory_usage",
-        "live_view",
-        "01181_db_atomic_drop_on_cluster",
-        "01175_distributed_ddl_output_mode",
-        "01415_sticking_mutations",
-        "00980_zookeeper_merge_tree_alter_settings",
-        "01148_zookeeper_path_macros_unfolding",
-        "01294_system_distributed_on_cluster",
-        "01269_create_with_null",
-        "01451_replicated_detach_drop_and_quorum",
-        "01188_attach_table_from_path",
-        "01149_zookeeper_mutation_stuck_after_replace_partition",
-        /// user_files
-        "01721_engine_file_truncate_on_insert",
-        /// Fails due to additional replicas or shards
-        "quorum",
-        "01650_drop_part_and_deduplication_zookeeper",
-        "01532_execute_merges_on_single_replica",
-        "00652_replicated_mutations_default_database_zookeeper",
-        "00620_optimize_on_nonleader_replica_zookeeper",
-        /// grep -c
-        "01018_ddl_dictionaries_bad_queries",
-        "00908_bloom_filter_index",
-        /// Unsupported type of ALTER query
-        "01650_fetch_patition_with_macro_in_zk_path",
-        "01451_detach_drop_part",
-        "01451_replicated_detach_drop_part",
-        "01417_freeze_partition_verbose",
-        "01417_freeze_partition_verbose_zookeeper",
-        "01130_in_memory_parts_partitons",
-        "01060_shutdown_table_after_detach",
-        "01021_only_tuple_columns",
-        "01015_attach_part",
-        "00955_test_final_mark",
-        "00753_alter_attach",
-        "00626_replace_partition_from_table_zookeeper",
-        "00626_replace_partition_from_table",
-        "00152_insert_different_granularity",
-        "00054_merge_tree_partitions",
-        "01781_merge_tree_deduplication",
-        /// Old syntax is not allowed
-        "01062_alter_on_mutataion_zookeeper",
-        "00925_zookeeper_empty_replicated_merge_tree_optimize_final",
-        "00754_alter_modify_order_by_replicated_zookeeper",
-        "00652_replicated_mutations_zookeeper",
-        "00623_replicated_truncate_table_zookeeper",
-        "00516_deduplication_after_drop_partition_zookeeper",
-        "00446_clear_column_in_partition_concurrent_zookeeper",
-        "00236_replicated_drop_on_non_leader_zookeeper",
-        "00226_zookeeper_deduplication_and_unexpected_parts",
-        "00215_primary_key_order_zookeeper",
-        "00121_drop_column_zookeeper",
-        "00083_create_merge_tree_zookeeper",
-        "00062_replicated_merge_tree_alter_zookeeper",
-        /// Does not support renaming of multiple tables in single query
-        "00634_rename_view",
-        "00140_rename",
-        /// Requires investigation
-        "00953_zookeeper_suetin_deduplication_bug",
-        "01783_http_chunk_size",
-        "01943_query_id_check",
-        "00166_explain_estimate"
+        /// Create queries contain UUID
+        "00604_show_create_database",
+        "00080_show_tables_and_system_tables",
+        "00738_lock_for_inner_table"
     ],
     "polymorphic-parts": [
-        "01508_partition_pruning_long", /// bug, shoud be fixed
-        "01482_move_to_prewhere_and_cast" /// bug, shoud be fixed
-    ],
-    "parallel":
-    [
-        /// Pessimistic list of tests which work badly in parallel.
-        /// Probably they need better investigation.
-        "00062_replicated_merge_tree_alter_zookeeper",
-        "00080_show_tables_and_system_tables",
-        "00101_materialized_views_and_insert_without_explicit_database",
-        "00109_shard_totals_after_having",
-        "00110_external_sort",
-        "00116_storage_set",
-        "00121_drop_column_zookeeper",
-        "00133_long_shard_memory_tracker_and_exception_safety",
-        "00158_buffer_and_nonexistent_table",
-        "00180_attach_materialized_view",
-        "00226_zookeeper_deduplication_and_unexpected_parts",
-        "00236_replicated_drop_on_non_leader_zookeeper",
-        "00305_http_and_readonly",
-        "00311_array_primary_key",
-        "00417_kill_query",
-        "00423_storage_log_single_thread",
-        "00429_long_http_bufferization",
-        "00446_clear_column_in_partition_concurrent_zookeeper",
-        "00446_clear_column_in_partition_zookeeper",
-        "00463_long_sessions_in_http_interface",
-        "00505_shard_secure",
-        "00508_materialized_view_to",
-        "00516_deduplication_after_drop_partition_zookeeper",
-        "00534_functions_bad_arguments10",
-        "00552_or_nullable",
-        "00564_versioned_collapsing_merge_tree",
-        "00571_non_exist_database_when_create_materializ_view",
-        "00575_illegal_column_exception_when_drop_depen_column",
-        "00599_create_view_with_subquery",
-        "00600_replace_running_query",
-        "00604_show_create_database",
-        "00612_http_max_query_size",
-        "00619_union_highlite",
-        "00620_optimize_on_nonleader_replica_zookeeper",
-        "00623_truncate_table",
-        "00623_truncate_table_throw_exception",
-        "00625_arrays_in_nested",
-        "00626_replace_partition_from_table",
-        "00626_replace_partition_from_table_zookeeper",
-        "00633_materialized_view_and_too_many_parts_zookeeper",
-        "00643_cast_zookeeper",
-        "00652_mergetree_mutations",
-        "00652_replicated_mutations_zookeeper",
-        "00682_empty_parts_merge",
-        "00688_low_cardinality_serialization",
-        "00693_max_block_size_system_tables_columns",
-        "00699_materialized_view_mutations",
-        "00701_rollup",
-        "00715_fetch_merged_or_mutated_part_zookeeper",
-        "00716_allow_ddl",
-        "00719_parallel_ddl_db",
-        "00740_database_in_nested_view",
-        "00741_client_comment_multiline",
-        "00751_default_databasename_for_view",
-        "00753_alter_attach",
-        "00754_alter_modify_column_partitions",
-        "00754_alter_modify_order_by_replicated_zookeeper",
-        "00763_long_lock_buffer_alter_destination_table",
-        "00800_versatile_storage_join",
-        "00804_test_alter_compression_codecs",
-        "00804_test_custom_compression_codecs",
-        "00804_test_custom_compression_codes_log_storages",
-        "00804_test_delta_codec_compression",
-        "00815_left_join_on_stepanel",
-        "00834_cancel_http_readonly_queries_on_client_close",
-        "00834_kill_mutation",
-        "00834_kill_mutation_replicated_zookeeper",
-        "00840_long_concurrent_select_and_drop_deadlock",
-        "00857_global_joinsavel_table_alias",
-        "00899_long_attach_memory_limit",
-        "00910_buffer_prewhere",
-        "00910_zookeeper_custom_compression_codecs_replicated",
+        /// These tests fail with compact parts, because they
+        /// check some implementation defined things
+        /// like checksums, computed granularity, ProfileEvents, etc.
+        "avx",
+        "01045_order_by_pk_special_storages",
+        "01042_check_query_and_last_granule_size",
+        "00961_checksums_in_system_parts_columns_table",
+        "00933_test_fix_extra_seek_on_compressed_cache",
+        "00926_adaptive_index_granularity_collapsing_merge_tree",
         "00926_adaptive_index_granularity_merge_tree",
-        "00926_adaptive_index_granularity_pk",
         "00926_adaptive_index_granularity_replacing_merge_tree",
         "00926_zookeeper_adaptive_index_granularity_replicated_merge_tree",
         "00933_alter_ttl",
@@ -487,15 +358,12 @@
         "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
         "01748_dictionary_table_dot", // creates database
         "00950_dict_get",
-        "01615_random_one_shard_insertion",
         "01683_flat_dictionary",
         "01681_cache_dictionary_simple_key",
         "01682_cache_dictionary_complex_key",
         "01684_ssd_cache_dictionary_simple_key",
         "01685_ssd_cache_dictionary_complex_key",
         "01737_clickhouse_server_wait_server_pool_long", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
-        "01954_clickhouse_benchmark_round_robin", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
-        "01594_too_low_memory_limits", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
         "01760_system_dictionaries",
         "01760_polygon_dictionaries",
         "01778_hierarchical_dictionaries",
@@ -506,22 +374,20 @@
         "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
         "01821_table_comment",
         "01710_projection_fetch",
-        "01824_prefer_global_in_and_join",
-        "01870_modulo_partition_key",
         "01870_buffer_flush", // creates database
-        "01889_sqlite_read_write",
-        "01889_postgresql_protocol_null_fields",
-        "01889_check_row_policy_defined_using_user_function",
-        "01921_concurrent_ttl_and_normal_merges_zookeeper_long", // heavy test, better to run sequentially
-        "01913_replace_dictionary",
-        "01914_exchange_dictionaries",
-        "01915_create_or_replace_dictionary",
-        "01925_test_storage_merge_aliases",
-        "01933_client_replxx_convert_history", /// Uses non unique history file
-        "01999_grant_with_replace",
-        "01902_table_function_merge_db_repr",
-        "01946_test_zstd_decompression_with_escape_sequence_at_the_end_of_buffer",
-        "01946_test_wrong_host_name_access",
-        "01213_alter_rename_with_default_zookeeper" /// Warning: Removing leftovers from table.
+        "00926_adaptive_index_granularity_versioned_collapsing_merge_tree",
+        "00804_test_delta_codec_compression",
+        "00731_long_merge_tree_select_opened_files",
+        "00653_verification_monotonic_data_load",
+        "00484_preferred_max_column_in_block_size_bytes",
+        "00446_clear_column_in_partition_zookeeper",
+        "00443_preferred_block_size_bytes",
+        "00160_merge_and_index_in_in",
+        "01055_compact_parts",
+        "01039_mergetree_exec_time",
+        "00933_ttl_simple", /// Maybe it's worth to fix it
+        "00753_system_columns_and_system_tables",
+        "01343_min_bytes_to_use_mmap_io",
+        "01344_min_bytes_to_use_mmap_io_index"
     ]
 }

@@ -4,7 +4,6 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -75,15 +74,12 @@ protected:
         }
 
         settings.ostr << (settings.hilite ? hilite_keyword : "");
-        if (exchange && dictionary)
-            settings.ostr << "EXCHANGE DICTIONARIES ";
-        else if (exchange)
+        if (exchange)
             settings.ostr << "EXCHANGE TABLES ";
         else if (dictionary)
             settings.ostr << "RENAME DICTIONARY ";
         else
             settings.ostr << "RENAME TABLE ";
-
         settings.ostr << (settings.hilite ? hilite_none : "");
 
         for (auto it = elements.cbegin(); it != elements.cend(); ++it)

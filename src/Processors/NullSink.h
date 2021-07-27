@@ -6,19 +6,19 @@ namespace DB
 {
 
 /// Sink which closes input port and reads nothing.
-class NullSink : public ISink
+class NullSink : public IProcessor
 {
 public:
-    explicit NullSink(Block header) : ISink(std::move(header)) {}
+    explicit NullSink(Block header) : IProcessor({std::move(header)}, {}) {}
     String getName() const override { return "NullSink"; }
 
     Status prepare() override
     {
-        input.close();
+        inputs.front().close();
         return Status::Finished;
     }
-protected:
-    void consume(Chunk) override {}
+
+    InputPort & getPort() { return inputs.front(); }
 };
 
 /// Sink which reads everything and do nothing with it.
