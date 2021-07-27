@@ -479,6 +479,15 @@ void HedgedConnections::checkNewReplica()
     Connection * connection = nullptr;
     HedgedConnectionsFactory::State state = hedged_connections_factory.waitForReadyConnections(connection);
 
+    if (cancelled)
+    {
+        /// Do not start new connection if query is already canceled.
+        if (connection)
+            connection->disconnect();
+
+        state = HedgedConnectionsFactory::State::CANNOT_CHOOSE;
+    }
+
     processNewReplicaState(state, connection);
 
     /// Check if we don't need to listen hedged_connections_factory file descriptor in epoll anymore.
