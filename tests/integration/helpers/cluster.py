@@ -877,7 +877,7 @@ class ClickHouseCluster:
         if (with_mongo or with_mongo_secure) and not (self.with_mongo or self.with_mongo_secure):
             if with_mongo_secure:
                 cmds.append(self.setup_mongo_secure_cmd(instance, env_variables, docker_compose_yml_dir))
-            else
+            else:
                 cmds.append(self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if self.with_net_trics:

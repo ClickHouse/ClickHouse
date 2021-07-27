@@ -38,7 +38,7 @@ def test_simple_select(started_cluster):
         data.append({'key': i, 'data': hex(i * i)})
     simple_mongo_table.insert_many(data)
 
-    node = started_cluster.instance['node']
+    node = started_cluster.instances['node']
     node.query(
         "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')")
 
@@ -59,7 +59,7 @@ def test_complex_data_type(started_cluster):
         data.append({'key': i, 'data': hex(i * i), 'dict': {'a': i, 'b': str(i)}})
     incomplete_mongo_table.insert_many(data)
 
-    node = started_cluster.instance['node']
+    node = started_cluster.instances['node']
     node.query(
         "CREATE TABLE incomplete_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse')")
 
@@ -80,7 +80,7 @@ def test_incorrect_data_type(started_cluster):
         data.append({'key': i, 'data': hex(i * i), 'aaaa': 'Hello'})
     strange_mongo_table.insert_many(data)
 
-    node = started_cluster.instance['node']
+    node = started_cluster.instances['node']
     node.query(
         "CREATE TABLE strange_mongo_table(key String, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse')")
 
@@ -99,7 +99,7 @@ def test_incorrect_data_type(started_cluster):
 
 @pytest.mark.parametrize('started_cluster', [True], indirect=['started_cluster'])
 def test_secure_connection(started_cluster):
-    mongo_connection = get_mongo_connection(secure=True)
+    mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection['test']
     db.add_user('root', 'clickhouse')
     simple_mongo_table = db['simple_table']
@@ -108,7 +108,7 @@ def test_secure_connection(started_cluster):
         data.append({'key': i, 'data': hex(i * i)})
     simple_mongo_table.insert_many(data)
 
-    node = started_cluster.instance['node']
+    node = started_cluster.instances['node']
     node.query(
         "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse', 'ssl=true')")
 
