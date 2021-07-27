@@ -71,6 +71,9 @@ AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
 
 AsynchronousReadBufferFromFile::~AsynchronousReadBufferFromFile()
 {
+    /// Must wait for events in flight before closing the file.
+    finalize();
+
     if (fd < 0)
         return;
 
@@ -88,6 +91,14 @@ void AsynchronousReadBufferFromFile::close()
 
     fd = -1;
 }
+
+
+AsynchronousReadBufferFromFileWithCache::~AsynchronousReadBufferFromFileWithCache()
+{
+    /// Must wait for events in flight before potentially closing the file by destroying OpenedFilePtr.
+    finalize();
+}
+
 
 }
 

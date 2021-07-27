@@ -30,6 +30,8 @@ protected:
     /// Name or some description of file.
     std::string getFileName() const override;
 
+    void finalize();
+
 public:
     AsynchronousReadBufferFromFileDescriptor(
         AsynchronousReaderPtr reader_,

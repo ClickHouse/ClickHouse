@@ -62,13 +62,19 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 }
 
 
-AsynchronousReadBufferFromFileDescriptor::~AsynchronousReadBufferFromFileDescriptor()
+void AsynchronousReadBufferFromFileDescriptor::finalize()
 {
     if (prefetch_request_id)
     {
         reader->wait(*prefetch_request_id, {});
         prefetch_request_id.reset();
     }
+}
+
+
+AsynchronousReadBufferFromFileDescriptor::~AsynchronousReadBufferFromFileDescriptor()
+{
+    finalize();
 }
 
 
