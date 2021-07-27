@@ -27,6 +27,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Common/parseRemoteDescription.h>
 #include <Processors/Pipe.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -94,25 +95,27 @@ Pipe StoragePostgreSQL::read(
 }
 
 
-class PostgreSQLBlockOutputStream : public IBlockOutputStream
+class PostgreSQLSink : public SinkToStorage
 {
 public:
-    explicit PostgreSQLBlockOutputStream(
+    explicit PostgreSQLSink(
         const StorageMetadataPtr & metadata_snapshot_,
         postgres::ConnectionHolderPtr connection_holder_,
         const String & remote_table_name_,
         const String & remote_table_schema_)
-        : metadata_snapshot(metadata_snapshot_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , metadata_snapshot(metadata_snapshot_)
         , connection_holder(std::move(connection_holder_))
         , remote_table_name(remote_table_name_)
         , remote_table_schema(remote_table_schema_)
     {
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    String getName() const override { return "PostgreSQLSink"; }
 
-    void write(const Block & block) override
+    void consume(Chunk chunk) override
     {
+        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
         if (!inserter)
             inserter = std::make_unique<StreamTo>(connection_holder->get(),
                                                   remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
@@ -155,7 +158,7 @@ public:
         }
     }
 
-    void writeSuffix() override
+    void onFinish() override
     {
         if (inserter)
             inserter->complete();
@@ -295,10 +298,10 @@ private:
 };
 
 
-BlockOutputStreamPtr StoragePostgreSQL::write(
+SinkToStoragePtr StoragePostgreSQL::write(
         const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
 {
-    return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema);
+    return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema);
 }
 
 

@@ -20,7 +20,7 @@ class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRoc
 {
     friend struct shared_ptr_helper<StorageEmbeddedRocksDB>;
     friend class EmbeddedRocksDBSource;
-    friend class EmbeddedRocksDBBlockOutputStream;
+    friend class EmbeddedRocksDBSink;
     friend class EmbeddedRocksDBBlockInputStream;
 public:
     std::string getName() const override { return "EmbeddedRocksDB"; }
@@ -34,7 +34,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     bool supportsParallelInsert() const override { return true; }
