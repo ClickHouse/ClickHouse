@@ -194,6 +194,10 @@ continue
     jobs
     pstree -aspgT
 
+    server_exit_code=0
+    wait $server_pid || server_exit_code=$?
+    echo "Server exit code is $server_exit_code"
+
     # Make files with status and description we'll show for this check on Github.
     task_exit_code=$fuzzer_exit_code
     if [ "$server_died" == 1 ]

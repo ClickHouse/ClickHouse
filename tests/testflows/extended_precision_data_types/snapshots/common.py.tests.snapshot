@@ -1035,10 +1035,12 @@ a
 
 mapAdd_with_Int128_on_a_table = r"""
 a
+([1,2],[2,4])
 """
 
 mapSubtract_with_Int128_on_a_table = r"""
 a
+([1,2],[0,0])
 """
 
 mapPopulateSeries_with_Int128_on_a_table = r"""
@@ -1563,10 +1565,12 @@ a
 
 mapAdd_with_Int256_on_a_table = r"""
 a
+([1,2],[2,4])
 """
 
 mapSubtract_with_Int256_on_a_table = r"""
 a
+([1,2],[0,0])
 """
 
 mapPopulateSeries_with_Int256_on_a_table = r"""
@@ -2091,10 +2095,12 @@ a
 
 mapAdd_with_UInt128_on_a_table = r"""
 a
+([1,2],[2,4])
 """
 
 mapSubtract_with_UInt128_on_a_table = r"""
 a
+([1,2],[0,0])
 """
 
 mapPopulateSeries_with_UInt128_on_a_table = r"""
@@ -2619,10 +2625,12 @@ a
 
 mapAdd_with_UInt256_on_a_table = r"""
 a
+([1,2],[2,4])
 """
 
 mapSubtract_with_UInt256_on_a_table = r"""
 a
+([1,2],[0,0])
 """
 
 mapPopulateSeries_with_UInt256_on_a_table = r"""
@@ -6278,5 +6286,45 @@ a
 1
 1
 \N
+"""
+
+mapAdd_with_Int128 = r"""
+mapAdd(tuple(array(toInt128(\'1\'), toInt128(\'2\')), array(toInt128(\'1\'), toInt128(\'2\'))), tuple(array(toInt128(\'1\'), toInt128(\'2\')), array(toInt128(\'1\'), toInt128(\'2\'))))
+([1,2],[2,4])
+"""
+
+mapSubtract_with_Int128 = r"""
+mapSubtract(tuple(array(toInt128(\'1\'), toInt128(\'2\')), array(toInt128(\'1\'), toInt128(\'2\'))), tuple(array(toInt128(\'1\'), toInt128(\'2\')), array(toInt128(\'1\'), toInt128(\'2\'))))
+([1,2],[0,0])
+"""
+
+mapAdd_with_Int256 = r"""
+mapAdd(tuple(array(toInt256(\'1\'), toInt256(\'2\')), array(toInt256(\'1\'), toInt256(\'2\'))), tuple(array(toInt256(\'1\'), toInt256(\'2\')), array(toInt256(\'1\'), toInt256(\'2\'))))
+([1,2],[2,4])
+"""
+
+mapSubtract_with_Int256 = r"""
+mapSubtract(tuple(array(toInt256(\'1\'), toInt256(\'2\')), array(toInt256(\'1\'), toInt256(\'2\'))), tuple(array(toInt256(\'1\'), toInt256(\'2\')), array(toInt256(\'1\'), toInt256(\'2\'))))
+([1,2],[0,0])
+"""
+
+mapAdd_with_UInt128 = r"""
+mapAdd(tuple(array(toUInt128(\'1\'), toUInt128(\'2\')), array(toUInt128(\'1\'), toUInt128(\'2\'))), tuple(array(toUInt128(\'1\'), toUInt128(\'2\')), array(toUInt128(\'1\'), toUInt128(\'2\'))))
+([1,2],[2,4])
+"""
+
+mapSubtract_with_UInt128 = r"""
+mapSubtract(tuple(array(toUInt128(\'1\'), toUInt128(\'2\')), array(toUInt128(\'1\'), toUInt128(\'2\'))), tuple(array(toUInt128(\'1\'), toUInt128(\'2\')), array(toUInt128(\'1\'), toUInt128(\'2\'))))
+([1,2],[0,0])
+"""
+
+mapAdd_with_UInt256 = r"""
+mapAdd(tuple(array(toUInt256(\'1\'), toUInt256(\'2\')), array(toUInt256(\'1\'), toUInt256(\'2\'))), tuple(array(toUInt256(\'1\'), toUInt256(\'2\')), array(toUInt256(\'1\'), toUInt256(\'2\'))))
+([1,2],[2,4])
+"""
+
+mapSubtract_with_UInt256 = r"""
+mapSubtract(tuple(array(toUInt256(\'1\'), toUInt256(\'2\')), array(toUInt256(\'1\'), toUInt256(\'2\'))), tuple(array(toUInt256(\'1\'), toUInt256(\'2\')), array(toUInt256(\'1\'), toUInt256(\'2\'))))
+([1,2],[0,0])
 """
 
