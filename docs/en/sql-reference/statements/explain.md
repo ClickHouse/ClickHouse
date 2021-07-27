@@ -114,6 +114,7 @@ Settings:
 -   `header` — Prints output header for step. Default: 0.
 -   `description` — Prints step description. Default: 1.
 -   `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+-   `subquery_for_index` — Execute subquery to make set for index if `indexes ` setting is enabled. Default: 1.
 -   `actions` — Prints detailed information about step actions. Default: 0.
 -   `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
 
@@ -304,6 +305,76 @@ Example:
   }
 ]
 ```
+
+When `subquery_for_index` =1 , `indexes` =1 and `use_index_for_in_with_subqueries` is enabled, the subquery will be execute and make set for main query to analyze index.
+
+Example:
+
+
+```
+set use_index_for_in_with_subqueries=1;
+explain indexes=1 select distinct(w_warehouse_name) from warehouse where w_warehouse_sk in (select inv_warehouse_sk from inventory where inv_quantity_on_hand > 900);
+
+┌─explain───────────────────────────────────────────────────────────────────────────┐
+│ Expression (Projection)                                                           │
+│   Distinct                                                                        │
+│     Distinct (Preliminary DISTINCT)                                               │
+│       Expression (Before ORDER BY)                                                │
+│         Filter (WHERE)                                                            │
+│           SettingQuotaAndLimits (Set limits and quota after reading from storage) │
+│             ReadFromMergeTree                                                     │
+│             Indexes:                                                              │
+│               PrimaryKey                                                          │
+│                 Keys:                                                             │
+│                   w_warehouse_sk                                                  │
+│                 Condition: (w_warehouse_sk in 5-element set)                      │
+│                 Parts: 1/1                                                        │
+│                 Granules: 1/1                                                     │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+When `subquery_for_index` =0 , `indexes` =1 and `use_index_for_in_with_subqueries` is enabled, the subquery will be NOT execute and the result of analyzing index may shows unknown.
+
+Example:
+
+
+```
+set use_index_for_in_with_subqueries=1;
+explain indexes=1,subquery_for_index =0 select distinct(w_warehouse_name) from warehouse where w_warehouse_sk in (select inv_warehouse_sk from inventory where inv_quantity_on_hand > 900);
+
+┌─explain─────────────────────────────────────────────────────────────────────────────┐
+│ Expression (Projection)                                                             │
+│   Distinct                                                                          │
+│     CreatingSets (Create sets before main query execution)                          │
+│       Distinct (Preliminary DISTINCT)                                               │
+│         Expression (Before ORDER BY)                                                │
+│           Filter (WHERE)                                                            │
+│             SettingQuotaAndLimits (Set limits and quota after reading from storage) │
+│               ReadFromMergeTree                                                     │
+│               Indexes:                                                              │
+│                 PrimaryKey                                                          │
+│                   Keys:                                                             │
+│                     w_warehouse_sk                                                  │
+│                   Condition: (w_warehouse_sk in unknown size set)                   │
+│                   Parts: 1/1                                                        │
+│                   Granules: 1/1                                                     │
+│       CreatingSet (Create set for subquery)                                         │
+│         Expression ((Projection + Before ORDER BY))                                 │
+│           SettingQuotaAndLimits (Set limits and quota after reading from storage)   │
+│             ReadFromMergeTree                                                       │
+│             Indexes:                                                                │
+│               PrimaryKey                                                            │
+│                 Condition: true                                                     │
+│                 Parts: 2/2                                                          │
+│                 Granules: 137/137                                                   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+
+
+
 
 With `actions` = 1, added keys depend on step type.
 
