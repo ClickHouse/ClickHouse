@@ -94,9 +94,17 @@ try
     MarkRanges mark_ranges_for_task = { all_mark_ranges.back() };
     all_mark_ranges.pop_back();
 
-    auto size_predictor = (preferred_block_size_bytes == 0)
-        ? nullptr
-        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, metadata_snapshot->getSampleBlock());
+    std::unique_ptr<MergeTreeBlockSizePredictor> size_predictor;
+    if (preferred_block_size_bytes)
+    {
+        const auto & required_column_names = task_columns.columns.getNames();
+        const auto & required_pre_column_names = task_columns.pre_columns.getNames();
+        NameSet complete_column_names(required_column_names.begin(), required_column_names.end());
+        complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
+
+        size_predictor = std::make_unique<MergeTreeBlockSizePredictor>(
+            data_part, Names(complete_column_names.begin(), complete_column_names.end()), metadata_snapshot->getSampleBlock());
+    }
 
     task = std::make_unique<MergeTreeReadTask>(
         data_part, mark_ranges_for_task, part_index_in_query, ordered_names, column_name_set,

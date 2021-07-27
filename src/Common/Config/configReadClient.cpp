@@ -10,16 +10,10 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-/// Checks if file exists without throwing an exception but with message in console.
-bool safeFsExists(const auto & path)
+bool safeFsExists(const String & path)
 {
     std::error_code ec;
-    bool res = fs::exists(path, ec);
-    if (ec)
-    {
-        std::cerr << "Can't check '" << path << "': [" << ec.value() << "] "  << ec.message() << std::endl;
-    }
-    return res;
+    return fs::exists(path, ec);
 };
 
 bool configReadClient(Poco::Util::LayeredConfiguration & config, const std::string & home_path)
