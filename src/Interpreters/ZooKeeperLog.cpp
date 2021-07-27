@@ -24,8 +24,8 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
     auto type_enum = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
             {
-                {"Send",            static_cast<Int8>(SEND)},
-                {"Receive",         static_cast<Int8>(RECEIVE)},
+                {"Request",         static_cast<Int8>(REQUEST)},
+                {"Response",        static_cast<Int8>(RESPONSE)},
                 {"Finalize",        static_cast<Int8>(FINALIZE)},
             });
 
@@ -86,7 +86,6 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
     auto watch_type_enum = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
             {
-                {"NONE",                    0},
                 {"CREATED",                 static_cast<Int8>(Coordination::Event::CREATED)},
                 {"DELETED",                 static_cast<Int8>(Coordination::Event::DELETED)},
                 {"CHANGED",                 static_cast<Int8>(Coordination::Event::CHANGED)},
@@ -98,7 +97,6 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
     auto watch_state_enum = std::make_shared<DataTypeEnum16>(
         DataTypeEnum16::Values
             {
-                {"NONE",                0},
                 {"EXPIRED_SESSION",         static_cast<Int16>(Coordination::State::EXPIRED_SESSION)},
                 {"AUTH_FAILED",             static_cast<Int16>(Coordination::State::AUTH_FAILED)},
                 {"CONNECTING",              static_cast<Int16>(Coordination::State::CONNECTING)},
@@ -134,8 +132,8 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
         {"zxid", std::make_shared<DataTypeInt64>()},
         {"error", std::make_shared<DataTypeNullable>(error_enum)},
 
-        {"watch_type", watch_type_enum},
-        {"watch_state", watch_state_enum},
+        {"watch_type", std::make_shared<DataTypeNullable>(watch_type_enum)},
+        {"watch_state", std::make_shared<DataTypeNullable>(watch_state_enum)},
 
         {"path_created", std::make_shared<DataTypeString>()},
 
@@ -182,8 +180,8 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(zxid);
     columns[i++]->insert(error ? Field(*error) : Field());
 
-    columns[i++]->insert(watch_type);
-    columns[i++]->insert(watch_state);
+    columns[i++]->insert(watch_type ? Field(*watch_type) : Field());
+    columns[i++]->insert(watch_state ? Field(*watch_state) : Field());
 
     columns[i++]->insert(path_created);
 

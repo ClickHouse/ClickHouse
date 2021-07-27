@@ -14,8 +14,8 @@ struct ZooKeeperLogElement
     enum Type
     {
         UNKNOWN = 0,
-        SEND = 1,
-        RECEIVE = 2,
+        REQUEST = 1,
+        RESPONSE = 2,
         FINALIZE = 3
     };
 
@@ -38,7 +38,7 @@ struct ZooKeeperLogElement
     bool is_sequential = false;
 
     /// remove, check, set
-    std::optional<Int32> version = 0;
+    std::optional<Int32> version;
 
     /// multi
     UInt32 requests_size = 0;
@@ -49,8 +49,8 @@ struct ZooKeeperLogElement
     std::optional<Int32> error;
 
     /// watch
-    Int32 watch_type = 0;
-    Int32 watch_state = 0;
+    std::optional<Int32> watch_type;
+    std::optional<Int32> watch_state;
 
     /// create
     String path_created;
