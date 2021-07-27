@@ -1225,7 +1225,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
     if (request)
     {
         request->createLogElements(elems);
-        log_type = ZooKeeperLogElement::SEND;
+        log_type = ZooKeeperLogElement::REQUEST;
     }
     else
     {
@@ -1237,7 +1237,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
     if (response)
     {
         response->fillLogElements(elems, 0);
-        log_type = ZooKeeperLogElement::RECEIVE;
+        log_type = ZooKeeperLogElement::RESPONSE;
     }
 
     if (finalize)
