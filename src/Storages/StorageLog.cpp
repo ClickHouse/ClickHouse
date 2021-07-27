@@ -16,6 +16,7 @@
 
 #include <DataTypes/NestedUtils.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
@@ -27,7 +28,6 @@
 #include <Processors/Pipe.h>
 
 #include <cassert>
-#include <chrono>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -172,7 +172,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
     auto create_stream_getter = [&](bool stream_for_prefix)
     {
-        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer * //-V1047
+        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
         {
             if (cache.count(ISerialization::getSubcolumnNameForStream(path)))
                 return nullptr;
@@ -465,7 +465,6 @@ StorageLog::StorageLog(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     bool attach,
     size_t max_compress_block_size_)
     : IStorage(table_id_)
@@ -477,7 +476,6 @@ StorageLog::StorageLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -719,34 +717,6 @@ CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr contex
 }
 
 
-IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
-{
-    std::shared_lock lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
-    if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
-    ColumnSizeByName column_sizes;
-    FileChecker::Map file_sizes = file_checker.getFileSizes();
-
-    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
-    {
-        ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
-        {
-            String stream_name = ISerialization::getFileNameForStream(column, substream_path);
-            ColumnSize & size = column_sizes[column.name];
-            auto it = files.find(stream_name);
-            if (it != files.end())
-                size.data_compressed += file_sizes[fileName(it->second.data_file_path)];
-        };
-
-        ISerialization::SubstreamPath substream_path;
-        auto serialization = column.type->getDefaultSerialization();
-        serialization->enumerateStreams(stream_callback, substream_path);
-    }
-
-    return column_sizes;
-}
-
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
@@ -764,14 +734,8 @@ void registerStorageLog(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return StorageLog::create(
-            disk,
-            args.relative_data_path,
-            args.table_id,
-            args.columns,
-            args.constraints,
-            args.comment,
-            args.attach,
-            args.getContext()->getSettings().max_compress_block_size);
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
+            args.attach, args.getContext()->getSettings().max_compress_block_size);
     }, features);
 }
 

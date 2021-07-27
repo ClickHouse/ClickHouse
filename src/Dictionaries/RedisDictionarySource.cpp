@@ -14,7 +14,7 @@ void registerDictionarySourceRedis(DictionarySourceFactory & factory)
                                    Block & sample_block,
                                    ContextPtr /* context */,
                                    const std::string & /* default_database */,
-                                   bool /* created_from_ddl */) -> DictionarySourcePtr {
+                                   bool /* check_config */) -> DictionarySourcePtr {
         return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);
     };
     factory.registerSource("redis", create_table_source);
@@ -30,6 +30,7 @@ void registerDictionarySourceRedis(DictionarySourceFactory & factory)
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitors.h>
 
 #include "RedisBlockInputStream.h"
 

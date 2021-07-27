@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -7,7 +7,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/Context.h>
 #include <numeric>
 
 
@@ -32,10 +31,8 @@ class FunctionRange : public IFunction
 {
 public:
     static constexpr auto name = "range";
-
-    const size_t max_elements;
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionRange>(std::move(context_)); }
-    explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef().function_range_max_elements_in_block) {}
+    static constexpr size_t max_elements = 100'000'000;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRange>(); }
 
 private:
     String getName() const override { return name; }

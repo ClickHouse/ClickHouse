@@ -2,7 +2,7 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/RolesOrUsersSet.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/lexical_cast.hpp>
 #include <chrono>
@@ -45,7 +45,7 @@ struct Quota : public IAccessEntity
 
     struct ResourceTypeInfo
     {
-        const char * const raw_name = "";
+        const char * const raw_name;
         const String name;    /// Lowercased with underscores, e.g. "result_rows".
         const String keyword; /// Uppercased with spaces, e.g. "RESULT ROWS".
         const bool output_as_float = false;
@@ -219,7 +219,7 @@ inline const Quota::KeyTypeInfo & Quota::KeyTypeInfo::get(KeyType type)
         {
             for (const auto & token : tokens)
             {
-                for (auto kt : collections::range(KeyType::MAX))
+                for (auto kt : ext::range(KeyType::MAX))
                 {
                     if (KeyTypeInfo::get(kt).name == token)
                     {

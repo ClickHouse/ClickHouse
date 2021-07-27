@@ -1,7 +1,6 @@
 #pragma once
 
 #include <unordered_map>
-#include <common/logger_useful.h>
 #include "DiskDecorator.h"
 #include "DiskLocal.h"
 
@@ -38,7 +37,7 @@ public:
         const String & path,
         size_t buf_size,
         size_t estimated_size,
-        size_t direct_io_threshold,
+        size_t aio_threshold,
         size_t mmap_threshold,
         MMappedFileCache * mmap_cache) const override;
 
@@ -64,8 +63,6 @@ private:
     mutable std::unordered_map<String, std::weak_ptr<FileDownloadMetadata>> file_downloads;
     /// Protects concurrent downloading files to cache.
     mutable std::mutex mutex;
-
-    Poco::Logger * log = &Poco::Logger::get("DiskCache");
 };
 
 }
