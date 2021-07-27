@@ -29,6 +29,7 @@ public:
     bool execute() override;
 
 protected:
+    void prepareCommon();
     virtual bool prepare() = 0;
     bool executeImpl() ;
     virtual bool finalize() = 0;
