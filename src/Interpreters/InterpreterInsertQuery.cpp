@@ -8,6 +8,7 @@
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
+#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -271,7 +272,7 @@ BlockIO InterpreterInsertQuery::execute()
             /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
             ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
             if (table->noPushingToViews() && !no_destination)
-                out = table->write(query_ptr, metadata_snapshot, getContext());
+                out = std::make_shared<PushingToSinkBlockOutputStream>(table->write(query_ptr, metadata_snapshot, getContext()));
             else
                 out = std::make_shared<PushingToViewsBlockOutputStream>(table, metadata_snapshot, getContext(), query_ptr, no_destination);
 
