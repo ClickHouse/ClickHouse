@@ -9,7 +9,6 @@
 #include <Storages/StorageDictionary.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Documentation/SimpleDocumentationDictionary.h>
 
 namespace DB
 {
@@ -62,7 +61,7 @@ StoragePtr TableFunctionDictionary::executeImpl(
 
 void registerTableFunctionDictionary(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionDictionary>(TableFunctionFactory::CaseInsensitive, DictionaryDoc::doc);
+    factory.registerFunction<TableFunctionDictionary>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(DictionaryDoc::doc));
 }
 
 }

@@ -11,7 +11,6 @@
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypesNumber.h>
 #include "registerTableFunctions.h"
-#include <Documentation/SimpleDocumentationNumbers.h>
 
 
 namespace DB
@@ -53,8 +52,8 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_f
 
 void registerTableFunctionNumbers(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNumbers<true>>(TableFunctionFactory::CaseInsensitive, NumbersDoc::doc);
-    factory.registerFunction<TableFunctionNumbers<false>>(TableFunctionFactory::CaseInsensitive, NumbersDoc::doc);
+    factory.registerFunction<TableFunctionNumbers<true>>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(NumbersDoc::doc));
+    factory.registerFunction<TableFunctionNumbers<false>>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(NumbersDoc::doc));
 }
 
 template <bool multithreaded>

@@ -14,7 +14,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ClientInfo.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionS3.h>
 #include <TableFunctions/TableFunctionS3Cluster.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -22,7 +21,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Documentation/SimpleDocumentationS3Cluster.h>
 
 #include "registerTableFunctions.h"
 
@@ -149,7 +147,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
 
 void registerTableFunctionS3Cluster(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionS3Cluster>(TableFunctionFactory::CaseInsensitive, S3ClusterDoc::doc);
+    factory.registerFunction<TableFunctionS3Cluster>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(S3ClusterDoc::doc));
 }
 
 

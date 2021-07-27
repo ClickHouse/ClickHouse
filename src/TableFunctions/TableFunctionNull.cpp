@@ -9,8 +9,6 @@
 #include <TableFunctions/TableFunctionNull.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include "registerTableFunctions.h"
-#include <Documentation/SimpleDocumentationNull.h>
-
 
 namespace DB
 {
@@ -47,6 +45,6 @@ StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, Conte
 
 void registerTableFunctionNull(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNull>(TableFunctionFactory::CaseInsensitive, NullDoc::doc);
+    factory.registerFunction<TableFunctionNull>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(NullDoc::doc));
 }
 }

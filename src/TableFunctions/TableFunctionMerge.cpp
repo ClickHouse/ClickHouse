@@ -10,7 +10,6 @@
 #include <TableFunctions/TableFunctionMerge.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
-#include <Documentation/SimpleDocumentationMerge.h>
 
 namespace DB
 {
@@ -168,7 +167,7 @@ TableFunctionMerge::getMatchedTablesWithAccess(const String & database_name, con
 
 void registerTableFunctionMerge(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionMerge>(TableFunctionFactory::CaseInsensitive, MergeDoc::doc);
+    factory.registerFunction<TableFunctionMerge>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(MergeDoc::doc));
 }
 
 }

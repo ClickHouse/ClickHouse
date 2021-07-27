@@ -7,7 +7,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Documentation/SimpleDocumentationFile.h>
 
 namespace DB
 {
@@ -34,6 +33,6 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
 
 void registerTableFunctionFile(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFile>(TableFunctionFactory::CaseInsensitive, FileDoc::doc);
+    factory.registerFunction<TableFunctionFile>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(FileDoc::doc));
 }
 }

@@ -16,11 +16,12 @@ namespace DB
 class IDocumentation : public std::enable_shared_from_this<IDocumentation>
 {
 public:
-    explicit IDocumentation(const char * doc): documentation(doc) {}
+    explicit IDocumentation(const char * doc = "Not found"): documentation(doc) {}
 
-    const char* getDocumentation() const { return documentation; }
-private:
-    const char* documentation;
+    virtual std::string getDocumentation() const = 0;
+    virtual ~IDocumentation() = default;
+protected:
+    std::string documentation;
 };
 
 using IDocumentationPtr = std::unique_ptr<IDocumentation>;

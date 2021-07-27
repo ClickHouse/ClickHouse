@@ -11,7 +11,6 @@
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include "registerTableFunctions.h"
-#include <Documentation/SimpleDocumentationS3.h>
 
 
 namespace DB
@@ -114,7 +113,7 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 
 void registerTableFunctionS3(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionS3>(TableFunctionFactory::CaseInsensitive, S3Doc::doc);
+    factory.registerFunction<TableFunctionS3>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(S3Doc::doc));
 }
 
 void registerTableFunctionCOS(TableFunctionFactory & factory)

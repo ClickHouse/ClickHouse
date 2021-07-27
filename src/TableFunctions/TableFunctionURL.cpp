@@ -8,7 +8,6 @@
 #include <Storages/StorageURL.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/StorageExternalDistributed.h>
-#include <Documentation/SimpleDocumentationUrl.h>
 
 
 namespace DB
@@ -48,6 +47,6 @@ StoragePtr TableFunctionURL::getStorage(
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionURL>(TableFunctionFactory::CaseInsensitive, UrlDoc::doc);
+    factory.registerFunction<TableFunctionURL>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(UrlDoc::doc));
 }
 }

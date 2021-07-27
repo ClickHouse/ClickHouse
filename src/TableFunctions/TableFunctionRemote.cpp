@@ -16,7 +16,6 @@
 #include <Core/Defines.h>
 #include <common/range.h>
 #include "registerTableFunctions.h"
-#include <Documentation/SimpleDocumentationRemote.h>
 
 
 namespace DB
@@ -273,10 +272,10 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
 
 void registerTableFunctionRemote(TableFunctionFactory & factory)
 {
-    factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); }, TableFunctionFactory::CaseInsensitive, RemoteDoc::doc);
-    factory.registerFunction("remoteSecure", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, TableFunctionFactory::CaseInsensitive, RemoteDoc::doc);
-    factory.registerFunction("cluster", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, TableFunctionFactory::CaseInsensitive, RemoteDoc::doc);
-    factory.registerFunction("clusterAllReplicas", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, TableFunctionFactory::CaseInsensitive, RemoteDoc::doc);
+    factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); }, TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(RemoteDoc::doc));
+    factory.registerFunction("remoteSecure", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(RemoteDoc::doc));
+    factory.registerFunction("cluster", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(RemoteDoc::doc));
+    factory.registerFunction("clusterAllReplicas", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(RemoteDoc::doc));
 }
 
 }

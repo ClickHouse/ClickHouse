@@ -6,8 +6,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionView.h>
 #include "registerTableFunctions.h"
-#include <Documentation/SimpleDocumentationView.h>
-
 
 namespace DB
 {
@@ -50,7 +48,7 @@ StoragePtr TableFunctionView::executeImpl(
 
 void registerTableFunctionView(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionView>(TableFunctionFactory::CaseInsensitive, ViewDoc::doc);
+    factory.registerFunction<TableFunctionView>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(ViewDoc::doc));
 }
 
 }
