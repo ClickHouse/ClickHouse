@@ -8,6 +8,7 @@
 namespace rocksdb
 {
     class DB;
+    class Statistics;
 }
 
 
@@ -16,7 +17,7 @@ namespace DB
 
 class Context;
 
-class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage
+class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage, WithContext
 {
     friend struct shared_ptr_helper<StorageEmbeddedRocksDB>;
     friend class EmbeddedRocksDBSource;
@@ -47,6 +48,8 @@ public:
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {rocksdb_dir}; }
+
+    std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
 
 protected:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
