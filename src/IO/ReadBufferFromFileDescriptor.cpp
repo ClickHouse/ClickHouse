@@ -109,6 +109,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
 void ReadBufferFromFileDescriptor::prefetch()
 {
+#if defined(POSIX_FADV_WILLNEED)
     /// For direct IO, loading data into page cache is pointless.
     if (required_alignment)
         return;
@@ -116,6 +117,7 @@ void ReadBufferFromFileDescriptor::prefetch()
     /// Ask OS to prefetch data into page cache.
     if (0 != posix_fadvise(fd, file_offset_of_buffer_end, internal_buffer.size(), POSIX_FADV_WILLNEED))
         throwFromErrno("Cannot posix_fadvise", ErrorCodes::CANNOT_ADVISE);
+#endif
 }
 
 
