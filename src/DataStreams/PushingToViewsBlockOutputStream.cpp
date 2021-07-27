@@ -134,15 +134,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     {
         auto sink = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), getContext());
 
-        if (!blocksHaveEqualStructure(sink->getPort().getHeader(), metadata_snapshot->getSampleBlock()))
-        {
-            std::string expected_descr;
-            std::string actual_descr;
-            getBlocksDifference(sink->getPort().getHeader(), metadata_snapshot->getSampleBlock(), actual_descr, expected_descr);
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                            "Unexpected schema of inserted columns for {}. Expected: {}. Actual: {}",
-                            storage->getName(), actual_descr, expected_descr);
-        }
+        metadata_snapshot->check(sink->getPort().getHeader().getColumnsWithTypeAndName());
 
         replicated_output = dynamic_cast<ReplicatedMergeTreeSink *>(sink.get());
         output = std::make_shared<PushingToSinkBlockOutputStream>(std::move(sink));
