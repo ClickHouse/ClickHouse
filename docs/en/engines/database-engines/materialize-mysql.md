@@ -5,6 +5,8 @@ toc_title: MaterializeMySQL
 
 # MaterializeMySQL {#materialize-mysql}
 
+**This is experimental feature that should not be used in production.**
+
 Creates ClickHouse database with all the tables existing in MySQL, and all the data in those tables.
 
 ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries.
@@ -24,6 +26,21 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 -   `database` — MySQL database name.
 -   `user` — MySQL user.
 -   `password` — User password.
+
+**Engine Settings**
+-   `max_rows_in_buffer` — Max rows that data is allowed to cache in memory(for single table and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `65505`.
+-   `max_bytes_in_buffer` —  Max bytes that data is allowed to cache in memory(for single table and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `1048576`.
+-   `max_rows_in_buffers` — Max rows that data is allowed to cache in memory(for database and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `65505`.
+-   `max_bytes_in_buffers` — Max bytes that data is allowed to cache in memory(for database and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `1048576`.
+-   `max_flush_data_time` — Max milliseconds that data is allowed to cache in memory(for database and the cache data unable to query). when this time is exceeded, the data will be materialized. Default: `1000`.
+-   `max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disable retry. Default: `1000`.
+-   `allows_query_when_mysql_lost` — Allow query materialized table when mysql is lost. Default: `0` (`false`).
+```
+CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', '***') 
+     SETTINGS 
+        allows_query_when_mysql_lost=true,
+        max_wait_time_when_mysql_unavailable=10000;
+```
 
 ## Virtual columns {#virtual-columns}
 
@@ -81,6 +98,8 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 - If `_version` is not specified in the `SELECT` query, [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used. So only rows with `MAX(_version)` are selected.
 
 - If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not included into the result set.
+
+- The result includes columns comments in case they exist in MySQL database tables.
 
 ### Index Conversion {#index-conversion}
 
