@@ -153,11 +153,20 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         storage.cloneReplicaIfNeeded(zookeeper);
 
-        storage.queue.load(zookeeper);
+        try
+        {
+            storage.queue.load(zookeeper);
 
-        /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
-        /// because cleanup_thread doesn't delete log_pointer of active replicas.
-        storage.queue.pullLogsToQueue(zookeeper);
+            /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
+            /// because cleanup_thread doesn't delete log_pointer of active replicas.
+            storage.queue.pullLogsToQueue(zookeeper);
+        }
+        catch (...)
+        {
+            storage.last_queue_update_exception.set(std::make_unique<String>(getCurrentExceptionMessage(false)));
+            throw;
+        }
+
         storage.queue.removeCurrentPartsFromMutations();
         storage.last_queue_update_finish_time.store(time(nullptr));
 
