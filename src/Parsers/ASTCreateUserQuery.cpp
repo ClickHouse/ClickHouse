@@ -213,7 +213,11 @@ namespace
 
     void formatDefaultDatabase(const String & default_database, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT DATABASE " << (settings.hilite ? IAST::hilite_none : "") << default_database;
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT DATABASE " << (settings.hilite ? IAST::hilite_none : "");
+        if (default_database.empty())
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
+        else
+            settings.ostr << backQuoteIfNeed(default_database);
     }
 }
 
@@ -267,8 +271,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (remove_hosts)
         formatHosts("DROP", *remove_hosts, format);
 
-    if (!default_database.empty())
-        formatDefaultDatabase(default_database, format);
+    if (default_database)
+        formatDefaultDatabase(*default_database, format);
 
     if (default_roles)
         formatDefaultRoles(*default_roles, format);

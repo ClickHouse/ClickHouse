@@ -301,14 +301,24 @@ namespace
         });
     }
 
-    bool parseDefaultDatabase(IParserBase::Pos & pos, Expected & expected, String & default_database)
+    bool parseDefaultDatabase(IParserBase::Pos & pos, Expected & expected, std::optional<String> & default_database)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{"DEFAULT DATABASE"}.ignore(pos, expected))
                 return false;
 
-            return parseIdentifierOrStringLiteral(pos, expected, default_database);
+            if (ParserKeyword{"NONE"}.ignore(pos, expected))
+            {
+                default_database = "";
+                return true;
+            }
+
+            String db_name;
+            if (!parseIdentifierOrStringLiteral(pos, expected, db_name))
+                return false;
+            default_database = db_name;
+            return true;
         });
     }
 }
@@ -360,8 +370,8 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
+    std::optional<String> default_database;
     String cluster;
-    String default_database;
 
     while (true)
     {
@@ -402,7 +412,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!grantees && parseGrantees(pos, expected, attach_mode, grantees))
             continue;
 
-        if (default_database.empty() && parseDefaultDatabase(pos, expected, default_database))
+        if (!default_database && parseDefaultDatabase(pos, expected, default_database))
             continue;
 
         if (alter)

@@ -53,7 +53,7 @@ public:
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
 
-    String default_database;
+    std::optional<String> default_database;
 
     String getID(char) const override;
     ASTPtr clone() const override;
