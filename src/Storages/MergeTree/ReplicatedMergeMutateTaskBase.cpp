@@ -2,6 +2,7 @@
 
 
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 
 
 namespace DB
@@ -79,7 +80,35 @@ bool ReplicatedMergeMutateTaskBase::execute()
     if (saved_exception)
     {
         std::lock_guard lock(storage.queue.state_mutex);
-        selected_entry->log_entry->exception = saved_exception;
+
+        auto & log_entry = selected_entry->log_entry;
+
+        log_entry->exception = saved_exception;
+
+        if (log_entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
+        {
+            /// Record the exception in the system.mutations table.
+            Int64 result_data_version = MergeTreePartInfo::fromPartName(log_entry->new_part_name, storage.queue.format_version)
+                .getDataVersion();
+            auto source_part_info = MergeTreePartInfo::fromPartName(
+                log_entry->source_parts.at(0), storage.queue.format_version);
+
+            auto in_partition = storage.queue.mutations_by_partition.find(source_part_info.partition_id);
+            if (in_partition != storage.queue.mutations_by_partition.end())
+            {
+                auto mutations_begin_it = in_partition->second.upper_bound(source_part_info.getDataVersion());
+                auto mutations_end_it = in_partition->second.upper_bound(result_data_version);
+                for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
+                {
+                    ReplicatedMergeTreeQueue::MutationStatus & status = *it->second;
+                    status.latest_failed_part = log_entry->source_parts.at(0);
+                    status.latest_failed_part_info = source_part_info;
+                    status.latest_fail_time = time(nullptr);
+                    status.latest_fail_reason = getExceptionMessage(saved_exception, false);
+                }
+            }
+        }
+
     }
 
 

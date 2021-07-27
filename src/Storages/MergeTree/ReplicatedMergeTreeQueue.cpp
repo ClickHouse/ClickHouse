@@ -1376,6 +1376,7 @@ bool ReplicatedMergeTreeQueue::processEntry(
 
         entry->exception = saved_exception;
 
+        /// TODO: Delete from here
         if (entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
         {
             /// Record the exception in the system.mutations table.
