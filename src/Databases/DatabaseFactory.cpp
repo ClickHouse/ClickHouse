@@ -317,7 +317,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
 
-        return std::make_shared<DatabaseSQLite>(context, engine_define, database_path);
+        return std::make_shared<DatabaseSQLite>(context, engine_define, create.attach, database_path);
     }
 #endif
 

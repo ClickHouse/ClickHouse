@@ -274,8 +274,8 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     return proc, stdout, stderr, total_time
 
 
-def need_retry(stderr):
-    return any(msg in stderr for msg in MESSAGES_TO_RETRY)
+def need_retry(stdout, stderr):
+    return any(msg in stdout for msg in MESSAGES_TO_RETRY) or any(msg in stderr for msg in MESSAGES_TO_RETRY)
 
 
 def get_processlist(args):
@@ -494,7 +494,7 @@ def run_tests_array(all_tests_with_params):
                         status += 'Database: ' + testcase_args.testcase_database
                     else:
                         counter = 1
-                        while need_retry(stderr):
+                        while need_retry(stdout, stderr):
                             restarted_tests.append((case_file, stderr))
                             testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
                             proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
@@ -938,8 +938,8 @@ def main(args):
         create_database_retries = 0
         while create_database_retries < MAX_RETRIES:
             clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-            (_, stderr) = clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + db_name + get_db_engine(args, db_name)))
-            if not need_retry(stderr):
+            (stdout, stderr) = clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + db_name + get_db_engine(args, db_name)))
+            if not need_retry(stdout, stderr):
                 break
             create_database_retries += 1
 

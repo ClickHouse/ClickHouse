@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
 #include <Interpreters/Context.h>
 
 
@@ -8,7 +8,7 @@ namespace DB
 {
 
 
-MergeTreeThreadSelectBlockInputProcessor::MergeTreeThreadSelectBlockInputProcessor(
+MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     const size_t thread_,
     const MergeTreeReadPoolPtr & pool_,
     const size_t min_marks_to_read_,
@@ -46,7 +46,7 @@ MergeTreeThreadSelectBlockInputProcessor::MergeTreeThreadSelectBlockInputProcess
 }
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
-bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
+bool MergeTreeThreadSelectProcessor::getNewTask()
 {
     task = pool->getTask(min_marks_to_read, thread, ordered_names);
 
@@ -107,6 +107,6 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
 }
 
 
-MergeTreeThreadSelectBlockInputProcessor::~MergeTreeThreadSelectBlockInputProcessor() = default;
+MergeTreeThreadSelectProcessor::~MergeTreeThreadSelectProcessor() = default;
 
 }
