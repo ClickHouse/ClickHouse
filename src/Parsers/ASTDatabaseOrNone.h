@@ -1,0 +1,16 @@
+//
+// Created by max_w on 2021/7/27.
+//
+
+#ifndef CLICKHOUSE_ASTDATABASEORNONE_H
+#define CLICKHOUSE_ASTDATABASEORNONE_H
+
+
+
+class ASTDatabaseOrNone {
+
+};
+
+
+
+#endif //CLICKHOUSE_ASTDATABASEORNONE_H

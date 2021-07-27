@@ -1,0 +1,16 @@
+//
+// Created by max_w on 2021/7/27.
+//
+
+#ifndef CLICKHOUSE_PARSERDATABASEORNONE_H
+#define CLICKHOUSE_PARSERDATABASEORNONE_H
+
+
+
+class ParserDatabaseOrNone {
+
+};
+
+
+
+#endif //CLICKHOUSE_PARSERDATABASEORNONE_H
