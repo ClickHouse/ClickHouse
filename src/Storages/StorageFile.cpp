@@ -17,6 +17,7 @@
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <Common/escapeForFileName.h>
@@ -525,10 +526,10 @@ Pipe StorageFile::read(
 }
 
 
-class StorageFileBlockOutputStream : public IBlockOutputStream
+class StorageFileSink final : public SinkToStorage
 {
 public:
-    explicit StorageFileBlockOutputStream(
+    explicit StorageFileSink(
         StorageFile & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         std::unique_lock<std::shared_timed_mutex> && lock_,
@@ -536,7 +537,8 @@ public:
         ContextPtr context,
         const std::optional<FormatSettings> & format_settings,
         int & flags)
-        : storage(storage_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
     {
@@ -567,29 +569,29 @@ public:
             {}, format_settings);
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    String getName() const override { return "StorageFileSink"; }
 
-    void write(const Block & block) override
-    {
-        writer->write(block);
-    }
-
-    void writePrefix() override
+    void onStart() override
     {
         if (!prefix_written)
             writer->writePrefix();
         prefix_written = true;
     }
 
-    void writeSuffix() override
+    void consume(Chunk chunk) override
+    {
+        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+    }
+
+    void onFinish() override
     {
         writer->writeSuffix();
     }
 
-    void flush() override
-    {
-        writer->flush();
-    }
+    // void flush() override
+    // {
+    //     writer->flush();
+    // }
 
 private:
     StorageFile & storage;
@@ -600,7 +602,7 @@ private:
     bool prefix_written{false};
 };
 
-BlockOutputStreamPtr StorageFile::write(
+SinkToStoragePtr StorageFile::write(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context)
@@ -620,7 +622,7 @@ BlockOutputStreamPtr StorageFile::write(
         fs::create_directories(fs::path(path).parent_path());
     }
 
-    return std::make_shared<StorageFileBlockOutputStream>(
+    return std::make_shared<StorageFileSink>(
         *this,
         metadata_snapshot,
         std::unique_lock{rwlock, getLockTimeout(context)},
