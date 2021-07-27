@@ -2,6 +2,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/PushingToSinkBlockOutputStream.h>
+#include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/NestedUtils.h>
@@ -10,18 +11,18 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/LiveView/StorageLiveView.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
-#include <Storages/StorageValues.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageValues.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
-#include <common/scope_guard.h>
 #include <Common/setThreadName.h>
 #include <common/logger_useful.h>
+#include <common/scope_guard.h>
 
 #include <atomic>
 #include <chrono>
