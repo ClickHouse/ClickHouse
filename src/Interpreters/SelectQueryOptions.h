@@ -27,6 +27,8 @@ struct SelectQueryOptions
 {
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
+    bool only_explain = false;
+    bool subquery_for_index = false;
     bool only_analyze = false;
     bool modify_inplace = false;
     bool remove_duplicates = false;
@@ -64,6 +66,19 @@ struct SelectQueryOptions
         only_analyze = dry_run;
         return *this;
     }
+
+    SelectQueryOptions & explain(bool just_explain = true)
+    {
+        only_explain = just_explain;
+        return *this;
+    }
+
+    SelectQueryOptions & subqueryForIndex(bool force_index = true)
+    {
+        subquery_for_index = force_index;
+        return *this;
+    }
+
 
     SelectQueryOptions & modify(bool value = true)
     {

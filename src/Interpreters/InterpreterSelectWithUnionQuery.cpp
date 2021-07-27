@@ -29,8 +29,8 @@ namespace ErrorCodes
 }
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
-    const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names, bool is_explain_)
-    : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_, is_explain_)
+    const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
+    : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
 
@@ -207,9 +207,9 @@ std::unique_ptr<IInterpreterUnionOrSelectQuery>
 InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names, is_explain);
+        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
     else
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names, is_explain);
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
 }
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;

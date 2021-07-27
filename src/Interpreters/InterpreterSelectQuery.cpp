@@ -157,9 +157,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     ContextPtr context_,
     const SelectQueryOptions & options_,
-    const Names & required_result_column_names_,
-    bool is_explain_)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, nullptr, options_, required_result_column_names_, nullptr, is_explain_)
+    const Names & required_result_column_names_)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, nullptr, options_, required_result_column_names_)
 {
 }
 
@@ -167,18 +166,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     ContextPtr context_,
     const BlockInputStreamPtr & input_,
-    const SelectQueryOptions & options_,
-    bool is_explain_)
-    : InterpreterSelectQuery(query_ptr_, context_, input_, std::nullopt, nullptr, options_.copy().noSubquery(), {}, nullptr, is_explain_)
+    const SelectQueryOptions & options_)
+    : InterpreterSelectQuery(query_ptr_, context_, input_, std::nullopt, nullptr, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
         Pipe input_pipe_,
-        const SelectQueryOptions & options_,
-        bool is_explain_)
-        : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::move(input_pipe_), nullptr, options_.copy().noSubquery(), {}, nullptr, is_explain_)
+        const SelectQueryOptions & options_)
+        : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::move(input_pipe_), nullptr, options_.copy().noSubquery())
 {}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -186,9 +183,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     ContextPtr context_,
     const StoragePtr & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const SelectQueryOptions & options_,
-    bool is_explain_)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_, is_explain_)
+    const SelectQueryOptions & options_)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, std::nullopt, storage_, options_.copy().noSubquery(), {}, metadata_snapshot_)
 {}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
@@ -277,10 +273,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const StoragePtr & storage_,
     const SelectQueryOptions & options_,
     const Names & required_result_column_names,
-    const StorageMetadataPtr & metadata_snapshot_,
-    bool is_explain_)
+    const StorageMetadataPtr & metadata_snapshot_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
-    : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_, is_explain_)
+    : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
     , storage(storage_)
     , input(input_)
     , input_pipe(std::move(input_pipe_))
@@ -644,7 +639,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         && options.to_stage > QueryProcessingStage::WithMergeableState;
 
     analysis_result = ExpressionAnalysisResult(
-        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, source_header, is_explain);
+        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, filter_info, source_header);
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {

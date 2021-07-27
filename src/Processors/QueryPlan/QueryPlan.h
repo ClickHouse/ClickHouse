@@ -74,6 +74,8 @@ public:
         bool actions = false;
         /// Add information about indexes actions.
         bool indexes = false;
+        /// force explain index even subquery will execute
+        bool subquery_for_index = true;
     };
 
     struct ExplainPipelineOptions

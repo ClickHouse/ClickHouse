@@ -850,7 +850,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             size_t total_marks_count = part->index_granularity.getMarksCountWithoutFinal();
 
-            if (metadata_snapshot->hasPrimaryKey())
+            if (metadata_snapshot->hasPrimaryKey() && !key_condition->hasImplicitIn())
                 ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
             else if (total_marks_count)
                 ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};

@@ -927,14 +927,20 @@ bool KeyCondition::tryPrepareSetIndex(
 
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
-        return false;
+    {
+        if(right_arg->as<ASTSubquery>() && context->getSettings().use_index_for_in_with_subqueries)
+            implicit_in = true;
+        else
+            return false;
+    }
+    if (!implicit_in)
+        {
+        prepared_set->checkColumnsNumber(left_args_count);
+        for (size_t i = 0; i < indexes_mapping.size(); ++i)
+            prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
 
-    prepared_set->checkColumnsNumber(left_args_count);
-    for (size_t i = 0; i < indexes_mapping.size(); ++i)
-        prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
-
-    out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
-
+        out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
+    }
     return true;
 }
 

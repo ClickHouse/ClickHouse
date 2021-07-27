@@ -134,6 +134,7 @@ struct QueryPlanSettings
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
             {"indexes", query_plan_options.indexes},
+            {"subquery_for_index", query_plan_options.subquery_for_index},
             {"optimize", optimize},
             {"json", json}
     };
@@ -256,7 +257,10 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
         QueryPlan plan;
 
-        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions(), {}, true);
+        auto options = SelectQueryOptions().explain();
+        if (settings.query_plan_options.indexes && settings.query_plan_options.subquery_for_index)
+            options.subqueryForIndex();
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
         interpreter.buildQueryPlan(plan);
 
         if (settings.optimize)
@@ -291,7 +295,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
         QueryPlan plan;
 
-        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions(), {}, true);
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions().explain());
         interpreter.buildQueryPlan(plan);
         auto pipeline = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(getContext()),

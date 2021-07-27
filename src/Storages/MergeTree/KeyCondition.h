@@ -327,6 +327,8 @@ public:
 
     bool matchesExactContinuousRange() const;
 
+    bool hasImplicitIn() { return implicit_in; }
+
 private:
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
@@ -467,6 +469,7 @@ private:
     bool single_point;
     // If true, do not use always_monotonic information to transform constants
     bool strict;
+    bool implicit_in = false;
 };
 
 }
