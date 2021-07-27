@@ -327,7 +327,7 @@ public:
 
     bool matchesExactContinuousRange() const;
 
-    bool hasImplicitIn() { return implicit_in; }
+    bool hasImplicitIn() const { return implicit_in; }
 
 private:
     /// The expression is stored as Reverse Polish Notation.
