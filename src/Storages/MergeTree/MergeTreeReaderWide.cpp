@@ -206,10 +206,7 @@ static ReadBuffer * getStream(
     MergeTreeReaderStream & stream = *it->second;
 
     if (stream_for_prefix)
-    {
         stream.seekToStart();
-        continue_reading = false;
-    }
     else if (!continue_reading)
         stream.seekToMark(from_mark);
 
