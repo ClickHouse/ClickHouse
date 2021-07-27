@@ -36,8 +36,12 @@ public:
         const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
 
         if (!data_type || data_type->getFunctionName() != nested_func->getName())
-            throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                            argument->getName(), getName());
+
+        if (data_type->getParameters() != getParameters())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}: "
+                            "parameters mismatch", argument->getName(), getName());
     }
 
     String getName() const override
