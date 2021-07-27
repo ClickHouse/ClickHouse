@@ -154,6 +154,44 @@
         SELECT
             {function}(value_1),
             {function}(value_2),
+            {function}(value_3)
+        FROM {table}
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(value_1),
+            {function}(value_2),
+            sum(toUInt256(value_3)),
+            {function}(value_3)
+        FROM {table}
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}If(value_1, predicate),
+            {function}If(value_2, predicate),
+            {function}If(value_3, predicate)
+        FROM {table}
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}If(value_1, predicate),
+            {function}If(value_2, predicate),
+            sumIf(toUInt256(value_3), predicate),
+            {function}If(value_3, predicate)
+        FROM {table}
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(value_1),
+            {function}(value_2),
             {function}(value_3),
             {function}(value_4),
             {function}(value_5)
@@ -200,6 +238,51 @@
         FORMAT Null
     </query>
 
+    <query>
+        SELECT
+            {function}(value_1),
+            {function}(value_2),
+            {function}(value_3),
+            {function}(value_4),
+            {function}(value_5)
+        FROM {table}
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(value_1),
+            {function}(value_2),
+            sum(toUInt256(value_3)),
+            {function}(value_3),
+            {function}(value_4),
+            {function}(value_5)
+        FROM {table}
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}If(value_1, predicate),
+            {function}If(value_2, predicate),
+            {function}If(value_3, predicate),
+            {function}If(value_4, predicate),
+            {function}If(value_5, predicate)
+        FROM {table}
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}If(value_1, predicate),
+            {function}If(value_2, predicate),
+            sumIf(toUInt256(value_3), predicate),
+            {function}If(value_3, predicate),
+            {function}If(value_4, predicate),
+            {function}If(value_5, predicate)
+        FROM {table}
+        FORMAT Null
+    </query>
 
     <query>
         SELECT
@@ -244,6 +327,48 @@
             {function}(SearchEngineID)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(WatchID),
+            {function}(CounterID),
+            {function}(ClientIP)
+        FROM hits_100m_single
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(WatchID),
+            {function}(CounterID),
+            sum(toUInt256(ClientIP)),
+            {function}(ClientIP)
+        FROM hits_100m_single
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(WatchID),
+            {function}(CounterID),
+            {function}(ClientIP),
+            {function}(IPNetworkID),
+            {function}(SearchEngineID)
+        FROM hits_100m_single
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT
+            {function}(WatchID),
+            {function}(CounterID),
+            sum(toUInt256(ClientIP)),
+            {function}(ClientIP),
+            {function}(IPNetworkID),
+            {function}(SearchEngineID)
+        FROM hits_100m_single
         FORMAT Null
     </query>
 
@@ -294,6 +419,52 @@
             {function}If(SearchEngineID, predicate)
         FROM hits_100m_single
         GROUP BY intHash32(UserID) % {group_scale}
+        FORMAT Null
+    </query>
+
+    <query>
+        WITH (WatchID % 2 == 0) AS predicate
+        SELECT
+            {function}If(WatchID, predicate),
+            {function}If(CounterID, predicate),
+            {function}If(ClientIP, predicate)
+        FROM hits_100m_single
+        FORMAT Null
+    </query>
+
+    <query>
+        WITH (WatchID % 2 == 0) AS predicate
+        SELECT
+            {function}If(WatchID, predicate),
+            {function}If(CounterID, predicate),
+            sumIf(toUInt256(ClientIP), predicate),
+            {function}If(ClientIP, predicate)
+        FROM hits_100m_single
+        FORMAT Null
+    </query>
+
+    <query>
+        WITH (WatchID % 2 == 0) AS predicate
+        SELECT
+            {function}If(WatchID, predicate),
+            {function}If(CounterID, predicate),
+            {function}If(ClientIP, predicate),
+            {function}If(IPNetworkID, predicate),
+            {function}If(SearchEngineID, predicate)
+        FROM hits_100m_single
+        FORMAT Null
+    </query>
+
+    <query>
+        WITH (WatchID % 2 == 0) AS predicate
+        SELECT
+            {function}If(WatchID, predicate),
+            {function}If(CounterID, predicate),
+            sumIf(toUInt256(ClientIP), predicate),
+            {function}If(ClientIP, predicate),
+            {function}If(IPNetworkID, predicate),
+            {function}If(SearchEngineID, predicate)
+        FROM hits_100m_single
         FORMAT Null
     </query>
 
