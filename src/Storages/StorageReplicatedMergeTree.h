@@ -174,6 +174,7 @@ public:
         UInt64 absolute_delay;
         UInt8 total_replicas;
         UInt8 active_replicas;
+        String last_queue_update_exception;
         /// If the error has happened fetching the info from ZooKeeper, this field will be set.
         String zookeeper_exception;
     };
@@ -329,6 +330,7 @@ private:
     ReplicatedMergeTreeQueue queue;
     std::atomic<time_t> last_queue_update_start_time{0};
     std::atomic<time_t> last_queue_update_finish_time{0};
+    MultiVersion<String> last_queue_update_exception;
 
     DataPartsExchange::Fetcher fetcher;
 

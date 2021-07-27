@@ -3087,21 +3087,24 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
     }
-    catch (const Coordination::Exception & e)
-    {
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
-        if (e.code == Coordination::Error::ZSESSIONEXPIRED)
-        {
-            restarting_thread.wakeup();
-            return;
-        }
-
-        queue_updating_task->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
-    }
     catch (...)
     {
+        last_queue_update_exception.set(std::make_unique<String>(getCurrentExceptionMessage(false)));
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+        try
+        {
+            throw;
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (e.code == Coordination::Error::ZSESSIONEXPIRED)
+            {
+                restarting_thread.wakeup();
+                return;
+            }
+        }
+
         queue_updating_task->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
     }
 }
@@ -5561,6 +5564,10 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     res.log_pointer = 0;
     res.total_replicas = 0;
     res.active_replicas = 0;
+
+    MultiVersion<String>::Version queue_exception = last_queue_update_exception.get();
+    if (queue_exception)
+        res.last_queue_update_exception = *queue_exception;
 
     if (with_zk_fields && !res.is_session_expired)
     {
