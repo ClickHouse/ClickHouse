@@ -25,8 +25,9 @@ public:
         const String & name_,
         DiskPtr wrapped_disk_,
         const String & path_on_wrapped_disk_,
-        FileEncryption::Algorithm encryption_algorithm_,
-        const String & key_);
+        const std::unordered_map<UInt64, String> & keys_,
+        UInt64 current_key_id_,
+        FileEncryption::Algorithm current_algorithm_);
 
     const String & getName() const override { return name; }
     const String & getPath() const override { return disk_absolute_path; }
@@ -224,11 +225,14 @@ private:
         return disk_path + path;
     }
 
+    String getKey(UInt64 key_id) const;
+
     String name;
     String disk_path;
     String disk_absolute_path;
-    FileEncryption::Algorithm encryption_algorithm;
-    String key;
+    std::unordered_map<UInt64, String> keys;
+    UInt64 current_key_id;
+    FileEncryption::Algorithm current_algorithm;
 };
 
 }
