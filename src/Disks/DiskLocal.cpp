@@ -211,9 +211,9 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 
 std::unique_ptr<ReadBufferFromFileBase>
 DiskLocal::readFile(
-    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
+    const String & path, size_t buf_size, size_t estimated_size, size_t direct_io_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache, buf_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -309,7 +309,7 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         fs::copy(from, to, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
     }
     else
-        IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
+        copyThroughBuffers(from_path, to_disk, to_path); /// Base implementation.
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
@@ -367,7 +367,8 @@ void registerDiskLocal(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      ContextConstPtr context) -> DiskPtr {
+                      ContextPtr context,
+                      const DisksMap & /*map*/) -> DiskPtr {
         String path = config.getString(config_prefix + ".path", "");
         if (name == "default")
         {

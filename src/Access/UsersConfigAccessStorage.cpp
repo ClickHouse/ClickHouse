@@ -248,7 +248,7 @@ namespace
             limits.duration = duration;
             limits.randomize_interval = config.getBool(interval_config + ".randomize", false);
 
-            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
             {
                 const auto & type_info = Quota::ResourceTypeInfo::get(resource_type);
                 auto value = config.getString(interval_config + "." + type_info.name, "0");
@@ -598,13 +598,13 @@ void UsersConfigAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
 }
 
 
-ext::scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(id, handler);
 }
 
 
-ext::scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
+scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(type, handler);
 }

@@ -17,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int LOGICAL_ERROR;
 }
 
@@ -26,6 +27,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
+    ExpressionActionsSettings actions_settings,
     UInt64 max_block_size_rows_,
     UInt64 preferred_block_size_bytes_,
     UInt64 preferred_max_column_in_block_size_bytes_,
@@ -49,6 +51,23 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     for (auto it = virt_column_names.rbegin(); it != virt_column_names.rend(); ++it)
         if (header_without_virtual_columns.has(*it))
             header_without_virtual_columns.erase(*it);
+
+    if (prewhere_info)
+    {
+        prewhere_actions = std::make_unique<PrewhereExprInfo>();
+        if (prewhere_info->alias_actions)
+            prewhere_actions->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions, actions_settings);
+
+        if (prewhere_info->row_level_filter)
+            prewhere_actions->row_level_filter = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings);
+
+        prewhere_actions->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings);
+
+        prewhere_actions->row_level_column_name = prewhere_info->row_level_column_name;
+        prewhere_actions->prewhere_column_name = prewhere_info->prewhere_column_name;
+        prewhere_actions->remove_prewhere_column = prewhere_info->remove_prewhere_column;
+        prewhere_actions->need_filter = prewhere_info->need_filter;
+    }
 }
 
 
@@ -78,14 +97,14 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
     {
         if (reader->getColumns().empty())
         {
-            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info, true);
+            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), true);
         }
         else
         {
             MergeTreeRangeReader * pre_reader_ptr = nullptr;
             if (pre_reader != nullptr)
             {
-                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_info, false);
+                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), false);
                 pre_reader_ptr = &current_task.pre_range_reader;
             }
 
@@ -396,16 +415,17 @@ void MergeTreeBaseSelectProcessor::injectVirtualColumns(
     chunk.setColumns(columns, num_rows);
 }
 
-void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info)
+Block MergeTreeBaseSelectProcessor::transformHeader(
+    Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
     if (prewhere_info)
     {
         if (prewhere_info->alias_actions)
-            prewhere_info->alias_actions->execute(block);
+            block = prewhere_info->alias_actions->updateHeader(std::move(block));
 
         if (prewhere_info->row_level_filter)
         {
-            prewhere_info->row_level_filter->execute(block);
+            block = prewhere_info->row_level_filter->updateHeader(std::move(block));
             auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
             if (!row_level_column.type->canBeUsedInBooleanContext())
             {
@@ -417,7 +437,7 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
         }
 
         if (prewhere_info->prewhere_actions)
-            prewhere_info->prewhere_actions->execute(block);
+            block = prewhere_info->prewhere_actions->updateHeader(std::move(block));
 
         auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
         if (!prewhere_column.type->canBeUsedInBooleanContext())
@@ -430,16 +450,17 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
             block.erase(prewhere_info->prewhere_column_name);
         else
         {
-            auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
-            ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+            WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
+            if (which.isInt() || which.isUInt())
+                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
+            else if (which.isFloat())
+                prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
+            else
+                throw Exception("Illegal type " + prewhere_column.type->getName() + " of column for filter.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
         }
     }
-}
 
-Block MergeTreeBaseSelectProcessor::transformHeader(
-    Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns)
-{
-    executePrewhereActions(block, prewhere_info);
     injectVirtualColumns(block, nullptr, partition_value_type, virtual_columns);
     return block;
 }

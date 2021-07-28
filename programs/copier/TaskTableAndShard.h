@@ -6,7 +6,7 @@
 
 #include <Core/Defines.h>
 
-#include <ext/map.h>
+#include <common/map.h>
 #include <boost/algorithm/string/join.hpp>
 
 
@@ -286,7 +286,7 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
                + "." + escapeForFileName(table_push.first)
                + "." + escapeForFileName(table_push.second);
 
-    engine_push_str = config.getString(table_prefix + "engine");
+    engine_push_str = config.getString(table_prefix + "engine", "rand()");
 
     {
         ParserStorage parser_storage;
@@ -305,7 +305,7 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
         main_engine_split_ast = createASTStorageDistributed(cluster_push_name, table_push.first, table_push.second,
                                                             sharding_key_ast);
 
-        for (const auto piece_number : ext::range(0, number_of_splits))
+        for (const auto piece_number : collections::range(0, number_of_splits))
         {
             auxiliary_engine_split_asts.emplace_back
                     (

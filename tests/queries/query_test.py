@@ -12,6 +12,7 @@ SKIP_LIST = [
     # these couple of tests hangs everything
     "00600_replace_running_query",
     "00987_distributed_stack_overflow",
+    "01954_clickhouse_benchmark_multiple_long",
 
     # just fail
     "00133_long_shard_memory_tracker_and_exception_safety",
@@ -74,6 +75,8 @@ SKIP_LIST = [
     "01300_client_save_history_when_terminated",  # expect-test
     "01304_direct_io",
     "01306_benchmark_json",
+    "01035_lc_empty_part_bug",  # FLAKY
+    "01175_distributed_ddl_output_mode_long",  # tcp port in reference
     "01320_create_sync_race_condition_zookeeper",
     "01355_CSV_input_format_allow_errors",
     "01370_client_autocomplete_word_break_characters",  # expect-test
@@ -98,6 +101,7 @@ SKIP_LIST = [
     "01561_mann_whitney_scipy",
     "01582_distinct_optimization",
     "01591_window_functions",
+    "01594_too_low_memory_limits",
     "01599_multiline_input_and_singleline_comments",  # expect-test
     "01601_custom_tld",
     "01606_git_import",
@@ -113,7 +117,7 @@ SKIP_LIST = [
     "01685_ssd_cache_dictionary_complex_key",
     "01737_clickhouse_server_wait_server_pool_long",
     "01746_executable_pool_dictionary",
-    "01747_executable_pool_dictionary_implicit_key",
+    "01747_executable_pool_dictionary_implicit_key.sql",
     "01747_join_view_filter_dictionary",
     "01748_dictionary_table_dot",
     "01754_cluster_all_replicas_shard_num",
@@ -126,6 +130,9 @@ SKIP_LIST = [
     "01848_http_insert_segfault",
     "01875_ssd_cache_dictionary_decimal256_type",
     "01880_remote_ipv6",
+    "01889_check_row_policy_defined_using_user_function",
+    "01889_clickhouse_client_config_format",
+    "01903_ssd_cache_dictionary_array_type",
 ]
 
 
@@ -149,17 +156,19 @@ def check_result(result, error, return_code, reference, replace_map):
             pytrace=False)
 
 
-def run_client(bin_prefix, port, database, query, reference, replace_map=None):
+def run_client(use_antlr, bin_prefix, port, database, query, reference, replace_map=None):
     # We can't use `text=True` since some tests may return binary data
-    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-d', database, '-m', '-n', '--testmode'],
-                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    cmd = [bin_prefix + '-client', '--port', str(port), '-d', database, '-m', '-n', '--testmode']
+    if use_antlr:
+        cmd.append('--use_antlr_parser=1')
+    client = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = client.communicate(query.encode('utf-8'))
     assert client.returncode is not None, "Client should exit after processing all queries"
 
     check_result(result, error, client.returncode, reference, replace_map)
 
 
-def run_shell(bin_prefix, server, database, path, reference, replace_map=None):
+def run_shell(use_antlr, bin_prefix, server, database, path, reference, replace_map=None):
     env = {
         'CLICKHOUSE_BINARY': bin_prefix,
         'CLICKHOUSE_DATABASE': database,
@@ -170,8 +179,11 @@ def run_shell(bin_prefix, server, database, path, reference, replace_map=None):
         'CLICKHOUSE_PORT_INTERSERVER': str(server.inter_port),
         'CLICKHOUSE_PORT_POSTGRESQL': str(server.postgresql_port),
         'CLICKHOUSE_TMP': server.tmp_dir,
-        'CLICKHOUSE_CONFIG_CLIENT': server.client_config
+        'CLICKHOUSE_CONFIG_CLIENT': server.client_config,
+        'PROTOC_BINARY': os.path.abspath(os.path.join(os.path.dirname(bin_prefix), '..', 'contrib', 'protobuf', 'protoc')),  # FIXME: adhoc solution
     }
+    if use_antlr:
+        env['CLICKHOUSE_CLIENT_OPT'] = '--use_antlr_parser=1'
     shell = subprocess.Popen([path], env=env, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = shell.communicate()
     assert shell.returncode is not None, "Script should exit after executing all commands"
@@ -185,7 +197,7 @@ def random_str(length=10):
     return ''.join(random.choice(alphabet) for _ in range(length))
 
 
-def test_sql_query(bin_prefix, sql_query, standalone_server):
+def test_sql_query(use_antlr, bin_prefix, sql_query, standalone_server):
     for test in SKIP_LIST:
         if test in sql_query:
             pytest.skip("Test matches skip-list: " + test)
@@ -205,21 +217,21 @@ def test_sql_query(bin_prefix, sql_query, standalone_server):
         reference = file.read()
 
     random_name = 'test_{random}'.format(random=random_str())
-    run_client(bin_prefix, tcp_port, 'default', 'CREATE DATABASE {random};'.format(random=random_name), b'')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', 'CREATE DATABASE {random};'.format(random=random_name), b'')
 
-    run_client(bin_prefix, tcp_port, random_name, query, reference, {random_name: 'default'})
+    run_client(use_antlr, bin_prefix, tcp_port, random_name, query, reference, {random_name: 'default'})
 
     query = "SELECT 'SHOW ORPHANED TABLES'; SELECT name FROM system.tables WHERE database != 'system' ORDER BY (database, name);"
-    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED TABLES\n')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED TABLES\n')
 
     query = 'DROP DATABASE {random};'.format(random=random_name)
-    run_client(bin_prefix, tcp_port, 'default', query, b'')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'')
 
     query = "SELECT 'SHOW ORPHANED DATABASES'; SHOW DATABASES;"
-    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
 
 
-def test_shell_query(bin_prefix, shell_query, standalone_server):
+def test_shell_query(use_antlr, bin_prefix, shell_query, standalone_server):
     for test in SKIP_LIST:
         if test in shell_query:
             pytest.skip("Test matches skip-list: " + test)
@@ -238,15 +250,15 @@ def test_shell_query(bin_prefix, shell_query, standalone_server):
 
     random_name = 'test_{random}'.format(random=random_str())
     query = 'CREATE DATABASE {random};'.format(random=random_name)
-    run_client(bin_prefix, tcp_port, 'default', query, b'')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'')
 
-    run_shell(bin_prefix, standalone_server, random_name, shell_path, reference, {random_name: 'default'})
+    run_shell(use_antlr, bin_prefix, standalone_server, random_name, shell_path, reference, {random_name: 'default'})
 
     query = "SELECT 'SHOW ORPHANED TABLES'; SELECT name FROM system.tables WHERE database != 'system' ORDER BY (database, name);"
-    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED TABLES\n')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED TABLES\n')
 
     query = 'DROP DATABASE {random};'.format(random=random_name)
-    run_client(bin_prefix, tcp_port, 'default', query, b'')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'')
 
     query = "SELECT 'SHOW ORPHANED DATABASES'; SHOW DATABASES;"
-    run_client(bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')
+    run_client(use_antlr, bin_prefix, tcp_port, 'default', query, b'SHOW ORPHANED DATABASES\ndefault\nsystem\n')

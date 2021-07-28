@@ -32,7 +32,4 @@ struct FilterDescription
 
 struct ColumnWithTypeAndName;
 
-/// Will throw an exception if column_elem is cannot be used as a filter column.
-void checkColumnCanBeUsedAsFilter(const ColumnWithTypeAndName & column_elem);
-
 }

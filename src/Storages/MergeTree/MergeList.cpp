@@ -13,7 +13,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, const FutureMerg
     , partition_id{future_part.part_info.partition_id}
     , result_part_name{future_part.name}
     , result_part_path{future_part.path}
-    , result_data_version{future_part.part_info.getDataVersion()}
+    , result_part_info{future_part.part_info}
     , num_parts{future_part.parts.size()}
     , thread_id{getThreadId()}
     , merge_type{future_part.merge_type}
@@ -32,7 +32,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, const FutureMerg
     if (!future_part.parts.empty())
     {
         source_data_version = future_part.parts[0]->info.getDataVersion();
-        is_mutation = (result_data_version != source_data_version);
+        is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
     /// Each merge is executed into separate background processing pool thread

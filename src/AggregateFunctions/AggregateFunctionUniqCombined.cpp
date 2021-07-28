@@ -3,9 +3,10 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <functional>
@@ -13,13 +14,13 @@
 
 namespace DB
 {
+
 struct Settings;
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -51,6 +52,8 @@ namespace
                 return res;
             else if (which.isDate())
                 return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDate::FieldType>>(argument_types, params);
+            else if (which.isDate32())
+                return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDate32::FieldType>>(argument_types, params);
             else if (which.isDateTime())
                 return std::make_shared<typename WithK<K, HashValueType>::template AggregateFunction<DataTypeDateTime::FieldType>>(argument_types, params);
             else if (which.isStringOrFixedString())
@@ -105,11 +108,6 @@ namespace
 
         if (argument_types.empty())
             throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        const WhichDataType t(argument_types[0]);
-        if (t.isAggregateFunction())
-            throw Exception(
-                "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         switch (precision)
         {

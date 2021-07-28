@@ -58,7 +58,7 @@ void StorageMongoDB::connectIfNotConnected()
     if (!connection)
         connection = std::make_shared<Poco::MongoDB::Connection>(host, port);
 
-    if (!authentified)
+    if (!authenticated)
     {
 #       if POCO_VERSION >= 0x01070800
             Poco::MongoDB::Database poco_db(database_name);
@@ -67,7 +67,7 @@ void StorageMongoDB::connectIfNotConnected()
 #       else
             authenticate(*connection, database_name, username, password);
 #       endif
-        authentified = true;
+        authenticated = true;
     }
 }
 

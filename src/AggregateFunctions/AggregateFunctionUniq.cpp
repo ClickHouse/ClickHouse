@@ -4,6 +4,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -11,12 +12,12 @@
 
 namespace DB
 {
+
 struct Settings;
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -38,12 +39,6 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 
     bool use_exact_hash_function = !isAllArgumentsContiguousInMemory(argument_types);
 
-    const WhichDataType t(argument_types[0]);
-    if (t.isAggregateFunction())
-        throw Exception(
-            "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
     if (argument_types.size() == 1)
     {
         const IDataType & argument_type = *argument_types[0];
@@ -55,6 +50,8 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             return res;
         else if (which.isDate())
             return std::make_shared<AggregateFunctionUniq<DataTypeDate::FieldType, Data>>(argument_types);
+        else if (which.isDate32())
+            return std::make_shared<AggregateFunctionUniq<DataTypeDate32::FieldType, Data>>(argument_types);
         else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data>>(argument_types);
         else if (which.isStringOrFixedString())
@@ -86,12 +83,6 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
         throw Exception("Incorrect number of arguments for aggregate function " + name,
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const WhichDataType t(argument_types[0]);
-    if (t.isAggregateFunction())
-        throw Exception(
-            "Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
     /// We use exact hash function if the user wants it;
     /// or if the arguments are not contiguous in memory, because only exact hash function have support for this case.
     bool use_exact_hash_function = is_exact || !isAllArgumentsContiguousInMemory(argument_types);
@@ -107,6 +98,8 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             return res;
         else if (which.isDate())
             return std::make_shared<AggregateFunctionUniq<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>(argument_types);
+        else if (which.isDate32())
+            return std::make_shared<AggregateFunctionUniq<DataTypeDate32::FieldType, Data<DataTypeDate32::FieldType>>>(argument_types);
         else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(argument_types);
         else if (which.isStringOrFixedString())

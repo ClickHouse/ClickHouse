@@ -754,8 +754,8 @@ RQ_SRS_020_ClickHouse_Extended_Precision_Create_Table = Requirement(
     level=3,
     num='4.13.1')
 
-QA_SRS020_ClickHouse_Extended_Precision_Data_Types = Specification(
-    name='QA-SRS020 ClickHouse Extended Precision Data Types', 
+SRS020_ClickHouse_Extended_Precision_Data_Types = Specification(
+    name='SRS020 ClickHouse Extended Precision Data Types',
     description=None,
     author=None,
     date=None, 
@@ -855,7 +855,7 @@ QA_SRS020_ClickHouse_Extended_Precision_Data_Types = Specification(
         RQ_SRS_020_ClickHouse_Extended_Precision_Create_Table,
         ),
     content='''
-# QA-SRS020 ClickHouse Extended Precision Data Types
+# SRS020 ClickHouse Extended Precision Data Types
 # Software Requirements Specification
 
 ## Table of Contents

@@ -44,6 +44,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RESTART REPLICAS";
         case Type::RESTART_REPLICA:
             return "RESTART REPLICA";
+        case Type::RESTORE_REPLICA:
+            return "RESTORE REPLICA";
         case Type::DROP_REPLICA:
             return "DROP REPLICA";
         case Type::SYNC_REPLICA:
@@ -119,18 +121,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                       << (settings.hilite ? hilite_none : "");
     };
 
-    auto print_database_dictionary = [&]
-    {
-        settings.ostr << " ";
-        if (!database.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
-                          << (settings.hilite ? hilite_none : "") << ".";
-        }
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_dictionary)
-                      << (settings.hilite ? hilite_none : "");
-    };
-
     auto print_drop_replica = [&]
     {
         settings.ostr << " " << quoteString(replica);
@@ -187,13 +177,13 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         else if (!volume.empty())
             print_on_volume();
     }
-    else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA || type == Type::FLUSH_DISTRIBUTED)
+    else if (  type == Type::RESTART_REPLICA
+            || type == Type::RESTORE_REPLICA
+            || type == Type::SYNC_REPLICA
+            || type == Type::FLUSH_DISTRIBUTED
+            || type == Type::RELOAD_DICTIONARY)
     {
         print_database_table();
-    }
-    else if (type == Type::RELOAD_DICTIONARY)
-    {
-        print_database_dictionary();
     }
     else if (type == Type::DROP_REPLICA)
     {

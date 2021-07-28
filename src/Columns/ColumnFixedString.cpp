@@ -12,7 +12,7 @@
 #include <Common/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 #include <common/sort.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>

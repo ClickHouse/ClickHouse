@@ -1,5 +1,6 @@
 #include "DiskS3.h"
 
+#if USE_AWS_S3
 #include "Disks/DiskFactory.h"
 
 #include <bitset>
@@ -19,11 +20,11 @@
 #include <Common/thread_local_rng.h>
 #include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/CopyObjectRequest.h> // Y_IGNORE
+#include <aws/s3/model/DeleteObjectsRequest.h> // Y_IGNORE
+#include <aws/s3/model/GetObjectRequest.h> // Y_IGNORE
+#include <aws/s3/model/ListObjectsV2Request.h> // Y_IGNORE
+#include <aws/s3/model/HeadObjectRequest.h> // Y_IGNORE
 
 
 namespace DB
@@ -155,15 +156,6 @@ DiskS3::DiskS3(
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
 {
-}
-
-String DiskS3::getUniqueId(const String & path) const
-{
-    Metadata metadata(remote_fs_root_path, metadata_path, path);
-    String id;
-    if (!metadata.remote_fs_objects.empty())
-        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
-    return id;
 }
 
 RemoteFSPathKeeperPtr DiskS3::createFSPathKeeper() const
@@ -319,6 +311,9 @@ void DiskS3::createFileOperationObject(const String & operation_name, UInt64 rev
 void DiskS3::startup()
 {
     auto settings = current_settings.get();
+
+    /// Need to be enabled if it was disabled during shutdown() call.
+    settings->client->EnableRequestProcessing();
 
     if (!settings->send_metadata)
         return;
@@ -879,6 +874,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
                 to_path /= from_path.parent_path().filename();
             else
                 to_path /= from_path.filename();
+            fs::create_directories(to_path);
             fs::copy(from_path, to_path, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
             fs::remove_all(from_path);
         }
@@ -925,7 +921,7 @@ void DiskS3::onFreeze(const String & path)
     revision_file_buf.finalize();
 }
 
-void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context)
+void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &)
 {
     auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context);
 
@@ -937,7 +933,7 @@ void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, 
 
 DiskS3Settings::DiskS3Settings(
     const std::shared_ptr<Aws::S3::S3Client> & client_,
-    UInt64 s3_max_single_read_retries_,
+    size_t s3_max_single_read_retries_,
     size_t s3_min_upload_part_size_,
     size_t s3_max_single_part_upload_size_,
     size_t min_bytes_for_seek_,
@@ -958,3 +954,5 @@ DiskS3Settings::DiskS3Settings(
 }
 
 }
+
+#endif

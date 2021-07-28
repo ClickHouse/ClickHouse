@@ -50,6 +50,11 @@ public:
         return nested_func->getReturnType();
     }
 
+    DataTypePtr getStateType() const override
+    {
+        return nested_func->getStateType();
+    }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_func->create(place);
