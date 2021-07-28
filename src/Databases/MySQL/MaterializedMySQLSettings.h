@@ -17,13 +17,13 @@ class ASTStorage;
     M(Int64, max_wait_time_when_mysql_unavailable, 1000, "Retry interval when MySQL is not available (milliseconds). Negative value disable retry.", 0) \
     M(Bool, allows_query_when_mysql_lost, false, "Allow query materialized table when mysql is lost.", 0) \
 
-    DECLARE_SETTINGS_TRAITS(MaterializeMySQLSettingsTraits, LIST_OF_MATERIALIZE_MODE_SETTINGS)
+    DECLARE_SETTINGS_TRAITS(MaterializedMySQLSettingsTraits, LIST_OF_MATERIALIZE_MODE_SETTINGS)
 
 
-/** Settings for the MaterializeMySQL database engine.
+/** Settings for the MaterializedMySQL database engine.
   * Could be loaded from a CREATE DATABASE query (SETTINGS clause).
   */
-struct MaterializeMySQLSettings : public BaseSettings<MaterializeMySQLSettingsTraits>
+struct MaterializedMySQLSettings : public BaseSettings<MaterializedMySQLSettingsTraits>
 {
     void loadFromQuery(ASTStorage & storage_def);
 };

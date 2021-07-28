@@ -1,9 +1,9 @@
 ---
 toc_priority: 29
-toc_title: MaterializeMySQL
+toc_title: MaterializedMySQL
 ---
 
-# MaterializeMySQL {#materialize-mysql}
+# MaterializedMySQL {#materialized-mysql}
 
 **This is experimental feature that should not be used in production.**
 
@@ -17,7 +17,7 @@ This feature is experimental.
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
+ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
 ```
 
 **Engine Parameters**
@@ -36,7 +36,7 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 -   `max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disable retry. Default: `1000`.
 -   `allows_query_when_mysql_lost` — Allow query materialized table when mysql is lost. Default: `0` (`false`).
 ```
-CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', '***') 
+CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***') 
      SETTINGS 
         allows_query_when_mysql_lost=true,
         max_wait_time_when_mysql_unavailable=10000;
@@ -51,7 +51,7 @@ For the correct work of `MaterializeMySQL`, there are few mandatory `MySQL`-side
 
 ## Virtual columns {#virtual-columns}
 
-When working with the `MaterializeMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
+When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
  
 - `_version` — Transaction counter. Type [UInt64](../../sql-reference/data-types/int-uint.md).
 - `_sign` — Deletion mark. Type [Int8](../../sql-reference/data-types/int-uint.md). Possible values:
@@ -99,7 +99,7 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 
 ### Data Replication {#data-replication}
 
-`MaterializeMySQL` does not support direct `INSERT`, `DELETE` and `UPDATE` queries. However, they are supported in terms of data replication:
+`MaterializedMySQL` does not support direct `INSERT`, `DELETE` and `UPDATE` queries. However, they are supported in terms of data replication:
 
 - MySQL `INSERT` query is converted into `INSERT` with `_sign=1`.
 
@@ -107,9 +107,9 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 
 - MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1`.
 
-### Selecting from MaterializeMySQL Tables {#select}
+### Selecting from MaterializedMySQL Tables {#select}
 
-`SELECT` query from `MaterializeMySQL` tables has some specifics:
+`SELECT` query from `MaterializedMySQL` tables has some specifics:
 
 - If `_version` is not specified in the `SELECT` query, [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used. So only rows with `MAX(_version)` are selected.
 
@@ -126,10 +126,10 @@ ClickHouse has only one physical order, which is determined by `ORDER BY` clause
 **Notes**
 
 - Rows with `_sign=-1` are not deleted physically from the tables.
-- Cascade `UPDATE/DELETE` queries are not supported by the `MaterializeMySQL` engine.
+- Cascade `UPDATE/DELETE` queries are not supported by the `MaterializedMySQL` engine.
 - Replication can be easily broken.
 - Manual operations on database and tables are forbidden.
-- `MaterializeMySQL` is influenced by [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert) setting. The data is merged in the corresponding table in the `MaterializeMySQL` database when a table in the MySQL server changes.
+- `MaterializedMySQL` is influenced by [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert) setting. The data is merged in the corresponding table in the `MaterializedMySQL` database when a table in the MySQL server changes.
 
 ## Examples of Use {#examples-of-use}
 
@@ -158,7 +158,7 @@ Database in ClickHouse, exchanging data with the MySQL server:
 The database and the table created:
 
 ``` sql
-CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', '***');
+CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***');
 SHOW TABLES FROM mysql;
 ```
 
@@ -193,4 +193,4 @@ SELECT * FROM mysql.test;
 └───┴─────┴──────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/engines/database-engines/materialize-mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->
