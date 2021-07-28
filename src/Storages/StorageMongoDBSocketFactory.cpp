@@ -11,8 +11,11 @@
 #   include <Poco/Net/SecureStreamSocket.h>
 #endif
 
-#pragma clang diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
+#ifdef __clang__
+#   pragma clang diagnostic ignored "-Wunused-parameter"
+#else
+#   pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
 
 
 namespace DB
