@@ -809,6 +809,20 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 
         auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
         add_into_aggregate_states_function_single_place(rows, columns_data.data(), res);
+
+#if defined(MEMORY_SANITIZER)
+
+        /// We compile only functions that do not allocate some data in Arena. Only store necessary state in AggregateData place.
+        for (size_t aggregate_function_index = 0; aggregate_function_index < aggregate_functions.size(); ++aggregate_function_index)
+        {
+            if (!is_aggregate_function_compiled[aggregate_function_index])
+                continue;
+
+            auto aggregate_data_with_offset = res + offsets_of_aggregate_states[aggregate_function_index];
+            auto data_size = params.aggregates[aggregate_function_index].function->sizeOfData();
+            __msan_unpoison(aggregate_data_with_offset, data_size);
+        }
+#endif
     }
 #endif
 
