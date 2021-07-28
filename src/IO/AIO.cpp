@@ -59,7 +59,7 @@ AIOContext::AIOContext(AIOContext && rhs)
     *this = std::move(rhs);
 }
 
-AIOContext::AIOContext & AIOContext::operator=(AIOContext && rhs)
+AIOContext & AIOContext::operator=(AIOContext && rhs)
 {
     std::swap(ctx, rhs.ctx);
 }
