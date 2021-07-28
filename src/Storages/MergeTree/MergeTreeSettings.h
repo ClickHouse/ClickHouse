@@ -53,7 +53,10 @@ struct Settings;
     M(Bool, fsync_part_directory, false, "Do fsync for part directory after all part operations (writes, renames, etc.).", 0) \
     M(UInt64, write_ahead_log_bytes_to_fsync, 100ULL * 1024 * 1024, "Amount of bytes, accumulated in WAL to do fsync.", 0) \
     M(UInt64, write_ahead_log_interval_ms_to_fsync, 100, "Interval in milliseconds after which fsync for WAL is being done.", 0) \
-    M(Bool, in_memory_parts_insert_sync, false, "If true insert of part with in-memory format will wait for fsync of WAL", 0) \
+    M(Bool, in_memory_parts_insert_sync, false, "If true insert of part with in-memory format will wait for fsync of WAL", 0)       \
+    M(String, merge_part_select_strategy, "Simple", "part selection strategy: Simple(SimpleMergeSelector), Level(LevelMergeSector).", 0)   \
+    M(UInt64, min_parts_to_merge, 5, "The minimal number of parts to merge for MemoryMergeSelector", 0)  \
+    M(UInt64, max_parts_to_merge, 100, "The maximal number of parts to merge for MemoryMergeSelector", 0)     \
     \
     /** Inserts settings. */ \
     M(UInt64, parts_to_delay_insert, 150, "If table contains at least that many active parts in single partition, artificially slow down insert into table.", 0) \

@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
+#include <Storages/MergeTree/LevelMergeSelector.h>
+#include <Storages/MergeTree/CombinedMergeSelector.h>
 #include <Storages/MergeTree/AllMergeSelector.h>
 #include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
@@ -85,7 +87,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
         future_part_type = std::min(future_part_type, part->getType());
     }
 
-    auto chosen_type = parts_.front()->storage.choosePartTypeOnDisk(sum_bytes_uncompressed, sum_rows);
+    auto chosen_type = parts_.front()->storage.choosePartType(sum_bytes_uncompressed, sum_rows);
     future_part_type = std::min(future_part_type, chosen_type);
     assign(std::move(parts_), future_part_type);
 }
@@ -236,6 +238,27 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     /// Previous part only in boundaries of partition frame
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
 
+/*
+    std::ostringstream debug_buf;
+    bool print = false;
+    for (const MergeTreeData::DataPartPtr & part : data_parts)
+    {
+
+        if (part->storage.getStorageID().table_name.ends_with("t_num"))
+        {
+            const auto info = part->info;
+            debug_buf << info.partition_id << ", "
+                << info.min_block << ","
+                << info.max_block << ", "
+                << info.level << ", "
+                << info.mutation<< std::endl;
+            print = true;
+        }
+    }
+    if(print)
+        LOG_DEBUG(log, "------------ part info: {}", debug_buf.str());
+*/
+
     size_t parts_selected_precondition = 0;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
@@ -339,12 +362,25 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
     if (parts_to_merge.empty())
     {
-        SimpleMergeSelector::Settings merge_settings;
-        if (aggressive)
-            merge_settings.base = 1;
+        const auto merge_tree_settings = data.getSettings();
+        if (merge_tree_settings->merge_part_select_strategy.value == "Level")
+        {
+            LevelMergeSelector::Settings merge_settings;
+            merge_settings.parts_to_merge = merge_tree_settings->min_parts_to_merge;
+            parts_to_merge = LevelMergeSelector(merge_settings).select(parts_ranges, max_total_size_to_merge);
+        }
+        else if(merge_tree_settings->merge_part_select_strategy.value == "Combined")
+        {
+            parts_to_merge = CombinedMergeSelector(merge_tree_settings).select(parts_ranges, max_total_size_to_merge);
+        }
+        else
+        {
+            SimpleMergeSelector::Settings merge_settings;
+            if (aggressive)
+                merge_settings.base = 1;
+            parts_to_merge = SimpleMergeSelector(merge_settings).select(parts_ranges, max_total_size_to_merge);
+        }
 
-        parts_to_merge = SimpleMergeSelector(merge_settings)
-                            .select(parts_ranges, max_total_size_to_merge);
 
         /// Do not allow to "merge" part with itself for regular merges, unless it is a TTL-merge where it is ok to remove some values with expired ttl
         if (parts_to_merge.size() == 1)

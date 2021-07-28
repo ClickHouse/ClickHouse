@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeSelector.h>
-
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 /**
 We have a set of data parts that is dynamically changing - new data parts are added and there is background merging process.
@@ -26,7 +26,7 @@ Then we need some balance between optimization of these two metrics.
 But some optimizations may improve both metrics.
 
 For example, we can look at the "merge tree" - the tree of data parts that were merged.
-If the tree is perfectly balanced then its depth is proportonal to the log(data size),
+If the tree is perfectly balanced then its depth is proportional to the log(data size),
 the total amount of work is proportional to data_size * log(data_size)
 and the write amplification is proportional to log(data_size).
 If it's not balanced (e.g. every new data part is always merged with existing data parts),
@@ -77,7 +77,7 @@ That's why I still believe that there are many opportunities to optimize the mer
 Please do not mix the task with a similar task in other LSM-based systems (like RocksDB).
 Their problem statement is subtly different. Our set of data parts is consisted of data parts
 that are completely independent in stored data. Ranges of primary keys in data parts can intersect.
-When doing SELECT we read from all data parts. INSERTed data parts comes with unknown size...
+When doing SELECT we read from all data parts. Inserted data parts comes with unknown size...
 */
 
 namespace DB
@@ -88,6 +88,9 @@ class SimpleMergeSelector final : public IMergeSelector
 public:
     struct Settings
     {
+        Settings() = default;
+        Settings(MergeTreeSettingsPtr ) {}
+
         /// Zero means unlimited.
         size_t max_parts_to_merge_at_once = 100;
 
