@@ -22,22 +22,131 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 
-
 namespace CurrentMetrics
 {
     extern const Metric BackgroundPoolTask;
     extern const Metric PartMutation;
 }
 
-
 namespace DB
 {
-
 
 namespace ErrorCodes
 {
     extern const int ABORTED;
 }
+
+namespace MutationHelpers
+{
+
+
+static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeListEntry & mutate_entry)
+{
+    if (merges_blocker.isCancelled() || mutate_entry->is_cancelled)
+        throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
+
+    return true;
+}
+
+
+/** Split mutation commands into two parts:
+*   First part should be executed by mutations interpreter.
+*   Other is just simple drop/renames, so they can be executed without interpreter.
+*/
+static void splitMutationCommands(
+    MergeTreeData::DataPartPtr part,
+    const MutationCommands & commands,
+    MutationCommands & for_interpreter,
+    MutationCommands & for_file_renames)
+{
+    ColumnsDescription part_columns(part->getColumns());
+
+    if (!isWidePart(part))
+    {
+        NameSet mutated_columns;
+        for (const auto & command : commands)
+        {
+            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
+                || command.type == MutationCommand::Type::MATERIALIZE_TTL
+                || command.type == MutationCommand::Type::DELETE
+                || command.type == MutationCommand::Type::UPDATE)
+            {
+                for_interpreter.push_back(command);
+                for (const auto & [column_name, expr] : command.column_to_update_expression)
+                    mutated_columns.emplace(column_name);
+            }
+            else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
+            {
+                for_file_renames.push_back(command);
+            }
+            else if (part_columns.has(command.column_name))
+            {
+                if (command.type == MutationCommand::Type::DROP_COLUMN)
+                {
+                    mutated_columns.emplace(command.column_name);
+                }
+                else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                {
+                    for_interpreter.push_back(
+                    {
+                        .type = MutationCommand::Type::READ_COLUMN,
+                        .column_name = command.rename_to,
+                    });
+                    mutated_columns.emplace(command.column_name);
+                    part_columns.rename(command.column_name, command.rename_to);
+                }
+            }
+        }
+        /// If it's compact part, then we don't need to actually remove files
+        /// from disk we just don't read dropped columns
+        for (const auto & column : part->getColumns())
+        {
+            if (!mutated_columns.count(column.name))
+                for_interpreter.emplace_back(
+                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+        }
+    }
+    else
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
+                || command.type == MutationCommand::Type::MATERIALIZE_TTL
+                || command.type == MutationCommand::Type::DELETE
+                || command.type == MutationCommand::Type::UPDATE)
+            {
+                for_interpreter.push_back(command);
+            }
+            else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
+            {
+                for_file_renames.push_back(command);
+            }
+            /// If we don't have this column in source part, than we don't need
+            /// to materialize it
+            else if (part_columns.has(command.column_name))
+            {
+                if (command.type == MutationCommand::Type::READ_COLUMN)
+                {
+                    for_interpreter.push_back(command);
+                }
+                else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                {
+                    part_columns.rename(command.column_name, command.rename_to);
+                    for_file_renames.push_back(command);
+                }
+                else
+                {
+                    for_file_renames.push_back(command);
+                }
+            }
+        }
+    }
+}
+
+
+} // namespace MutationHelpers
 
 
 bool MutateTask::execute()
@@ -49,7 +158,7 @@ bool MutateTask::execute()
 
 MergeTreeData::MutableDataPartPtr MutateTask::main()
 {
-    checkOperationIsNotCanceled(merges_blocker, mutate_entry);
+    MutationHelpers::checkOperationIsNotCanceled(merges_blocker, mutate_entry);
 
     if (future_part->parts.size() != 1)
         throw Exception("Trying to mutate " + toString(future_part->parts.size()) + " parts, not one. "
@@ -93,7 +202,7 @@ MergeTreeData::MutableDataPartPtr MutateTask::main()
     MutationCommands for_interpreter;
     MutationCommands for_file_renames;
 
-    splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames);
+    MutationHelpers::splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames);
 
     UInt64 watch_prev_elapsed = 0;
     MergeStageProgress stage_progress(1.0);
@@ -339,17 +448,23 @@ void MutateTask::mutateAllPartColumns(
     mutating_stream->readPrefix();
     out.writePrefix();
 
+
+
     writeWithProjections(
+        data,
+        mutator,
+        merges_blocker,
+        log,
         new_data_part,
-        // metadata_snapshot,
+        metadata_snapshot,
         projections_to_build,
         mutating_stream,
         out,
-        // time_of_mutation,
+        time_of_mutation,
         merge_entry,
-        // space_reservation,
-        // holder,
-        // context,
+        space_reservation,
+        holder,
+        context,
         minmax_idx.get());
 
     new_data_part->minmax_idx = std::move(minmax_idx);
@@ -399,16 +514,20 @@ void MutateTask::mutateSomePartColumns(
 
     std::vector<MergeTreeProjectionPtr> projections_to_build(projections_to_recalc.begin(), projections_to_recalc.end());
     writeWithProjections(
+        data,
+        mutator,
+        merges_blocker,
+        log,
         new_data_part,
-        // metadata_snapshot,
+        metadata_snapshot,
         projections_to_build,
         mutating_stream,
         out,
-        // time_of_mutation,
-        merge_entry
-        // space_reservation,
-        // holder
-        // context
+        time_of_mutation,
+        merge_entry,
+        space_reservation,
+        holder,
+        context
         );
 
     mutating_stream->readSuffix();
@@ -419,45 +538,279 @@ void MutateTask::mutateSomePartColumns(
 }
 
 
+class IExecutableTask
+{
+public:
+    virtual bool execute() = 0;
+    virtual ~IExecutableTask() = default;
+};
 
+using ExecutableTaskUniquePtr = std::unique_ptr<IExecutableTask>;
+
+struct Parameters
+{
+    MergeTreeData & data;
+    MergeTreeDataMergerMutator & mutator;
+    ActionBlocker & merges_blocker;
+    Poco::Logger * logger;
+    MergeTreeData::MutableDataPartPtr new_data_part;
+    const StorageMetadataPtr & metadata_snapshot;
+    const MergeTreeProjections & projections_to_build;
+    BlockInputStreamPtr mutating_stream;
+    IMergedBlockOutputStream & out;
+    time_t time_of_mutation;
+    MergeListEntry & merge_entry;
+    ReservationSharedPtr space_reservation;
+    TableLockHolder & holder;
+    ContextPtr context;
+    IMergeTreeDataPart::MinMaxIndex * minmax_idx;
+};
+
+
+class MergeProjectionPartsTask : public IExecutableTask
+{
+public:
+    MergeProjectionPartsTask(
+        String name_,
+        MergeTreeData::MutableDataPartsVector && parts_,
+        const ProjectionDescription & projection_,
+        MergeTreeData::MutableDataPartPtr new_data_part_,
+        size_t & block_num_,
+        Parameters parameters_
+        )
+        : name(std::move(name_))
+        , parts(std::move(parts_))
+        , projection(projection_)
+        , block_num(block_num_)
+        , new_data_part(new_data_part_)
+        , parameters(std::move(parameters_))
+        , log(&Poco::Logger::get("MergeProjectionPartsTask"))
+        {
+            LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
+            level_parts[current_level] = std::move(parts);
+        }
+
+    bool execute() override
+    {
+        auto & current_level_parts = level_parts[current_level];
+        auto & next_level_parts = level_parts[next_level];
+
+        MergeTreeData::MutableDataPartsVector selected_parts;
+        while (selected_parts.size() < max_parts_to_merge_in_one_level && !current_level_parts.empty())
+        {
+            selected_parts.push_back(std::move(current_level_parts.back()));
+            current_level_parts.pop_back();
+        }
+
+        if (selected_parts.empty())
+        {
+            if (next_level_parts.empty())
+            {
+                LOG_WARNING(log, "There is no projection parts merged");
+
+                /// Task is finished
+                return false;
+            }
+            current_level = next_level;
+            ++next_level;
+        }
+        else if (selected_parts.size() == 1)
+        {
+            if (next_level_parts.empty())
+            {
+                LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
+                selected_parts[0]->renameTo(projection.name + ".proj", true);
+                selected_parts[0]->name = projection.name;
+                selected_parts[0]->is_temp = false;
+                new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
+
+                /// Task is finished
+                return false;
+            }
+            else
+            {
+                LOG_DEBUG(log, "Forwarded part {} in level {} to next level", selected_parts[0]->name, current_level);
+                next_level_parts.push_back(std::move(selected_parts[0]));
+            }
+        }
+        else if (selected_parts.size() > 1)
+        {
+            // Generate a unique part name
+            ++block_num;
+            auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
+            MergeTreeData::DataPartsVector const_selected_parts(
+                std::make_move_iterator(selected_parts.begin()), std::make_move_iterator(selected_parts.end()));
+            projection_future_part->assign(std::move(const_selected_parts));
+            projection_future_part->name = fmt::format("{}_{}", projection.name, ++block_num);
+            projection_future_part->part_info = {"all", 0, 0, 0};
+
+            MergeTreeData::MergingParams projection_merging_params;
+            projection_merging_params.mode = MergeTreeData::MergingParams::Ordinary;
+            if (projection.type == ProjectionDescription::Type::Aggregate)
+                projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
+
+            LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
+            auto tmp_part_merge_task = parameters.mutator.mergePartsToTemporaryPart(
+                projection_future_part,
+                projection.metadata,
+                parameters.merge_entry,
+                parameters.holder,
+                parameters.time_of_mutation,
+                parameters.context,
+                parameters.space_reservation,
+                false, // TODO Do we need deduplicate for projections
+                {},
+                projection_merging_params,
+                new_data_part.get(),
+                "tmp_merge_");
+
+            next_level_parts.push_back(executeHere(tmp_part_merge_task));
+
+            next_level_parts.back()->is_temp = true;
+        }
+
+        /// Need execute again
+        return true;
+    }
+private:
+    String name;
+    MergeTreeData::MutableDataPartsVector parts;
+    const ProjectionDescription & projection;
+    size_t & block_num;
+    MergeTreeData::MutableDataPartPtr new_data_part;
+    Parameters parameters;
+
+    Poco::Logger * log;
+
+    std::map<size_t, MergeTreeData::MutableDataPartsVector> level_parts;
+    size_t current_level = 0;
+    size_t next_level = 1;
+
+    /// TODO(nikitamikhaylov): make this constant a setting
+    static constexpr size_t max_parts_to_merge_in_one_level = 10;
+};
+
+
+// This class is responsible for:
 // 1. get projection pipeline and a sink to write parts
 // 2. build an executor that can write block to the input stream (actually we can write through it to generate as many parts as possible)
 // 3. finalize the pipeline so that all parts are merged into one part
-void MutateTask::writeWithProjections(
-    MergeTreeData::MutableDataPartPtr new_data_part,
-    // const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeProjections & projections_to_build,
-    BlockInputStreamPtr mutating_stream,
-    IMergedBlockOutputStream & out,
-    // time_t time_of_mutation,
-    MergeListEntry & merge_entry,
-    // ReservationSharedPtr space_reservation,
-    // TableLockHolder & holder,
-    // ContextPtr context,
-    IMergeTreeDataPart::MinMaxIndex * minmax_idx
-    )
+
+// In short it executed a mutation for the part an original part and for its every projection
+
+/**
+ *
+ * An overview of how the process of mutation works for projections:
+ *
+ * The mutation for original parts is executed block by block,
+ * but additionally we execute a SELECT query for each projection over a current block.
+ * And we store results to a map : ProjectionName -> ArrayOfParts.
+ *
+ * Then, we have to merge all parts for each projection. But we will have constraint:
+ * We cannot execute merge on more than 10 parts simulatiously.
+ * So we build a tree of merges. At the beginning all the parts have level 0.
+ * At each step we take not bigger than 10 parts from the same level
+ * and merge it into a bigger part with incremented level.
+ */
+class PartMergerWriter
 {
-    size_t block_num = 0;
-    std::map<String, MergeTreeData::MutableDataPartsVector> projection_parts;
+public:
+    PartMergerWriter(Parameters parameters_) : parameters(std::move(parameters_)), projections(parameters.metadata_snapshot->projections)
+    {
+
+    }
+
+    bool execute()
+    {
+        switch (state)
+        {
+            case State::NEED_PREPARE:
+            {
+                prepare();
+
+                state = State::NEED_MUTATE_ORIGINAL_PART;
+                return true;
+            }
+            case State::NEED_MUTATE_ORIGINAL_PART:
+            {
+                if (mutateOriginalPartAndPrepareProjections())
+                    return true;
+
+                state = State::NEED_MERGE_PROJECTION_PARTS;
+                return true;
+            }
+            case State::NEED_MERGE_PROJECTION_PARTS:
+            {
+                if (iterateThroughAllProjections())
+                    return true;
+
+                state = State::SUCCESS;
+                return true;
+            }
+            case State::SUCCESS:
+            {
+                return false;
+            }
+        }
+    }
+
+private:
+    void prepare();
+    bool mutateOriginalPartAndPrepareProjections();
+    bool iterateThroughAllProjections();
+    void constructTaskForProjectionPartsMerge();
+    void finalize();
+
+    enum class State
+    {
+        NEED_PREPARE,
+        NEED_MUTATE_ORIGINAL_PART,
+        NEED_MERGE_PROJECTION_PARTS,
+
+        SUCCESS
+    };
+
+    State state{State::NEED_PREPARE};
+    Parameters parameters;
+
     Block block;
+    size_t block_num = 0;
+
+    using ProjectionNameToItsBlocks =std::map<String, MergeTreeData::MutableDataPartsVector>;
+    ProjectionNameToItsBlocks projection_parts;
+    std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
+
     std::vector<SquashingTransform> projection_squashes;
-    for (size_t i = 0, size = projections_to_build.size(); i < size; ++i)
+    const ProjectionsDescription & projections;
+
+    ExecutableTaskUniquePtr merge_projection_parts_task_ptr;
+};
+
+
+void PartMergerWriter::prepare()
+{
+    for (size_t i = 0, size = parameters.projections_to_build.size(); i < size; ++i)
     {
         projection_squashes.emplace_back(65536, 65536 * 256);
     }
-    while (checkOperationIsNotCanceled(merges_blocker, merge_entry) && (block = mutating_stream->read()))
+}
+
+
+bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
+{
+    if (MutationHelpers::checkOperationIsNotCanceled(parameters.merges_blocker, parameters.merge_entry) && (block = parameters.mutating_stream->read()))
     {
-        if (minmax_idx)
-            minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+        if (parameters.minmax_idx)
+            parameters.minmax_idx->update(block, parameters.data.getMinMaxColumnsNames(parameters.metadata_snapshot->getPartitionKey()));
 
-        out.write(block);
+        parameters.out.write(block);
 
-        for (size_t i = 0, size = projections_to_build.size(); i < size; ++i)
+        for (size_t i = 0, size = parameters.projections_to_build.size(); i < size; ++i)
         {
-            const auto & projection = projections_to_build[i]->projection;
+            const auto & projection = parameters.projections_to_build[i]->projection;
             auto in = InterpreterSelectQuery(
                           projection.query_ast,
-                          context,
+                          parameters.context,
                           Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
                           SelectQueryOptions{
                               projection.type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns : QueryProcessingStage::WithMergeableState})
@@ -473,224 +826,117 @@ void MutateTask::writeWithProjections(
             if (projection_block)
             {
                 projection_parts[projection.name].emplace_back(
-                    MergeTreeDataWriter::writeTempProjectionPart(data, log, projection_block, projection, new_data_part.get(), ++block_num));
+                    MergeTreeDataWriter::writeTempProjectionPart(parameters.data, parameters.logger, projection_block, projection, parameters.new_data_part.get(), ++block_num));
             }
         }
 
-        merge_entry->rows_written += block.rows();
-        merge_entry->bytes_written_uncompressed += block.bytes();
+        parameters.merge_entry->rows_written += block.rows();
+        parameters.merge_entry->bytes_written_uncompressed += block.bytes();
+
+        /// Need execute again
+        return true;
     }
 
     // Write the last block
-    for (size_t i = 0, size = projections_to_build.size(); i < size; ++i)
+    for (size_t i = 0, size = parameters.projections_to_build.size(); i < size; ++i)
     {
-        const auto & projection = projections_to_build[i]->projection;
+        const auto & projection = parameters.projections_to_build[i]->projection;
         auto & projection_squash = projection_squashes[i];
         auto projection_block = projection_squash.add({});
         if (projection_block)
         {
             projection_parts[projection.name].emplace_back(
-                MergeTreeDataWriter::writeTempProjectionPart(data, log, projection_block, projection, new_data_part.get(), ++block_num));
+                MergeTreeDataWriter::writeTempProjectionPart(parameters.data, parameters.logger, projection_block, projection, parameters.new_data_part.get(), ++block_num));
         }
     }
 
-    const auto & projections = metadata_snapshot->projections;
+    projection_parts_iterator = std::make_move_iterator(projection_parts.begin());
 
-    for (auto && [name, parts] : projection_parts)
-    {
-        LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
+    /// Maybe there are no projections ?
+    if (projection_parts_iterator != std::make_move_iterator(projection_parts.end()))
+        constructTaskForProjectionPartsMerge();
 
-        const auto & projection = projections.get(name);
-
-        std::map<size_t, MergeTreeData::MutableDataPartsVector> level_parts;
-        size_t current_level = 0;
-        size_t next_level = 1;
-        level_parts[current_level] = std::move(parts);
-        size_t max_parts_to_merge_in_one_level = 10;
-        for (;;)
-        {
-            auto & current_level_parts = level_parts[current_level];
-            auto & next_level_parts = level_parts[next_level];
-
-            MergeTreeData::MutableDataPartsVector selected_parts;
-            while (selected_parts.size() < max_parts_to_merge_in_one_level && !current_level_parts.empty())
-            {
-                selected_parts.push_back(std::move(current_level_parts.back()));
-                current_level_parts.pop_back();
-            }
-
-            if (selected_parts.empty())
-            {
-                if (next_level_parts.empty())
-                {
-                    LOG_WARNING(log, "There is no projection parts merged");
-                    break;
-                }
-                current_level = next_level;
-                ++next_level;
-            }
-            else if (selected_parts.size() == 1)
-            {
-                if (next_level_parts.empty())
-                {
-                    LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
-                    selected_parts[0]->renameTo(projection.name + ".proj", true);
-                    selected_parts[0]->name = projection.name;
-                    selected_parts[0]->is_temp = false;
-                    new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
-                    break;
-                }
-                else
-                {
-                    LOG_DEBUG(log, "Forwarded part {} in level {} to next level", selected_parts[0]->name, current_level);
-                    next_level_parts.push_back(std::move(selected_parts[0]));
-                }
-            }
-            else if (selected_parts.size() > 1)
-            {
-                // Generate a unique part name
-                ++block_num;
-                auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
-                MergeTreeData::DataPartsVector const_selected_parts(
-                    std::make_move_iterator(selected_parts.begin()), std::make_move_iterator(selected_parts.end()));
-                projection_future_part->assign(std::move(const_selected_parts));
-                projection_future_part->name = fmt::format("{}_{}", projection.name, ++block_num);
-                projection_future_part->part_info = {"all", 0, 0, 0};
-
-                MergeTreeData::MergingParams projection_merging_params;
-                projection_merging_params.mode = MergeTreeData::MergingParams::Ordinary;
-                if (projection.type == ProjectionDescription::Type::Aggregate)
-                    projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
-
-                LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
-                auto tmp_part_merge_task = mutator.mergePartsToTemporaryPart(
-                    projection_future_part,
-                    projection.metadata,
-                    merge_entry,
-                    holder,
-                    time_of_mutation,
-                    context,
-                    space_reservation,
-                    false, // TODO Do we need deduplicate for projections
-                    {},
-                    projection_merging_params,
-                    new_data_part.get(),
-                    "tmp_merge_");
-
-                next_level_parts.push_back(executeHere(tmp_part_merge_task));
-
-                next_level_parts.back()->is_temp = true;
-            }
-        }
-    }
+    /// Let's move on to the next stage
+    return false;
 }
 
 
-
-
-/// Static methods
-
-bool MutateTask::checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeListEntry & mutate_entry)
+void PartMergerWriter::constructTaskForProjectionPartsMerge()
 {
-    if (merges_blocker.isCancelled() || mutate_entry->is_cancelled)
-        throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
+    auto && [name, parts] = *projection_parts_iterator;
+    const auto & projection = projections.get(name);
+
+    merge_projection_parts_task_ptr = std::make_unique<MergeProjectionPartsTask>
+    (
+        name,
+        std::move(parts),
+        projection,
+        parameters.new_data_part,
+        block_num,
+        parameters
+    );
+}
+
+
+bool PartMergerWriter::iterateThroughAllProjections()
+{
+    /// In case if there are no projections we didn't construct a task
+    if (!merge_projection_parts_task_ptr)
+        return false;
+
+    if (merge_projection_parts_task_ptr->execute())
+        return true;
+
+    ++projection_parts_iterator;
+
+    if (projection_parts_iterator == std::make_move_iterator(projection_parts.end()))
+        return false;
+
+    constructTaskForProjectionPartsMerge();
 
     return true;
 }
 
 
-void MutateTask::splitMutationCommands(
-    MergeTreeData::DataPartPtr part,
-    const MutationCommands & commands,
-    MutationCommands & for_interpreter,
-    MutationCommands & for_file_renames)
+void MutateTask::writeWithProjections(
+    MergeTreeData & data_param,
+    MergeTreeDataMergerMutator & mutator_param,
+    ActionBlocker & merges_blocker_param,
+    Poco::Logger * logger,
+    MergeTreeData::MutableDataPartPtr new_data_part,
+    const StorageMetadataPtr & metadata_snapshot_param,
+    const MergeTreeProjections & projections_to_build,
+    BlockInputStreamPtr mutating_stream,
+    IMergedBlockOutputStream & out,
+    time_t time_of_mutation_param,
+    MergeListEntry & merge_entry,
+    ReservationSharedPtr space_reservation_param,
+    TableLockHolder & holder_param,
+    ContextPtr context_param,
+    IMergeTreeDataPart::MinMaxIndex * minmax_idx
+    )
 {
-    ColumnsDescription part_columns(part->getColumns());
+    auto task = std::make_unique<PartMergerWriter>
+    (Parameters{
+        data_param,
+        mutator_param,
+        merges_blocker_param,
+        logger,
+        new_data_part,
+        metadata_snapshot_param,
+        projections_to_build,
+        mutating_stream,
+        out,
+        time_of_mutation_param,
+        merge_entry,
+        space_reservation_param,
+        holder_param,
+        context_param,
+        minmax_idx
+    });
 
-    if (!isWidePart(part))
-    {
-        NameSet mutated_columns;
-        for (const auto & command : commands)
-        {
-            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
-                || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
-                || command.type == MutationCommand::Type::MATERIALIZE_TTL
-                || command.type == MutationCommand::Type::DELETE
-                || command.type == MutationCommand::Type::UPDATE)
-            {
-                for_interpreter.push_back(command);
-                for (const auto & [column_name, expr] : command.column_to_update_expression)
-                    mutated_columns.emplace(column_name);
-            }
-            else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
-            {
-                for_file_renames.push_back(command);
-            }
-            else if (part_columns.has(command.column_name))
-            {
-                if (command.type == MutationCommand::Type::DROP_COLUMN)
-                {
-                    mutated_columns.emplace(command.column_name);
-                }
-                else if (command.type == MutationCommand::Type::RENAME_COLUMN)
-                {
-                    for_interpreter.push_back(
-                    {
-                        .type = MutationCommand::Type::READ_COLUMN,
-                        .column_name = command.rename_to,
-                    });
-                    mutated_columns.emplace(command.column_name);
-                    part_columns.rename(command.column_name, command.rename_to);
-                }
-            }
-        }
-        /// If it's compact part, then we don't need to actually remove files
-        /// from disk we just don't read dropped columns
-        for (const auto & column : part->getColumns())
-        {
-            if (!mutated_columns.count(column.name))
-                for_interpreter.emplace_back(
-                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
-        }
-    }
-    else
-    {
-        for (const auto & command : commands)
-        {
-            if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
-                || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
-                || command.type == MutationCommand::Type::MATERIALIZE_TTL
-                || command.type == MutationCommand::Type::DELETE
-                || command.type == MutationCommand::Type::UPDATE)
-            {
-                for_interpreter.push_back(command);
-            }
-            else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
-            {
-                for_file_renames.push_back(command);
-            }
-            /// If we don't have this column in source part, than we don't need
-            /// to materialize it
-            else if (part_columns.has(command.column_name))
-            {
-                if (command.type == MutationCommand::Type::READ_COLUMN)
-                {
-                    for_interpreter.push_back(command);
-                }
-                else if (command.type == MutationCommand::Type::RENAME_COLUMN)
-                {
-                    part_columns.rename(command.column_name, command.rename_to);
-                    for_file_renames.push_back(command);
-                }
-                else
-                {
-                    for_file_renames.push_back(command);
-                }
-            }
-        }
-    }
+    while (task->execute()) {}
 }
-
 
 
 

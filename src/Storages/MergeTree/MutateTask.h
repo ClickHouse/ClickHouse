@@ -93,32 +93,22 @@ private:
         // ContextPtr context
         );
 
-    void writeWithProjections(
+    static void writeWithProjections(
+        MergeTreeData & data_param,
+        MergeTreeDataMergerMutator & mutator_param,
+        ActionBlocker & merges_blocker_param,
+        Poco::Logger * logger,
         MergeTreeData::MutableDataPartPtr new_data_part,
-        // const StorageMetadataPtr & metadata_snapshot,
+        const StorageMetadataPtr & metadata_snapshot_param,
         const MergeTreeProjections & projections_to_build,
         BlockInputStreamPtr mutating_stream,
         IMergedBlockOutputStream & out,
-        // time_t time_of_mutation,
+        time_t time_of_mutation_param,
         MergeListEntry & merge_entry,
-        // ReservationSharedPtr space_reservation,
-        // TableLockHolder & holder,
-        // ContextPtr context,
+        ReservationSharedPtr space_reservation_param,
+        TableLockHolder & holder,
+        ContextPtr context,
         IMergeTreeDataPart::MinMaxIndex * minmax_idx = nullptr);
-
-
-    static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeListEntry & mutate_entry);
-
-
-    /** Split mutation commands into two parts:
-    * First part should be executed by mutations interpreter.
-    * Other is just simple drop/renames, so they can be executed without interpreter.
-    */
-    static void splitMutationCommands(
-        MergeTreeData::DataPartPtr part,
-        const MutationCommands & commands,
-        MutationCommands & for_interpreter,
-        MutationCommands & for_file_renames);
 
 
     std::promise<MergeTreeData::MutableDataPartPtr> promise;
