@@ -5,6 +5,17 @@ toc_title: "Манипуляции со столбцами"
 
 # Манипуляции со столбцами {#manipuliatsii-so-stolbtsami}
 
+Набор действий позволяющих изменять структуру таблицы
+
+Синтаксис:
+
+``` sql
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN ...
+```
+
+В запросе можно указать сразу несколько действий над одной таблицей через запятую.
+Каждое действие это манипуляция над столбцом.
+
 Существуют следующие действия:
 
 -   [ADD COLUMN](#alter_add-column) — добавляет столбец в таблицу;
@@ -72,6 +83,22 @@ DROP COLUMN [IF EXISTS] name
 ALTER TABLE visits DROP COLUMN browser
 ```
 
+## RENAME COLUMN {#alter_rename-column}
+
+``` sql
+RENAME COLUMN [IF EXISTS] name to new_name
+```
+
+Переименовывает столбец `name` в `new_name`. Если указано выражение `IF EXISTS`, запрос не будет возвращать ошибку если столбец `name` не существует. Поскольку переименование не затрагивает физические данные колонки, запрос выполняется практически мгновенно.
+
+**ЗАМЕЧЕНИЕ**: Столбцы являющиеся частью основного ключа или ключа сортировки (заданные с помощью `ORDER BY` или `PRIMARY KEY`) не могут быть переименованы. Попытка переименовать эти слобцы приведет к `SQL Error [524]`. 
+
+Пример:
+
+``` sql
+ALTER TABLE visits RENAME COLUMN webBrowser TO browser
+```
+
 ## CLEAR COLUMN {#alter_clear-column}
 
 ``` sql
@@ -109,7 +136,7 @@ ALTER TABLE visits COMMENT COLUMN browser 'Столбец показывает, 
 ## MODIFY COLUMN {#alter_modify-column}
 
 ``` sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL] [AFTER name_after | FIRST]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
 ```
 
 Запрос изменяет следующие свойства столбца `name`:
@@ -118,9 +145,13 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL] [AFTER name_after | F
 
 -   Значение по умолчанию
 
+-   Кодеки сжатия
+
 -   TTL
 
-        Примеры изменения TTL столбца смотрите в разделе [TTL столбца](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
+Примеры изменения кодеков сжатия смотрите в разделе [Кодеки сжатия столбцов](../create/table.md#codecs)
+
+Примеры изменения TTL столбца смотрите в разделе [TTL столбца](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
 
 Если указано `IF EXISTS`, запрос не возвращает ошибку, если столбца не существует.
 
@@ -189,4 +220,3 @@ ALTER TABLE table_with_ttl RENAME COLUMN column_ttl TO column_ttl_new;
 Запрос `ALTER` блокирует все чтения и записи для таблицы. То есть, если на момент запроса `ALTER`, выполнялся долгий `SELECT`, то запрос `ALTER` сначала дождётся его выполнения. И в это время, все новые запросы к той же таблице, будут ждать, пока завершится этот `ALTER`.
 
 Для таблиц, которые не хранят данные самостоятельно (типа [Merge](../../../sql-reference/statements/alter/index.md) и [Distributed](../../../sql-reference/statements/alter/index.md)), `ALTER` всего лишь меняет структуру таблицы, но не меняет структуру подчинённых таблиц. Для примера, при ALTER-е таблицы типа `Distributed`, вам также потребуется выполнить запрос `ALTER` для таблиц на всех удалённых серверах.
-
