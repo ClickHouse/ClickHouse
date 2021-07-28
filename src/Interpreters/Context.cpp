@@ -800,13 +800,12 @@ void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAd
     user_id = new_user_id;
     access = std::move(new_access);
 
-    
     auto user = access->getUser();
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
     if (!user->default_database.empty())
         setCurrentDatabase(user->default_database);
-  
+
     auto default_profile_info = access->getDefaultProfileInfo();
     settings_constraints_and_current_profiles = default_profile_info->getConstraintsAndProfileIDs();
     applySettingsChanges(default_profile_info->settings);

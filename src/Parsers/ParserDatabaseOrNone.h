@@ -1,16 +1,17 @@
-//
-// Created by max_w on 2021/7/27.
-//
+#pragma once
+#include <Parsers/IParserBase.h>
 
-#ifndef CLICKHOUSE_PARSERDATABASEORNONE_H
-#define CLICKHOUSE_PARSERDATABASEORNONE_H
+namespace DB
+{
 
-
-
-class ParserDatabaseOrNone {
+class ParserDatabaseOrNone : public IParserBase
+{
+protected:
+    const char * getName() const override { return "DatabaseOrNone"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 };
 
+}
 
 
-#endif //CLICKHOUSE_PARSERDATABASEORNONE_H
