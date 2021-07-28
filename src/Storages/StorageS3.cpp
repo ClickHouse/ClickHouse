@@ -409,9 +409,9 @@ public:
             MutableColumns column_sub_chunks = columns[column_index]->scatter(sub_chunks_indices.size(), selector);
             if (column_index == 0) /// Set sizes for sub-chunks.
             {
-                for (size_t sub_chunk_index = 0; sub_chunk_index < column_sub_chunks.size(); ++sub_chunk_index)
+                for (const auto & column_sub_chunk : column_sub_chunks)
                 {
-                    sub_chunks.emplace_back(Columns(), column_sub_chunks[sub_chunk_index]->size());
+                    sub_chunks.emplace_back(Columns(), column_sub_chunk->size());
                 }
             }
             for (size_t sub_chunk_index = 0; sub_chunk_index < column_sub_chunks.size(); ++sub_chunk_index)
