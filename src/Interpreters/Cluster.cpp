@@ -115,23 +115,44 @@ Cluster::Address::Address(
 
 
 Cluster::Address::Address(
-        const String & host_port_,
-        const String & user_,
-        const String & password_,
-        UInt16 clickhouse_port,
-        bool secure_,
-        Int64 priority_,
-        UInt32 shard_index_,
-        UInt32 replica_index_)
-    : user(user_)
-    , password(password_)
+    const String & host_port_,
+    const String & user_,
+    const String & password_,
+    UInt16 clickhouse_port,
+    bool treat_local_port_as_remote,
+    bool secure_,
+    Int64 priority_,
+    UInt32 shard_index_,
+    UInt32 replica_index_)
+    : user(user_), password(password_)
 {
-    auto parsed_host_port = parseAddress(host_port_, clickhouse_port);
+    bool can_be_local = true;
+    std::pair<std::string, UInt16> parsed_host_port;
+    if (!treat_local_port_as_remote)
+    {
+        parsed_host_port = parseAddress(host_port_, clickhouse_port);
+    }
+    else
+    {
+        /// For clickhouse-local (treat_local_port_as_remote) try to read the address without passing a default port
+        /// If it works we have a full address that includes a port, which means it won't be local
+        /// since clickhouse-local doesn't listen in any port
+        /// If it doesn't include a port then use the default one and it could be local (if the address is)
+        try
+        {
+            parsed_host_port = parseAddress(host_port_, 0);
+            can_be_local = false;
+        }
+        catch (...)
+        {
+            parsed_host_port = parseAddress(host_port_, clickhouse_port);
+        }
+    }
     host_name = parsed_host_port.first;
     port = parsed_host_port.second;
     secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = priority_;
-    is_local = isLocal(clickhouse_port);
+    is_local = can_be_local && isLocal(clickhouse_port);
     shard_index = shard_index_;
     replica_index = replica_index_;
 }
@@ -329,7 +350,7 @@ Clusters::Impl Clusters::getContainer() const
 Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                  const Settings & settings,
                  const String & config_prefix_,
-                 const String & cluster_name)
+                 const String & cluster_name) : name(cluster_name)
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -366,7 +387,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
-            ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
+            auto pool = ConnectionPoolFactory::instance().get(
                 settings.distributed_connections_pool_size,
                 address.host_name, address.port,
                 address.default_database, address.user, address.password,
@@ -439,7 +460,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             for (const auto & replica : replica_addresses)
             {
-                auto replica_pool = std::make_shared<ConnectionPool>(
+                auto replica_pool = ConnectionPoolFactory::instance().get(
                     settings.distributed_connections_pool_size,
                     replica.host_name, replica.port,
                     replica.default_database, replica.user, replica.password,
@@ -482,9 +503,16 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 }
 
 
-Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-                 const String & username, const String & password, UInt16 clickhouse_port, bool treat_local_as_remote,
-                 bool secure, Int64 priority)
+Cluster::Cluster(
+    const Settings & settings,
+    const std::vector<std::vector<String>> & names,
+    const String & username,
+    const String & password,
+    UInt16 clickhouse_port,
+    bool treat_local_as_remote,
+    bool treat_local_port_as_remote,
+    bool secure,
+    Int64 priority)
 {
     UInt32 current_shard_num = 1;
 
@@ -492,7 +520,16 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     {
         Addresses current;
         for (const auto & replica : shard)
-            current.emplace_back(replica, username, password, clickhouse_port, secure, priority, current_shard_num, current.size() + 1);
+            current.emplace_back(
+                replica,
+                username,
+                password,
+                clickhouse_port,
+                treat_local_port_as_remote,
+                secure,
+                priority,
+                current_shard_num,
+                current.size() + 1);
 
         addresses_with_failover.emplace_back(current);
 
@@ -502,7 +539,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
 
         for (const auto & replica : current)
         {
-            auto replica_pool = std::make_shared<ConnectionPool>(
+            auto replica_pool = ConnectionPoolFactory::instance().get(
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port,
                         replica.default_database, replica.user, replica.password,
@@ -606,7 +643,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
-            ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
+            auto pool = ConnectionPoolFactory::instance().get(
                 settings.distributed_connections_pool_size,
                 address.host_name,
                 address.port,

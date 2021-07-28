@@ -153,6 +153,26 @@ Possible values:
 
 Default value: 1048576.
 
+## table_function_remote_max_addresses {#table_function_remote_max_addresses}
+
+Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
+##  glob_expansion_max_elements  {#glob_expansion_max_elements }
+
+Sets the maximum number of addresses generated from patterns for external storages and table functions (like [url](../../sql-reference/table-functions/url.md)) except the `remote` function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
@@ -508,6 +528,23 @@ Possible values:
 -   `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
 Default value: `ALL`.
+
+## join_algorithm {#settings-join_algorithm}
+
+Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
+
+Possible values:
+
+- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
+- `partial_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
+- `prefer_partial_merge` — ClickHouse always tries to use `merge` join if possible.
+- `auto` — ClickHouse tries to change `hash` join to `merge` join on the fly to avoid out of memory.
+
+Default value: `hash`.
+
+When using `hash` algorithm the right part of `JOIN` is uploaded into RAM. 
+
+When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to the disk. The `merge` algorithm in ClickHouse differs a bit from the classic realization. First ClickHouse sorts the right table by [join key](../../sql-reference/statements/select/join.md#select-join) in blocks and creates min-max index for sorted blocks. Then it sorts parts of left table by `join key` and joins them over right table. The min-max index is also used to skip unneeded right table blocks.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
@@ -1738,7 +1775,7 @@ Default value: 0.
 
 ## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
 
-Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read. 
+Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read.
 
 These functions can be transformed:
 
@@ -1969,6 +2006,13 @@ Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
 
+## output_format_avro_string_column_pattern {#output_format_avro_string_column_pattern}
+
+Regexp of column names of type String to output as Avro `string` (default is `bytes`).
+RE2 syntax is supported.
+
+Type: string
+
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
 Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format.
@@ -2000,13 +2044,13 @@ Default value: 16.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
-Sleep time for merge selecting when no part selected, a lower setting will trigger selecting tasks in background_schedule_pool frequently which result in large amount of requests to zookeeper in large-scale clusters
+Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to Zookeeper in large-scale clusters.
 
 Possible values:
 
 -   Any positive integer.
 
-Default value: 5000 
+Default value: `5000`.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 

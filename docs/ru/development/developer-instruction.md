@@ -128,7 +128,7 @@ Ninja - система запуска сборочных задач.
     /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew install cmake ninja
 
-Проверьте версию CMake: `cmake --version`. Если версия меньше 3.3, то установите новую версию с сайта https://cmake.org/download/
+Проверьте версию CMake: `cmake --version`. Если версия меньше 3.12, то установите новую версию с сайта https://cmake.org/download/
 
 ## Необязательные внешние библиотеки {#neobiazatelnye-vneshnie-biblioteki}
 
@@ -241,6 +241,8 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 Описание архитектуры ClickHouse: https://clickhouse.tech/docs/ru/development/architecture/
 
 Стиль кода: https://clickhouse.tech/docs/ru/development/style/
+
+Рекомендации по добавлению сторонних библиотек и поддержанию в них пользовательских изменений: https://clickhouse.tech/docs/ru/development/contrib/#adding-third-party-libraries
 
 Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 

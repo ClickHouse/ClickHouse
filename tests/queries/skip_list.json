@@ -41,7 +41,8 @@
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01955_clickhouse_benchmark_connection_hang" /// Limits RLIMIT_NOFILE, see comment in the test
     ],
     "memory-sanitizer": [
         "capnproto",
@@ -175,7 +176,9 @@
         "00140_rename",
         /// Requires investigation
         "00953_zookeeper_suetin_deduplication_bug",
-        "01783_http_chunk_size"
+        "01783_http_chunk_size",
+        "01943_query_id_check",
+        "00166_explain_estimate"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
@@ -491,6 +494,7 @@
         "01684_ssd_cache_dictionary_simple_key",
         "01685_ssd_cache_dictionary_complex_key",
         "01737_clickhouse_server_wait_server_pool_long", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
+        "01954_clickhouse_benchmark_round_robin", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
         "01594_too_low_memory_limits", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
         "01760_system_dictionaries",
         "01760_polygon_dictionaries",
@@ -514,6 +518,10 @@
         "01915_create_or_replace_dictionary",
         "01925_test_storage_merge_aliases",
         "01933_client_replxx_convert_history", /// Uses non unique history file
-        "01902_table_function_merge_db_repr"
+        "01999_grant_with_replace",
+        "01902_table_function_merge_db_repr",
+        "01946_test_zstd_decompression_with_escape_sequence_at_the_end_of_buffer",
+        "01946_test_wrong_host_name_access",
+        "01213_alter_rename_with_default_zookeeper" /// Warning: Removing leftovers from table.
     ]
 }

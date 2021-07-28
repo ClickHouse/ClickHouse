@@ -663,7 +663,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(
-                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out! "
+                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out. "
                     "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
         }
         LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
