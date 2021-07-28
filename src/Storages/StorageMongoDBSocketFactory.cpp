@@ -17,11 +17,7 @@ namespace DB
 
 Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSocket(const std::string & host, int port, Poco::Timespan connectTimeout, bool secure)
 {
-#if USE_SSL
     return secure ? createSecureSocket(host, port, connectTimeout) : createPlainSocket(host, port, connectTimeout);
-#else
-    return createPlainSocket(host, port, connectTimeout);
-#endif
 }
 
 Poco::Net::StreamSocket StorageMongoDBSocketFactory::createPlainSocket(const std::string & host, int port, Poco::Timespan connectTimeout)
@@ -34,16 +30,19 @@ Poco::Net::StreamSocket StorageMongoDBSocketFactory::createPlainSocket(const std
     return socket;
 }
 
-#if USE_SSL
+
 Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSecureSocket(const std::string & host, int port, Poco::Timespan connectTimeout)
 {
+#if USE_SSL
     Poco::Net::SocketAddress address(host, port);
     Poco::Net::SecureStreamSocket socket;
 
     socket.connect(address, connectTimeout);
 
     return socket;
-}
+#else
+    return createPlainSocket(host, port, connectTimeout);
 #endif
+}
 
 }
