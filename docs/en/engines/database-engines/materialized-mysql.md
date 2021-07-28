@@ -42,6 +42,13 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
         max_wait_time_when_mysql_unavailable=10000;
 ```
 
+**Settings on MySQL-server side**
+
+For the correct work of `MaterializeMySQL`, there are few mandatory `MySQL`-side configuration settings that should be set:
+
+- `default_authentication_plugin = mysql_native_password` since `MaterializeMySQL` can only authorize with this method.
+- `gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializeMySQL` replication. Pay attention that while turning this mode `On` you should also specify `enforce_gtid_consistency = on`.
+
 ## Virtual columns {#virtual-columns}
 
 When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
@@ -70,12 +77,21 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 | STRING                  | [String](../../sql-reference/data-types/string.md)           |
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
+| BINARY                  | [FixedString](../../sql-reference/data-types/fixedstring.md) |
 
 Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws exception "Unhandled data type" and stops replication.
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
+
+### Compatibility restrictions
+
+Apart of the data types limitations there are few restrictions comparing to `MySQL` databases, that should be resolved before replication will be possible:
+
+- Each table in `MySQL` should contain `PRIMARY KEY`.
+
+- Replication for tables, those are containing rows with `ENUM` field values out of range (specified in `ENUM` signature) will not work.
 
 ### DDL Queries {#ddl-queries}
 
