@@ -1,22 +1,22 @@
 
 ---
 toc_priority: 29
-toc_title: MaterializeMySQL
+toc_title: MaterializedMySQL
 ---
 
-# MaterializeMySQL {#materialize-mysql}
+# MaterializedMySQL {#materialized-mysql}
 
 Создает базу данных ClickHouse со всеми таблицами, существующими в MySQL, и всеми данными в этих таблицах.
 
 Сервер ClickHouse работает как реплика MySQL. Он читает файл binlog и выполняет DDL and DML-запросы.
 
-`MaterializeMySQL` — экспериментальный движок баз данных.
+`MaterializedMySQL` — экспериментальный движок баз данных.
 
 ## Создание базы данных {#creating-a-database}
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
+ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
 ```
 
 **Параметры движка**
@@ -28,7 +28,7 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 
 ## Виртуальные столбцы {#virtual-columns}
 
-При работе с движком баз данных `MaterializeMySQL` используются таблицы семейства [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) с виртуальными столбцами `_sign` и `_version`.
+При работе с движком баз данных `MaterializedMySQL` используются таблицы семейства [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) с виртуальными столбцами `_sign` и `_version`.
 
 - `_version` — счетчик транзакций. Тип [UInt64](../../sql-reference/data-types/int-uint.md).
 - `_sign` — метка удаления. Тип [Int8](../../sql-reference/data-types/int-uint.md). Возможные значения:
@@ -75,9 +75,9 @@ DDL-запросы в MySQL конвертируются в соответств
 
 - Запрос `UPDATE` конвертируется в ClickHouse в `INSERT` с `_sign=-1` и `INSERT` с `_sign=1`.
 
-### Выборка из таблиц движка MaterializeMySQL {#select}
+### Выборка из таблиц движка MaterializedMySQL {#select}
 
-Запрос `SELECT` из таблиц движка `MaterializeMySQL` имеет некоторую специфику:
+Запрос `SELECT` из таблиц движка `MaterializedMySQL` имеет некоторую специфику:
 
 - Если в запросе `SELECT` напрямую не указан столбец `_version`, то используется модификатор [FINAL](../../sql-reference/statements/select/from.md#select-from-final). Таким образом, выбираются только строки с `MAX(_version)`.
 
@@ -94,10 +94,10 @@ DDL-запросы в MySQL конвертируются в соответств
 **Примечание**
 
 - Строки с `_sign=-1` физически не удаляются из таблиц.
-- Каскадные запросы `UPDATE/DELETE` не поддерживаются движком `MaterializeMySQL`.
+- Каскадные запросы `UPDATE/DELETE` не поддерживаются движком `MaterializedMySQL`.
 - Репликация может быть легко нарушена.
-- Прямые операции изменения данных в таблицах и базах данных `MaterializeMySQL` запрещены.
-- На работу `MaterializeMySQL` влияет настройка [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert). Когда таблица на MySQL сервере меняется, происходит слияние данных в соответсвующей таблице в базе данных `MaterializeMySQL`.
+- Прямые операции изменения данных в таблицах и базах данных `MaterializedMySQL` запрещены.
+- На работу `MaterializedMySQL` влияет настройка [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert). Когда таблица на MySQL сервере меняется, происходит слияние данных в соответсвующей таблице в базе данных `MaterializedMySQL`.
 
 ## Примеры использования {#examples-of-use}
 
@@ -126,7 +126,7 @@ mysql> SELECT * FROM test;
 База данных и созданная таблица:
 
 ``` sql
-CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', '***');
+CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***');
 SHOW TABLES FROM mysql;
 ```
 

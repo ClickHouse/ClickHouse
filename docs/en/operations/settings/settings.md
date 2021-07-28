@@ -2927,7 +2927,7 @@ Result:
 └─────────────┘
 ```
 
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
+Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md) behaviour.
 
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 

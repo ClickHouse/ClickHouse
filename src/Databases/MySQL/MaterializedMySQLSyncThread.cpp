@@ -4,7 +4,7 @@
 
 #if USE_MYSQL
 
-#include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #    include <cstdlib>
 #    include <random>
 #    include <Columns/ColumnTuple.h>
@@ -12,7 +12,7 @@
 #    include <DataStreams/CountingBlockOutputStream.h>
 #    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
-#    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
 #    include <Formats/MySQLBlockInputStream.h>
 #    include <IO/ReadBufferFromString.h>
@@ -71,14 +71,14 @@ static BlockIO tryToExecuteQuery(const String & query_to_execute, ContextMutable
     catch (...)
     {
         tryLogCurrentException(
-            &Poco::Logger::get("MaterializeMySQLSyncThread(" + database + ")"),
+            &Poco::Logger::get("MaterializedMySQLSyncThread(" + database + ")"),
             "Query " + query_to_execute + " wasn't finished successfully");
         throw;
     }
 }
 
 
-MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
+MaterializedMySQLSyncThread::~MaterializedMySQLSyncThread()
 {
     try
     {
@@ -129,7 +129,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     {
         bool first = true;
         WriteBufferFromOwnString error_message;
-        error_message << "Illegal MySQL variables, the MaterializeMySQL engine requires ";
+        error_message << "Illegal MySQL variables, the MaterializedMySQL engine requires ";
         for (const auto & [variable_name, variable_error_val] : variables_error_message)
         {
             error_message << (first ? "" : ", ") << variable_name << "='" << variable_error_val << "'";
@@ -142,15 +142,15 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     }
 }
 
-MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
+MaterializedMySQLSyncThread::MaterializedMySQLSyncThread(
     ContextPtr context_,
     const String & database_name_,
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
-    MaterializeMySQLSettings * settings_)
+    MaterializedMySQLSettings * settings_)
     : WithContext(context_->getGlobalContext())
-    , log(&Poco::Logger::get("MaterializeMySQLSyncThread"))
+    , log(&Poco::Logger::get("MaterializedMySQLSyncThread"))
     , database_name(database_name_)
     , mysql_database_name(mysql_database_name_)
     , pool(std::move(pool_))
@@ -160,7 +160,7 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     query_prefix = "EXTERNAL DDL FROM MySQL(" + backQuoteIfNeed(database_name) + ", " + backQuoteIfNeed(mysql_database_name) + ") ";
 }
 
-void MaterializeMySQLSyncThread::synchronization()
+void MaterializedMySQLSyncThread::synchronization()
 {
     setThreadName(MYSQL_BACKGROUND_THREAD_NAME);
 
@@ -221,7 +221,7 @@ void MaterializeMySQLSyncThread::synchronization()
     }
 }
 
-void MaterializeMySQLSyncThread::stopSynchronization()
+void MaterializedMySQLSyncThread::stopSynchronization()
 {
     if (!sync_quit && background_thread_pool)
     {
@@ -231,12 +231,12 @@ void MaterializeMySQLSyncThread::stopSynchronization()
     }
 }
 
-void MaterializeMySQLSyncThread::startSynchronization()
+void MaterializedMySQLSyncThread::startSynchronization()
 {
     background_thread_pool = std::make_unique<ThreadFromGlobalPool>([this]() { synchronization(); });
 }
 
-void MaterializeMySQLSyncThread::assertMySQLAvailable()
+void MaterializedMySQLSyncThread::assertMySQLAvailable()
 {
     try
     {
@@ -334,7 +334,7 @@ static inline void dumpDataForTables(
             Stopwatch watch;
             copyData(input, *out, is_cancelled);
             const Progress & progress = out->getProgress();
-            LOG_INFO(&Poco::Logger::get("MaterializeMySQLSyncThread(" + database_name + ")"),
+            LOG_INFO(&Poco::Logger::get("MaterializedMySQLSyncThread(" + database_name + ")"),
                 "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
                 , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
                 , watch.elapsedSeconds(), formatReadableQuantity(static_cast<size_t>(progress.written_rows / watch.elapsedSeconds()))
@@ -356,7 +356,7 @@ static inline UInt32 randomNumber()
     return dist6(rng);
 }
 
-bool MaterializeMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metadata)
+bool MaterializedMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metadata)
 {
     bool opened_transaction = false;
     mysqlxx::PoolWithFailover::Entry connection;
@@ -441,7 +441,7 @@ bool MaterializeMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metad
     return false;
 }
 
-void MaterializeMySQLSyncThread::flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata)
+void MaterializedMySQLSyncThread::flushBuffersData(Buffers & buffers, MaterializeMetadata & metadata)
 {
     if (buffers.data.empty())
         return;
@@ -674,7 +674,7 @@ static inline size_t onUpdateData(const Row & rows_data, Block & buffer, size_t 
     return buffer.bytes() - prev_bytes;
 }
 
-void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr & receive_event, MaterializeMetadata & metadata)
+void MaterializedMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr & receive_event, MaterializeMetadata & metadata)
 {
     if (receive_event->type() == MYSQL_WRITE_ROWS_EVENT)
     {
@@ -729,7 +729,7 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
     }
 }
 
-void MaterializeMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_event)
+void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_event)
 {
     try
     {
@@ -751,18 +751,18 @@ void MaterializeMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_event
     }
 }
 
-bool MaterializeMySQLSyncThread::isMySQLSyncThread()
+bool MaterializedMySQLSyncThread::isMySQLSyncThread()
 {
     return getThreadName() == MYSQL_BACKGROUND_THREAD_NAME;
 }
 
-void MaterializeMySQLSyncThread::setSynchronizationThreadException(const std::exception_ptr & exception)
+void MaterializedMySQLSyncThread::setSynchronizationThreadException(const std::exception_ptr & exception)
 {
     auto db = DatabaseCatalog::instance().getDatabase(database_name);
     DB::setSynchronizationThreadException(db, exception);
 }
 
-void MaterializeMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes)
+void MaterializedMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes)
 {
     total_blocks_rows += written_rows;
     total_blocks_bytes += written_bytes;
@@ -770,13 +770,13 @@ void MaterializeMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_by
     max_block_bytes = std::max(block_bytes, max_block_bytes);
 }
 
-bool MaterializeMySQLSyncThread::Buffers::checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes) const
+bool MaterializedMySQLSyncThread::Buffers::checkThresholds(size_t check_block_rows, size_t check_block_bytes, size_t check_total_rows, size_t check_total_bytes) const
 {
     return max_block_rows >= check_block_rows || max_block_bytes >= check_block_bytes || total_blocks_rows >= check_total_rows
         || total_blocks_bytes >= check_total_bytes;
 }
 
-void MaterializeMySQLSyncThread::Buffers::commit(ContextPtr context)
+void MaterializedMySQLSyncThread::Buffers::commit(ContextPtr context)
 {
     try
     {
@@ -801,7 +801,7 @@ void MaterializeMySQLSyncThread::Buffers::commit(ContextPtr context)
     }
 }
 
-MaterializeMySQLSyncThread::Buffers::BufferAndSortingColumnsPtr MaterializeMySQLSyncThread::Buffers::getTableDataBuffer(
+MaterializedMySQLSyncThread::Buffers::BufferAndSortingColumnsPtr MaterializedMySQLSyncThread::Buffers::getTableDataBuffer(
     const String & table_name, ContextPtr context)
 {
     const auto & iterator = data.find(table_name);
