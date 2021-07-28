@@ -20,7 +20,7 @@
 #define DBMS_DEFAULT_POLL_INTERVAL 10
 
 /// The size of the I/O buffer by default.
-#define DBMS_DEFAULT_BUFFER_SIZE 1048576ULL
+#define DBMS_DEFAULT_BUFFER_SIZE 65536ULL
 
 /** Which blocks by default read the data (by number of rows).
   * Smaller values give better cache locality, less consumption of RAM, but more overhead to process the query.
