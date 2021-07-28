@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include "Documentation/SimpleDocumentation.h"
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 
@@ -23,13 +24,13 @@ void TableFunctionFactory::registerFunction(const std::string & name, Value crea
     if (!table_functions.emplace(name, creator).second)
         throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
-    else table_docs.emplace(name, std::move(documentation));
+    else table_docs.emplace(name, documentation == nullptr ? makeSimpleDocumentation("Not found") : std::move(documentation));
 
     if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_table_functions.emplace(Poco::toLower(name), creator).second)
         throw Exception("TableFunctionFactory: the case insensitive table function name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
-    else case_insensitive_table_docs.emplace(name, std::move(documentation));
+    else case_insensitive_table_docs.emplace(name, documentation == nullptr ? makeSimpleDocumentation("Not found") : std::move(documentation));
 }
 
 TableFunctionPtr TableFunctionFactory::get(
@@ -87,12 +88,12 @@ std::string TableFunctionFactory::getDocumetation(const std::string & name_param
 
     auto it = table_docs.find(name);
     if (table_docs.end() != it)
-        return it->second == nullptr ? "Not found" : it->second->getDocumentation();
+        return it->second->getDocumentation();
     else
     {
         it = case_insensitive_table_docs.find(Poco::toLower(name));
         if (case_insensitive_table_docs.end() != it)
-            return it->second == nullptr ? "Not found" : it->second->getDocumentation();
+            return it->second->getDocumentation();
     }
 
     if (CurrentThread::isInitialized())

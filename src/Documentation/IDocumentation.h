@@ -10,7 +10,7 @@ namespace DB
 
 /**
  * Class for creating documentation in order that is set by add-functions
- * It is simpler to build documention without missing symbols when changing docs,
+ * It is simpler to build documentation without missing symbols when changing docs,
  * easier to change order and to get particular parts of documentation for other uses
  */
 class IDocumentation : public std::enable_shared_from_this<IDocumentation>
