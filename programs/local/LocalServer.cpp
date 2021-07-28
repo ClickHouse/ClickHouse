@@ -218,7 +218,7 @@ std::string LocalServer::getInitialCreateTableQuery()
 }
 
 
-void LocalServer::executeParsedQueryImpl()
+void LocalServer::executeSingleQuery(const String & query_to_execute)
 {
     ReadBufferFromString read_buf(query_to_execute);
     WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
@@ -307,13 +307,6 @@ int LocalServer::mainImpl()
     try
     {
         ThreadStatus thread_status;
-
-        if (is_interactive)
-        {
-            std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
-            for (const auto & [key, value] : prompt_substitutions)
-                boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
-        }
 
         /// We will terminate process on error
         static KillingErrorHandler error_handler;
@@ -491,8 +484,12 @@ void LocalServer::processConfig()
     }
 
     echo_queries = config().hasOption("echo") || config().hasOption("verbose");
-    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+
     server_display_name = config().getString("display_name", getFQDNOrHostName());
+    prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
+    std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
+    for (const auto & [key, value] : prompt_substitutions)
+        boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 }
 
 
@@ -628,7 +625,7 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setBool("no-system-tables", true);
 
     if (options.count("queries-file"))
-        queries_files = options["queries-file"].as<std::vector<std::string>>();
+        queries_files.emplace_back(config().getString("queries-file"));
 }
 
 }

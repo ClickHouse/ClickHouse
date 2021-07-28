@@ -46,51 +46,32 @@ protected:
 
     int mainImpl() override;
 
-    void shutdown() override
+
+    bool processMultiQuery(const String & all_queries_text) override
     {
-        try
-        {
-            cleanup();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        auto process_single_query = [&](const String & query, const String &, ASTPtr) { executeSingleQuery(query); };
+        return processMultiQueryImpl(all_queries_text, process_single_query);
     }
+
+    void processSingleQuery(const String & full_query) override
+    {
+        auto process_single_query = [&]() { executeSingleQuery(full_query); };
+        processSingleQueryImpl(full_query, process_single_query);
+    }
+
 
     String getQueryTextPrefix() override
     {
         return getInitialCreateTableQuery();
     }
 
-    bool processMultiQuery(const String & all_queries_text) override
-    {
-        auto process_single_query = [&](const String & query)
-        {
-            prepareAndExecuteQuery(query);
-        };
-        return processMultiQueryImpl(all_queries_text, process_single_query);
-    }
-
-    void executeParsedQueryImpl() override;
-
-    void reportQueryError() const override {}
+    void reportQueryError(const String &) const override {}
 
     void printHelpMessage(const OptionsDescription & options_description) override;
 
-    bool supportPasswordOption() const override { return false; }
-
-    bool processMultiQueryFromFile(const String & file) override
-    {
-        auto text = getInitialCreateTableQuery();
-        String queries_from_file;
-        ReadBufferFromFile in(file);
-        readStringUntilEOF(queries_from_file, in);
-        text += queries_from_file;
-        return processMultiQuery(text);
-    }
-
 private:
+    void executeSingleQuery(const String & query_to_execute);
+
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
       * This query will be executed first, before queries passed through --query argument
       * Returns empty string if it cannot compose that query.
