@@ -149,7 +149,7 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_a
 
 -   TTL
 
-Примеры изменения кодеков сжатия смотрите в разделе [Кодеки сжатия столбцов](../create/table.md#codecs)
+Примеры изменения кодеков сжатия смотрите в разделе [Кодеки сжатия столбцов](../create/table.md#codecs).
 
 Примеры изменения TTL столбца смотрите в разделе [TTL столбца](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
 
