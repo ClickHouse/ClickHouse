@@ -471,7 +471,7 @@ private:
                 replaceWildcards(key, partition_id),
                 min_upload_part_size,
                 max_single_part_upload_size
-            )); // FIXME .first->second->onStart();
+            ));
         }
 
         return sinks[partition_id];
