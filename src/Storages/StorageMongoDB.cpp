@@ -46,7 +46,7 @@ StorageMongoDB::StorageMongoDB(
     , username(username_)
     , password(password_)
     , options(options_)
-    , uri("mongodb://" + username_ + ":" + password_ + "@" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
+    , uri("mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
