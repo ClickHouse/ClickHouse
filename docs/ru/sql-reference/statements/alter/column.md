@@ -20,11 +20,11 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 
 -   [ADD COLUMN](#alter_add-column) — добавляет столбец в таблицу;
 -   [DROP COLUMN](#alter_drop-column) — удаляет столбец;
+-   [RENAME COLUMN](#alter_rename-column) — переименовывает существующий столбец.
 -   [CLEAR COLUMN](#alter_clear-column) — сбрасывает все значения в столбце для заданной партиции;
 -   [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
 -   [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL.
 -   [MODIFY COLUMN REMOVE](#modify-remove) — удаляет какое-либо из свойств столбца.
--   [RENAME COLUMN](#alter_rename-column) — переименовывает существующий столбец.
 
 Подробное описание для каждого действия приведено ниже.
 
