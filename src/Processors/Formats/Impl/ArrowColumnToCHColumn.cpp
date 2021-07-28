@@ -389,7 +389,7 @@ static void readColumnFromArrowColumn(
         case arrow::Type::TIMESTAMP:
             fillColumnWithTimestampData(arrow_column, internal_column);
             break;
-#if ARCADIA_BUILD
+#if defined(ARCADIA_BUILD)
         case arrow::Type::DECIMAL:
             fillColumnWithDecimalData<Decimal128, arrow::Decimal128Array>(arrow_column, internal_column /*, internal_nested_type*/);
             break;
@@ -511,7 +511,7 @@ static DataTypePtr getInternalType(
         return makeNullable(getInternalType(arrow_type, nested_type, column_name, format_name));
     }
 
-#if ARCADIA_BUILD
+#if defined(ARCADIA_BUILD)
     if (arrow_type->id() == arrow::Type::DECIMAL)
     {
         const auto & decimal_type = dynamic_cast<const arrow::DecimalType &>(*arrow_type);
