@@ -76,6 +76,7 @@ class TraceLog;
 class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
+class ZooKeeperLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -714,6 +715,7 @@ public:
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
+    std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
