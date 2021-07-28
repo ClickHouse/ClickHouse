@@ -153,7 +153,7 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_a
 
 Примеры изменения TTL столбца смотрите в разделе [TTL столбца](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
 
-Если указано `IF EXISTS`, запрос не возвращает ошибку, если столбца не существует.
+Если указано `IF EXISTS`, запрос не возвращает ошибку при условии, что столбец не существует.
 
 Запрос также может изменять порядок столбцов при помощи `FIRST | AFTER`, смотрите описание [ADD COLUMN](#alter_add-column).
 
