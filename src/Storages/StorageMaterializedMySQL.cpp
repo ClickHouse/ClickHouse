@@ -4,7 +4,7 @@
 
 #if USE_MYSQL
 
-#include <Storages/StorageMaterializeMySQL.h>
+#include <Storages/StorageMaterializedMySQL.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -21,14 +21,14 @@
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/FilterTransform.h>
 
-#include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
 
-StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_)
+StorageMaterializedMySQL::StorageMaterializedMySQL(const StoragePtr & nested_storage_, const IDatabase * database_)
     : StorageProxy(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
     StorageInMemoryMetadata in_memory_metadata;
@@ -36,12 +36,12 @@ StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_stora
     setInMemoryMetadata(in_memory_metadata);
 }
 
-bool StorageMaterializeMySQL::needRewriteQueryWithFinal(const Names & column_names) const
+bool StorageMaterializedMySQL::needRewriteQueryWithFinal(const Names & column_names) const
 {
     return needRewriteQueryWithFinalForStorage(column_names, nested_storage);
 }
 
-Pipe StorageMaterializeMySQL::read(
+Pipe StorageMaterializedMySQL::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
@@ -57,14 +57,14 @@ Pipe StorageMaterializeMySQL::read(
             query_info, context, processed_stage, max_block_size, num_streams);
 }
 
-NamesAndTypesList StorageMaterializeMySQL::getVirtuals() const
+NamesAndTypesList StorageMaterializedMySQL::getVirtuals() const
 {
     /// If the background synchronization thread has exception.
     rethrowSyncExceptionIfNeed(database);
     return nested_storage->getVirtuals();
 }
 
-IStorage::ColumnSizeByName StorageMaterializeMySQL::getColumnSizes() const
+IStorage::ColumnSizeByName StorageMaterializedMySQL::getColumnSizes() const
 {
     auto sizes = nested_storage->getColumnSizes();
     auto nested_header = nested_storage->getInMemoryMetadataPtr()->getSampleBlock();
