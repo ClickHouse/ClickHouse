@@ -11,7 +11,6 @@
 #include "AggregateFunctionFactory.h"
 #include "FactoryHelpers.h"
 #include "Helpers.h"
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -23,13 +22,14 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
 namespace
 {
     using FuncLinearRegression = AggregateFunctionMLMethod<LinearModelData, NameLinearRegression>;
     using FuncLogisticRegression = AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression>;
-    template <class Method>
-    AggregateFunctionPtr
-    createAggregateFunctionMLMethod(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+    template <typename Method>
+    AggregateFunctionPtr createAggregateFunctionMLMethod(
+        const std::string & name, const DataTypes & argument_types, const Array & parameters)
     {
         if (parameters.size() > 4)
             throw Exception(

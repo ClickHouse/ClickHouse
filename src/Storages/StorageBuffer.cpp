@@ -137,7 +137,7 @@ public:
     BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage, const StorageMetadataPtr & metadata_snapshot)
         : SourceWithProgress(
             metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names_))
+        , column_names_and_types(metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names_, true))
         , buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
@@ -242,8 +242,8 @@ void StorageBuffer::read(
         {
             const auto & dest_columns = destination_metadata_snapshot->getColumns();
             const auto & our_columns = metadata_snapshot->getColumns();
-            return dest_columns.hasPhysicalOrSubcolumn(column_name) &&
-                   dest_columns.getPhysicalOrSubcolumn(column_name).type->equals(*our_columns.getPhysicalOrSubcolumn(column_name).type);
+            auto dest_columm = dest_columns.tryGetColumnOrSubcolumn(ColumnsDescription::AllPhysical, column_name);
+            return dest_columm && dest_columm->type->equals(*our_columns.getColumnOrSubcolumn(ColumnsDescription::AllPhysical, column_name).type);
         });
 
         if (dst_has_same_structure)
