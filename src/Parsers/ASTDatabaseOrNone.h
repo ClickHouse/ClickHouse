@@ -1,16 +1,21 @@
-//
-// Created by max_w on 2021/7/27.
-//
+#pragma once
 
-#ifndef CLICKHOUSE_ASTDATABASEORNONE_H
-#define CLICKHOUSE_ASTDATABASEORNONE_H
+#include <Parsers/IAST.h>
 
+namespace DB
+{
 
+class ASTDatabaseOrNone : public IAST
+{
+public:
+    bool none = false;
+    String database_name;
 
-class ASTDatabaseOrNone {
-
+    bool isNone() const { return none; }
+    String getID(char) const override { return "DatabaseOrNone"; }
+    ASTPtr clone() const override { return std::make_shared<ASTDatabaseOrNone>(*this); }
+    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
+}
 
 
-
-#endif //CLICKHOUSE_ASTDATABASEORNONE_H
