@@ -149,7 +149,7 @@ This query changes the `name` column properties:
 
 -   TTL
 
-For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md#codecs)
+For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md#codecs).
 
 For examples of columns TTL modifying, see [Column TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
 
