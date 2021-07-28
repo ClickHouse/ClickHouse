@@ -551,6 +551,9 @@ private:
 
         MainThreadStatus::getInstance();
 
+        /// If we have special flag, we will not set hard limit. Note: avoid using this parameter if you can.
+        if (!config().has("no-max-memory-usage-for-client") || !config().getBool("no-max-memory-usage-for-client"))
+        {
         /// Limit on total memory usage
         size_t max_client_memory_usage = context->getSettings().max_memory_usage;
 
@@ -559,6 +562,7 @@ private:
             total_memory_tracker.setHardLimit(max_client_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+        }
         }
 
         registerFormats();
@@ -1706,7 +1710,8 @@ private:
                 if (!old_settings)
                     old_settings.emplace(context->getSettingsRef());
                 context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-                total_memory_tracker.setHardLimit(context->getSettings().max_memory_usage);
+                if (!config().has("no-max-memory-usage-for-client") || !config().getBool("no-max-memory-usage-for-client"))
+                    total_memory_tracker.setHardLimit(context->getSettings().max_memory_usage);
             };
             const auto * insert = parsed_query->as<ASTInsertQuery>();
             if (insert && insert->settings_ast)
@@ -1747,7 +1752,8 @@ private:
                     else
                     {
                         context->applySettingChange(change);
-                        total_memory_tracker.setHardLimit(context->getSettings().max_memory_usage);
+                        if (!config().has("no-max-memory-usage-for-client") || !config().getBool("no-max-memory-usage-for-client"))
+                            total_memory_tracker.setHardLimit(context->getSettings().max_memory_usage);
                     }
                 }
             }
@@ -2624,6 +2630,7 @@ public:
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
             ("no-warnings", "disable warnings when client connects to server")
+            ("no-max-memory-usage-for-client", "disable hard limit for memory tracker (max_memory_usage is set to zero, which means unlimited)")
         ;
 
         Settings cmd_settings;
@@ -2786,6 +2793,8 @@ public:
             config().setString("history_file", options["history_file"].as<std::string>());
         if (options.count("no-warnings"))
             config().setBool("no-warnings", true);
+        if (options.count("no-max-memory-usage-for-client"))
+            config().setBool("no-max-memory-usage-for-client", true);
 
         if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
         {
