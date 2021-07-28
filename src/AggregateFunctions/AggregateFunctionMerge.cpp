@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionMerge.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include "Documentation/SimpleDocumentation.h"
 
 
 namespace DB
@@ -61,7 +62,7 @@ public:
 
 void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMerge>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMerge>(), makeSimpleDocumentation(AgrMergeDocs::doc));
 }
 
 }

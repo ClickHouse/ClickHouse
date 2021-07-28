@@ -113,4 +113,17 @@ public:
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
+namespace AgrMergeDocs
+{
+const char * doc = R"(
+If you apply this combinator, the aggregate function takes the intermediate aggregation state as an argument, combines the states to finish aggregation, and returns the resulting value.
+)";
+
+//TODO there is one more combinator in docs
+///## -MergeState {#aggregate_functions_combinators-mergestate}
+///
+///Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it does not return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
+}
+
+
 }

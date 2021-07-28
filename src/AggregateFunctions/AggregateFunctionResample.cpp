@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionResample.h>
 
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include "Documentation/SimpleDocumentation.h"
 
 
 namespace DB
@@ -99,7 +100,7 @@ public:
 
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>(), makeSimpleDocumentation(AgrResampleDocs::doc));
 }
 
 }

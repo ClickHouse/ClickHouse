@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/AggregateFunctionSimpleState.h>
+#include "Documentation/SimpleDocumentation.h"
 
 namespace DB
 {
@@ -27,7 +28,7 @@ namespace
 
 void registerAggregateFunctionCombinatorSimpleState(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorSimpleState>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorSimpleState>(), makeSimpleDocumentation(AgrSimpleStateDocs::doc));
 }
 
 }

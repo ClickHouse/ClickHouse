@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionForEach.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <Common/typeid_cast.h>
+#include "Documentation/SimpleDocumentation.h"
 
 
 namespace DB
@@ -48,7 +49,7 @@ public:
 
 void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorForEach>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorForEach>(), makeSimpleDocumentation(AgrForEachDocs::doc));
 }
 
 }

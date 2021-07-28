@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Common/typeid_cast.h>
+#include "Documentation/SimpleDocumentation.h"
 
 
 namespace DB
@@ -64,7 +65,7 @@ public:
 
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorDistinct>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorDistinct>(), makeSimpleDocumentation(AgrDistinctDocs::doc));
 }
 
 }

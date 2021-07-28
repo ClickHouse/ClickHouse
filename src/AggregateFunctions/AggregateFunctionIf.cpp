@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionIf.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include "AggregateFunctionNull.h"
+#include "Documentation/SimpleDocumentation.h"
 
 
 namespace DB
@@ -350,7 +351,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>(), makeSimpleDocumentation(AgrIFDocs::doc));
 }
 
 }

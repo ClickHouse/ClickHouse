@@ -282,4 +282,133 @@ public:
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
+namespace AgrOrDefaultDocs
+{
+const char * doc = R"(
+Changes behavior of an aggregate function.
+
+If an aggregate function does not have input values, with this combinator it returns the default value for its return data type. Applies to the aggregate functions that can take empty input data.
+
+`-OrDefault` can be used with other combinators.
+
+**Syntax**
+
+``` sql
+<aggFunction>OrDefault(x)
+```
+
+**Arguments**
+
+-   `x` — Aggregate function parameters.
+
+**Returned values**
+
+Returns the default value of an aggregate function’s return type if there is nothing to aggregate.
+
+Type depends on the aggregate function used.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT avg(number), avgOrDefault(number) FROM numbers(0)
+```
+
+Result:
+
+``` text
+┌─avg(number)─┬─avgOrDefault(number)─┐
+│         nan │                    0 │
+└─────────────┴──────────────────────┘
+```
+
+Also `-OrDefault` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
+
+Query:
+
+``` sql
+SELECT avgOrDefaultIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+Result:
+
+``` text
+┌─avgOrDefaultIf(x, greater(x, 10))─┐
+│                              0.00 │
+└───────────────────────────────────┘
+```
+)";
+}
+
+namespace AgrOrNullDocs
+{
+const char * doc = R"(
+Changes behavior of an aggregate function.
+
+This combinator converts a result of an aggregate function to the [Nullable](../../sql-reference/data-types/nullable.md) data type. If the aggregate function does not have values to calculate it returns [NULL](../../sql-reference/syntax.md#null-literal).
+
+`-OrNull` can be used with other combinators.
+
+**Syntax**
+
+``` sql
+<aggFunction>OrNull(x)
+```
+
+**Arguments**
+
+-   `x` — Aggregate function parameters.
+
+**Returned values**
+
+-   The result of the aggregate function, converted to the `Nullable` data type.
+-   `NULL`, if there is nothing to aggregate.
+
+Type: `Nullable(aggregate function return type)`.
+
+**Example**
+
+Add `-orNull` to the end of aggregate function.
+
+Query:
+
+``` sql
+SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
+```
+
+Result:
+
+``` text
+┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
+│              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
+└───────────────────┴───────────────────────────────┘
+```
+
+Also `-OrNull` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
+
+Query:
+
+``` sql
+SELECT avgOrNullIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+Result:
+
+``` text
+┌─avgOrNullIf(x, greater(x, 10))─┐
+│                           ᴺᵁᴸᴸ │
+└────────────────────────────────┘
+```
+)";
+}
+
 }

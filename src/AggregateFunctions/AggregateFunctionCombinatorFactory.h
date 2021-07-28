@@ -5,7 +5,8 @@
 
 #include <string>
 #include <unordered_map>
-
+#include <Documentation/SimpleDocumentation.h>
+#include "Documentation/IDocumentation.h"
 
 namespace DB
 {
@@ -29,12 +30,15 @@ private:
     using Dict = std::vector<CombinatorPair>;
     Dict dict;
 
+    using CombinatorsDocs = std::unordered_map<std::string, IDocumentationPtr>;
+    CombinatorsDocs docs;
+
 public:
 
     static AggregateFunctionCombinatorFactory & instance();
 
     /// Not thread safe. You must register before using tryGet.
-    void registerCombinator(const AggregateFunctionCombinatorPtr & value);
+    void registerCombinator(const AggregateFunctionCombinatorPtr & value, IDocumentationPtr documentation=nullptr);
 
     /// Example: if the name is 'avgIf', it will return combinator -If.
     AggregateFunctionCombinatorPtr tryFindSuffix(const std::string & name) const;
@@ -43,6 +47,9 @@ public:
     {
         return dict;
     }
+
+    /// If there will be no documentation returns "Not found"
+    std::string getDocumentation(const std::string & name) const;
 };
 
 }

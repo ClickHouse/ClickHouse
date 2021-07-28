@@ -83,4 +83,41 @@ public:
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
+namespace AgrSimpleStateDocs
+{
+const char * doc = R"(
+If you apply this combinator, the aggregate function returns the same value but with a different type. This is a [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md) that can be stored in a table to work with [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) tables.
+
+**Syntax**
+
+``` sql
+<aggFunction>SimpleState(x)
+```
+
+**Arguments**
+
+-   `x` — Aggregate function parameters.
+
+**Returned values**
+
+The value of an aggregate function with the `SimpleAggregateFunction(...)` type.
+
+**Example**
+
+Query:
+
+``` sql
+WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
+```
+
+Result:
+
+``` text
+┌─toTypeName(c)────────────────────────┬─c─┐
+│ SimpleAggregateFunction(any, UInt64) │ 0 │
+└──────────────────────────────────────┴───┘
+```
+)";
+}
+
 }

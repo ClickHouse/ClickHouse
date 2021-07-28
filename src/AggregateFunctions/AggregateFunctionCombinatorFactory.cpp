@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void AggregateFunctionCombinatorFactory::registerCombinator(const AggregateFunctionCombinatorPtr & value)
+void AggregateFunctionCombinatorFactory::registerCombinator(const AggregateFunctionCombinatorPtr & value, IDocumentationPtr documentation)
 {
     CombinatorPair pair{
         .name = value->getName(),
@@ -23,6 +23,7 @@ void AggregateFunctionCombinatorFactory::registerCombinator(const AggregateFunct
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionCombinatorFactory: the name '{}' is not unique",
             value->getName());
     dict.emplace(std::lower_bound(dict.begin(), dict.end(), pair), pair);
+    docs.emplace(pair.name, std::move(documentation));
 }
 
 AggregateFunctionCombinatorPtr AggregateFunctionCombinatorFactory::tryFindSuffix(const std::string & name) const
@@ -40,4 +41,12 @@ AggregateFunctionCombinatorFactory & AggregateFunctionCombinatorFactory::instanc
     return ret;
 }
 
+std::string AggregateFunctionCombinatorFactory::getDocumentation(const std::string & name) const
+{
+    auto it = docs.find(name);
+    if (docs.end() != it)
+        return it->second == nullptr ? "Not found" : it->second->getDocumentation();
+
+    return "Not found anywhere";
+}
 }

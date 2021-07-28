@@ -244,4 +244,12 @@ public:
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 };
 
+namespace AgrDistinctDocs
+{
+const char * doc = R"(
+Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
+Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` and so on.
+)";
+}
+
 }

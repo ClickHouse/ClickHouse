@@ -203,4 +203,75 @@ public:
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 
+namespace AgrResampleDocs
+{
+const char * doc = R"(
+Lets you divide data into groups, and then separately aggregates the data in those groups. Groups are created by splitting the values from one column into intervals.
+
+``` sql
+<aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
+```
+
+**Arguments**
+
+-   `start` — Starting value of the whole required interval for `resampling_key` values.
+-   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval does not include the `stop` value `[start, stop)`.
+-   `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
+-   `resampling_key` — Column whose values are used for separating data into intervals.
+-   `aggFunction_params` — `aggFunction` parameters.
+
+**Returned values**
+
+-   Array of `aggFunction` results for each subinterval.
+
+**Example**
+
+Consider the `people` table with the following data:
+
+``` text
+┌─name───┬─age─┬─wage─┐
+│ John   │  16 │   10 │
+│ Alice  │  30 │   15 │
+│ Mary   │  35 │    8 │
+│ Evelyn │  48 │ 11.5 │
+│ David  │  62 │  9.9 │
+│ Brian  │  60 │   16 │
+└────────┴─────┴──────┘
+```
+
+Let’s get the names of the people whose age lies in the intervals of `[30,60)` and `[60,75)`. Since we use integer representation for age, we get ages in the `[30, 59]` and `[60,74]` intervals.
+
+To aggregate names in an array, we use the [groupArray](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray) aggregate function. It takes one argument. In our case, it’s the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
+
+``` sql
+SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
+```
+
+``` text
+┌─groupArrayResample(30, 75, 30)(name, age)─────┐
+│ [['Alice','Mary','Evelyn'],['David','Brian']] │
+└───────────────────────────────────────────────┘
+```
+
+Consider the results.
+
+`Jonh` is out of the sample because he’s too young. Other people are distributed according to the specified age intervals.
+
+Now let’s count the total number of people and their average wage in the specified age intervals.
+
+``` sql
+SELECT
+    countResample(30, 75, 30)(name, age) AS amount,
+    avgResample(30, 75, 30)(wage, age) AS avg_wage
+FROM people
+```
+
+``` text
+┌─amount─┬─avg_wage──────────────────┐
+│ [3,2]  │ [11.5,12.949999809265137] │
+└────────┴───────────────────────────┘
+```
+)";
+}
+
 }
