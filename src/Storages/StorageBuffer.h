@@ -4,7 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Poco/Event.h>
 
@@ -42,11 +42,11 @@ namespace DB
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer final : public ext::shared_ptr_helper<StorageBuffer>, public IStorage, WithContext
+class StorageBuffer final : public shared_ptr_helper<StorageBuffer>, public IStorage, WithContext
 {
-friend struct ext::shared_ptr_helper<StorageBuffer>;
+friend struct shared_ptr_helper<StorageBuffer>;
 friend class BufferSource;
-friend class BufferBlockOutputStream;
+friend class BufferSink;
 
 public:
     struct Thresholds
@@ -58,7 +58,8 @@ public:
 
     std::string getName() const override { return "Buffer"; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
@@ -83,11 +84,11 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
-    void shutdown() override;
+    void flush() override;
     bool optimize(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -112,8 +113,8 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    std::optional<UInt64> lifetimeRows() const override { return writes.rows; }
-    std::optional<UInt64> lifetimeBytes() const override { return writes.bytes; }
+    std::optional<UInt64> lifetimeRows() const override { return lifetime_writes.rows; }
+    std::optional<UInt64> lifetimeBytes() const override { return lifetime_writes.bytes; }
 
 
 private:
@@ -143,12 +144,13 @@ private:
     StorageID destination_id;
     bool allow_materialized;
 
-    /// Lifetime
-    struct LifeTimeWrites
+    struct Writes
     {
         std::atomic<size_t> rows = 0;
         std::atomic<size_t> bytes = 0;
-    } writes;
+    };
+    Writes lifetime_writes;
+    Writes total_writes;
 
     Poco::Logger * log;
 
@@ -177,6 +179,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         ContextPtr context_,
         size_t num_shards_,
         const Thresholds & min_thresholds_,

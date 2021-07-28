@@ -5,8 +5,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <Common/SettingsChanges.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -20,12 +21,16 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ParserQuery.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/QueryPipeline.h>
+#include <Formats/FormatFactory.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -521,7 +526,7 @@ namespace
         Poco::Logger * log = nullptr;
 
         std::shared_ptr<NamedSession> session;
-        ContextPtr query_context;
+        ContextMutablePtr query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
         String query_text;
         ASTPtr ast;
@@ -547,7 +552,8 @@ namespace
 
         std::optional<ReadBufferFromCallback> read_buffer;
         std::optional<WriteBufferFromString> write_buffer;
-        BlockInputStreamPtr block_input_stream;
+        std::unique_ptr<QueryPipeline> pipeline;
+        std::unique_ptr<PullingPipelineExecutor> pipeline_executor;
         BlockOutputStreamPtr block_output_stream;
         bool need_input_data_from_insert_query = true;
         bool need_input_data_from_query_info = true;
@@ -755,16 +761,16 @@ namespace
                 throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
             input_function_is_used = true;
             initializeBlockInputStream(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
-            block_input_stream->readPrefix();
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
         {
             if (context != query_context)
                 throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
-            auto block = block_input_stream->read();
-            if (!block)
-                block_input_stream->readSuffix();
+
+            Block block;
+            while (!block && pipeline_executor->pull(block));
+
             return block;
         });
 
@@ -797,13 +803,15 @@ namespace
         /// So we mustn't touch the input stream from other thread.
         initializeBlockInputStream(io.out->getHeader());
 
-        block_input_stream->readPrefix();
         io.out->writePrefix();
 
-        while (auto block = block_input_stream->read())
-            io.out->write(block);
+        Block block;
+        while (pipeline_executor->pull(block))
+        {
+            if (block)
+                io.out->write(block);
+        }
 
-        block_input_stream->readSuffix();
         io.out->writeSuffix();
     }
 
@@ -866,9 +874,11 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
-        assert(!block_input_stream);
-        block_input_stream = query_context->getInputFormat(
-            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
+        assert(!pipeline);
+        pipeline = std::make_unique<QueryPipeline>();
+        auto source = FormatFactory::instance().getInput(
+            input_format, *read_buffer, header, query_context, query_context->getSettings().max_insert_block_size);
+        pipeline->init(Pipe(source));
 
         /// Add default values if necessary.
         if (ast)
@@ -881,10 +891,17 @@ namespace
                     StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);
                     const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
                     if (!columns.empty())
-                        block_input_stream = std::make_shared<AddingDefaultsBlockInputStream>(block_input_stream, columns, query_context);
+                    {
+                        pipeline->addSimpleTransform([&](const Block & cur_header)
+                        {
+                            return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, query_context);
+                        });
+                    }
                 }
             }
         }
+
+        pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
     }
 
     void Call::createExternalTables()
@@ -908,7 +925,7 @@ namespace
                 else
                 {
                     NamesAndTypesList columns;
-                    for (size_t column_idx : ext::range(external_table.columns_size()))
+                    for (size_t column_idx : collections::range(external_table.columns_size()))
                     {
                         const auto & name_and_type = external_table.columns(column_idx);
                         NameAndTypePair column;
@@ -927,13 +944,13 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    auto out_stream = storage->write(ASTPtr(), metadata_snapshot, query_context);
+                    auto out_stream = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
                     ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
                     String format = external_table.format();
                     if (format.empty())
                         format = "TabSeparated";
-                    ContextPtr external_table_context = query_context;
-                    ContextPtr temp_context;
+                    ContextMutablePtr external_table_context = query_context;
+                    ContextMutablePtr temp_context;
                     if (!external_table.settings().empty())
                     {
                         temp_context = Context::createCopy(query_context);
@@ -1150,7 +1167,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", exception.code(), exception.displayText(), exception.getStackTraceString());
+        LOG_ERROR(log, getExceptionMessage(exception, true));
 
         if (responder && !responder_finished)
         {
@@ -1196,7 +1213,8 @@ namespace
     void Call::close()
     {
         responder.reset();
-        block_input_stream.reset();
+        pipeline_executor.reset();
+        pipeline.reset();
         block_output_stream.reset();
         read_buffer.reset();
         write_buffer.reset();
@@ -1524,7 +1542,7 @@ private:
     {
         std::lock_guard lock{mutex};
         responders_for_new_calls.resize(CALL_MAX);
-        for (CallType call_type : ext::range(CALL_MAX))
+        for (CallType call_type : collections::range(CALL_MAX))
             makeResponderForNewCall(call_type);
     }
 

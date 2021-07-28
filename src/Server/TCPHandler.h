@@ -119,7 +119,7 @@ public:
     void run() override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(ContextPtr /*context*/) {}
+    virtual void customizeContext(ContextMutablePtr /*context*/) {}
 
 private:
     IServer & server;
@@ -132,8 +132,8 @@ private:
     UInt64 client_version_patch = 0;
     UInt64 client_tcp_protocol_version = 0;
 
-    ContextPtr connection_context;
-    ContextPtr query_context;
+    ContextMutablePtr connection_context;
+    ContextMutablePtr query_context;
 
     size_t unknown_packet_in_send_data = 0;
 
@@ -174,7 +174,7 @@ private:
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
-    bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
+    bool readDataNext(size_t poll_interval, time_t receive_timeout);
     void readData(const Settings & connection_settings);
     void receiveClusterNameAndSalt();
     std::tuple<size_t, int> getReadTimeouts(const Settings & connection_settings);

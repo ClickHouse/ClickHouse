@@ -45,17 +45,33 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     ASTPtr create_query;
     ASTQueryWithTableAndOutput * show_query;
     if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()) ||
-        (show_query = query_ptr->as<ASTShowCreateViewQuery>()))
+        (show_query = query_ptr->as<ASTShowCreateViewQuery>()) ||
+        (show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
     {
         auto resolve_table_type = show_query->temporary ? Context::ResolveExternal : Context::ResolveOrdinary;
         auto table_id = getContext()->resolveStorageID(*show_query, resolve_table_type);
-        getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+
+        bool is_dictionary = static_cast<bool>(query_ptr->as<ASTShowCreateDictionaryQuery>());
+
+        if (is_dictionary)
+            getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, table_id);
+        else
+            getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+
         create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, getContext());
+
+        auto & ast_create_query = create_query->as<ASTCreateQuery &>();
         if (query_ptr->as<ASTShowCreateViewQuery>())
         {
-            auto & ast_create_query = create_query->as<ASTCreateQuery &>();
             if (!ast_create_query.isView())
-                throw Exception(backQuote(ast_create_query.database) + "." + backQuote(ast_create_query.table) + " is not a VIEW", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}.{} is not a VIEW",
+                    backQuote(ast_create_query.database), backQuote(ast_create_query.table));
+        }
+        else if (is_dictionary)
+        {
+            if (!ast_create_query.is_dictionary)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}.{} is not a DICTIONARY",
+                    backQuote(ast_create_query.database), backQuote(ast_create_query.table));
         }
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
@@ -65,14 +81,6 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         show_query->database = getContext()->resolveDatabase(show_query->database);
         getContext()->checkAccess(AccessType::SHOW_DATABASES, show_query->database);
         create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDatabaseQuery();
-    }
-    else if ((show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
-    {
-        if (show_query->temporary)
-            throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
-        show_query->database = getContext()->resolveDatabase(show_query->database);
-        getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, show_query->database, show_query->table);
-        create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDictionaryQuery(show_query->table);
     }
 
     if (!create_query)

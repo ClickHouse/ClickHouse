@@ -6,11 +6,17 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <DataStreams/IBlockInputStream.h>
+
 
 namespace DB
 {
@@ -231,25 +237,45 @@ class DictionaryAttributeColumnProvider
 {
 public:
     using ColumnType =
-        std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
-            std::conditional_t<IsDecimalNumber<DictionaryAttributeType>, ColumnDecimal<DictionaryAttributeType>,
-                ColumnVector<DictionaryAttributeType>>>;
+        std::conditional_t<std::is_same_v<DictionaryAttributeType, Array>, ColumnArray,
+            std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
+                std::conditional_t<IsDecimalNumber<DictionaryAttributeType>, ColumnDecimal<DictionaryAttributeType>,
+                    ColumnVector<DictionaryAttributeType>>>>;
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
     static ColumnPtr getColumn(const DictionaryAttribute & dictionary_attribute, size_t size)
     {
+        if constexpr (std::is_same_v<DictionaryAttributeType, Array>)
+        {
+            if (const auto * array_type = typeid_cast<const DataTypeArray *>(dictionary_attribute.type.get()))
+            {
+                auto nested_column = array_type->getNestedType()->createColumn();
+                return ColumnArray::create(std::move(nested_column));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
+            }
+        }
         if constexpr (std::is_same_v<DictionaryAttributeType, String>)
         {
             return ColumnType::create();
         }
-        if constexpr (IsDecimalNumber<DictionaryAttributeType>)
+        else if constexpr (std::is_same_v<DictionaryAttributeType, UUID>)
         {
-            auto scale = getDecimalScale(*dictionary_attribute.nested_type);
+            return ColumnType::create(size);
+        }
+        else if constexpr (IsDecimalNumber<DictionaryAttributeType>)
+        {
+            auto nested_type = removeNullable(dictionary_attribute.type);
+            auto scale = getDecimalScale(*nested_type);
             return ColumnType::create(size, scale);
         }
-        else if constexpr (IsNumber<DictionaryAttributeType>)
+        else if constexpr (is_arithmetic_v<DictionaryAttributeType>)
+        {
             return ColumnType::create(size);
+        }
         else
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
     }
@@ -261,6 +287,8 @@ public:
   *
   * If default_values_column is null then attribute_default_value will be used.
   * If default_values_column is not null in constructor than this column values will be used as default values.
+  *
+  * For nullable dictionary attribute isNullAt method is provided.
  */
 template <typename DictionaryAttributeType>
 class DictionaryDefaultValueExtractor
@@ -270,22 +298,40 @@ class DictionaryDefaultValueExtractor
 public:
     using DefaultValueType = DictionaryValueType<DictionaryAttributeType>;
 
-    explicit DictionaryDefaultValueExtractor(DictionaryAttributeType attribute_default_value, ColumnPtr default_values_column_ = nullptr)
-        : default_value(std::move(attribute_default_value))
+    explicit DictionaryDefaultValueExtractor(
+        Field attribute_default_value,
+        ColumnPtr default_values_column_)
     {
+        if (default_values_column_ != nullptr &&
+            isColumnConst(*default_values_column_))
+        {
+            attribute_default_value = (*default_values_column_)[0];
+            default_values_column_ = nullptr;
+        }
+
         if (default_values_column_ == nullptr)
-            use_default_value_from_column = false;
+        {
+            use_attribute_default_value = true;
+
+            if (attribute_default_value.isNull())
+                default_value_is_null = true;
+            else
+                default_value = attribute_default_value.get<NearestFieldType<DictionaryAttributeType>>();
+        }
         else
         {
-            if (const auto * const default_col = checkAndGetColumn<DefaultColumnType>(*default_values_column_))
+            const IColumn * default_values_column_ptr = default_values_column_.get();
+
+            if (const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(default_values_column_.get()))
+            {
+                default_values_column_ptr = nullable_column->getNestedColumnPtr().get();
+                is_null_map = &nullable_column->getNullMapColumn();
+            }
+
+            if (const auto * const default_col = checkAndGetColumn<DefaultColumnType>(default_values_column_ptr))
             {
                 default_values_column = default_col;
-                use_default_value_from_column = true;
-            }
-            else if (const auto * const default_col_const = checkAndGetColumnConst<DefaultColumnType>(default_values_column_.get()))
-            {
-                default_value = default_col_const->template getValue<DictionaryAttributeType>();
-                use_default_value_from_column = false;
+                use_attribute_default_value = false;
             }
             else
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Type of default column is not the same as dictionary attribute type.");
@@ -294,20 +340,39 @@ public:
 
     DefaultValueType operator[](size_t row)
     {
-        if (!use_default_value_from_column)
+        if (use_attribute_default_value)
             return static_cast<DefaultValueType>(default_value);
 
         assert(default_values_column != nullptr);
 
-        if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
+        if constexpr (std::is_same_v<DefaultColumnType, ColumnArray>)
+        {
+            Field field = (*default_values_column)[row];
+            return field.get<Array>();
+        }
+        else if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
             return default_values_column->getDataAt(row);
         else
             return default_values_column->getData()[row];
     }
+
+    bool isNullAt(size_t row)
+    {
+        if (default_value_is_null)
+            return true;
+
+        if (is_null_map)
+            return is_null_map->getData()[row];
+
+        return false;
+    }
+
 private:
-    DictionaryAttributeType default_value;
+    DictionaryAttributeType default_value {};
     const DefaultColumnType * default_values_column = nullptr;
-    bool use_default_value_from_column = false;
+    const ColumnUInt8 * is_null_map = nullptr;
+    bool use_attribute_default_value = false;
+    bool default_value_is_null = false;
 };
 
 template <DictionaryKeyType key_type>
@@ -437,23 +502,35 @@ private:
   */
 template <DictionaryKeyType dictionary_key_type>
 void mergeBlockWithStream(
-    size_t key_column_size [[maybe_unused]],
-    Block & block_to_update [[maybe_unused]],
-    BlockInputStreamPtr & stream [[maybe_unused]])
+    size_t key_columns_size,
+    Block & block_to_update,
+    BlockInputStreamPtr & stream)
 {
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
     static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by updatePreviousyLoadedBlockWithStream");
 
     Columns saved_block_key_columns;
-    saved_block_key_columns.reserve(key_column_size);
+    saved_block_key_columns.reserve(key_columns_size);
 
     /// Split into keys columns and attribute columns
-    for (size_t i = 0; i < key_column_size; ++i)
+    for (size_t i = 0; i < key_columns_size; ++i)
         saved_block_key_columns.emplace_back(block_to_update.safeGetByPosition(i).column);
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
     DictionaryKeysExtractor<dictionary_key_type> saved_keys_extractor(saved_block_key_columns, arena_holder.getComplexKeyArena());
     auto saved_keys_extracted_from_block = saved_keys_extractor.extractAllKeys();
+
+    /**
+     * We create filter with our block to update size, because we want to filter out values that have duplicate keys
+     * if they appear in blocks that we fetch from stream.
+     * But first we try to filter out duplicate keys from existing block.
+     * For example if we have block with keys 1, 2, 2, 2, 3, 3
+     * Our filter will have [1, 0, 0, 1, 0, 1] after first stage.
+     * We also update saved_key_to_index hash map for keys to point to their latest indexes.
+     * For example if in blocks from stream we will get keys [4, 2, 3]
+     * Our filter will be [1, 0, 0, 0, 0, 0].
+     * After reading all blocks from stream we filter our duplicate keys from block_to_update and insert loaded columns.
+     */
 
     IColumn::Filter filter(saved_keys_extracted_from_block.size(), true);
 
@@ -483,10 +560,10 @@ void mergeBlockWithStream(
     while (Block block = stream->read())
     {
         Columns block_key_columns;
-        block_key_columns.reserve(key_column_size);
+        block_key_columns.reserve(key_columns_size);
 
         /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < key_column_size; ++i)
+        for (size_t i = 0; i < key_columns_size; ++i)
             block_key_columns.emplace_back(block.safeGetByPosition(i).column);
 
         DictionaryKeysExtractor<dictionary_key_type> update_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
@@ -551,7 +628,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "{}: type mismatch: column has wrong type expected {}",
             dictionary->getDictionaryID().getNameForLogs(),
-            TypeName<T>::get());
+            TypeName<T>);
     }
 
     if (is_const_column)

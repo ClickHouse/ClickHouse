@@ -26,8 +26,10 @@
 namespace ProfileEvents
 {
     extern const Event FileOpen;
-    extern const Event WriteBufferAIOWrite;
-    extern const Event WriteBufferAIOWriteBytes;
+    extern const Event AIOWrite;
+    extern const Event AIOWriteBytes;
+    extern const Event AIORead;
+    extern const Event AIOReadBytes;
 }
 
 namespace DB
@@ -53,7 +55,6 @@ struct SSDCacheDictionaryStorageConfiguration
 {
     const size_t strict_max_lifetime_seconds;
     const DictionaryLifetime lifetime;
-
     const std::string file_path;
     const size_t max_partitions_count;
     const size_t block_size;
@@ -532,8 +533,8 @@ public:
 
         auto bytes_written = eventResult(event);
 
-        ProfileEvents::increment(ProfileEvents::WriteBufferAIOWrite);
-        ProfileEvents::increment(ProfileEvents::WriteBufferAIOWriteBytes, bytes_written);
+        ProfileEvents::increment(ProfileEvents::AIOWrite);
+        ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
 
         if (bytes_written != static_cast<decltype(bytes_written)>(block_size * buffer_size_in_blocks))
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,
@@ -600,6 +601,9 @@ public:
                 file_path,
                 buffer_size_in_bytes,
                 read_bytes);
+
+        ProfileEvents::increment(ProfileEvents::AIORead);
+        ProfileEvents::increment(ProfileEvents::AIOReadBytes, read_bytes);
 
         SSDCacheBlock block(block_size);
 
@@ -688,6 +692,9 @@ public:
                     throw Exception(ErrorCodes::AIO_READ_ERROR,
                         "GC: AIO failed to read file ({}). Expected bytes ({}). Actual bytes ({})", file_path, block_size, read_bytes);
 
+                ProfileEvents::increment(ProfileEvents::AIORead);
+                ProfileEvents::increment(ProfileEvents::AIOReadBytes, read_bytes);
+
                 char * request_buffer = getRequestBuffer(request);
 
                 // Unpoison the memory returned from an uninstrumented system function.
@@ -744,6 +751,9 @@ private:
 
         FileDescriptor & operator=(FileDescriptor && rhs)
         {
+            if (this == &rhs)
+                return *this;
+
             close(fd);
 
             fd = rhs.fd;

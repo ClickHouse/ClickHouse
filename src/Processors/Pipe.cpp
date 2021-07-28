@@ -4,7 +4,8 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>
-#include <Processors/NullSink.h>
+#include <Processors/Sinks/NullSink.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
@@ -834,7 +835,7 @@ void Pipe::transform(const Transformer & transformer)
 
     if (collected_processors)
     {
-        for (const auto & processor : processors)
+        for (const auto & processor : new_processors)
             collected_processors->emplace_back(processor);
     }
 

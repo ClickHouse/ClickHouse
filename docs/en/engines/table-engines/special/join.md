@@ -28,7 +28,7 @@ See the detailed description of the [CREATE TABLE](../../../sql-reference/statem
 -   `join_type` – [JOIN type](../../../sql-reference/statements/select/join.md#select-join-types).
 -   `k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
 
-Enter `join_strictness` and `join_type` parameters without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. If the parameters don’t match, ClickHouse doesn’t throw an exception and may return incorrect data.
+Enter `join_strictness` and `join_type` parameters without quotes, for example, `Join(ANY, LEFT, col1)`. They must match the `JOIN` operation that the table will be used for. If the parameters do not match, ClickHouse does not throw an exception and may return incorrect data.
 
 ## Table Usage {#table-usage}
 

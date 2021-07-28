@@ -2,6 +2,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -82,6 +83,14 @@ void MergeSortingStep::describeActions(FormatSettings & settings) const
 
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
+}
+
+void MergeSortingStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Sort Description", explainSortDescription(description, input_streams.front().header));
+
+    if (limit)
+        map.add("Limit", limit);
 }
 
 }

@@ -15,7 +15,9 @@ def server(_bucket, _path):
     for name in request.headers:
         if name == 'Authorization' and request.headers[name] == 'Bearer TOKEN':
             return '1, 2, 3'
-    abort(403)
+    response.status = 403
+    response.content_type = 'text/xml'
+    return '<?xml version="1.0" encoding="UTF-8"?><Error><Code>ForbiddenError</Code><Message>Forbidden Error</Message><RequestId>txfbd566d03042474888193-00608d7537</RequestId></Error>'
 
 
 @route('/')

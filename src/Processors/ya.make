@@ -107,11 +107,11 @@ SRCS(
     QueryPlan/IQueryPlanStep.cpp
     QueryPlan/ISourceStep.cpp
     QueryPlan/ITransformingStep.cpp
+    QueryPlan/JoinStep.cpp
     QueryPlan/LimitByStep.cpp
     QueryPlan/LimitStep.cpp
     QueryPlan/MergeSortingStep.cpp
     QueryPlan/MergingAggregatedStep.cpp
-    QueryPlan/MergingFinal.cpp
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetStep.cpp
     QueryPlan/Optimizations/QueryPlanOptimizationSettings.cpp
@@ -126,6 +126,7 @@ SRCS(
     QueryPlan/QueryPlan.cpp
     QueryPlan/ReadFromMergeTree.cpp
     QueryPlan/ReadFromPreparedSource.cpp
+    QueryPlan/ReadFromRemote.cpp
     QueryPlan/ReadNothingStep.cpp
     QueryPlan/RollupStep.cpp
     QueryPlan/SettingQuotaAndLimitsStep.cpp
@@ -138,10 +139,12 @@ SRCS(
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
+    Transforms/AddingDefaultsTransform.cpp
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ArrayJoinTransform.cpp
+    Transforms/CheckSortedTransform.cpp
     Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
@@ -164,6 +167,7 @@ SRCS(
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     Transforms/WindowTransform.cpp
+    Transforms/getSourceFromFromASTInsertQuery.cpp
     printPipeline.cpp
 
 )

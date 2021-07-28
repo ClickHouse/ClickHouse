@@ -7,6 +7,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
+#include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -17,6 +18,8 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/printPipeline.h>
+
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -75,17 +78,35 @@ BlockIO InterpreterExplainQuery::execute()
 }
 
 
-Block InterpreterExplainQuery::getSampleBlock()
+Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind kind)
 {
-    Block block;
-
-    ColumnWithTypeAndName col;
-    col.name = "explain";
-    col.type = std::make_shared<DataTypeString>();
-    col.column = col.type->createColumn();
-    block.insert(col);
-
-    return block;
+    if (kind == ASTExplainQuery::ExplainKind::QueryEstimates)
+    {
+        auto cols = NamesAndTypes{
+            {"database", std::make_shared<DataTypeString>()},
+            {"table", std::make_shared<DataTypeString>()},
+            {"parts", std::make_shared<DataTypeUInt64>()},
+            {"rows", std::make_shared<DataTypeUInt64>()},
+            {"marks", std::make_shared<DataTypeUInt64>()},
+        };
+        return Block({
+            {cols[0].type->createColumn(), cols[0].type, cols[0].name},
+            {cols[1].type->createColumn(), cols[1].type, cols[1].name},
+            {cols[2].type->createColumn(), cols[2].type, cols[2].name},
+            {cols[3].type->createColumn(), cols[3].type, cols[3].name},
+            {cols[4].type->createColumn(), cols[4].type, cols[4].name},
+        });
+    }
+    else
+    {
+        Block res;
+        ColumnWithTypeAndName col;
+        col.name = "explain";
+        col.type = std::make_shared<DataTypeString>();
+        col.column = col.type->createColumn();
+        res.insert(col);
+        return res;
+    }
 }
 
 /// Split str by line feed and write as separate row to ColumnString.
@@ -121,6 +142,7 @@ struct QueryPlanSettings
 
     /// Apply query plan optimizations.
     bool optimize = true;
+    bool json = false;
 
     constexpr static char name[] = "PLAN";
 
@@ -131,6 +153,7 @@ struct QueryPlanSettings
             {"actions", query_plan_options.actions},
             {"indexes", query_plan_options.indexes},
             {"optimize", optimize},
+            {"json", json}
     };
 };
 
@@ -218,12 +241,13 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
 BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
-    const auto & ast = query->as<ASTExplainQuery &>();
+    const auto & ast = query->as<const ASTExplainQuery &>();
 
-    Block sample_block = getSampleBlock();
+    Block sample_block = getSampleBlock(ast.getKind());
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     WriteBufferFromOwnString buf;
+    bool single_line = false;
 
     if (ast.getKind() == ASTExplainQuery::ParsedAST)
     {
@@ -256,7 +280,26 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         if (settings.optimize)
             plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
 
-        plan.explainPlan(buf, settings.query_plan_options);
+        if (settings.json)
+        {
+            /// Add extra layers to make plan look more like from postgres.
+            auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
+            plan_map->add("Plan", plan.explainPlan(settings.query_plan_options));
+            auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
+            plan_array->add(std::move(plan_map));
+
+            auto format_settings = getFormatSettings(getContext());
+            format_settings.json.quote_64bit_integers = false;
+
+            JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
+            JSONBuilder::FormatContext format_context{.out = buf};
+
+            plan_array->format(json_format_settings, format_context);
+
+            single_line = true;
+        }
+        else
+            plan.explainPlan(buf, settings.query_plan_options);
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPipeline)
     {
@@ -288,8 +331,32 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
             plan.explainPipeline(buf, settings.query_pipeline_options);
         }
     }
+    else if (ast.getKind() == ASTExplainQuery::QueryEstimates)
+    {
+        if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+            throw Exception("Only SELECT is supported for EXPLAIN ESTIMATE query", ErrorCodes::INCORRECT_QUERY);
 
-    fillColumn(*res_columns[0], buf.str());
+        auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
+        QueryPlan plan;
+
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+        interpreter.buildQueryPlan(plan);
+        // collect the selected marks, rows, parts during build query pipeline.
+        plan.buildQueryPipeline(
+            QueryPlanOptimizationSettings::fromContext(getContext()),
+            BuildQueryPipelineSettings::fromContext(getContext()));
+
+        if (settings.optimize)
+            plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
+        plan.explainEstimate(res_columns);
+    }
+    if (ast.getKind() != ASTExplainQuery::QueryEstimates)
+    {
+        if (single_line)
+            res_columns[0]->insertData(buf.str().data(), buf.str().size());
+        else
+            fillColumn(*res_columns[0], buf.str());
+    }
 
     return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
 }

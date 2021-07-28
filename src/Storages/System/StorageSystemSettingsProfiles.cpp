@@ -38,7 +38,7 @@ void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, Conte
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
+    auto & column_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_num_elements = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]).getData();
     auto & column_apply_to_all = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
@@ -54,7 +54,7 @@ void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, Conte
                        const RolesOrUsersSet & apply_to)
     {
         column_name.insertData(name.data(), name.length());
-        column_id.push_back(id);
+        column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
         column_num_elements.push_back(elements.size());
 

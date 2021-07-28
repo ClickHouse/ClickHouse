@@ -1,7 +1,6 @@
 #include <Common/Exception.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
@@ -144,7 +143,7 @@ Pipe StorageSystemNumbers::read(
 
     Pipe pipe;
 
-    if (num_streams > 1 && !even_distribution && *limit)
+    if (num_streams > 1 && !even_distribution && limit)
     {
         auto state = std::make_shared<NumbersMultiThreadedState>(offset);
         UInt64 max_counter = offset + *limit;

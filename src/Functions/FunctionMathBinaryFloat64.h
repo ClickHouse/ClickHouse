@@ -6,7 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -76,18 +76,8 @@ private:
             if (rows_remaining != 0)
             {
                 RightType right_src_remaining[Impl::rows_per_iteration];
-                if constexpr (!is_big_int_v<RightType> && !std::is_same_v<RightType, Decimal256>)
-                {
-                    memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
-                    memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
-                }
-                else
-                {
-                    for (size_t i = 0; i < rows_remaining; i++)
-                        right_src_remaining[i] = right_src_data[rows_size + i];
-                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
-                        right_src_remaining[i] = 0;
-                }
+                memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
+                memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
                 Float64 dst_remaining[Impl::rows_per_iteration];
 
                 Impl::execute(left_src_data, right_src_remaining, dst_remaining);
@@ -123,32 +113,13 @@ private:
             if (rows_remaining != 0)
             {
                 LeftType left_src_remaining[Impl::rows_per_iteration];
-                if constexpr (!is_big_int_v<LeftType> && !std::is_same_v<LeftType, Decimal256>)
-                {
-                    memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
-                    memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
-                }
-                else
-                {
-                    for (size_t i = 0; i < rows_remaining; i++)
-                        left_src_remaining[i] = left_src_data[rows_size + i];
-                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
-                        left_src_remaining[i] = 0;
-                }
+                memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
+                memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
 
                 RightType right_src_remaining[Impl::rows_per_iteration];
-                if constexpr (!is_big_int_v<RightType> && !std::is_same_v<RightType, Decimal256>)
-                {
-                    memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
-                    memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
-                }
-                else
-                {
-                    for (size_t i = 0; i < rows_remaining; i++)
-                        right_src_remaining[i] = right_src_data[rows_size + i];
-                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
-                        right_src_remaining[i] = 0;
-                }
+                memcpy(right_src_remaining, &right_src_data[rows_size], rows_remaining * sizeof(RightType));
+                memset(right_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(RightType));
+
                 Float64 dst_remaining[Impl::rows_per_iteration];
 
                 Impl::execute(left_src_remaining, right_src_remaining, dst_remaining);
@@ -178,18 +149,8 @@ private:
             if (rows_remaining != 0)
             {
                 LeftType left_src_remaining[Impl::rows_per_iteration];
-                if constexpr (!is_big_int_v<LeftType> && !std::is_same_v<LeftType, Decimal256>)
-                {
-                    memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
-                    memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
-                }
-                else
-                {
-                    for (size_t i = 0; i < rows_remaining; i++)
-                        left_src_remaining[i] = left_src_data[rows_size + i];
-                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
-                        left_src_remaining[i] = 0;
-                }
+                memcpy(left_src_remaining, &left_src_data[rows_size], rows_remaining * sizeof(LeftType));
+                memset(left_src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(LeftType));
 
                 Float64 dst_remaining[Impl::rows_per_iteration];
 

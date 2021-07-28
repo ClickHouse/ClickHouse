@@ -2,7 +2,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <ext/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -147,6 +147,13 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 
 Chunk ParallelParsingInputFormat::generate()
 {
+    /// Delayed launching of segmentator thread
+    if (unlikely(!parsing_started.exchange(true)))
+    {
+        segmentator_thread = ThreadFromGlobalPool(
+            &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
+    }
+
     if (isCancelled() || parsing_finished)
     {
         /**

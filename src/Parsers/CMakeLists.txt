@@ -9,6 +9,6 @@ if (USE_DEBUG_HELPERS)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
-if(ENABLE_TESTS)
-    add_subdirectory(tests)
+if(ENABLE_EXAMPLES)
+    add_subdirectory(examples)
 endif()

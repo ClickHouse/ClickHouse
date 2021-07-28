@@ -64,7 +64,7 @@ TEST(CoordinationTest, BufferSerde)
 {
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Get);
     request->xid = 3;
-    dynamic_cast<Coordination::ZooKeeperGetRequest *>(request.get())->path = "/path/value";
+    dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request).path = "/path/value";
 
     DB::WriteBufferFromNuraftBuffer wbuf;
     request->write(wbuf);
@@ -90,7 +90,7 @@ TEST(CoordinationTest, BufferSerde)
 
     EXPECT_EQ(request_read->getOpNum(), Coordination::OpNum::Get);
     EXPECT_EQ(request_read->xid, 3);
-    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest *>(request_read.get())->path, "/path/value");
+    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperGetRequest &>(*request_read).path, "/path/value");
 }
 
 template <typename StateMachine>
@@ -911,7 +911,7 @@ TEST(CoordinationTest, TestStorageSnapshotSimple)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3);
 
-    DB::KeeperStorage storage(500);
+    DB::KeeperStorage storage(500, "");
     addNode(storage, "/hello", "world", 1);
     addNode(storage, "/hello/somepath", "somedata", 3);
     storage.session_id_counter = 5;
@@ -958,7 +958,7 @@ TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3);
 
-    DB::KeeperStorage storage(500);
+    DB::KeeperStorage storage(500, "");
     storage.getSessionID(130);
 
     for (size_t i = 0; i < 50; ++i)
@@ -998,7 +998,7 @@ TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3);
 
-    DB::KeeperStorage storage(500);
+    DB::KeeperStorage storage(500, "");
     storage.getSessionID(130);
 
     for (size_t j = 1; j <= 5; ++j)
@@ -1035,7 +1035,7 @@ TEST(CoordinationTest, TestStorageSnapshotMode)
 {
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3);
-    DB::KeeperStorage storage(500);
+    DB::KeeperStorage storage(500, "");
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
@@ -1086,7 +1086,7 @@ TEST(CoordinationTest, TestStorageSnapshotBroken)
 {
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3);
-    DB::KeeperStorage storage(500);
+    DB::KeeperStorage storage(500, "");
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));

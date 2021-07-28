@@ -23,6 +23,7 @@ struct AlterCommand
 
     enum Type
     {
+        UNKNOWN,
         ADD_COLUMN,
         DROP_COLUMN,
         MODIFY_COLUMN,
@@ -33,8 +34,11 @@ struct AlterCommand
         DROP_INDEX,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
+        ADD_PROJECTION,
+        DROP_PROJECTION,
         MODIFY_TTL,
         MODIFY_SETTING,
+        RESET_SETTING,
         MODIFY_QUERY,
         RENAME_COLUMN,
         REMOVE_TTL,
@@ -55,7 +59,7 @@ struct AlterCommand
         TTL
     };
 
-    Type type;
+    Type type = UNKNOWN;
 
     String column_name;
 
@@ -74,10 +78,10 @@ struct AlterCommand
     /// For ADD or MODIFY - after which column to add a new one. If an empty string, add to the end.
     String after_column;
 
-    /// For ADD_COLUMN, MODIFY_COLUMN - Add to the begin if it is true.
+    /// For ADD_COLUMN, MODIFY_COLUMN, ADD_INDEX - Add to the begin if it is true.
     bool first = false;
 
-    /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
+    /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN, RESET_SETTING
     bool if_exists = false;
 
     /// For ADD_COLUMN
@@ -102,6 +106,13 @@ struct AlterCommand
     // For ADD/DROP CONSTRAINT
     String constraint_name;
 
+    /// For ADD PROJECTION
+    ASTPtr projection_decl = nullptr;
+    String after_projection_name;
+
+    /// For ADD/DROP PROJECTION
+    String projection_name;
+
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;
 
@@ -116,6 +127,9 @@ struct AlterCommand
 
     /// For MODIFY SETTING
     SettingsChanges settings_changes;
+
+    /// For RESET SETTING
+    std::set<String> settings_resets;
 
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;

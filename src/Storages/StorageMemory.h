@@ -4,7 +4,7 @@
 #include <optional>
 #include <mutex>
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
@@ -20,10 +20,10 @@ namespace DB
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public ext::shared_ptr_helper<StorageMemory>, public IStorage
+class StorageMemory final : public shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend class MemoryBlockOutputStream;
-friend struct ext::shared_ptr_helper<StorageMemory>;
+friend class MemorySink;
+friend struct shared_ptr_helper<StorageMemory>;
 
 public:
     String getName() const override { return "Memory"; }
@@ -47,7 +47,7 @@ public:
 
     bool hasEvenlyDistributedRead() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     void drop() override;
 
@@ -115,6 +115,7 @@ protected:
         const StorageID & table_id_,
         ColumnsDescription columns_description_,
         ConstraintsDescription constraints_,
+        const String & comment,
         bool compress_ = false);
 };
 

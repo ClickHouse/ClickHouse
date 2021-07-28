@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -87,18 +87,8 @@ private:
             if (rows_remaining != 0)
             {
                 T src_remaining[Impl::rows_per_iteration];
-                if constexpr (is_big_int_v<T> || std::is_same_v<T, Decimal256>)
-                {
-                    for (size_t i = 0; i < rows_remaining; i++)
-                        src_remaining[i] = src_data[rows_size + i];
-                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
-                        src_remaining[i] = 0;
-                }
-                else
-                {
-                    memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(T));
-                    memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(T));
-                }
+                memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(T));
+                memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(T));
                 ReturnType dst_remaining[Impl::rows_per_iteration];
 
                 Impl::execute(src_remaining, dst_remaining);

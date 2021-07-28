@@ -12,7 +12,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/Quota.h>
 #include <Access/AccessFlags.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -25,7 +25,7 @@ namespace
     DataTypeEnum8::Values getKeyTypeEnumValues()
     {
         DataTypeEnum8::Values enum_values;
-        for (auto key_type : ext::range(KeyType::MAX))
+        for (auto key_type : collections::range(KeyType::MAX))
         {
             const auto & type_info = KeyTypeInfo::get(key_type);
             if ((key_type != KeyType::NONE) && type_info.base_types.empty())
@@ -60,7 +60,7 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
+    auto & column_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_key_types = assert_cast<ColumnInt8 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData()).getData();
     auto & column_key_types_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
@@ -80,7 +80,7 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
                        const RolesOrUsersSet & apply_to)
     {
         column_name.insertData(name.data(), name.length());
-        column_id.push_back(id);
+        column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
 
         if (key_type != KeyType::NONE)

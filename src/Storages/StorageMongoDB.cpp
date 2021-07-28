@@ -34,7 +34,8 @@ StorageMongoDB::StorageMongoDB(
     const std::string & username_,
     const std::string & password_,
     const ColumnsDescription & columns_,
-    const ConstraintsDescription & constraints_)
+    const ConstraintsDescription & constraints_,
+    const String & comment)
     : IStorage(table_id_)
     , host(host_)
     , port(port_)
@@ -46,6 +47,7 @@ StorageMongoDB::StorageMongoDB(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -56,7 +58,7 @@ void StorageMongoDB::connectIfNotConnected()
     if (!connection)
         connection = std::make_shared<Poco::MongoDB::Connection>(host, port);
 
-    if (!authentified)
+    if (!authenticated)
     {
 #       if POCO_VERSION >= 0x01070800
             Poco::MongoDB::Database poco_db(database_name);
@@ -65,7 +67,7 @@ void StorageMongoDB::connectIfNotConnected()
 #       else
             authenticate(*connection, database_name, username, password);
 #       endif
-        authentified = true;
+        authenticated = true;
     }
 }
 
@@ -125,7 +127,8 @@ void registerStorageMongoDB(StorageFactory & factory)
             username,
             password,
             args.columns,
-            args.constraints);
+            args.constraints,
+            args.comment);
     },
     {
         .source_access_type = AccessType::MONGO,

@@ -46,6 +46,7 @@ class ParserIdentifier : public IParserBase
 {
 public:
     explicit ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
+
 protected:
     const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -209,10 +210,22 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserCastExpression : public IParserBase
+/// Fast path of cast operator "::".
+/// It tries to read literal as text.
+/// If it fails, later operator will be transformed to function CAST.
+/// Examples: "0.1::Decimal(38, 38)", "[1, 2]::Array(UInt8)"
+class ParserCastOperator : public IParserBase
 {
 protected:
-    const char * getName() const override { return "CAST expression"; }
+    const char * getName() const override { return "CAST operator"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast);
+class ParserCastAsExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "CAST AS expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -295,6 +308,7 @@ protected:
 
 
 /** String in single quotes.
+  * String in heredoc $here$txt$here$ equivalent to 'txt'.
   */
 class ParserStringLiteral : public IParserBase
 {
@@ -366,8 +380,8 @@ protected:
 class ParserAlias : public IParserBase
 {
 public:
-    ParserAlias(bool allow_alias_without_as_keyword_)
-        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
+    explicit ParserAlias(bool allow_alias_without_as_keyword_) : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) { }
+
 private:
     static const char * restricted_keywords[];
 
@@ -454,8 +468,10 @@ protected:
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {
 public:
-    ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false)
-        : brackets_can_be_omitted(brackets_can_be_omitted_) {}
+    explicit ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false) : brackets_can_be_omitted(brackets_can_be_omitted_)
+    {
+    }
+
 protected:
 
     const char * getName() const override { return "function with key-value arguments"; }

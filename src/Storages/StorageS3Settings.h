@@ -28,6 +28,7 @@ struct S3AuthSettings
 {
     String access_key_id;
     String secret_access_key;
+    String region;
     String server_side_encryption_customer_key_base64;
 
     HeaderCollection headers;
@@ -38,7 +39,9 @@ struct S3AuthSettings
     inline bool operator==(const S3AuthSettings & other) const
     {
         return access_key_id == other.access_key_id && secret_access_key == other.secret_access_key
-            && server_side_encryption_customer_key_base64 == other.server_side_encryption_customer_key_base64 && headers == other.headers
+            && region == other.region
+            && server_side_encryption_customer_key_base64 == other.server_side_encryption_customer_key_base64
+            && headers == other.headers
             && use_environment_credentials == other.use_environment_credentials
             && use_insecure_imds_request == other.use_insecure_imds_request;
     }

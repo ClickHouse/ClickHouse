@@ -8,11 +8,10 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatFactory.h>
-#include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <Core/Field.h>
 #include <Common/escapeForFileName.h>
 
@@ -24,11 +23,11 @@ LibraryBridgeHelper::LibraryBridgeHelper(
         ContextPtr context_,
         const Block & sample_block_,
         const Field & dictionary_id_)
-    : IBridgeHelper(context_)
+    : IBridgeHelper(context_->getGlobalContext())
     , log(&Poco::Logger::get("LibraryBridgeHelper"))
     , sample_block(sample_block_)
     , config(context_->getConfigRef())
-    , http_timeout(context_->getSettingsRef().http_receive_timeout.value.totalSeconds())
+    , http_timeout(context_->getGlobalContext()->getSettingsRef().http_receive_timeout.value)
     , dictionary_id(dictionary_id_)
 {
     bridge_port = config.getUInt("library_bridge.port", DEFAULT_PORT);
@@ -129,7 +128,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string ids_string)
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_IDS_METHOD);
-    return loadBase(uri, [ids_string](std::ostream & os) { os << "ids=" << ids_string; });
+    return loadBase(uri, [ids_string](std::ostream & os) { os << ids_string; });
 }
 
 

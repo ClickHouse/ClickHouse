@@ -23,17 +23,18 @@ using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
 enum class ChangelogVersion : uint8_t
 {
     V0 = 0,
+    V1 = 1, /// with 64 bit buffer header
 };
 
-static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V0;
+static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V1;
 
 struct ChangelogRecordHeader
 {
     ChangelogVersion version = CURRENT_CHANGELOG_VERSION;
-    uint64_t index; /// entry log number
-    uint64_t term;
-    nuraft::log_val_type value_type;
-    uint64_t blob_size;
+    uint64_t index = 0; /// entry log number
+    uint64_t term = 0;
+    nuraft::log_val_type value_type{};
+    uint64_t blob_size = 0;
 };
 
 /// Changelog record on disk

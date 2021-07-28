@@ -193,7 +193,7 @@ void CSVRowInputFormat::readPrefix()
             {
                 if (!read_column)
                 {
-                    have_always_default_columns = true;
+                    column_mapping->have_always_default_columns = true;
                     break;
                 }
             }
@@ -221,7 +221,7 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
     /// Track whether we have to fill any columns in this row with default
     /// values. If not, we return an empty column mask to the caller, so that
     /// it doesn't have to check it.
-    bool have_default_columns = have_always_default_columns;
+    bool have_default_columns = column_mapping->have_always_default_columns;
 
     ext.read_columns.assign(column_mapping->read_columns.size(), true);
     const auto delimiter = format_settings.csv.delimiter;
@@ -416,7 +416,7 @@ void CSVRowInputFormat::resetParser()
     RowInputFormatWithDiagnosticInfo::resetParser();
     column_mapping->column_indexes_for_input_fields.clear();
     column_mapping->read_columns.clear();
-    have_always_default_columns = false;
+    column_mapping->have_always_default_columns = false;
 }
 
 

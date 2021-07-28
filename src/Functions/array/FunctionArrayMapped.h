@@ -8,7 +8,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>

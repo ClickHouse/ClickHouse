@@ -27,7 +27,7 @@ RUN apt-get update \
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
+RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
@@ -35,22 +35,15 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
 RUN apt-get update \
     && apt-get install \
         alien \
-        clang-10 \
         clang-11 \
-        clang-tidy-10 \
         clang-tidy-11 \
         cmake \
         debhelper \
         devscripts \
-        g++-9 \
-        gcc-9 \
         gdb  \
         git \
         gperf \
-        lld-10 \
         lld-11 \
-        llvm-10 \
-        llvm-10-dev \
         llvm-11 \
         llvm-11-dev \
         moreutils \

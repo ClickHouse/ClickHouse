@@ -10,13 +10,14 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <common/logger_useful.h>
 #include "MySQLBlockInputStream.h"
 
@@ -48,7 +49,7 @@ MySQLBlockInputStream::Connection::Connection(
 {
 }
 
-/// Used in MaterializeMySQL and in doInvalidateQuery for dictionary source.
+/// Used in MaterializedMySQL and in doInvalidateQuery for dictionary source.
 MySQLBlockInputStream::MySQLBlockInputStream(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
@@ -157,6 +158,14 @@ namespace
                 assert_cast<ColumnFloat64 &>(column).insertValue(value.getDouble());
                 read_bytes_size += 8;
                 break;
+            case ValueType::vtEnum8:
+                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).get<Int8>());
+                read_bytes_size += assert_cast<ColumnInt8 &>(column).byteSize();
+                break;
+            case ValueType::vtEnum16:
+                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).get<Int16>());
+                read_bytes_size += assert_cast<ColumnInt16 &>(column).byteSize();
+                break;
             case ValueType::vtString:
                 assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
                 read_bytes_size += assert_cast<ColumnString &>(column).byteSize();
@@ -169,7 +178,7 @@ namespace
             {
                 ReadBufferFromString in(value);
                 time_t time = 0;
-                readDateTimeText(time, in);
+                readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
                 if (time < 0)
                     time = 0;
                 assert_cast<ColumnUInt32 &>(column).insertValue(time);
@@ -177,8 +186,8 @@ namespace
                 break;
             }
             case ValueType::vtUUID:
-                assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
-                read_bytes_size += assert_cast<ColumnUInt128 &>(column).byteSize();
+                assert_cast<ColumnUUID &>(column).insert(parse<UUID>(value.data(), value.size()));
+                read_bytes_size += assert_cast<ColumnUUID &>(column).byteSize();
                 break;
             case ValueType::vtDateTime64:[[fallthrough]];
             case ValueType::vtDecimal32: [[fallthrough]];
@@ -216,7 +225,7 @@ Block MySQLBlockInputStream::readImpl()
     }
 
     MutableColumns columns(description.sample_block.columns());
-    for (const auto i : ext::range(0, columns.size()))
+    for (const auto i : collections::range(0, columns.size()))
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
@@ -276,7 +285,7 @@ void MySQLBlockInputStream::initPositionMappingFromQueryResultStructure()
             throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
                 + toString(description.sample_block.columns()) + " expected", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
-        for (const auto idx : ext::range(0, connection->result.getNumFields()))
+        for (const auto idx : collections::range(0, connection->result.getNumFields()))
             position_mapping[idx] = idx;
     }
     else
@@ -286,7 +295,7 @@ void MySQLBlockInputStream::initPositionMappingFromQueryResultStructure()
 
         size_t fields_size = connection->result.getNumFields();
 
-        for (const size_t & idx : ext::range(0, fields_size))
+        for (const size_t & idx : collections::range(0, fields_size))
         {
             const auto & field_name = connection->result.getFieldName(idx);
             if (description.sample_block.has(field_name))

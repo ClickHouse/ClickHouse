@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/IProcessor.h>
@@ -27,6 +26,9 @@ struct SizeLimits;
 
 struct ExpressionActionsSettings;
 
+class IJoin;
+using JoinPtr = std::shared_ptr<IJoin>;
+
 class QueryPipeline
 {
 public:
@@ -52,6 +54,7 @@ public:
     void addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter);
     /// Add transform with getNumStreams() input ports.
     void addTransform(ProcessorPtr transform);
+    void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
     /// Transform pipeline in general way.
@@ -90,6 +93,15 @@ public:
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
+    /// Join two pipelines together using JoinPtr.
+    /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
+    static std::unique_ptr<QueryPipeline> joinPipelines(
+        std::unique_ptr<QueryPipeline> left,
+        std::unique_ptr<QueryPipeline> right,
+        JoinPtr join,
+        size_t max_block_size,
+        Processors * collected_processors = nullptr);
+
     /// Add other pipeline and execute it before current one.
     /// Pipeline must have empty header, it should not generate any chunk.
     /// This is used for CreatingSets.
@@ -106,7 +118,7 @@ public:
     const Block & getHeader() const { return pipe.getHeader(); }
 
     void addTableLock(TableLockHolder lock) { pipe.addTableLock(std::move(lock)); }
-    void addInterpreterContext(std::shared_ptr<Context> context) { pipe.addInterpreterContext(std::move(context)); }
+    void addInterpreterContext(std::shared_ptr<const Context> context) { pipe.addInterpreterContext(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
     void addQueryPlan(std::unique_ptr<QueryPlan> plan) { pipe.addQueryPlan(std::move(plan)); }
     void setLimits(const StreamLocalLimits & limits) { pipe.setLimits(limits); }
@@ -122,7 +134,7 @@ public:
     {
         auto num_threads = pipe.maxParallelStreams();
 
-        if (max_threads)
+        if (max_threads) //-V1051
             num_threads = std::min(num_threads, max_threads);
 
         return std::max<size_t>(1, num_threads);

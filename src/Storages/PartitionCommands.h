@@ -20,6 +20,8 @@ struct PartitionCommand
 {
     enum Type
     {
+        UNKNOWN,
+
         ATTACH_PARTITION,
         MOVE_PARTITION,
         DROP_PARTITION,
@@ -32,7 +34,7 @@ struct PartitionCommand
         REPLACE_PARTITION,
     };
 
-    Type type;
+    Type type = UNKNOWN;
 
     ASTPtr partition;
 
@@ -62,6 +64,7 @@ struct PartitionCommand
         DISK,
         VOLUME,
         TABLE,
+        SHARD,
     };
 
     std::optional<MoveDestinationType> move_destination_type;

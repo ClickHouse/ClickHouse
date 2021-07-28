@@ -111,7 +111,7 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
     init();
 }
 
-MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const StorageMetadataPtr & metadata_snapshot)
+MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::unique_lock lock(write_mutex);
 
@@ -189,10 +189,15 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
 
         if (action_type == ActionType::ADD_PART)
         {
-            MergedBlockOutputStream part_out(part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
+            MergedBlockOutputStream part_out(
+                part,
+                metadata_snapshot,
+                block.getNamesAndTypesList(),
+                {},
+                CompressionCodecFactory::instance().get("NONE", {}));
 
             part->minmax_idx.update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
-            part->partition.create(metadata_snapshot, block, 0);
+            part->partition.create(metadata_snapshot, block, 0, context);
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);
 

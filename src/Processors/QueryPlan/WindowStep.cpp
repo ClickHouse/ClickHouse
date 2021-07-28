@@ -5,6 +5,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -114,6 +115,27 @@ void WindowStep::describeActions(FormatSettings & settings) const
                                           : "           ");
         settings.out << window_functions[i].column_name << "\n";
     }
+}
+
+void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    if (!window_description.partition_by.empty())
+    {
+        auto partion_columns_array = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto & descr : window_description.partition_by)
+            partion_columns_array->add(descr.column_name);
+
+        map.add("Partition By", std::move(partion_columns_array));
+    }
+
+    if (!window_description.order_by.empty())
+        map.add("Sort Description", explainSortDescription(window_description.order_by, {}));
+
+    auto functions_array = std::make_unique<JSONBuilder::JSONArray>();
+    for (const auto & func : window_functions)
+        functions_array->add(func.column_name);
+
+    map.add("Functions", std::move(functions_array));
 }
 
 }

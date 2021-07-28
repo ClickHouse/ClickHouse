@@ -1,13 +1,30 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
+# system.functions {#system-functions}
 
-# 系统。功能 {#system-functions}
-
-包含有关正常函数和聚合函数的信息。
+包含有关常规函数和聚合函数的信息。
 
 列:
 
 -   `name`(`String`) – The name of the function.
 -   `is_aggregate`(`UInt8`) — Whether the function is aggregate.
+
+**举例**
+```
+ SELECT * FROM system.functions LIMIT 10;
+```
+
+```
+┌─name─────────────────────┬─is_aggregate─┬─case_insensitive─┬─alias_to─┐
+│ sumburConsistentHash     │            0 │                0 │          │
+│ yandexConsistentHash     │            0 │                0 │          │
+│ demangle                 │            0 │                0 │          │
+│ addressToLine            │            0 │                0 │          │
+│ JSONExtractRaw           │            0 │                0 │          │
+│ JSONExtractKeysAndValues │            0 │                0 │          │
+│ JSONExtract              │            0 │                0 │          │
+│ JSONExtractString        │            0 │                0 │          │
+│ JSONExtractFloat         │            0 │                0 │          │
+│ JSONExtractInt           │            0 │                0 │          │
+└──────────────────────────┴──────────────┴──────────────────┴──────────┘
+
+10 rows in set. Elapsed: 0.002 sec. 
+```

@@ -25,10 +25,12 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/ExpressionJIT.h>
+#include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
+#include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
@@ -42,11 +44,8 @@
 #    include "config_core.h"
 #endif
 
-
 namespace DB
 {
-
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -55,6 +54,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int NO_ZOOKEEPER;
 }
 
 
@@ -130,6 +130,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         throw Exception("Unknown action type: " + std::to_string(action_type), ErrorCodes::LOGICAL_ERROR);
 }
 
+constexpr std::string_view table_is_not_replicated = "Table {} is not replicated";
+
 }
 
 /// Implements SYSTEM [START|STOP] <something action from ActionLocks>
@@ -191,8 +193,8 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
 }
 
 
-InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextPtr context_)
-        : WithContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
+InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
+        : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(&Poco::Logger::get("InterpreterSystemQuery"))
 {
 }
 
@@ -211,11 +213,16 @@ BlockIO InterpreterSystemQuery::execute()
     system_context->setSetting("profile", getContext()->getSystemProfileName());
 
     /// Make canonical query for simpler processing
-    if (!query.table.empty())
+    if (query.type == Type::RELOAD_DICTIONARY)
+    {
+        if (!query.database.empty())
+            query.table = query.database + "." + query.table;
+    }
+    else if (!query.table.empty())
+    {
         table_id = getContext()->resolveStorageID(StorageID(query.database, query.table), Context::ResolveOrdinary);
+    }
 
-    if (!query.target_dictionary.empty() && !query.database.empty())
-        query.target_dictionary = query.database + "." + query.target_dictionary;
 
     volume_ptr = {};
     if (!query.storage_policy.empty() && !query.volume.empty())
@@ -285,7 +292,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            external_dictionaries_loader.reloadDictionary(query.target_dictionary, getContext());
+            external_dictionaries_loader.reloadDictionary(query.table, getContext());
 
 
             ExternalDictionariesLoader::resetAll();
@@ -295,8 +302,8 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
             executeCommandsAndThrowIfError(
-                    [&] () { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
-                    [&] () { system_context->getEmbeddedDictionaries().reload(); }
+                [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
+                [&] { system_context->getEmbeddedDictionaries().reload(); }
             );
             ExternalDictionariesLoader::resetAll();
             break;
@@ -391,21 +398,27 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::RESTART_REPLICA:
             if (!tryRestartReplica(table_id, system_context))
-                throw Exception("There is no " + query.database + "." + query.table + " replicated table",
-                                ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
+            break;
+        case Type::RESTORE_REPLICA:
+            restoreReplica();
+            break;
+        case Type::RESTART_DISK:
+            restartDisk(query.disk);
             break;
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             executeCommandsAndThrowIfError(
-                    [&] () { if (auto query_log = getContext()->getQueryLog()) query_log->flush(true); },
-                    [&] () { if (auto part_log = getContext()->getPartLog("")) part_log->flush(true); },
-                    [&] () { if (auto query_thread_log = getContext()->getQueryThreadLog()) query_thread_log->flush(true); },
-                    [&] () { if (auto trace_log = getContext()->getTraceLog()) trace_log->flush(true); },
-                    [&] () { if (auto text_log = getContext()->getTextLog()) text_log->flush(true); },
-                    [&] () { if (auto metric_log = getContext()->getMetricLog()) metric_log->flush(true); },
-                    [&] () { if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
-                    [&] () { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); }
+                [&] { if (auto query_log = getContext()->getQueryLog()) query_log->flush(true); },
+                [&] { if (auto part_log = getContext()->getPartLog("")) part_log->flush(true); },
+                [&] { if (auto query_thread_log = getContext()->getQueryThreadLog()) query_thread_log->flush(true); },
+                [&] { if (auto trace_log = getContext()->getTraceLog()) trace_log->flush(true); },
+                [&] { if (auto text_log = getContext()->getTextLog()) text_log->flush(true); },
+                [&] { if (auto metric_log = getContext()->getMetricLog()) metric_log->flush(true); },
+                [&] { if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
+                [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
+                [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); }
             );
             break;
         }
@@ -419,12 +432,51 @@ BlockIO InterpreterSystemQuery::execute()
     return BlockIO();
 }
 
+void InterpreterSystemQuery::restoreReplica()
+{
+    getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextPtr system_context, bool need_ddl_guard)
+    const zkutil::ZooKeeperPtr& zookeeper = getContext()->getZooKeeper();
+
+    if (zookeeper->expired())
+        throw Exception(ErrorCodes::NO_ZOOKEEPER,
+            "Cannot restore table metadata because ZooKeeper session has expired");
+
+    const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+    auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
+
+    if (table_replicated_ptr == nullptr)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
+
+    auto & table_replicated = *table_replicated_ptr;
+
+    StorageReplicatedMergeTree::Status status;
+    table_replicated.getStatus(status);
+
+    if (!status.is_readonly)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica must be readonly");
+
+    const String replica_name = table_replicated.getReplicaName();
+    const String& zk_root_path = status.zookeeper_path;
+
+    if (String replica_path = zk_root_path + "replicas/" + replica_name; zookeeper->exists(replica_path))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Replica path is present at {} -- nothing to restore. "
+            "If you are sure that metadata it lost and replica path contain some garbage, "
+            "then use SYSTEM DROP REPLICA query first.", replica_path);
+
+    table_replicated.restoreMetadataInZooKeeper();
+}
+
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
 
-    auto table_ddl_guard = need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName()) : nullptr;
+    auto table_ddl_guard = need_ddl_guard
+        ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName())
+        : nullptr;
+
     auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, getContext());
     ASTPtr create_ast;
 
@@ -432,7 +484,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
         return nullptr;
 
-    table->shutdown();
+    table->flushAndShutdown();
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
@@ -465,34 +517,29 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     return table;
 }
 
-void InterpreterSystemQuery::restartReplicas(ContextPtr system_context)
+void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 {
     std::vector<StorageID> replica_names;
     auto & catalog = DatabaseCatalog::instance();
 
     for (auto & elem : catalog.getDatabases())
-    {
-        DatabasePtr & database = elem.second;
-        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
-        {
-            if (auto table = iterator->table())
-            {
-                if (dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
-                    replica_names.emplace_back(StorageID{iterator->databaseName(), iterator->name()});
-            }
-        }
-    }
+        for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
+            if (dynamic_cast<const StorageReplicatedMergeTree *>(it->table().get()))
+                replica_names.emplace_back(it->databaseName(), it->name());
 
     if (replica_names.empty())
         return;
 
     TableGuards guards;
+
     for (const auto & name : replica_names)
         guards.emplace(UniqueTableName{name.database_name, name.table_name}, nullptr);
+
     for (auto & guard : guards)
         guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
 
     ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
+
     for (auto & replica : replica_names)
     {
         LOG_TRACE(log, "Restarting replica on {}", replica.getNameForLogs());
@@ -512,7 +559,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
         if (!dropReplicaImpl(query, table))
-            throw Exception("Table " + table_id.getNameForLogs() + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
     }
     else if (!query.database.empty())
     {
@@ -538,7 +585,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     else if (!query.replica_zk_path.empty())
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
-        auto remote_replica_path = query.replica_zk_path  + "/replicas/" + query.replica;
+        String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
 
         /// This check is actually redundant, but it may prevent from some user mistakes
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
@@ -618,13 +665,13 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(
-                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out! "
+                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out. "
                     "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
         }
         LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());
     }
     else
-        throw Exception("Table " + table_id.getNameForLogs() + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 }
 
 void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
@@ -637,12 +684,25 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
+void InterpreterSystemQuery::restartDisk(String & name)
+{
+    getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
+
+    auto disk = getContext()->getDisk(name);
+
+    if (DiskRestartProxy * restart_proxy = dynamic_cast<DiskRestartProxy*>(disk.get()))
+        restart_proxy->restart();
+    else
+        throw Exception("Disk " + name + " doesn't have possibility to restart", ErrorCodes::BAD_ARGUMENTS);
+}
+
 
 AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() const
 {
     const auto & query = query_ptr->as<const ASTSystemQuery &>();
     using Type = ASTSystemQuery::Type;
     AccessRightsElements required_access;
+
     switch (query.type)
     {
         case Type::SHUTDOWN: [[fallthrough]];
@@ -754,6 +814,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.database, query.table);
             break;
         }
+        case Type::RESTORE_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.database, query.table);
+            break;
+        }
         case Type::SYNC_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_SYNC_REPLICA, query.database, query.table);
@@ -777,6 +842,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::FLUSH_LOGS:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
+            break;
+        }
+        case Type::RESTART_DISK:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
             break;
         }
         case Type::STOP_LISTEN_QUERIES: break;
