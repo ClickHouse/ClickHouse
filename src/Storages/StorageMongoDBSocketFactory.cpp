@@ -11,12 +11,6 @@
 #   include <Poco/Net/SecureStreamSocket.h>
 #endif
 
-#ifdef __clang__
-#   pragma clang diagnostic ignored "-Wunused-parameter"
-#else
-#   pragma GCC diagnostic ignored "-Wunused-parameter"
-#endif
-
 
 namespace DB
 {
@@ -24,25 +18,29 @@ namespace DB
 Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSocket(const std::string & host, int port, Poco::Timespan connectTimeout, bool secure)
 {
 #if USE_SSL
-    return secure ? createSecureSocket(host, port) : createPlainSocket(host, port);
+    return secure ? createSecureSocket(host, port, connectTimeout) : createPlainSocket(host, port, connectTimeout);
 #else
-    return createPlainSocket(host, port);
+    return createPlainSocket(host, port, connectTimeout);
 #endif
 }
 
-Poco::Net::StreamSocket StorageMongoDBSocketFactory::createPlainSocket(const std::string & host, int port)
+Poco::Net::StreamSocket StorageMongoDBSocketFactory::createPlainSocket(const std::string & host, int port, Poco::Timespan connectTimeout)
 {
     Poco::Net::SocketAddress address(host, port);
-    Poco::Net::StreamSocket socket(address);
+    Poco::Net::StreamSocket socket;
+
+    socket.connect(address, connectTimeout);
 
     return socket;
 }
 
 #if USE_SSL
-Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSecureSocket(const std::string & host, int port)
+Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSecureSocket(const std::string & host, int port, Poco::Timespan connectTimeout)
 {
     Poco::Net::SocketAddress address(host, port);
-    Poco::Net::SecureStreamSocket socket(address, host);
+    Poco::Net::SecureStreamSocket socket;
+
+    socket.connect(address, connectTimeout);
 
     return socket;
 }
