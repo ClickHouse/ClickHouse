@@ -43,9 +43,9 @@ public:
     struct Request
     {
         FileDescriptorPtr descriptor;
-        size_t offset;
-        size_t size;
-        char * buf;
+        size_t offset = 0;
+        size_t size = 0;
+        char * buf = nullptr;
         int priority = 0;
     };
 
