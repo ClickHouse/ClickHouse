@@ -85,7 +85,7 @@ select addSeconds(x1, 3600) from t1;
 select '-------addMinutes---------';
 select addMinutes(x1, 60) from t1;
 select '-------addHours---------';
-select addHours(x1, 12) from t1;
+select addHours(x1, 1) from t1;
 select '-------addDays---------';
 select addDays(x1, 7) from t1;
 select '-------addWeeks---------';
