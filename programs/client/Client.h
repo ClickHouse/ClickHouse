@@ -15,49 +15,29 @@ public:
     void initialize(Poco::Util::Application & self) override;
 
 protected:
-    int mainImpl() override;
-
-    bool supportPasswordOption() const override { return true; }
-
-    void reconnectIfNeeded() override
-    {
-        if (!connection->checkConnected())
-            connect();
-    }
+    void processSingleQuery(const String & full_query) override;
 
     bool processMultiQuery(const String & all_queries_text) override;
 
-    void processParsedSingleQuery(std::optional<bool> echo_query = {});
-    void processTextAsSingleQuery(const String & text_);
+    bool processWithFuzzing(const String & full_query) override;
 
-    bool processMultiQueryFromFile(const String & file) override
-    {
-        connection->setDefaultDatabase(connection_parameters.default_database);
-        String text;
-        ReadBufferFromFile in(file);
-        readStringUntilEOF(text, in);
-        return processMultiQuery(text);
-    }
+
+    void reportQueryError(const String & query) const override;
+
+    void loadSuggestionData() override;
+
 
     bool validateParsedOptions() override { return true; }
 
-    std::vector<String> loadWarningMessages();
 
-    void loadSuggestionDataIfPossible() override;
-
-    bool checkErrorMatchesHints(const TestHint & test_hint, bool had_error) override;
-    void reportQueryError() const override;
-
-    bool processWithFuzzing(const String & text) override;
-
-    void executeParsedQueryPrefix() override;
-    void executeParsedQueryImpl() override;
-    void executeParsedQuerySuffix() override;
+    int mainImpl() override;
 
     void readArguments(int argc, char ** argv,
                        Arguments & common_arguments,
                        std::vector<Arguments> & external_tables_arguments) override;
+
     void printHelpMessage(const OptionsDescription & options_description) override;
+
     void addOptions(OptionsDescription & options_description) override;
 
     void processOptions(const OptionsDescription & options_description,
@@ -89,33 +69,43 @@ private:
 
     void connect();
     void printChangedSettings() const;
-    void sendExternalTables();
+    void sendExternalTables(ASTPtr parsed_query);
 
-    void executeInsertQuery();
-    void executeOrdinaryQuery();
+    void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
+    void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
 
-    void sendData(Block & sample, const ColumnsDescription & columns_description);
+    void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendDataFrom(ReadBuffer & buf, Block & sample,
-                      const ColumnsDescription & columns_description);
+                      const ColumnsDescription & columns_description, ASTPtr parsed_query);
 
-    void receiveResult();
-    void receiveLogs();
+    void receiveResult(ASTPtr parsed_query);
+    void receiveLogs(ASTPtr parsed_query);
     bool receiveEndOfQuery();
-    bool receiveAndProcessPacket(bool cancelled);
-    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description);
+    bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
+    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
 
-    void initBlockOutputStream(const Block & block);
+    void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
-    void onData(Block & block);
+    void onData(Block & block, ASTPtr parsed_query);
     void onLogData(Block & block);
-    void onTotals(Block & block);
-    void onExtremes(Block & block);
+    void onTotals(Block & block, ASTPtr parsed_query);
+    void onExtremes(Block & block, ASTPtr parsed_query);
     void onProgress(const Progress & value);
 
     void writeFinalProgress();
     void onReceiveExceptionFromServer(std::unique_ptr<Exception> && e);
     void onProfileInfo(const BlockStreamProfileInfo & profile_info);
     void onEndOfStream();
+
+    void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query);
+    std::vector<String> loadWarningMessages();
+
+    void reconnectIfNeeded() override
+    {
+        if (!connection->checkConnected())
+            connect();
+    }
+
 };
 }

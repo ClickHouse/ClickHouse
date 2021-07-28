@@ -167,9 +167,12 @@ void ClientBase::resetOutput()
 }
 
 
-void ClientBase::outputQueryInfo(bool echo_query_)
+void ClientBase::processSingleQueryImpl(const String & full_query, std::function<void()> execute_single_query, std::optional<bool> echo_query_, bool report_error)
 {
-    if (echo_query_)
+    resetOutput();
+    have_error = false;
+
+    if (echo_query_ && *echo_query_)
     {
         writeString(full_query, std_out);
         writeChar('\n', std_out);
@@ -188,40 +191,12 @@ void ClientBase::outputQueryInfo(bool echo_query_)
             std_out.next();
         }
     }
-}
 
-
-void ClientBase::prepareAndExecuteQuery(const String & query)
-{
-    /* Parameters are in global variables:
-     * 'parsed_query' -- the query AST,
-     * 'query_to_execute' -- the query text that is sent to server,
-     * 'full_query' -- for INSERT queries, contains the query and the data that
-     * follows it. Its memory is referenced by ASTInsertQuery::begin, end.
-     **/
-
-    full_query = query_to_execute = query;
-
-    executeParsedQueryPrefix();
-    executeParsedQuery();
-}
-
-
-void ClientBase::executeParsedQuery(std::optional<bool> echo_query_, bool report_error)
-{
-    resetOutput();
-    client_exception.reset();
-    server_exception.reset();
-
-    have_error = false;
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();
 
-    outputQueryInfo(echo_query_.value_or(echo_queries));
-
-    executeParsedQueryImpl();
-    executeParsedQuerySuffix();
+    execute_single_query();
 
     if (is_interactive)
     {
@@ -235,12 +210,12 @@ void ClientBase::executeParsedQuery(std::optional<bool> echo_query_, bool report
     }
 
     if (have_error && report_error)
-        reportQueryError();
+        reportQueryError(full_query);
 }
 
 
 bool ClientBase::processMultiQueryImpl(const String & all_queries_text,
-                                       std::function<void(const String &)> process_single_query,
+                                       std::function<void(const String &, const String &, ASTPtr)> execute_single_query,
                                        std::function<void(const String &, Exception &)> process_parse_query_error)
 {
 
@@ -250,6 +225,12 @@ bool ClientBase::processMultiQueryImpl(const String & all_queries_text,
     /// addition to end of line.
     const char * this_query_begin = all_queries_text.data();
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
+
+    String query_to_execute;
+    // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
+    String full_query;
+
+    ASTPtr parsed_query;
 
     while (this_query_begin < all_queries_end)
     {
@@ -338,8 +319,6 @@ bool ClientBase::processMultiQueryImpl(const String & all_queries_text,
         // server log.
         adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
 
-        // full_query is the query + inline INSERT data + trailing comments
-        // (the latter is our best guess for now).
         full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
         if (query_fuzzer_runs)
         {
@@ -349,7 +328,7 @@ bool ClientBase::processMultiQueryImpl(const String & all_queries_text,
             continue;
         }
 
-        process_single_query(String(this_query_begin, this_query_end - this_query_begin));
+        execute_single_query(String(this_query_begin, this_query_end - this_query_begin), query_to_execute, parsed_query);
 
         // For INSERTs with inline data: use the end of inline data as
         // reported by the format parser (it is saved in sendData()).
@@ -365,7 +344,7 @@ bool ClientBase::processMultiQueryImpl(const String & all_queries_text,
 
         // Report error.
         if (have_error)
-            reportQueryError();
+            reportQueryError(full_query);
 
         // Stop processing queries if needed.
         if (have_error && !ignore_error)
@@ -390,7 +369,7 @@ bool ClientBase::processQueryText(const String & text)
     if (!is_multiquery)
     {
         assert(!query_fuzzer_runs);
-        prepareAndExecuteQuery(text);
+        processSingleQuery(text);
 
         return true;
     }
@@ -416,7 +395,7 @@ void ClientBase::runInteractive()
     const auto local_tz = DateLUT::instance().getTimeZone();
 
     suggest.emplace();
-    loadSuggestionDataIfPossible();
+    loadSuggestionData();
 
     if (home_path.empty())
     {
@@ -536,14 +515,26 @@ void ClientBase::runNonInteractive()
 {
     if (!queries_files.empty())
     {
+        auto process_multi_query_from_file = [&](const String & file)
+        {
+            auto text = getQueryTextPrefix();
+            String queries_from_file;
+
+            ReadBufferFromFile in(file);
+            readStringUntilEOF(queries_from_file, in);
+
+            text += queries_from_file;
+            return processMultiQuery(text);
+        };
+
         /// Read all queries into `text`.
         for (const auto & queries_file : queries_files)
         {
             for (const auto & interleave_file : interleave_queries_files)
-                if (!processMultiQueryFromFile(interleave_file))
+                if (!process_multi_query_from_file(interleave_file))
                     return;
 
-            if (!processMultiQueryFromFile(queries_file))
+            if (!process_multi_query_from_file(queries_file))
                 return;
         }
 
@@ -663,9 +654,7 @@ void ClientBase::init(int argc, char ** argv)
 
     processOptions(options_description, options, external_tables_arguments);
     argsToConfig(common_arguments, config(), 100);
-
-    if (supportPasswordOption())
-        clearPasswordFromCommandLine(argc, argv);
+    clearPasswordFromCommandLine(argc, argv);
 }
 
 }

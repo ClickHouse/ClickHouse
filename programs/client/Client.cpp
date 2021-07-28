@@ -93,6 +93,33 @@ namespace ErrorCodes
 }
 
 
+void Client::processSingleQuery(const String & full_query)
+{
+    /// Some parts of a query (result output and formatting) are executed
+    /// client-side. Thus we need to parse the query.
+    const char * begin = full_query.data();
+    auto parsed_query = parseQuery(begin, begin + full_query.size(), false);
+
+    if (!parsed_query)
+        return;
+
+    String query_to_execute;
+
+    // An INSERT query may have the data that follow query text. Remove the
+    /// Send part of query without data, because data will be sent separately.
+    auto * insert = parsed_query->as<ASTInsertQuery>();
+    if (insert && insert->data)
+        query_to_execute = full_query.substr(0, insert->data - full_query.data());
+    else
+        query_to_execute = full_query;
+
+    processSingleQueryImpl(full_query, [&]() { executeSingleQuery(query_to_execute, parsed_query); });
+
+    if (have_error)
+        reportQueryError(full_query);
+}
+
+
 bool Client::processMultiQuery(const String & all_queries_text)
 {
     // It makes sense not to base any control flow on this, so that it is
@@ -103,24 +130,24 @@ bool Client::processMultiQuery(const String & all_queries_text)
         /// disable logs if expects errors
         TestHint test_hint(test_mode, all_queries_text);
         if (test_hint.clientError() || test_hint.serverError())
-            prepareAndExecuteQuery("SET send_logs_level = 'fatal'");
+            processSingleQuery("SET send_logs_level = 'fatal'");
     }
 
     bool echo_query = echo_queries;
-    auto process_single_query = [&](const String & query)
+    auto process_single_query = [&](const String & full_query, const String & query_to_execute, ASTPtr parsed_query)
     {
         // Now we know for sure where the query ends.
         // Look for the hint in the text of query + insert data + trailing
         // comments,
         // e.g. insert into t format CSV 'a' -- { serverError 123 }.
         // Use the updated query boundaries we just calculated.
-        TestHint test_hint(test_mode, query);
+        TestHint test_hint(test_mode, full_query);
         // Echo all queries if asked; makes for a more readable reference
         // file.
         echo_query = test_hint.echoQueries().value_or(echo_query);
         try
         {
-            executeParsedQuery(echo_query, false);
+            processSingleQueryImpl(full_query, [&](){ executeSingleQuery(query_to_execute, parsed_query); }, echo_query, false);
         }
         catch (...)
         {
@@ -319,7 +346,7 @@ void Client::initialize(Poco::Util::Application & self)
 }
 
 
-void Client::loadSuggestionDataIfPossible()
+void Client::loadSuggestionData()
 {
     if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
     {
@@ -366,6 +393,8 @@ int Client::mainImpl()
         }
         else
         {
+            connection->setDefaultDatabase(connection_parameters.default_database);
+
             runNonInteractive();
 
             // If exception code isn't zero, we should return non-zero return
@@ -399,68 +428,6 @@ int Client::mainImpl()
     }
 
     return 0;
-}
-
-
-bool Client::checkErrorMatchesHints(const TestHint & test_hint, bool had_error)
-{
-    auto error_matches_hint = true;
-    if (had_error)
-    {
-        if (test_hint.serverError())
-        {
-            if (!server_exception)
-            {
-                error_matches_hint = false;
-                fmt::print(stderr, "Expected server error code '{}' but got no server error.\n", test_hint.serverError());
-            }
-            else if (server_exception->code() != test_hint.serverError())
-            {
-                error_matches_hint = false;
-                std::cerr << "Expected server error code: " << test_hint.serverError() << " but got: " << server_exception->code()
-                            << "." << std::endl;
-            }
-        }
-
-        if (test_hint.clientError())
-        {
-            if (!client_exception)
-            {
-                error_matches_hint = false;
-                fmt::print(stderr, "Expected client error code '{}' but got no client error.\n", test_hint.clientError());
-            }
-            else if (client_exception->code() != test_hint.clientError())
-            {
-                error_matches_hint = false;
-                fmt::print(
-                    stderr, "Expected client error code '{}' but got '{}'.\n", test_hint.clientError(), client_exception->code());
-            }
-        }
-
-        if (!test_hint.clientError() && !test_hint.serverError())
-        {
-            // No error was expected but it still occurred. This is the
-            // default case w/o test hint, doesn't need additional
-            // diagnostics.
-            error_matches_hint = false;
-        }
-    }
-    else
-    {
-        if (test_hint.clientError())
-        {
-            fmt::print(stderr, "The query succeeded but the client error '{}' was expected.\n", test_hint.clientError());
-            error_matches_hint = false;
-        }
-
-        if (test_hint.serverError())
-        {
-            fmt::print(stderr, "The query succeeded but the server error '{}' was expected.\n", test_hint.serverError());
-            error_matches_hint = false;
-        }
-    }
-
-    return error_matches_hint;
 }
 
 
@@ -591,7 +558,7 @@ void Client::connect()
 }
 
 
-void Client::reportQueryError() const
+void Client::reportQueryError(const String & query) const
 {
     if (server_exception)
     {
@@ -604,11 +571,9 @@ void Client::reportQueryError() const
 
     if (client_exception)
     {
-        fmt::print(stderr, "Error on processing query '{}':\n{}\n", full_query, client_exception->message());
+        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, client_exception->message());
         if (is_interactive)
-        {
             fmt::print(stderr, "\n");
-        }
     }
 
     // A debug check -- at least some exception must be set, if the error
@@ -642,14 +607,14 @@ void Client::printChangedSettings() const
 
 
 /// Returns false when server is not available.
-bool Client::processWithFuzzing(const String & text)
+bool Client::processWithFuzzing(const String & full_query)
 {
     ASTPtr orig_ast;
 
     try
     {
-        const char * begin = text.data();
-        orig_ast = parseQuery(begin, begin + text.size(), true);
+        const char * begin = full_query.data();
+        orig_ast = parseQuery(begin, begin + full_query.size(), true);
     }
     catch (const Exception & e)
     {
@@ -676,6 +641,9 @@ bool Client::processWithFuzzing(const String & text)
     {
         this_query_runs = 1;
     }
+
+    String query_to_execute;
+    ASTPtr parsed_query;
 
     ASTPtr fuzz_base = orig_ast;
     for (size_t fuzz_step = 0; fuzz_step < this_query_runs; ++fuzz_step)
@@ -740,8 +708,7 @@ bool Client::processWithFuzzing(const String & text)
 
             parsed_query = ast_to_process;
             query_to_execute = parsed_query->formatForErrorMessage();
-
-            executeParsedQuery();
+            processSingleQueryImpl(full_query, [&]() { executeSingleQuery(query_to_execute, parsed_query); });
         }
         catch (...)
         {
@@ -910,7 +877,7 @@ bool Client::processWithFuzzing(const String & text)
 
 
 /// Convert external tables to ExternalTableData and send them using the connection.
-void Client::sendExternalTables()
+void Client::sendExternalTables(ASTPtr parsed_query)
 {
     const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
     if (!select && !external_tables.empty())
@@ -924,7 +891,7 @@ void Client::sendExternalTables()
 }
 
 
-void Client::executeInsertQuery()
+void Client::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     /// Process the query that requires transferring data blocks to the server.
     const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
@@ -940,26 +907,27 @@ void Client::executeInsertQuery()
         &global_context->getClientInfo(),
         true);
 
-    sendExternalTables();
+    sendExternalTables(parsed_query);
 
     /// Receive description of table structure.
     Block sample;
     ColumnsDescription columns_description;
-    if (receiveSampleBlock(sample, columns_description))
+    if (receiveSampleBlock(sample, columns_description, parsed_query))
     {
         /// If structure was received (thus, server has not thrown an exception),
         /// send our data with that structure.
-        sendData(sample, columns_description);
+        sendData(sample, columns_description, parsed_query);
         receiveEndOfQuery();
     }
 }
 
 
-void Client::executeOrdinaryQuery()
+void Client::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
+    auto query = query_to_execute;
     if (!query_parameters.empty())
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
@@ -967,7 +935,7 @@ void Client::executeOrdinaryQuery()
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
-        query_to_execute = serializeAST(*parsed_query);
+        query = serializeAST(*parsed_query);
     }
 
     int retries_left = 10;
@@ -979,15 +947,15 @@ void Client::executeOrdinaryQuery()
         {
             connection->sendQuery(
                 connection_parameters.timeouts,
-                query_to_execute,
+                query,
                 global_context->getCurrentQueryId(),
                 query_processing_stage,
                 &global_context->getSettingsRef(),
                 &global_context->getClientInfo(),
                 true);
 
-            sendExternalTables();
-            receiveResult();
+            sendExternalTables(parsed_query);
+            receiveResult(parsed_query);
 
             break;
         }
@@ -1009,75 +977,54 @@ void Client::executeOrdinaryQuery()
 }
 
 
-void Client::executeParsedQueryPrefix()
-{
-    /// Some parts of a query (result output and formatting) are executed
-    /// client-side. Thus we need to parse the query.
-    const char * begin = full_query.data();
-    parsed_query = parseQuery(begin, begin + full_query.size(), false);
-    if (!parsed_query)
-        return;
-
-    // An INSERT query may have the data that follow query text. Remove the
-    /// Send part of query without data, because data will be sent separately.
-    auto * insert = parsed_query->as<ASTInsertQuery>();
-    if (insert && insert->data)
-        query_to_execute = full_query.substr(0, insert->data - full_query.data());
-}
-
-
-void Client::executeParsedQueryImpl()
+void Client::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     client_exception.reset();
     server_exception.reset();
 
-    /// Temporarily apply query settings to context.
-    std::optional<Settings> old_settings;
-    SCOPE_EXIT_SAFE({
-        if (old_settings)
-            global_context->setSettings(*old_settings);
-    });
-
-    auto apply_query_settings = [&](const IAST & settings_ast)
     {
-        if (!old_settings)
-            old_settings.emplace(global_context->getSettingsRef());
-        global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-    };
+        /// Temporarily apply query settings to context.
+        std::optional<Settings> old_settings;
+        SCOPE_EXIT_SAFE({
+            if (old_settings)
+                global_context->setSettings(*old_settings);
+        });
 
-    const auto * insert = parsed_query->as<ASTInsertQuery>();
-    if (insert && insert->settings_ast)
-        apply_query_settings(*insert->settings_ast);
+        auto apply_query_settings = [&](const IAST & settings_ast)
+        {
+            if (!old_settings)
+                old_settings.emplace(global_context->getSettingsRef());
+            global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
+        };
 
-    /// FIXME: try to prettify this cast using `as<>()`
-    const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
-    if (with_output && with_output->settings_ast)
-        apply_query_settings(*with_output->settings_ast);
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
+        if (insert && insert->settings_ast)
+            apply_query_settings(*insert->settings_ast);
 
-    reconnectIfNeeded();
+        /// FIXME: try to prettify this cast using `as<>()`
+        const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
+        if (with_output && with_output->settings_ast)
+            apply_query_settings(*with_output->settings_ast);
 
-    ASTPtr input_function;
-    if (insert && insert->select)
-        insert->tryFindInputFunction(input_function);
+        if (!connection->checkConnected())
+            connect();
 
-    /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-    if (insert && (!insert->select || input_function) && !insert->watch)
-    {
-        if (input_function && insert->format.empty())
-            throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
+        ASTPtr input_function;
+        if (insert && insert->select)
+            insert->tryFindInputFunction(input_function);
 
-        executeInsertQuery();
+        /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
+        if (insert && (!insert->select || input_function) && !insert->watch)
+        {
+            if (input_function && insert->format.empty())
+                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
+
+            processInsertQuery(query_to_execute, parsed_query);
+        }
+        else
+            processOrdinaryQuery(query_to_execute, parsed_query);
     }
-    else
-    {
-        /// Process the query that doesn't require transferring data blocks to the server.
-        executeOrdinaryQuery();
-    }
-}
 
-
-void Client::executeParsedQuerySuffix()
-{
     /// Do not change context (current DB, settings) in case of an exception.
     if (!have_error)
     {
@@ -1092,7 +1039,6 @@ void Client::executeParsedQuerySuffix()
                     global_context->applySettingChange(change);
             }
         }
-
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
             const String & new_database = use_query->database;
@@ -1105,7 +1051,7 @@ void Client::executeParsedQuerySuffix()
 }
 
 
-void Client::sendData(Block & sample, const ColumnsDescription & columns_description)
+void Client::sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
     /// If INSERT data must be sent.
     auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
@@ -1118,7 +1064,7 @@ void Client::sendData(Block & sample, const ColumnsDescription & columns_descrip
         ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
         try
         {
-            sendDataFrom(data_in, sample, columns_description);
+            sendDataFrom(data_in, sample, columns_description, parsed_query);
         }
         catch (Exception & e)
         {
@@ -1150,7 +1096,7 @@ void Client::sendData(Block & sample, const ColumnsDescription & columns_descrip
                 std_in.setProgressCallback(global_context);
             }
 
-            sendDataFrom(std_in, sample, columns_description);
+            sendDataFrom(std_in, sample, columns_description, parsed_query);
         }
         catch (Exception & e)
         {
@@ -1163,7 +1109,7 @@ void Client::sendData(Block & sample, const ColumnsDescription & columns_descrip
 }
 
 
-void Client::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description)
+void Client::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
     String current_format = insert_format;
 
@@ -1193,7 +1139,7 @@ void Client::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescrip
     while (executor.pull(block))
     {
         /// Check if server send Log packet
-        receiveLogs();
+        receiveLogs(parsed_query);
 
         /// Check if server send Exception packet
         auto packet_type = connection->checkPacket();
@@ -1220,7 +1166,7 @@ void Client::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescrip
 
 /// Receives and processes packets coming from server.
 /// Also checks if query execution should be cancelled.
-void Client::receiveResult()
+void Client::receiveResult(ASTPtr parsed_query)
 {
     InterruptListener interrupt_listener;
     bool cancelled = false;
@@ -1280,7 +1226,7 @@ void Client::receiveResult()
                 break;
         }
 
-        if (!receiveAndProcessPacket(cancelled))
+        if (!receiveAndProcessPacket(parsed_query, cancelled))
             break;
     }
 
@@ -1292,7 +1238,7 @@ void Client::receiveResult()
 /// Receive a part of the result, or progress info or an exception and process it.
 /// Returns true if one should continue receiving packets.
 /// Output of result is suppressed if query was cancelled.
-bool Client::receiveAndProcessPacket(bool cancelled)
+bool Client::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
 {
     Packet packet = connection->receivePacket();
 
@@ -1303,7 +1249,7 @@ bool Client::receiveAndProcessPacket(bool cancelled)
 
         case Protocol::Server::Data:
             if (!cancelled)
-                onData(packet.block);
+                onData(packet.block, parsed_query);
             return true;
 
         case Protocol::Server::Progress:
@@ -1316,12 +1262,12 @@ bool Client::receiveAndProcessPacket(bool cancelled)
 
         case Protocol::Server::Totals:
             if (!cancelled)
-                onTotals(packet.block);
+                onTotals(packet.block, parsed_query);
             return true;
 
         case Protocol::Server::Extremes:
             if (!cancelled)
-                onExtremes(packet.block);
+                onExtremes(packet.block, parsed_query);
             return true;
 
         case Protocol::Server::Exception:
@@ -1344,7 +1290,7 @@ bool Client::receiveAndProcessPacket(bool cancelled)
 
 
 /// Receive the block that serves as an example of the structure of table where data will be inserted.
-bool Client::receiveSampleBlock(Block & out, ColumnsDescription & columns_description)
+bool Client::receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
     while (true)
     {
@@ -1366,7 +1312,7 @@ bool Client::receiveSampleBlock(Block & out, ColumnsDescription & columns_descri
 
             case Protocol::Server::TableColumns:
                 columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
-                return receiveSampleBlock(out, columns_description);
+                return receiveSampleBlock(out, columns_description, parsed_query);
 
             default:
                 throw NetException(
@@ -1410,19 +1356,19 @@ bool Client::receiveEndOfQuery()
 
 
 /// Process Log packets, used when inserting data by blocks
-void Client::receiveLogs()
+void Client::receiveLogs(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket();
 
     while (packet_type && *packet_type == Protocol::Server::Log)
     {
-        receiveAndProcessPacket(false);
+        receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket();
     }
 }
 
 
-void Client::initBlockOutputStream(const Block & block)
+void Client::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
 {
     if (!block_out_stream)
     {
@@ -1520,7 +1466,7 @@ void Client::initLogsOutputStream()
 }
 
 
-void Client::onData(Block & block)
+void Client::onData(Block & block, ASTPtr parsed_query)
 {
     if (!block)
         return;
@@ -1528,7 +1474,7 @@ void Client::onData(Block & block)
     processed_rows += block.rows();
 
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
-    initBlockOutputStream(block);
+    initBlockOutputStream(block, parsed_query);
 
     /// The header block containing zero rows was used to initialize
     /// block_out_stream, do not output it.
@@ -1560,16 +1506,16 @@ void Client::onLogData(Block & block)
 }
 
 
-void Client::onTotals(Block & block)
+void Client::onTotals(Block & block, ASTPtr parsed_query)
 {
-    initBlockOutputStream(block);
+    initBlockOutputStream(block, parsed_query);
     block_out_stream->setTotals(block);
 }
 
 
-void Client::onExtremes(Block & block)
+void Client::onExtremes(Block & block, ASTPtr parsed_query)
 {
-    initBlockOutputStream(block);
+    initBlockOutputStream(block, parsed_query);
     block_out_stream->setExtremes(block);
 }
 

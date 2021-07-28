@@ -34,11 +34,75 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-    /// Prepare for and start either interactive or non-interactive mode.
-    virtual int mainImpl() = 0;
+    /*
+     * Run query in interactive or non-interactive mode. Depends on:
+     *  - processSingleQuery
+     *  - processMultiQuery
+     *  - processWithFuzzing
+     */
+    void runInteractive();
 
-    /// If some work is required on destroying.
-    virtual void shutdown() {}
+    void runNonInteractive();
+
+    /*
+     * full_query - current query as it was given to the client.
+     * parsed_query - parsed query (used to determine some settings e.g. format, output file).
+     * query_to_execute - current query as it will be executed by server.
+     *                    (It may differ from the full query for INSERT queries, for which the
+     *                    data that follows the query is stripped and sent separately.)
+    **/
+
+
+    /*
+     * Process multiquery - several queries separated by ';'.
+     * Also in case of clickhouse-server:
+     * - INSERT data is ended by the end of line, not ';'.
+     * - An exception is VALUES format where we also support semicolon in addition to end of line.
+    **/
+    bool processMultiQueryImpl(const String & all_queries_text,
+                               std::function<void(const String & full_query, const String & query_to_execute, ASTPtr parsed_query)> execute_single_query,
+                               std::function<void(const String &, Exception &)> process_parse_query_error = {});
+
+    /// Process parsed single query.
+    void processSingleQueryImpl(const String & query,
+                                std::function<void()> execute_single_query,
+                                std::optional<bool> echo_query_ = {}, bool report_error = false);
+
+    /*
+     * Method to implement multi-query processing.
+     * Must make some preparation and then call processMultiQueryImpl. Afterwards it might execute some finishing code.
+    **/
+    virtual bool processMultiQuery(const String & all_queries_text) = 0;
+
+    /*
+     * Method to implement single-query processing.
+     * Must make some preparation and then call processSingleQueryImpl. Afterwards it might execute some finishing code.
+    **/
+    virtual void processSingleQuery(const String & query) = 0;
+
+    virtual bool processWithFuzzing(const String &)
+    {
+        throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+
+    virtual void reportQueryError(const String & query) const = 0;
+
+    /// For non-interactive multi-query mode get queries text prefix.
+    virtual String getQueryTextPrefix() { return ""; }
+
+    virtual void loadSuggestionData() {}
+
+
+    /// Parse query text for multiquery mode.
+    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+    void resetOutput();
+    virtual void reconnectIfNeeded() {}
+    virtual bool validateParsedOptions() { return false; }
+
+
+    /// Prepare for and call either runInteractive() or runNonInteractive().
+    virtual int mainImpl() = 0;
 
     virtual void readArguments(int argc, char ** argv,
                                Arguments & common_arguments, std::vector<Arguments> &) = 0;
@@ -61,61 +125,6 @@ protected:
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
 
     virtual void processConfig() = 0;
-
-    virtual bool validateParsedOptions() { return false; }
-
-
-    void runInteractive();
-
-    void runNonInteractive();
-
-    /*
-     * Process multiquery - several queries separated by ';'.
-     * Also in case of clickhouse-server:
-     * - INSERT data is ended by the end of line, not ';'.
-     * - An exception is VALUES format where we also support semicolon in addition to end of line.
-    **/
-    bool processMultiQueryImpl(const String & all_queries_text,
-                               std::function<void(const String &)> process_single_query,
-                               std::function<void(const String &, Exception &)> process_parse_query_error = {});
-
-    /// Method to implement multi-query processing. Must call processMultiQueryImpl.
-    virtual bool processMultiQuery(const String & all_queries_text) = 0;
-
-    /// Process single file (with queries) from non-interactive mode.
-    virtual bool processMultiQueryFromFile(const String & file) = 0;
-
-    /// For non-interactive multiquery mode get queries text prefix.
-    virtual String getQueryTextPrefix() { return ""; }
-
-    /// Parse query text for multiquery mode.
-    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
-
-
-    void prepareAndExecuteQuery(const String & query);
-
-    void executeParsedQuery(std::optional<bool> echo_query_ = {}, bool report_error = true);
-
-    virtual void executeParsedQueryPrefix() {}
-
-    virtual void executeParsedQueryImpl() = 0;
-
-    virtual void executeParsedQuerySuffix() {}
-
-
-    void resetOutput();
-
-    virtual void reportQueryError() const = 0;
-
-    virtual void loadSuggestionDataIfPossible() {}
-
-    virtual bool checkErrorMatchesHints(const TestHint & /* test_hint */, bool /* had_error */) { return false; }
-
-    virtual void reconnectIfNeeded() {}
-
-    virtual bool supportPasswordOption() const = 0;
-
-    virtual bool processWithFuzzing(const String &) { return true; }
 
 private:
     inline String prompt() const
@@ -165,15 +174,6 @@ protected:
     int query_fuzzer_runs = 0;
 
     std::optional<Suggest> suggest;
-
-    /// Current query as it was given to the client.
-    String full_query;
-    /// Parsed query. Is used to determine some settings (e.g. format, output file).
-    ASTPtr parsed_query;
-    // Current query as it will be executed either on server on in clickhouse-local.
-    // It may differ from the full query for INSERT queries, for which the data that follows
-    // the query is stripped and sent separately.
-    String query_to_execute;
 
     /// If the last query resulted in exception. `server_exception` or
     /// `client_exception` must be set.
