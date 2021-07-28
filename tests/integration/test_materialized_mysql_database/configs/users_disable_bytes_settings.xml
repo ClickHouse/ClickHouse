@@ -2,10 +2,10 @@
 <yandex>
     <profiles>
         <default>
-            <allow_experimental_database_materialize_mysql>1</allow_experimental_database_materialize_mysql>
-            <allow_introspection_functions>1</allow_introspection_functions>
-            <optimize_on_insert>0</optimize_on_insert>
-            <default_database_engine>Ordinary</default_database_engine>
+            <allow_experimental_database_materialized_mysql>1</allow_experimental_database_materialized_mysql>
+            <default_database_engine>Atomic</default_database_engine>
+            <external_storage_max_read_rows>1</external_storage_max_read_rows>
+            <external_storage_max_read_bytes>0</external_storage_max_read_bytes>
         </default>
     </profiles>
 
