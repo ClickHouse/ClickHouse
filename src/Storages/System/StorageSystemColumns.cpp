@@ -65,12 +65,12 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        ContextPtr context)
+        const Context & context)
         : SourceWithProgress(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
-        , total_tables(tables->size()), access(context->getAccess())
-        , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
+        , total_tables(tables->size()), access(context.getAccess())
+        , query_id(context.getCurrentQueryId()), lock_acquire_timeout(context.getSettingsRef().lock_acquire_timeout)
     {
     }
 
@@ -98,7 +98,7 @@ protected:
             Names cols_required_for_sorting_key;
             Names cols_required_for_primary_key;
             Names cols_required_for_sampling;
-            IStorage::ColumnSizeByName column_sizes;
+            MergeTreeData::ColumnSizeByName column_sizes;
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
@@ -243,7 +243,7 @@ Pipe StorageSystemColumns::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
@@ -289,9 +289,9 @@ Pipe StorageSystemColumns::read(
         }
 
         Tables external_tables;
-        if (context->hasSessionContext())
+        if (context.hasSessionContext())
         {
-            external_tables = context->getSessionContext()->getExternalTables();
+            external_tables = context.getSessionContext().getExternalTables();
             if (!external_tables.empty())
                 database_column_mut->insertDefault(); /// Empty database for external tables.
         }

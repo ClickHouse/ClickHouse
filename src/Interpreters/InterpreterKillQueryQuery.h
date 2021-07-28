@@ -8,12 +8,15 @@
 namespace DB
 {
 
+class Context;
 class AccessRightsElements;
 
-class InterpreterKillQueryQuery final : public IInterpreter, WithMutableContext
+
+class InterpreterKillQueryQuery final : public IInterpreter
 {
 public:
-    InterpreterKillQueryQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) { }
+    InterpreterKillQueryQuery(const ASTPtr & query_ptr_, Context & context_)
+        : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
@@ -22,6 +25,8 @@ private:
     Block getSelectResult(const String & columns, const String & table);
 
     ASTPtr query_ptr;
+    Context & context;
 };
+
 
 }
