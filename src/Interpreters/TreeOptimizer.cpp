@@ -204,10 +204,22 @@ GroupByKeysInfo getGroupByKeysInfo(const ASTs & group_by_keys)
     /// filling set with short names of keys
     for (const auto & group_key : group_by_keys)
     {
-        if (group_key->as<ASTFunction>())
-            data.has_function = true;
+        /// for grouping sets case
+        if (group_key->as<ASTExpressionList>())
+        {
+            const auto express_list_ast = group_key->as<const ASTExpressionList &>();
+            for (const auto & group_elem : express_list_ast.children)
+            {
+                data.key_names.insert(group_elem->getColumnName());
+            }
+        }
+        else
+        {
+            if (group_key->as<ASTFunction>())
+                data.has_function = true;
 
-        data.key_names.insert(group_key->getColumnName());
+            data.key_names.insert(group_key->getColumnName());
+        }
     }
 
     return data;
