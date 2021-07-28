@@ -38,16 +38,8 @@ struct AIOContext : private boost::noncopyable
     AIOContext() {}
     AIOContext(unsigned int nr_events = 128);
     ~AIOContext();
-
-    AIOContext(AIOContext && rhs)
-    {
-        *this = std::move(rhs);
-    }
-
-    AIOContext & operator=(AIOContext && rhs)
-    {
-        std::swap(ctx, rhs.ctx);
-    }
+    AIOContext(AIOContext && rhs);
+    AIOContext & operator=(AIOContext && rhs);
 };
 
 #elif defined(OS_FREEBSD)
