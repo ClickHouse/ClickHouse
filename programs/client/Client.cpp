@@ -552,7 +552,7 @@ private:
         MainThreadStatus::getInstance();
 
         /// Limit on total memory usage
-        size_t max_client_memory_usage = config().getUInt64("max_memory_usage", 0);
+        size_t max_client_memory_usage = context->getSettings().max_memory_usage;
 
         if (max_client_memory_usage != 0)
         {
@@ -1706,6 +1706,7 @@ private:
                 if (!old_settings)
                     old_settings.emplace(context->getSettingsRef());
                 context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
+                total_memory_tracker.setHardLimit(context->getSettings().max_memory_usage);
             };
             const auto * insert = parsed_query->as<ASTInsertQuery>();
             if (insert && insert->settings_ast)
@@ -1744,7 +1745,10 @@ private:
                     if (change.name == "profile")
                         current_profile = change.value.safeGet<String>();
                     else
+                    {
                         context->applySettingChange(change);
+                        total_memory_tracker.setHardLimit(context->getSettings().max_memory_usage);
+                    }
                 }
             }
 
@@ -1804,8 +1808,6 @@ private:
             query_to_send = serializeAST(*parsed_query);
         }
 
-        bool set_max_memory_usage_query = query_to_send.starts_with("Set") && (query_to_send.find("max_memory_usage") != std::string::npos);
-
         int retries_left = 10;
         for (;;)
         {
@@ -1825,11 +1827,6 @@ private:
                 sendExternalTables();
                 receiveResult();
 
-                if (set_max_memory_usage_query)
-                {
-                    auto number_pos = query_to_send.find_last_of('=');
-                    total_memory_tracker.setHardLimit(std::stoll(query_to_send.substr(number_pos + 1, query_to_send.size() - number_pos - 1)));
-                }
                 break;
             }
             catch (const Exception & e)
