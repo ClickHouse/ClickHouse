@@ -608,7 +608,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     zookeeper->createIfNotExists(replica_path + "/mutation_pointer", String());
 
     /// Nodes for zero-copy S3 replication
-    if (storage_settings.get()->allow_s3_zero_copy_replication)
+    if (storage_settings.get()->allow_remote_fs_zero_copy_replication)
     {
         zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_s3", String());
         zookeeper->createIfNotExists(zookeeper_path + "/zero_copy_s3/shared", String());
@@ -1728,7 +1728,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     future_merged_part.updatePath(*this, reserved_space);
     future_merged_part.merge_type = entry.merge_type;
 
-    if (storage_settings_ptr->allow_s3_zero_copy_replication)
+    if (storage_settings_ptr->allow_remote_fs_zero_copy_replication)
     {
         if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::Type::S3)
         {
@@ -1740,7 +1740,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
                 if (replica_to_execute_merge)
                 {
                     LOG_DEBUG(log,
-                        "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold",
+                        "Prefer fetching part {} from replica {} due remote_fs_execute_merges_on_single_replica_time_threshold",
                         entry.new_part_name, replica_to_execute_merge.value());
                     return false;
                 }
@@ -7300,7 +7300,7 @@ bool StorageReplicatedMergeTree::tryToFetchIfShared(
     const String & path)
 {
     const auto data_settings = getSettings();
-    if (!data_settings->allow_s3_zero_copy_replication)
+    if (!data_settings->allow_remote_fs_zero_copy_replication)
         return false;
 
     if (disk->getType() != DB::DiskType::Type::S3)

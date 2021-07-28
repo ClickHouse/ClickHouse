@@ -58,7 +58,7 @@ bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplica(const Re
 
 bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplicaS3Shared(const ReplicatedMergeTreeLogEntryData & entry) const
 {
-    time_t threshold = s3_execute_merges_on_single_replica_time_threshold;
+    time_t threshold = remote_fs_execute_merges_on_single_replica_time_threshold;
     return (
         threshold > 0       /// feature turned on
         && entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS /// it is a merge log entry
@@ -102,14 +102,14 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 {
     auto threshold = storage.getSettings()->execute_merges_on_single_replica_time_threshold.totalSeconds();
     auto threshold_s3 = 0;
-    if (storage.getSettings()->allow_s3_zero_copy_replication)
-        threshold_s3 = storage.getSettings()->s3_execute_merges_on_single_replica_time_threshold.totalSeconds();
+    if (storage.getSettings()->allow_remote_fs_zero_copy_replication)
+        threshold_s3 = storage.getSettings()->remote_fs_execute_merges_on_single_replica_time_threshold.totalSeconds();
 
     if (threshold == 0)
         /// we can reset the settings w/o lock (it's atomic)
         execute_merges_on_single_replica_time_threshold = threshold;
     if (threshold_s3 == 0)
-        s3_execute_merges_on_single_replica_time_threshold = threshold_s3;
+        remote_fs_execute_merges_on_single_replica_time_threshold = threshold_s3;
     if (threshold == 0 && threshold_s3 == 0)
         return;
 
@@ -117,7 +117,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 
     /// the setting was already enabled, and last state refresh was done recently
     if (((threshold != 0 && execute_merges_on_single_replica_time_threshold != 0)
-        || (threshold_s3 != 0 && s3_execute_merges_on_single_replica_time_threshold != 0))
+        || (threshold_s3 != 0 && remote_fs_execute_merges_on_single_replica_time_threshold != 0))
         && now - last_refresh_time < REFRESH_STATE_MINIMUM_INTERVAL_SECONDS)
         return;
 
@@ -146,7 +146,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
         LOG_WARNING(storage.log, "Can't find current replica in the active replicas list, or too few active replicas to use execute_merges_on_single_replica_time_threshold!");
         /// we can reset the settings w/o lock (it's atomic)
         execute_merges_on_single_replica_time_threshold = 0;
-        s3_execute_merges_on_single_replica_time_threshold = 0;
+        remote_fs_execute_merges_on_single_replica_time_threshold = 0;
         return;
     }
 
@@ -154,7 +154,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
     if (threshold != 0) /// Zeros already reset
         execute_merges_on_single_replica_time_threshold = threshold;
     if (threshold_s3 != 0)
-        s3_execute_merges_on_single_replica_time_threshold = threshold_s3;
+        remote_fs_execute_merges_on_single_replica_time_threshold = threshold_s3;
     last_refresh_time = now;
     current_replica_index = current_replica_index_tmp;
     active_replicas = active_replicas_tmp;

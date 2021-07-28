@@ -2750,8 +2750,8 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             if (active_part_it == data_parts_by_info.end())
                 throw Exception("Cannot swap part '" + part_copy->name + "', no such active part.", ErrorCodes::NO_SUCH_DATA_PART);
 
-            /// We do not check allow_s3_zero_copy_replication here because data may be shared
-            /// when allow_s3_zero_copy_replication turned on and off again
+            /// We do not check allow_remote_fs_zero_copy_replication here because data may be shared
+            /// when allow_remote_fs_zero_copy_replication turned on and off again
 
             original_active_part->force_keep_shared_data = false;
 
