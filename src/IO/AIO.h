@@ -33,10 +33,21 @@ int io_getevents(aio_context_t ctx, long min_nr, long max_nr, io_event * events,
 
 struct AIOContext : private boost::noncopyable
 {
-    aio_context_t ctx;
+    aio_context_t ctx = 0;
 
+    AIOContext() {}
     AIOContext(unsigned int nr_events = 128);
     ~AIOContext();
+
+    AIOContext(AIOContext && rhs)
+    {
+        *this = std::move(rhs);
+    }
+
+    AIOContext & operator=(AIOContext && rhs)
+    {
+        std::swap(ctx, rhs.ctx);
+    }
 };
 
 #elif defined(OS_FREEBSD)
