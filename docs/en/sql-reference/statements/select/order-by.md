@@ -286,7 +286,7 @@ When `TO const_expr` not defined sequence of filling use maximum `expr` field va
 When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types as `days` for Date type and as `seconds` for DateTime type.
 When `STEP const_numeric_expr` omitted then sequence of filling use `1.0` for numeric type, `1 day` for Date type and `1 second` for DateTime type.
 
-Example query without `WITH FILL`:
+Example of query without `WITH FILL`:
 
 ``` sql
 SELECT n, source FROM (
