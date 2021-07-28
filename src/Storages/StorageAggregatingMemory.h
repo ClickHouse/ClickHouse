@@ -69,7 +69,7 @@ protected:
 private:
     Poco::Logger * log;
 
-    mutable std::mutex mutex;
+    mutable std::mutex init_mutex;
     std::atomic<bool> is_initialized{false};
 
     SelectQueryDescription select_query;
@@ -79,7 +79,7 @@ private:
     StoragePtr source_storage;
     StorageMetadataPtr src_metadata_snapshot;
 
-    AggregatingTransformParamsPtr aggregator_transform;
+    AggregatingTransformParamsPtr aggregator_transform_params;
     std::shared_ptr<ManyAggregatedData> many_data;
 
     /// Reads can be done in parallel, while new blocks must be merged sequentially.

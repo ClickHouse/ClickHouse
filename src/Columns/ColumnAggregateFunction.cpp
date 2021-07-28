@@ -55,12 +55,12 @@ static std::string getTypeString(const AggregateFunctionPtr & func)
 
 
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_)
-    : func(func_), type_string(getTypeString(func)), not_destroy_states(false)
+    : func(func_), type_string(getTypeString(func))
 {
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_)
-    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func)), not_destroy_states(false)
+    : foreign_arenas(arenas_), func(func_), type_string(getTypeString(func))
 {
 
 }
@@ -74,7 +74,7 @@ void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
 
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
-    if (!func->hasTrivialDestructor() && !src && !not_destroy_states)
+    if (!func->hasTrivialDestructor() && !src && destroy_states)
         for (auto * val : data)
             func->destroy(val);
 }
@@ -671,8 +671,7 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
     : COWHelper<IColumn, ColumnAggregateFunction>(src_),
     foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end()),
-    not_destroy_states(false)
+    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {
 }
 
@@ -706,7 +705,7 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
 
 void ColumnAggregateFunction::disableStateDestruction()
 {
-    not_destroy_states = true;
+    destroy_states = false;
 }
 
 }

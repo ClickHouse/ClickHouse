@@ -82,8 +82,8 @@ private:
     /// Name of the type to distinguish different aggregation states.
     String type_string;
 
-    /// Do not call destroy in destructor.
-    bool not_destroy_states;
+    /// Do not call destroy in destructor if disabled.
+    bool destroy_states = true;
 
     ColumnAggregateFunction() = default;
 

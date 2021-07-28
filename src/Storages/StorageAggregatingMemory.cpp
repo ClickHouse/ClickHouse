@@ -180,8 +180,8 @@ public:
           metadata_snapshot(metadata_snapshot_),
           context(context_),
           variants(*(storage.many_data)->variants[0]),
-          key_columns(storage.aggregator_transform->params.keys_size),
-          aggregate_columns(storage.aggregator_transform->params.aggregates_size) {}
+          key_columns(storage.aggregator_transform_params->params.keys_size),
+          aggregate_columns(storage.aggregator_transform_params->params.aggregates_size) {}
 
     // OutputStream structure is same as source (before aggregation).
     Block getHeader() const override { return storage.src_metadata_snapshot->getSampleBlock(); }
@@ -214,7 +214,7 @@ public:
         while (Block result_block = in->read())
         {
             std::unique_lock lock(storage.rwlock);
-            storage.aggregator_transform->aggregator.mergeBlock(result_block, variants, no_more_keys);
+            storage.aggregator_transform_params->aggregator.mergeBlock(result_block, variants, no_more_keys);
         }
 
         in->readSuffix();
@@ -263,11 +263,13 @@ public:
 
 private:
     ProcessorPtr source;
+    std::shared_lock<std::shared_mutex> lock;
 
 protected:
-    StorageSource(const StorageID & table_id, const ColumnsDescription & columns_, ProcessorPtr source_)
-        : IStorage(table_id),
-          source(source_)
+    StorageSource(const StorageID & table_id, const ColumnsDescription & columns_, ProcessorPtr source_, std::shared_lock<std::shared_mutex> lock_)
+        : IStorage(table_id)
+        , source(source_)
+        , lock(std::move(lock_))
     {
         StorageInMemoryMetadata storage_metadata;
         storage_metadata.setColumns(columns_);
@@ -323,32 +325,23 @@ static ColumnsDescription nameTypeListToColumnsDescription(NamesAndTypesList lis
     return columns;
 }
 
-static const AggregatingStep * extractAggregatingStepFromPlan(const QueryPlan::Nodes & nodes)
-{
-    for (auto && node : nodes)
-    {
-        AggregatingStep * step_ptr = dynamic_cast<AggregatingStep *>(node.step.get());
-        if (step_ptr)
-            return step_ptr;
-    }
-
-    throw Exception("AggregatingStep is not found for query", ErrorCodes::INCORRECT_QUERY);
-}
-
 void StorageAggregatingMemory::lazyInit()
 {
     if (is_initialized)
         return;
 
-    std::lock_guard lock(mutex);
+    std::lock_guard lock(init_mutex);
 
     if (is_initialized)
         return;
 
     ASTPtr select_ptr = select_query.inner_query;
+    ASTSelectQuery * select = select_ptr->as<ASTSelectQuery>();
+    if (!select)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid create query for AggregatingMemory. SELECT query is expected");
 
     /// Get info about source table.
-    JoinedTables joined_tables(query_context, select_ptr->as<ASTSelectQuery &>());
+    JoinedTables joined_tables(query_context, *select);
     source_storage = joined_tables.getLeftTableStorage();
     NamesAndTypesList source_columns = source_storage->getInMemoryMetadata().getColumns().getAll();
 
@@ -372,7 +365,11 @@ void StorageAggregatingMemory::lazyInit()
     QueryPlan query_plan;
     select_interpreter.buildQueryPlan(query_plan);
 
-    const AggregatingStep * aggregating_step = extractAggregatingStepFromPlan(query_plan.nodes);
+    const auto * aggregating_step = typeid_cast<const AggregatingStep *>(query_plan.getLastStep()->step.get());
+    if (!aggregating_step)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregatingStep is not found for query. Last step is {}",
+                        query_plan.getLastStep()->step->getName());
+
     Aggregator::Params aggr_params = aggregating_step->getParams();
 
     const Settings & settings = query_context->getSettingsRef();
@@ -389,7 +386,7 @@ void StorageAggregatingMemory::lazyInit()
                               settings.min_count_to_compile_aggregate_expression,
                               true);
 
-    aggregator_transform = std::make_shared<AggregatingTransformParams>(params, false);
+    aggregator_transform_params = std::make_shared<AggregatingTransformParams>(params, false);
     initState(query_context);
     is_initialized = true;
 }
@@ -400,7 +397,7 @@ void StorageAggregatingMemory::initState(ContextPtr context)
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
-    if (aggregator_transform->params.keys_size == 0 && !aggregator_transform->params.empty_result_for_aggregation_by_empty_set)
+    if (aggregator_transform_params->params.keys_size == 0 && !aggregator_transform_params->params.empty_result_for_aggregation_by_empty_set)
     {
         AggregatingOutputStream os(*this, getInMemoryMetadataPtr(), context);
         os.write(src_metadata_snapshot->getSampleBlock());
@@ -433,11 +430,11 @@ Pipe StorageAggregatingMemory::read(
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     // TODO implement O(1) read by aggregation key
-    auto filter_key = getFilterKeys(aggregator_transform->params, query_info);
+    auto filter_key = getFilterKeys(aggregator_transform_params->params, query_info);
 
     std::shared_lock lock(rwlock);
 
-    auto prepared_data = aggregator_transform->aggregator.prepareVariantsToMerge(many_data->variants);
+    auto prepared_data = aggregator_transform_params->aggregator.prepareVariantsToMerge(many_data->variants);
     auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
 
     ProcessorPtr source;
@@ -448,17 +445,17 @@ Pipe StorageAggregatingMemory::read(
         for (size_t i = 0; i < key_columns.size(); ++i)
             key_columns[i] = filter_key->raw_key_columns[i].get();
 
-        Block block = aggregator_transform->aggregator.readBlockByFilterKeys(prepared_data_ptr, key_columns);
+        Block block = aggregator_transform_params->aggregator.readBlockByFilterKeys(prepared_data_ptr, key_columns);
 
         Chunk chunk(block.getColumns(), block.rows());
         source = std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk));
     }
     else
     {
-        source = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
+        source = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform_params, std::move(prepared_data_ptr), num_streams);
     }
 
-    StoragePtr mergable_storage = StorageSource::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), source);
+    StoragePtr mergable_storage = StorageSource::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), source, std::move(lock));
 
     InterpreterSelectQuery select(metadata_snapshot->getSelectQuery().inner_query, context, mergable_storage);
     BlockIO select_result = select.execute();
