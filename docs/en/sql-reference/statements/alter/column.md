@@ -20,11 +20,11 @@ The following actions are supported:
 
 -   [ADD COLUMN](#alter_add-column) — Adds a new column to the table.
 -   [DROP COLUMN](#alter_drop-column) — Deletes the column.
+-   [RENAME COLUMN](#alter_rename-column) — Renames an existing column.
 -   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
 -   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
 -   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
--   [RENAME COLUMN](#alter_rename-column) — Renames an existing column.
 
 These actions are described in detail below.
 
