@@ -25,7 +25,8 @@ struct Estimator
             best_begin = begin;
             best_end = end;
         }
-        else if(current_len == part_count){
+        else if(current_len == part_count)
+        {
             double current_score = sum_size;
             if (!min_score || current_score < min_score)
             {
@@ -74,6 +75,9 @@ void selectWithinPartition(
         else
             break;
     }
+    /// fix
+    if (range_begin < 0) range_begin = 0;
+
     estimator.consider(parts.begin() + range_begin, parts.begin() + range_end, sum_size);
 
 
