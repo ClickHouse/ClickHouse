@@ -115,7 +115,7 @@ def test_table_function_remote(start_cluster):
 
 
 def test_redirect(start_cluster):
-    hdfs_api = start_cluster.make_hdfs_api()
+    hdfs_api = start_cluster.hdfs_api
 
     hdfs_api.write_data("/simple_storage", "1\t\n")
     assert hdfs_api.read_data("/simple_storage") == "1\t\n"

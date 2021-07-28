@@ -44,7 +44,7 @@ echo "clickhouse-client --query "'"select file('"'${user_files_path}/dir'), file
 echo "clickhouse-client --query "'"select file('"'/tmp/c.txt'), file('${user_files_path}/b.txt')"'";echo :$?' | bash 2>/dev/null
 
 # Test relative path consists of ".." whose absolute path is out of the user_files directory.
-echo "clickhouse-client --query "'"select file('"'${user_files_path}/../../../../tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "clickhouse-client --query "'"select file('"'${user_files_path}/../../../../../../../../../../../../../../../../../../../tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
 echo "clickhouse-client --query "'"select file('"'../../../../a.txt'), file('${user_files_path}/b.txt')"'";echo :$?' | bash 2>/dev/null
 
 

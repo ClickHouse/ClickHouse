@@ -22,7 +22,7 @@
 #    include <Common/quoteString.h>
 #    include <Common/setThreadName.h>
 #    include <common/sleep.h>
-#    include <ext/bit_cast.h>
+#    include <common/bit_cast.h>
 
 namespace DB
 {

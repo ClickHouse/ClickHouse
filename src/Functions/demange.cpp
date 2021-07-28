@@ -25,7 +25,7 @@ class FunctionDemangle : public IFunction
 {
 public:
     static constexpr auto name = "demangle";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         context->checkAccess(AccessType::demangle);
         return std::make_shared<FunctionDemangle>();

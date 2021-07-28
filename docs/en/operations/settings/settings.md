@@ -153,6 +153,26 @@ Possible values:
 
 Default value: 1048576.
 
+## table_function_remote_max_addresses {#table_function_remote_max_addresses}
+
+Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
+##  glob_expansion_max_elements  {#glob_expansion_max_elements }
+
+Sets the maximum number of addresses generated from patterns for external storages and table functions (like [url](../../sql-reference/table-functions/url.md)) except the `remote` function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
@@ -379,7 +399,7 @@ Default value: `1`.
 
 ## insert_null_as_default {#insert_null_as_default}
 
-Enables or disables the insertion of [default values](../../sql-reference/statements/create/table.md#create-default-values) instead of [NULL](../../sql-reference/syntax.md#null-literal) into columns with not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) data type. 
+Enables or disables the insertion of [default values](../../sql-reference/statements/create/table.md#create-default-values) instead of [NULL](../../sql-reference/syntax.md#null-literal) into columns with not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) data type.
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
 This setting is applicable to [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#insert_query_insert-select) queries. Note that `SELECT` subqueries may be concatenated with `UNION ALL` clause.
@@ -508,6 +528,23 @@ Possible values:
 -   `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
 Default value: `ALL`.
+
+## join_algorithm {#settings-join_algorithm}
+
+Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
+
+Possible values:
+
+- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
+- `partial_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
+- `prefer_partial_merge` — ClickHouse always tries to use `merge` join if possible.
+- `auto` — ClickHouse tries to change `hash` join to `merge` join on the fly to avoid out of memory.
+
+Default value: `hash`.
+
+When using `hash` algorithm the right part of `JOIN` is uploaded into RAM. 
+
+When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to the disk. The `merge` algorithm in ClickHouse differs a bit from the classic realization. First ClickHouse sorts the right table by [join key](../../sql-reference/statements/select/join.md#select-join) in blocks and creates min-max index for sorted blocks. Then it sorts parts of left table by `join key` and joins them over right table. The min-max index is also used to skip unneeded right table blocks.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
@@ -986,6 +1023,19 @@ The maximum number of simultaneous connections with remote servers for distribut
 
 Default value: 1024.
 
+## max_distributed_depth {#max-distributed-depth}
+
+Limits the maximum depth of recursive queries for [Distributed](../../engines/table-engines/special/distributed.md) tables.
+
+If the value is exceeded, the server throws an exception.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited depth.
+
+Default value: `5`.
+
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the ‘shard’ and ‘replica’ sections are used in the cluster definition.
@@ -1169,7 +1219,7 @@ Possible values:
 
 Default value: `1`.
 
-**Additional Info** 
+**Additional Info**
 
 This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
 
@@ -1181,25 +1231,34 @@ This setting is useful for replicated tables with a sampling key. A query may be
 !!! warning "Warning"
     This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
 
-## compile {#compile}
+## compile_expressions {#compile-expressions}
 
-Enable compilation of queries. By default, 0 (disabled).
+Enables or disables compilation of frequently used simple functions and operators to native code with LLVM at runtime.
 
-The compilation is only used for part of the query-processing pipeline: for the first stage of aggregation (GROUP BY).
-If this portion of the pipeline was compiled, the query may run faster due to the deployment of short cycles and inlining aggregate function calls. The maximum performance improvement (up to four times faster in rare cases) is seen for queries with multiple simple aggregate functions. Typically, the performance gain is insignificant. In very rare cases, it may slow down query execution.
+Possible values:
 
-## min_count_to_compile {#min-count-to-compile}
+- 0 — Disabled.
+- 1 — Enabled.
 
-How many times to potentially use a compiled chunk of code before running compilation. By default, 3.
-For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
-If the value is 1 or more, compilation occurs asynchronously in a separate thread. The result will be used as soon as it is ready, including queries that are currently running.
+Default value: `1`.
 
-Compiled code is required for each different combination of aggregate functions used in the query and the type of keys in the GROUP BY clause.
-The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they do not use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
+## min_count_to_compile_expression {#min-count-to-compile-expression}
+
+Minimum count of executing same expression before it is get compiled.
+
+Default value: `3`.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
-If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
+Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
+Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations. 
+
+Possible values:
+
+-   0 — Integers are output without quotes.
+-   1 — Integers are enclosed in quotes.
+
+Default value: 1.
 
 ## output_format_json_quote_denormals {#settings-output_format_json_quote_denormals}
 
@@ -1545,7 +1604,7 @@ Possible values:
 
 -   0 — Disabled (final query processing is done on the initiator node).
 -   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
--   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possilbe when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+-   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
 
 **Example**
 
@@ -1578,6 +1637,18 @@ FORMAT PrettyCompactMonoBlock
 
 Default value: 0
 
+## distributed_push_down_limit (#distributed-push-down-limit}
+
+LIMIT will be applied on each shard separatelly. Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
+
+Possible values:
+
+-  0 - Disabled
+-  1 - Enabled
+
+!!! note "Note"
+    That with this setting the result of the query may be inaccurate.
+
 ## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
 
 Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.
@@ -1597,7 +1668,7 @@ Possible values:
 
 Default value: 0
 
-## optimize_skip_unused_shards_rewrite_in {#optimize-skip-unused-shardslrewrite-in}
+## optimize_skip_unused_shards_rewrite_in {#optimize-skip-unused-shards-rewrite-in}
 
 Rewrite IN in query for remote shards to exclude values that does not belong to the shard (requires optimize_skip_unused_shards).
 
@@ -1702,6 +1773,28 @@ Possible values:
 
 Default value: 0.
 
+## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
+
+Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read.
+
+These functions can be transformed:
+
+-   [length](../../sql-reference/functions/array-functions.md#array_functions-length) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [empty](../../sql-reference/functions/array-functions.md#function-empty) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [isNull](../../sql-reference/operators/index.md#operator-is-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [isNotNull](../../sql-reference/operators/index.md#is-not-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [count](../../sql-reference/aggregate-functions/reference/count.md) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
+-   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) to read the [keys](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
+-   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) to read the [values](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
+
+Possible values:
+
+-   0 — Optimization disabled.
+-   1 — Optimization enabled.
+
+Default value: `0`.
+
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Type: seconds
@@ -1776,6 +1869,27 @@ Possible values:
 -   0 — Disabled.
 
 Default value: 0.
+
+## distributed_directory_monitor_split_batch_on_failure {#distributed_directory_monitor_split_batch_on_failure}
+
+Enables/disables splitting batches on failures.
+
+Sometimes sending particular batch to the remote shard may fail, because of some complex pipeline after (i.e. `MATERIALIZED VIEW` with `GROUP BY`) due to `Memory limit exceeded` or similar errors. In this case, retrying will not help (and this will stuck distributed sends for the table) but sending files from that batch one by one may succeed INSERT.
+
+So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_directory_monitor_batch_inserts` for failed batches).
+
+Possible values:
+
+-   1 — Enabled.
+-   0 — Disabled.
+
+Default value: 0.
+
+!!! note "Note"
+    This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
+
+!!! warning "Warning"
+    You should not rely on automatic batch splitting, since this may hurt performance.
 
 ## os_thread_priority {#setting-os-thread-priority}
 
@@ -1892,6 +2006,13 @@ Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
 
+## output_format_avro_string_column_pattern {#output_format_avro_string_column_pattern}
+
+Regexp of column names of type String to output as Avro `string` (default is `bytes`).
+RE2 syntax is supported.
+
+Type: string
+
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
 Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format.
@@ -1920,6 +2041,16 @@ Possible values:
 -   Any positive integer.
 
 Default value: 16.
+
+## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
+
+Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to Zookeeper in large-scale clusters.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: `5000`.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
@@ -2056,11 +2187,11 @@ Possible values:
 
 -   Any positive integer.
 
-Default value: 16.
+Default value: 128.
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recomended to use default value.
+Sets the number of threads performing background fetches for [replicated](../../engines/table-engines/mergetree-family/replication.md) tables. This setting is applied at the ClickHouse server start and can’t be changed in a user session. For production usage with frequent small insertions or slow ZooKeeper cluster is recommended to use default value.
 
 Possible values:
 
@@ -2536,17 +2667,6 @@ Result
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
 
-## allow_experimental_bigint_types {#allow_experimental_bigint_types}
-
-Enables or disables integer values exceeding the range that is supported by the int data type.
-
-Possible values:
-
--   1 — The bigint data type is enabled.
--   0 — The bigint data type is disabled.
-
-Default value: `0`.
-
 ## persistent {#persistent}
 
 Disables persistency for the [Set](../../engines/table-engines/special/set.md#set) and [Join](../../engines/table-engines/special/join.md#join) table engines.
@@ -2658,7 +2778,7 @@ Default value: `0`.
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
-It is implemented via query rewrite (similar to [count_distinct_implementation](#settings-count_distinct_implementation) setting) to get consistent results for distributed queries. 
+It is implemented via query rewrite (similar to [count_distinct_implementation](#settings-count_distinct_implementation) setting) to get consistent results for distributed queries.
 
 Possible values:
 
@@ -2842,7 +2962,7 @@ Default value: `0`.
 
 ## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
 
-Adds a modifier `SYNC` to all `DROP` and `DETACH` queries. 
+Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
 
 Possible values:
 
@@ -2948,7 +3068,7 @@ Enables or disables using the original column names instead of aliases in query 
 Possible values:
 
 - 0 — The column name is substituted with the alias.
-- 1 — The column name is not substituted with the alias. 
+- 1 — The column name is not substituted with the alias.
 
 Default value: `0`.
 
@@ -3061,8 +3181,144 @@ SELECT
     sum(a),
     sumCount(b).1,
     sumCount(b).2,
-    (sumCount(b).1) / (sumCount(b).2)    
+    (sumCount(b).1) / (sumCount(b).2)
 FROM fuse_tbl
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+## allow_experimental_database_replicated {#allow_experimental_database_replicated}
+
+Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `0`.
+
+## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
+
+Sets how long initial DDL query should wait for Replicated database to precess previous DDL queue entries in seconds.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited.
+
+Default value: `300`.
+
+## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
+
+Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite. 
+
+Possible values:
+
+-   Positive integer.
+-   0 — Async mode.
+-   Negative integer — infinite timeout.
+
+Default value: `180`.
+
+## distributed_ddl_output_mode {#distributed_ddl_output_mode}
+
+Sets format of distributed DDL query result.
+
+Possible values:
+
+-   `throw` — Returns result set with query execution status for all hosts where query is finished. If query has failed on some hosts, then it will rethrow the first exception. If query is not finished yet on some hosts and [distributed_ddl_task_timeout](#distributed_ddl_task_timeout) exceeded, then it throws `TIMEOUT_EXCEEDED` exception.
+-   `none` — Is similar to throw, but distributed DDL query returns no result set.
+-   `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
+-   `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
+
+Default value: `throw`.
+
+## flatten_nested {#flatten-nested}
+
+Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns.
+
+Possible values:
+
+-   1 — Nested column is flattened to separate arrays.
+-   0 — Nested column stays a single array of tuples.
+
+Default value: `1`.
+
+**Usage**
+
+If the setting is set to `0`, it is possible to use an arbitrary level of nesting.
+
+**Examples**
+
+Query:
+
+``` sql
+SET flatten_nested = 1;
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Result:
+
+``` text
+┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n.a` Array(UInt32),
+    `n.b` Array(UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SET flatten_nested = 0;
+
+CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+SHOW CREATE TABLE t_nest;
+```
+
+Result:
+
+``` text
+┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE default.t_nest
+(
+    `n` Nested(a UInt32, b UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192 │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## external_table_functions_use_nulls {#external-table-functions-use-nulls}
+
+Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md)] table functions use Nullable columns.
+
+Possible values:
+
+-   0 — The table function explicitly uses Nullable columns.
+-   1 — The table function implicitly uses Nullable columns.
+
+Default value: `1`.
+
+**Usage**
+
+If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
+
+## output_format_arrow_low_cardinality_as_dictionary {#output-format-arrow-low-cardinality-as-dictionary}
+
+Allows to convert the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) type to the `DICTIONARY` type of the [Arrow](../../interfaces/formats.md#data-format-arrow) format for `SELECT` queries.
+
+Possible values:
+
+-   0 — The `LowCardinality` type is not converted to the `DICTIONARY` type.
+-   1 — The `LowCardinality` type is converted to the `DICTIONARY` type.
+
+Default value: `0`.

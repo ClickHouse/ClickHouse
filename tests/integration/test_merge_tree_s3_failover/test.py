@@ -43,8 +43,7 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("node",
-                             main_configs=["configs/config.d/log_conf.xml",
-                                           "configs/config.d/storage_conf.xml",
+                             main_configs=["configs/config.d/storage_conf.xml",
                                            "configs/config.d/instant_moves.xml",
                                            "configs/config.d/part_log.xml"],
                              with_minio=True)

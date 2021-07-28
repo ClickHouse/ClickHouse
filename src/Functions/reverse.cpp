@@ -4,7 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <ext/map.h>
+#include <common/map.h>
 
 
 namespace DB
@@ -57,7 +57,7 @@ class FunctionReverse : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionReverse>();
     }
@@ -117,9 +117,9 @@ class ReverseOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionOverloadResolverPtr create(ContextConstPtr context) { return std::make_unique<ReverseOverloadResolver>(context); }
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ReverseOverloadResolver>(context); }
 
-    explicit ReverseOverloadResolver(ContextConstPtr context_) : context(context_) {}
+    explicit ReverseOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -131,7 +131,7 @@ public:
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 FunctionReverse::create(context),
-                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
     }
 
@@ -141,7 +141,7 @@ public:
     }
 
 private:
-    ContextConstPtr context;
+    ContextPtr context;
 };
 
 }

@@ -30,14 +30,6 @@ Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
-## Huge Pages {#huge-pages}
-
-Always disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
-
-``` bash
-$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
-```
-
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
@@ -90,6 +82,15 @@ If you are using IPv6, increase the size of the route cache.
 The Linux kernel prior to 3.2 had a multitude of problems with IPv6 implementation.
 
 Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be much worse for patching replicas with tens of terabytes of data, or for processing distributed queries with a large amount of intermediate data.
+
+## Huge Pages {#huge-pages}
+
+If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
+On newer Linux kernels transparent huge pages are alright.
+
+``` bash
+$ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+```
 
 ## Hypervisor configuration
 

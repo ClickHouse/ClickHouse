@@ -14,6 +14,7 @@
 #endif
 
 #include <chrono>
+#include <optional>
 #include <set>
 #include <vector>
 

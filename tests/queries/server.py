@@ -292,20 +292,33 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
              </shard>
          </test_cluster_with_incorrect_pw>
 
-         <test_cluster_two_replicas_different_databases>
-             <shard>
-                 <replica>
-                     <default_database>shard_0</default_database>
-                     <host>localhost</host>
-                     <port>{tcp_port}</port>
-                 </replica>
-                 <replica>
-                     <default_database>shard_1</default_database>
-                     <host>localhost</host>
-                     <port>{tcp_port}</port>
-                 </replica>
-             </shard>
-         </test_cluster_two_replicas_different_databases>
+         <test_cluster_one_shard_two_replicas>
+           <shard>
+               <replica>
+                   <host>127.0.0.1</host>
+                   <port>{tcp_port}</port>
+               </replica>
+               <replica>
+                   <host>127.0.0.2</host>
+                   <port>{tcp_port}</port>
+               </replica>
+           </shard>
+        </test_cluster_one_shard_two_replicas>
+
+        <test_cluster_two_replicas_different_databases>
+            <shard>
+                <replica>
+                    <default_database>shard_0</default_database>
+                    <host>localhost</host>
+                    <port>{tcp_port}</port>
+                </replica>
+                <replica>
+                    <default_database>shard_1</default_database>
+                    <host>localhost</host>
+                    <port>{tcp_port}</port>
+                </replica>
+            </shard>
+        </test_cluster_two_replicas_different_databases>
     </remote_servers>
 
     <storage_configuration>

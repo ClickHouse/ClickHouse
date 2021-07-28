@@ -113,8 +113,8 @@ public:
 
         if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
         {
-            /// QuantileTiming only supports integers.
-            if (isNaN(value) || value > std::numeric_limits<Value>::max() || value < std::numeric_limits<Value>::min())
+            /// QuantileTiming only supports unsigned integers. Too large values are also meaningless.
+            if (isNaN(value) || value > std::numeric_limits<Int64>::max() || value < 0)
                 return;
         }
 

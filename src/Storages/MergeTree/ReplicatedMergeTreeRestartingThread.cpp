@@ -90,6 +90,8 @@ void ReplicatedMergeTreeRestartingThread::run()
                     /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
                     tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
+                    /// Here we're almost sure the table is already readonly, but it doesn't hurt to enforce it.
+                    setReadonly();
                     if (first_time)
                         storage.startup_event.set();
                     task->scheduleAfter(retry_period_ms);
@@ -356,7 +358,12 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.part_check_thread.stop();
 
     /// Stop queue processing
-    storage.background_executor.finish();
+    {
+        auto fetch_lock = storage.fetcher.blocker.cancel();
+        auto merge_lock = storage.merger_mutator.merges_blocker.cancel();
+        auto move_lock = storage.parts_mover.moves_blocker.cancel();
+        storage.background_executor.finish();
+    }
 
     LOG_TRACE(log, "Threads finished");
 }

@@ -59,7 +59,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
                                             "or bad RAM on host (look at dmesg or kern.log for enormous amount of EDAC errors, "
                                             "ECC-related reports, Machine Check Exceptions, mcelog; note that ECC memory can fail "
                                             "if the number of errors is huge) or bad CPU on host. If you read data from disk, "
-                                            "this can be caused by disk bit rott. This exception protects ClickHouse "
+                                            "this can be caused by disk bit rot. This exception protects ClickHouse "
                                             "from data corruption due to hardware failures.";
 
     auto flip_bit = [](char * buf, size_t pos)
