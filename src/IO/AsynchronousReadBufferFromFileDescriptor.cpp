@@ -122,6 +122,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     {
         if (prefetch_request_id)
         {
+            std::cerr << "Ignoring prefetched data" << "\n";
             reader->wait(*prefetch_request_id, {});
             prefetch_request_id.reset();
         }

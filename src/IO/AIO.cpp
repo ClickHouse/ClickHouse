@@ -51,7 +51,8 @@ AIOContext::AIOContext(unsigned int nr_events)
 
 AIOContext::~AIOContext()
 {
-    io_destroy(ctx);
+    if (ctx)
+        io_destroy(ctx);
 }
 
 AIOContext::AIOContext(AIOContext && rhs)
