@@ -615,14 +615,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     bool has_wildcards = client_auth.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos || client_auth.uri.key.find(PARTITION_ID_WILDCARD) != String::npos;
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
-    bool is_partitioned_implementation = false;
-    if (insert_query)
-    {
-        if (insert_query->partition_by && has_wildcards)
-        {
-            is_partitioned_implementation = true;
-        }
-    }
+    bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
 
     if (is_partitioned_implementation)
     {
