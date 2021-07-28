@@ -26,6 +26,7 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
@@ -418,7 +419,8 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto metric_log = getContext()->getMetricLog()) metric_log->flush(true); },
                 [&] { if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
                 [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
-                [&] () { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); }
+                [&] { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); },
+                [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); }
             );
             break;
         }

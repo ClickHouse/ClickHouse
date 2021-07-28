@@ -1166,4 +1166,27 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
+
+    <!-- You can also configure rocksdb like this: -->
+    <!--
+    <rocksdb>
+        <options>
+            <max_background_jobs>8</max_background_jobs>
+        </options>
+        <column_family_options>
+            <num_levels>2</num_levels>
+        </column_family_options>
+        <tables>
+            <table>
+                <name>TABLE</name>
+                <options>
+                    <max_background_jobs>8</max_background_jobs>
+                </options>
+                <column_family_options>
+                    <num_levels>2</num_levels>
+                </column_family_options>
+            </table>
+        </tables>
+    </rocksdb>
+    -->
 </yandex>
