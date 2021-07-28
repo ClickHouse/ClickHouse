@@ -2065,13 +2065,18 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     auto & query = getSelectQuery();
     if (query.group_by_with_grouping_sets)
     {
+        std::set<size_t> keys_set;
         for (const auto & aggregation_keys : query_analyzer->aggregationKeysList())
         {
             keys.clear();
             for (const auto & key : aggregation_keys)
             {
-                keys.push_back(header_before_aggregation.getPositionByName(key.name));
-                all_keys.push_back(header_before_aggregation.getPositionByName(key.name));
+                size_t key_name_pos = header_before_aggregation.getPositionByName(key.name);
+                if (!keys_set.count(key_name_pos))
+                {
+                    keys_set.insert(key_name_pos);
+                }
+                keys.push_back(key_name_pos);
                 LOG_DEBUG(
                     log,
                     "execute aggregation with grouping sets add key with name {} and number {}",
@@ -2084,6 +2089,11 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
                 "execute aggregation with grouping sets add keys set of size {}",
                 keys.size());
         }
+        all_keys.assign(keys_set.begin(), keys_set.end());
+        LOG_DEBUG(
+            log,
+            "execute aggregation with grouping sets add all keys of size {}",
+            all_keys.size());
     }
     else
     {
