@@ -122,7 +122,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, Context
 
 void registerTableFunctionValues(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionValues>(TableFunctionFactory::CaseInsensitive);
+    factory.registerFunction<TableFunctionValues>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(ValuesDoc::doc));
 }
 
 }

@@ -188,6 +188,26 @@ SELECT name, value FROM existing_table;
 
 }
 
+
+namespace COSNDoc
+{
+const char * doc = R"(
+COS is fully compatible with S3's API, In addition to URI style. 
+Add new table function and storage engine to access COS.
+
+For example, create table with COSN engine.
+```
+CREATE TABLE c2 (
+    a UInt32, 
+    b String,
+    c String
+) ENGINE=COSN('http://hk-123456789.cos.ap-hongkong.myqcloud.com/test.dat','xxx','xxx','CSV')
+```
+
+)";
+
+}
+
 }
 
 #endif

@@ -81,7 +81,7 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
 
 void registerTableFunctionSQLite(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionSQLite>();
+    factory.registerFunction<TableFunctionSQLite>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(SQLiteDoc::doc));
 }
 
 }

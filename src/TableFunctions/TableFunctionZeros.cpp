@@ -48,8 +48,8 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
 
 void registerTableFunctionZeros(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionZeros<true>>();
-    factory.registerFunction<TableFunctionZeros<false>>();
+    factory.registerFunction<TableFunctionZeros<true>>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(ZerosDoc::doc));
+    factory.registerFunction<TableFunctionZeros<false>>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(ZerosMTDoc::doc));
 }
 
 template <bool multithreaded>

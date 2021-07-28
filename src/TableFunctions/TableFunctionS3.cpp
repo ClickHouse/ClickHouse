@@ -118,7 +118,7 @@ void registerTableFunctionS3(TableFunctionFactory & factory)
 
 void registerTableFunctionCOS(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionCOS>();
+    factory.registerFunction<TableFunctionCOS>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(COSNDoc::doc));
 }
 
 }

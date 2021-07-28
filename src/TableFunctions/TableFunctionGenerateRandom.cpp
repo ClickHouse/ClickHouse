@@ -90,7 +90,7 @@ StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_functio
 
 void registerTableFunctionGenerate(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionGenerateRandom>();
+    factory.registerFunction<TableFunctionGenerateRandom>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(GenerateRandomDoc::doc));
 }
 
 }

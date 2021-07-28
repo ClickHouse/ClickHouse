@@ -103,11 +103,11 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionJDBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionJDBC>();
+    factory.registerFunction<TableFunctionJDBC>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(JDBCDoc::doc));
 }
 
 void registerTableFunctionODBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionODBC>();
+    factory.registerFunction<TableFunctionODBC>(TableFunctionFactory::CaseInsensitive, makeSimpleDocumentation(ODBCDoc::doc));
 }
 }

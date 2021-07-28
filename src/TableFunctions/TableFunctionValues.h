@@ -23,5 +23,22 @@ private:
     String structure;
 };
 
+namespace ValuesDoc
+{
+const char * doc = R"(
+An easier way to create simple tables like
+```
+┌─a─┬─b─────┐
+│ 1 │ one   │
+│ 2 │ two   │
+│ 3 │ three │
+└───┴───────┘
+```
+By query:
+
+```SELECT * FROM VALUES('a UInt64, s String', (1, 'one'), (2, 'two'), (3, 'three'));```
+)";
+
+}
 
 }

@@ -31,6 +31,29 @@ private:
     std::shared_ptr<sqlite3> sqlite_db;
 };
 
+namespace SQLiteDoc
+{
+const char * doc = R"(
+Allows `SELECT` and `INSERT` queries to be performed on data that is stored in sqlite database file.
+
+**Syntax**
+
+``` sql
+postgresql('host:port', 'database', 'table', 'user', 'password')
+```
+
+**Arguments**
+
+-   `host:port` — PostgreSQL server address.
+-   `database` — Remote database name.
+-   `table` — Remote table name.
+-   `user` — PostgreSQL user.
+-   `password` — User password.
+
+)";
+
+}
+
 }
 
 #endif
