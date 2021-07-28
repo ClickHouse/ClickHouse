@@ -36,12 +36,12 @@ HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST)
 HTTP_SERVER_ADDRESS = (HTTP_SERVER_HOST, HTTP_SERVER_PORT)
 HTTP_SERVER_URL_STR = 'http://' + ':'.join(str(s) for s in HTTP_SERVER_ADDRESS) + "/"
 
-# Because we need to check content of file.csv we can create this content and avoid reading csv
+# Because we need to check the content of file.csv we can create this content and avoid reading csv
 CSV_DATA = "Hello, 1\nWorld, 2\nThis, 152\nis, 9283\ntesting, 2313213\ndata, 555\n"
 
 
 # Choose compression method
-# (Will change during test, need to check standart data sending, to make sure that nothing broke)
+# (Will change during test, need to check standard data sending, to make sure that nothing broke)
 COMPRESS_METHOD = 'none'
 ADDING_ENDING = ''
 ENDINGS = ['.gz', '.xz']
