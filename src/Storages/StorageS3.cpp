@@ -459,9 +459,10 @@ private:
 
     SinkPtr getSinkForPartition(const String & partition_id)
     {
-        if (sinks.count(partition_id) == 0)
+        auto it = sinks.find(partition_id);
+        if (it == sinks.end())
         {
-            sinks.emplace(partition_id, std::make_shared<StorageS3Sink>(
+            std::tie(it, std::ignore) = sinks.emplace(partition_id, std::make_shared<StorageS3Sink>(
                 format,
                 sample_block,
                 context,
@@ -474,7 +475,7 @@ private:
             ));
         }
 
-        return sinks[partition_id];
+        return it->second;
     }
 
     static void validatePartitionKey(const StringRef & str)
