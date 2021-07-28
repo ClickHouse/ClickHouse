@@ -71,11 +71,9 @@ public:
     String getUserName() const;
 
     /// Returns information about current and enabled roles.
-    /// The function can return nullptr.
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
     /// Returns information about enabled row policies.
-    /// The function can return nullptr.
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies() const;
 
     /// Returns the row policy filter for a specified table.
@@ -83,16 +81,13 @@ public:
     ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType index, const ASTPtr & extra_condition = nullptr) const;
 
     /// Returns the quota to track resource consumption.
-    /// The function returns nullptr if no tracking or limitation is needed.
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
 
     /// Returns the default settings, i.e. the settings to apply on user's login.
-    /// The function returns nullptr if it's no need to apply settings.
     std::shared_ptr<const Settings> getDefaultSettings() const;
 
     /// Returns the settings' constraints.
-    /// The function returns nullptr if there are no constraints.
     std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
 
     /// Returns the current access rights.
