@@ -62,6 +62,7 @@ AIOContext::AIOContext(AIOContext && rhs)
 AIOContext & AIOContext::operator=(AIOContext && rhs)
 {
     std::swap(ctx, rhs.ctx);
+    return *this;
 }
 
 #elif defined(OS_FREEBSD)
