@@ -52,14 +52,14 @@ public:
     /// Less than requested amount of data can be returned.
     /// Also error can be returned in 'exception'.
     /// If no error, and the size is zero - the file has ended.
-    /// (for example, EINTR must be handled automatically)
+    /// (for example, EINTR must be handled by implementation automatically)
     struct Result
     {
         size_t size = 0;
         std::exception_ptr exception;
     };
 
-    /// The methods 'submit' and 'wait' can be called concurrently from multiple threads
+    /// The methods 'submit' and 'wait' both can be called concurrently from multiple threads
     /// but only for different requests.
 
     /// Submit request and obtain a handle. This method don't perform any waits.
