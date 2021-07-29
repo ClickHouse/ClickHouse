@@ -1,0 +1,3 @@
+set (CLICKHOUSE_DOCUMENTATION_LINK
+    Generator.cpp
+)

@@ -82,7 +82,7 @@ TableFunctionPtr TableFunctionFactory::tryGet(
     return res;
 }
 
-std::string TableFunctionFactory::getDocumetation(const std::string & name_param) const
+std::string TableFunctionFactory::getDocumentation(const std::string & name_param) const
 {
     String name = getAliasToOrName(name_param);
 

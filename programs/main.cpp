@@ -32,6 +32,9 @@ int mainEntryClickHouseServer(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_CLIENT
 int mainEntryClickHouseClient(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_DOCUMENTATION
+int entryDocumentationGenerator(int argc, char ** argv);
+#endif
 #if ENABLE_CLICKHOUSE_LOCAL
 int mainEntryClickHouseLocal(int argc, char ** argv);
 #endif
@@ -94,6 +97,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_CLIENT
     {"client", mainEntryClickHouseClient},
+#endif
+#if ENABLE_CLICKHOUSE_DOCUMENTATION
+    {"documentation", entryDocumentationGenerator},
 #endif
 #if ENABLE_CLICKHOUSE_BENCHMARK
     {"benchmark", mainEntryClickHouseBenchmark},

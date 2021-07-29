@@ -10,6 +10,8 @@ option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
 option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_DOCUMENTATION "Generating clickhouse documentation mode."
+    ${ENABLE_CLICKHOUSE_ALL})
 
 # https://clickhouse.tech/docs/en/operations/utilities/clickhouse-local/
 option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
@@ -81,6 +83,13 @@ if (NOT ENABLE_CLICKHOUSE_CLIENT)
 else()
     message(STATUS "Client mode: ON")
 endif()
+
+if (NOT ENABLE_CLICKHOUSE_DOCUMENTATION)
+    message(WARNING "Clickhouse documentation mode is turned off. You can't create documentation without it")
+else()
+    message(STATUS "Clickhouse documentation mode: ON")
+endif()
+
 
 if (ENABLE_CLICKHOUSE_LOCAL)
     message(STATUS "Local mode: ON")
@@ -227,6 +236,7 @@ add_subdirectory (obfuscator)
 add_subdirectory (install)
 add_subdirectory (git-import)
 add_subdirectory (bash-completion)
+add_subdirectory (documentation)
 
 if (ENABLE_CLICKHOUSE_KEEPER)
     add_subdirectory (keeper)
@@ -298,6 +308,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
     set (CLICKHOUSE_ALL_TARGETS
         clickhouse-server
         clickhouse-client
+        clickhouse-documentation
         clickhouse-local
         clickhouse-benchmark
         clickhouse-extract-from-config
@@ -347,6 +358,9 @@ else ()
     if (ENABLE_CLICKHOUSE_CLIENT)
         clickhouse_target_link_split_lib(clickhouse client)
     endif ()
+    if (ENABLE_CLICKHOUSE_DOCUMENTATION)
+        clickhouse_target_link_split_lib(clickhouse documentation)
+    endif ()
     if (ENABLE_CLICKHOUSE_LOCAL)
         clickhouse_target_link_split_lib(clickhouse local)
     endif ()
@@ -391,6 +405,11 @@ else ()
         add_custom_target (clickhouse-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-client DEPENDS clickhouse)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-client" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-client)
+    endif ()
+    if (ENABLE_CLICKHOUSE_DOCUMENTATION)
+        add_custom_target (clickhouse-documentation ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-documentation DEPENDS clickhouse)
+        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-documentation" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        list(APPEND CLICKHOUSE_BUNDLE clickhouse-documentation)
     endif ()
     if (ENABLE_CLICKHOUSE_LOCAL)
         add_custom_target (clickhouse-local ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-local DEPENDS clickhouse)

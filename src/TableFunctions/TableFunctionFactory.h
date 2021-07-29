@@ -52,7 +52,7 @@ public:
     bool isTableFunctionName(const std::string & name) const;
 
     /// If there will be no documentation returns "Not found"
-    std::string getDocumetation(const std::string & name) const;
+    std::string getDocumentation(const std::string & name) const;
 private:
     using TableFunctions = std::unordered_map<std::string, Value>;
     using TableFunctionsDocs = std::unordered_map<std::string, IDocumentationPtr>;
