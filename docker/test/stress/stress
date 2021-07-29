@@ -51,6 +51,7 @@ def get_options(i):
 
     if client_options:
         options.append(" --client-option " + ' '.join(client_options))
+
     return ' '.join(options)
 
 
