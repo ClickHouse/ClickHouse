@@ -147,13 +147,13 @@ def test_put(started_cluster, maybe_auth, positive, compression):
 
 
 def test_distributed_put(started_cluster):
-    bucket = cluster.minio_bucket
-    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test_{_partition_id}.csv"
-    put_query = f"""insert into table function s3('http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{filename}',
+    put_query = f"""insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}',
                     'CSV', '{table_format}') PARTITION BY column3 values {values}"""
 
     run_query(instance, put_query)
