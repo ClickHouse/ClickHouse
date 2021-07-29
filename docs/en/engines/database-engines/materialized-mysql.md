@@ -36,8 +36,8 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 -   `max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disable retry. Default: `1000`.
 -   `allows_query_when_mysql_lost` — Allow query materialized table when mysql is lost. Default: `0` (`false`).
 ```
-CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***') 
-     SETTINGS 
+CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***')
+     SETTINGS
         allows_query_when_mysql_lost=true,
         max_wait_time_when_mysql_unavailable=10000;
 ```
@@ -52,10 +52,10 @@ For the correct work of `MaterializeMySQL`, there are few mandatory `MySQL`-side
 ## Virtual columns {#virtual-columns}
 
 When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
- 
+
 - `_version` — Transaction counter. Type [UInt64](../../sql-reference/data-types/int-uint.md).
 - `_sign` — Deletion mark. Type [Int8](../../sql-reference/data-types/int-uint.md). Possible values:
-    - `1` — Row is not deleted, 
+    - `1` — Row is not deleted,
     - `-1` — Row is deleted.
 
 ## Data Types Support {#data_types-support}
@@ -103,7 +103,7 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 
 - MySQL `INSERT` query is converted into `INSERT` with `_sign=1`.
 
-- MySQL `DELETE` query is converted into `INSERT` with `_sign=-1`. 
+- MySQL `DELETE` query is converted into `INSERT` with `_sign=-1`.
 
 - MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1`.
 
@@ -146,9 +146,9 @@ mysql> SELECT * FROM test;
 ```
 
 ```text
-+---+------+------+ 
++---+------+------+
 | a |    b |    c |
-+---+------+------+ 
++---+------+------+
 | 2 |  222 | Wow! |
 +---+------+------+
 ```
@@ -175,9 +175,9 @@ SELECT * FROM mysql.test;
 ```
 
 ``` text
-┌─a─┬──b─┐ 
-│ 1 │ 11 │ 
-│ 2 │ 22 │ 
+┌─a─┬──b─┐
+│ 1 │ 11 │
+│ 2 │ 22 │
 └───┴────┘
 ```
 
@@ -188,8 +188,8 @@ SELECT * FROM mysql.test;
 ```
 
 ``` text
-┌─a─┬───b─┬─c────┐ 
-│ 2 │ 222 │ Wow! │ 
+┌─a─┬───b─┬─c────┐
+│ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```
 
