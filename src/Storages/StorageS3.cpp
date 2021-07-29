@@ -43,7 +43,6 @@
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>
 
-#include <common/find_symbols.h>
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
 #include <re2/re2.h>
