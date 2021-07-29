@@ -859,9 +859,9 @@ bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & p
 }
 
 std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
-    const StorageMetadataPtr & metadata_snapshot, String * /* disable_reason */, TableLockHolder & /* table_lock_holder */)
+    const StorageMetadataPtr & metadata_snapshot, String * /* disable_reason */, TableLockHolder & /* table_lock_holder */,
+    std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock)
 {
-    std::unique_lock currently_processing_in_background_mutex_lock(currently_processing_in_background_mutex);
     size_t max_ast_elements = getContext()->getSettingsRef().max_expanded_ast_elements;
 
     auto future_part = std::make_shared<FutureMergedMutatedPart>();
@@ -999,7 +999,6 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
 
     if (are_some_mutations_for_some_parts_skipped)
     {
-        currently_processing_in_background_mutex_lock.unlock();
         std::lock_guard<std::mutex> mutation_wait_mutex_lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();
     }
@@ -1028,7 +1027,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, lock);
         if (!merge_entry)
         {
-            mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
+            mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock, lock);
             has_mutations = !current_mutations_by_version.empty();
         }
     }
