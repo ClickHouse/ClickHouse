@@ -365,7 +365,7 @@ void WindowTransform::advancePartitionEnd()
     // for which we are calculating the window functions), because they all might be
     // past the end of the partition. prev_frame_start is suitable, because it
     // is a pointer to the first row of the previous frame that must have been
-    // valid, or to the first row of the partition, and we make sure not do drop
+    // valid, or to the first row of the partition, and we make sure not to drop
     // its block.
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
