@@ -25,7 +25,10 @@ expect eof
 
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion"
 expect {
-    "Cannot load data for command line suggestions: Code: 241" { puts "Error"}
+    "Cannot load data for command line suggestions: Code: 241" {
+         puts "Error"
+         expect ":) "
+         }
      ":) "
 }
 send -- "SET max_memory_usage = 1;\r"
