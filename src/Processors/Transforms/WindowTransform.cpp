@@ -315,7 +315,7 @@ void WindowTransform::advancePartitionEnd()
 
     const RowNumber end = blocksEnd();
 
-//     fmt::print(stderr, "end {}, partition_end {}\n", end, partition_end);
+//    fmt::print(stderr, "end {}, partition_end {}\n", end, partition_end);
 
     // If we're at the total end of data, we must end the partition. This is one
     // of the few places in calculations where we need special handling for end
@@ -361,31 +361,31 @@ void WindowTransform::advancePartitionEnd()
     // The partition ends when the PARTITION BY columns change. We need
     // some reference columns for comparison. We might have already
     // dropped the blocks where the partition starts, but any other row in the
-    // partition will do. We can't use current_row for this (the next row for
-    // which we are calculating the window functions), because it might be past
-    // the partition end. The frame pointers are more suitable because they are
-    // always inside the partition and we keep the frame in memory. Use
-    // frame_end because it's closer to the partition_end and will give better
-    // data locality.
+    // partition will do. We can't use frame_start or frame_end or current_row (the next row
+    // for which we are calculating the window functions), because they all might be
+    // past the end of the partition. prev_frame_start is suitable, because it
+    // is a pointer to the first row of the previous frame that must have been
+    // valid, or to the first row of the partition, and we make sure not do drop
+    // its block.
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
     {
 //        fmt::print(stderr, "compare reference '{}' to compared '{}'\n",
-//            frame_end, partition_end);
+//            prev_frame_start, partition_end);
 
         size_t i = 0;
         for (; i < partition_by_columns; i++)
         {
             const auto * reference_column
-                = inputAt(frame_end)[partition_by_indices[i]].get();
+                = inputAt(prev_frame_start)[partition_by_indices[i]].get();
             const auto * compared_column
                 = inputAt(partition_end)[partition_by_indices[i]].get();
 
 //            fmt::print(stderr, "reference '{}', compared '{}'\n",
-//                (*reference_column)[frame_end.row],
+//                (*reference_column)[prev_frame_start.row],
 //                (*compared_column)[partition_end.row]);
             if (compared_column->compareAt(partition_end.row,
-                    frame_end.row, *reference_column,
+                    prev_frame_start.row, *reference_column,
                     1 /* nan_direction_hint */) != 0)
             {
                 break;
@@ -1373,13 +1373,16 @@ void WindowTransform::work()
     }
 
     // We don't really have to keep the entire partition, and it can be big, so
-    // we want to drop the starting blocks to save memory.
-    // We can drop the old blocks if we already returned them as output, and the
-    // frame and the current row are already past them. Note that the frame
-    // start can be further than current row for some frame specs (e.g. EXCLUDE
-    // CURRENT ROW), so we have to check both.
+    // we want to drop the starting blocks to save memory. We can drop the old
+    // blocks if we already returned them as output, and the frame and the
+    // current row are already past them. We also need to keep the previous
+    // frame start because we use it as the partition etalon. It is always less
+    // than the current frame start, so we don't have to check the latter. Note
+    // that the frame start can be further than current row for some frame specs
+    // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
+    assert(prev_frame_start <= frame_start);
     const auto first_used_block = std::min(next_output_block_number,
-        std::min(frame_start.block, current_row.block));
+        std::min(prev_frame_start.block, current_row.block));
 
     if (first_block_number < first_used_block)
     {
@@ -1392,6 +1395,7 @@ void WindowTransform::work()
 
         assert(next_output_block_number >= first_block_number);
         assert(frame_start.block >= first_block_number);
+        assert(prev_frame_start.block >= first_block_number);
         assert(current_row.block >= first_block_number);
         assert(peer_group_start.block >= first_block_number);
     }
