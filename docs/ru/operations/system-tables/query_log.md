@@ -67,7 +67,7 @@ ClickHouse не удаляет данные из таблица автомати
 -   `initial_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого пришел родительский запрос.
 -   `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт, с которого клиент сделал родительский запрос.
 -   `initial_query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время начала обработки запроса (для распределенных запросов).
--   `initial_query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время начала запроса с точностью до микросекунд (для распределенных запросов).
+-   `initial_query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время начала обработки запроса с точностью до микросекунд (для распределенных запросов).
 -   `interface` ([UInt8](../../sql-reference/data-types/int-uint.md)) — интерфейс, с которого ушёл запрос. Возможные значения:
     -   1 — TCP.
     -   2 — HTTP.
