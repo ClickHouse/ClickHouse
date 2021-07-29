@@ -52,22 +52,22 @@ CompressedWriteBuffer::~CompressedWriteBuffer()
 {
     if (hasPendingData())
     {
-        if (std::uncaught_exception())
-        {
-            /// Try our best to flush buffer.
-            MemoryTracker::LockExceptionInThread lock;
-            try
-            {
-                next();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("CompressedWriteBuffer::~CompressedWriteBuffer");
-            }
-        }
-        else
-            /// No exception, buffer was not flushed. Consider it as a logical error.
+
+#ifndef NDEBUG
+        /// No exception, buffer was not flushed. Consider it as a logical error.
+        if (std::uncaught_exception() == 0)
             std::terminate();
+#endif
+        /// Try our best to flush buffer.
+        MemoryTracker::LockExceptionInThread lock;
+        try
+        {
+            next();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("CompressedWriteBuffer::~CompressedWriteBuffer");
+        }
     }
 }
 
