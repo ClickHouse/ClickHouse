@@ -339,13 +339,13 @@ String LocalServer::getQueryTextPrefix()
 }
 
 
-void LocalServer::reportQueryError(const String & query) const
+void LocalServer::reportQueryError(const String &) const
 {
     if (local_server_exception)
     {
-        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, local_server_exception->message());
-        if (is_interactive)
-            fmt::print(stderr, "\n");
+        // fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, local_server_exception->message());
+        // if (is_interactive)
+        //     fmt::print(stderr, "\n");
     }
     assert(have_error && local_server_exception);
 }
