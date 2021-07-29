@@ -2,7 +2,7 @@ version: '2.3'
 
 services:
     rabbitmq1:
-        image: rabbitmq:3-management
+        image: rabbitmq:3.8-management-alpine
         hostname: rabbitmq1
         ports:
             - "5672:5672"
