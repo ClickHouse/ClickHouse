@@ -487,7 +487,7 @@ private:
     {
         for (const char * i = str.data; i != str.data + str.size; ++i)
         {
-            if (*i < 0x20 || *i == '{' || *i == '}' || *i == '*' || *i == '?')
+            if (static_cast<UInt8>(*i) < 0x20 || *i == '{' || *i == '}' || *i == '*' || *i == '?')
             {
                 /// Need to convert to UInt32 because UInt8 can't be passed to format due to "mixing character types is disallowed".
                 UInt32 invalid_char_byte = static_cast<UInt32>(static_cast<UInt8>(*i));
