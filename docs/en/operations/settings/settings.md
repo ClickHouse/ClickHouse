@@ -153,6 +153,26 @@ Possible values:
 
 Default value: 1048576.
 
+## table_function_remote_max_addresses {#table_function_remote_max_addresses}
+
+Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
+##  glob_expansion_max_elements  {#glob_expansion_max_elements }
+
+Sets the maximum number of addresses generated from patterns for external storages and table functions (like [url](../../sql-reference/table-functions/url.md)) except the `remote` function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
@@ -2907,7 +2927,7 @@ Result:
 └─────────────┘
 ```
 
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
+Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md) behaviour.
 
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 

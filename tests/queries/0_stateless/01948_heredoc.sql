@@ -11,3 +11,12 @@ SELECT $doc$该类型的引擎$doc$;
 
 SELECT $РАЗДЕЛИТЕЛЬ$VALUE$РАЗДЕЛИТЕЛЬ$;
 SELECT $该类型的引擎$VALUE$该类型的引擎$;
+
+SELECT $$
+value1
+value2
+value3
+$$;
+
+SELECT $doc$'\xc3\x28'$doc$;
+SELECT $\xc3\x28$'\xc3\x28'$\xc3\x28$;

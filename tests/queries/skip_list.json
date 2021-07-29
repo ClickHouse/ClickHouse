@@ -41,7 +41,8 @@
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01955_clickhouse_benchmark_connection_hang" /// Limits RLIMIT_NOFILE, see comment in the test
     ],
     "memory-sanitizer": [
         "capnproto",
@@ -136,6 +137,7 @@
         "01532_execute_merges_on_single_replica",
         "00652_replicated_mutations_default_database_zookeeper",
         "00620_optimize_on_nonleader_replica_zookeeper",
+        "01158_zookeeper_log",
         /// grep -c
         "01018_ddl_dictionaries_bad_queries",
         "00908_bloom_filter_index",
@@ -181,7 +183,8 @@
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
-        "01482_move_to_prewhere_and_cast" /// bug, shoud be fixed
+        "01482_move_to_prewhere_and_cast", /// bug, shoud be fixed
+        "01158_zookeeper_log"
     ],
     "parallel":
     [
@@ -493,6 +496,7 @@
         "01684_ssd_cache_dictionary_simple_key",
         "01685_ssd_cache_dictionary_complex_key",
         "01737_clickhouse_server_wait_server_pool_long", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
+        "01954_clickhouse_benchmark_round_robin", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
         "01594_too_low_memory_limits", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
         "01760_system_dictionaries",
         "01760_polygon_dictionaries",
@@ -519,6 +523,7 @@
         "01999_grant_with_replace",
         "01902_table_function_merge_db_repr",
         "01946_test_zstd_decompression_with_escape_sequence_at_the_end_of_buffer",
-        "01946_test_wrong_host_name_access"
+        "01946_test_wrong_host_name_access",
+        "01213_alter_rename_with_default_zookeeper" /// Warning: Removing leftovers from table.
     ]
 }

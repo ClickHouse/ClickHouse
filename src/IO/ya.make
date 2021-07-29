@@ -43,6 +43,7 @@ SRCS(
     MySQLPacketPayloadReadBuffer.cpp
     MySQLPacketPayloadWriteBuffer.cpp
     NullWriteBuffer.cpp
+    OpenedFile.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
     ReadBufferFromEncryptedFile.cpp
