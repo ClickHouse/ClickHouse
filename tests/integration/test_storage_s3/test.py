@@ -163,6 +163,21 @@ def test_distributed_put(started_cluster):
     assert "78,43,45\n" == get_s3_file_content(started_cluster, bucket, "test_45.csv")
 
 
+def test_distributed_put_const_column(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
+    values_csv = "1,2,3\n3,2,1\n78,43,45\n"
+    filename = "test_{_partition_id}.csv"
+    put_query = f"""insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}',
+                    'CSV', '{table_format}') PARTITION BY '88' values {values}"""
+
+    run_query(instance, put_query)
+
+    assert values_csv == get_s3_file_content(started_cluster, bucket, "test_88.csv")
+
+
 @pytest.mark.parametrize("special", [
     "space",
     "plus"
