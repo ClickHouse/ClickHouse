@@ -518,6 +518,77 @@ protected:
         return action_it == action_end;
     }
 
+    /// Splits the pattern into deterministic parts separated by non-deterministic fragments
+    /// (time constraints and Kleene stars), and tries to match the deterministic parts in their specified order,
+    /// ignoring the non-deterministic fragments.
+    /// This function can quickly check that a full match is not possible if some deterministic fragment is missing.
+    template <typename EventEntry>
+    bool couldMatchDeterministicParts(const EventEntry events_begin, const EventEntry events_end, bool limit_iterations = true) const
+    {
+        size_t events_processed = 0;
+        auto events_it = events_begin;
+        std::vector<UInt64> det_part;
+
+        auto find_deterministic_part = [&events_it, &events_end, &events_processed, &det_part, limit_iterations]()
+        {
+            auto events_it_init = events_it;
+            const auto det_part_begin = std::begin(det_part);
+            const auto det_part_end = std::end(det_part);
+            auto det_part_it = det_part_begin;
+
+            while (det_part_it != det_part_end && events_it != events_end)
+            {
+                /// matching any event
+                if (*det_part_it == 0)
+                    ++events_it, ++det_part_it;
+
+                /// matching specific event
+                else {
+                    if (events_it->second.test(*det_part_it - 1))
+                        ++events_it, ++det_part_it;
+
+                    else
+                    {
+                        events_it = ++events_it_init;
+                        det_part_it = det_part_begin;
+                    }
+                }
+
+                if (limit_iterations && ++events_processed > sequence_match_max_iterations) {
+                    throw Exception{"Pattern application proves too difficult, exceeding max iterations (" + toString(sequence_match_max_iterations) + ")",
+                        ErrorCodes::TOO_SLOW};
+                }
+            }
+
+            det_part.clear();
+            return det_part_it == det_part_end;
+        };
+
+        for (auto action : actions) {
+            switch(action.type) {
+            /// mark AnyEvent action with 0 and SpecificEvent with positive numbers corresponding to the events
+            case PatternActionType::SpecificEvent:
+                det_part.push_back(action.extra + 1);
+                break;
+            case PatternActionType::AnyEvent:
+                det_part.push_back(0);
+                break;
+            case PatternActionType::KleeneStar:
+            case PatternActionType::TimeLessOrEqual:
+            case PatternActionType::TimeLess:
+            case PatternActionType::TimeGreaterOrEqual:
+            case PatternActionType::TimeGreater:
+            case PatternActionType::TimeEqual:
+                if (!find_deterministic_part())
+                    return false;
+            default:
+                throw Exception{"Unknown PatternActionType", ErrorCodes::LOGICAL_ERROR};
+            }
+        }
+
+        return find_deterministic_part();
+    }
+
 private:
     enum class DFATransition : char
     {
@@ -592,7 +663,8 @@ public:
         const auto events_end = std::end(data_ref.events_list);
         auto events_it = events_begin;
 
-        bool match = this->pattern_has_time ? this->backtrackingMatch(events_it, events_end) : this->dfaMatch(events_it, events_end);
+        bool couldMatch = this->couldMatchDeterministicParts(events_begin, events_end, this->pattern_has_time);
+        bool match = couldMatch && (this->pattern_has_time ? this->backtrackingMatch(events_it, events_end) : this->dfaMatch(events_it, events_end));
         assert_cast<ColumnUInt8 &>(to).getData().push_back(match);
     }
 };
@@ -628,8 +700,12 @@ private:
         auto events_it = events_begin;
 
         size_t count = 0;
-        while (events_it != events_end && this->backtrackingMatch(events_it, events_end))
-            ++count;
+        // check if there is a chance of matching the sequence at least once
+        bool couldMatch = this->couldMatchDeterministicParts(events_begin, events_end);
+        if (couldMatch) {
+            while (events_it != events_end && this->backtrackingMatch(events_it, events_end))
+                ++count;
+        }
 
         return count;
     }
