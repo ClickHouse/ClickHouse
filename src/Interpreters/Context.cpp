@@ -1752,6 +1752,24 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
+{
+    /// It can be nearly impossible to understand in which order global objects are initialized on server startup.
+    /// If getZooKeeper() is called before initializeSystemLogs(), then zkutil::ZooKeeper gets nullptr
+    /// instead of pointer to system table and it logs nothing.
+    /// This method explicitly sets correct pointer to system log after its initialization.
+    /// TODO get rid of this if possible
+
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (!shared->system_logs || !shared->system_logs->zookeeper_log)
+        return;
+
+    if (shared->zookeeper)
+        shared->zookeeper->setZooKeeperLog(shared->system_logs->zookeeper_log);
+
+    for (auto & zk : shared->auxiliary_zookeepers)
+        zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
+}
 
 void Context::initializeKeeperStorageDispatcher() const
 {
