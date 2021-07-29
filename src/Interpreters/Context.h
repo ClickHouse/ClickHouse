@@ -76,6 +76,7 @@ class TraceLog;
 class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
+class ZooKeeperLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -89,7 +90,7 @@ class ICompressionCodec;
 class AccessControlManager;
 class Credentials;
 class GSSAcceptorContext;
-class SettingsConstraints;
+struct SettingsConstraintsAndProfileIDs;
 class RemoteHostFilter;
 struct StorageID;
 class IDisk;
@@ -118,8 +119,6 @@ using ThrottlerPtr = std::shared_ptr<Throttler>;
 
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
-
-struct MySQLWireContext;
 
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
@@ -177,8 +176,8 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::optional<UUID> user_id;
-    std::vector<UUID> current_roles;
-    bool use_default_roles = false;
+    std::shared_ptr<std::vector<UUID>> current_roles;
+    std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
     String current_database;
@@ -300,8 +299,6 @@ private:
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
 
-    MySQLWireContext * mysql_protocol_context = nullptr;
-
     Context();
     Context(const Context &);
     Context & operator=(const Context &);
@@ -381,6 +378,11 @@ public:
     boost::container::flat_set<UUID> getCurrentRoles() const;
     boost::container::flat_set<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
+
+    void setCurrentProfile(const String & profile_name);
+    void setCurrentProfile(const UUID & profile_id);
+    std::vector<UUID> getCurrentProfiles() const;
+    std::vector<UUID> getEnabledProfiles() const;
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -520,7 +522,7 @@ public:
     void clampToSettingsConstraints(SettingsChanges & changes) const;
 
     /// Returns the current constraints (can return null).
-    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
+    std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
@@ -713,6 +715,7 @@ public:
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
+    std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -797,11 +800,6 @@ public:
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
 
-    /// Caller is responsible for lifetime of mysql_context.
-    /// Used in MySQLHandler for session context.
-    void setMySQLProtocolContext(MySQLWireContext * mysql_context);
-    MySQLWireContext * getMySQLProtocolContext() const;
-
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
 
@@ -818,8 +816,6 @@ private:
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;
-
-    void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 

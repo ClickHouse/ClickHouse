@@ -170,13 +170,13 @@ SELECT alphaTokens('abca1abc');
 
 Extracts all groups from non-overlapping substrings matched by a regular expression.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
-extractAllGroups(text, regexp) 
+extractAllGroups(text, regexp)
 ```
 
-**Arguments** 
+**Arguments**
 
 -   `text` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 -   `regexp` — Regular expression. Constant. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).

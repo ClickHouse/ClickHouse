@@ -34,6 +34,7 @@ Configuration template:
       <min_part_size>...</min_part_size>
       <min_part_size_ratio>...</min_part_size_ratio>
       <method>...</method>
+      <level>...</level>
     </case>
     ...
 </compression>
@@ -43,7 +44,8 @@ Configuration template:
 
 -   `min_part_size` – The minimum size of a data part.
 -   `min_part_size_ratio` – The ratio of the data part size to the table size.
--   `method` – Compression method. Acceptable values: `lz4` or `zstd`.
+-   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`.
+-   `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table/#create-query-general-purpose-codecs).
 
 You can configure multiple `<case>` sections.
 
@@ -62,6 +64,7 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
+        <level>1</level>
     </case>
 </compression>
 ```
@@ -98,7 +101,7 @@ Default value: `1073741824` (1 GB).
 ```xml
 <core_dump>
     <size_limit>1073741824</size_limit>
-</core_dump> 
+</core_dump>
 ```
 ## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
@@ -439,8 +442,8 @@ The server will need access to the public Internet via IPv4 (at the time of writ
 
 Keys:
 
--   `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports. 
--   `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax. 
+-   `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports.
+-   `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax.
 -   `anonymize` - Avoid attaching the server hostname to the crash report.
 -   `http_proxy` - Configure HTTP proxy for sending crash reports.
 -   `debug` - Sets the Sentry client into debug mode.
@@ -502,7 +505,7 @@ The default `max_server_memory_usage` value is calculated as `memory_amount * ma
 
 ## max_server_memory_usage_to_ram_ratio {#max_server_memory_usage_to_ram_ratio}
 
-Defines the fraction of total physical RAM amount, available to the ClickHouse server. If the server tries to utilize more, the memory is cut down to the appropriate amount. 
+Defines the fraction of total physical RAM amount, available to the ClickHouse server. If the server tries to utilize more, the memory is cut down to the appropriate amount.
 
 Possible values:
 
@@ -713,7 +716,7 @@ Keys for server/client settings:
 -   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1_2 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 -   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
 -   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
@@ -880,7 +883,7 @@ Parameters:
 -   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
 
 **Example**
-```xml 
+```xml
 <yandex>
     <text_log>
         <level>notice</level>

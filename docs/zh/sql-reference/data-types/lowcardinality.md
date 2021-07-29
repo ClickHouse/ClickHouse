@@ -32,7 +32,7 @@ LowCardinality(data_type)
 ```sql
 CREATE TABLE lc_t
 (
-    `id` UInt16, 
+    `id` UInt16,
     `strings` LowCardinality(String)
 )
 ENGINE = MergeTree()

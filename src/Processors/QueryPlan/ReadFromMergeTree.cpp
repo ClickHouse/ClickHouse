@@ -15,7 +15,7 @@
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -47,6 +47,9 @@ struct ReadFromMergeTree::AnalysisResult
     IndexStats index_stats;
     Names column_names_to_read;
     ReadFromMergeTree::ReadType read_type = ReadFromMergeTree::ReadType::Default;
+    UInt64 selected_rows = 0;
+    UInt64 selected_marks = 0;
+    UInt64 selected_parts = 0;
 };
 
 static MergeTreeReaderSettings getMergeTreeReaderSettings(const ContextPtr & context)
@@ -154,7 +157,7 @@ Pipe ReadFromMergeTree::readFromPool(
 
     for (size_t i = 0; i < max_streams; ++i)
     {
-        auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
+        auto source = std::make_shared<MergeTreeThreadSelectProcessor>(
             i, pool, min_marks_for_concurrent_read, max_block_size,
             settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
             data, metadata_snapshot, use_uncompressed_cache,
@@ -659,7 +662,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
             /// with level > 0 then we won't postprocess this part and if num_streams > 1 we
             /// can use parallel select on such parts. We save such parts in one vector and then use
-            /// MergeTreeReadPool and MergeTreeThreadSelectBlockInputProcessor for parallel select.
+            /// MergeTreeReadPool and MergeTreeThreadSelectProcessor for parallel select.
             if (num_streams > 1 && settings.do_not_merge_across_partitions_select_final &&
                 std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
                 parts_to_merge_ranges[range_index]->data_part->info.level > 0)
@@ -829,7 +832,8 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
         log,
         requested_num_streams,
         result.index_stats,
-        true);
+        true /* use_skip_indexes */,
+        true /* check_limits */);
 
     size_t sum_marks_pk = total_marks_pk;
     for (const auto & stat : result.index_stats)
@@ -838,13 +842,17 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 
     size_t sum_marks = 0;
     size_t sum_ranges = 0;
+    size_t sum_rows = 0;
 
     for (const auto & part : result.parts_with_ranges)
     {
         sum_ranges += part.ranges.size();
         sum_marks += part.getMarksCount();
+        sum_rows += part.getRowsCount();
     }
-
+    result.selected_parts = result.parts_with_ranges.size();
+    result.selected_marks = sum_marks;
+    result.selected_rows  = sum_rows;
     LOG_DEBUG(
         log,
         "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
@@ -882,6 +890,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
         return;
     }
 
+    selected_marks = result.selected_marks;
+    selected_rows = result.selected_rows;
+    selected_parts = result.selected_parts;
     /// Projection, that needed to drop columns, which have appeared by execution
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.

@@ -74,7 +74,7 @@ Parameters:
                 source cluster & destination clusters accept exactly the same
                 parameters as parameters for the usual Distributed table
                 see https://clickhouse.tech/docs/en/engines/table-engines/special/distributed/
-            --> 
+            -->
             <shard>
                 <internal_replication>false</internal_replication>
                     <replica>

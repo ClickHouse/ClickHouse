@@ -388,6 +388,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
 
+        if (storage && !query.final() && storage->needRewriteQueryWithFinal(syntax_analyzer_result->requiredSourceColumns()))
+            query.setFinal();
+
         /// Save scalar sub queries's results in the query context
         if (!options.only_analyze && context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
@@ -609,16 +612,16 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     query_info.query = query_ptr;
     query_info.has_window = query_analyzer->hasWindow();
-
     if (storage && !options.only_analyze)
     {
-        from_stage = storage->getQueryProcessingStage(context, options.to_stage, metadata_snapshot, query_info);
-
-        /// TODO how can we make IN index work if we cache parts before selecting a projection?
-        /// XXX Used for IN set index analysis. Is this a proper way?
-        if (query_info.projection)
-            metadata_snapshot->selected_projection = query_info.projection->desc;
+        auto & query = getSelectQuery();
+        query_analyzer->makeSetsForIndex(query.where());
+        query_analyzer->makeSetsForIndex(query.prewhere());
+        query_info.sets = query_analyzer->getPreparedSets();
     }
+
+    if (storage && !options.only_analyze)
+        from_stage = storage->getQueryProcessingStage(context, options.to_stage, metadata_snapshot, query_info);
 
     /// Do I need to perform the first part of the pipeline?
     /// Running on remote servers during distributed processing or if query is not distributed.
@@ -1729,7 +1732,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         syntax_analyzer_result->optimize_trivial_count
         && (settings.max_parallel_replicas <= 1)
         && storage
-        && storage->getName() != "MaterializeMySQL"
+        && storage->getName() != "MaterializedMySQL"
         && !row_policy_filter
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
@@ -1882,8 +1885,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        // TODO figure out how to make set for projections
-        query_info.sets = query_analyzer->getPreparedSets();
         auto & prewhere_info = analysis_result.prewhere_info;
 
         if (prewhere_info)

@@ -33,6 +33,12 @@ struct Settings;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 
+enum class JoinTableSide
+{
+    Left,
+    Right
+};
+
 class TableJoin
 {
 
@@ -67,9 +73,12 @@ private:
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
+    ASTs on_filter_condition_asts_left;
+    ASTs on_filter_condition_asts_right;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
+
     ASTTableJoin table_join;
 
     ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
@@ -150,6 +159,23 @@ public:
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
+    /* Conditions for left/right table from JOIN ON section.
+     *
+     * Conditions for left and right tables stored separately and united with 'and' function into one column.
+     * For example for query:
+     * SELECT ... JOIN ... ON t1.id == t2.id AND expr11(t1) AND expr21(t2) AND expr12(t1) AND expr22(t2)
+     *
+     * We will build two new ASTs: `expr11(t1) AND expr12(t1)`, `expr21(t2) AND expr22(t2)`
+     * Such columns will be added and calculated for left and right tables respectively.
+     * Only rows where conditions are met (where new columns have non-zero value) will be joined.
+     *
+     * NOTE: non-equi condition containing columns from different tables (like `... ON t1.id = t2.id AND t1.val > t2.val)
+     *     doesn't supported yet, it can be added later.
+     */
+    void addJoinCondition(const ASTPtr & ast, bool is_left);
+    ASTPtr joinConditionColumn(JoinTableSide side) const;
+    std::pair<String, String> joinConditionColumnNames() const;
+
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
 
@@ -201,8 +227,6 @@ public:
     /// StorageJoin overrides key names (cause of different names qualification)
     void setRightKeys(const Names & keys) { key_names_right = keys; }
 
-    /// Split key and other columns by keys name list
-    void splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const;
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;

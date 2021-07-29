@@ -43,6 +43,16 @@ namespace
             UInt8 type = Field::Types::Null;
             hash.update(type);
         }
+        void operator() (const NegativeInfinity &) const
+        {
+            UInt8 type = Field::Types::NegativeInfinity;
+            hash.update(type);
+        }
+        void operator() (const PositiveInfinity &) const
+        {
+            UInt8 type = Field::Types::PositiveInfinity;
+            hash.update(type);
+        }
         void operator() (const UInt64 & x) const
         {
             UInt8 type = Field::Types::UInt64;
