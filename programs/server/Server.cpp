@@ -1047,6 +1047,7 @@ if (ThreadFuzzer::instance().isEffective())
         loadMetadataSystem(global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
+        global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
