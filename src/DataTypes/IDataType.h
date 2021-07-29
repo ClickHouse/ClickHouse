@@ -417,7 +417,7 @@ template <typename T>
 inline bool isColumnedAsNumber(const T & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt() || which.isFloat() || which.isDate() || which.isDateTime() || which.isDateTime64() || which.isUUID();
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isUUID();
 }
 
 template <typename T>
@@ -484,6 +484,7 @@ template <typename T>
 class DataTypeNumber;
 
 class DataTypeDate;
+class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
 
@@ -493,6 +494,7 @@ template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
 
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
 

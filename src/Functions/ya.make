@@ -39,6 +39,7 @@ PEERDIR(
 
 SRCS(
     CRC.cpp
+    FunctionChar.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
     FunctionFile.cpp
@@ -46,7 +47,10 @@ SRCS(
     FunctionJoinGet.cpp
     FunctionSQLJSON.cpp
     FunctionsAES.cpp
-    FunctionsCoding.cpp
+    FunctionsBinaryRepr.cpp
+    FunctionsBitToArray.cpp
+    FunctionsCodingIP.cpp
+    FunctionsCodingUUID.cpp
     FunctionsConversion.cpp
     FunctionsEmbeddedDictionaries.cpp
     FunctionsExternalDictionaries.cpp
@@ -209,7 +213,6 @@ SRCS(
     bitTestAny.cpp
     bitWrapperFunc.cpp
     bitXor.cpp
-    bitmaskToList.cpp
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
@@ -229,6 +232,8 @@ SRCS(
     countSubstringsCaseInsensitive.cpp
     countSubstringsCaseInsensitiveUTF8.cpp
     currentDatabase.cpp
+    currentProfiles.cpp
+    currentRoles.cpp
     currentUser.cpp
     dateDiff.cpp
     dateName.cpp
@@ -316,6 +321,7 @@ SRCS(
     ilike.cpp
     in.cpp
     indexHint.cpp
+    initialQueryID.cpp
     initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -409,6 +415,7 @@ SRCS(
     positionCaseInsensitiveUTF8.cpp
     positionUTF8.cpp
     pow.cpp
+    queryID.cpp
     rand.cpp
     rand64.cpp
     randConstant.cpp
@@ -474,6 +481,7 @@ SRCS(
     sleepEachRow.cpp
     sqrt.cpp
     startsWith.cpp
+    stringCutToZero.cpp
     stringToH3.cpp
     substring.cpp
     subtractDays.cpp

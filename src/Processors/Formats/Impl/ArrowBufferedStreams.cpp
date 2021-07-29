@@ -6,7 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <arrow/buffer.h>
-#include <arrow/io/api.h>
+#include <arrow/io/memory.h>
 #include <arrow/result.h>
 
 #include <sys/stat.h>
