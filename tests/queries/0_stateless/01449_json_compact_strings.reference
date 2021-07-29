@@ -14,7 +14,7 @@
 			"type": "Array(UInt8)"
 		},
 		{
-			"name": "tuple(1, 'a')",
+			"name": "(1, 'a')",
 			"type": "Tuple(UInt8, String)"
 		},
 		{

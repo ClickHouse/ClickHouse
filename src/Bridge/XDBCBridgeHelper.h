@@ -5,16 +5,14 @@
 #include <Interpreters/Context.h>
 #include <Access/AccessType.h>
 #include <Parsers/IdentifierQuotingStyle.h>
-#include <Poco/File.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Poco/Path.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <common/logger_useful.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <Bridge/IBridgeHelper.h>
 
 #if !defined(ARCADIA_BUILD)

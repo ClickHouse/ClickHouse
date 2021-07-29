@@ -9,7 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ArenaAllocator.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <bitset>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -17,6 +17,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -76,7 +78,7 @@ public:
     AggregateFunctionRetention(const DataTypes & arguments)
         : IAggregateFunctionDataHelper<AggregateFunctionRetentionData, AggregateFunctionRetention>(arguments, {})
     {
-        for (const auto i : ext::range(0, arguments.size()))
+        for (const auto i : collections::range(0, arguments.size()))
         {
             auto cond_arg = arguments[i].get();
             if (!isUInt8(cond_arg))
@@ -98,7 +100,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        for (const auto i : ext::range(0, events_size))
+        for (const auto i : collections::range(0, events_size))
         {
             auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)

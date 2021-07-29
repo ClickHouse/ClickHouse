@@ -508,7 +508,7 @@ void CurrentThread::detachQueryIfNotDetached()
 }
 
 
-CurrentThread::QueryScope::QueryScope(ContextPtr query_context)
+CurrentThread::QueryScope::QueryScope(ContextMutablePtr query_context)
 {
     CurrentThread::initializeQuery();
     CurrentThread::attachQueryContext(query_context);

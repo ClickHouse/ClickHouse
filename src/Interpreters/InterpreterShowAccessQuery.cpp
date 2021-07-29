@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Access/AccessFlags.h>
 #include <Access/AccessControlManager.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
@@ -53,7 +53,7 @@ std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
     getContext()->checkAccess(AccessType::SHOW_ACCESS);
 
     std::vector<AccessEntityPtr> entities;
-    for (auto type : ext::range(EntityType::MAX))
+    for (auto type : collections::range(EntityType::MAX))
     {
         auto ids = access_control.findAll(type);
         for (const auto & id : ids)

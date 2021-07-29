@@ -1,8 +1,9 @@
 #include "SharedLibraryHandler.h"
 
-#include <ext/scope_guard.h>
-#include <IO/ReadHelpers.h>
+#include <common/scope_guard.h>
+#include <common/bit_cast.h>
 #include <common/find_symbols.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -114,7 +115,7 @@ BlockInputStreamPtr SharedLibraryHandler::loadAll()
 
 BlockInputStreamPtr SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids)
 {
-    const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
+    const ClickHouseLibrary::VectorUInt64 ids_data{bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
 
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(attributes_names.size());
     ClickHouseLibrary::CStrings columns_pass{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), attributes_names.size()};

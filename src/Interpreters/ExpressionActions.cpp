@@ -51,7 +51,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     actions_dag = actions_dag_->clone();
 
 #if USE_EMBEDDED_COMPILER
-    if (settings.compile_expressions)
+    if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
         actions_dag->compileExpressions(settings.min_count_to_compile_expression);
 #endif
 
@@ -531,11 +531,12 @@ Names ExpressionActions::getRequiredColumns() const
 
 bool ExpressionActions::hasArrayJoin() const
 {
-    for (const auto & action : actions)
-        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-            return true;
+    return getActionsDAG().hasArrayJoin();
+}
 
-    return false;
+void ExpressionActions::assertDeterministic() const
+{
+    getActionsDAG().assertDeterministic();
 }
 
 
@@ -810,6 +811,9 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     NameSet required_names = required_output_;
     for (const auto & name : analyzed_join->keyNamesLeft())
         required_names.emplace(name);
+
+    if (ASTPtr extra_condition_column = analyzed_join->joinConditionColumn(JoinTableSide::Left))
+        required_names.emplace(extra_condition_column->getColumnName());
 
     for (const auto & column : required_columns)
     {

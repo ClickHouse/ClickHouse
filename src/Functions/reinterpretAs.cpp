@@ -259,7 +259,9 @@ private:
     {
         return type.isUInt() ||
             type.isInt() ||
-            type.isDateOrDateTime() ||
+            type.isDate() ||
+            type.isDateTime() ||
+            type.isDateTime64() ||
             type.isFloat() ||
             type.isUUID() ||
             type.isDecimal();

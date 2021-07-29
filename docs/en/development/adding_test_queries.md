@@ -105,11 +105,11 @@ clickhouse-client -nmT < tests/queries/0_stateless/01521_dummy_test.sql | tee te
 
 5) ensure everything is correct, if the test output is incorrect (due to some bug for example), adjust the reference file using text editor.
 
-####  How to create good test
+#### How to create a good test
 
-- test should be
+- A test should be
 	- minimal - create only tables related to tested functionality, remove unrelated columns and parts of query
-	- fast - should not take longer than few seconds (better subseconds)
+	- fast - should not take longer than a few seconds (better subseconds)
 	- correct - fails then feature is not working
         - deterministic
 	- isolated / stateless 
@@ -120,11 +120,21 @@ clickhouse-client -nmT < tests/queries/0_stateless/01521_dummy_test.sql | tee te
 - don't switch databases (unless necessary)
 - you can create several table replicas on the same node if needed
 - you can use one of the test cluster definitions when needed (see system.clusters)
-- use `number` / `numbers_mt` / `zeros` / `zeros_mt` and similar for queries / to initialize data when appliable
+- use `number` / `numbers_mt` / `zeros` / `zeros_mt` and similar for queries / to initialize data when applicable
 - clean up the created objects after test and before the test (DROP IF EXISTS) - in case of some dirty state 
 - prefer sync mode of operations (mutations, merges, etc.)
 - use other SQL files in the `0_stateless` folder as an example
-- ensure the feature / feature combination you want to tests is not covered yet with existing tests
+- ensure the feature / feature combination you want to test is not yet covered with existing tests
+
+#### Test naming rules
+
+It's important to name tests correctly, so one could turn some tests subset off in clickhouse-test invocation.
+
+| Tester flag| What should be in test name | When flag should be added |
+|---|---|---|---|
+| `--[no-]zookeeper`| "zookeeper" or "replica" | Test uses tables from ReplicatedMergeTree family |
+| `--[no-]shard` | "shard" or "distributed" or "global"| Test using connections to 127.0.0.2 or similar |
+| `--[no-]long` | "long" or "deadlock" or "race" | Test runs longer than 60 seconds |
 
 #### Commit / push / create PR.
 

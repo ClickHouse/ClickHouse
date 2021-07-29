@@ -3,9 +3,10 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Poco/Path.h>
 #include <Poco/URI.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -87,10 +88,10 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand() const
 
     const auto & config = getConfig();
     /// Path to executable folder
-    Poco::Path path{config.getString("application.dir", "/usr/bin")};
+    fs::path path(config.getString("application.dir", "/usr/bin"));
 
     std::vector<std::string> cmd_args;
-    path.setFileName(serviceFileName());
+    path /= serviceFileName();
 
     cmd_args.push_back("--http-port");
     cmd_args.push_back(std::to_string(config.getUInt(configPrefix() + ".port", getDefaultPort())));
@@ -126,7 +127,7 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand() const
 
     LOG_TRACE(getLog(), "Starting {}", serviceAlias());
 
-    return ShellCommand::executeDirect(path.toString(), cmd_args, ShellCommandDestructorStrategy(true));
+    return ShellCommand::executeDirect(path.string(), cmd_args, ShellCommandDestructorStrategy(true));
 }
 
 }

@@ -27,8 +27,6 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-class CompiledExpressionCache;
-
 namespace JSONBuilder
 {
     class JSONMap;
@@ -85,12 +83,12 @@ public:
         ExecutableFunctionPtr function;
         /// If function is a compiled statement.
         bool is_function_compiled = false;
+        /// It is deterministic (See IFunction::isDeterministic).
+        /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
+        bool is_deterministic = true;
 
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
-        /// Some functions like `ignore()` always return constant but can't be replaced by constant it.
-        /// We calculate such constants in order to avoid unnecessary materialization, but prohibit it's folding.
-        bool allow_constant_folding = true;
 
         void toTree(JSONBuilder::JSONMap & map) const;
     };
@@ -121,6 +119,7 @@ public:
     const NodeRawConstPtrs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
+    Names getRequiredColumnsNames() const;
     ColumnsWithTypeAndName getResultColumns() const;
     NamesAndTypesList getNamesAndTypesList() const;
 
@@ -179,6 +178,7 @@ public:
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
+    void assertDeterministic() const; /// Throw if not isDeterministic.
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression);
@@ -214,6 +214,7 @@ public:
     /// Conversion should be possible with only usage of CAST function and renames.
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
     /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
+    /// @param new_names - Output parameter for new column names when add_casted_columns is used.
     static ActionsDAGPtr makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,

@@ -167,7 +167,8 @@ Pipe StorageDictionary::read(
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, local_context);
+    auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
+    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
     auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
     /// TODO: update dictionary interface for processors.
     return Pipe(std::make_shared<SourceFromInputStream>(stream));
@@ -185,7 +186,7 @@ void StorageDictionary::startup()
     bool lazy_load = global_context->getConfigRef().getBool("dictionaries_lazy_load", true);
     if (!lazy_load)
     {
-        auto & external_dictionaries_loader = global_context->getExternalDictionariesLoader();
+        const auto & external_dictionaries_loader = global_context->getExternalDictionariesLoader();
 
         /// reloadConfig() is called here to force loading the dictionary.
         external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
@@ -215,23 +216,26 @@ LoadablesConfigurationPtr StorageDictionary::getConfiguration() const
 
 void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 {
+    auto old_table_id = getStorageID();
+    IStorage::renameInMemory(new_table_id);
+
     if (configuration)
     {
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
 
-        auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
-        external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
+        const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
+        auto result = external_dictionaries_loader.getLoadResult(old_table_id.getInternalDictionaryName());
 
-        auto result = external_dictionaries_loader.getLoadResult(getStorageID().getInternalDictionaryName());
-        if (!result.object)
-            return;
+        if (result.object)
+        {
+            const auto dictionary = std::static_pointer_cast<const IDictionary>(result.object);
+            dictionary->updateDictionaryName(new_table_id);
+        }
 
-        const auto dictionary = std::static_pointer_cast<const IDictionary>(result.object);
-        dictionary->updateDictionaryName(new_table_id);
+        external_dictionaries_loader.reloadConfig(old_table_id.getInternalDictionaryName());
+        dictionary_name = new_table_id.getFullNameNotQuoted();
     }
-
-    IStorage::renameInMemory(new_table_id);
 }
 
 void registerStorageDictionary(StorageFactory & factory)

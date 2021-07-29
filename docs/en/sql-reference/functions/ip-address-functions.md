@@ -48,7 +48,7 @@ LIMIT 10
 └────────────────┴───────┘
 ```
 
-Since using ‘xxx’ is highly unusual, this may be changed in the future. We recommend that you don’t rely on the exact format of this fragment.
+Since using ‘xxx’ is highly unusual, this may be changed in the future. We recommend that you do not rely on the exact format of this fragment.
 
 ### IPv6NumToString(x) {#ipv6numtostringx}
 

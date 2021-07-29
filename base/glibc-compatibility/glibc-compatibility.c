@@ -8,13 +8,6 @@
 extern "C" {
 #endif
 
-#include <pthread.h>
-
-size_t __pthread_get_minstack(const pthread_attr_t * attr)
-{
-    return 1048576;        /// This is a guess. Don't sure it is correct.
-}
-
 #include <signal.h>
 #include <unistd.h>
 #include <string.h>
@@ -140,6 +133,8 @@ int __open_2(const char *path, int oflag)
     return open(path, oflag);
 }
 
+
+#include <pthread.h>
 
 /// No-ops.
 int pthread_setname_np(pthread_t thread, const char *name) { return 0; }

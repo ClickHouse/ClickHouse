@@ -12,14 +12,13 @@ namespace DB
 
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
-using DisksMap = std::map<String, DiskPtr>;
 
 /// Parse .xml configuration and store information about disks
 /// Mostly used for introspection.
 class DiskSelector
 {
 public:
-    DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextConstPtr context);
+    DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context);
     DiskSelector(const DiskSelector & from) : disks(from.disks) { }
 
     DiskSelectorPtr updateFromConfig(

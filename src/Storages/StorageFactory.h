@@ -39,16 +39,16 @@ public:
         /// Relative to <path> from server config (possibly <path> of some <disk> of some <volume> for *MergeTree)
         const String & relative_data_path;
         const StorageID & table_id;
-        ContextWeakPtr local_context;
-        ContextWeakPtr context;
+        ContextWeakMutablePtr local_context;
+        ContextWeakMutablePtr context;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         bool attach;
         bool has_force_restore_data_flag;
         const String & comment;
 
-        ContextPtr getContext() const;
-        ContextPtr getLocalContext() const;
+        ContextMutablePtr getContext() const;
+        ContextMutablePtr getLocalContext() const;
     };
 
     /// Analog of the IStorage::supports*() helpers
@@ -81,8 +81,8 @@ public:
     StoragePtr get(
         const ASTCreateQuery & query,
         const String & relative_data_path,
-        ContextPtr local_context,
-        ContextPtr context,
+        ContextMutablePtr local_context,
+        ContextMutablePtr context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         bool has_force_restore_data_flag) const;

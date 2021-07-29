@@ -72,7 +72,9 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
     }
 
     const Names & internal_columns = InterpreterSelectQuery(
-        temp_internal_select, getContext(), SelectQueryOptions().analyze()).getSampleBlock().getNames();
+        temp_internal_select,
+        const_pointer_cast<Context>(getContext()),
+        SelectQueryOptions().analyze()).getSampleBlock().getNames();
 
     if (rewriteSubquery(*temp_select_query, internal_columns))
     {

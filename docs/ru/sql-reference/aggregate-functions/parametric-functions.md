@@ -116,7 +116,7 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 -   `.*` — соответствует любому количеству событий. Для этого элемента шаблона не надо задавать условия.
 
--   `(?t operator value)` — устанавливает время в секундах, которое должно разделять два события. Например, шаблон `(?1)(?t>1800)(?2)` соответствует событиям, которые произошли более чем через 1800 секунд друг от друга. Между этими событиями может находиться произвольное количество любых событий. Операторы могут быть `>=`, `>`, `<`, `<=`.
+-   `(?t operator value)` — устанавливает время в секундах, которое должно разделять два события. Например, шаблон `(?1)(?t>1800)(?2)` соответствует событиям, которые произошли более чем через 1800 секунд друг от друга. Между этими событиями может находиться произвольное количество любых событий. Операторы могут быть `>=`, `>`, `<`, `<=`, `==`.
 
 **Примеры**
 
@@ -496,3 +496,258 @@ FROM
 Решение: пишем в запросе GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
 
+## sequenceNextNode {#sequenceNextNode}
+
+Возвращает значение следующего события, соответствующего цепочке событий.
+
+_Экспериментальная функция, чтобы включить ее, выполните: `SET allow_experimental_funnel_functions = 1`._
+
+**Синтаксис**
+
+``` sql
+sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event1, event2, event3, ...)
+```
+
+**Параметры**
+
+-   `direction` — используется для навигации по направлениям.
+    - forward — двигаться вперед.
+    - backward — двигаться назад.
+
+-   `base` — используется для задания начальной точки.
+    - head — установить начальную точку на первое событие цепочки.
+    - tail — установить начальную точку на последнее событие цепочки.
+    - first_match — установить начальную точку на первое соответствующее событие `event1`.
+    - last_match — установить начальную точку на последнее соответствующее событие `event1`.
+    
+**Аргументы**
+
+-   `timestamp` — название столбца, содержащего `timestamp`. Поддерживаемые типы данных: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) и другие беззнаковые целые типы.
+-   `event_column` — название столбца, содержащего значение следующего возвращаемого события. Поддерживаемые типы данных: [String](../../sql-reference/data-types/string.md) и [Nullable(String)](../../sql-reference/data-types/nullable.md).
+-   `base_condition` — условие, которому должна соответствовать исходная точка.
+-   `event1`, `event2`, ... — условия, описывающие цепочку событий. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемые значения**
+
+-  `event_column[next_index]` — если есть совпадение с шаблоном и существует следующее значение.
+-  `NULL` — если нет совпадений с шаблоном или следующего значения не существует.
+
+Тип: [Nullable(String)](../../sql-reference/data-types/nullable.md).
+
+**Пример**
+
+Функцию можно использовать, если есть цепочка событий A->B->C->D->E, и вы хотите определить событие, следующее за B->C, то есть D.
+
+Запрос ищет событие после A->B:
+
+``` sql
+CREATE TABLE test_flow (
+    dt DateTime, 
+    id int, 
+    page String)
+ENGINE = MergeTree() 
+PARTITION BY toYYYYMMDD(dt) 
+ORDER BY id;
+
+INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'D') (5, 1, 'E');
+
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'A', page = 'A', page = 'B') as next_flow FROM test_flow GROUP BY id;
+```
+
+Результат:
+
+``` text
+┌─id─┬─next_flow─┐
+│  1 │ C         │
+└────┴───────────┘
+```
+
+**Поведение для `forward` и `head`**
+
+``` sql
+ALTER TABLE test_flow DELETE WHERE 1 = 1 settings mutations_sync = 1;
+
+INSERT INTO test_flow VALUES (1, 1, 'Home') (2, 1, 'Gift') (3, 1, 'Exit');
+INSERT INTO test_flow VALUES (1, 2, 'Home') (2, 2, 'Home') (3, 2, 'Gift') (4, 2, 'Basket');
+INSERT INTO test_flow VALUES (1, 3, 'Gift') (2, 3, 'Home') (3, 3, 'Gift') (4, 3, 'Basket');
+```
+
+``` sql
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'Home', page = 'Home', page = 'Gift') FROM test_flow GROUP BY id;
+ 
+                  dt   id   page
+ 1970-01-01 09:00:01    1   Home // Исходная точка, совпадение с Home
+ 1970-01-01 09:00:02    1   Gift // Совпадение с Gift
+ 1970-01-01 09:00:03    1   Exit // Результат 
+
+ 1970-01-01 09:00:01    2   Home // Исходная точка, совпадение с Home
+ 1970-01-01 09:00:02    2   Home // Несовпадение с Gift
+ 1970-01-01 09:00:03    2   Gift
+ 1970-01-01 09:00:04    2   Basket    
+ 
+ 1970-01-01 09:00:01    3   Gift // Исходная точка, несовпадение с Home
+ 1970-01-01 09:00:02    3   Home      
+ 1970-01-01 09:00:03    3   Gift      
+ 1970-01-01 09:00:04    3   Basket    
+```
+
+**Поведение для `backward` и `tail`**
+
+``` sql
+SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page = 'Basket', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift
+1970-01-01 09:00:03    1   Exit // Исходная точка, несовпадение с Basket
+                                     
+1970-01-01 09:00:01    2   Home 
+1970-01-01 09:00:02    2   Home // Результат
+1970-01-01 09:00:03    2   Gift // Совпадение с Gift
+1970-01-01 09:00:04    2   Basket // Исходная точка, совпадение с Basket
+                                     
+1970-01-01 09:00:01    3   Gift
+1970-01-01 09:00:02    3   Home // Результат
+1970-01-01 09:00:03    3   Gift // Исходная точка, совпадение с Gift
+1970-01-01 09:00:04    3   Basket // Исходная точка, совпадение с Basket
+```
+
+
+**Поведение для `forward` и `first_match`**
+
+``` sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift // Исходная точка
+1970-01-01 09:00:03    1   Exit // Результат
+                                     
+1970-01-01 09:00:01    2   Home 
+1970-01-01 09:00:02    2   Home 
+1970-01-01 09:00:03    2   Gift // Исходная точка
+1970-01-01 09:00:04    2   Basket  Результат
+                                     
+1970-01-01 09:00:01    3   Gift // Исходная точка
+1970-01-01 09:00:02    3   Home // Результат
+1970-01-01 09:00:03    3   Gift   
+1970-01-01 09:00:04    3   Basket    
+```
+
+``` sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift // Исходная точка
+1970-01-01 09:00:03    1   Exit // Несовпадение с Home
+                                     
+1970-01-01 09:00:01    2   Home 
+1970-01-01 09:00:02    2   Home 
+1970-01-01 09:00:03    2   Gift // Исходная точка
+1970-01-01 09:00:04    2   Basket // Несовпадение с Home
+                                     
+1970-01-01 09:00:01    3   Gift // Исходная точка
+1970-01-01 09:00:02    3   Home // Совпадение с Home
+1970-01-01 09:00:03    3   Gift // Результат
+1970-01-01 09:00:04    3   Basket    
+```
+
+
+**Поведение для `backward` и `last_match`**
+
+``` sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home // Результат
+1970-01-01 09:00:02    1   Gift // Исходная точка
+1970-01-01 09:00:03    1   Exit 
+                                     
+1970-01-01 09:00:01    2   Home 
+1970-01-01 09:00:02    2   Home // Результат
+1970-01-01 09:00:03    2   Gift // Исходная точка
+1970-01-01 09:00:04    2   Basket    
+                                     
+1970-01-01 09:00:01    3   Gift 
+1970-01-01 09:00:02    3   Home // Результат
+1970-01-01 09:00:03    3   Gift // Исходная точка
+1970-01-01 09:00:04    3   Basket    
+```
+
+``` sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home // Совпадение с Home, результат `Null`
+1970-01-01 09:00:02    1   Gift // Исходная точка
+1970-01-01 09:00:03    1   Exit 
+                                     
+1970-01-01 09:00:01    2   Home // Результат
+1970-01-01 09:00:02    2   Home // Совпадение с Home
+1970-01-01 09:00:03    2   Gift // Исходная точка
+1970-01-01 09:00:04    2   Basket    
+                                     
+1970-01-01 09:00:01    3   Gift // Результат
+1970-01-01 09:00:02    3   Home // Совпадение с Home
+1970-01-01 09:00:03    3   Gift // Исходная точка 
+1970-01-01 09:00:04    3   Basket    
+```
+
+
+**Поведение для `base_condition`**
+
+``` sql
+CREATE TABLE test_flow_basecond
+(
+    `dt` DateTime,
+    `id` int,
+    `page` String,
+    `ref` String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(dt)
+ORDER BY id;
+
+INSERT INTO test_flow_basecond VALUES (1, 1, 'A', 'ref4') (2, 1, 'A', 'ref3') (3, 1, 'B', 'ref2') (4, 1, 'B', 'ref1');
+```
+
+``` sql
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, ref = 'ref1', page = 'A') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref 
+ 1970-01-01 09:00:01    1   A      ref4 // Начало не может быть исходной точкой, поскольку столбец ref не соответствует 'ref1'.
+ 1970-01-01 09:00:02    1   A      ref3 
+ 1970-01-01 09:00:03    1   B      ref2 
+ 1970-01-01 09:00:04    1   B      ref1 
+ ```
+
+``` sql
+SELECT id, sequenceNextNode('backward', 'tail')(dt, page, ref = 'ref4', page = 'B') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref 
+ 1970-01-01 09:00:01    1   A      ref4
+ 1970-01-01 09:00:02    1   A      ref3 
+ 1970-01-01 09:00:03    1   B      ref2 
+ 1970-01-01 09:00:04    1   B      ref1 // Конец не может быть исходной точкой, поскольку столбец ref не соответствует 'ref4'.
+```
+
+``` sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, ref = 'ref3', page = 'A') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref 
+ 1970-01-01 09:00:01    1   A      ref4 // Эта строка не может быть исходной точкой, поскольку столбец ref не соответствует 'ref3'.
+ 1970-01-01 09:00:02    1   A      ref3 // Исходная точка
+ 1970-01-01 09:00:03    1   B      ref2 // Результат
+ 1970-01-01 09:00:04    1   B      ref1 
+```
+
+``` sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, ref = 'ref2', page = 'B') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref 
+ 1970-01-01 09:00:01    1   A      ref4
+ 1970-01-01 09:00:02    1   A      ref3 // Результат
+ 1970-01-01 09:00:03    1   B      ref2 // Исходная точка
+ 1970-01-01 09:00:04    1   B      ref1 // Эта строка не может быть исходной точкой, поскольку столбец ref не соответствует 'ref2'. 
+```

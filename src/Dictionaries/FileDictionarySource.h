@@ -17,7 +17,7 @@ class FileDictionarySource final : public IDictionarySource
 {
 public:
     FileDictionarySource(const std::string & filepath_, const std::string & format_,
-        Block & sample_block_, ContextPtr context_, bool check_config);
+        Block & sample_block_, ContextPtr context_, bool created_from_ddl);
 
     FileDictionarySource(const FileDictionarySource & other);
 

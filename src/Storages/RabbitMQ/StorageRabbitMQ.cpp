@@ -1,5 +1,4 @@
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -15,7 +14,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
-#include <Storages/RabbitMQ/RabbitMQBlockOutputStream.h>
+#include <Storages/RabbitMQ/RabbitMQSink.h>
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/StorageFactory.h>
@@ -43,6 +42,7 @@ static const auto RETRIES_MAX = 20;
 static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
+static const auto BACKOFF_TRESHOLD = 32000;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
@@ -100,6 +100,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , semaphore(0, num_consumers)
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
+        , milliseconds_to_wait(RESCHEDULE_MS)
 {
     event_handler = std::make_shared<RabbitMQHandler>(loop.getLoop(), log);
     restoreConnection(false);
@@ -263,6 +264,9 @@ size_t StorageRabbitMQ::getMaxBlockSize() const
 
 void StorageRabbitMQ::initRabbitMQ()
 {
+    if (stream_cancelled)
+        return;
+
     if (use_user_setup)
     {
         queues.emplace_back(queue_base);
@@ -277,7 +281,7 @@ void StorageRabbitMQ::initRabbitMQ()
     initExchange(rabbit_channel);
     bindExchange(rabbit_channel);
 
-    for (const auto i : ext::range(0, num_queues))
+    for (const auto i : collections::range(0, num_queues))
         bindQueue(i + 1, rabbit_channel);
 
     LOG_TRACE(log, "RabbitMQ setup completed");
@@ -640,9 +644,9 @@ Pipe StorageRabbitMQ::read(
 }
 
 
-BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    return std::make_shared<RabbitMQBlockOutputStream>(*this, metadata_snapshot, local_context);
+    return std::make_shared<RabbitMQSink>(*this, metadata_snapshot, local_context);
 }
 
 
@@ -702,10 +706,6 @@ void StorageRabbitMQ::shutdown()
     while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
         event_handler->iterateLoop();
 
-    /// Should actually force closure, if not yet closed, but it generates distracting error logs
-    //if (!connection->closed())
-    //    connection->close(true);
-
     for (size_t i = 0; i < num_created_consumers; ++i)
         popReadBuffer();
 }
@@ -717,6 +717,22 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
 {
     if (use_user_setup)
         return;
+
+    if (!event_handler->connectionRunning())
+    {
+        String queue_names;
+        for (const auto & queue : queues)
+        {
+            if (!queue_names.empty())
+                queue_names += ", ";
+            queue_names += queue;
+        }
+        LOG_WARNING(log,
+                    "RabbitMQ clean up not done, because there is no connection in table's shutdown."
+                    "There are {} queues ({}), which might need to be deleted manually. Exchanges will be auto-deleted",
+                    queues.size(), queue_names);
+        return;
+    }
 
     AMQP::TcpChannel rabbit_channel(connection.get());
     for (const auto & queue : queues)
@@ -852,7 +868,17 @@ void StorageRabbitMQ::streamingToViewsFunc()
                     LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
                     if (streamToViews())
+                    {
+                        /// Reschedule with backoff.
+                        if (milliseconds_to_wait < BACKOFF_TRESHOLD)
+                            milliseconds_to_wait *= 2;
+                        event_handler->updateLoopState(Loop::STOP);
                         break;
+                    }
+                    else
+                    {
+                        milliseconds_to_wait = RESCHEDULE_MS;
+                    }
 
                     auto end_time = std::chrono::steady_clock::now();
                     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
@@ -871,9 +897,8 @@ void StorageRabbitMQ::streamingToViewsFunc()
         }
     }
 
-    /// Wait for attached views
     if (!stream_cancelled)
-        streaming_task->scheduleAfter(RESCHEDULE_MS);
+        streaming_task->scheduleAfter(milliseconds_to_wait);
 }
 
 
@@ -1019,6 +1044,7 @@ bool StorageRabbitMQ::streamToViews()
         looping_task->activateAndSchedule();
     }
 
+    /// Do not reschedule, do not stop event loop.
     return false;
 }
 

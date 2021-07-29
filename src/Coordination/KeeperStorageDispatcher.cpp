@@ -226,6 +226,10 @@ bool KeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
     request_info.session_id = session_id;
 
     std::lock_guard lock(push_request_mutex);
+
+    if (shutdown_called)
+        return false;
+
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
         requests_queue->push(std::move(request_info));
@@ -234,7 +238,7 @@ bool KeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
     return true;
 }
 
-void KeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config)
+void KeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
     int myid = config.getInt("keeper_server.server_id");
@@ -246,7 +250,8 @@ void KeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<KeeperServer>(myid, coordination_settings, config, responses_queue, snapshots_queue);
+    server = std::make_unique<KeeperServer>(
+        myid, coordination_settings, config, responses_queue, snapshots_queue, standalone_keeper);
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
@@ -315,6 +320,8 @@ void KeeperStorageDispatcher::shutdown()
                 break;
             }
         }
+
+        std::lock_guard lock(session_to_response_callback_mutex);
         session_to_response_callback.clear();
     }
     catch (...)

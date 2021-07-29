@@ -3,7 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/Buffer_fwd.h>
@@ -21,9 +21,9 @@ namespace DB
 
 using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
-class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
+class StorageRabbitMQ final: public shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageRabbitMQ>;
+    friend struct shared_ptr_helper<StorageRabbitMQ>;
 
 public:
     std::string getName() const override { return "RabbitMQ"; }
@@ -50,7 +50,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(
+    SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context) override;
@@ -79,7 +79,7 @@ protected:
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
 
 private:
-    ContextPtr rabbitmq_context;
+    ContextMutablePtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
 
     const String exchange_name;
@@ -135,6 +135,8 @@ private:
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder looping_task;
     BackgroundSchedulePool::TaskHolder connection_task;
+
+    uint64_t milliseconds_to_wait;
 
     std::atomic<bool> stream_cancelled{false};
     size_t read_attempts = 0;
