@@ -480,30 +480,18 @@ private:
 
     static void validatePartitionKey(const StringRef & str)
     {
-        const char * end = str.data + str.size;
-
-        const char * first_symbol = find_first_symbols<
-                '\x00', '\x01', '\x02', '\x03', '\x04', '\x05', '\x06', '\x07',
-                '\x08', '\x09', '\x0A', '\x0B', '\x0C', '\x0D', '\x0E', '\x0F'>(str.data, end);
-        if (first_symbol == end)
+        for (const char * i = str.data; i != str.data + str.size; ++i)
         {
-            first_symbol = find_first_symbols<
-                    '\x10', '\x11', '\x12', '\x13', '\x14', '\x15', '\x16', '\x17',
-                    '\x18', '\x19', '\x1A', '\x1B', '\x1C', '\x1D', '\x1E', '\x1F'
-                >(str.data, end);
-            if (first_symbol == end)
+            if (*i < 0x20 || *i == '{' || *i == '}' || *i == '*' || *i == '?')
             {
-                first_symbol = find_first_symbols<'{', '}', '*', '?'>(str.data, end);
-                if (first_symbol == end)
-                {
-                    return;
-                }
+                /// Need to convert to UInt32 because UInt8 can't be passed to format due to "mixing character types is disallowed".
+                UInt32 invalid_char_byte = static_cast<UInt32>(static_cast<UInt8>(*i));
+                throw DB::Exception(ErrorCodes::CANNOT_PARSE_TEXT,
+                        "Illegal character '\\x{0:02x}' in partition key starting with '{}'.",
+                        invalid_char_byte,
+                        StringRef(str.data, i - str.data));
             }
         }
-
-        /// Need to convert to UInt32 because UInt8 can't be passed to format due to "mixing character types is disallowed".
-        UInt32 invalid_char_byte = static_cast<UInt32>(static_cast<UInt8>(*first_symbol));
-        throw DB::Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Illegal character '\\x{0:02x}' in partition key.", invalid_char_byte);
     }
 };
 
