@@ -259,10 +259,24 @@ private:
     Poco::Logger * log;
     BaseDaemon & daemon;
 
-    void onTerminate(const std::string & message, UInt32 thread_num) const
+    void onTerminate(std::string_view message, UInt32 thread_num) const
     {
+	    size_t pos = message.find('\n');
+
         LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message);
+            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
+
+        while (pos != std::string_view::npos)
+        {
+            ++pos;
+            size_t next_pos = message.find('\n', pos);
+            size_t size = next_pos;
+            if (next_pos != std::string_view::npos)
+                size = next_pos - pos;
+
+            LOG_FATAL(log, "{}", message.substr(pos, size));
+            pos = next_pos;
+        }
     }
 
     void onFault(
