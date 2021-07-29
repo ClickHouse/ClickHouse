@@ -581,9 +581,6 @@ protected:
             case PatternActionType::TimeEqual:
                 if (!find_deterministic_part())
                     return false;
-                break;
-            default:
-                throw Exception{"Unknown PatternActionType", ErrorCodes::LOGICAL_ERROR};
             }
         }
 
