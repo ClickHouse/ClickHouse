@@ -137,6 +137,7 @@ SRCS(
     RequiredSourceColumnsVisitor.cpp
     RewriteAnyFunctionVisitor.cpp
     RewriteCountVariantsVisitor.cpp
+    RewriteFunctionToSubcolumnVisitor.cpp
     RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
     Set.cpp
@@ -154,6 +155,7 @@ SRCS(
     TreeOptimizer.cpp
     TreeRewriter.cpp
     WindowDescription.cpp
+    ZooKeeperLog.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
     castColumn.cpp

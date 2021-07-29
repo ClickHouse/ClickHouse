@@ -21,7 +21,7 @@
 #include <fstream>
 #include <sstream>
 #include <memory>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #include <Poco/Observer.h>
 #include <Poco/AutoPtr.h>

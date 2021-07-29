@@ -13,7 +13,7 @@ toc_title: GRANT
 ## Синтаксис присвоения привилегий {#grant-privigele-syntax}
 
 ```sql
-GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
 - `privilege` — Тип привилегии
@@ -21,18 +21,20 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 - `user` — Пользователь ClickHouse.
 
 `WITH GRANT OPTION` разрешает пользователю или роли выполнять запрос `GRANT`. Пользователь может выдавать только те привилегии, которые есть у него, той же или меньшей области действий.
+`WITH REPLACE OPTION` заменяет все старые привилегии новыми привилегиями для `user` или `role`, Если не указано, добавьте новые привилегии для старых.
 
 
 ## Синтаксис назначения ролей {#assign-role-syntax}
 
 ```sql
-GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
+GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
 ```
 
 - `role` — Роль пользователя ClickHouse.
 - `user` — Пользователь ClickHouse.
 
 `WITH ADMIN OPTION` присваивает привилегию [ADMIN OPTION](#admin-option-privilege) пользователю или роли.
+`WITH REPLACE OPTION` заменяет все старые роли новыми ролями для пользователя `user` или `role`, Если не указано, добавьте новые роли в старые.
 
 ## Использование {#grant-usage}
 
@@ -282,7 +284,7 @@ GRANT INSERT(x,y) ON db.table TO john
             - `ALTER MATERIALIZE TTL`. Уровень: `TABLE`. Алиасы: `MATERIALIZE TTL`
         - `ALTER SETTINGS`. Уровень: `TABLE`. Алиасы: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
         - `ALTER MOVE PARTITION`. Уровень: `TABLE`. Алиасы: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
-        - `ALTER FETCH PARTITION`. Уровень: `TABLE`. Алиасы: `FETCH PARTITION`
+        - `ALTER FETCH PARTITION`. Уровень: `TABLE`. Алиасы: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
         - `ALTER FREEZE PARTITION`. Уровень: `TABLE`. Алиасы: `FREEZE PARTITION`
     - `ALTER VIEW` Уровень: `GROUP`
         - `ALTER VIEW REFRESH `. Уровень: `VIEW`. Алиасы: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
@@ -319,12 +321,11 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Разрешает выполнять запросы [DROP](misc.md#drop) и [DETACH](misc.md#detach-statement) в соответствии со следующей иерархией привилегий:
 
-- `DROP`. Уровень: 
+- `DROP`. Уровень: `GROUP`
     - `DROP DATABASE`. Уровень: `DATABASE`
     - `DROP TABLE`. Уровень: `TABLE`
     - `DROP VIEW`. Уровень: `VIEW`
     - `DROP DICTIONARY`. Уровень: `DICTIONARY`
-
 
 ### TRUNCATE {#grant-truncate}
 
@@ -482,4 +483,3 @@ GRANT INSERT(x,y) ON db.table TO john
 ### ADMIN OPTION {#admin-option-privilege}
 
 Привилегия `ADMIN OPTION` разрешает пользователю назначать свои роли другому пользователю.
-

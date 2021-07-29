@@ -3,7 +3,7 @@
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Util/Application.h>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Server/MySQLHandler.h>
 
 #if USE_SSL

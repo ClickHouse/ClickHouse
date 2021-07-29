@@ -6,7 +6,7 @@
 #include <random>
 #include <functional>
 #include <common/types.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>

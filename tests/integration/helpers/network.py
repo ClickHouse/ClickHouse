@@ -1,7 +1,7 @@
 import os
 import subprocess
 import time
-
+import logging
 import docker
 
 
@@ -127,14 +127,25 @@ class _NetworkManager:
         return cls._instance
 
     def add_iptables_rule(self, **kwargs):
-        cmd = ['iptables', '-I', 'DOCKER-USER', '1']
+        cmd = ['iptables', '--wait', '-I', 'DOCKER-USER', '1']
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
         self._exec_run(cmd, privileged=True)
 
     def delete_iptables_rule(self, **kwargs):
-        cmd = ['iptables', '-D', 'DOCKER-USER']
+        cmd = ['iptables', '--wait', '-D', 'DOCKER-USER']
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
         self._exec_run(cmd, privileged=True)
+
+    @staticmethod
+    def clean_all_user_iptables_rules():
+        for i in range(1000):
+            iptables_iter = i
+            # when rules will be empty, it will return error
+            res = subprocess.run("iptables --wait -D DOCKER-USER 1", shell=True)
+
+            if res.returncode != 0:
+                logging.info("All iptables rules cleared, " + str(iptables_iter) + " iterations, last error: " + str(res.stderr))
+                return
 
     @staticmethod
     def _iptables_cmd_suffix(
@@ -159,12 +170,12 @@ class _NetworkManager:
 
     def __init__(
             self,
-            container_expire_timeout=50, container_exit_timeout=60):
+            container_expire_timeout=50, container_exit_timeout=60, docker_api_version=os.environ.get("DOCKER_API_VERSION")):
 
         self.container_expire_timeout = container_expire_timeout
         self.container_exit_timeout = container_exit_timeout
 
-        self._docker_client = docker.from_env(version=os.environ.get("DOCKER_API_VERSION"))
+        self._docker_client = docker.DockerClient(base_url='unix:///var/run/docker.sock', version=docker_api_version, timeout=600)
 
         self._container = None
 
@@ -207,6 +218,13 @@ class _NetworkManager:
 
         return self._container
 
+    def _exec_run_with_retry(self, cmd, retry_count, **kwargs):
+        for i in range(retry_count):
+            try:
+                self._exec_run(cmd, **kwargs)
+            except subprocess.CalledProcessError as e:
+                logging.error(f"_exec_run failed for {cmd}, {e}")
+
     def _exec_run(self, cmd, **kwargs):
         container = self._ensure_container()
 
@@ -230,6 +248,7 @@ class NetThroughput(object):
             if not check:
                 raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
         except:
+            logging.error("All available interfaces %s", subprocess.check_output("cat /proc/net/dev", shell=True))
             raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
 
         self.current_in = self._get_in_bytes()

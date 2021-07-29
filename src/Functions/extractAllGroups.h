@@ -51,7 +51,7 @@ public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionExtractAllGroups>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractAllGroups>(); }
 
     String getName() const override { return name; }
 

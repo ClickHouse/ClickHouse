@@ -40,14 +40,14 @@ String toQueryStringWithQuote(const std::vector<String> & quote_list)
 namespace DB
 {
 
-std::map<String, NamesAndTypesList> fetchTablesColumnsList(
+std::map<String, ColumnsDescription> fetchTablesColumnsList(
         mysqlxx::PoolWithFailover & pool,
         const String & database_name,
         const std::vector<String> & tables_name,
         const Settings & settings,
         MultiEnum<MySQLDataTypesSupport> type_support)
 {
-    std::map<String, NamesAndTypesList> tables_and_columns;
+    std::map<String, ColumnsDescription> tables_and_columns;
 
     if (tables_name.empty())
         return tables_and_columns;
@@ -62,6 +62,7 @@ std::map<String, NamesAndTypesList> fetchTablesColumnsList(
         { std::make_shared<DataTypeUInt64>(),   "length" },
         { std::make_shared<DataTypeUInt64>(),   "precision" },
         { std::make_shared<DataTypeUInt64>(),   "scale" },
+        { std::make_shared<DataTypeString>(),   "column_comment" },
     };
 
     WriteBufferFromOwnString query;
@@ -72,8 +73,9 @@ std::map<String, NamesAndTypesList> fetchTablesColumnsList(
              " IS_NULLABLE = 'YES' AS is_nullable,"
              " COLUMN_TYPE LIKE '%unsigned' AS is_unsigned,"
              " CHARACTER_MAXIMUM_LENGTH AS length,"
-             " NUMERIC_PRECISION as numeric_precision,"
-             " IF(ISNULL(NUMERIC_SCALE), DATETIME_PRECISION, NUMERIC_SCALE) AS scale" // we know DATETIME_PRECISION as a scale in CH
+             " NUMERIC_PRECISION AS numeric_precision,"
+             " IF(ISNULL(NUMERIC_SCALE), DATETIME_PRECISION, NUMERIC_SCALE) AS scale," // we know DATETIME_PRECISION as a scale in CH
+             " COLUMN_COMMENT AS column_comment"
              " FROM INFORMATION_SCHEMA.COLUMNS"
              " WHERE ";
 
@@ -94,21 +96,26 @@ std::map<String, NamesAndTypesList> fetchTablesColumnsList(
         const auto & char_max_length_col = *block.getByPosition(5).column;
         const auto & precision_col = *block.getByPosition(6).column;
         const auto & scale_col = *block.getByPosition(7).column;
+        const auto & column_comment_col = *block.getByPosition(8).column;
 
         size_t rows = block.rows();
         for (size_t i = 0; i < rows; ++i)
         {
             String table_name = table_name_col[i].safeGet<String>();
-            tables_and_columns[table_name].emplace_back(
-                    column_name_col[i].safeGet<String>(),
-                    convertMySQLDataType(
-                            type_support,
-                            column_type_col[i].safeGet<String>(),
-                            settings.external_table_functions_use_nulls && is_nullable_col[i].safeGet<UInt64>(),
-                            is_unsigned_col[i].safeGet<UInt64>(),
-                            char_max_length_col[i].safeGet<UInt64>(),
-                            precision_col[i].safeGet<UInt64>(),
-                            scale_col[i].safeGet<UInt64>()));
+            ColumnDescription column_description(
+                        column_name_col[i].safeGet<String>(),
+                        convertMySQLDataType(
+                                type_support,
+                                column_type_col[i].safeGet<String>(),
+                                settings.external_table_functions_use_nulls && is_nullable_col[i].safeGet<UInt64>(),
+                                is_unsigned_col[i].safeGet<UInt64>(),
+                                char_max_length_col[i].safeGet<UInt64>(),
+                                precision_col[i].safeGet<UInt64>(),
+                                scale_col[i].safeGet<UInt64>())
+            );
+            column_description.comment = column_comment_col[i].safeGet<String>();
+
+            tables_and_columns[table_name].add(column_description);
         }
     }
     return tables_and_columns;

@@ -583,7 +583,7 @@
         <port>9019</port>
     </jdbc_bridge>
     -->
-  
+
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
@@ -705,6 +705,8 @@
                     "yandex.ru" -> "yandex.ru:443", "yandex.ru:80" etc. is allowed, but "yandex.ru:80" -> only "yandex.ru:80" is allowed.
             If the host is specified as IP address, it is checked as specified in URL. Example: "[2a02:6b8:a::a]".
             If there are redirects and support for redirects is enabled, every redirect (the Location field) is checked.
+            Host should be specified using the host xml tag:
+                    <host>yandex.ru</host>
         -->
 
         <!-- Regular expression can be specified. RE2 engine is used for regexps.
@@ -915,7 +917,7 @@
             Asynchronous metrics are updated once a minute, so there is
             no need to flush more often.
         -->
-        <flush_interval_milliseconds>60000</flush_interval_milliseconds>
+        <flush_interval_milliseconds>7000</flush_interval_milliseconds>
     </asynchronous_metric_log>
 
     <!--
@@ -1154,4 +1156,27 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
+
+    <!-- You can also configure rocksdb like this: -->
+    <!--
+    <rocksdb>
+        <options>
+            <max_background_jobs>8</max_background_jobs>
+        </options>
+        <column_family_options>
+            <num_levels>2</num_levels>
+        </column_family_options>
+        <tables>
+            <table>
+                <name>TABLE</name>
+                <options>
+                    <max_background_jobs>8</max_background_jobs>
+                </options>
+                <column_family_options>
+                    <num_levels>2</num_levels>
+                </column_family_options>
+            </table>
+        </tables>
+    </rocksdb>
+    -->
 </yandex>

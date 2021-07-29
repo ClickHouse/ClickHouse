@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <tuple>
 #include <common/types.h>
 #include <common/DayNum.h>
@@ -71,6 +72,13 @@ struct MergeTreePartInfo
             || max_block < rhs.min_block;
     }
 
+    bool isFakeDropRangePart() const
+    {
+        /// Another max level was previously used for REPLACE/MOVE PARTITION
+        auto another_max_level = std::numeric_limits<decltype(level)>::max();
+        return level == MergeTreePartInfo::MAX_LEVEL || level == another_max_level;
+    }
+
     String getPartName() const;
     String getPartNameV0(DayNum left_date, DayNum right_date) const;
     UInt64 getBlocksCount() const
@@ -78,7 +86,7 @@ struct MergeTreePartInfo
         return static_cast<UInt64>(max_block - min_block + 1);
     }
 
-    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
+    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);  // -V1071
 
     static bool tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
 

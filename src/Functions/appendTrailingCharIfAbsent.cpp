@@ -4,7 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -24,7 +24,7 @@ class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
 public:
     static constexpr auto name = "appendTrailingCharIfAbsent";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
     }
@@ -85,7 +85,7 @@ private:
             ColumnString::Offset src_offset{};
             ColumnString::Offset dst_offset{};
 
-            for (const auto i : ext::range(0, size))
+            for (const auto i : collections::range(0, size))
             {
                 const auto src_length = src_offsets[i] - src_offset;
                 memcpySmallAllowReadWriteOverflow15(&dst_data[dst_offset], &src_data[src_offset], src_length);
