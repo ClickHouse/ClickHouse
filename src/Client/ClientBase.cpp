@@ -47,7 +47,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -384,7 +383,7 @@ bool ClientBase::processQueryText(const String & text)
 }
 
 
-void ClientBase::runInteractive()
+void ClientBase::runInteractive(std::function<bool(std::function<bool()>)> try_process_query_text)
 {
     if (config().has("query_id"))
         throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
@@ -394,8 +393,9 @@ void ClientBase::runInteractive()
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
 
+    std::optional<Suggest> suggest;
     suggest.emplace();
-    loadSuggestionData();
+    loadSuggestionData(*suggest);
 
     if (home_path.empty())
     {
@@ -477,28 +477,8 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
-        try
-        {
-            if (!processQueryText(input))
-                break;
-        }
-        catch (const Exception & e)
-        {
-            /// We don't need to handle the test hints in the interactive mode.
-            bool print_stack_trace = config().getBool("stacktrace", false);
-            std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-
-            client_exception = std::make_unique<Exception>(e);
-        }
-
-        if (client_exception)
-        {
-            /// client_exception may have been set above or elsewhere.
-            /// Client-side exception during query execution can result in the loss of
-            /// sync in the connection protocol.
-            /// So we reconnect and allow to enter the next query.
-            reconnectIfNeeded();
-        }
+        if (!try_process_query_text([&]() -> bool { return processQueryText(input); }))
+            break;
     }
     while (true);
 
@@ -605,28 +585,18 @@ void ClientBase::init(int argc, char ** argv)
     /// Don't parse options with Poco library, we prefer neat boost::program_options.
     stopOptionsProcessing();
 
-    Arguments common_arguments{""}; /// 0th argument is ignored.
-    std::vector<Arguments> external_tables_arguments;
-    readArguments(argc, argv, common_arguments, external_tables_arguments);
-
     stdin_is_a_tty = isatty(STDIN_FILENO);
     stdout_is_a_tty = isatty(STDOUT_FILENO);
-    if (stdin_is_a_tty)
-        terminal_width = getTerminalWidth();
+    terminal_width = getTerminalWidth();
 
-    OptionsDescription options_description;
-    addOptions(options_description);
+    Arguments common_arguments{""}; /// 0th argument is ignored.
+    std::vector<Arguments> external_tables_arguments;
 
-    cmd_settings.addProgramOptions(options_description.main_description.value());
-
-    /// Parse main commandline options.
-    po::parsed_options parsed = po::command_line_parser(common_arguments).options(options_description.main_description.value()).run();
-    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-    if (validateParsedOptions() && unrecognized_options.size() > 1)
-        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[1]);
+    readArguments(argc, argv, common_arguments, external_tables_arguments);
 
     po::variables_map options;
-    po::store(parsed, options);
+    OptionsDescription options_description;
+    addAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
     if (options.count("version") || options.count("V"))

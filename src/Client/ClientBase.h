@@ -2,22 +2,22 @@
 
 #include <boost/program_options.hpp>
 #include <Poco/Util/Application.h>
-#include <Core/Names.h>
-#include <Core/Types.h>
 #include <Interpreters/Context.h>
 #include <Common/ProgressIndication.h>
 #include <Client/Suggest.h>
 #include <Client/QueryFuzzer.h>
-#include <Client/TestHint.h>
 #include <Common/ShellCommand.h>
 
-#if USE_REPLXX
-#   include <common/ReplxxLineReader.h>
-#elif defined(USE_READLINE) && USE_READLINE
-#   include <common/ReadlineLineReader.h>
-#else
-#   include <common/LineReader.h>
-#endif
+namespace po = boost::program_options;
+
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+}
 
 
 namespace DB
@@ -35,14 +35,15 @@ public:
 
 protected:
     /*
-     * Run query in interactive or non-interactive mode. Depends on:
+     * Run interactive or non-interactive mode. Depends on:
      *  - processSingleQuery
      *  - processMultiQuery
      *  - processWithFuzzing
      */
-    void runInteractive();
-
     void runNonInteractive();
+
+    /// Pass lambda, which executes passed function and catches/processes exceptions, returns result of passed function.
+    void runInteractive(std::function<bool(std::function<bool()>)> try_process_query_text);
 
 
     /*
@@ -94,14 +95,12 @@ protected:
     /// For non-interactive multi-query mode get queries text prefix.
     virtual String getQueryTextPrefix() { return ""; }
 
-    virtual void loadSuggestionData() {}
+    virtual void loadSuggestionData(Suggest &) {}
 
 
-    /// Parse query text for multiquery mode.
-    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
     void resetOutput();
-    virtual void reconnectIfNeeded() {}
-    virtual bool validateParsedOptions() { return false; }
+
+    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
 
 
     /// Prepare for and call either runInteractive() or runNonInteractive().
@@ -121,7 +120,7 @@ protected:
 
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
 
-    virtual void addOptions(OptionsDescription & options_description) = 0;
+    virtual void addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments) = 0;
 
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
@@ -137,7 +136,7 @@ private:
 
     void outputQueryInfo(bool echo_query_);
 
-    /// Process query text (multiquery or single query) accroding to options.
+    /// Process query text (multiquery or single query) according to options.
     bool processQueryText(const String & text);
 
 
@@ -176,16 +175,9 @@ protected:
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
 
-    std::optional<Suggest> suggest;
-
     /// If the last query resulted in exception. `server_exception` or
     /// `client_exception` must be set.
     bool have_error = false;
-    /// The last exception that was received from the server. Is used for the
-    /// return code in batch mode.
-    std::unique_ptr<Exception> server_exception;
-    /// Likewise, the last exception that occurred on the client.
-    std::unique_ptr<Exception> client_exception;
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
@@ -202,9 +194,6 @@ protected:
 
     /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
     std::vector<std::pair<String, String>> query_id_formats;
-    QueryProcessingStage::Enum query_processing_stage;
-
-    String current_profile;
 
 private:
     NameSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж",

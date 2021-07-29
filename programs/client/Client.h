@@ -26,10 +26,7 @@ protected:
 
     void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
 
-    void loadSuggestionData() override;
-
-
-    bool validateParsedOptions() override { return true; }
+    void loadSuggestionData(Suggest & suggest) override;
 
 
     int mainImpl() override;
@@ -40,7 +37,7 @@ protected:
 
     void printHelpMessage(const OptionsDescription & options_description) override;
 
-    void addOptions(OptionsDescription & options_description) override;
+    void addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments) override;
 
     void processOptions(const OptionsDescription & options_description,
                         const CommandLineOptions & options,
@@ -50,6 +47,13 @@ protected:
 
 private:
     std::unique_ptr<Connection> connection; /// Connection to DB.
+    ConnectionParameters connection_parameters;
+
+    /// The last exception that was received from the server. Is used for the
+    /// return code in batch mode.
+    std::unique_ptr<Exception> server_exception;
+    /// Likewise, the last exception that occurred on the client.
+    std::unique_ptr<Exception> client_exception;
 
     String format; /// Query results output format.
     bool is_default_format = true; /// false, if format is set in the config or command line.
@@ -66,8 +70,8 @@ private:
 
     /// Dictionary with query parameters for prepared statements.
     NameToNameMap query_parameters;
-
-    ConnectionParameters connection_parameters;
+    QueryProcessingStage::Enum query_processing_stage;
+    String current_profile;
 
     void connect();
     void printChangedSettings() const;
@@ -101,8 +105,7 @@ private:
     void onEndOfStream();
 
     std::vector<String> loadWarningMessages();
-
-    void reconnectIfNeeded() override
+    void reconnectIfNeeded()
     {
         if (!connection->checkConnected())
             connect();
