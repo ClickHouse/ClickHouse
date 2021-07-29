@@ -1803,7 +1803,6 @@ void Client::processOptions(const OptionsDescription & options_description,
         }
         catch (const Exception & e)
         {
-            std::string text = e.displayText();
             std::cerr << getExceptionMessage(e, false) << std::endl;
             std::cerr << "Table №" << i << std::endl << std::endl;
             /// Avoid the case when error exit code can possibly overflow to normal (zero).

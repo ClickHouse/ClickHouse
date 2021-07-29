@@ -312,7 +312,7 @@ bool LocalServer::processMultiQuery(const String & all_queries_text)
         }
         catch (...)
         {
-            local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+            local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(false), getCurrentExceptionCode());
             have_error = true;
         }
     };
@@ -326,9 +326,10 @@ void LocalServer::processSingleQuery(const String & full_query)
     ASTPtr parsed_query;
     if (is_interactive)
     {
-        auto this_query_begin = full_query.data();
+        const auto * this_query_begin = full_query.data();
         parsed_query = parseQuery(this_query_begin, full_query.data() + full_query.size(), false);
     }
+
     processSingleQueryImpl(full_query, full_query, parsed_query, echo_queries);
 }
 
@@ -339,15 +340,14 @@ String LocalServer::getQueryTextPrefix()
 }
 
 
-void LocalServer::reportQueryError(const String &) const
+void LocalServer::reportQueryError(const String & query) const
 {
-    if (local_server_exception)
+    /// For non-interactive mode process exception only when all queries were executed.
+    if (local_server_exception && is_interactive)
     {
-        // fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, local_server_exception->message());
-        // if (is_interactive)
-        //     fmt::print(stderr, "\n");
+        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, local_server_exception->message());
+        fmt::print(stderr, "\n");
     }
-    assert(have_error && local_server_exception);
 }
 
 
