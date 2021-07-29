@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/queryToString.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
@@ -51,6 +52,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     if (!getContext()->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
         disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
+    std::cerr << "---- storage " << storage->getName() << std::endl;
     auto table_id = storage->getStorageID();
     Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
 
@@ -88,32 +90,42 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
-            auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
+            auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtrForInsert();
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
 
+            //std::cerr << "=== MV with inner query " << queryToString(query) << std::endl;
+
             // StorageAggregatingMemory accepts pushed blocks without any transformations
-            if (dynamic_cast<StorageAggregatingMemory *>(inner_table.get()))
-            {
-                query = nullptr;
-                out = std::make_shared<PushingToViewsBlockOutputStream>(inner_table, dependent_metadata_snapshot, insert_context, ASTPtr());
-            }
-            else
+            // if (dynamic_cast<StorageAggregatingMemory *>(inner_table.get()))
+            // {
+            //     query = nullptr;
+            //     out = std::make_shared<PushingToViewsBlockOutputStream>(inner_table, dependent_metadata_snapshot, insert_context, ASTPtr());
+            // }
+            // else
             {
                 std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
                 insert->table_id = inner_table_id;
 
-                /// Get list of columns we get from select query.
-                auto header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze())
-                    .getSampleBlock();
+                Names names;
+                if (query)
+                {
+                    /// Get list of columns we get from select query.
+                    names = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze())
+                        .getSampleBlock().getNames();
+                }
+                else
+                    names = inner_metadata_snapshot->getColumns().getAllPhysical().getNames();
+
+                //std::cerr << "Inner query header " << header.dumpStructure() << std::endl;
 
                 /// Insert only columns returned by select.
                 auto list = std::make_shared<ASTExpressionList>();
                 const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
-                for (const auto & column : header)
+                for (const auto & name : names)
                 {
                     /// But skip columns which storage doesn't have.
-                    if (inner_table_columns.hasPhysical(column.name))
-                        list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                    if (inner_table_columns.hasPhysical(name))
+                        list->children.emplace_back(std::make_shared<ASTIdentifier>(name));
                 }
 
                 insert->columns = std::move(list);
@@ -359,6 +371,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
 
         if (view.query)
         {
+            std::cerr << ".... pushing block " << block.dumpStructure() << "\n" << storage->getName() << "\n" << queryToString(view.query) << std::endl;
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
             /// InterpreterSelectQuery will do processing of alias columns.

@@ -156,7 +156,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     StoragePtr table = getTable(query);
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings.lock_acquire_timeout);
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto metadata_snapshot = table->getInMemoryMetadataPtrForInsert();
 
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot);
     if (!query.table_function)
@@ -285,18 +285,18 @@ BlockIO InterpreterInsertQuery::execute()
 
             bool null_as_default = query.select && getContext()->getSettingsRef().insert_null_as_default;
 
-            /// Actually we don't know structure of input blocks from query/table,
-            /// because some clients break insertion protocol (columns != header)
-            bool allow_cast_to_metadata = true;
+            // /// Actually we don't know structure of input blocks from query/table,
+            // /// because some clients break insertion protocol (columns != header)
+            // bool allow_cast_to_metadata = true;
 
-            /// StorageAggregatingMemory has special structure, in which read and writes have different structure.
-            /// In this case metadata_snapshot contains read structure, and should not be used for INSERT.
-            if (dynamic_cast<StorageAggregatingMemory *>(table.get()))
-                allow_cast_to_metadata = false;
+            // /// StorageAggregatingMemory has special structure, in which read and writes have different structure.
+            // /// In this case metadata_snapshot contains read structure, and should not be used for INSERT.
+            // if (dynamic_cast<StorageAggregatingMemory *>(table.get()))
+            //     allow_cast_to_metadata = false;
 
-            if (allow_cast_to_metadata)
-                out = std::make_shared<AddingDefaultBlockOutputStream>(
-                    out, query_sample_block, metadata_snapshot->getColumns(), getContext(), null_as_default);
+            // if (allow_cast_to_metadata)
+            out = std::make_shared<AddingDefaultBlockOutputStream>(
+                out, query_sample_block, metadata_snapshot->getColumns(), getContext(), null_as_default);
 
             /// It's important to squash blocks as early as possible (before other transforms),
             ///  because other transforms may work inefficient if block size is small.

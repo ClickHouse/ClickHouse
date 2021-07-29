@@ -32,6 +32,8 @@ public:
 
     void startup() override;
 
+    StorageMetadataPtr getInMemoryMetadataPtrForInsert() const override { return src_metadata_snapshot; }
+
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,

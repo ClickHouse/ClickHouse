@@ -3,11 +3,13 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
@@ -128,6 +130,45 @@ StorageMaterializedView::StorageMaterializedView(
 
         target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, getContext())->getStorageID();
     }
+
+    if (has_inner_table && query.storage->engine && query.storage->engine->name == "AggregatingMemory")
+    {
+        // auto names = InterpreterSelectQuery(select.inner_query, local_context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze()).getSampleBlock().getNames();
+        // ASTPtr new_select = std::make_shared<ASTSelectQuery>();
+        // auto * select_ast = new_select->as<ASTSelectQuery>();
+
+        // select_ast->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+        // auto expr_list = select_ast->select();
+
+        // for (const auto & name : names)
+        //     expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
+
+        // select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+        // auto tables = select_ast->tables();
+        // auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
+        // auto table_expr = std::make_shared<ASTTableExpression>();
+        // tables->children.push_back(tables_elem);
+        // tables_elem->table_expression = table_expr;
+        // tables_elem->children.push_back(table_expr);
+        // table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(
+        //     select.select_table_id.database_name, select.select_table_id.table_name);
+        // table_expr->children.push_back(table_expr->database_and_table_name);
+
+        // auto new_select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
+        // new_select_with_union->list_of_selects = std::make_shared<ASTExpressionList>();
+        // new_select_with_union->list_of_selects->children.push_back(new_select);
+
+        // select = SelectQueryDescription::getSelectQueryFromASTForMatView(new_select_with_union, local_context);
+
+        select.inner_query = nullptr;
+        select.select_query = nullptr;
+
+        //std::cerr << ">> MV setting select " << queryToString(select.inner_query) << std::endl;
+        storage_metadata.setSelectQuery(select);
+        setInMemoryMetadata(storage_metadata);
+    }
+
+    storage_metadata.setColumns(DatabaseCatalog::instance().getTable(target_table_id, local_context)->getInMemoryMetadataPtr()->getColumns());
 
     if (!select.select_table_id.empty())
         DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());

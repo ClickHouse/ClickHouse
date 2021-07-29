@@ -195,12 +195,12 @@ public:
         storage.src_metadata_snapshot->check(block, true);
 
         StoragePtr source_storage = storage.source_storage;
-        auto query = metadata_snapshot->getSelectQuery();
+        auto query = storage.select_query.inner_query; // .select_query->as<ASTSelectWithUnionQuery>()->list_of_selects->children.at(0);// metadata_snapshot->getSelectQuery();
 
         StoragePtr block_storage
             = StorageValues::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), block, source_storage->getVirtuals());
 
-        InterpreterSelectQuery select(query.inner_query, context, block_storage, nullptr, SelectQueryOptions(QueryProcessingStage::WithMergeableState));
+        InterpreterSelectQuery select(query, context, block_storage, nullptr, SelectQueryOptions(QueryProcessingStage::WithMergeableState));
         auto select_result = select.execute();
 
         BlockInputStreamPtr in;
