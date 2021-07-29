@@ -486,7 +486,7 @@ private:
                 /// Need to convert to UInt32 because UInt8 can't be passed to format due to "mixing character types is disallowed".
                 UInt32 invalid_char_byte = static_cast<UInt32>(static_cast<UInt8>(*i));
                 throw DB::Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                        "Illegal character '\\x{:02x}' in partition key starting with '{}'.",
+                        "Illegal character '\\x{:02x}' in partition key starting with '{}'",
                         invalid_char_byte,
                         StringRef(str.data, i - str.data));
             }
