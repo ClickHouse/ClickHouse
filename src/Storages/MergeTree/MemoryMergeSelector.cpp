@@ -111,7 +111,7 @@ MemoryMergeSelector::PartsRange MemoryMergeSelector::select(
     Estimator estimator;
 
     int idx = parts_ranges.size() -1 ;
-    bool printDebug = false;
+//    bool printDebug = false;
     while (idx >=0)
     {
         auto & parts_range = parts_ranges[idx];
@@ -120,11 +120,11 @@ MemoryMergeSelector::PartsRange MemoryMergeSelector::select(
         if(part->getType() != MergeTreeDataPartType::IN_MEMORY)
             break;
 
-        if (part->storage.getStorageID().table_name.ends_with("t_num"))
-            printDebug = true;
+//        if (part->storage.getStorageID().table_name.ends_with("t_num"))
+//            printDebug = true;
 
-        if(printDebug)
-            dumpPartsInfo(parts_range, "candidate segments: ");
+//        if(printDebug)
+//            dumpPartsInfo(parts_range, "candidate segments: ");
 
         selectWithinPartition(parts_range, max_total_size_to_merge, estimator, settings);
 
@@ -132,8 +132,8 @@ MemoryMergeSelector::PartsRange MemoryMergeSelector::select(
         --idx;
     }
 
-    if(printDebug)
-        dumpPartsInfo(estimator.getBest(), "selected part range: ");
+//    if(printDebug)
+//        dumpPartsInfo(estimator.getBest(), "selected part range: ");
 
     return estimator.getBest();
 }
