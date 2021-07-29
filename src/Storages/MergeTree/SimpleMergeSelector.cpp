@@ -160,14 +160,6 @@ void selectWithinPartition(
         if (begin > 1000)
             break;
 
-//        const MergeTreeData::DataPartPtr & part = *(static_cast<const MergeTreeData::DataPartPtr *>(parts[begin].data));
-//        if (part->storage.getStorageID().table_name.ends_with("t_num"))
-//        {
-//            std::cout<< part->name << ", " <<parts[begin].shall_participate_in_merges<< std::endl;
-//        }
-//        std::cout<<std::endl;
-
-
         if (!parts[begin].shall_participate_in_merges)
             continue;
 
