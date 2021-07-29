@@ -50,9 +50,25 @@ CompressedWriteBuffer::CompressedWriteBuffer(
 
 CompressedWriteBuffer::~CompressedWriteBuffer()
 {
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
-    next();
+    if (hasPendingData())
+    {
+        if (std::uncaught_exception())
+        {
+            /// Try our best to flush buffer.
+            MemoryTracker::LockExceptionInThread lock;
+            try
+            {
+                next();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("CompressedWriteBuffer::~CompressedWriteBuffer");
+            }
+        }
+        else
+            /// No exception, buffer was not flushed. Consider it as a logical error.
+            std::terminate();
+    }
 }
 
 }
