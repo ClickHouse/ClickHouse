@@ -16,7 +16,7 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-Web UI can be accessed here: `http://localhost:8123/play`. 
+Web UI can be accessed here: `http://localhost:8123/play`.
 
 ![Web UI](../images/play.png)
 

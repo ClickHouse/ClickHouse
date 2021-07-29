@@ -62,7 +62,7 @@ ClickHouse可以接受和返回各种格式的数据。受支持的输入格式�
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
 
 
-您可以使用ClickHouse设置一些格式化参数。更多详情设置请参考[设置](../operations/settings/settings.md) 
+您可以使用ClickHouse设置一些格式化参数。更多详情设置请参考[设置](../operations/settings/settings.md)
 
 ## TabSeparated {#tabseparated}
 
