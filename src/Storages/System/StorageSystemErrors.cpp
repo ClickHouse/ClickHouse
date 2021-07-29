@@ -3,8 +3,9 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/System/StorageSystemErrors.h>
-#include <Common/ErrorCodes.h>
 #include <Interpreters/Context.h>
+#include <Common/ErrorCodes.h>
+
 
 namespace DB
 {
@@ -23,11 +24,11 @@ NamesAndTypesList StorageSystemErrors::getNamesAndTypes()
 }
 
 
-void StorageSystemErrors::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     auto add_row = [&](std::string_view name, size_t code, const auto & error, bool remote)
     {
-        if (error.count || context.getSettingsRef().system_events_show_zero_values)
+        if (error.count || context->getSettingsRef().system_events_show_zero_values)
         {
             size_t col_num = 0;
             res_columns[col_num++]->insert(name);

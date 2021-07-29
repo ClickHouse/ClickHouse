@@ -23,6 +23,7 @@ extern "C"
 
 namespace DB
 {
+struct Settings;
 
 class ReadBuffer;
 class WriteBuffer;
@@ -108,6 +109,8 @@ public:
             std::move(names)
         );
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

@@ -7,17 +7,14 @@
 namespace DB
 {
 
-class Context;
 class ASTSetQuery;
-
 
 /** Change one or several settings for the session or just for the current context.
   */
-class InterpreterSetQuery : public IInterpreter
+class InterpreterSetQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterSetQuery(const ASTPtr & query_ptr_, Context & context_)
-        : query_ptr(query_ptr_), context(context_) {}
+    InterpreterSetQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
 
     /** Usual SET query. Set setting for the session.
       */
@@ -30,8 +27,6 @@ public:
 
 private:
     ASTPtr query_ptr;
-    Context & context;
 };
-
 
 }

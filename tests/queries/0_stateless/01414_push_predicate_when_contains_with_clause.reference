@@ -3,7 +3,7 @@
 SELECT
     number,
     square_number
-FROM 
+FROM
 (
     WITH number * 2 AS square_number
     SELECT

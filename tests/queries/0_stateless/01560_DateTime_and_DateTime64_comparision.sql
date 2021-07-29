@@ -31,7 +31,7 @@ SELECT
     dt64 != dt,
     toDateTime(dt64) != dt,
     dt64 != toDateTime64(dt, 1, 'UTC')
-FROM 
+FROM
 (
     WITH toDateTime('2015-05-18 07:40:11') as value
     SELECT

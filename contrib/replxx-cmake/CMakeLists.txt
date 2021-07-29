@@ -62,7 +62,7 @@ if (NOT LIBRARY_REPLXX OR NOT INCLUDE_REPLXX OR NOT EXTERNAL_REPLXX_WORKS)
     )
 
     add_library (replxx ${SRCS})
-    target_include_directories(replxx SYSTEM PUBLIC ${LIBRARY_DIR}/include)
+    target_include_directories(replxx SYSTEM PUBLIC "${LIBRARY_DIR}/include")
 endif ()
 
 if (COMPILER_CLANG)

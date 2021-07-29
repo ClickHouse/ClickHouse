@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
@@ -18,12 +18,12 @@ using SetPtr = std::shared_ptr<Set>;
   */
 class StorageSetOrJoinBase : public IStorage
 {
-    friend class SetOrJoinBlockOutputStream;
+    friend class SetOrJoinSink;
 
 public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
@@ -35,6 +35,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         bool persistent_);
 
     DiskPtr disk;
@@ -62,9 +63,9 @@ private:
   *  and also written to a file-backup, for recovery after a restart.
   * Reading from the table is not possible directly - it is possible to specify only the right part of the IN statement.
   */
-class StorageSet final : public ext::shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
+class StorageSet final : public shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
 {
-friend struct ext::shared_ptr_helper<StorageSet>;
+friend struct shared_ptr_helper<StorageSet>;
 
 public:
     String getName() const override { return "Set"; }
@@ -72,7 +73,7 @@ public:
     /// Access the insides.
     SetPtr & getSet() { return set; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
@@ -91,6 +92,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         bool persistent_);
 };
 

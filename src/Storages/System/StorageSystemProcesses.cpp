@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/System/StorageSystemProcesses.h>
@@ -60,19 +61,25 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"query", std::make_shared<DataTypeString>()},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"ProfileEvents.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"ProfileEvents.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"Settings.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"Settings.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
+        {"Settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
 
         {"current_database", std::make_shared<DataTypeString>()},
     };
 }
 
-
-void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+NamesAndAliases StorageSystemProcesses::getNamesAndAliases()
 {
-    ProcessList::Info info = context.getProcessList().getInfo(true, true, true);
+    return
+    {
+        {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
+        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"}
+    };
+}
+
+void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+{
+    ProcessList::Info info = context->getProcessList().getInfo(true, true, true);
 
     for (const auto & process : info)
     {
@@ -127,28 +134,24 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Contex
         }
 
         {
-            IColumn * column_profile_events_names = res_columns[i++].get();
-            IColumn * column_profile_events_values = res_columns[i++].get();
+            IColumn * column = res_columns[i++].get();
 
             if (process.profile_counters)
-                ProfileEvents::dumpToArrayColumns(*process.profile_counters, column_profile_events_names, column_profile_events_values, true);
+                ProfileEvents::dumpToMapColumn(*process.profile_counters, column, true);
             else
             {
-                column_profile_events_names->insertDefault();
-                column_profile_events_values->insertDefault();
+                column->insertDefault();
             }
         }
 
         {
-            IColumn * column_settings_names = res_columns[i++].get();
-            IColumn * column_settings_values = res_columns[i++].get();
+            IColumn * column = res_columns[i++].get();
 
             if (process.query_settings)
-                process.query_settings->dumpToArrayColumns(column_settings_names, column_settings_values, true);
+                process.query_settings->dumpToMapColumn(column, true);
             else
             {
-                column_settings_names->insertDefault();
-                column_settings_values->insertDefault();
+                column->insertDefault();
             }
         }
 

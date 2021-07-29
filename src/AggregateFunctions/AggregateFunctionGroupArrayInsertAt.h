@@ -9,7 +9,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -20,6 +21,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -103,6 +105,8 @@ public:
     {
         return std::make_shared<DataTypeArray>(type);
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

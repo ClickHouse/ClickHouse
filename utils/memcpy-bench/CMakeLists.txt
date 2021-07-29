@@ -15,6 +15,10 @@ add_executable (memcpy-bench
 
 add_compile_options(memcpy-bench PRIVATE -fno-tree-loop-distribute-patterns)
 
+if (OS_SUNOS)
+	target_compile_options(memcpy-bench PRIVATE "-Wa,--divide")
+endif()
+
 set_source_files_properties(FastMemcpy.cpp PROPERTIES COMPILE_FLAGS "-Wno-old-style-cast")
 set_source_files_properties(FastMemcpy_Avx.cpp PROPERTIES COMPILE_FLAGS "-mavx -Wno-old-style-cast -Wno-cast-qual -Wno-cast-align")
 

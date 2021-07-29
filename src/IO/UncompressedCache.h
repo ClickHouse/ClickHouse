@@ -2,8 +2,8 @@
 
 #include <Common/LRUCache.h>
 #include <Common/SipHash.h>
-#include <Common/UInt128.h>
 #include <Common/ProfileEvents.h>
+#include <Common/HashTable/Hash.h>
 #include <IO/BufferWithOwnMemory.h>
 
 
@@ -53,7 +53,7 @@ public:
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
         hash.update(offset);
-        hash.get128(key.low, key.high);
+        hash.get128(key);
 
         return key;
     }

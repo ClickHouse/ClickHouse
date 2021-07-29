@@ -303,7 +303,7 @@ namespace VolnitskyTraits
                     {
                         /// ngram for Ul
                         chars.c0 = c0u;
-                        chars.c1 = c1l;
+                        chars.c1 = c1l; //-V1048
                         putNGramBase(n, offset);
                     }
 

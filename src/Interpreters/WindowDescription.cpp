@@ -1,8 +1,11 @@
 #include <Interpreters/WindowDescription.h>
 
 #include <Core/Field.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
+
 
 namespace DB
 {
@@ -86,6 +89,38 @@ void WindowFrame::toString(WriteBuffer & buf) const
 
 void WindowFrame::checkValid() const
 {
+    // Check the validity of offsets.
+    if (type == WindowFrame::FrameType::Rows
+        || type == WindowFrame::FrameType::Groups)
+    {
+        if (begin_type == BoundaryType::Offset
+            && !((begin_offset.getType() == Field::Types::UInt64
+                    || begin_offset.getType() == Field::Types::Int64)
+                && begin_offset.get<Int64>() >= 0
+                && begin_offset.get<Int64>() < INT_MAX))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
+                toString(type),
+                applyVisitor(FieldVisitorToString(), begin_offset),
+                Field::Types::toString(begin_offset.getType()));
+        }
+
+        if (end_type == BoundaryType::Offset
+            && !((end_offset.getType() == Field::Types::UInt64
+                    || end_offset.getType() == Field::Types::Int64)
+                && end_offset.get<Int64>() >= 0
+                && end_offset.get<Int64>() < INT_MAX))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
+                toString(type),
+                applyVisitor(FieldVisitorToString(), end_offset),
+                Field::Types::toString(end_offset.getType()));
+        }
+    }
+
+    // Check relative positioning of offsets.
     // UNBOUNDED PRECEDING end and UNBOUNDED FOLLOWING start should have been
     // forbidden at the parsing level.
     assert(!(begin_type == BoundaryType::Unbounded && !begin_preceding));
@@ -126,7 +161,8 @@ void WindowFrame::checkValid() const
         bool begin_less_equal_end;
         if (begin_preceding && end_preceding)
         {
-            begin_less_equal_end = begin_offset >= end_offset;
+            /// we can't compare Fields using operator<= if fields have different types
+            begin_less_equal_end = applyVisitor(FieldVisitorAccurateLessOrEqual(), end_offset, begin_offset);
         }
         else if (begin_preceding && !end_preceding)
         {
@@ -138,7 +174,7 @@ void WindowFrame::checkValid() const
         }
         else /* if (!begin_preceding && !end_preceding) */
         {
-            begin_less_equal_end = begin_offset <= end_offset;
+            begin_less_equal_end = applyVisitor(FieldVisitorAccurateLessOrEqual(), begin_offset, end_offset);
         }
 
         if (!begin_less_equal_end)

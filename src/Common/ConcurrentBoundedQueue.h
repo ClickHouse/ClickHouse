@@ -6,7 +6,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
 
-#include <Common/MoveOrCopyIfThrow.h>
+#include <common/MoveOrCopyIfThrow.h>
 
 /** A very simple thread-safe queue of limited size.
   * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty.

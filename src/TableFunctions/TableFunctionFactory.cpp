@@ -31,7 +31,7 @@ void TableFunctionFactory::registerFunction(const std::string & name, Value crea
 
 TableFunctionPtr TableFunctionFactory::get(
     const ASTPtr & ast_function,
-    const Context & context) const
+    ContextPtr context) const
 {
     const auto * table_function = ast_function->as<ASTFunction>();
     auto res = tryGet(table_function->name, context);
@@ -50,7 +50,7 @@ TableFunctionPtr TableFunctionFactory::get(
 
 TableFunctionPtr TableFunctionFactory::tryGet(
         const std::string & name_param,
-        const Context &) const
+        ContextPtr) const
 {
     String name = getAliasToOrName(name_param);
     TableFunctionPtr res;
@@ -70,7 +70,7 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
     if (CurrentThread::isInitialized())
     {
-        const auto * query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef().log_queries)
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, name);
     }

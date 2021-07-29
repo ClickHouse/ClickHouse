@@ -1,11 +1,13 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 
 #include <Common/assert_cast.h>
 
@@ -37,6 +39,11 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
             return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames(), tuple_type->serializeNames());
         else
             return std::make_shared<DataTypeTuple>(elements);
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        return std::make_shared<DataTypeMap>(recursiveRemoveLowCardinality(map_type->getKeyType()), recursiveRemoveLowCardinality(map_type->getValueType()));
     }
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
@@ -76,6 +83,16 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
         for (auto & element : columns)
             element = recursiveRemoveLowCardinality(element);
         return ColumnTuple::create(columns);
+    }
+
+    if (const auto * column_map = typeid_cast<const ColumnMap *>(column.get()))
+    {
+        const auto & nested = column_map->getNestedColumnPtr();
+        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        if (nested.get() == nested_no_lc.get())
+            return column;
+
+        return ColumnMap::create(nested_no_lc);
     }
 
     if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))

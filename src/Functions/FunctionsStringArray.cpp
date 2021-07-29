@@ -11,6 +11,7 @@ void registerFunctionsStringArray(FunctionFactory & factory)
     factory.registerFunction<FunctionAlphaTokens>();
     factory.registerFunction<FunctionSplitByChar>();
     factory.registerFunction<FunctionSplitByString>();
+    factory.registerFunction<FunctionSplitByRegexp>();
     factory.registerFunction<FunctionArrayStringConcat>();
 }
 

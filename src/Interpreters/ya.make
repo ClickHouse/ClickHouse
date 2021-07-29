@@ -39,6 +39,7 @@ SRCS(
     CollectJoinOnKeysVisitor.cpp
     ColumnAliasesVisitor.cpp
     Context.cpp
+    ConvertStringsToEnumVisitor.cpp
     CrashLog.cpp
     CrossToInnerJoinVisitor.cpp
     DDLTask.cpp
@@ -54,7 +55,7 @@ SRCS(
     ExpressionAnalyzer.cpp
     ExternalDictionariesLoader.cpp
     ExternalLoader.cpp
-    ExternalLoaderDatabaseConfigRepository.cpp
+    ExternalLoaderDictionaryStorageConfigRepository.cpp
     ExternalLoaderTempConfigRepository.cpp
     ExternalLoaderXMLConfigRepository.cpp
     ExternalModelsLoader.cpp
@@ -103,6 +104,7 @@ SRCS(
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp
     InterpreterWatchQuery.cpp
+    InterserverCredentials.cpp
     JoinSwitcher.cpp
     JoinToSubqueryTransformVisitor.cpp
     JoinedTables.cpp
@@ -117,6 +119,7 @@ SRCS(
     OpenTelemetrySpanLog.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp
+    OptimizeShardingKeyRewriteInVisitor.cpp
     PartLog.cpp
     PredicateExpressionsOptimizer.cpp
     PredicateRewriteVisitor.cpp
@@ -134,6 +137,7 @@ SRCS(
     RequiredSourceColumnsVisitor.cpp
     RewriteAnyFunctionVisitor.cpp
     RewriteCountVariantsVisitor.cpp
+    RewriteFunctionToSubcolumnVisitor.cpp
     RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
     Set.cpp
@@ -151,6 +155,7 @@ SRCS(
     TreeOptimizer.cpp
     TreeRewriter.cpp
     WindowDescription.cpp
+    ZooKeeperLog.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
     castColumn.cpp
