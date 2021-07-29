@@ -48,7 +48,7 @@ SET custom_a = 123;
 To get the current value of a custom setting use `getSetting()` function:
 
 ```sql
-SELECT getSetting('custom_a');   
+SELECT getSetting('custom_a');
 ```
 
 **See Also**

@@ -18,7 +18,7 @@ If the `optimize_move_to_prewhere` setting is set to 0, heuristics to automatica
 
 !!! note "Attention"
      The `PREWHERE` section is executed before` FINAL`, so the results of `FROM FINAL` queries may be skewed when using` PREWHERE` with fields not in the `ORDER BY` section of a table.
-    
+
 ## Limitations {#limitations}
 
 `PREWHERE` is only supported by tables from the `*MergeTree` family.

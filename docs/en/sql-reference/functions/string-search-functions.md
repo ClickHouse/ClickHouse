@@ -399,7 +399,7 @@ Extracts all the fragments of a string using a regular expression. If ‘haystac
 
 ## extractAllGroupsHorizontal {#extractallgroups-horizontal}
 
-Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where the first array includes all fragments matching the first group, the second array - matching the second group, etc. 
+Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where the first array includes all fragments matching the first group, the second array - matching the second group, etc.
 
 !!! note "Note"
     `extractAllGroupsHorizontal` function is slower than [extractAllGroupsVertical](#extractallgroups-vertical).

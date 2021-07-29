@@ -47,7 +47,7 @@ SET custom_a = 123;
 Чтобы получить текущее значение пользовательской настройки, используйте функцию `getSetting()`:
 
 ```sql
-SELECT getSetting('custom_a');   
+SELECT getSetting('custom_a');
 ```
 
 **См. также**

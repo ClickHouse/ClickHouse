@@ -648,7 +648,7 @@ date_add(unit, value, date)
     - `month`
     - `quarter`
     - `year`
-	
+
 -   `value` — значение интервала для добавления. [Int](../../sql-reference/data-types/int-uint.md).
 -   `date` — дата или дата со временем, к которой добавляется `value`. [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -792,7 +792,7 @@ timestamp_add(date, INTERVAL value unit)
 Синонимы: `timeStampAdd`, `TIMESTAMP_ADD`.
 
 **Аргументы**
-   
+
 -   `date` — дата или дата со временем. [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
 -   `value` — значение интервала для добавления. [Int](../../sql-reference/data-types/int-uint.md).
 -   `unit` — единица измерения времени, в которой задан интервал для добавления. [String](../../sql-reference/data-types/string.md).
@@ -812,7 +812,7 @@ timestamp_add(date, INTERVAL value unit)
 Дата или дата со временем, полученная в результате добавления `value`, выраженного в `unit`, к `date`.
 
 Тип: [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
-   
+
 **Пример**
 
 Запрос:
@@ -854,8 +854,8 @@ timestamp_sub(unit, value, date)
     - `month`
     - `quarter`
     - `year`
-	
--   `value` — значение интервала для вычитания. [Int](../../sql-reference/data-types/int-uint.md).  
+
+-   `value` — значение интервала для вычитания. [Int](../../sql-reference/data-types/int-uint.md).
 -   `date` — дата или дата со временем. [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Возвращаемое значение**

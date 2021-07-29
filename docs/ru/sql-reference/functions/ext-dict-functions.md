@@ -138,7 +138,7 @@ LIMIT 3;
                 <name>c2</name>
                 <type>String</type>
                 <null_value></null_value>
-            </attribute>           
+            </attribute>
         </structure>
         <lifetime>0</lifetime>
     </dictionary>

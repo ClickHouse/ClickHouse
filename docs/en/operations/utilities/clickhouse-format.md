@@ -37,7 +37,7 @@ SELECT sum(number) FROM numbers(5)
 ```bash
 $ clickhouse-format -n <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
 ```
-   
+
 Result:
 
 ```text
@@ -58,13 +58,13 @@ FROM
 ```bash
 $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
 ```
-   
+
 Result:
 
 ```text
 SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
 ```
-  
+
 Same query and another seed string:
 
 ```bash

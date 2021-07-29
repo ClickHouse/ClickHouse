@@ -56,7 +56,7 @@ In the subtotals rows the values of already "grouped" key expressions are set to
 !!! note "Note"
     Mind that [HAVING](../../../sql-reference/statements/select/having.md) clause can affect the subtotals results.
 
-**Example**   
+**Example**
 
 Consider the table t:
 
@@ -115,7 +115,7 @@ In the subtotals rows the values of all "grouped" key expressions are set to `0`
 !!! note "Note"
     Mind that [HAVING](../../../sql-reference/statements/select/having.md) clause can affect the subtotals results.
 
-**Example**     
+**Example**
 
 Consider the table t:
 
@@ -138,7 +138,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 As `GROUP BY` section has three key expressions, the result contains eight tables with subtotals for all key expression combinations:
 
-- `GROUP BY year, month, day`  
+- `GROUP BY year, month, day`
 - `GROUP BY year, month`
 - `GROUP BY year, day`
 - `GROUP BY year`

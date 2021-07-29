@@ -32,7 +32,7 @@
             <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
             <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
         </my_ldap_server>
-		
+
         <!- Typical Active Directory with configured user DN detection for further role mapping. -->
         <my_ad_server>
             <host>localhost</host>
@@ -143,7 +143,7 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
                 <prefix>clickhouse_</prefix>
             </role_mapping>
         </ldap>
-		
+
         <!- Typical Active Directory with role mapping that relies on the detected user DN. -->
         <ldap>
             <server>my_ad_server</server>

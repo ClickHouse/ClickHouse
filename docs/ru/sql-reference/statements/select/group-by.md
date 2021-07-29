@@ -52,7 +52,7 @@ toc_title: GROUP BY
 !!! note "Примечание"
     Если в запросе есть секция [HAVING](../../../sql-reference/statements/select/having.md), она может повлиять на результаты расчета подытогов.
 
-**Пример**   
+**Пример**
 
 Рассмотрим таблицу t:
 
@@ -112,7 +112,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 !!! note "Примечание"
     Если в запросе есть секция [HAVING](../../../sql-reference/statements/select/having.md), она может повлиять на результаты расчета подытогов.
 
-**Пример** 
+**Пример**
 
 Рассмотрим таблицу t:
 
@@ -135,7 +135,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 Поскольку секция `GROUP BY` содержит три ключевых выражения, результат состоит из восьми таблиц с подытогами — по таблице для каждой комбинации ключевых выражений:
 
-- `GROUP BY year, month, day`  
+- `GROUP BY year, month, day`
 - `GROUP BY year, month`
 - `GROUP BY year, day`
 - `GROUP BY year`
