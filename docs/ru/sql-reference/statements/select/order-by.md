@@ -333,7 +333,7 @@ SELECT n, source FROM (
 └─────┴──────────┘
 ```
 
-Для случая с несколькими полями `ORDER BY field2 WITH FILL, field1 WITH FILL` порядок заполнения будет следовать порядку полей в секции `ORDER BY`.
+Для случая с несколькими полями `ORDER BY field2 WITH FILL, field1 WITH FILL` порядок заполнения будет соответствовать порядку полей в секции `ORDER BY`.
 
 Пример:
 
