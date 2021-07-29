@@ -367,6 +367,11 @@ void WindowTransform::advancePartitionEnd()
     // is a pointer to the first row of the previous frame that must have been
     // valid, or to the first row of the partition, and we make sure not to drop
     // its block.
+    assert(partition_start <= prev_frame_start);
+    // The frame start should be inside the prospective partition, except the
+    // case when it still has no rows.
+    assert(prev_frame_start < partition_end || partition_start == partition_end);
+    assert(first_block_number <= prev_frame_start.block);
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
     {
