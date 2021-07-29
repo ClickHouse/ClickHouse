@@ -24,8 +24,12 @@
 #endif
 
 #if USE_MYSQL
-#    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
-#    include <Storages/StorageMaterializeMySQL.h>
+#    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
+#    include <Storages/StorageMaterializedMySQL.h>
+#endif
+
+#if USE_LIBPQXX
+#    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -132,7 +136,7 @@ StoragePtr TemporaryTableHolder::getTable() const
 }
 
 
-void DatabaseCatalog::loadTemporaryDatabase()
+void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
 
@@ -234,16 +238,24 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             return {};
         }
 
-#if USE_MYSQL
-        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializeMySQL::tryGetTable(...)
-        if (db_and_table.first->getEngineName() == "MaterializeMySQL")
+#if USE_LIBPQXX
+        if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {
-            if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
-                db_and_table.second = std::make_shared<StorageMaterializeMySQL>(std::move(db_and_table.second), db_and_table.first.get());
+            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext());
+        }
+#endif
+
+#if USE_MYSQL
+        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
+        if (db_and_table.first->getEngineName() == "MaterializedMySQL")
+        {
+            if (!MaterializedMySQLSyncThread::isMySQLSyncThread())
+                db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
         }
 #endif
         return db_and_table;
     }
+
 
     if (table_id.database_name == TEMPORARY_DATABASE)
     {

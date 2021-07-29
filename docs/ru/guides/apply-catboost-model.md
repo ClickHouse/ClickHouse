@@ -18,6 +18,8 @@ toc_title: "Применение модели CatBoost в ClickHouse"
 
 Подробнее об обучении моделей в CatBoost, см. [Обучение и применение моделей](https://catboost.ai/docs/features/training.html#training).
 
+Вы можете перегрузить модели CatBoost, если их конфигурация была обновлена, без перезагрузки сервера. Для этого используйте системные запросы [RELOAD MODEL](../sql-reference/statements/system.md#query_language-system-reload-model) и [RELOAD MODELS](../sql-reference/statements/system.md#query_language-system-reload-models).
+
 ## Перед началом работы {#prerequisites}
 
 Если у вас еще нет [Docker](https://docs.docker.com/install/), установите его.

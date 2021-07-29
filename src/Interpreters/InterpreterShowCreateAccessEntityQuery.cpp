@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -151,7 +151,7 @@ namespace
             ASTCreateQuotaQuery::Limits create_query_limits;
             create_query_limits.duration = limits.duration;
             create_query_limits.randomize_interval = limits.randomize_interval;
-            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
                 create_query_limits.max[resource_type] = limits.max[resource_type];
             query->all_limits.push_back(create_query_limits);
         }
@@ -181,7 +181,7 @@ namespace
         if (policy.isRestrictive())
             query->is_restrictive = policy.isRestrictive();
 
-        for (auto type : ext::range(RowPolicy::MAX_CONDITION_TYPE))
+        for (auto type : collections::range(RowPolicy::MAX_CONDITION_TYPE))
         {
             const auto & condition = policy.conditions[static_cast<size_t>(type)];
             if (!condition.empty())

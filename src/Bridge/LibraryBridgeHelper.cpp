@@ -11,7 +11,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <Core/Field.h>
 #include <Common/escapeForFileName.h>
 
@@ -20,7 +20,7 @@ namespace DB
 {
 
 LibraryBridgeHelper::LibraryBridgeHelper(
-        ContextConstPtr context_,
+        ContextPtr context_,
         const Block & sample_block_,
         const Field & dictionary_id_)
     : IBridgeHelper(context_->getGlobalContext())
@@ -128,7 +128,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string ids_string)
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_IDS_METHOD);
-    return loadBase(uri, [ids_string](std::ostream & os) { os << "ids=" << ids_string; });
+    return loadBase(uri, [ids_string](std::ostream & os) { os << ids_string; });
 }
 
 

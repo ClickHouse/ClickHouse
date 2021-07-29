@@ -4,7 +4,7 @@
 #include <Access/LDAPClient.h>
 #include <Access/Credentials.h>
 #include <common/types.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <map>
 #include <mutex>
 #include <set>
@@ -51,8 +51,8 @@ private: // IAccessStorage implementations.
     virtual UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     virtual void removeImpl(const UUID & id) override;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
-    virtual ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    virtual ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
+    virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
+    virtual scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     virtual bool hasSubscriptionImpl(const UUID & id) const override;
     virtual bool hasSubscriptionImpl(EntityType type) const override;
     virtual UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
@@ -80,7 +80,7 @@ private:
     mutable std::map<String, std::set<String>> roles_per_users; // user name -> role names (...that should be granted to it; may but don't have to include common roles)
     mutable std::map<UUID, String> granted_role_names;          // (currently granted) role id -> its name
     mutable std::map<String, UUID> granted_role_ids;            // (currently granted) role name -> its id
-    ext::scope_guard role_change_subscription;
+    scope_guard role_change_subscription;
     mutable MemoryAccessStorage memory_storage;
 };
 }

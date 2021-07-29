@@ -202,7 +202,7 @@ def check_modify_column_when_privilege_is_granted(table, user, node, column=None
         column = 'modify'
 
     with Given(f"I add the column {column}"):
-        node.query(f"ALTER TABLE {table} ADD COLUMN {column} String")
+        node.query(f"ALTER TABLE {table} ADD COLUMN {column} String DEFAULT '0'")
 
     with When(f"I insert some data into column {column}"):
         node.query(f"INSERT INTO {table} ({column}) VALUES ('3.4')")

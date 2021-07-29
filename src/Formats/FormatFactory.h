@@ -35,10 +35,10 @@ struct RowOutputFormatParams;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
-FormatSettings getFormatSettings(ContextConstPtr context);
+FormatSettings getFormatSettings(ContextPtr context);
 
 template <typename T>
-FormatSettings getFormatSettings(ContextConstPtr context, const T & settings);
+FormatSettings getFormatSettings(ContextPtr context, const T & settings);
 
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
@@ -113,7 +113,7 @@ public:
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
-        ContextConstPtr context,
+        ContextPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -123,7 +123,7 @@ public:
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
-        ContextConstPtr context,
+        ContextPtr context,
         WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -132,7 +132,7 @@ public:
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
-        ContextConstPtr context,
+        ContextPtr context,
         WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -140,7 +140,7 @@ public:
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
-        ContextConstPtr context,
+        ContextPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -149,7 +149,7 @@ public:
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
-        ContextConstPtr context,
+        ContextPtr context,
         WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -157,7 +157,7 @@ public:
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
-        ContextConstPtr context,
+        ContextPtr context,
         WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 

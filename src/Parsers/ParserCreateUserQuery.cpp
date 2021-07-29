@@ -12,7 +12,7 @@
 #include <Parsers/ParserRolesOrUsersSet.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ParserSettingsProfileElement.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
@@ -54,7 +54,7 @@ namespace
 
             if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {
-                for (auto check_type : ext::range(Authentication::MAX_TYPE))
+                for (auto check_type : collections::range(Authentication::MAX_TYPE))
                 {
                     if (ParserKeyword{Authentication::TypeInfo::get(check_type).raw_name}.ignore(pos, expected))
                     {

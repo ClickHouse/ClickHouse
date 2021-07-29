@@ -724,8 +724,9 @@ public:
     Int32 size() const override
     {
         Int32 sz = 4 + 2; // size of message + number of fields
+        /// If values is NULL, field size is -1 and data not added.
         for (const std::shared_ptr<ISerializable> & field : row)
-            sz += 4 + field->size();
+            sz += 4 + (field->size() > 0 ? field->size() : 0);
         return sz;
     }
 

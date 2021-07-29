@@ -155,9 +155,7 @@ public:
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
     void setTotals(const Block & block) override { totals = block; }
-    bool hasTotals() const override { return totals; }
-
-    void joinTotals(Block & block) const override;
+    const Block & getTotals() const override { return totals; }
 
     bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
 
@@ -379,6 +377,10 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
+    /// Additional conditions for rows to join from JOIN ON section
+    String condition_mask_column_name_left;
+    String condition_mask_column_name_right;
+
     Poco::Logger * log;
 
     Block totals;
@@ -400,7 +402,8 @@ private:
         Block & block,
         const Names & key_names_left,
         const Block & block_with_columns_to_add,
-        const Maps & maps) const;
+        const Maps & maps,
+        bool is_join_get = false) const;
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 

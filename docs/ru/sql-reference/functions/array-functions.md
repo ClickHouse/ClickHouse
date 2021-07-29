@@ -11,17 +11,23 @@ toc_title: "Массивы"
 Тип результата - UInt8.
 Функция также работает для строк.
 
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
+
 ## notEmpty {#function-notempty}
 
 Возвращает 0 для пустого массива, и 1 для непустого массива.
 Тип результата - UInt8.
 Функция также работает для строк.
 
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
+
 ## length {#array_functions-length}
 
 Возвращает количество элементов в массиве.
 Тип результата - UInt64.
 Функция также работает для строк.
+
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT length(arr) FROM table` преобразуется к запросу `SELECT arr.size0 FROM TABLE`.
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
@@ -39,10 +45,49 @@ toc_title: "Массивы"
 
 Принимает пустой массив и возвращает массив из одного элемента, равного значению по умолчанию.
 
-## range(N) {#rangen}
 
-Возвращает массив чисел от 0 до N-1.
-На всякий случай, если на блок данных, создаются массивы суммарной длины больше 100 000 000 элементов, то кидается исключение.
+## range(end), range(\[start, \] end \[, step\]) {#range}
+
+Возвращает массив чисел от `start` до `end - 1` с шагом `step`.
+
+**Синтаксис**
+
+``` sql
+range([start, ] end [, step])
+```
+
+**Аргументы**
+
+-   `start` — начало диапазона. Обязательно, когда указан `step`. По умолчанию равно `0`. Тип: [UInt](../data-types/int-uint.md)
+-   `end` — конец диапазона. Обязательный аргумент. Должен быть больше, чем `start`. Тип: [UInt](../data-types/int-uint.md)
+-   `step` — шаг обхода. Необязательный аргумент. По умолчанию равен `1`. Тип: [UInt](../data-types/int-uint.md)
+
+
+**Возвращаемые значения**
+
+-   массив `UInt` чисел от `start` до `end - 1` с шагом `step`
+
+
+**Особенности реализации**
+
+-   Не поддерживаются отрицательные значения аргументов: `start`, `end`, `step` имеют тип `UInt`.
+
+-   Если в результате запроса создаются массивы суммарной длиной больше 100 000 000 элементов, то генерируется исключение.
+
+
+**Примеры**
+
+Запрос:
+``` sql
+SELECT range(5), range(1, 5), range(1, 5, 2);
+```
+Ответ:
+```txt
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │
+└─────────────┴─────────────┴────────────────┘
+```
+
 
 ## array(x1, …), оператор \[x1, …\] {#arrayx1-operator-x1}
 

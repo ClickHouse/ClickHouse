@@ -12,7 +12,7 @@
 #    include <IO/WriteHelpers.h>
 #    include <Common/ObjectPool.h>
 #    include <Common/typeid_cast.h>
-#    include <ext/range.h>
+#    include <common/range.h>
 
 #    include <memory>
 #    include <string>
@@ -162,7 +162,7 @@ private:
 
 public:
     static constexpr auto name = "convertCharset";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionConvertCharset>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertCharset>(); }
 
     String getName() const override
     {
@@ -173,7 +173,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (size_t i : ext::range(0, 3))
+        for (size_t i : collections::range(0, 3))
             if (!isString(arguments[i]))
                 throw Exception("Illegal type " + arguments[i]->getName() + " of argument of function " + getName()
                     + ", must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
