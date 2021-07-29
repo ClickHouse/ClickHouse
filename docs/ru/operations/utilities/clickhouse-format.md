@@ -18,7 +18,7 @@ toc_title: clickhouse-format
 - `--seed <строка>` — задает строку, которая определяет результат обфускации.
 - `--backslash` — добавляет обратный слеш в конце каждой строки отформатированного запроса. Удобно использовать если многострочный запрос скопирован из интернета или другого источника и его нужно выполнить из командной строки.
 
-## Примеры {#examples} 
+## Примеры {#examples}
 
 1. Подсветка синтаксиса и форматирование в одну строку:
 
@@ -32,12 +32,12 @@ $ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
 SELECT sum(number) FROM numbers(5)
 ```
 
-2. Несколько запросов в одной строке: 
+2. Несколько запросов в одной строке:
 
 ```bash
 $ clickhouse-format -n <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
 ```
-    
+
 Результат:
 
 ```text
@@ -64,13 +64,13 @@ $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWE
 ```text
 SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
 ```
-   
+
 Тот же запрос с другой инициализацией обфускатора:
 
 ```bash
 $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
 ```
-    
+
 Результат:
 
 ```text
@@ -95,4 +95,4 @@ FROM  \
     UNION DISTINCT \
     SELECT 3 \
 )
-``` 
+```
