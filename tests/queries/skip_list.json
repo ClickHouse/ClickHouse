@@ -714,6 +714,7 @@
         "01804_dictionary_decimal256_type",
         "01870_modulo_partition_key",
         "01889_postgresql_protocol_null_fields",
-        "01850_dist_INSERT_preserve_error" // uses cluster with different static databases shard_0/shard_1
+        "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
+        "1946_test_zstd_decompression_with_escape_sequence_at_the_end_of_buffer"
     ]
 }
