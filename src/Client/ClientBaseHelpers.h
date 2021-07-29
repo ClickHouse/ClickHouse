@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Core/Types.h>
 #include <common/DateLUT.h>
 #include <common/LocalDate.h>

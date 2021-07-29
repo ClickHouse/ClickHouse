@@ -34,6 +34,7 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <Client/Connection.h>
+#include <Client/TestHint.h>
 #include <Columns/ColumnString.h>
 #include <Poco/Util/Application.h>
 
@@ -90,6 +91,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TOO_DEEP_RECURSION;
     extern const int NETWORK_ERROR;
+    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 
@@ -346,12 +348,12 @@ void Client::initialize(Poco::Util::Application & self)
 }
 
 
-void Client::loadSuggestionData()
+void Client::loadSuggestionData(Suggest & suggest)
 {
     if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
     {
         /// Load suggestion data from the server.
-        suggest->load(connection_parameters, config().getInt("suggestion_limit"));
+        suggest.load(connection_parameters, config().getInt("suggestion_limit"));
     }
 }
 
@@ -389,7 +391,34 @@ int Client::mainImpl()
                 }
             }
 
-            runInteractive();
+            auto try_process_query_text = [&](std::function<bool()> func)
+            {
+                try
+                {
+                    return func();
+                }
+                catch (const Exception & e)
+                {
+                    /// We don't need to handle the test hints in the interactive mode.
+                    bool print_stack_trace = config().getBool("stacktrace", false);
+                    std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+
+                    client_exception = std::make_unique<Exception>(e);
+                }
+
+                if (client_exception)
+                {
+                    /// client_exception may have been set above or elsewhere.
+                    /// Client-side exception during query execution can result in the loss of
+                    /// sync in the connection protocol.
+                    /// So we reconnect and allow to enter the next query.
+                    reconnectIfNeeded();
+                }
+
+                return true;
+            };
+
+            runInteractive(try_process_query_text);
         }
         else
         {
@@ -471,9 +500,7 @@ void Client::connect()
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
     if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
-    {
         server_display_name = config().getString("host", "localhost");
-    }
 
     if (is_interactive)
     {
@@ -1597,8 +1624,7 @@ void Client::readArguments(int argc, char ** argv, Arguments & common_arguments,
             external_tables_arguments.emplace_back(Arguments{""});
         }
         /// Options with value after equal sign.
-        else if (
-            in_external_group
+        else if (in_external_group
             && (0 == strncmp(arg, "--file=", strlen("--file=")) || 0 == strncmp(arg, "--name=", strlen("--name="))
                 || 0 == strncmp(arg, "--format=", strlen("--format=")) || 0 == strncmp(arg, "--structure=", strlen("--structure="))
                 || 0 == strncmp(arg, "--types=", strlen("--types="))))
@@ -1606,8 +1632,7 @@ void Client::readArguments(int argc, char ** argv, Arguments & common_arguments,
             external_tables_arguments.back().emplace_back(arg);
         }
         /// Options with value after whitespace.
-        else if (
-            in_external_group
+        else if (in_external_group
             && (0 == strcmp(arg, "--file") || 0 == strcmp(arg, "--name") || 0 == strcmp(arg, "--format")
                 || 0 == strcmp(arg, "--structure") || 0 == strcmp(arg, "--types")))
         {
@@ -1665,10 +1690,8 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
 }
 
 
-void Client::addOptions(OptionsDescription & options_description)
+void Client::addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    namespace po = boost::program_options;
-
     /// Main commandline options related to client functionality and all parameters from Settings.
 
     options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
@@ -1744,6 +1767,14 @@ void Client::addOptions(OptionsDescription & options_description)
     (
         "types", po::value<std::string>(), "types"
     );
+
+    cmd_settings.addProgramOptions(options_description.main_description.value());
+    /// Parse main commandline options.
+    po::parsed_options parsed = po::command_line_parser(arguments).options(options_description.main_description.value()).run();
+    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+    if (unrecognized_options.size() > 1)
+        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[1]);
+    po::store(parsed, options);
 }
 
 

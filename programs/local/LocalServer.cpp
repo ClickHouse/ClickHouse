@@ -53,7 +53,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int SYNTAX_ERROR;
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
 }
@@ -223,6 +222,8 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
     ReadBufferFromString read_buf(query_to_execute);
     WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
+    local_server_exception.reset();
+
     std::function<void()> finalize_progress;
     if (need_render_progress)
     {
@@ -242,9 +243,8 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
         if (!config().hasOption("ignore-error"))
             throw;
 
-        if (!local_server_exception)
-            local_server_exception = std::current_exception();
-
+        local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+        have_error = true;
         std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
     }
 }
@@ -302,6 +302,55 @@ void LocalServer::setupUsers()
 }
 
 
+bool LocalServer::processMultiQuery(const String & all_queries_text)
+{
+    auto process_single_query = [&](const String & query_to_execute, const String &, ASTPtr)
+    {
+        try
+        {
+            processSingleQueryImpl(query_to_execute, query_to_execute, nullptr, echo_queries, false);
+        }
+        catch (...)
+        {
+            local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+            have_error = true;
+        }
+    };
+
+    return processMultiQueryImpl(all_queries_text, process_single_query);
+}
+
+
+void LocalServer::processSingleQuery(const String & full_query)
+{
+    ASTPtr parsed_query;
+    if (is_interactive)
+    {
+        auto this_query_begin = full_query.data();
+        parsed_query = parseQuery(this_query_begin, full_query.data() + full_query.size(), false);
+    }
+    processSingleQueryImpl(full_query, full_query, parsed_query, echo_queries);
+}
+
+
+String LocalServer::getQueryTextPrefix()
+{
+    return getInitialCreateTableQuery();
+}
+
+
+void LocalServer::reportQueryError(const String & query) const
+{
+    if (local_server_exception)
+    {
+        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, local_server_exception->message());
+        if (is_interactive)
+            fmt::print(stderr, "\n");
+    }
+    assert(have_error && local_server_exception);
+}
+
+
 int LocalServer::mainImpl()
 {
     try
@@ -351,14 +400,31 @@ int LocalServer::mainImpl()
 
         if (is_interactive)
         {
-            runInteractive();
+            std::cout << std::endl;
+
+            auto try_process_query_text = [&](std::function<bool()> func)
+            {
+                try
+                {
+                    return func();
+                }
+                catch (const Exception & e)
+                {
+                    bool print_stack_trace = config().getBool("stacktrace", false);
+                    std::cerr << "Received exception:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+                }
+
+                return true;
+            };
+
+            runInteractive(try_process_query_text);
         }
         else
         {
             runNonInteractive();
 
             if (local_server_exception)
-                std::rethrow_exception(local_server_exception);
+                local_server_exception->rethrow();
         }
 
         global_context->shutdown();
@@ -395,15 +461,16 @@ void LocalServer::processConfig()
             throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
 
         is_interactive = true;
+
+        if (config().has("multiquery"))
+            is_multiquery = true;
     }
     else
     {
-        /// For clickhouse-local non-interactive mode always assumes multiqeury can be used by default.
-        is_multiquery = true;
-
         need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
+        is_multiquery = true;
     }
 
     shared_context = Context::createShared();
@@ -526,7 +593,7 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
 }
 
 
-void LocalServer::addOptions(OptionsDescription & options_description)
+void LocalServer::addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
     options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
     options_description.main_description->add_options()
@@ -554,7 +621,15 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ("no-system-tables", "do not attach system tables (better startup time)")
         ("version,V", "print version information and exit")
         ("progress", "print progress of queries execution")
+
+        ("multiline,m", "multiline")
+        ("multiquery,n", "multiquery")
+        ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
         ;
+
+    cmd_settings.addProgramOptions(options_description.main_description.value());
+    po::parsed_options parsed = po::command_line_parser(arguments).options(options_description.main_description.value()).run();
+    po::store(parsed, options);
 }
 
 
@@ -624,6 +699,11 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
 
     if (options.count("queries-file"))
         queries_files.emplace_back(config().getString("queries-file"));
+
+    if (options.count("multiline"))
+        config().setBool("multiline", true);
+    if (options.count("multiquery"))
+        config().setBool("multiquery", true);
 }
 
 }
