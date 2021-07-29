@@ -9,7 +9,7 @@ Many developers can say that the code is the best docs by itself, and they are r
 If you want to help ClickHouse with documentation you can face, for example, the following questions:
 
 - "I don't know how to write."
-   
+
     We have prepared some [recommendations](#what-to-write) for you.
 
 - "I know what I want to write, but I don't know how to contribute to docs."
@@ -78,10 +78,10 @@ Contribute all new information in English language. Other languages are translat
 
 - Images: `![Exclamation sign](uri)`. You can refer to local images as well as remote in internet.
 - Lists: Lists can be of two types:
-   
+
     - `- unordered`: Each item starts from the `-`.
     - `1. ordered`: Each item starts from the number.
-   
+
     A list must be separated from the text by an empty line. Nested lists must be indented with 4 spaces.
 
 - Inline code: `` `in backticks` ``.

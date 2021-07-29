@@ -54,7 +54,7 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 !!! info "Warning"
     ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
 
-	
+
 ## GRANTEES Clause {#grantees}
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#grant-privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#grant-privigele-syntax). Options of the `GRANTEES` clause:

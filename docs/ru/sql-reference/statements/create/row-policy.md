@@ -33,7 +33,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluste
     `CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter`
 
     запретит пользователям `mira` и `peter` видеть строки с `b != 1`, и еще запретит всем остальным пользователям (например, пользователю `paul`) видеть какие-либо строки вообще из таблицы `mydb.table1`.
-   
+
     Если это нежелательно, такое поведение можно исправить, определив дополнительную политику:
 
     `CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`

@@ -340,8 +340,8 @@ SHOW [ROW] POLICIES [ON [db.]table]
 
 ``` sql
 SHOW QUOTAS
-``` 
-   
+```
+
 ## SHOW QUOTA {#show-quota-statement}
 
 Выводит потребление [квоты](../../operations/quotas.md) для всех пользователей или только для текущего пользователя. Для просмотра других параметров, см. системные таблицы [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) и [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).

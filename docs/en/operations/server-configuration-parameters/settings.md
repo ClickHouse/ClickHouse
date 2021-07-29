@@ -34,7 +34,7 @@ Configuration template:
       <min_part_size>...</min_part_size>
       <min_part_size_ratio>...</min_part_size_ratio>
       <method>...</method>
-      <level>...</level>   
+      <level>...</level>
     </case>
     ...
 </compression>
@@ -64,7 +64,7 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>	   
+        <level>1</level>
     </case>
 </compression>
 ```

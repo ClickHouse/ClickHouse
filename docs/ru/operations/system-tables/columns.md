@@ -38,17 +38,17 @@ database:                system
 table:                   aggregate_function_combinators
 name:                    name
 type:                    String
-default_kind:           
-default_expression:     
+default_kind:
+default_expression:
 data_compressed_bytes:   0
 data_uncompressed_bytes: 0
 marks_bytes:             0
-comment:                
+comment:
 is_in_partition_key:     0
 is_in_sorting_key:       0
 is_in_primary_key:       0
 is_in_sampling_key:      0
-compression_codec:      
+compression_codec:
 
 Row 2:
 ──────
@@ -56,15 +56,15 @@ database:                system
 table:                   aggregate_function_combinators
 name:                    is_internal
 type:                    UInt8
-default_kind:           
-default_expression:     
+default_kind:
+default_expression:
 data_compressed_bytes:   0
 data_uncompressed_bytes: 0
 marks_bytes:             0
-comment:                
+comment:
 is_in_partition_key:     0
 is_in_sorting_key:       0
 is_in_primary_key:       0
 is_in_sampling_key:      0
-compression_codec:      
+compression_codec:
 ```

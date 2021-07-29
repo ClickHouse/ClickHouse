@@ -479,7 +479,7 @@ x::t
 **Arguments**
 
 -   `x` — A value to convert. May be of any type.
--   `T` — The name of the target data type. [String](../../sql-reference/data-types/string.md). 
+-   `T` — The name of the target data type. [String](../../sql-reference/data-types/string.md).
 -   `t` — The target data type.
 
 **Returned value**

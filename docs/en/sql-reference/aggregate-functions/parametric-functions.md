@@ -530,7 +530,7 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
     - tail — Set the base point to the last event.
     - first_match — Set the base point to the first matched `event1`.
     - last_match — Set the base point to the last matched `event1`.
-   
+
 **Arguments**
 
 -   `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types.
@@ -594,12 +594,12 @@ SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'Home', page = '
  1970-01-01 09:00:01    2   Home // Base point, Matched with Home
  1970-01-01 09:00:02    2   Home // Unmatched with Gift
  1970-01-01 09:00:03    2   Gift
- 1970-01-01 09:00:04    2   Basket   
+ 1970-01-01 09:00:04    2   Basket
 
  1970-01-01 09:00:01    3   Gift // Base point, Unmatched with Home
- 1970-01-01 09:00:02    3   Home     
- 1970-01-01 09:00:03    3   Gift     
- 1970-01-01 09:00:04    3   Basket   
+ 1970-01-01 09:00:02    3   Home
+ 1970-01-01 09:00:03    3   Gift
+ 1970-01-01 09:00:04    3   Basket
 ```
 
 **Behavior for `backward` and `tail`**
@@ -611,12 +611,12 @@ SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page 
 1970-01-01 09:00:01    1   Home
 1970-01-01 09:00:02    1   Gift
 1970-01-01 09:00:03    1   Exit // Base point, Unmatched with Basket
-                                    
+
 1970-01-01 09:00:01    2   Home
 1970-01-01 09:00:02    2   Home // The result
 1970-01-01 09:00:03    2   Gift // Matched with Gift
 1970-01-01 09:00:04    2   Basket // Base point, Matched with Basket
-                                    
+
 1970-01-01 09:00:01    3   Gift
 1970-01-01 09:00:02    3   Home // The result
 1970-01-01 09:00:03    3   Gift // Base point, Matched with Gift
@@ -633,16 +633,16 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:01    1   Home
 1970-01-01 09:00:02    1   Gift // Base point
 1970-01-01 09:00:03    1   Exit // The result
-                                    
+
 1970-01-01 09:00:01    2   Home
 1970-01-01 09:00:02    2   Home
 1970-01-01 09:00:03    2   Gift // Base point
 1970-01-01 09:00:04    2   Basket  The result
-                                    
+
 1970-01-01 09:00:01    3   Gift // Base point
 1970-01-01 09:00:02    3   Home // The result
-1970-01-01 09:00:03    3   Gift  
-1970-01-01 09:00:04    3   Basket   
+1970-01-01 09:00:03    3   Gift
+1970-01-01 09:00:04    3   Basket
 ```
 
 ``` sql
@@ -652,16 +652,16 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:01    1   Home
 1970-01-01 09:00:02    1   Gift // Base point
 1970-01-01 09:00:03    1   Exit // Unmatched with Home
-                                    
+
 1970-01-01 09:00:01    2   Home
 1970-01-01 09:00:02    2   Home
 1970-01-01 09:00:03    2   Gift // Base point
 1970-01-01 09:00:04    2   Basket // Unmatched with Home
-                                    
+
 1970-01-01 09:00:01    3   Gift // Base point
 1970-01-01 09:00:02    3   Home // Matched with Home
 1970-01-01 09:00:03    3   Gift // The result
-1970-01-01 09:00:04    3   Basket   
+1970-01-01 09:00:04    3   Basket
 ```
 
 
@@ -674,16 +674,16 @@ SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:01    1   Home // The result
 1970-01-01 09:00:02    1   Gift // Base point
 1970-01-01 09:00:03    1   Exit
-                                    
+
 1970-01-01 09:00:01    2   Home
 1970-01-01 09:00:02    2   Home // The result
 1970-01-01 09:00:03    2   Gift // Base point
-1970-01-01 09:00:04    2   Basket   
-                                    
+1970-01-01 09:00:04    2   Basket
+
 1970-01-01 09:00:01    3   Gift
 1970-01-01 09:00:02    3   Home // The result
-1970-01-01 09:00:03    3   Gift // Base point 
-1970-01-01 09:00:04    3   Basket   
+1970-01-01 09:00:03    3   Gift // Base point
+1970-01-01 09:00:04    3   Basket
 ```
 
 ``` sql
@@ -693,16 +693,16 @@ SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', p
 1970-01-01 09:00:01    1   Home // Matched with Home, the result is null
 1970-01-01 09:00:02    1   Gift // Base point
 1970-01-01 09:00:03    1   Exit
-                                    
+
 1970-01-01 09:00:01    2   Home // The result
 1970-01-01 09:00:02    2   Home // Matched with Home
 1970-01-01 09:00:03    2   Gift // Base point
-1970-01-01 09:00:04    2   Basket   
-                                    
+1970-01-01 09:00:04    2   Basket
+
 1970-01-01 09:00:01    3   Gift // The result
 1970-01-01 09:00:02    3   Home // Matched with Home
-1970-01-01 09:00:03    3   Gift // Base point 
-1970-01-01 09:00:04    3   Basket   
+1970-01-01 09:00:03    3   Gift // Base point
+1970-01-01 09:00:04    3   Basket
 ```
 
 

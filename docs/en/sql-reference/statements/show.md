@@ -335,8 +335,8 @@ Returns a list of [quotas](../../operations/access-rights.md#quotas-management).
 
 ``` sql
 SHOW QUOTAS
-``` 
-   
+```
+
 ## SHOW QUOTA {#show-quota-statement}
 
 Returns a [quota](../../operations/quotas.md) consumption for all users or for current user. To view another parameters, see system tables [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) and [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
