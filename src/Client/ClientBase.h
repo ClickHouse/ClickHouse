@@ -44,29 +44,6 @@ protected:
 
     void runNonInteractive();
 
-    /*
-     * full_query - current query as it was given to the client.
-     * parsed_query - parsed query (used to determine some settings e.g. format, output file).
-     * query_to_execute - current query as it will be executed by server.
-     *                    (It may differ from the full query for INSERT queries, for which the
-     *                    data that follows the query is stripped and sent separately.)
-    **/
-
-
-    /*
-     * Process multiquery - several queries separated by ';'.
-     * Also in case of clickhouse-server:
-     * - INSERT data is ended by the end of line, not ';'.
-     * - An exception is VALUES format where we also support semicolon in addition to end of line.
-    **/
-    bool processMultiQueryImpl(const String & all_queries_text,
-                               std::function<void(const String & full_query, const String & query_to_execute, ASTPtr parsed_query)> execute_single_query,
-                               std::function<void(const String &, Exception &)> process_parse_query_error = {});
-
-    /// Process parsed single query.
-    void processSingleQueryImpl(const String & query,
-                                std::function<void()> execute_single_query,
-                                std::optional<bool> echo_query_ = {}, bool report_error = false);
 
     /*
      * Method to implement multi-query processing.
@@ -84,6 +61,32 @@ protected:
     {
         throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+
+    /*
+     * Process multiquery - several queries separated by ';'. Depends on executeSingleQuery().
+     * Also in case of clickhouse-server:
+     * - INSERT data is ended by the end of line, not ';'.
+     * - An exception is VALUES format where we also support semicolon in addition to end of line.
+    **/
+    bool processMultiQueryImpl(const String & all_queries_text,
+                               std::function<void(const String & full_query, const String & query_to_execute, ASTPtr parsed_query)> execute_single_query,
+                               std::function<void(const String &, Exception &)> process_parse_query_error = {});
+
+    /*
+     * Process parsed single query. Depends on executeSingleQuery().
+    **/
+    void processSingleQueryImpl(const String & query, const String & query_to_execute, ASTPtr parsed_query,
+                                std::optional<bool> echo_query_ = {}, bool report_error = false);
+    /*
+     * Just execute a single query.
+     * full_query - current query as it was given to the client.
+     * parsed_query - parsed query (used to determine some settings e.g. format, output file).
+     * query_to_execute - current query as it will be executed by server.
+     *                    (It may differ from the full query for INSERT queries, for which the
+     *                    data that follows the query is stripped and sent separately.)
+    **/
+    virtual void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) = 0;
 
 
     virtual void reportQueryError(const String & query) const = 0;

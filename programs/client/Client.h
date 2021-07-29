@@ -24,6 +24,8 @@ protected:
 
     void reportQueryError(const String & query) const override;
 
+    void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
+
     void loadSuggestionData() override;
 
 
@@ -98,7 +100,6 @@ private:
     void onProfileInfo(const BlockStreamProfileInfo & profile_info);
     void onEndOfStream();
 
-    void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query);
     std::vector<String> loadWarningMessages();
 
     void reconnectIfNeeded() override
