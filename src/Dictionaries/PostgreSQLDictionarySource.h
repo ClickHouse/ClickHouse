@@ -26,6 +26,7 @@ public:
         const String db;
         const String schema;
         const String table;
+        const String query;
         const String where;
         const String invalidate_query;
         const String update_field;
