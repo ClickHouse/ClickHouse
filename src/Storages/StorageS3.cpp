@@ -461,14 +461,20 @@ private:
         auto it = sinks.find(partition_id);
         if (it == sinks.end())
         {
+            auto partition_bucket = replaceWildcards(bucket, partition_id);
+            S3::URI::validateBucket(partition_bucket);
+
+            auto partition_key = replaceWildcards(key, partition_id);
+            S3::URI::validateKey(partition_key);
+
             std::tie(it, std::ignore) = sinks.emplace(partition_id, std::make_shared<StorageS3Sink>(
                 format,
                 sample_block,
                 context,
                 compression_method,
                 client,
-                replaceWildcards(bucket, partition_id),
-                replaceWildcards(key, partition_id),
+                partition_bucket,
+                partition_key,
                 min_upload_part_size,
                 max_single_part_upload_size
             ));
