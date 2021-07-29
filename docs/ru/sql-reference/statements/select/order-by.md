@@ -280,7 +280,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr]
 ```
 
-`WITH FILL` может быть применен к полям с числовыми (все разновидности float, int, decimal) или временными (все разновидности Date, DateTime) типами. В случае применения к полям типа `String`, недостающие значения заполняются пустой строкой.
+`WITH FILL` может быть применен к полям с числовыми (все разновидности float, int, decimal) или временными (все разновидности Date, DateTime) типами. В случае применения к полям типа `String` недостающие значения заполняются пустой строкой.
 Когда не определен `FROM const_expr`, последовательность заполнения использует минимальное значение поля `expr` из `ORDER BY`.
 Когда не определен `TO const_expr`, последовательность заполнения использует максимальное значение поля `expr` из `ORDER BY`.
 Когда `STEP const_numeric_expr` определен, `const_numeric_expr` интерпретируется `как есть` для числовых типов, как `дни` для типа Date и как `секунды` для типа DateTime. 
