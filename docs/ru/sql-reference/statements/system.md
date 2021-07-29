@@ -288,8 +288,7 @@ SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
-Реинициализирует состояние сессий Zookeeper для таблицы `ReplicatedMergeTree`. Сравнивает текущее состояние с тем, которое хранится в Zookeeper (как источнике правильных значений) и при необходимости добавляет задачи в очередь репликации Zookeeper.
-Инициализация очереди репликации на основе данных ZooKeeper происходит так же, как при `ATTACH TABLE`. Какое-то время таблица будет недоступна для любых операций.
+Реинициализирует состояние сессий Zookeeper для таблицы семейства `ReplicatedMergeTree`. Сравнивает текущее состояние с Zookeeper (как источнике правильных значений) и при необходимости добавляет задачи в очередь репликации Zookeeper. В процессе инициализации очереди репликации на основе данных ZooKeeper, какое-то время таблица будет недоступна для любых операций.
 
 ``` sql
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
@@ -297,9 +296,9 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 
 ### RESTORE REPLICA {#query_language-system-restore-replica}
 
-Восстанавливает реплику, если данные (возможно) присутствуют, но метаданные Zookeeper потеряны.
+Восстанавливает реплику, если метаданные Zookeeper потеряны, но сами данные возможно существуют.
 
-Работает только с таблицами readonly `ReplicatedMergeTree`.
+Работает только с таблицами семейства `ReplicatedMergeTree` в режиме только на чтение.
 
 Запрос можно выполнить из:
 
@@ -308,8 +307,7 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
   - конкретного пути в каталоге реплики `/replicas/replica_name/` с потерянными данными.
 
 К реплике прикрепляются локально найденные части, информация о них отправляется в Zookeeper.
-Данные, присутствующие в реплике до потери метаданных, не извлекаются повторно из других реплик, если они не устарели
-(поэтому восстановление реплики не означает повторную загрузку всех данных по сети).
+Данные, присутствующие в реплике до потери метаданных, не извлекаются повторно из других реплик, если они не устарели (поэтому восстановление реплики не означает повторную загрузку всех данных по сети).
 
 Предупреждение: потерянные данные в любых состояниях перемещаются в папку `detached/`. Части, активные до потери данных (для которых сделан commit), прикрепляются.
 
@@ -338,8 +336,14 @@ INSERT INTO test SELECT * FROM numbers(1000);
 
 -- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- root loss.
 
-SYSTEM RESTART REPLICA test; -- Table will attach as readonly as metadata is missing.
-SYSTEM RESTORE REPLICA test; -- Need to execute on every replica, another way: RESTORE REPLICA test ON CLUSTER cluster
+SYSTEM RESTART REPLICA test; -- таблица будет прикреплена только для чтения, так как метаданные отсутствуют.
+SYSTEM RESTORE REPLICA test; -- необходимо выполнить на каждой реплике.
+```
+
+Альтернативный способ:
+
+```sql
+RESTORE REPLICA test ON CLUSTER cluster;
 ```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
