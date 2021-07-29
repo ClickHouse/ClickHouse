@@ -7,7 +7,7 @@ toc_title: MaterializedPostgreSQL
 
 Creates ClickHouse database with all the tables existing in PostgreSQL, and all the data in those tables.
 
-ClickHouse server works as PostgreSQL replica. It reads binlog and performs DDL and DML queries.
+ClickHouse server works as PostgreSQL replica. It reads WAL and performs DML queries. DDL is not replicated, but can be handled (described below).
 
 This feature is experimental.
 
