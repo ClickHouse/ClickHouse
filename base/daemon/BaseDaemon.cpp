@@ -261,7 +261,7 @@ private:
 
     void onTerminate(std::string_view message, UInt32 thread_num) const
     {
-	    size_t pos = message.find('\n');
+        size_t pos = message.find('\n');
 
         LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
             VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
