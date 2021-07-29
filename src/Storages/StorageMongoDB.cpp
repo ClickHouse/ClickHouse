@@ -125,7 +125,7 @@ void registerStorageMongoDB(StorageFactory & factory)
         const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
-        String options = "";
+        String options;
 
         if (engine_args.size() >= 6)
             options = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
