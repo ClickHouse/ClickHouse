@@ -193,22 +193,6 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 - [REMOVE TTL](ttl.md).
 
-## RENAME COLUMN {#alter_rename-column}
-
-Переименовывает существующий столбец.
-
-Синтаксис:
-
-```sql
-ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name
-```
-
-**Пример**
-
-```sql
-ALTER TABLE table_with_ttl RENAME COLUMN column_ttl TO column_ttl_new;
-```
-
 ## Ограничения запроса ALTER {#ogranicheniia-zaprosa-alter}
 
 Запрос `ALTER` позволяет создавать и удалять отдельные элементы (столбцы) вложенных структур данных, но не вложенные структуры данных целиком. Для добавления вложенной структуры данных, вы можете добавить столбцы с именем вида `name.nested_name` и типом `Array(T)` - вложенная структура данных полностью эквивалентна нескольким столбцам-массивам с именем, имеющим одинаковый префикс до точки.
