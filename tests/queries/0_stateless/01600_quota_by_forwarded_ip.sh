@@ -28,7 +28,7 @@ CREATE QUOTA quota_by_forwarded_ip KEYED BY forwarded_ip_address FOR RANDOMIZED 
 echo '--- Test with quota by immediate IP ---'
 
 while true; do
-    $CLICKHOUSE_CLIENT --user quoted_by_ip --query "SELECT count() FROM numbers(10)" 2>/dev/null || break
+    ${CLICKHOUSE_CURL} --fail -sS "${CLICKHOUSE_URL}&user=quoted_by_ip" -d "SELECT count() FROM numbers(10)" 2>/dev/null || break
 done | uniq
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=quoted_by_ip" -d "SELECT count() FROM numbers(10)" | grep -oF 'exceeded'
