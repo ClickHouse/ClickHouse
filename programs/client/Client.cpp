@@ -113,7 +113,7 @@ void Client::processSingleQuery(const String & full_query)
     else
         query_to_execute = full_query;
 
-    processSingleQueryImpl(full_query, [&]() { executeSingleQuery(query_to_execute, parsed_query); });
+    processSingleQueryImpl(full_query, query_to_execute, parsed_query);
 
     if (have_error)
         reportQueryError(full_query);
@@ -147,7 +147,7 @@ bool Client::processMultiQuery(const String & all_queries_text)
         echo_query = test_hint.echoQueries().value_or(echo_query);
         try
         {
-            processSingleQueryImpl(full_query, [&](){ executeSingleQuery(query_to_execute, parsed_query); }, echo_query, false);
+            processSingleQueryImpl(full_query, query_to_execute, parsed_query, echo_query, false);
         }
         catch (...)
         {
@@ -708,7 +708,7 @@ bool Client::processWithFuzzing(const String & full_query)
 
             parsed_query = ast_to_process;
             query_to_execute = parsed_query->formatForErrorMessage();
-            processSingleQueryImpl(full_query, [&]() { executeSingleQuery(query_to_execute, parsed_query); });
+            processSingleQueryImpl(full_query, query_to_execute, parsed_query);
         }
         catch (...)
         {
@@ -807,8 +807,7 @@ bool Client::processWithFuzzing(const String & full_query)
             {
                 const auto * tmp_pos = query_to_execute.c_str();
 
-                ast_2 = parseQuery(tmp_pos, tmp_pos + query_to_execute.size(),
-                    false /* allow_multi_statements */);
+                ast_2 = parseQuery(tmp_pos, tmp_pos + query_to_execute.size(), false /* allow_multi_statements */);
             }
             catch (Exception & e)
             {

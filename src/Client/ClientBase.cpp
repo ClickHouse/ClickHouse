@@ -167,7 +167,7 @@ void ClientBase::resetOutput()
 }
 
 
-void ClientBase::processSingleQueryImpl(const String & full_query, std::function<void()> execute_single_query, std::optional<bool> echo_query_, bool report_error)
+void ClientBase::processSingleQueryImpl(const String & full_query, const String & query_to_execute, ASTPtr parsed_query, std::optional<bool> echo_query_, bool report_error)
 {
     resetOutput();
     have_error = false;
@@ -196,7 +196,7 @@ void ClientBase::processSingleQueryImpl(const String & full_query, std::function
     written_first_block = false;
     progress_indication.resetProgress();
 
-    execute_single_query();
+    executeSingleQuery(query_to_execute, parsed_query);
 
     if (is_interactive)
     {

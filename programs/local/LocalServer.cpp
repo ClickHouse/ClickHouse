@@ -218,7 +218,7 @@ std::string LocalServer::getInitialCreateTableQuery()
 }
 
 
-void LocalServer::executeSingleQuery(const String & query_to_execute)
+void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* parsed_query */)
 {
     ReadBufferFromString read_buf(query_to_execute);
     WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
@@ -335,7 +335,7 @@ int LocalServer::mainImpl()
         /// Use the same query_id (and thread group) for all queries
         CurrentThread::QueryScope query_scope_holder(query_context);
 
-        if (need_render_progress)
+        if (need_render_progress && !is_interactive)
         {
             /// Set progress callback, which can be run from multiple threads.
             query_context->setProgressCallback([&](const Progress & value)
@@ -402,7 +402,7 @@ void LocalServer::processConfig()
         is_multiquery = true;
 
         need_render_progress = config().getBool("progress", false);
-        echo_queries = config().getBool("echo", false);
+        echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
     }
 
@@ -482,8 +482,6 @@ void LocalServer::processConfig()
     {
         attachSystemTables(global_context);
     }
-
-    echo_queries = config().hasOption("echo") || config().hasOption("verbose");
 
     server_display_name = config().getString("display_name", getFQDNOrHostName());
     prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
@@ -568,7 +566,7 @@ void LocalServer::applyCmdSettings(ContextMutablePtr context)
 
 void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
-    context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
+    context->setDefaultFormat(config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
     applyCmdSettings(context);
 }
 
