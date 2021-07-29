@@ -20,6 +20,29 @@ Possible values:
 -   `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
 -   `allow` — Allows the use of these types of subqueries.
 
+## prefer_global_in_and_join {#prefer-global-in-and-join}
+
+Enables the replacement of `IN`/`JOIN` operators with `GLOBAL IN`/`GLOBAL JOIN`.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `0`.
+
+**Usage**
+
+Although `SET [distributed_product_mode](#distributed-product-mode)=global;` can change the queries behavior for the distributed tables, it's not suitable for local tables or tables from external resources. Here is when the `prefer_global_in_and_join` setting comes into play.
+
+For example, we have query serving nodes that contain local tables, which are not suitable for distribution. We need to scatter their data on the fly during distributed processing with the `GLOBAL` keyword — `GLOBAL IN`/`GLOBAL JOIN`.
+
+Another use case of `prefer_global_in_and_join` is accessing tables created by external engines. This setting helps to reduce the number of calls to external sources while joining such tables: only one call per query.
+
+**Check Also**
+
+-   [Distributed subqueries](../../sql-reference/operators/in.md#select-distributed-subqueries) for more information on how to use `GLOBAL IN`/`GLOBAL JOIN`
+
 ## enable_optimize_predicate_expression {#enable-optimize-predicate-expression}
 
 Turns on predicate pushdown in `SELECT` queries.
