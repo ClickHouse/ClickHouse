@@ -389,13 +389,13 @@ public:
         block_with_partition_by_expr.setColumns(columns);
         partition_by_expr->execute(block_with_partition_by_expr);
 
-        const auto * key_column = checkAndGetColumn<ColumnString>(block_with_partition_by_expr.getByName(partition_by_column_name).column.get());
+        const auto * column = block_with_partition_by_expr.getByName(partition_by_column_name).column.get();
 
         std::unordered_map<String, size_t> sub_chunks_indices;
         IColumn::Selector selector;
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
-            auto value = key_column->getDataAt(row);
+            auto value = column->getDataAt(row);
             validatePartitionKey(value);
             auto [it, inserted] = sub_chunks_indices.emplace(value, sub_chunks_indices.size());
             selector.push_back(it->second);
