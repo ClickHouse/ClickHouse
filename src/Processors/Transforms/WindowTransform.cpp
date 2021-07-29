@@ -315,7 +315,7 @@ void WindowTransform::advancePartitionEnd()
 
     const RowNumber end = blocksEnd();
 
-//    fmt::print(stderr, "end {}, partition_end {}\n", end, partition_end);
+//     fmt::print(stderr, "end {}, partition_end {}\n", end, partition_end);
 
     // If we're at the total end of data, we must end the partition. This is one
     // of the few places in calculations where we need special handling for end
@@ -348,8 +348,8 @@ void WindowTransform::advancePartitionEnd()
     assert(end.block == partition_end.block + 1);
 
     // Try to advance the partition end pointer.
-    const size_t n = partition_by_indices.size();
-    if (n == 0)
+    const size_t partition_by_columns = partition_by_indices.size();
+    if (partition_by_columns == 0)
     {
         // No PARTITION BY. All input is one partition, which will end when the
         // input ends.
@@ -360,27 +360,39 @@ void WindowTransform::advancePartitionEnd()
     // Check for partition end.
     // The partition ends when the PARTITION BY columns change. We need
     // some reference columns for comparison. We might have already
-    // dropped the blocks where the partition starts, but any row in the
-    // partition will do. We use the current_row for this. It might be the same
-    // as the partition_end if we're at the first row of the first partition, so
-    // we will compare it to itself, but it still works correctly.
+    // dropped the blocks where the partition starts, but any other row in the
+    // partition will do. We can't use current_row for this (the next row for
+    // which we are calculating the window functions), because it might be past
+    // the partition end. The frame pointers are more suitable because they are
+    // always inside the partition and we keep the frame in memory. Use
+    // frame_end because it's closer to the partition_end and will give better
+    // data locality.
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
     {
+//        fmt::print(stderr, "compare reference '{}' to compared '{}'\n",
+//            frame_end, partition_end);
+
         size_t i = 0;
-        for (; i < n; i++)
+        for (; i < partition_by_columns; i++)
         {
-            const auto * ref = inputAt(current_row)[partition_by_indices[i]].get();
-            const auto * c = inputAt(partition_end)[partition_by_indices[i]].get();
-            if (c->compareAt(partition_end.row,
-                    current_row.row, *ref,
+            const auto * reference_column
+                = inputAt(frame_end)[partition_by_indices[i]].get();
+            const auto * compared_column
+                = inputAt(partition_end)[partition_by_indices[i]].get();
+
+//            fmt::print(stderr, "reference '{}', compared '{}'\n",
+//                (*reference_column)[frame_end.row],
+//                (*compared_column)[partition_end.row]);
+            if (compared_column->compareAt(partition_end.row,
+                    frame_end.row, *reference_column,
                     1 /* nan_direction_hint */) != 0)
             {
                 break;
             }
         }
 
-        if (i < n)
+        if (i < partition_by_columns)
         {
             partition_ended = true;
             return;
@@ -964,6 +976,9 @@ void WindowTransform::writeOutCurrentRow()
             a->insertResultInto(buf, *result_column, arena.get());
         }
     }
+
+//    fmt::print(stderr, "wrote out aggregation state for current row '{}'\n",
+//        current_row);
 }
 
 static void assertSameColumns(const Columns & left_all,
@@ -1181,7 +1196,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         peer_group_number = 1;
 
 //        fmt::print(stderr, "reinitialize agg data at start of {}\n",
-//            new_partition_start);
+//            partition_start);
         // Reinitialize the aggregate function states because the new partition
         // has started.
         for (auto & ws : workspaces)
