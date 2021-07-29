@@ -1,5 +1,5 @@
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
-#include <Storages/RocksDB/EmbeddedRocksDBBlockOutputStream.h>
+#include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 #include <Storages/RocksDB/EmbeddedRocksDBBlockInputStream.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -16,6 +16,7 @@
 #include <Parsers/ASTCreateQuery.h>
 
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
@@ -26,14 +27,18 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
 
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Poco/Logger.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
 
 #include <rocksdb/db.h>
 #include <rocksdb/table.h>
+#include <rocksdb/convenience.h>
 
+#include <filesystem>
+
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -46,6 +51,24 @@ namespace ErrorCodes
 }
 
 using FieldVectorPtr = std::shared_ptr<FieldVector>;
+using RocksDBOptions = std::unordered_map<std::string, std::string>;
+
+
+static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & path)
+{
+    RocksDBOptions options;
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(path, keys);
+
+    for (const auto & key : keys)
+    {
+        const String key_path = path + "." + key;
+        options[key] = config.getString(key_path);
+    }
+
+    return options;
+}
 
 
 // returns keys may be filter by condition
@@ -245,37 +268,111 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata_,
         bool attach,
-        Context & context_,
+        ContextPtr context_,
         const String & primary_key_)
-    : IStorage(table_id_), primary_key{primary_key_}
+    : IStorage(table_id_)
+    , WithContext(context_->getGlobalContext())
+    , primary_key{primary_key_}
 {
     setInMemoryMetadata(metadata_);
-    rocksdb_dir = context_.getPath() + relative_data_path_;
+    rocksdb_dir = context_->getPath() + relative_data_path_;
     if (!attach)
     {
-        Poco::File(rocksdb_dir).createDirectories();
+        fs::create_directories(rocksdb_dir);
     }
     initDb();
 }
 
-void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr & , const Context &, TableExclusiveLockHolder &)
+void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr & , ContextPtr, TableExclusiveLockHolder &)
 {
     rocksdb_ptr->Close();
-    Poco::File(rocksdb_dir).remove(true);
-    Poco::File(rocksdb_dir).createDirectories();
+    fs::remove_all(rocksdb_dir);
+    fs::create_directories(rocksdb_dir);
     initDb();
 }
 
 void StorageEmbeddedRocksDB::initDb()
 {
-    rocksdb::Options options;
+    rocksdb::Status status;
+    rocksdb::Options base;
     rocksdb::DB * db;
-    options.create_if_missing = true;
-    options.compression = rocksdb::CompressionType::kZSTD;
-    rocksdb::Status status = rocksdb::DB::Open(options, rocksdb_dir, &db);
 
-    if (status != rocksdb::Status::OK())
-        throw Exception("Fail to open rocksdb path at: " +  rocksdb_dir + ": " + status.ToString(), ErrorCodes::ROCKSDB_ERROR);
+    base.create_if_missing = true;
+    base.compression = rocksdb::CompressionType::kZSTD;
+    base.statistics = rocksdb::CreateDBStatistics();
+    /// It is too verbose by default, and in fact we don't care about rocksdb logs at all.
+    base.info_log_level = rocksdb::ERROR_LEVEL;
+
+    rocksdb::Options merged = base;
+
+    const auto & config = getContext()->getConfigRef();
+    if (config.has("rocksdb.options"))
+    {
+        auto config_options = getOptionsFromConfig(config, "rocksdb.options");
+        status = rocksdb::GetDBOptionsFromMap(merged, config_options, &merged);
+        if (!status.ok())
+        {
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.options' at: {}: {}",
+                rocksdb_dir, status.ToString());
+        }
+    }
+    if (config.has("rocksdb.column_family_options"))
+    {
+        auto column_family_options = getOptionsFromConfig(config, "rocksdb.column_family_options");
+        status = rocksdb::GetColumnFamilyOptionsFromMap(merged, column_family_options, &merged);
+        if (!status.ok())
+        {
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.options' at: {}: {}",
+                rocksdb_dir, status.ToString());
+        }
+    }
+
+    if (config.has("rocksdb.tables"))
+    {
+        auto table_name = getStorageID().getTableName();
+
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys("rocksdb.tables", keys);
+
+        for (const auto & key : keys)
+        {
+            const String key_prefix = "rocksdb.tables." + key;
+            if (config.getString(key_prefix + ".name") != table_name)
+                continue;
+
+            String config_key = key_prefix + ".options";
+            if (config.has(config_key))
+            {
+                auto table_config_options = getOptionsFromConfig(config, config_key);
+                status = rocksdb::GetDBOptionsFromMap(merged, table_config_options, &merged);
+                if (!status.ok())
+                {
+                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from '{}' at: {}: {}",
+                        config_key, rocksdb_dir, status.ToString());
+                }
+            }
+
+            config_key = key_prefix + ".column_family_options";
+            if (config.has(config_key))
+            {
+                auto table_column_family_options = getOptionsFromConfig(config, config_key);
+                status = rocksdb::GetColumnFamilyOptionsFromMap(merged, table_column_family_options, &merged);
+                if (!status.ok())
+                {
+                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from '{}' at: {}: {}",
+                        config_key, rocksdb_dir, status.ToString());
+                }
+            }
+        }
+    }
+
+    status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
+
+    if (!status.ok())
+    {
+        throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to open rocksdb path at: {}: {}",
+            rocksdb_dir, status.ToString());
+    }
     rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
 }
 
@@ -284,7 +381,7 @@ Pipe StorageEmbeddedRocksDB::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        const Context & /*context*/,
+        ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams)
@@ -330,10 +427,10 @@ Pipe StorageEmbeddedRocksDB::read(
     }
 }
 
-BlockOutputStreamPtr StorageEmbeddedRocksDB::write(
-    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+SinkToStoragePtr StorageEmbeddedRocksDB::write(
+    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<EmbeddedRocksDBBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }
 
 
@@ -352,15 +449,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.context);
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
     {
         throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
     }
-    return StorageEmbeddedRocksDB::create(args.table_id, args.relative_data_path, metadata, args.attach, args.context, primary_key_names[0]);
+    return StorageEmbeddedRocksDB::create(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0]);
 }
 
+std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
+{
+    return rocksdb_ptr->GetOptions().statistics;
+}
 
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {

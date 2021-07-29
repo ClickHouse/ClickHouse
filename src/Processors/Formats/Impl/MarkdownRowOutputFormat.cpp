@@ -17,20 +17,20 @@ void MarkdownRowOutputFormat::writePrefix()
     for (size_t i = 0; i < columns; ++i)
     {
         writeEscapedString(header.safeGetByPosition(i).name, out);
-        writeCString(" | ", out);
+        if (i == (columns - 1))
+            writeCString(" |", out);
+        else
+            writeCString(" | ", out);
     }
     writeCString("\n|", out);
     String left_alignment = ":-|";
-    String central_alignment = ":-:|";
     String right_alignment = "-:|";
     for (size_t i = 0; i < columns; ++i)
     {
-        if (isInteger(types[i]))
+        if (types[i]->shouldAlignRightInPrettyFormats())
             writeString(right_alignment, out);
-        else if (isString(types[i]))
-            writeString(left_alignment, out);
         else
-            writeString(central_alignment, out);
+            writeString(left_alignment, out);
     }
     writeChar('\n', out);
 }

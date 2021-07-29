@@ -12,7 +12,7 @@ NO_COMPILER_WARNINGS()
 
 
 SRCS(
-<? find . -name '*.cpp' | grep -v -P 'tests|PostgreSQL' | sed 's/^\.\//    /' | sort ?>
+<? find . -name '*.cpp' | grep -v -P 'tests|PostgreSQL' | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
 )
 
 END()

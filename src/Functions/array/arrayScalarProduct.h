@@ -25,7 +25,7 @@ class FunctionArrayScalarProduct : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayScalarProduct>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayScalarProduct>(); }
 
 private:
     using ResultColumnType = ColumnVector<typename Method::ResultType>;

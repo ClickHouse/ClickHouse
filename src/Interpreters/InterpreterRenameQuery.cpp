@@ -18,8 +18,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
+    : WithContext(context_), query_ptr(query_ptr_)
 {
 }
 
@@ -29,12 +29,12 @@ BlockIO InterpreterRenameQuery::execute()
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
 
     if (!rename.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
 
-    context.checkAccess(getRequiredAccess());
+    getContext()->checkAccess(getRequiredAccess());
 
-    String path = context.getPath();
-    String current_database = context.getCurrentDatabase();
+    String path = getContext()->getPath();
+    String current_database = getContext()->getCurrentDatabase();
 
     /** In case of error while renaming, it is possible that only part of tables was renamed
       *  or we will be in inconsistent state. (It is worth to be fixed.)
@@ -77,10 +77,11 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     for (const auto & elem : descriptions)
     {
         if (!rename.exchange)
-            database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), context);
+            database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
-        if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+        if (typeid_cast<DatabaseReplicated *>(database.get())
+            && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
         {
             if (1 < descriptions.size())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database {} is Replicated, "
@@ -90,12 +91,12 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
+            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
         }
         else
         {
             database->renameTable(
-                context,
+                getContext(),
                 elem.from_table_name,
                 *database_catalog.getDatabase(elem.to_database_name),
                 elem.to_table_name,
@@ -140,19 +141,19 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess() const
     return required_access;
 }
 
-void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const
+void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const
 {
     elem.query_kind = "Rename";
     const auto & rename = ast->as<const ASTRenameQuery &>();
     for (const auto & element : rename.elements)
     {
         {
-            String database = backQuoteIfNeed(element.from.database.empty() ? context.getCurrentDatabase() : element.from.database);
+            String database = backQuoteIfNeed(element.from.database.empty() ? getContext()->getCurrentDatabase() : element.from.database);
             elem.query_databases.insert(database);
             elem.query_tables.insert(database + "." + backQuoteIfNeed(element.from.table));
         }
         {
-            String database = backQuoteIfNeed(element.to.database.empty() ? context.getCurrentDatabase() : element.to.database);
+            String database = backQuoteIfNeed(element.to.database.empty() ? getContext()->getCurrentDatabase() : element.to.database);
             elem.query_databases.insert(database);
             elem.query_tables.insert(database + "." + backQuoteIfNeed(element.to.table));
         }

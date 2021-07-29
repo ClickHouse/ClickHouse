@@ -60,8 +60,8 @@ public:
         SubstreamsCache * cache) const override;
 
 private:
-    template <typename Writer>
-    void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, Writer && writer) const;
+    template <typename KeyWriter, typename ValueWriter>
+    void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, KeyWriter && key_writer, ValueWriter && value_writer) const;
 
     template <typename Reader>
     void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const;

@@ -7,8 +7,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Core/Block.h>
-#include <ext/range.h>
-#include <ext/size.h>
 #include <Common/HashTable/HashMap.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
@@ -42,6 +40,14 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
+    double getFoundRate() const override
+    {
+        size_t queries = query_count.load(std::memory_order_relaxed);
+        if (!queries)
+            return 0;
+        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+    }
+
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return 0; }
@@ -65,6 +71,13 @@ public:
     }
 
     DictionaryKeyType getKeyType() const override { return dictionary_key_type; }
+
+    Columns getColumns(
+        const Strings & attribute_names,
+        const DataTypes & result_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const Columns & default_values_columns) const override;
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -94,6 +107,7 @@ private:
     const DictionaryLifetime dict_lifetime;
 
     mutable std::atomic<size_t> query_count{0};
+    mutable std::atomic<size_t> found_count{0};
 };
 
 extern template class DirectDictionary<DictionaryKeyType::simple>;

@@ -4,11 +4,13 @@
             [clojure.pprint :refer [pprint]]
             [jepsen.clickhouse-keeper.set :as set]
             [jepsen.clickhouse-keeper.db :refer :all]
+            [jepsen.clickhouse-keeper.zookeeperdb :refer :all]
             [jepsen.clickhouse-keeper.nemesis :as custom-nemesis]
             [jepsen.clickhouse-keeper.register :as register]
             [jepsen.clickhouse-keeper.unique :as unique]
             [jepsen.clickhouse-keeper.queue :as queue]
             [jepsen.clickhouse-keeper.counter :as counter]
+            [jepsen.clickhouse-keeper.bench :as bench]
             [jepsen.clickhouse-keeper.constants :refer :all]
             [clojure.string :as str]
             [jepsen
@@ -72,12 +74,29 @@
     :validate [pos? "Must be a positive integer."]]
    [nil, "--lightweight-run" "Subset of workloads/nemesises which is simple to validate"]
    [nil, "--reuse-binary" "Use already downloaded binary if it exists, don't remove it on shutdown"]
+   [nil, "--bench" "Run perf-test mode"]
+   [nil, "--zookeeper-version VERSION" "Run zookeeper with version"
+    :default ""]
+   [nil, "--bench-opts STR" "Run perf-test mode"
+    :default "--generator list_medium_nodes -c 30 -i 1000"]
    ["-c" "--clickhouse-source URL" "URL for clickhouse deb or tgz package"
-    :default "https://clickhouse-builds.s3.yandex.net/21677/ef82333089156907a0979669d9374c2e18daabe5/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_deb/clickhouse-common-static_21.4.1.6313_amd64.deb"]])
+    :default "https://clickhouse-builds.s3.yandex.net/21677/ef82333089156907a0979669d9374c2e18daabe5/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_deb/clickhouse-common-static_21.4.1.6313_amd64.deb"]
+   [nil "--bench-path path" "Path to keeper-bench util"
+    :default "/home/alesap/code/cpp/BuildCH/utils/keeper-bench/keeper-bench"]])
 
-(defn clickhouse-keeper-test
-  "Given an options map from the command line runner (e.g. :nodes, :ssh,
-  :concurrency, ...), constructs a test map."
+(defn get-db
+  [opts]
+  (if (empty? (:zookeeper-version opts))
+    (db (:clickhouse-source opts) (boolean (:reuse-binary opts)))
+    (zookeeper-db (:zookeeper-version opts))))
+
+(defn get-port
+  [opts]
+  (if (empty? (:zookeeper-version opts))
+    9181
+    2181))
+
+(defn clickhouse-func-tests
   [opts]
   (info "Test opts\n" (with-out-str (pprint opts)))
   (let [quorum (boolean (:quorum opts))
@@ -87,7 +106,7 @@
            opts
            {:name (str "clickhouse-keeper-quorum=" quorum "-"  (name (:workload opts)) "-" (name (:nemesis opts)))
             :os ubuntu/os
-            :db (db (:clickhouse-source opts) (boolean (:reuse-binary opts)))
+            :db (get-db opts)
             :pure-generators true
             :client (:client workload)
             :nemesis (:nemesis current-nemesis)
@@ -104,6 +123,30 @@
                         (gen/log "Waiting for recovery")
                         (gen/sleep 10)
                         (gen/clients (:final-generator workload)))})))
+
+(defn clickhouse-perf-test
+  [opts]
+  (info "Starting performance test")
+  (let [dct {:type :invoke :bench-opts (:bench-opts opts) :bench-path (:bench-path opts)}]
+    (merge tests/noop-test
+           opts
+           {:name (str "clickhouse-keeper-perf")
+            :os ubuntu/os
+            :db (get-db opts)
+            :pure-generators true
+            :client (bench/bench-client (get-port opts))
+            :nemesis nemesis/noop
+            :generator (->> dct
+                            (gen/stagger 1)
+                            (gen/nemesis nil))})))
+
+(defn clickhouse-keeper-test
+  "Given an options map from the command line runner (e.g. :nodes, :ssh,
+  :concurrency, ...), constructs a test map."
+  [opts]
+  (if (boolean (:bench opts))
+    (clickhouse-perf-test opts)
+    (clickhouse-func-tests opts)))
 
 (def all-nemesises (keys custom-nemesis/custom-nemesises))
 

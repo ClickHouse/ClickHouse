@@ -1,5 +1,5 @@
 SELECT MAX(aggr)
-FROM 
+FROM
 (
 	SELECT MAX(-1) AS aggr
 	FROM system.one
@@ -11,7 +11,7 @@ FROM
 
 );
 SELECT MaX(aggr)
-FROM 
+FROM
 (
     SELECT mAX(-1) AS aggr
     FROM system.one
@@ -22,7 +22,7 @@ FROM
     WHERE 1
 );
 SELECT MaX(aggr)
-FROM 
+FROM
 (
     SELECT mAX(-1) AS aggr
     FROM system.one
@@ -33,7 +33,7 @@ FROM
     WHERE 1
 );
 SELECT MaX(aggr)
-FROM 
+FROM
 (
     SELECT mAX(-1) AS aggr
     FROM system.one
@@ -45,7 +45,7 @@ FROM
 );
 SET aggregate_functions_null_for_empty=1;
 SELECT MAX(aggr)
-FROM 
+FROM
 (
 	SELECT MAX(-1) AS aggr
 	FROM system.one
@@ -57,7 +57,7 @@ FROM
 
 );
 SELECT MaX(aggr)
-FROM 
+FROM
 (
     SELECT mAX(-1) AS aggr
     FROM system.one
@@ -68,7 +68,7 @@ FROM
     WHERE 1
 );
 SELECT MaX(aggr)
-FROM 
+FROM
 (
     SELECT mAX(-1) AS aggr
     FROM system.one
@@ -79,7 +79,7 @@ FROM
     WHERE 1
 );
 SELECT MaX(aggr)
-FROM 
+FROM
 (
     SELECT mAX(-1) AS aggr
     FROM system.one

@@ -25,12 +25,12 @@ BlockIO InterpreterOptimizeQuery::execute()
     const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
 
     if (!ast.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccess());
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
 
-    context.checkAccess(getRequiredAccess());
+    getContext()->checkAccess(getRequiredAccess());
 
-    auto table_id = context.resolveStorageID(ast, Context::ResolveOrdinary);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto table_id = getContext()->resolveStorageID(ast, Context::ResolveOrdinary);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     // Empty list of names means we deduplicate by all columns, but user can explicitly state which columns to use.
@@ -40,7 +40,8 @@ BlockIO InterpreterOptimizeQuery::execute()
         // User requested custom set of columns for deduplication, possibly with Column Transformer expression.
         {
             // Expand asterisk, column transformers, etc into list of column names.
-            const auto cols = processColumnTransformers(context.getCurrentDatabase(), table, metadata_snapshot, ast.deduplicate_by_columns);
+            const auto cols
+                = processColumnTransformers(getContext()->getCurrentDatabase(), table, metadata_snapshot, ast.deduplicate_by_columns);
             for (const auto & col : cols->children)
                 column_names.emplace_back(col->getColumnName());
         }
@@ -68,7 +69,7 @@ BlockIO InterpreterOptimizeQuery::execute()
         }
     }
 
-    table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, context);
+    table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, getContext());
 
     return {};
 }

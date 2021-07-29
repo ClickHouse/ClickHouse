@@ -7,7 +7,7 @@
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Common/ExternalLoaderStatus.h>
 
 
@@ -87,7 +87,7 @@ public:
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.
-    ext::scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository) const;
+    scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository) const;
 
     void setConfigSettings(const ExternalLoaderConfigSettings & settings_);
 

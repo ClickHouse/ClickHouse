@@ -1,9 +1,9 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <Common/Stopwatch.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
+#include <Common/Stopwatch.h>
 
 namespace Poco
 {
@@ -13,19 +13,17 @@ class Logger;
 namespace DB
 {
 
-class ReplicatedMergeTreeBlockOutputStream;
-class Context;
-
+class ReplicatedMergeTreeSink;
 
 /** Writes data to the specified table and to all dependent materialized views.
   */
-class PushingToViewsBlockOutputStream : public IBlockOutputStream
+class PushingToViewsBlockOutputStream : public IBlockOutputStream, WithContext
 {
 public:
     PushingToViewsBlockOutputStream(
         const StoragePtr & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const Context & context_,
+        ContextPtr context_,
         const ASTPtr & query_ptr_,
         bool no_destination = false);
 
@@ -40,10 +38,9 @@ private:
     StoragePtr storage;
     StorageMetadataPtr metadata_snapshot;
     BlockOutputStreamPtr output;
-    ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
+    ReplicatedMergeTreeSink * replicated_output = nullptr;
     Poco::Logger * log;
 
-    const Context & context;
     ASTPtr query_ptr;
     Stopwatch main_watch;
 
@@ -57,8 +54,8 @@ private:
     };
 
     std::vector<ViewInfo> views;
-    std::unique_ptr<Context> select_context;
-    std::unique_ptr<Context> insert_context;
+    ContextMutablePtr select_context;
+    ContextMutablePtr insert_context;
 
     void process(const Block & block, ViewInfo & view);
 };

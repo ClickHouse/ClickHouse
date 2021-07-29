@@ -16,17 +16,20 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
-    KeeperStateMachine(ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_);
+    KeeperStateMachine(
+        ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_,
+        const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_,
+        const std::string & superdigest_ = "");
 
     void init();
 
-    nuraft::ptr<nuraft::buffer> pre_commit(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
+    nuraft::ptr<nuraft::buffer> pre_commit(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
-    nuraft::ptr<nuraft::buffer> commit(const size_t log_idx, nuraft::buffer & data) override;
+    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override;
 
-    void rollback(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
+    void rollback(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
 
-    size_t last_commit_index() override { return last_committed_idx; }
+    uint64_t last_commit_index() override { return last_committed_idx; }
 
     bool apply_snapshot(nuraft::snapshot & s) override;
 
@@ -38,7 +41,7 @@ public:
 
     void save_logical_snp_obj(
         nuraft::snapshot & s,
-        size_t & obj_id,
+        uint64_t & obj_id,
         nuraft::buffer & data,
         bool is_first_obj,
         bool is_last_obj) override;
@@ -46,7 +49,7 @@ public:
     int read_logical_snp_obj(
         nuraft::snapshot & s,
         void* & user_snp_ctx,
-        ulong obj_id,
+        uint64_t obj_id,
         nuraft::ptr<nuraft::buffer> & data_out,
         bool & is_last_obj) override;
 
@@ -82,8 +85,10 @@ private:
     std::mutex storage_lock;
 
     /// Last committed Raft log number.
-    std::atomic<size_t> last_committed_idx;
+    std::atomic<uint64_t> last_committed_idx;
     Poco::Logger * log;
+
+    const std::string superdigest;
 };
 
 }

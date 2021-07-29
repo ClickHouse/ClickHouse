@@ -48,6 +48,14 @@ toc_title: "Введение"
 
 Движки семейства:
 
+-   [Kafka](integrations/kafka.md#kafka)
+-   [MySQL](integrations/mysql.md#mysql)
+-   [ODBC](integrations/odbc.md#table-engine-odbc)
+-   [JDBC](integrations/jdbc.md#table-engine-jdbc)
+-   [S3](integrations/s3.md#table-engine-s3)
+
+### Специальные движки {#spetsialnye-dvizhki}
+
 -   [ODBC](../../engines/table-engines/integrations/odbc.md)
 -   [JDBC](../../engines/table-engines/integrations/jdbc.md)
 -   [MySQL](../../engines/table-engines/integrations/mysql.md)
@@ -84,4 +92,3 @@ toc_title: "Введение"
 Чтобы получить данные из виртуального столбца, необходимо указать его название в запросе `SELECT`. `SELECT *` не отображает данные из виртуальных столбцов.
 
 При создании таблицы со столбцом, имя которого совпадает с именем одного из виртуальных столбцов таблицы, виртуальный столбец становится недоступным. Не делайте так. Чтобы помочь избежать конфликтов, имена виртуальных столбцов обычно предваряются подчеркиванием.
-

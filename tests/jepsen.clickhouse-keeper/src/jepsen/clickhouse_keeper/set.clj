@@ -18,7 +18,8 @@
      :nodename node))
 
   (setup! [this test]
-    (zk-create-if-not-exists conn k "#{}"))
+    (exec-with-retries 30 (fn []
+                            (zk-create-if-not-exists conn k "#{}"))))
 
   (invoke! [this test op]
     (case (:f op)

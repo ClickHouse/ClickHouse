@@ -46,14 +46,31 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ### Из запроса SELECT {#from-select-query}
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
 ```
 
-Создаёт таблицу со структурой, как результат запроса `SELECT`, с движком engine, и заполняет её данными из SELECT-а.
+Создаёт таблицу со структурой, как результат запроса `SELECT`, с движком `engine`, и заполняет её данными из `SELECT`. Также вы можете явно задать описание столбцов.
 
-Во всех случаях, если указано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если таблица уже существует. В этом случае, запрос будет ничего не делать.
+Если таблица уже существует и указано `IF NOT EXISTS`, то запрос ничего не делает.
 
 После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков таблиц](../../../engines/table-engines/index.md#table_engines).
+
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+```
+
+Результат:
+
+```text
+┌─x─┬─toTypeName(x)─┐
+│ 1 │ String        │
+└───┴───────────────┘
+```
 
 ## Модификатор NULL или NOT NULL {#null-modifiers}
 
@@ -230,7 +247,7 @@ CREATE TABLE codec_example
 )
 ENGINE = MergeTree()
 ```
-## Временные таблицы {#vremennye-tablitsy}
+## Временные таблицы {#temporary-tables}
 
 ClickHouse поддерживает временные таблицы со следующими характеристиками:
 
@@ -327,6 +344,41 @@ SELECT * FROM base.t1;
 ┌─n─┐
 │ 3 │
 └───┘
+```
+
+## Секция COMMENT {#comment-table}
+
+Вы можете добавить комментарий к таблице при ее создании.
+
+!!!note "Замечание"
+    Комментарий поддерживается для всех движков таблиц, кроме [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) и [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+	
+**Синтаксис**
+
+``` sql
+CREATE TABLE db.table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+COMMENT 'Comment'
+```
+	
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
+SELECT name, comment FROM system.tables WHERE name = 't1';
+```
+
+Результат:
+
+```text
+┌─name─┬─comment─────────────┐
+│ t1   │ The temporary table │
+└──────┴─────────────────────┘
 ```
 
 <!--hide-->

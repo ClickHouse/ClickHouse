@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 ADDINCL(
-    contrib/libs/zstd
+    contrib/libs/zstd/include
     contrib/restricted/fast_float
 )
 
@@ -26,6 +26,7 @@ SRCS(
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
     DoubleConverter.cpp
+    FileEncryptionCommon.cpp
     HTTPChunkedReadBuffer.cpp
     HTTPCommon.cpp
     HashingWriteBuffer.cpp
@@ -42,11 +43,13 @@ SRCS(
     MySQLPacketPayloadReadBuffer.cpp
     MySQLPacketPayloadWriteBuffer.cpp
     NullWriteBuffer.cpp
+    OpenedFile.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
-    ReadBufferAIO.cpp
+    ReadBufferFromEncryptedFile.cpp
     ReadBufferFromFile.cpp
     ReadBufferFromFileBase.cpp
+    ReadBufferFromFileDecorator.cpp
     ReadBufferFromFileDescriptor.cpp
     ReadBufferFromIStream.cpp
     ReadBufferFromMemory.cpp
@@ -55,8 +58,10 @@ SRCS(
     SeekAvoidingReadBuffer.cpp
     TimeoutSetter.cpp
     UseSSL.cpp
+    WriteBufferFromEncryptedFile.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
+    WriteBufferFromFileDecorator.cpp
     WriteBufferFromFileDescriptor.cpp
     WriteBufferFromFileDescriptorDiscardOnFailure.cpp
     WriteBufferFromHTTP.cpp

@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Access/AccessFlags.h>
 #include <Access/AccessControlManager.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
@@ -49,11 +49,11 @@ BlockInputStreamPtr InterpreterShowAccessQuery::executeImpl() const
 
 std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
 {
-    const auto & access_control = context.getAccessControlManager();
-    context.checkAccess(AccessType::SHOW_ACCESS);
+    const auto & access_control = getContext()->getAccessControlManager();
+    getContext()->checkAccess(AccessType::SHOW_ACCESS);
 
     std::vector<AccessEntityPtr> entities;
-    for (auto type : ext::range(EntityType::MAX))
+    for (auto type : collections::range(EntityType::MAX))
     {
         auto ids = access_control.findAll(type);
         for (const auto & id : ids)
@@ -71,7 +71,7 @@ std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
 ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
 {
     auto entities = getEntities();
-    const auto & access_control = context.getAccessControlManager();
+    const auto & access_control = getContext()->getAccessControlManager();
 
     ASTs create_queries, grant_queries;
     for (const auto & entity : entities)

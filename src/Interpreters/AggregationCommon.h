@@ -4,7 +4,6 @@
 
 #include <Common/SipHash.h>
 #include <Common/Arena.h>
-#include <Common/UInt128.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/memcpySmall.h>
 #include <Common/assert_cast.h>
@@ -265,7 +264,7 @@ static inline UInt128 ALWAYS_INLINE hash128(
     for (size_t j = 0; j < keys_size; ++j)
         key_columns[j]->updateHashWithValue(i, hash);
 
-    hash.get128(key.low, key.high);
+    hash.get128(key);
 
     return key;
 }

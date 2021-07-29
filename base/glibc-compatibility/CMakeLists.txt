@@ -15,7 +15,7 @@ if (GLIBC_COMPATIBILITY)
 
     add_headers_and_sources(glibc_compatibility .)
     add_headers_and_sources(glibc_compatibility musl)
-    if (ARCH_ARM)
+    if (ARCH_AARCH64)
         list (APPEND glibc_compatibility_sources musl/aarch64/syscall.s musl/aarch64/longjmp.s)
         set (musl_arch_include_dir musl/aarch64)
     elseif (ARCH_AMD64)

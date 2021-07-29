@@ -43,6 +43,18 @@ PostgreSQL массивы конвертируются в массивы ClickHo
 
 !!! info "Примечание"
     Будьте внимательны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
+	
+Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
+
+```sql
+SELECT name FROM postgresql(`postgres{1|2|3}:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+или
+
+```sql
+SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
 
 При использовании словаря PostgreSQL поддерживается приоритет реплик. Чем больше номер реплики, тем ниже ее приоритет. Наивысший приоритет у реплики с номером `0`.    
 
@@ -65,10 +77,10 @@ postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
 postgresql> SELECT * FROM test;
- int_id | int_nullable | float | str  | float_nullable
---------+--------------+-------+------+----------------
-      1 |              |     2 | test |
-(1 row)
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+ (1 row)
 ```
 
 Получение данных в ClickHouse:

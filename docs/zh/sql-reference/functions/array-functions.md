@@ -606,7 +606,7 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 
 如果要获取数组中唯一项的列表，可以使用arrayReduce（‘groupUniqArray’，arr）。
 
-## arryjoin(arr) {#array-functions-join}
+## arrayJoin(arr) {#array-functions-join}
 
 一个特殊的功能。请参见[«ArrayJoin函数»](array-join.md#functions_arrayjoin)部分。
 
