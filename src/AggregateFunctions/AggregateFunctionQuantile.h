@@ -105,6 +105,11 @@ public:
             return res;
     }
 
+    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
+    {
+        return getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
+    }
+
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
