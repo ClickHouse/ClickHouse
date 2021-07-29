@@ -54,33 +54,40 @@ void selectWithinPartition(
     Estimator & estimator,
     const MemoryMergeSelector::Settings & settings)
 {
-    size_t parts_size = parts.size();
-    if (parts_size < settings.min_parts_to_merge)
-        return;
-
-    size_t range_end = parts_size;
-    int range_begin = range_end - 1;
-
-    size_t sum_size = 0;
-    while (range_begin >= 0)
+    size_t memory_part_count = 0;
+    auto iter = parts.rbegin();
+    while(iter != parts.rend())
     {
-        const MergeTreeData::DataPartPtr part = *(static_cast<const MergeTreeData::DataPartPtr *>(parts[range_begin].data));
+        const MergeTreeData::DataPartPtr & part = *(static_cast<const MergeTreeData::DataPartPtr *>((*iter).data));
 
         if (part->getType() != MergeTreeDataPartType::IN_MEMORY)
             break;
+        else /// prevent SimpleMergeSelector merging InMemory parts.
+        {
+            auto & part_info = const_cast<MemoryMergeSelector::Part &>(*iter);
+            part_info.shall_participate_in_merges = false;
 
-        sum_size  += parts[range_begin].size;
-        if (range_end - range_begin <= settings.max_parts_to_merge && sum_size <= max_total_size_to_merge)
-            --range_begin;
-        else
-            break;
+            memory_part_count++;
+        }
+        iter++;
     }
-    /// fix
-    if (range_begin < 0) range_begin = 0;
 
-    estimator.consider(parts.begin() + range_begin, parts.begin() + range_end, sum_size);
+    if (memory_part_count < settings.min_parts_to_merge)
+        return;
 
+    int idx = parts.size() - 1;
+    size_t selected_count = 0;
+    size_t sum_size = 0;
+    while (true)
+    {
+        sum_size  += parts[idx].size;
+        selected_count++;
+        if (selected_count > settings.max_parts_to_merge || sum_size > max_total_size_to_merge || selected_count == memory_part_count)
+            break;
 
+        idx--;
+    }
+    estimator.consider(parts.begin() + idx, parts.end(), sum_size);
 }
 }
 
@@ -91,10 +98,10 @@ void MemoryMergeSelector::dumpPartsInfo(const MemoryMergeSelector::PartsRange & 
     {
         const MergeTreeData::DataPartPtr treeDataPart = *(static_cast<const MergeTreeData::DataPartPtr *>(part.data));
         const auto info = treeDataPart->info;
-        debug_buf << info.partition_id << ", " << info.min_block << "," << info.max_block << ", " << info.level << ", " << info.mutation
-                  << std::endl;
+        debug_buf << info.getPartName() << ", " << info.min_block << "," << info.max_block << ", " << info.level <<
+                ", " << info.mutation << ", should merge:" << part.shall_participate_in_merges << std::endl;
     }
-    LOG_DEBUG(log, "------------{} part info: \n {}", prefix, debug_buf.str());
+    LOG_DEBUG(log, "\n----- {} \n {}---------\n", prefix, debug_buf.str());
 }
 
 MemoryMergeSelector::PartsRange MemoryMergeSelector::select(
@@ -107,9 +114,11 @@ MemoryMergeSelector::PartsRange MemoryMergeSelector::select(
     bool printDebug = false;
     while (idx >=0)
     {
-        const auto & parts_range = parts_ranges[idx];
+        auto & parts_range = parts_ranges[idx];
         const MergeTreeData::DataPartPtr & part = *(static_cast<const MergeTreeData::DataPartPtr *>(parts_range.back().data));
-        if(part->getType() != MergeTreeDataPartType::IN_MEMORY) break;
+        /// InMemory parts lie in the right side of the list.
+        if(part->getType() != MergeTreeDataPartType::IN_MEMORY)
+            break;
 
         if (part->storage.getStorageID().table_name.ends_with("t_num"))
             printDebug = true;
