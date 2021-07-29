@@ -32,7 +32,7 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 
 - `_version` — счетчик транзакций. Тип [UInt64](../../sql-reference/data-types/int-uint.md).
 - `_sign` — метка удаления. Тип [Int8](../../sql-reference/data-types/int-uint.md). Возможные значения:
-    - `1` — строка не удалена, 
+    - `1` — строка не удалена,
     - `-1` — строка удалена.
 
 ## Поддержка типов данных {#data_types-support}
@@ -114,9 +114,9 @@ mysql> SELECT * FROM test;
 ```
 
 ```text
-+---+------+------+ 
++---+------+------+
 | a |    b |    c |
-+---+------+------+ 
++---+------+------+
 | 2 |  222 | Wow! |
 +---+------+------+
 ```
@@ -143,9 +143,9 @@ SELECT * FROM mysql.test;
 ```
 
 ``` text
-┌─a─┬──b─┐ 
-│ 1 │ 11 │ 
-│ 2 │ 22 │ 
+┌─a─┬──b─┐
+│ 1 │ 11 │
+│ 2 │ 22 │
 └───┴────┘
 ```
 
@@ -156,8 +156,8 @@ SELECT * FROM mysql.test;
 ```
 
 ``` text
-┌─a─┬───b─┬─c────┐ 
-│ 2 │ 222 │ Wow! │ 
+┌─a─┬───b─┬─c────┐
+│ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```
 

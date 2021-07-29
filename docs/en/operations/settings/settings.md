@@ -542,7 +542,7 @@ Possible values:
 
 Default value: `hash`.
 
-When using `hash` algorithm the right part of `JOIN` is uploaded into RAM. 
+When using `hash` algorithm the right part of `JOIN` is uploaded into RAM.
 
 When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to the disk. The `merge` algorithm in ClickHouse differs a bit from the classic realization. First ClickHouse sorts the right table by [join key](../../sql-reference/statements/select/join.md#select-join) in blocks and creates min-max index for sorted blocks. Then it sorts parts of left table by `join key` and joins them over right table. The min-max index is also used to skip unneeded right table blocks.
 
@@ -1251,7 +1251,7 @@ Default value: `3`.
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
-Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations. 
+Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
 
 Possible values:
 
@@ -3209,7 +3209,7 @@ Default value: `300`.
 
 ## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
 
-Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite. 
+Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite.
 
 Possible values:
 
