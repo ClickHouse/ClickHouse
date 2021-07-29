@@ -193,22 +193,6 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 - [REMOVE TTL](ttl.md).
 
-## RENAME COLUMN {#alter_rename-column}
-
-Renames an existing column.
-
-Syntax:
-
-```sql
-ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name
-```
-
-**Example**
-
-```sql
-ALTER TABLE table_with_ttl RENAME COLUMN column_ttl TO column_ttl_new;
-```
-
 ## Limitations {#alter-query-limitations}
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
