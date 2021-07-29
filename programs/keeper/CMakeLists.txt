@@ -13,7 +13,6 @@ set (CLICKHOUSE_KEEPER_LINK
         clickhouse_common_config
         clickhouse_common_io
         clickhouse_common_zookeeper
-        clickhouse_dictionaries
         daemon
         dbms
 

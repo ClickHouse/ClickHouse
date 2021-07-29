@@ -25,7 +25,6 @@ target_link_libraries(clickhouse-odbc-bridge PRIVATE
     daemon
     dbms
     bridge
-    clickhouse_dictionaries
     clickhouse_parsers
     nanodbc
     unixodbc
