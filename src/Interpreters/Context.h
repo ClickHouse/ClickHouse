@@ -76,6 +76,7 @@ class TraceLog;
 class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
+class ZooKeeperLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -648,6 +649,8 @@ public:
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
+    void setSystemZooKeeperLogAfterInitializationIfNeeded();
+
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(size_t max_size_in_bytes);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
@@ -714,6 +717,7 @@ public:
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
+    std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
