@@ -303,6 +303,9 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
 
         for (const String & virtual_part_name : entry->getVirtualPartNames(format_version))
         {
+            /// This part will never appear, so remove it from virtual parts
+            virtual_parts.remove(virtual_part_name);
+
             /// Because execution of the entry is unsuccessful,
             /// `virtual_part_name` will never appear so we won't need to mutate
             /// it.
