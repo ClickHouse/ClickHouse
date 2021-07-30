@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MutationCommands.h>
+#include <Interpreters/MutationsInterpreter.h>
 
 
 namespace DB
@@ -54,6 +56,8 @@ public:
     }
 
 private:
+
+    bool prepare();
 
     MergeTreeData::MutableDataPartPtr main();
 
@@ -127,6 +131,35 @@ private:
     MergeTreeData & data;
     MergeTreeDataMergerMutator & mutator;
     ActionBlocker & merges_blocker;
+
+
+    BlockInputStreamPtr in{nullptr};
+    Block updated_header;
+    std::unique_ptr<MutationsInterpreter> interpreter;
+    UInt64 watch_prev_elapsed{0};
+    std::unique_ptr<MergeStageProgress> stage_progress{nullptr};
+
+    MutationCommands commands_for_part;
+    MutationCommands for_interpreter;
+    MutationCommands for_file_renames;
+
+    NamesAndTypesList storage_columns = metadata_snapshot->getColumns().getAllPhysical();
+    NameSet materialized_indices;
+    NameSet materialized_projections;
+    MutationsInterpreter::MutationKind::MutationKindEnum mutation_kind
+        = MutationsInterpreter::MutationKind::MutationKindEnum::MUTATE_UNKNOWN;
+
+    VolumePtr single_disk_volume;
+    MergeTreeData::MutableDataPartPtr new_data_part;
+    DiskPtr disk;
+    String new_part_tmp_path;
+
+    SyncGuardPtr sync_guard;
+
+    String mrk_extension;
+
+    bool need_sync;
+    bool need_remove_expired_values;
 };
 
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MutateTaskPtr task)
