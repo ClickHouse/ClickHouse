@@ -1,6 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionIf.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-#include "registerAggregateFunctions.h"
 #include "AggregateFunctionNull.h"
 
 
@@ -36,9 +35,9 @@ public:
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
-        const Array &) const override
+        const Array & params) const override
     {
-        return std::make_shared<AggregateFunctionIf>(nested_function, arguments);
+        return std::make_shared<AggregateFunctionIf>(nested_function, arguments, params);
     }
 };
 
