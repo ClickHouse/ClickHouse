@@ -40,7 +40,7 @@ private:
         if (!(which_key.isInt() || which_key.isUInt()))
         {
             throw Exception(
-                "Keys for " + getName() + " should be of integer type (signed or unsigned)", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Keys for {} function should be of integer type (signed or unsigned)", getName());
         }
 
         if (max_key_type)
@@ -49,27 +49,28 @@ private:
 
             if (which_max_key.isNullable())
                 throw Exception(
-                    "Max key argument in arguments of function " + getName() + " can not be Nullable",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Max key argument in arguments of function " + getName() + " can not be Nullable");
 
             if (key_type->getTypeId() != max_key_type->getTypeId())
-                throw Exception("Max key type in " + getName() + " should be same as keys type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Max key type in {} should be same as keys type", getName());
         }
     }
 
     DataTypePtr getReturnTypeForTuple(const DataTypes & arguments) const
     {
         if (arguments.size() < 2)
-            throw Exception(getName() + " accepts at least two arrays for key and value", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} accepts at least two arrays for key and value", getName());
 
         if (arguments.size() > 3)
-            throw Exception("too many arguments in " + getName() + " call", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too many arguments in {} call", getName());
 
         const DataTypeArray * key_array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         const DataTypeArray * val_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
 
         if (!key_array_type || !val_array_type)
-            throw Exception(getName() + " accepts two arrays for key and value", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} accepts two arrays for key and value", getName());
 
         const auto & key_type = key_array_type->getNestedType();
 
@@ -89,7 +90,7 @@ private:
         else if (arguments.size() == 2)
             this->checkTypes(map->getKeyType(), arguments[1]);
         else
-            throw Exception("too many arguments in " + getName() + " call", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too many arguments in {} call", getName());
 
         return std::make_shared<DataTypeMap>(map->getKeyType(), map->getValueType());
     }
@@ -97,14 +98,18 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(getName() + " accepts at least one map", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, getName() + " accepts at least one map or two arrays");
 
         if (arguments[0]->getTypeId() == TypeIndex::Array)
             return getReturnTypeForTuple(arguments);
         else if (arguments[0]->getTypeId() == TypeIndex::Map)
             return getReturnTypeForMap(arguments);
         else
-            throw Exception(getName() + " only accepts maps", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} only accepts one map or arrays, but got {}",
+                getName(),
+                arguments[0]->getName());
     }
 
     // Struct holds input and output columns references,
@@ -146,7 +151,8 @@ private:
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(key_column);
             if (!const_array)
-                throw Exception("Expected array column, found " + key_column->getName(), ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN, "Expected array column in function {}, found {}", getName(), key_column->getName());
 
             in_keys_array = checkAndGetColumn<ColumnArray>(const_array->getDataColumnPtr().get());
             key_is_const = true;
@@ -158,7 +164,8 @@ private:
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(val_column);
             if (!const_array)
-                throw Exception("Expected array column, found " + val_column->getName(), ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN, "Expected array column in function {}, found {}", getName(), val_column->getName());
 
             in_values_array = checkAndGetColumn<ColumnArray>(const_array->getDataColumnPtr().get());
             val_is_const = true;
@@ -166,7 +173,7 @@ private:
 
         if (!in_keys_array || !in_values_array)
             /* something went wrong */
-            throw Exception("Illegal columns in arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns in arguments of function " + getName());
 
         const auto & in_keys_data = assert_cast<const ColumnVector<KeyType> &>(in_keys_array->getData()).getData();
         const auto & in_values_data = assert_cast<const ColumnVector<ValType> &>(in_values_array->getData()).getData();
@@ -230,8 +237,8 @@ private:
     {
         MutableColumnPtr res_column = res_type->createColumn();
         bool max_key_is_const = false;
-        auto inout = res_column->getDataType() == TypeIndex::Tuple ? getInOutDataFromArrays<KeyType, ValType>(res_column, arg_columns)
-                                                                   : getInOutDataFromMap<KeyType, ValType>(res_column, arg_columns);
+        auto columns = res_column->getDataType() == TypeIndex::Tuple ? getInOutDataFromArrays<KeyType, ValType>(res_column, arg_columns)
+                                                                     : getInOutDataFromMap<KeyType, ValType>(res_column, arg_columns);
 
         KeyType max_key_const{0};
 
@@ -246,36 +253,39 @@ private:
         std::map<KeyType, ValType> res_map;
 
         //Iterate through two arrays and fill result values.
-        for (size_t row = 0; row < inout.row_count; ++row)
+        for (size_t row = 0; row < columns.row_count; ++row)
         {
-            size_t key_offset = 0, val_offset = 0, items_count = inout.in_key_offsets[0], val_array_size = inout.in_val_offsets[0];
+            size_t key_offset = 0, val_offset = 0, items_count = columns.in_key_offsets[0], val_array_size = columns.in_val_offsets[0];
 
             res_map.clear();
 
-            if (!inout.key_is_const)
+            if (!columns.key_is_const)
             {
-                key_offset = row > 0 ? inout.in_key_offsets[row - 1] : 0;
-                items_count = inout.in_key_offsets[row] - key_offset;
+                key_offset = row > 0 ? columns.in_key_offsets[row - 1] : 0;
+                items_count = columns.in_key_offsets[row] - key_offset;
             }
 
-            if (!inout.val_is_const)
+            if (!columns.val_is_const)
             {
-                val_offset = row > 0 ? inout.in_val_offsets[row - 1] : 0;
-                val_array_size = inout.in_val_offsets[row] - val_offset;
+                val_offset = row > 0 ? columns.in_val_offsets[row - 1] : 0;
+                val_array_size = columns.in_val_offsets[row] - val_offset;
             }
 
             if (items_count != val_array_size)
-                throw Exception("Key and value array should have same amount of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Key and value array should have same amount of elements in function {}",
+                    getName());
 
             if (items_count == 0)
             {
-                inout.out_keys_offsets.push_back(offset);
+                columns.out_keys_offsets.push_back(offset);
                 continue;
             }
 
             for (size_t i = 0; i < items_count; ++i)
             {
-                res_map.insert({inout.in_keys_data[key_offset + i], inout.in_vals_data[val_offset + i]});
+                res_map.insert({columns.in_keys_data[key_offset + i], columns.in_vals_data[val_offset + i]});
             }
 
             auto min_key = res_map.begin()->first;
@@ -296,7 +306,7 @@ private:
                 /* no need to add anything, max key is less that first key */
                 if (max_key < min_key)
                 {
-                    inout.out_keys_offsets.push_back(offset);
+                    columns.out_keys_offsets.push_back(offset);
                     continue;
                 }
             }
@@ -309,16 +319,16 @@ private:
             KeyType key;
             for (key = min_key;; ++key)
             {
-                inout.out_keys_data.push_back(key);
+                columns.out_keys_data.push_back(key);
 
                 auto it = res_map.find(key);
                 if (it != res_map.end())
                 {
-                    inout.out_vals_data.push_back(it->second);
+                    columns.out_vals_data.push_back(it->second);
                 }
                 else
                 {
-                    inout.out_vals_data.push_back(0);
+                    columns.out_vals_data.push_back(0);
                 }
 
                 ++offset;
@@ -326,11 +336,11 @@ private:
                     break;
             }
 
-            inout.out_keys_offsets.push_back(offset);
+            columns.out_keys_offsets.push_back(offset);
         }
 
-        if (inout.out_vals_offsets)
-            inout.out_vals_offsets->insert(inout.out_keys_offsets.begin(), inout.out_keys_offsets.end());
+        if (columns.out_vals_offsets)
+            columns.out_vals_offsets->insert(columns.out_keys_offsets.begin(), columns.out_keys_offsets.end());
 
         return res_column;
     }
@@ -365,7 +375,7 @@ private:
             case TypeIndex::UInt256:
                 return execute2<KeyType, UInt256>(arg_columns, max_key_column, res_type);
             default:
-                throw Exception("Illegal columns in arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns in arguments of function " + getName());
         }
     }
 
@@ -431,7 +441,7 @@ private:
             case TypeIndex::UInt256:
                 return execute1<UInt256>(arg_columns, max_key_column, res_type, val_type);
             default:
-                throw Exception("Illegal columns in arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns in arguments of function " + getName());
         }
     }
 };
