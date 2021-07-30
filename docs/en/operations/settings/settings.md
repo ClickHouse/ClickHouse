@@ -39,7 +39,7 @@ For example, we have query serving nodes that contain local tables, which are no
 
 Another use case of `prefer_global_in_and_join` is accessing tables created by external engines. This setting helps to reduce the number of calls to external sources while joining such tables: only one call per query.
 
-**See Also**
+**See also:**
 
 -   [Distributed subqueries](../../sql-reference/operators/in.md#select-distributed-subqueries) for more information on how to use `GLOBAL IN`/`GLOBAL JOIN`
 
