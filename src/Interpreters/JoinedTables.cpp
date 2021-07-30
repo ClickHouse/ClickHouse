@@ -161,9 +161,10 @@ using RenameQualifiedIdentifiersVisitor = InDepthNodeVisitor<RenameQualifiedIden
 
 }
 
-JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query)
+JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query, bool include_all_columns_)
     : context(context_)
     , table_expressions(getTableExpressions(select_query))
+    , include_all_columns(include_all_columns_)
     , left_table_expression(extractTableExpression(select_query, 0))
     , left_db_and_table(getDatabaseAndTable(select_query, 0))
 {}
@@ -220,11 +221,13 @@ StoragePtr JoinedTables::getLeftTableStorage()
 
 bool JoinedTables::resolveTables()
 {
-    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
+    const auto & settings = context->getSettingsRef();
+    bool include_alias_cols = include_all_columns || settings.asterisk_include_alias_columns;
+    bool include_materialized_cols = include_all_columns || settings.asterisk_include_materialized_columns;
+    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context, include_alias_cols, include_materialized_cols);
     if (tables_with_columns.size() != table_expressions.size())
         throw Exception("Unexpected tables count", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & settings = context->getSettingsRef();
     if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
     {
         for (size_t i = 0; i < tables_with_columns.size(); ++i)
@@ -310,6 +313,13 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         replaceJoinedTable(select_query);
 
     return table_join;
+}
+
+void JoinedTables::reset(const ASTSelectQuery & select_query)
+{
+    table_expressions = getTableExpressions(select_query);
+    left_table_expression = extractTableExpression(select_query, 0);
+    left_db_and_table = getDatabaseAndTable(select_query, 0);
 }
 
 }

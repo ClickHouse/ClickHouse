@@ -37,3 +37,9 @@ select bin(unbin('0')) == '00000000';
 select hex('') == bin('');
 select unhex('') == unbin('');
 select unhex('0') == unbin('0');
+
+-- hex and bin support AggregateFunction
+select hex(sumState(number)) == hex(toString(sumState(number))) from numbers(10);
+select hex(avgState(number)) == hex(toString(avgState(number))) from numbers(99);
+select hex(avgState(number)) from numbers(10);
+select bin(avgState(number)) from numbers(10);
