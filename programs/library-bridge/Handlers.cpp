@@ -181,15 +181,10 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         }
         else if (method == "loadIds")
         {
-            params.read(request.getStream());
+            String ids_string;
+            readString(ids_string, request.getStream());
+            std::vector<uint64_t> ids = parseIdsFromBinary(ids_string);
 
-            if (!params.has("ids"))
-            {
-                processError(response, "No 'ids' in request URL");
-                return;
-            }
-
-            std::vector<uint64_t> ids = parseIdsFromBinary(params.get("ids"));
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             const auto & sample_block = library_handler->getSampleBlock();
             auto input = library_handler->loadIds(ids);
