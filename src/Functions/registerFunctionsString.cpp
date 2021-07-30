@@ -84,8 +84,8 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionEncodeXMLComponent(factory);
     registerFunctionDecodeXMLComponent(factory);
     registerFunctionExtractTextFromHTML(factory);
-
     registerFunctionToStringCutToZero(factory);
+
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);
