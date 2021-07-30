@@ -51,15 +51,6 @@ TTLCalcInputStream::TTLCalcInputStream(
             recompression_ttl, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
 }
 
-Block reorderColumns(Block block, const Block & header)
-{
-    Block res;
-    for (const auto & col : header)
-        res.insert(block.getByName(col.name));
-
-    return res;
-}
-
 Block TTLCalcInputStream::readImpl()
 {
     auto block = children.at(0)->read();
