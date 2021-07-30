@@ -1,3 +1,5 @@
+SET allow_experimental_nlp_functions = 1;
+
 SELECT stem('en', 'given');
 SELECT stem('en', 'combinatorial');
 SELECT stem('en', 'collection');

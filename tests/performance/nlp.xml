@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
+    </settings>
+
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
     </preconditions>

@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -61,6 +62,9 @@ public:
     static constexpr auto name = "lemmatize";
     static FunctionPtr create(ContextPtr context)
     {
+        if (!context->getSettingsRef().allow_experimental_nlp_functions)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Natural language processing function '{}' is experimental. Set `allow_experimental_nlp_functions` setting to enable it", name);
+
         return std::make_shared<FunctionLemmatize>(context->getLemmatizers());
     }
 
