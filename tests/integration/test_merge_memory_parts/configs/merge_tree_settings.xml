@@ -1,0 +1,13 @@
+<yandex>
+    <merge_tree>
+        <min_rows_for_compact_part>10000</min_rows_for_compact_part>
+        <min_rows_for_wide_part>100000</min_rows_for_wide_part>
+        <in_memory_parts_enable_wal>1</in_memory_parts_enable_wal>
+        <old_parts_lifetime>30</old_parts_lifetime>
+
+        <!--simple, default; Level; Combined-->
+        <merge_part_select_strategy>Combined</merge_part_select_strategy>
+        <min_parts_to_merge>5</min_parts_to_merge>
+        <max_parts_to_merge>20</max_parts_to_merge>
+    </merge_tree>
+</yandex>
