@@ -222,7 +222,11 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
     ReadBufferFromString read_buf(query_to_execute);
     WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
-    local_server_exception.reset();
+    /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
+    /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
+    /// first exception or whether we need to even rethrow it because there is --ignore-error.
+    if (is_interactive || !ignore_error)
+        local_server_exception.reset();
 
     std::function<void()> finalize_progress;
     if (need_render_progress)
@@ -240,12 +244,11 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
     }
     catch (...)
     {
-        if (!config().hasOption("ignore-error"))
+        if (!ignore_error)
             throw;
 
         local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
         have_error = true;
-        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
     }
 }
 
@@ -446,7 +449,9 @@ int LocalServer::mainImpl()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
+        if (!ignore_error)
+            std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
+
         /// If exception code isn't zero, we should return non-zero return code anyway.
         return e.code() ? e.code() : -1;
     }
