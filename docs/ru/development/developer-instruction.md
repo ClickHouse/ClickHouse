@@ -92,7 +92,7 @@ ClickHouse не работает и не собирается на 32-битны
     # Две последние команды могут быть объединены вместе:
     git submodule update --init
 
-The next commands would help you to reset all submodules to the initial state (!WARING! - any chenges inside will be deleted):
+The next commands would help you to reset all submodules to the initial state (!WARING! - any changes inside will be deleted):
 Следующие команды помогут сбросить все сабмодули в изначальное состояние (!ВНИМАНИЕ! - все изменения в сабмодулях будут утеряны):
 
     # Synchronizes submodules' remote URL with .gitmodules
@@ -241,6 +241,8 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 Описание архитектуры ClickHouse: https://clickhouse.tech/docs/ru/development/architecture/
 
 Стиль кода: https://clickhouse.tech/docs/ru/development/style/
+
+Рекомендации по добавлению сторонних библиотек и поддержанию в них пользовательских изменений: https://clickhouse.tech/docs/ru/development/contrib/#adding-third-party-libraries
 
 Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 
