@@ -4,9 +4,6 @@
 #include <Common/UnicodeBar.h>
 #include <Databases/DatabaseMemory.h>
 
-/// FIXME: progress bar in clickhouse-local needs to be cleared after query execution
-///        - same as it is now in clickhouse-client. Also there is no writeFinalProgress call
-///        in clickhouse-local.
 
 namespace DB
 {

@@ -29,6 +29,7 @@ void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
 void registerFunctionStartsWith(FunctionFactory &);
 void registerFunctionEndsWith(FunctionFactory &);
 void registerFunctionTrim(FunctionFactory &);
+void registerFunctionPadString(FunctionFactory &);
 void registerFunctionRegexpQuoteMeta(FunctionFactory &);
 void registerFunctionNormalizeQuery(FunctionFactory &);
 void registerFunctionNormalizedQueryHash(FunctionFactory &);
@@ -39,6 +40,7 @@ void registerFunctionExtractTextFromHTML(FunctionFactory &);
 void registerFunctionStem(FunctionFactory &);
 void registerFunctionSynonyms(FunctionFactory &);
 void registerFunctionLemmatize(FunctionFactory &);
+void registerFunctionToStringCutToZero(FunctionFactory &);
 
 
 #if USE_BASE64
@@ -71,6 +73,7 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionStartsWith(factory);
     registerFunctionEndsWith(factory);
     registerFunctionTrim(factory);
+    registerFunctionPadString(factory);
     registerFunctionRegexpQuoteMeta(factory);
     registerFunctionNormalizeQuery(factory);
     registerFunctionNormalizedQueryHash(factory);
@@ -81,6 +84,7 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionStem(factory);
     registerFunctionSynonyms(factory);
     registerFunctionLemmatize(factory);
+    registerFunctionToStringCutToZero(factory);
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);

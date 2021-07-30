@@ -157,6 +157,7 @@ SRCS(
     TreeOptimizer.cpp
     TreeRewriter.cpp
     WindowDescription.cpp
+    ZooKeeperLog.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
     castColumn.cpp

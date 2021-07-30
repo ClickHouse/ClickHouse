@@ -607,6 +607,8 @@ public:
     }
 };
 
+template <typename JSONParser>
+class JSONExtractRawImpl;
 
 /// Nodes of the extract tree. We need the extract tree to extract from JSON complex values containing array, tuples or nullables.
 template <typename JSONParser>
@@ -691,7 +693,10 @@ struct JSONExtractTree
     public:
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
+            if (element.isString())
+                return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
+            else
+                return JSONExtractRawImpl<JSONParser>::insertResultToColumn(dest, element, {});
         }
     };
 
