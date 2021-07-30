@@ -1049,7 +1049,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 {
                     readText(temperature, *sensor_file);
                 }
-                catch(const ErrnoException & e)
+                catch (const ErrnoException & e)
                 {
                     LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"), "Hardware monitor '{}', sensor '{}' exists but could not be read, error {}.", hwmon_name, sensor_name, e.getErrno());
                 }
