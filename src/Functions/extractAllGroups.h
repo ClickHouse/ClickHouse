@@ -7,6 +7,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include <memory>
 #include <string>
@@ -47,16 +49,21 @@ enum class ExtractAllGroupsResultKind
 template <typename Impl>
 class FunctionExtractAllGroups : public IFunction
 {
+    ContextPtr context;
+
 public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractAllGroups>(); }
+    FunctionExtractAllGroups(ContextPtr context_)
+        : context(context_)
+    {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionExtractAllGroups>(context); }
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return Kind == ExtractAllGroupsResultKind::HORIZONTAL ? 0 : 2; }
-    bool isVariadic() const override { return Kind == ExtractAllGroupsResultKind::HORIZONTAL; }
+    size_t getNumberOfArguments() const override { return 2; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -67,13 +74,7 @@ public:
             {"haystack", isStringOrFixedString, nullptr, "const String or const FixedString"},
             {"needle", isStringOrFixedString, isColumnConst, "const String or const FixedString"},
         };
-        FunctionArgumentDescriptors optional_args;
-        if constexpr (Kind == ExtractAllGroupsResultKind::HORIZONTAL)
-        {
-            optional_args.push_back(FunctionArgumentDescriptor{"max_matches_per_row", isUnsignedInteger, isColumnConst, "const Unsigned Int"});
-        }
-
-        validateFunctionArgumentTypes(*this, arguments, args, optional_args);
+        validateFunctionArgumentTypes(*this, arguments, args);
 
         /// Two-dimensional array of strings, each `row` of top array represents matching groups.
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
@@ -154,9 +155,8 @@ public:
         }
         else
         {
-            /// Additional limit to fail fast on supposedly incorrect usage, arbitrary value.
-            static constexpr size_t MAX_MATCHES_PER_ROW = 1000;
-            const auto max_matches_per_row = arguments.size() >= 3 ? arguments[2].column->getUInt(0) : MAX_MATCHES_PER_ROW;
+            /// Additional limit to fail fast on supposedly incorrect usage.
+            const auto max_matches_per_row = context->getSettingsRef().regexp_max_matches_per_row;
 
             PODArray<StringPiece, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.
