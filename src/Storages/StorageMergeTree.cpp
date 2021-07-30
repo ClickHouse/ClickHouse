@@ -860,7 +860,8 @@ bool StorageMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & p
 
 std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
     const StorageMetadataPtr & metadata_snapshot, String * /* disable_reason */, TableLockHolder & /* table_lock_holder */,
-    std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock)
+    std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock,
+    bool & were_some_mutations_for_some_parts_skipped)
 {
     size_t max_ast_elements = getContext()->getSettingsRef().max_expanded_ast_elements;
 
@@ -883,7 +884,6 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         return {};
     }
 
-    bool are_some_mutations_for_some_parts_skipped = false;
     auto mutations_end_it = current_mutations_by_version.end();
     for (const auto & part : getDataPartsVector())
     {
@@ -980,7 +980,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
                 /// This is needed in order to not produce excessive mutations of non-related parts.
                 auto block_range = std::make_pair(part->info.min_block, part->info.max_block);
                 updated_version_by_block_range[block_range] = current_mutations_by_version.rbegin()->first;
-                are_some_mutations_for_some_parts_skipped = true;
+                were_some_mutations_for_some_parts_skipped = true;
                 continue;
             }
 
@@ -997,12 +997,6 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         }
     }
 
-    if (are_some_mutations_for_some_parts_skipped)
-    {
-        std::lock_guard<std::mutex> mutation_wait_mutex_lock(mutation_wait_mutex);
-        mutation_wait_event.notify_all();
-    }
-
     return {};
 }
 
@@ -1015,6 +1009,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     std::shared_ptr<MergeMutateSelectedEntry> merge_entry, mutate_entry;
+    bool were_some_mutations_skipped = false;
 
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
@@ -1026,10 +1021,17 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, lock);
         if (!merge_entry)
-        {
-            mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock, lock);
-            has_mutations = !current_mutations_by_version.empty();
-        }
+            mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock, lock, were_some_mutations_skipped);
+
+        has_mutations = !current_mutations_by_version.empty();
+    }
+
+    if ((!mutate_entry && has_mutations) || were_some_mutations_skipped)
+    {
+        /// Notify in case of errors or if some mutation was skipped (because it has no effect on the part).
+        /// TODO @azat: we can also spot some selection errors when `mutate_entry` is true.
+        std::lock_guard lock(mutation_wait_mutex);
+        mutation_wait_event.notify_all();
     }
 
     if (merge_entry)
