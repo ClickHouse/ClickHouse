@@ -51,7 +51,6 @@ void GrantedRoles::revokeAdminOption(const std::vector<UUID> & roles_)
         revokeAdminOption(role);
 }
 
-
 GrantedRoles::Grants GrantedRoles::getGrants() const
 {
     Grants res;
