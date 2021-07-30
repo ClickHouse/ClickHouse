@@ -1,14 +1,12 @@
 #pragma once
 
-#include <common/logger_useful.h>
 #include <Storages/MergeTree/MergeSelector.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-
+#include <common/logger_useful.h>
 
 
 namespace DB
 {
-
 /**
  *  1. only handle parts in memory.
  *  2. aggressive, merge as many as possible in one merging operation.
@@ -16,7 +14,6 @@ namespace DB
  */
 class MemoryMergeSelector : public IMergeSelector
 {
-
 public:
     struct Settings
     {
@@ -32,8 +29,7 @@ public:
         }
     };
 
-    explicit MemoryMergeSelector(const Settings & settings_) : settings(settings_),
-        log(&Poco::Logger::get("MemoryMergeSelector")){}
+    explicit MemoryMergeSelector(const Settings & settings_) : settings(settings_), log(&Poco::Logger::get("MemoryMergeSelector")) { }
 
     PartsRange select(const PartsRanges & parts_ranges, const size_t max_total_size_to_merge) override;
 
