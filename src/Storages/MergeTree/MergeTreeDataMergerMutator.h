@@ -242,7 +242,7 @@ private:
         time_t time_of_mutation,
         const CompressionCodecPtr & compression_codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values,
+        bool need_recalculate_ttl,
         bool need_sync,
         const ReservationPtr & space_reservation,
         TableLockHolder & holder,
@@ -260,7 +260,7 @@ private:
         time_t time_of_mutation,
         const CompressionCodecPtr & compression_codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values,
+        bool need_recalculate_ttl,
         bool need_sync,
         const ReservationPtr & space_reservation,
         TableLockHolder & holder,
@@ -271,7 +271,7 @@ private:
     static void finalizeMutatedPart(
         const MergeTreeDataPartPtr & source_part,
         MergeTreeData::MutableDataPartPtr new_data_part,
-        bool need_remove_expired_values,
+        bool need_recalculate_ttl,
         const CompressionCodecPtr & codec);
 
 public :
