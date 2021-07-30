@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_NLP
+
 #include <Common/Exception.h>
 #include <Interpreters/SynonymsExtensions.h>
 
@@ -49,7 +55,7 @@ public:
         }
     }
 
-    const Synset * getSynonyms(const std::string_view & token) const override
+    const Synset * getSynonyms(std::string_view token) const override
     {
         auto it = table.find(token);
 
@@ -68,7 +74,7 @@ private:
 public:
     explicit WordnetSynonymsExtension(const String & path) : wn(path) {}
 
-    const Synset * getSynonyms(const std::string_view & token) const override
+    const Synset * getSynonyms(std::string_view token) const override
     {
         return wn.get_synset(std::string(token));
     }
@@ -147,3 +153,5 @@ SynonymsExtensions::ExtPtr SynonymsExtensions::getExtension(const String & name)
 }
 
 }
+
+#endif

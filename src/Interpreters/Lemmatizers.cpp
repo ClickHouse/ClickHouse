@@ -1,3 +1,10 @@
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_NLP
+
 #include <Common/Exception.h>
 #include <Interpreters/Lemmatizers.h>
 #include <RdrLemmatizer.h>
@@ -89,3 +96,5 @@ Lemmatizers::LemmPtr Lemmatizers::getLemmatizer(const String & name)
 }
 
 }
+
+#endif

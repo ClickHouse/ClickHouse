@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_NLP
+
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -116,3 +122,5 @@ void registerFunctionStem(FunctionFactory & factory)
 }
 
 }
+
+#endif

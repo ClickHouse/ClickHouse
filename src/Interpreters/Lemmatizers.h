@@ -1,10 +1,18 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_NLP
+
 #include <common/types.h>
 #include <Poco/Util/Application.h>
 
 #include <mutex>
 #include <unordered_map>
+
+
 
 namespace DB
 {
@@ -37,3 +45,5 @@ public:
 };
 
 }
+
+#endif

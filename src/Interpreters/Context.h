@@ -52,8 +52,6 @@ class AccessRightsElements;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
-class SynonymsExtensions;
-class Lemmatizers;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -115,6 +113,11 @@ class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 struct BackgroundTaskSchedulingSettings;
+
+#if USE_NLP
+    class SynonymsExtensions;
+    class Lemmatizers;
+#endif
 
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
@@ -536,8 +539,10 @@ public:
     void tryCreateEmbeddedDictionaries() const;
     void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
 
+#if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
+#endif
 
     void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
