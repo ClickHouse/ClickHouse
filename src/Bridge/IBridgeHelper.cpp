@@ -33,21 +33,6 @@ Poco::URI IBridgeHelper::getPingURI() const
 }
 
 
-bool IBridgeHelper::checkBridgeIsRunning() const
-{
-    try
-    {
-        ReadWriteBufferFromHTTP buf(
-            getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
-        return checkString(PING_OK_ANSWER, buf);
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-
 void IBridgeHelper::startBridgeSync() const
 {
     if (!checkBridgeIsRunning())

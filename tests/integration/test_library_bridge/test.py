@@ -8,8 +8,23 @@ from helpers.cluster import ClickHouseCluster, run_and_check
 cluster = ClickHouseCluster(__file__)
 
 instance = cluster.add_instance('instance',
-        dictionaries=['configs/dictionaries/dict1.xml'],
-        main_configs=['configs/config.d/config.xml'])
+        dictionaries=['configs/dictionaries/dict1.xml'], main_configs=['configs/config.d/config.xml'], stay_alive=True)
+
+
+def create_dict_simple():
+    instance.query('DROP DICTIONARY IF EXISTS lib_dict_c')
+    instance.query('''
+        CREATE DICTIONARY lib_dict_c (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
+        PRIMARY KEY key SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'))
+        LAYOUT(CACHE(
+        SIZE_IN_CELLS 10000000
+        BLOCK_SIZE 4096
+        FILE_SIZE 16777216
+        READ_BUFFER_SIZE 1048576
+        MAX_STORED_KEYS 1048576))
+        LIFETIME(2) ;
+    ''')
+
 
 @pytest.fixture(scope="module")
 def ch_cluster():
@@ -158,6 +173,52 @@ def test_null_values(ch_cluster):
     result = instance.query('SELECT * FROM dict2_table ORDER BY key')
     expected = "0\t12\t12\t12\n"
     assert(result == expected)
+
+
+def test_recover_after_bridge_crash(ch_cluster):
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
+    create_dict_simple()
+
+    result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(0));''')
+    assert(result.strip() == '100')
+    result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(1));''')
+    assert(result.strip() == '101')
+
+    instance.exec_in_container(['bash', '-c', 'kill -9 `pidof clickhouse-library-bridge`'], user='root')
+    instance.query('SYSTEM RELOAD DICTIONARY lib_dict_c')
+
+    result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(0));''')
+    assert(result.strip() == '100')
+    result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(1));''')
+    assert(result.strip() == '101')
+
+    instance.exec_in_container(['bash', '-c', 'kill -9 `pidof clickhouse-library-bridge`'], user='root')
+    instance.query('DROP DICTIONARY lib_dict_c')
+
+
+def test_server_restart_bridge_might_be_stil_alive(ch_cluster):
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+
+    create_dict_simple()
+
+    result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(1));''')
+    assert(result.strip() == '101')
+
+    instance.restart_clickhouse()
+
+    result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(1));''')
+    assert(result.strip() == '101')
+
+    instance.exec_in_container(['bash', '-c', 'kill -9 `pidof clickhouse-library-bridge`'], user='root')
+    instance.restart_clickhouse()
+
+    result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(1));''')
+    assert(result.strip() == '101')
+
+    instance.query('DROP DICTIONARY lib_dict_c')
 
 
 if __name__ == '__main__':

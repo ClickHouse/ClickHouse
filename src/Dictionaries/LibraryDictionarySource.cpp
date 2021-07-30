@@ -48,17 +48,34 @@ LibraryDictionarySource::LibraryDictionarySource(
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", path);
 
     description.init(sample_block);
-    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id);
-    auto res = bridge_helper->initLibrary(path, getLibrarySettingsString(config, config_prefix + ".settings"), getDictAttributesString());
+
+    LibraryBridgeHelper::LibraryInitData library_data
+    {
+        .library_path = path,
+        .library_settings = getLibrarySettingsString(config, config_prefix + ".settings"),
+        .dict_attributes = getDictAttributesString()
+    };
+    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, library_data);
+    auto res = bridge_helper->initLibrary();
 
     if (!res)
         throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to create shared library from path: {}", path);
+    else
+        bridge_helper->setInitialized();
 }
 
 
 LibraryDictionarySource::~LibraryDictionarySource()
 {
-    bridge_helper->removeLibrary();
+    try
+    {
+        bridge_helper->removeLibrary();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("LibraryDictionarySource");
+    }
+
 }
 
 
@@ -72,7 +89,7 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , context(other.context)
     , description{other.description}
 {
-    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id);
+    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, other.bridge_helper->getLibraryData());
     bridge_helper->cloneLibrary(other.dictionary_id);
 }
 
@@ -99,7 +116,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
 BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
-    return bridge_helper->loadIds(getDictIdsString(ids));
+    return bridge_helper->loadIds(getDictIdsString(ids), ids);
 }
 
 
