@@ -46,9 +46,17 @@ void addDefaultRequiredExpressionsRecursively(Block & block, const String & requ
         auto cast_func = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column).type->getName()));
         default_expr_list_accum->children.emplace_back(setAlias(cast_func, required_column));
         added_columns.emplace(required_column);
-
         for (const auto & required_column_name : required_columns_names)
             addDefaultRequiredExpressionsRecursively(block, required_column_name, columns, default_expr_list_accum, added_columns);
+    }
+    else
+    {
+        /// This column is required, but doesn't have default expression, so lets use "default default"
+        auto column = columns.get(required_column_name);
+        auto default_value = column.type->getDefault();
+        auto default_ast = std::make_shared<ASTLiteral>(default_value);
+        default_expr_list_accum->children.emplace_back(setAlias(default_ast, required_column_name));
+        added_columns.emplace(required_column_name);
     }
 }
 
