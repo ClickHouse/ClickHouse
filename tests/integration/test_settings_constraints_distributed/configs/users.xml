@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<yandex>
+    <profiles>
+        <default>
+            <no-max-memory-usage-for-client>1</no-max-memory-usage-for-client>
+        </default>
+    </profiles>
+</yandex>
