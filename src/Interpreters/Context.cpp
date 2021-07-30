@@ -351,8 +351,10 @@ struct ContextSharedPart
 
     scope_guard dictionaries_xmls;
 
+#if USE_NLP
     mutable std::optional<SynonymsExtensions> synonyms_extensions;
     mutable std::optional<Lemmatizers> lemmatizers;
+#endif
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -1507,6 +1509,8 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
         std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
 }
 
+#if USE_NLP
+
 SynonymsExtensions & Context::getSynonymsExtensions() const
 {
     auto lock = getLock();
@@ -1526,6 +1530,7 @@ Lemmatizers & Context::getLemmatizers() const
 
     return *shared->lemmatizers;
 }
+#endif
 
 void Context::setProgressCallback(ProgressCallback callback)
 {

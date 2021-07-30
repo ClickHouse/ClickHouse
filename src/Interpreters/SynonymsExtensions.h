@@ -1,5 +1,11 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_NLP
+
 #include <common/types.h>
 #include <Poco/Util/Application.h>
 
@@ -17,7 +23,7 @@ class ISynonymsExtension
 public:
     using Synset = std::vector<String>;
 
-    virtual const Synset * getSynonyms(const std::string_view & token) const = 0;
+    virtual const Synset * getSynonyms(std::string_view token) const = 0;
 
     virtual ~ISynonymsExtension() = default;
 };
@@ -47,3 +53,5 @@ private:
 };
 
 }
+
+#endif

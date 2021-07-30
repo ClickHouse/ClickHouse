@@ -1,3 +1,9 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
+#if USE_NLP
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -114,3 +120,5 @@ void registerFunctionSynonyms(FunctionFactory & factory)
 }
 
 }
+
+#endif
