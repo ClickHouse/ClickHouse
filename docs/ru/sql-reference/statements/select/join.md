@@ -135,7 +135,7 @@ USING (equi_column1, ... equi_columnN, asof_column)
 └────┴──────┴───────────────┴─────────────────┘
 ```
 
-Запрос 
+Запрос
 ```sql
 SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 ```
