@@ -266,6 +266,7 @@ private:
         LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
             VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
 
+        /// Print trace from std::terminate exception line-by-line to make it easy for grep.
         while (pos != std::string_view::npos)
         {
             ++pos;
