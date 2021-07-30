@@ -4,7 +4,7 @@
 #include <AggregateFunctions/Helpers.h>
 
 #include <Common/FieldVisitors.h>
-#include "registerAggregateFunctions.h"
+
 
 namespace DB
 {

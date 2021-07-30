@@ -351,8 +351,11 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
     };
 
     ++buf.position();
+
     if (buf.eof())
         return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+
+    assert(buf.hasPendingData());
 
     switch (*buf.position())
     {
@@ -1124,10 +1127,13 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
     const size_t old_bytes = memory.size();
     const size_t additional_bytes = current - in.position();
     const size_t new_bytes = old_bytes + additional_bytes;
+
     /// There are no new bytes to add to memory.
     /// No need to do extra stuff.
     if (new_bytes == 0)
         return;
+
+    assert(in.position() + additional_bytes <= in.buffer().end());
     memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;

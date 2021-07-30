@@ -57,6 +57,7 @@ void IBackgroundJobExecutor::scheduleTask(bool with_backoff)
     }
     else
     {
+        no_work_done_count = 0;
         next_time_to_execute = 1000 * sleep_settings.thread_sleep_seconds_if_nothing_to_do;
     }
 
@@ -177,7 +178,7 @@ void IBackgroundJobExecutor::triggerTask()
 {
     std::lock_guard lock(scheduling_task_mutex);
     if (scheduling_task)
-        scheduling_task->schedule();
+        runTaskWithoutDelay();
 }
 
 IBackgroundJobExecutor::~IBackgroundJobExecutor()

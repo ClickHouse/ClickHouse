@@ -3,8 +3,6 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Moments.h>
 
-#include "registerAggregateFunctions.h"
-
 
 namespace ErrorCodes
 {
@@ -56,7 +54,8 @@ struct StudentTTestData : public TTestMoments<Float64>
     }
 };
 
-AggregateFunctionPtr createAggregateFunctionStudentTTest(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionStudentTTest(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertBinary(name, argument_types);
     assertNoParameters(name, parameters);
