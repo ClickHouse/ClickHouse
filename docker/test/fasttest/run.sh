@@ -310,6 +310,7 @@ function run_tests
         01411_bayesian_ab_testing
         01798_uniq_theta_sketch
         01799_long_uniq_theta_sketch
+        01890_stem                               # depends on libstemmer_c
         collate
         collation
         _orc_
