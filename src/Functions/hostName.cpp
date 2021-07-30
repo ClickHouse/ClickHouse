@@ -18,10 +18,10 @@ public:
     static constexpr auto name = "hostName";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionHostName>(context);
+        return std::make_shared<FunctionHostName>(context->isDistributed());
     }
 
-    explicit FunctionHostName(ContextPtr context_) : context(context_)
+    explicit FunctionHostName(bool is_distributed_) : is_distributed(is_distributed_)
     {
     }
 
@@ -37,7 +37,7 @@ public:
         return true;
     }
 
-    bool isSuitableForConstantFolding() const override { return !context->isDistributed(); }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     size_t getNumberOfArguments() const override
     {
@@ -54,7 +54,7 @@ public:
         return result_type->createColumnConst(input_rows_count, DNSResolver::instance().getHostName());
     }
 private:
-    ContextPtr context;
+    bool is_distributed;
 };
 
 }

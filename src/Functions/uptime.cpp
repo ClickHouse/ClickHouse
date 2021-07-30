@@ -15,10 +15,10 @@ public:
     static constexpr auto name = "uptime";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionUptime>(context, context->getUptimeSeconds());
+        return std::make_shared<FunctionUptime>(context->isDistributed(), context->getUptimeSeconds());
     }
 
-    explicit FunctionUptime(ContextPtr context_, time_t uptime_) : context(context_), uptime(uptime_)
+    explicit FunctionUptime(bool is_distributed_, time_t uptime_) : is_distributed(is_distributed_), uptime(uptime_)
     {
     }
 
@@ -39,7 +39,7 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForConstantFolding() const override { return !context->isDistributed(); }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -47,7 +47,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    bool is_distributed;
     time_t uptime;
 };
 

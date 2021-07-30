@@ -21,10 +21,10 @@ public:
     static constexpr auto name = "buildId";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionBuildId>(context);
+        return std::make_shared<FunctionBuildId>(context->isDistributed());
     }
 
-    explicit FunctionBuildId(ContextPtr context_) : context(context_)
+    explicit FunctionBuildId(bool is_distributed_) : is_distributed(is_distributed_)
     {
     }
 
@@ -40,7 +40,7 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForConstantFolding() const override { return !context->isDistributed(); }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -53,7 +53,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    bool is_distributed;
 };
 
 }

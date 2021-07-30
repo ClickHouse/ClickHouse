@@ -16,10 +16,10 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionTcpPort>(context, context->getTCPPort());
+        return std::make_shared<FunctionTcpPort>(context->isDistributed(), context->getTCPPort());
     }
 
-    explicit FunctionTcpPort(ContextPtr context_, UInt16 port_) : context(context_), port(port_)
+    explicit FunctionTcpPort(bool is_distributed_, UInt16 port_) : is_distributed(is_distributed_), port(port_)
     {
     }
 
@@ -33,7 +33,7 @@ public:
 
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
-    bool isSuitableForConstantFolding() const override { return !context->isDistributed(); }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -41,7 +41,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    bool is_distributed;
     const UInt64 port;
 };
 

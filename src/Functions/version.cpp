@@ -19,10 +19,10 @@ public:
     static constexpr auto name = "version";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionVersion>(context);
+        return std::make_shared<FunctionVersion>(context->isDistributed());
     }
 
-    explicit FunctionVersion(ContextPtr context_) : context(context_)
+    explicit FunctionVersion(bool is_distributed_) : is_distributed(is_distributed_)
     {
     }
 
@@ -33,7 +33,7 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForConstantFolding() const override { return !context->isDistributed(); }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     size_t getNumberOfArguments() const override
     {
@@ -50,7 +50,7 @@ public:
         return DataTypeString().createColumnConst(input_rows_count, VERSION_STRING);
     }
 private:
-    ContextPtr context;
+    bool is_distributed;
 };
 
 
