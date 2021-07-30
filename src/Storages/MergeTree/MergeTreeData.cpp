@@ -3179,7 +3179,11 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     const auto & partition_ast = ast->as<ASTPartition &>();
 
     if (!partition_ast.value)
+    {
+        if (!MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version))
+            throw Exception("Invalid partition format: " + partition_ast.id, ErrorCodes::INVALID_PARTITION_VALUE);
         return partition_ast.id;
+    }
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
