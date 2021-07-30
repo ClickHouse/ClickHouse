@@ -2,9 +2,135 @@
 #include <ostream>
 #include <string>
 #include <Documentation/SimpleGenerator.h>
+#include <Functions/registerFunctions.h>
+#include <TableFunctions/registerTableFunctions.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
+#include "common/types.h"
+#include <unordered_set>
 
 namespace DB
 {
+
+// Documentation generator have two modes:
+//    * single query processing
+//    * many query processing
+class DocumentationGenerator
+{
+public:
+    DocumentationGenerator() = default;
+    explicit DocumentationGenerator(const std::string& category, const std::string& object="", const std::string& path_to_write=""): group(category), 
+                                                                                                                                     name(object),
+                                                                                                                                     path(path_to_write) {}
+
+    void completeQuery();
+
+    void processManyQueries();
+
+private:
+    std::unordered_set<std::string> quit_options{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "учшеж",
+                                                 "йгшеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй", "n", "n;", "т", "Т", 
+                                                 "N", "N;", "т", " T;"};
+
+    std::unordered_set<std::string> agree_options{"Yes", "YES", "yes", "Yes;", "YES;", "yes;", "Y", "y", "Y;", "y;",
+                                                  "Нуы", "НУЫ", "нуы", "Нуы;", "НУЫ;", "нуы;", "Н", "н", "Н;", "н;"};
+
+    DB::SimpleGenerator generator;
+
+    bool wantToWatchDocumentation();
+
+    void readQuery();
+
+    std::string group;
+    std::string name;
+    std::string path;
+    
+};
+
+void DocumentationGenerator::completeQuery()
+{
+    generator.printDocumentation(group, name, path);
+}
+
+bool DocumentationGenerator::wantToWatchDocumentation()
+{
+    std::string user_command;
+    while (true)
+    {
+        std::cout << "Would you like to get documentation?[Y/n]" << std::endl;
+        std::cin >> user_command;
+
+        // To prevent reading '\n' in next function
+        std::cin.get();
+
+        if (agree_options.find(user_command) != agree_options.end())
+            return true;
+        if (quit_options.find(user_command) != quit_options.end())
+            return false;
+        std::cout << "Unknown command, try again." << std::endl;
+    }
+}
+
+void DocumentationGenerator::readQuery()
+{
+    size_t mode = 0;
+
+    char letter;
+    
+    while (std::cin.get(letter))
+    {
+        // if end of line, finish processing query
+        if (letter == '\n' || letter == '\4')
+            return;
+
+        if (letter == ' ')
+        {
+            ++mode;
+            if (mode > 2)
+            {
+                std::cout << "Wrong number of arguments. Expected not more than three: group name path_to_file." << std::endl;
+                return;
+            }
+            continue;
+        }
+
+        switch (mode)
+        {
+        case 0:
+            group += letter;
+            break;
+        case 1:
+            name += letter;
+            break;
+        case 2:
+            path += letter;
+            break;
+        default:
+            std::cout << "Wrong mode " << mode << " communicate support, if you meet this." << std::endl;
+            return;
+        }
+    }
+}
+
+void DocumentationGenerator::processManyQueries()
+{
+    while (true)
+    {
+        if (!wantToWatchDocumentation())
+            break;
+
+        // clear previous information
+        group.clear();
+        name.clear();
+        path.clear();
+
+        std::cout << "Enter group, name of object (or function) and path (optional)." << std::endl;
+        readQuery();
+        completeQuery();
+    }
+
+}
+
+}
 
 // Print documentation
 // Format of input is: group name path
@@ -15,18 +141,21 @@ namespace DB
 // -path (optional) shows where documentation should be put (be default it is printed)
 int entryDocumentationGenerator(int argc, char** argv)
 {
-    SimpleGenerator generator;
+    // need to 
+    DB::registerFunctions();
+    DB::registerAggregateFunctions();
+    DB::registerTableFunctions();
 
-    if (argc > 0)
+    if (argc > 1)
     {
-        if (argc == 2)
+        if (argc == 3)
         {
-            generator.printDocumentation(argv[1], argv[2]);
+            DB::DocumentationGenerator(argv[1], argv[2]).completeQuery();
             return 0;
         }
-        else if (argc == 3)
+        else if (argc == 4)
         {
-            generator.printDocumentation(argv[1], argv[2], argv[3]);
+            DB::DocumentationGenerator(argv[1], argv[2], argv[3]).completeQuery();
             return 0;
         }
         else 
@@ -35,70 +164,8 @@ int entryDocumentationGenerator(int argc, char** argv)
             return -1;
         }
     }
-
-    std::string user_command;
-    std::string group;
-    std::string name;
-    std::string path;
-
-    size_t mode = 0;
-
-    char letter;
     
-    while (true)
-    {
-        user_command.clear();
-        group.clear();
-        name.clear();
-        path.clear();
-
-        while (true) {
-            std::cout << "Would you like to get documentation?[Y/n]" << std::endl;
-            std::cin >> user_command;
-            if (user_command != "Y" || user_command != "q" || user_command != "n")
-            {
-                std::cout << "Unknown command" << std::endl;
-                continue;
-            } else 
-                break;
-        }
-        
-        if (user_command == "n" || user_command == "q")
-            break;
-  
-        while (std::cin.get(letter))
-        {
-            if (letter == '\n' || letter == '\4')
-            {
-                mode = 0;
-                break;
-            }
-            if (letter == ' ')
-            {
-                ++mode;
-                if (mode > 2)
-                    mode = 0;
-                break;
-            }
-            switch (mode)
-            {
-            case 0:
-                group += letter;
-                break;
-            case 1:
-                name += letter;
-                break;
-            case 2:
-                path += letter;
-                break;
-            default:
-                std::cout << "Wrong mode" << std::endl;
-            }
-        }
-
-        generator.printDocumentation(name, group, path);
-    }
-
+    DB::DocumentationGenerator().processManyQueries();
+    
     return 0;
-}
 }

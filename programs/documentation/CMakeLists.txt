@@ -4,16 +4,8 @@ set (CLICKHOUSE_DOCUMENTATION_SOURCES
 
 set (CLICKHOUSE_DOCUMENTATION_LINK
     PRIVATE
-        boost::program_options
-        clickhouse_aggregate_functions
-        clickhouse_common_config
-        clickhouse_common_io
-        clickhouse_functions
-        clickhouse_parsers
-        string_utils
+    boost::program_options
+    dbms
 )
-
-# Always use internal readpassphrase
-list(APPEND CLICKHOUSE_DOCUMENTATION_LINK PRIVATE readpassphrase)
 
 clickhouse_program_add(documentation)

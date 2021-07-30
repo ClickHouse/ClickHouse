@@ -41,6 +41,14 @@ AggregateFunctionCombinatorFactory & AggregateFunctionCombinatorFactory::instanc
     return ret;
 }
 
+std::vector<String> AggregateFunctionCombinatorFactory::getAllRegisteredNames() const
+{
+    std::vector<String> result;
+    for (const auto& [name, doc]: docs)
+        result.push_back(name);
+    return result;
+}
+
 std::string AggregateFunctionCombinatorFactory::getDocumentation(const std::string & name) const
 {
     auto it = docs.find(name);

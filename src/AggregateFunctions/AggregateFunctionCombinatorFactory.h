@@ -48,6 +48,8 @@ public:
         return dict;
     }
 
+    std::vector<String> getAllRegisteredNames() const;
+
     /// If there will be no documentation returns "Not found"
     std::string getDocumentation(const std::string & name) const;
 };

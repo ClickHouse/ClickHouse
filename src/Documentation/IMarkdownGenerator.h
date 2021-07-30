@@ -12,13 +12,16 @@ namespace DB
 class IMarkdownGenerator
 {
 public:
-void printDocumentation(const std::string& group, const std::string& name, const std::string& path="");
+void printDocumentation(const std::string& group, const std::string& name="", const std::string& path="");
 virtual ~IMarkdownGenerator() = default;
 
 protected:
 virtual std::string makeDocumentation(const std::string& text) = 0;
 
-std::string findDocumentation(const std::string& group, const std::string& name);
+std::string findDocumentation(const std::string& group, const std::string& name="");
+
+template <typename Factory>
+std::string processName(const std::string& name);
 
 };
 
