@@ -1,12 +1,10 @@
 #pragma once
 
+#include <Common/ClickHouseRevision.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/copyData.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/ISource.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -25,7 +23,7 @@ struct TemporaryFileStream
     explicit TemporaryFileStream(const std::string & path)
         : file_in(path)
         , compressed_in(file_in)
-        , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
+        , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get()))
     {}
 
     TemporaryFileStream(const std::string & path, const Block & header_)
@@ -35,38 +33,32 @@ struct TemporaryFileStream
     {}
 
     /// Flush data from input stream into file for future reading
-    static void write(const std::string & path, const Block & header, QueryPipeline pipeline, const std::string & codec)
+    static void write(const std::string & path, const Block & header, IBlockInputStream & input,
+                      std::atomic<bool> * is_cancelled, const std::string & codec)
     {
         WriteBufferFromFile file_buf(path);
         CompressedWriteBuffer compressed_buf(file_buf, CompressionCodecFactory::instance().get(codec, {}));
         NativeBlockOutputStream output(compressed_buf, 0, header);
-
-        PullingPipelineExecutor executor(pipeline);
-
-        output.writePrefix();
-
-        Block block;
-        while (executor.pull(block))
-            output.write(block);
-
-        output.writeSuffix();
+        copyData(input, output, is_cancelled);
         compressed_buf.finalize();
     }
 };
 
-class TemporaryFileLazySource : public ISource
+class TemporaryFileLazyInputStream : public IBlockInputStream
 {
 public:
-    TemporaryFileLazySource(const std::string & path_, const Block & header_)
-        : ISource(header_)
-        , path(path_)
+    TemporaryFileLazyInputStream(const std::string & path_, const Block & header_)
+        : path(path_)
+        , header(header_)
         , done(false)
     {}
 
-    String getName() const override { return "TemporaryFileLazySource"; }
+    String getName() const override { return "TemporaryFile"; }
+    Block getHeader() const override { return header; }
+    void readSuffix() override {}
 
 protected:
-    Chunk generate() override
+    Block readImpl() override
     {
         if (done)
             return {};
@@ -80,7 +72,7 @@ protected:
             done = true;
             stream.reset();
         }
-        return Chunk(block.getColumns(), block.rows());
+        return block;
     }
 
 private:

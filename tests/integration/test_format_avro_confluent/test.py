@@ -1,14 +1,22 @@
-import io
+import json
 import logging
+import io
 
-import avro.schema
 import pytest
-from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
-from confluent_kafka.avro.serializer.message_serializer import MessageSerializer
+
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
+import helpers.client
+
+import avro.schema
+from confluent.schemaregistry.client import CachedSchemaRegistryClient
+from confluent.schemaregistry.serializers import MessageSerializer
+
+logging.getLogger().setLevel(logging.INFO)
+logging.getLogger().addHandler(logging.StreamHandler())
+
 @pytest.fixture(scope="module")
-def started_cluster():
+def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("dummy", with_kafka=True)
@@ -34,10 +42,11 @@ def run_query(instance, query, data=None, settings=None):
     return result
 
 
-def test_select(started_cluster):
+
+def test_select(cluster):
     # type: (ClickHouseCluster) -> None
 
-    schema_registry_client = CachedSchemaRegistryClient('http://localhost:{}'.format(started_cluster.schema_registry_port))
+    schema_registry_client = cluster.schema_registry_client
     serializer = MessageSerializer(schema_registry_client)
 
     schema = avro.schema.make_avsc_object({
@@ -46,7 +55,7 @@ def test_select(started_cluster):
         'fields': [
             {
                 'name': 'value',
-                'type': 'long'
+                'type': 'long' 
             }
         ]
     })
@@ -59,12 +68,12 @@ def test_select(started_cluster):
         buf.write(message)
     data = buf.getvalue()
 
-    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     schema_registry_url = "http://{}:{}".format(
-        started_cluster.schema_registry_host,
-        8081
+        cluster.schema_registry_host,
+        cluster.schema_registry_port
     )
-
+    
     run_query(instance, "create table avro_data(value Int64) engine = Memory()")
     settings = {'format_avro_schema_registry_url': schema_registry_url}
     run_query(instance, "insert into avro_data format AvroConfluent", data, settings)

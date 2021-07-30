@@ -1,0 +1,172 @@
+value vs value
+0	1	1	Int8	Int8	Int8
+0	1	1	Int8	Int16	Int16
+0	1	1	Int8	Int32	Int32
+0	1	1	Int8	Int64	Int64
+0	1	1	Int8	UInt8	Int16
+0	1	1	Int8	UInt16	Int32
+0	1	1	Int8	UInt32	Int64
+0	1	1	Int8	Float32	Float32
+0	1	1	Int8	Float64	Float64
+0	1	1	Int8	Decimal(9, 0)	Decimal(9, 0)
+0	1	1	Int8	Decimal(18, 0)	Decimal(18, 0)
+0	1	1	Int8	Decimal(38, 0)	Decimal(38, 0)
+0	1	1	Int16	Int8	Int16
+0	1	1	Int16	Int16	Int16
+0	1	1	Int16	Int32	Int32
+0	1	1	Int16	Int64	Int64
+0	1	1	Int16	UInt8	Int16
+0	1	1	Int16	UInt16	Int32
+0	1	1	Int16	UInt32	Int64
+0	1	1	Int16	Float32	Float32
+0	1	1	Int16	Float64	Float64
+0	1	1	Int16	Decimal(9, 0)	Decimal(9, 0)
+0	1	1	Int16	Decimal(18, 0)	Decimal(18, 0)
+0	1	1	Int16	Decimal(38, 0)	Decimal(38, 0)
+0	1	1	Int32	Int8	Int32
+0	1	1	Int32	Int16	Int32
+0	1	1	Int32	Int32	Int32
+0	1	1	Int32	Int64	Int64
+0	1	1	Int32	UInt8	Int32
+0	1	1	Int32	UInt16	Int32
+0	1	1	Int32	UInt32	Int64
+0	1	1	Int32	Float32	Float64
+0	1	1	Int32	Float64	Float64
+0	1	1	Int32	Decimal(9, 0)	Decimal(9, 0)
+0	1	1	Int32	Decimal(18, 0)	Decimal(18, 0)
+0	1	1	Int32	Decimal(38, 0)	Decimal(38, 0)
+0	1	1	Int64	Int8	Int64
+0	1	1	Int64	Int16	Int64
+0	1	1	Int64	Int32	Int64
+0	1	1	Int64	Int64	Int64
+0	1	1	Int64	UInt8	Int64
+0	1	1	Int64	UInt16	Int64
+0	1	1	Int64	UInt32	Int64
+0	1	1	Int64	Decimal(9, 0)	Decimal(18, 0)
+0	1	1	Int64	Decimal(18, 0)	Decimal(18, 0)
+0	1	1	Int64	Decimal(38, 0)	Decimal(38, 0)
+0	1	1	UInt8	Int8	Int16
+0	1	1	UInt8	Int16	Int16
+0	1	1	UInt8	Int32	Int32
+0	1	1	UInt8	Int64	Int64
+0	1	1	UInt8	UInt8	UInt8
+0	1	1	UInt8	UInt16	UInt16
+0	1	1	UInt8	UInt32	UInt32
+0	1	1	UInt8	UInt64	UInt64
+0	1	1	UInt8	Float32	Float32
+0	1	1	UInt8	Float64	Float64
+0	1	1	UInt8	Decimal(9, 0)	Decimal(9, 0)
+0	1	1	UInt8	Decimal(18, 0)	Decimal(18, 0)
+0	1	1	UInt8	Decimal(38, 0)	Decimal(38, 0)
+0	1	1	UInt16	Int8	Int32
+0	1	1	UInt16	Int16	Int32
+0	1	1	UInt16	Int32	Int32
+0	1	1	UInt16	Int64	Int64
+0	1	1	UInt16	UInt8	UInt16
+0	1	1	UInt16	UInt16	UInt16
+0	1	1	UInt16	UInt32	UInt32
+0	1	1	UInt16	UInt64	UInt64
+0	1	1	UInt16	Float32	Float32
+0	1	1	UInt16	Float64	Float64
+0	1	1	UInt16	Decimal(9, 0)	Decimal(9, 0)
+0	1	1	UInt16	Decimal(18, 0)	Decimal(18, 0)
+0	1	1	UInt16	Decimal(38, 0)	Decimal(38, 0)
+0	1	1	UInt32	Int8	Int64
+0	1	1	UInt32	Int16	Int64
+0	1	1	UInt32	Int32	Int64
+0	1	1	UInt32	Int64	Int64
+0	1	1	UInt32	UInt8	UInt32
+0	1	1	UInt32	UInt16	UInt32
+0	1	1	UInt32	UInt32	UInt32
+0	1	1	UInt32	UInt64	UInt64
+0	1	1	UInt32	Float32	Float64
+0	1	1	UInt32	Float64	Float64
+0	1	1	UInt32	Decimal(9, 0)	Decimal(18, 0)
+0	1	1	UInt32	Decimal(18, 0)	Decimal(18, 0)
+0	1	1	UInt32	Decimal(38, 0)	Decimal(38, 0)
+0	1	1	UInt64	UInt8	UInt64
+0	1	1	UInt64	UInt16	UInt64
+0	1	1	UInt64	UInt32	UInt64
+0	1	1	UInt64	UInt64	UInt64
+0	1	1	UInt64	Decimal(9, 0)	Decimal(38, 0)
+0	1	1	UInt64	Decimal(18, 0)	Decimal(38, 0)
+0	1	1	UInt64	Decimal(38, 0)	Decimal(38, 0)
+1970-01-01	1970-01-02	1970-01-02	Date	Date	Date
+2000-01-01	2000-01-01 00:00:01	2000-01-01 00:00:01	Date	DateTime(\'Europe/Moscow\')	DateTime
+2000-01-01 00:00:00	2000-01-02	2000-01-02 00:00:00	DateTime(\'Europe/Moscow\')	Date	DateTime
+1970-01-01 03:00:00	1970-01-01 03:00:01	1970-01-01 03:00:01	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')
+00000000-0000-0000-0000-000000000000	00000000-0000-0001-0000-000000000000	00000000-0000-0001-0000-000000000000	UUID	UUID	UUID
+column vs value
+0	1	1	Int8	Int8	Int8
+0	1	1	Int8	Int16	Int16
+0	1	1	Int8	Int32	Int32
+0	1	1	Int8	Int64	Int64
+0	1	1	Int8	UInt8	Int16
+0	1	1	Int8	UInt16	Int32
+0	1	1	Int8	UInt32	Int64
+0	1	1	Int8	Float32	Float32
+0	1	1	Int8	Float64	Float64
+0	1	1	Int16	Int8	Int16
+0	1	1	Int16	Int16	Int16
+0	1	1	Int16	Int32	Int32
+0	1	1	Int16	Int64	Int64
+0	1	1	Int16	UInt8	Int16
+0	1	1	Int16	UInt16	Int32
+0	1	1	Int16	UInt32	Int64
+0	1	1	Int16	Float32	Float32
+0	1	1	Int16	Float64	Float64
+0	1	1	Int32	Int8	Int32
+0	1	1	Int32	Int16	Int32
+0	1	1	Int32	Int32	Int32
+0	1	1	Int32	Int64	Int64
+0	1	1	Int32	UInt8	Int32
+0	1	1	Int32	UInt16	Int32
+0	1	1	Int32	UInt32	Int64
+0	1	1	Int32	Float32	Float64
+0	1	1	Int32	Float64	Float64
+0	1	1	Int64	Int8	Int64
+0	1	1	Int64	Int16	Int64
+0	1	1	Int64	Int32	Int64
+0	1	1	Int64	Int64	Int64
+0	1	1	Int64	UInt8	Int64
+0	1	1	Int64	UInt16	Int64
+0	1	1	Int64	UInt32	Int64
+0	1	1	UInt8	Int8	Int16
+0	1	1	UInt8	Int16	Int16
+0	1	1	UInt8	Int32	Int32
+0	1	1	UInt8	Int64	Int64
+0	1	1	UInt8	UInt8	UInt8
+0	1	1	UInt8	UInt16	UInt16
+0	1	1	UInt8	UInt32	UInt32
+0	1	1	UInt8	UInt64	UInt64
+0	1	1	UInt8	Float32	Float32
+0	1	1	UInt8	Float64	Float64
+0	1	1	UInt16	Int8	Int32
+0	1	1	UInt16	Int16	Int32
+0	1	1	UInt16	Int32	Int32
+0	1	1	UInt16	Int64	Int64
+0	1	1	UInt16	UInt8	UInt16
+0	1	1	UInt16	UInt16	UInt16
+0	1	1	UInt16	UInt32	UInt32
+0	1	1	UInt16	UInt64	UInt64
+0	1	1	UInt16	Float32	Float32
+0	1	1	UInt16	Float64	Float64
+0	1	1	UInt32	Int8	Int64
+0	1	1	UInt32	Int16	Int64
+0	1	1	UInt32	Int32	Int64
+0	1	1	UInt32	Int64	Int64
+0	1	1	UInt32	UInt8	UInt32
+0	1	1	UInt32	UInt16	UInt32
+0	1	1	UInt32	UInt32	UInt32
+0	1	1	UInt32	UInt64	UInt64
+0	1	1	UInt32	Float32	Float64
+0	1	1	UInt32	Float64	Float64
+0	1	1	UInt64	UInt8	UInt64
+0	1	1	UInt64	UInt16	UInt64
+0	1	1	UInt64	UInt32	UInt64
+0	1	1	UInt64	UInt64	UInt64
+1970-01-01	1970-01-02	1970-01-02	Date	Date	Date
+2000-01-01	2000-01-01 00:00:01	2000-01-01 00:00:01	Date	DateTime(\'Europe/Moscow\')	DateTime
+2000-01-01 00:00:00	2000-01-02	2000-01-02 00:00:00	DateTime(\'Europe/Moscow\')	Date	DateTime
+1970-01-01 03:00:00	1970-01-01 03:00:01	1970-01-01 03:00:01	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')
+00000000-0000-0000-0000-000000000000	00000000-0000-0001-0000-000000000000	00000000-0000-0001-0000-000000000000	UUID	UUID	UUID

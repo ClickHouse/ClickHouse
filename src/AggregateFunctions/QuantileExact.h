@@ -1,18 +1,16 @@
 #pragma once
 
+#include <algorithm>
+#include <Core/Types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
 #include <Common/NaNUtils.h>
 #include <Common/PODArray.h>
-#include <common/sort.h>
-#include <common/types.h>
 
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -88,7 +86,8 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
         if (!array.empty())
         {
             size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-            nth_element(array.begin(), array.begin() + n, array.end());  /// NOTE: You can think of the radix-select algorithm.
+
+            std::nth_element(array.begin(), array.begin() + n, array.end()); /// NOTE You can think of the radix-select algorithm.
             return array[n];
         }
 
@@ -107,7 +106,9 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
                 auto level = levels[indices[i]];
 
                 size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-                nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+
+                std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+
                 result[indices[i]] = array[n];
                 prev_n = n;
             }
@@ -122,7 +123,7 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
 
 /// QuantileExactExclusive is equivalent to Excel PERCENTILE.EXC, R-6, SAS-4, SciPy-(0,0)
 template <typename Value>
-/// There are no virtual-like functions. So we don't inherit from QuantileExactBase.
+/// There is no virtual-like functions. So we don't inherit from QuantileExactBase.
 struct QuantileExactExclusive : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
@@ -143,10 +144,10 @@ struct QuantileExactExclusive : public QuantileExact<Value>
             else if (n < 1)
                 return static_cast<Float64>(array[0]);
 
-            nth_element(array.begin(), array.begin() + n - 1, array.end());
-            auto nth_elem = std::min_element(array.begin() + n, array.end());
+            std::nth_element(array.begin(), array.begin() + n - 1, array.end());
+            auto nth_element = std::min_element(array.begin() + n, array.end());
 
-            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
+            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
         }
 
         return std::numeric_limits<Float64>::quiet_NaN();
@@ -172,10 +173,10 @@ struct QuantileExactExclusive : public QuantileExact<Value>
                     result[indices[i]] = static_cast<Float64>(array[0]);
                 else
                 {
-                    nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
-                    auto nth_elem = std::min_element(array.begin() + n, array.end());
+                    std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
+                    auto nth_element = std::min_element(array.begin() + n, array.end());
 
-                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
+                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
                     prev_n = n - 1;
                 }
             }
@@ -190,7 +191,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
 
 /// QuantileExactInclusive is equivalent to Excel PERCENTILE and PERCENTILE.INC, R-7, SciPy-(1,1)
 template <typename Value>
-/// There are no virtual-like functions. So we don't inherit from QuantileExactBase.
+/// There is no virtual-like functions. So we don't inherit from QuantileExactBase.
 struct QuantileExactInclusive : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
@@ -207,10 +208,11 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                 return static_cast<Float64>(array[array.size() - 1]);
             else if (n < 1)
                 return static_cast<Float64>(array[0]);
-            nth_element(array.begin(), array.begin() + n - 1, array.end());
-            auto nth_elem = std::min_element(array.begin() + n, array.end());
 
-            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
+            std::nth_element(array.begin(), array.begin() + n - 1, array.end());
+            auto nth_element = std::min_element(array.begin() + n, array.end());
+
+            return static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
         }
 
         return std::numeric_limits<Float64>::quiet_NaN();
@@ -234,10 +236,10 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                     result[indices[i]] = static_cast<Float64>(array[0]);
                 else
                 {
-                    nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
-                    auto nth_elem = std::min_element(array.begin() + n, array.end());
+                    std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
+                    auto nth_element = std::min_element(array.begin() + n, array.end());
 
-                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
+                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_element - array[n - 1]);
                     prev_n = n - 1;
                 }
             }
@@ -264,7 +266,7 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
         {
             // sort inputs in ascending order
             std::sort(array.begin(), array.end());
-
+            size_t n = level < 1 ? level * array.size() : (array.size() - 1);
             // if level is 0.5 then compute the "low" median of the sorted array
             // by the method of rounding.
             if (level == 0.5)
@@ -279,14 +281,10 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
                     return array[static_cast<size_t>((floor(s / 2)) - 1)];
                 }
             }
-            else
-            {
-                // else quantile is the nth index of the sorted array obtained by multiplying
-                // level and size of array. Example if level = 0.1 and size of array is 10,
-                // then return array[1].
-                size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-                return array[n];
-            }
+            // else quantile is the nth index of the sorted array obtained by multiplying
+            // level and size of array. Example if level = 0.1 and size of array is 10,
+            // then return array[1].
+            return array[n];
         }
         return std::numeric_limits<Value>::quiet_NaN();
     }
@@ -300,7 +298,7 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
             for (size_t i = 0; i < size; ++i)
             {
                 auto level = levels[indices[i]];
-
+                size_t n = level < 1 ? level * array.size() : (array.size() - 1);
                 // if level is 0.5 then compute the "low" median of the sorted array
                 // by the method of rounding.
                 if (level == 0.5)
@@ -315,13 +313,9 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
                         result[indices[i]] = array[static_cast<size_t>(floor((s / 2) - 1))];
                     }
                 }
-                else
-                {
-                    // else quantile is the nth index of the sorted array obtained by multiplying
-                    // level and size of array. Example if level = 0.1 and size of array is 10.
-                    size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-                    result[indices[i]] = array[n];
-                }
+                // else quantile is the nth index of the sorted array obtained by multiplying
+                // level and size of array. Example if level = 0.1 and size of array is 10.
+                result[indices[i]] = array[n];
             }
         }
         else
@@ -346,7 +340,7 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
         {
             // sort inputs in ascending order
             std::sort(array.begin(), array.end());
-
+            size_t n = level < 1 ? level * array.size() : (array.size() - 1);
             // if level is 0.5 then compute the "high" median of the sorted array
             // by the method of rounding.
             if (level == 0.5)
@@ -354,13 +348,9 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
                 auto s = array.size();
                 return array[static_cast<size_t>(floor(s / 2))];
             }
-            else
-            {
-                // else quantile is the nth index of the sorted array obtained by multiplying
-                // level and size of array. Example if level = 0.1 and size of array is 10.
-                size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-                return array[n];
-            }
+            // else quantile is the nth index of the sorted array obtained by multiplying
+            // level and size of array. Example if level = 0.1 and size of array is 10.
+            return array[n];
         }
         return std::numeric_limits<Value>::quiet_NaN();
     }
@@ -374,7 +364,7 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
             for (size_t i = 0; i < size; ++i)
             {
                 auto level = levels[indices[i]];
-
+                size_t n = level < 1 ? level * array.size() : (array.size() - 1);
                 // if level is 0.5 then compute the "high" median of the sorted array
                 // by the method of rounding.
                 if (level == 0.5)
@@ -382,13 +372,9 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
                     auto s = array.size();
                     result[indices[i]] = array[static_cast<size_t>(floor(s / 2))];
                 }
-                else
-                {
-                    // else quantile is the nth index of the sorted array obtained by multiplying
-                    // level and size of array. Example if level = 0.1 and size of array is 10.
-                    size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-                    result[indices[i]] = array[n];
-                }
+                // else quantile is the nth index of the sorted array obtained by multiplying
+                // level and size of array. Example if level = 0.1 and size of array is 10.
+                result[indices[i]] = array[n];
             }
         }
         else

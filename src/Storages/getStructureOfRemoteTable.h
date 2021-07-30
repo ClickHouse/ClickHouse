@@ -16,7 +16,13 @@ struct StorageID;
 ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
     const StorageID & table_id,
-    ContextPtr context,
+    const Context & context,
+    const ASTPtr & table_func_ptr = nullptr);
+
+ColumnsDescription getStructureOfRemoteTableInShard(
+    const Cluster::ShardInfo & shard_info,
+    const StorageID & table_id,
+    const Context & context,
     const ASTPtr & table_func_ptr = nullptr);
 
 }

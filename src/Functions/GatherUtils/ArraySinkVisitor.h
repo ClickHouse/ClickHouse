@@ -4,7 +4,6 @@
 
 namespace DB::GatherUtils
 {
-#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericArraySink;
@@ -14,23 +13,14 @@ struct GenericArraySink;
 template <typename ArraySink>
 struct NullableArraySink;
 
-using NumericArraySinks = typename TypeListMap<NumericArraySink, TypeListNumbersAndUUID>::Type;
+using NumericArraySinks = typename TypeListMap<NumericArraySink, TypeListNumbersAndUInt128>::Type;
 using BasicArraySinks = typename AppendToTypeList<GenericArraySink, NumericArraySinks>::Type;
 using NullableArraySinks = typename TypeListMap<NullableArraySink, BasicArraySinks>::Type;
 using TypeListArraySinks = typename TypeListConcat<BasicArraySinks, NullableArraySinks>::Type;
 
-class ArraySinkVisitor : public ApplyTypeListForClass<Visitor, TypeListArraySinks>::Type
-{
-protected:
-    ~ArraySinkVisitor() = default;
-};
+class ArraySinkVisitor : public ApplyTypeListForClass<Visitor, TypeListArraySinks>::Type {};
 
 template <typename Derived>
-class ArraySinkVisitorImpl : public VisitorImpl<Derived, ArraySinkVisitor>
-{
-protected:
-    ~ArraySinkVisitorImpl() = default;
-};
+class ArraySinkVisitorImpl : public VisitorImpl<Derived, ArraySinkVisitor> {};
 
-#pragma GCC visibility pop
 }

@@ -1,5 +1,0 @@
-# https://github.com/llvm-mirror/compiler-rt/blob/master/lib/ubsan/ubsan_checks.inc
-
-# Some value is outside the range of representable values of type 'long' on user-provided data inside boost::geometry - ignore.
-src:*/Functions/pointInPolygon.cpp
-src:*/contrib/boost/boost/geometry/*

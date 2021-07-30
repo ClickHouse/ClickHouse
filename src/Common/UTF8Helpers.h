@@ -1,7 +1,6 @@
 #pragma once
 
-#include <optional>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Common/BitHelpers.h>
 #include <Poco/UTF8Encoding.h>
 
@@ -74,27 +73,26 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     return res;
 }
 
-
 template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-size_t convertCodePointToUTF8(uint32_t code_point, CharT * out_bytes, size_t out_length)
+int convert(const CharT * bytes)
 {
     static const Poco::UTF8Encoding utf8;
-    int res = utf8.convert(code_point, reinterpret_cast<uint8_t *>(out_bytes), out_length);
-    assert(res >= 0);
-    return res;
+    return utf8.convert(reinterpret_cast<const uint8_t *>(bytes));
 }
 
 template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-std::optional<uint32_t> convertUTF8ToCodePoint(const CharT * in_bytes, size_t in_length)
+int convert(int ch, CharT * bytes, int length)
 {
     static const Poco::UTF8Encoding utf8;
-    int res = utf8.queryConvert(reinterpret_cast<const uint8_t *>(in_bytes), in_length);
-
-    if (res >= 0)
-        return res;
-    return {};
+    return utf8.convert(ch, reinterpret_cast<uint8_t *>(bytes), length);
 }
 
+template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+int queryConvert(const CharT * bytes, int length)
+{
+    static const Poco::UTF8Encoding utf8;
+    return utf8.queryConvert(reinterpret_cast<const uint8_t *>(bytes), length);
+}
 
 /// returns UTF-8 wcswidth. Invalid sequence is treated as zero width character.
 /// `prefix` is used to compute the `\t` width which extends the string before

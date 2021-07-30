@@ -1,23 +1,20 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Common/FieldVisitors.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/TokenIterator.h>
-#include <Common/FieldVisitorDump.h>
-
 #include <optional>
 
 
 namespace DB
 {
 
-/// Literal (atomic) - number, string, NULL
+/** Literal (atomic) - number, string, NULL
+  */
 class ASTLiteral : public ASTWithAlias
 {
 public:
-    explicit ASTLiteral(Field && value_) : value(value_) {}
-    explicit ASTLiteral(const Field & value_) : value(value_) {}
-
     Field value;
 
     /// For ConstantExpressionTemplate
@@ -33,6 +30,11 @@ public:
      */
     String unique_column_name;
 
+
+public:
+    ASTLiteral(Field && value_) : value(value_) {}
+    ASTLiteral(const Field & value_) : value(value_) {}
+
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value)); }
 
@@ -41,16 +43,12 @@ public:
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    {
+        settings.ostr << applyVisitor(FieldVisitorToString(), value);
+    }
 
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
-    void appendColumnNameImpl(WriteBuffer & ostr, const Settings & settings) const override;
-
-private:
-    /// Legacy version of 'appendColumnNameImpl'. It differs only with tuple literals.
-    /// It's only needed to continue working of queries with tuple literals
-    /// in distributed tables while rolling update.
-    void appendColumnNameImplLegacy(WriteBuffer & ostr) const;
 };
 
 }
