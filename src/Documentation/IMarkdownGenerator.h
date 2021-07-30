@@ -8,7 +8,7 @@ namespace DB
 
 /// This interface is made for different generators 
 // (for example, if documentation in factory will have markdown syntax, we can generate easy,
-/// otherwise we will ned to transform it)
+/// otherwise we will need to transform it)
 class IMarkdownGenerator
 {
 public:
