@@ -247,21 +247,25 @@ void ExpressionAnalyzer::analyzeAggregation()
                     if (!node)
                         throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
-                    /// Constant expressions have non-null column pointer at this stage.
-                    if (node->column && isColumnConst(*node->column))
+                    /// Only removes constant keys if it's an initiator.
+                    if (getContext()->getClientInfo().distributed_depth == 0)
                     {
-                        select_query->group_by_with_constant_keys = true;
-
-                        /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
-                        if (!aggregate_descriptions.empty() || size > 1)
+                        /// Constant expressions have non-null column pointer at this stage.
+                        if (node->column && isColumnConst(*node->column))
                         {
-                            if (i + 1 < static_cast<ssize_t>(size))
-                                group_asts[i] = std::move(group_asts.back());
+                            select_query->group_by_with_constant_keys = true;
 
-                            group_asts.pop_back();
+                            /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
+                            if (!aggregate_descriptions.empty() || size > 1)
+                            {
+                                if (i + 1 < static_cast<ssize_t>(size))
+                                    group_asts[i] = std::move(group_asts.back());
 
-                            --i;
-                            continue;
+                                group_asts.pop_back();
+
+                                --i;
+                                continue;
+                            }
                         }
                     }
 
