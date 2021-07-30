@@ -2267,7 +2267,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
 void MergeTreeDataMergerMutator::finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
-    bool need_remove_expired_values,
+    bool need_recalculate_ttl,
     const CompressionCodecPtr & codec)
 {
     auto disk = new_data_part->volume->getDisk();
@@ -2281,7 +2281,7 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
     }
 
-    if (need_remove_expired_values)
+    if (need_recalculate_ttl)
     {
         /// Write a file with ttl infos in json format.
         auto out_ttl = disk->writeFile(fs::path(new_data_part->getFullRelativePath()) / "ttl.txt", 4096);

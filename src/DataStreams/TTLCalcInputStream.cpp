@@ -1,16 +1,4 @@
 #include <DataStreams/TTLCalcInputStream.h>
-#include <DataTypes/DataTypeDate.h>
-#include <Interpreters/inplaceBlockConversions.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Columns/ColumnConst.h>
-#include <Interpreters/addTypeConversionToAST.h>
-#include <Storages/TTLMode.h>
-#include <Interpreters/Context.h>
-
-#include <DataStreams/TTLDeleteAlgorithm.h>
-#include <DataStreams/TTLColumnAlgorithm.h>
-#include <DataStreams/TTLAggregationAlgorithm.h>
 #include <DataStreams/TTLUpdateInfoAlgorithm.h>
 
 namespace DB
@@ -81,7 +69,11 @@ Block TTLCalcInputStream::readImpl()
     if (!block)
         return block;
 
-    return reorderColumns(std::move(block), header);
+    Block res;
+    for (const auto & col : header)
+        res.insert(block.getByName(col.name));
+
+    return res;
 }
 
 void TTLCalcInputStream::readSuffixImpl()

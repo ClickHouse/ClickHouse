@@ -150,28 +150,6 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     return select;
 }
 
-ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns)
-{
-    NameSet new_updated_columns = updated_columns;
-    ColumnDependencies dependencies;
-    while (!new_updated_columns.empty())
-    {
-        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
-        new_updated_columns.clear();
-        for (const auto & dependency : new_dependencies)
-        {
-            if (!dependencies.count(dependency))
-            {
-                dependencies.insert(dependency);
-                if (!dependency.isReadOnly())
-                    new_updated_columns.insert(dependency.column_name);
-            }
-        }
-    }
-
-    return dependencies;
-}
-
 }
 
 
