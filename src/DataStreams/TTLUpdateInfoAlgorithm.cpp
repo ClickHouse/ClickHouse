@@ -22,26 +22,31 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
     }
 }
 
-TTLMoveAlgorithm::TTLMoveAlgorithm(
-    const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_)
-    : TTLUpdateInfoAlgorithm(description_, old_ttl_info_, current_time_, force_)
+void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
-}
+    if (description.mode == TTLMode::RECOMPRESS) 
+    {
+        data_part->ttl_infos.recompression_ttl[description.result_column] = new_ttl_info;
+    }
+    else if (description.mode == TTLMode::MOVE)
+    {
+        data_part->ttl_infos.moves_ttl[description.result_column] = new_ttl_info;
+    }
+    else if (description.mode == TTLMode::GROUP_BY)
+    {
+        data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
+        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+    }
+    else if (description.mode == TTLMode::DELETE)
+    {
+        if (description.where_expression)
+            data_part->ttl_infos.rows_where_ttl[description.result_column] = new_ttl_info;
+        else
+            data_part->ttl_infos.table_ttl = new_ttl_info;
 
-void TTLMoveAlgorithm::finalize(const MutableDataPartPtr & data_part) const
-{
-    data_part->ttl_infos.moves_ttl[description.result_column] = new_ttl_info;
-}
-
-TTLRecompressionAlgorithm::TTLRecompressionAlgorithm(
-    const TTLDescription & description_, const TTLInfo & old_ttl_info_, time_t current_time_, bool force_)
-    : TTLUpdateInfoAlgorithm(description_, old_ttl_info_, current_time_, force_)
-{
-}
-
-void TTLRecompressionAlgorithm::finalize(const MutableDataPartPtr & data_part) const
-{
-    data_part->ttl_infos.recompression_ttl[description.result_column] = new_ttl_info;
+        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
+    }
+    
 }
 
 }

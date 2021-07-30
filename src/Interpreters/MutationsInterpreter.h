@@ -64,20 +64,6 @@ public:
 
     NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
 
-    struct MutationKind
-    {
-        enum MutationKindEnum
-        {
-            MUTATE_UNKNOWN,
-            MUTATE_INDEX_PROJECTION,
-            MUTATE_OTHER,
-        } mutation_kind = MUTATE_UNKNOWN;
-
-        void set(const MutationKindEnum & kind);
-    };
-
-    MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
-
 private:
     ASTPtr prepare(bool dry_run);
 
@@ -147,8 +133,6 @@ private:
 
     NameSet materialized_indices;
     NameSet materialized_projections;
-
-    MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 
     /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;

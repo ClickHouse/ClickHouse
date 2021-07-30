@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <DataStreams/TTLBlockInputStream.h>
+#include <DataStreams/TTLCalcInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
@@ -1249,8 +1250,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     NamesAndTypesList storage_columns = metadata_snapshot->getColumns().getAllPhysical();
     NameSet materialized_indices;
     NameSet materialized_projections;
-    MutationsInterpreter::MutationKind::MutationKindEnum mutation_kind
-        = MutationsInterpreter::MutationKind::MutationKindEnum::MUTATE_UNKNOWN;
 
     if (!for_interpreter.empty())
     {
@@ -1258,7 +1257,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             storage_from_source_part, metadata_snapshot, for_interpreter, context_for_reading, true);
         materialized_indices = interpreter->grabMaterializedIndices();
         materialized_projections = interpreter->grabMaterializedProjections();
-        mutation_kind = interpreter->getMutationKind();
         in = interpreter->execute();
         updated_header = interpreter->getUpdatedHeader();
         in->setProgressCallback(MergeProgressCallback(merge_entry, watch_prev_elapsed, stage_progress));
@@ -1288,15 +1286,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(new_data_part->getType())
                                                                          : getNonAdaptiveMrkExtension();
     bool need_sync = needSyncPart(source_part->rows_count, source_part->getBytesOnDisk(), *data_settings);
-    bool need_remove_expired_values = false;
+    bool need_recalculate_ttl = false;
 
     if (in && shouldExecuteTTL(metadata_snapshot, interpreter->getColumnDependencies(), commands_for_part))
-        need_remove_expired_values = true;
+        need_recalculate_ttl = true;
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
-    if (!isWidePart(source_part)
-        || (mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && interpreter && interpreter->isAffectingAllColumns()))
+    if (!isWidePart(source_part) || (updated_header && interpreter && interpreter->isAffectingAllColumns()))
     {
         disk->createDirectories(new_part_tmp_path);
 
@@ -1319,7 +1316,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             time_of_mutation,
             compression_codec,
             merge_entry,
-            need_remove_expired_values,
+            need_recalculate_ttl,
             need_sync,
             space_reservation,
             holder,
@@ -1332,11 +1329,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     {
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         NameSet updated_columns;
-        if (mutation_kind != MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION)
-        {
-            for (const auto & name_type : updated_header.getNamesAndTypesList())
-                updated_columns.emplace(name_type.name);
-        }
+        for (const auto & name_type : updated_header.getNamesAndTypesList())
+            updated_columns.emplace(name_type.name);
 
         auto indices_to_recalc = getIndicesToRecalculate(
             in, updated_columns, metadata_snapshot, context, materialized_indices, source_part);
@@ -1345,21 +1339,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         NameSet files_to_skip = collectFilesToSkip(
             source_part,
-            mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : updated_header,
+            updated_header,
             indices_to_recalc,
             mrk_extension,
             projections_to_recalc);
         NameToNameVector files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
 
-        if (indices_to_recalc.empty() && projections_to_recalc.empty() && mutation_kind != MutationsInterpreter::MutationKind::MUTATE_OTHER
-            && files_to_rename.empty())
+        if (indices_to_recalc.empty() && projections_to_recalc.empty() && updated_columns.empty()
+            && files_to_rename.empty() && !need_recalculate_ttl)
         {
             LOG_TRACE(
                 log, "Part {} doesn't change up to mutation version {} (optimized)", source_part->name, future_part.part_info.mutation);
             return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info, metadata_snapshot);
         }
 
-        if (need_remove_expired_values)
+        if (need_recalculate_ttl)
             files_to_skip.insert("ttl.txt");
 
         disk->createDirectories(new_part_tmp_path);
@@ -1413,14 +1407,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 metadata_snapshot,
                 indices_to_recalc,
                 projections_to_recalc,
-                // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-                mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : updated_header,
+                updated_header,
                 new_data_part,
                 in,
                 time_of_mutation,
                 compression_codec,
                 merge_entry,
-                need_remove_expired_values,
+                need_recalculate_ttl,
                 need_sync,
                 space_reservation,
                 holder,
@@ -1441,7 +1434,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             }
         }
 
-        finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values, compression_codec);
+        finalizeMutatedPart(source_part, new_data_part, need_recalculate_ttl, compression_codec);
     }
 
     return new_data_part;
@@ -2167,7 +2160,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     time_t time_of_mutation,
     const CompressionCodecPtr & compression_codec,
     MergeListEntry & merge_entry,
-    bool need_remove_expired_values,
+    bool need_recalculate_ttl,
     bool need_sync,
     const ReservationPtr & space_reservation,
     TableLockHolder & holder,
@@ -2180,8 +2173,8 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
         mutating_stream = std::make_shared<MaterializingBlockInputStream>(
             std::make_shared<ExpressionBlockInputStream>(mutating_stream, data.getPrimaryKeyAndSkipIndicesExpression(metadata_snapshot)));
 
-    if (need_remove_expired_values)
-        mutating_stream = std::make_shared<TTLBlockInputStream>(mutating_stream, data, metadata_snapshot, new_data_part, time_of_mutation, true);
+    if (need_recalculate_ttl)
+        mutating_stream = std::make_shared<TTLCalcInputStream>(mutating_stream, data, metadata_snapshot, new_data_part, time_of_mutation, true);
 
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
 
@@ -2224,7 +2217,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     time_t time_of_mutation,
     const CompressionCodecPtr & compression_codec,
     MergeListEntry & merge_entry,
-    bool need_remove_expired_values,
+    bool need_recalculate_ttl,
     bool need_sync,
     const ReservationPtr & space_reservation,
     TableLockHolder & holder,
@@ -2233,8 +2226,8 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-    if (need_remove_expired_values)
-        mutating_stream = std::make_shared<TTLBlockInputStream>(mutating_stream, data, metadata_snapshot, new_data_part, time_of_mutation, true);
+    if (need_recalculate_ttl)
+        mutating_stream = std::make_shared<TTLCalcInputStream>(mutating_stream, data, metadata_snapshot, new_data_part, time_of_mutation, true);
 
     IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
     MergedColumnOnlyOutputStream out(

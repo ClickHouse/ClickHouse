@@ -156,7 +156,7 @@ ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_
     ColumnDependencies dependencies;
     while (!new_updated_columns.empty())
     {
-        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns);
+        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
         new_updated_columns.clear();
         for (const auto & dependency : new_dependencies)
         {
@@ -424,14 +424,13 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(storage, metadata_snapshot, updated_columns, column_to_affected_materialized);
     }
 
-    dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
+    dependencies = metadata_snapshot->getColumnDependencies(updated_columns, false);
 
     /// First, break a sequence of commands into stages.
     for (auto & command : commands)
     {
         if (command.type == MutationCommand::DELETE)
         {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
 
@@ -440,7 +439,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::UPDATE)
         {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
@@ -531,7 +529,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
             auto it = std::find_if(
                     std::cbegin(indices_desc), std::end(indices_desc),
                     [&](const IndexDescription & index)
@@ -550,7 +547,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
             for (const auto & column : projection.required_columns)
                 dependencies.emplace(column, ColumnDependency::PROJECTION);
@@ -558,60 +554,33 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
             materialized_indices.erase(command.index_name);
         }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
             materialized_projections.erase(command.projection_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (metadata_snapshot->hasRowsTTL())
+            // just recalculate ttl_infos without actual mutation
+            auto all_columns_vec = all_columns.getNames();
+            auto new_dependencies = metadata_snapshot->getColumnDependencies(NameSet(all_columns_vec.begin(), all_columns_vec.end()), false);
+
+            for (const auto & dependency : new_dependencies)
             {
-                for (const auto & column : all_columns)
-                    dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
+                if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
+                    dependencies.insert(dependency);
             }
-            else
+
+            if (dependencies.empty())
             {
-                NameSet new_updated_columns;
-                auto column_ttls = metadata_snapshot->getColumns().getColumnTTLs();
-                for (const auto & elem : column_ttls)
-                {
-                    dependencies.emplace(elem.first, ColumnDependency::TTL_TARGET);
-                    new_updated_columns.insert(elem.first);
-                }
-
-                auto all_columns_vec = all_columns.getNames();
-                auto all_dependencies = getAllColumnDependencies(metadata_snapshot, NameSet(all_columns_vec.begin(), all_columns_vec.end()));
-
-                for (const auto & dependency : all_dependencies)
-                {
-                    if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
-                        dependencies.insert(dependency);
-                }
-
-                /// Recalc only skip indices and projections of columns which could be updated by TTL.
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns);
-                for (const auto & dependency : new_dependencies)
-                {
-                    if (dependency.kind == ColumnDependency::SKIP_INDEX || dependency.kind == ColumnDependency::PROJECTION)
-                        dependencies.insert(dependency);
-                }
-
-                if (dependencies.empty())
-                {
-                    /// Very rare case. It can happen if we have only one MOVE TTL with constant expression.
-                    /// But we still have to read at least one column.
-                    dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
-                }
+                /// Very rare case. It can happen if we have only one MOVE TTL with constant expression.
+                /// But we still have to read at least one column.
+                dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
             }
         }
         else if (command.type == MutationCommand::READ_COLUMN)
         {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
@@ -638,6 +607,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 changed_columns.insert(dependency.column_name);
         }
 
+        // changed_columns is always empty because we don't delete or aggregate expired data here
         if (!changed_columns.empty())
         {
             if (stages.empty() || !stages.back().column_to_updated.empty())
@@ -675,6 +645,11 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source))));
                 auto pipeline = addStreamsForLaterStages(stages_copy, plan);
                 updated_header = std::make_unique<Block>(pipeline->getHeader());
+            } 
+            else 
+            {
+                //no column updated in mutations. maybe just materialize(index\projection\ttl)
+                updated_header = std::make_unique<Block>(Block{});
             }
 
             /// Special step to recalculate affected indices, projections and TTL expressions.
@@ -979,12 +954,6 @@ bool MutationsInterpreter::isAffectingAllColumns() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation interpreter has no stages");
 
     return stages.back().isAffectingAllColumns(storage_columns);
-}
-
-void MutationsInterpreter::MutationKind::set(const MutationKindEnum & kind)
-{
-    if (mutation_kind < kind)
-        mutation_kind = kind;
 }
 
 }
