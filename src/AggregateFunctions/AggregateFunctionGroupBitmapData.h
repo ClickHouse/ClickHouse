@@ -1,9 +1,9 @@
 #pragma once
 
 #include <algorithm>
+#include <boost/noncopyable.hpp>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
 
@@ -14,6 +14,7 @@
 #include <roaring.hh>
 #include <roaring64map.hh>
 
+
 namespace DB
 {
 
@@ -22,6 +23,7 @@ enum BitmapKind
     Small = 0,
     Bitmap = 1
 };
+
 
 /**
   * For a small number of values - an array of fixed size "on the stack".

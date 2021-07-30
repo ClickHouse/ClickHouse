@@ -416,6 +416,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             }
         }
 
+        if (query.prewhere() && query.where())
+        {
+            /// Filter block in WHERE instead to get better performance
+            query.setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
+        }
+
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
                 query_ptr, syntax_analyzer_result, context, metadata_snapshot,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),
@@ -497,12 +503,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query.setExpression(ASTSelectQuery::Expression::WHERE, {});
         else
             query.setExpression(ASTSelectQuery::Expression::WHERE, std::make_shared<ASTLiteral>(0u));
-        need_analyze_again = true;
-    }
-    if (query.prewhere() && query.where())
-    {
-        /// Filter block in WHERE instead to get better performance
-        query.setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
         need_analyze_again = true;
     }
 
@@ -1363,7 +1363,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
-        && typeid_cast<AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
+        && typeid_cast<const AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
 
     if (optimize_trivial_count)
     {
@@ -1387,7 +1387,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         if (num_rows)
         {
-            AggregateFunctionCount & agg_count = static_cast<AggregateFunctionCount &>(*func);
+            const AggregateFunctionCount & agg_count = static_cast<const AggregateFunctionCount &>(*func);
 
             /// We will process it up to "WithMergeableState".
             std::vector<char> state(agg_count.sizeOfData());
