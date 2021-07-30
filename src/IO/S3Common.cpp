@@ -6,7 +6,6 @@
 
 #    include <Common/quoteString.h>
 
-#    include <Functions/isValidUTF8.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <Storages/StorageS3Settings.h>
 
