@@ -30,12 +30,13 @@ SRCS(
     PostgreSQLHandlerFactory.cpp
     PrometheusMetricsWriter.cpp
     PrometheusRequestHandler.cpp
+    ProtocolInterfaceConfig.cpp
     ProtocolServerAdapter.cpp
+    ProxyConfig.cpp
     ReplicasStatusHandler.cpp
     StaticRequestHandler.cpp
     TCPHandler.cpp
     WebUIRequestHandler.cpp
-
 )
 
 END()

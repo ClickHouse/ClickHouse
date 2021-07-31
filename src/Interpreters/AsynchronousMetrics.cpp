@@ -1232,34 +1232,11 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         new_values["TotalRowsOfMergeTreeTables"] = total_number_of_rows;
         new_values["TotalPartsOfMergeTreeTables"] = total_number_of_parts;
 
-        auto get_metric_name = [](const String & name) -> const char *
-        {
-            static std::map<String, const char *> metric_map =
-            {
-                {"tcp_port", "TCPThreads"},
-                {"tcp_port_secure", "TCPSecureThreads"},
-                {"http_port", "HTTPThreads"},
-                {"https_port", "HTTPSecureThreads"},
-                {"interserver_http_port", "InterserverThreads"},
-                {"interserver_https_port", "InterserverSecureThreads"},
-                {"mysql_port", "MySQLThreads"},
-                {"postgresql_port", "PostgreSQLThreads"},
-                {"grpc_port", "GRPCThreads"},
-                {"prometheus.port", "PrometheusThreads"}
-            };
-            auto it = metric_map.find(name);
-            if (it == metric_map.end())
-                return nullptr;
-            else
-                return it->second;
-        };
-
         if (servers_to_start_before_tables)
         {
             for (const auto & server : *servers_to_start_before_tables)
             {
-                if (const auto * name = get_metric_name(server.getPortName()))
-                    new_values[name] = server.currentThreads();
+                new_values["Interface_" + server.getInterfaceName()] = server.currentThreads();
             }
         }
 
@@ -1267,8 +1244,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         {
             for (const auto & server : *servers)
             {
-                if (const auto * name = get_metric_name(server.getPortName()))
-                    new_values[name] = server.currentThreads();
+                new_values["Interface_" + server.getInterfaceName()] = server.currentThreads();
             }
         }
     }

@@ -10,6 +10,7 @@
 #include <IO/Progress.h>
 #include <IO/TimeoutSetter.h>
 #include <DataStreams/BlockIO.h>
+#include <DataStreams/BlockStreamProfileInfo.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context.h>
 

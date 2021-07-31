@@ -1,13 +1,19 @@
 #include <Server/ProtocolServerAdapter.h>
+#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/IServer.h>
+#include <Interpreters/Context.h>
 #include <Poco/Net/TCPServer.h>
+#include <boost/algorithm/string.hpp>
 
 #if USE_GRPC
-#include <Server/GRPCServer.h>
+#   include <Server/GRPCServer.h>
 #endif
 
+#include <set>
 
 namespace DB
 {
+
 class ProtocolServerAdapter::TCPServerAdapterImpl : public Impl
 {
 public:
@@ -23,9 +29,10 @@ private:
     std::unique_ptr<Poco::Net::TCPServer> tcp_server;
 };
 
-ProtocolServerAdapter::ProtocolServerAdapter(const char * port_name_, std::unique_ptr<Poco::Net::TCPServer> tcp_server_)
-    : port_name(port_name_), impl(std::make_unique<TCPServerAdapterImpl>(std::move(tcp_server_)))
+void ProtocolServerAdapter::add(std::unique_ptr<Poco::Net::TCPServer> && server)
 {
+    if (server)
+        servers.emplace_back(std::make_unique<TCPServerAdapterImpl>(std::move(server)));
 }
 
 #if USE_GRPC
@@ -44,9 +51,98 @@ private:
     std::unique_ptr<GRPCServer> grpc_server;
 };
 
-ProtocolServerAdapter::ProtocolServerAdapter(const char * port_name_, std::unique_ptr<GRPCServer> grpc_server_)
-    : port_name(port_name_), impl(std::make_unique<GRPCServerAdapterImpl>(std::move(grpc_server_)))
+void ProtocolServerAdapter::add(std::unique_ptr<GRPCServer> && server)
 {
+    if (server)
+        servers.emplace_back(std::make_unique<GRPCServerAdapterImpl>(std::move(server)));
 }
 #endif
+
+ProtocolServerAdapter::ProtocolServerAdapter(const std::string & interface_name_)
+    : interface_name(interface_name_)
+{
+}
+
+void ProtocolServerAdapter::start()
+{
+    for (auto & server : servers)
+        server->start();
+}
+
+void ProtocolServerAdapter::stop()
+{
+    for (auto & server : servers)
+        server->stop();
+}
+
+size_t ProtocolServerAdapter::currentConnections() const
+{
+    size_t res = 0;
+
+    for (auto & server : servers)
+        res += server->currentConnections();
+
+    return res;
+}
+
+size_t ProtocolServerAdapter::currentThreads() const
+{
+    size_t res = 0;
+
+    for (auto & server : servers)
+        res += server->currentThreads();
+
+    return res;
+}
+
+const std::string & ProtocolServerAdapter::getInterfaceName() const
+{
+    return interface_name;
+}
+
+namespace Util
+{
+
+std::vector<ProtocolServerAdapter> createServers(
+    const std::vector<std::string> & protocols,
+    const std::map<std::string, std::unique_ptr<ProtocolInterfaceConfig>> & interfaces,
+    IServer & server,
+    Poco::ThreadPool & pool,
+    AsynchronousMetrics * async_metrics,
+    bool & keeper_initialized
+)
+{
+    std::vector<ProtocolServerAdapter> servers;
+    std::set<std::string> uniques;
+
+    // Preserve protocols order.
+    for (auto protocol : protocols)
+    {
+        // Skip duplicates.
+        if (!uniques.insert(boost::to_lower_copy(protocol)).second)
+            continue;
+
+        for (const auto & interface : interfaces)
+        {
+            // Choose only applicable interfaces.
+            if (!boost::iequals(protocol, interface.second->protocol))
+                continue;
+
+#if USE_NURAFT
+            if (!keeper_initialized && boost::iequals(protocol, "keeper"))
+            {
+                server.context()->initializeKeeperStorageDispatcher();
+                keeper_initialized = true;
+            }
+#endif
+
+            servers.push_back(interface.second->createServerAdapter(server, pool, async_metrics));
+        }
+    }
+
+    return servers;
+}
+
+}
+
 }
