@@ -945,7 +945,7 @@ void executeQuery(
     ContextMutablePtr context,
     std::function<void(const String &, const String &, const String &, const String &)> set_result_details,
     const std::optional<FormatSettings> & output_format_settings,
-    std::function<void()> before_finalize_callback)
+    FlushBufferCallback flush_buffer_callback)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1085,7 +1085,7 @@ void executeQuery(
                     out->onProgress(progress);
                 });
 
-                out->setBeforeFinalizeCallback(before_finalize_callback);
+                out->setFlushBufferCallback(flush_buffer_callback);
 
                 if (set_result_details)
                     set_result_details(

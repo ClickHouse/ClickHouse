@@ -37,6 +37,7 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <IO/WriteBufferFromOStream.h>
+#include <DataStreams/NullBlockOutputStream.h>
 #include <IO/UseSSL.h>
 
 namespace fs = std::filesystem;
@@ -48,6 +49,22 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+
+void ClientBase::onProgress(const Progress & value)
+{
+    if (!progress_indication.updateProgress(value))
+    {
+        // Just a keep-alive update.
+        return;
+    }
+
+    if (block_out_stream)
+        block_out_stream->onProgress(value);
+
+    if (need_render_progress)
+        progress_indication.writeProgress();
 }
 
 

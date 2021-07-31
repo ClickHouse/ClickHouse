@@ -228,19 +228,29 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
     if (is_interactive || !ignore_error)
         local_server_exception.reset();
 
-    std::function<void()> finalize_progress;
+    std::function<void(WriteBuffer & out, size_t result_rows)> flush_buffer_callback;
     if (need_render_progress)
     {
-        /// Set finalizing callback for progress, which is called right before finalizing query output.
-        finalize_progress = [&]()
+        flush_buffer_callback = [&](WriteBuffer & out, size_t result_rows)
         {
-            progress_indication.clearProgressOutput();
+            written_first_block = true;
+            processed_rows = result_rows;
+
+            if (need_render_progress)
+                progress_indication.clearProgressOutput();
+
+            out.next();
+
+            /// Restore progress bar after data block.
+            if (need_render_progress)
+                progress_indication.writeProgress();
         };
     }
 
     try
     {
-        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, {}, finalize_progress);
+        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, {}, flush_buffer_callback);
+        progress_indication.clearProgressOutput();
     }
     catch (...)
     {
@@ -387,14 +397,12 @@ int LocalServer::mainImpl()
         /// Use the same query_id (and thread group) for all queries
         CurrentThread::QueryScope query_scope_holder(query_context);
 
-        if (need_render_progress && !is_interactive)
+        if (need_render_progress)
         {
             /// Set progress callback, which can be run from multiple threads.
             query_context->setProgressCallback([&](const Progress & value)
             {
-                /// Write progress only if progress was updated
-                if (progress_indication.updateProgress(value))
-                    progress_indication.writeProgress();
+                onProgress(value);
             });
 
             /// Set callback for file processing progress.

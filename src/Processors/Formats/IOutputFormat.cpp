@@ -76,9 +76,6 @@ void IOutputFormat::work()
         if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())
             setRowsBeforeLimit(rows_before_limit_counter->get());
 
-        if (before_finalize_callback)
-            before_finalize_callback();
-
         finalize();
         finalized = true;
         return;
@@ -108,7 +105,10 @@ void IOutputFormat::work()
 
 void IOutputFormat::flush()
 {
-    out.next();
+    if (flush_callback)
+        flush_callback(out, result_rows);
+    else
+        out.next();
 }
 
 void IOutputFormat::write(const Block & block)
