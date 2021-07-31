@@ -97,7 +97,6 @@ private:
     void onLogData(Block & block);
     void onTotals(Block & block, ASTPtr parsed_query);
     void onExtremes(Block & block, ASTPtr parsed_query);
-    void onProgress(const Progress & value);
 
     void writeFinalProgress();
     void onReceiveExceptionFromServer(std::unique_ptr<Exception> && e);

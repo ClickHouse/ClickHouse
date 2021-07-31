@@ -1546,22 +1546,6 @@ void Client::onExtremes(Block & block, ASTPtr parsed_query)
 }
 
 
-void Client::onProgress(const Progress & value)
-{
-    if (!progress_indication.updateProgress(value))
-    {
-        // Just a keep-alive update.
-        return;
-    }
-
-    if (block_out_stream)
-        block_out_stream->onProgress(value);
-
-    if (need_render_progress)
-        progress_indication.writeProgress();
-}
-
-
 void Client::writeFinalProgress()
 {
     progress_indication.writeFinalProgress();

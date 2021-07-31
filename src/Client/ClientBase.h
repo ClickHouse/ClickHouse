@@ -102,6 +102,8 @@ protected:
 
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
 
+    void onProgress(const Progress & value);
+
 
     /// Prepare for and call either runInteractive() or runNonInteractive().
     virtual int mainImpl() = 0;
