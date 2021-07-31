@@ -86,6 +86,9 @@ struct MergeTreePartInfo
         return static_cast<UInt64>(max_block - min_block + 1);
     }
 
+    /// Simple sanity check for partition ID. Checking that it's not too long or too short, doesn't contain a lot of '_'.
+    static bool validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version);
+
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);  // -V1071
 
     static bool tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
