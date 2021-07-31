@@ -40,7 +40,7 @@ def test_distributed_directory_monitor_split_batch_on_failure_OFF(started_cluste
         limit = 100e3
         node2.query(f'insert into dist select number/100, number from system.numbers limit {limit} offset {limit*i}', settings={
             # max_memory_usage is the limit for the batch on the remote node
-            # (local query should not be affected since 30MB is enough for 100K rows)
+            # (local query should not be affected since this is enough for 100K rows)
             'max_memory_usage': '25Mi',
         })
     # "Received from" is mandatory, since the exception should be thrown on the remote node.
@@ -53,8 +53,8 @@ def test_distributed_directory_monitor_split_batch_on_failure_ON(started_cluster
         limit = 100e3
         node1.query(f'insert into dist select number/100, number from system.numbers limit {limit} offset {limit*i}', settings={
             # max_memory_usage is the limit for the batch on the remote node
-            # (local query should not be affected since 30MB is enough for 100K rows)
-            'max_memory_usage': '30Mi',
+            # (local query should not be affected since this is enough for 100K rows)
+            'max_memory_usage': '25Mi',
         })
     node1.query('system flush distributed dist')
     assert int(node1.query('select count() from dist_data')) == 100000
