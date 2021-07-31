@@ -997,6 +997,13 @@ const Block & Context::getScalar(const String & name) const
     return it->second;
 }
 
+const Block * Context::tryGetLocalScalar(const String & name) const
+{
+    auto it = local_scalars.find(name);
+    if (local_scalars.end() == it)
+        return nullptr;
+    return &it->second;
+}
 
 Tables Context::getExternalTables() const
 {
@@ -1053,6 +1060,13 @@ void Context::addScalar(const String & name, const Block & block)
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     scalars[name] = block;
+}
+
+
+void Context::addLocalScalar(const String & name, const Block & block)
+{
+    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    local_scalars[name] = block;
 }
 
 

@@ -249,7 +249,7 @@ void ExpressionAnalyzer::analyzeAggregation()
                         throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
                     /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
-                    if (getContext()->getClientInfo().distributed_depth == 0 && settings.distributed_group_by_no_merge > 0)
+                    if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
                     {
                         /// Constant expressions have non-null column pointer at this stage.
                         if (node->column && isColumnConst(*node->column))
