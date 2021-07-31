@@ -543,6 +543,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
+        else if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+        {
+            /// FIXME
+        }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
