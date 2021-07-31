@@ -1558,6 +1558,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
@@ -1566,6 +1567,9 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
                 for_interpreter.push_back(command);
                 for (const auto & [column_name, expr] : command.column_to_update_expression)
                     mutated_columns.emplace(column_name);
+
+                if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
+                    mutated_columns.emplace(command.column_name);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX || command.type == MutationCommand::Type::DROP_PROJECTION)
             {
@@ -1603,6 +1607,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || command.type == MutationCommand::Type::MATERIALIZE_COLUMN
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
