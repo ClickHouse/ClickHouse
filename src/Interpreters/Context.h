@@ -197,6 +197,7 @@ private:
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
+    Scalars local_scalars;
 
     /// Fields for distributed s3 function
     std::optional<ReadTaskCallback> next_task_callback;
@@ -454,6 +455,9 @@ public:
     const Block & getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
+
+    const Block * tryGetLocalScalar(const String & name) const;
+    void addLocalScalar(const String & name, const Block & block);
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
     void addQueryAccessInfo(
