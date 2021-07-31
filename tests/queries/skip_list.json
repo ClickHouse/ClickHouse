@@ -30,7 +30,8 @@
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
         "01193_metadata_loading",
-        "01017_uniqCombined_memory_usage" /// Fine thresholds on memory usage
+        "01017_uniqCombined_memory_usage", /// Fine thresholds on memory usage
+        "01730_distributed_group_by_no_merge_order_by_long" /// Fine thresholds on memory usage
     ],
     "ub-sanitizer": [
         "capnproto",
