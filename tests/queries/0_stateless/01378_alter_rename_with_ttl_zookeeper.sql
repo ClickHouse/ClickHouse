@@ -6,10 +6,8 @@ CREATE TABLE table_rename_with_ttl
   value1 String
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/test/table_rename_with_ttl_01378', '1')
-order by value1
+ORDER BY tuple()
 SETTINGS merge_with_ttl_timeout=0,max_number_of_merges_with_ttl_in_pool=0;
-
-ORDER BY tuple();
 
 INSERT INTO table_rename_with_ttl SELECT toDate('2018-10-01') + number % 3, toString(number) from numbers(9);
 
