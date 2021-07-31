@@ -623,8 +623,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source))));
                 auto pipeline = addStreamsForLaterStages(stages_copy, plan);
                 updated_header = std::make_unique<Block>(pipeline->getHeader());
-            } 
-            else 
+            }
+            else
             {
                 //no column updated in mutations. maybe just materialize(index\projection\ttl)
                 updated_header = std::make_unique<Block>(Block{});
