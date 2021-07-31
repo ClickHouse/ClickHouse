@@ -3,6 +3,7 @@
 #include <functional>
 #include <common/scope_guard.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/formatBlock.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
