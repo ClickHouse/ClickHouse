@@ -46,11 +46,17 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+static const NameSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
+}
+
+namespace DB
+{
 
 void ClientBase::onProgress(const Progress & value)
 {

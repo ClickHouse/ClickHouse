@@ -225,7 +225,7 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
     /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
     /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
     /// first exception or whether we need to even rethrow it because there is --ignore-error.
-    if (is_interactive || !ignore_error)
+    if (!ignore_error)
         local_server_exception.reset();
 
     std::function<void(WriteBuffer & out, size_t result_rows)> flush_buffer_callback;
@@ -365,104 +365,102 @@ void LocalServer::reportQueryError(const String & query) const
 
 
 int LocalServer::mainImpl()
+try
+{
+    ThreadStatus thread_status;
+
+    /// We will terminate process on error
+    static KillingErrorHandler error_handler;
+    Poco::ErrorHandler::set(&error_handler);
+
+    /// Don't initialize DateLUT
+    registerFunctions();
+    registerAggregateFunctions();
+    registerTableFunctions();
+    registerStorages();
+    registerDictionaries();
+    registerDisks();
+    registerFormats();
+
+    processConfig();
+
+    /// we can't mutate global_context (can lead to races, as it was already passed to some background threads)
+    /// so we can't reuse it safely as a query context and need a copy here
+    query_context = Context::createCopy(global_context);
+    query_context->makeSessionContext();
+    query_context->makeQueryContext();
+    query_context->setUser("default", "", Poco::Net::SocketAddress{});
+    query_context->setCurrentQueryId("");
+
+    applyCmdSettings(query_context);
+    /// Use the same query_id (and thread group) for all queries
+    CurrentThread::QueryScope query_scope_holder(query_context);
+
+    if (need_render_progress)
+    {
+        /// Set progress callback, which can be run from multiple threads.
+        query_context->setProgressCallback([&](const Progress & value)
+        {
+            onProgress(value);
+        });
+
+        /// Set callback for file processing progress.
+        progress_indication.setFileProgressCallback(query_context);
+    }
+
+    if (is_interactive)
+    {
+        std::cout << std::endl;
+
+        auto try_process_query_text = [&](std::function<bool()> func)
+        {
+            try
+            {
+                return func();
+            }
+            catch (const Exception & e)
+            {
+                bool print_stack_trace = config().getBool("stacktrace", false);
+                std::cerr << "Received exception:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+            }
+
+            return true;
+        };
+
+        runInteractive(try_process_query_text);
+    }
+    else
+    {
+        runNonInteractive();
+
+        if (local_server_exception)
+            local_server_exception->rethrow();
+    }
+
+    global_context->shutdown();
+    global_context.reset();
+
+    status.reset();
+    cleanup();
+
+    return Application::EXIT_OK;
+}
+catch (const Exception & e)
 {
     try
     {
-        ThreadStatus thread_status;
-
-        /// We will terminate process on error
-        static KillingErrorHandler error_handler;
-        Poco::ErrorHandler::set(&error_handler);
-
-        /// Don't initialize DateLUT
-        registerFunctions();
-        registerAggregateFunctions();
-        registerTableFunctions();
-        registerStorages();
-        registerDictionaries();
-        registerDisks();
-        registerFormats();
-
-        processConfig();
-
-        /// we can't mutate global_context (can lead to races, as it was already passed to some background threads)
-        /// so we can't reuse it safely as a query context and need a copy here
-        query_context = Context::createCopy(global_context);
-        query_context->makeSessionContext();
-        query_context->makeQueryContext();
-        query_context->setUser("default", "", Poco::Net::SocketAddress{});
-        query_context->setCurrentQueryId("");
-
-        applyCmdSettings(query_context);
-        /// Use the same query_id (and thread group) for all queries
-        CurrentThread::QueryScope query_scope_holder(query_context);
-
-        if (need_render_progress)
-        {
-            /// Set progress callback, which can be run from multiple threads.
-            query_context->setProgressCallback([&](const Progress & value)
-            {
-                onProgress(value);
-            });
-
-            /// Set callback for file processing progress.
-            progress_indication.setFileProgressCallback(query_context);
-        }
-
-        if (is_interactive)
-        {
-            std::cout << std::endl;
-
-            auto try_process_query_text = [&](std::function<bool()> func)
-            {
-                try
-                {
-                    return func();
-                }
-                catch (const Exception & e)
-                {
-                    bool print_stack_trace = config().getBool("stacktrace", false);
-                    std::cerr << "Received exception:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-                }
-
-                return true;
-            };
-
-            runInteractive(try_process_query_text);
-        }
-        else
-        {
-            runNonInteractive();
-
-            if (local_server_exception)
-                local_server_exception->rethrow();
-        }
-
-        global_context->shutdown();
-        global_context.reset();
-
-        status.reset();
         cleanup();
-
-        return Application::EXIT_OK;
     }
-    catch (const Exception & e)
+    catch (...)
     {
-        try
-        {
-            cleanup();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
-        if (!ignore_error)
-            std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
-
-        /// If exception code isn't zero, we should return non-zero return code anyway.
-        return e.code() ? e.code() : -1;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    if (!ignore_error)
+        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
+
+    /// If exception code isn't zero, we should return non-zero return code anyway.
+    return e.code() ? e.code() : -1;
 }
 
 
