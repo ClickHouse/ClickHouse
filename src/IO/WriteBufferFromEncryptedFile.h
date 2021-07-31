@@ -21,7 +21,7 @@ public:
         size_t buffer_size_,
         std::unique_ptr<WriteBufferFromFileBase> out_,
         const String & key_,
-        const FileEncryption::InitVector & init_vector_,
+        const FileEncryption::Header & header_,
         size_t old_file_size = 0);
     ~WriteBufferFromEncryptedFile() override;
 
@@ -39,8 +39,8 @@ private:
     bool finished = false;
     std::unique_ptr<WriteBufferFromFileBase> out;
 
-    FileEncryption::InitVector iv;
-    bool flush_iv = false;
+    FileEncryption::Header header;
+    bool flush_header = false;
 
     FileEncryption::Encryptor encryptor;
 };

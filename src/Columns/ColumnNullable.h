@@ -111,6 +111,8 @@ public:
     void updateWeakHash32(WeakHash32 & hash) const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
+    // Special function for nullable minmax index
+    void getExtremesNullLast(Field & min, Field & max) const;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {

@@ -388,6 +388,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
 
+        if (storage && !query.final() && storage->needRewriteQueryWithFinal(syntax_analyzer_result->requiredSourceColumns()))
+            query.setFinal();
+
         /// Save scalar sub queries's results in the query context
         if (!options.only_analyze && context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
@@ -1729,7 +1732,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         syntax_analyzer_result->optimize_trivial_count
         && (settings.max_parallel_replicas <= 1)
         && storage
-        && storage->getName() != "MaterializeMySQL"
+        && storage->getName() != "MaterializedMySQL"
         && !row_policy_filter
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()

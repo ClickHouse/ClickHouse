@@ -197,6 +197,16 @@ String IAccessStorage::readName(const UUID & id) const
 }
 
 
+Strings IAccessStorage::readNames(const std::vector<UUID> & ids) const
+{
+    Strings res;
+    res.reserve(ids.size());
+    for (const auto & id : ids)
+        res.emplace_back(readName(id));
+    return res;
+}
+
+
 std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
 {
     String name;
@@ -204,6 +214,19 @@ std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
     if (!tryCall(func))
         return {};
     return name;
+}
+
+
+Strings IAccessStorage::tryReadNames(const std::vector<UUID> & ids) const
+{
+    Strings res;
+    res.reserve(ids.size());
+    for (const auto & id : ids)
+    {
+        if (auto name = tryReadName(id))
+            res.emplace_back(std::move(name).value());
+    }
+    return res;
 }
 
 
