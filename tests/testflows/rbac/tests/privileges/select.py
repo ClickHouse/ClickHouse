@@ -419,13 +419,9 @@ def feature(self, table_type, parallel=None, stress=None, node="clickhouse1"):
         self.context.stress = parallel
 
     tasks = []
-    pool = Pool(10)
-
-    try:
+    with Pool(10) as pool:
         try:
             for scenario in loads(current_module(), Scenario):
                 run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
         finally:
             join(tasks)
-    finally:
-        pool.close()

@@ -21,6 +21,40 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
 }
 
 
+bool MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
+{
+    if (partition_id.empty())
+        return false;
+
+    ReadBufferFromString in(partition_id);
+
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        UInt32 min_yyyymmdd = 0;
+        UInt32 max_yyyymmdd = 0;
+        if (!tryReadIntText(min_yyyymmdd, in)
+            || !checkChar('_', in)
+            || !tryReadIntText(max_yyyymmdd, in)
+            || !checkChar('_', in))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        while (!in.eof())
+        {
+            char c;
+            readChar(c, in);
+
+            if (c == '_')
+                break;
+        }
+    }
+
+    return in.eof();
+}
+
 bool MergeTreePartInfo::tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version)
 {
     ReadBufferFromString in(part_name);
@@ -93,6 +127,15 @@ bool MergeTreePartInfo::tryParsePartName(const String & part_name, MergeTreePart
         part_info->partition_id = std::move(partition_id);
         part_info->min_block = min_block_num;
         part_info->max_block = max_block_num;
+        if (level == LEGACY_MAX_LEVEL)
+        {
+            /// We (accidentally) had two different max levels until 21.6 and it might cause logical errors like
+            /// "Part 20170601_20170630_0_2_999999999 intersects 201706_0_1_4294967295".
+            /// So we replace unexpected max level to make contains(...) method and comparison operators work
+            /// correctly with such virtual parts. On part name serialization we will use legacy max level to keep the name unchanged.
+            part_info->use_leagcy_max_level = true;
+            level = MAX_LEVEL;
+        }
         part_info->level = level;
         part_info->mutation = mutation;
     }
@@ -146,7 +189,15 @@ String MergeTreePartInfo::getPartName() const
     writeChar('_', wb);
     writeIntText(max_block, wb);
     writeChar('_', wb);
-    writeIntText(level, wb);
+    if (use_leagcy_max_level)
+    {
+        assert(level == MAX_LEVEL);
+        writeIntText(LEGACY_MAX_LEVEL, wb);
+    }
+    else
+    {
+        writeIntText(level, wb);
+    }
 
     if (mutation)
     {
@@ -177,7 +228,15 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     writeChar('_', wb);
     writeIntText(max_block, wb);
     writeChar('_', wb);
-    writeIntText(level, wb);
+    if (use_leagcy_max_level)
+    {
+        assert(level == MAX_LEVEL);
+        writeIntText(LEGACY_MAX_LEVEL, wb);
+    }
+    else
+    {
+        writeIntText(level, wb);
+    }
 
     if (mutation)
     {

@@ -12,19 +12,15 @@ system flush logs;
 select count()
 from system.query_log
 where
-    query like '%01546_log_queries_min_query_duration_ms-fast%'
-    and query not like '%system.query_log%'
+    query like 'select \'01546_log_queries_min_query_duration_ms-fast%'
     and current_database = currentDatabase()
-    and event_date = today()
-    and event_time >= now() - interval 1 minute;
+    and event_date >= yesterday();
 select count()
 from system.query_thread_log
 where
-    query like '%01546_log_queries_min_query_duration_ms-fast%'
-    and query not like '%system.query_thread_log%'
+    query like 'select \'01546_log_queries_min_query_duration_ms-fast%'
     and current_database = currentDatabase()
-    and event_date = today()
-    and event_time >= now() - interval 1 minute;
+    and event_date >= yesterday();
 
 --
 -- slow -- query logged
@@ -37,18 +33,14 @@ system flush logs;
 select count()
 from system.query_log
 where
-    query like '%01546_log_queries_min_query_duration_ms-slow%'
-    and query not like '%system.query_log%'
+    query like 'select \'01546_log_queries_min_query_duration_ms-slow%'
     and current_database = currentDatabase()
-    and event_date = today()
-    and event_time >= now() - interval 1 minute;
+    and event_date >= yesterday();
 -- There at least two threads involved in a simple query
 -- (one thread just waits another, sigh)
-select count() == 2
+select if(count() == 2, 'OK', 'Fail: ' || toString(count()))
 from system.query_thread_log
 where
-    query like '%01546_log_queries_min_query_duration_ms-slow%'
-    and query not like '%system.query_thread_log%'
+    query like 'select \'01546_log_queries_min_query_duration_ms-slow%'
     and current_database = currentDatabase()
-    and event_date = today()
-    and event_time >= now() - interval 1 minute;
+    and event_date >= yesterday();

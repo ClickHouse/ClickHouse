@@ -1,7 +1,5 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_folder_title: "\u5BFC\u8A00"
+toc_folder_title: 快速上手
 toc_priority: 2
 ---
 
@@ -9,7 +7,7 @@ toc_priority: 2
 
 如果您是ClickHouse的新手，并希望亲身体验它的性能。
 
-首先需要进行 [环境安装与部署](install.md).
+首先需要完成 [安装与部署](install.md).
 
 之后，您可以通过教程与示例数据完成自己的入门第一步：
 

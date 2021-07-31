@@ -4,7 +4,7 @@
 #include <Formats/verbosePrintString.h>
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 
 
@@ -193,7 +193,7 @@ void CSVRowInputFormat::readPrefix()
             {
                 if (!read_column)
                 {
-                    have_always_default_columns = true;
+                    column_mapping->have_always_default_columns = true;
                     break;
                 }
             }
@@ -201,7 +201,10 @@ void CSVRowInputFormat::readPrefix()
             return;
         }
         else
+        {
             skipRow(in, format_settings.csv, num_columns);
+            setupAllColumnsByTableSchema();
+        }
     }
     else if (!column_mapping->is_set)
         setupAllColumnsByTableSchema();
@@ -218,7 +221,7 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
     /// Track whether we have to fill any columns in this row with default
     /// values. If not, we return an empty column mask to the caller, so that
     /// it doesn't have to check it.
-    bool have_default_columns = have_always_default_columns;
+    bool have_default_columns = column_mapping->have_always_default_columns;
 
     ext.read_columns.assign(column_mapping->read_columns.size(), true);
     const auto delimiter = format_settings.csv.delimiter;
@@ -230,7 +233,9 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
         if (table_column)
         {
             skipWhitespacesAndTabs(in);
-            ext.read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column], is_last_file_column);
+            ext.read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column],
+                serializations[*table_column], is_last_file_column);
+
             if (!ext.read_columns[*table_column])
                 have_default_columns = true;
             skipWhitespacesAndTabs(in);
@@ -360,10 +365,11 @@ void CSVRowInputFormat::syncAfterError()
 
 void CSVRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
 {
-    if (column_mapping->column_indexes_for_input_fields[file_column])
+    const auto & index = column_mapping->column_indexes_for_input_fields[file_column];
+    if (index)
     {
         const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
-        readField(column, type, is_last_file_column);
+        readField(column, type, serializations[*index], is_last_file_column);
     }
     else
     {
@@ -372,7 +378,7 @@ void CSVRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & 
     }
 }
 
-bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column)
+bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column)
 {
     const bool at_delimiter = !in.eof() && *in.position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column
@@ -395,12 +401,12 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bo
     else if (format_settings.null_as_default && !type->isNullable())
     {
         /// If value is null but type is not nullable then use default value instead.
-        return DataTypeNullable::deserializeTextCSV(column, in, format_settings, type);
+        return SerializationNullable::deserializeTextCSVImpl(column, in, format_settings, serialization);
     }
     else
     {
         /// Read the column normally.
-        type->deserializeAsTextCSV(column, in, format_settings);
+        serialization->deserializeTextCSV(column, in, format_settings);
         return true;
     }
 }
@@ -410,7 +416,7 @@ void CSVRowInputFormat::resetParser()
     RowInputFormatWithDiagnosticInfo::resetParser();
     column_mapping->column_indexes_for_input_fields.clear();
     column_mapping->read_columns.clear();
-    have_always_default_columns = false;
+    column_mapping->have_always_default_columns = false;
 }
 
 

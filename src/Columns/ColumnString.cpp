@@ -11,7 +11,7 @@
 #include <Common/memcmpSmall.h>
 #include <common/sort.h>
 #include <common/unaligned.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 
 namespace DB
@@ -535,7 +535,6 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(min_idx, min);
     get(max_idx, max);
 }
-
 
 ColumnPtr ColumnString::compress() const
 {

@@ -166,4 +166,25 @@ toc_title: "Визуальные интерфейсы от сторонних р
 
 [Как сконфигурировать ClickHouse в Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
-[Original article](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->
+### SeekTable {#seektable}
+
+[SeekTable](https://www.seektable.com) — это аналитический инструмент для самостоятельного анализа и обработки данных бизнес-аналитики. Он доступен как в виде облачного сервиса, так и в виде локальной версии. Отчеты из SeekTable могут быть встроены в любое веб-приложение.
+
+Основные возможности:
+
+-   Удобный конструктор отчетов.
+-   Гибкая настройка отчетов SQL и создание запросов для специфичных отчетов.
+-   Интегрируется с ClickHouse, используя собственную точку приема запроса TCP/IP или интерфейс HTTP(S) (два разных драйвера).
+-   Поддерживает всю мощь диалекта ClickHouse SQL для построения запросов по различным измерениям и показателям.
+-   [WEB-API](https://www.seektable.com/help/web-api-integration) для автоматизированной генерации отчетов.
+-   Процесс разработки отчетов поддерживает [резервное копирование/восстановление данных](https://www.seektable.com/help/self-hosted-backup-restore); конфигурация моделей данных (кубов) / отчетов представляет собой удобочитаемый XML-файл, который может храниться в системе контроля версий.
+
+SeekTable [бесплатен](https://www.seektable.com/help/cloud-pricing) для личного/индивидуального использования.
+
+[Как сконфигурировать подключение ClickHouse в SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
+
+### Chadmin {#chadmin}
+
+[Chadmin](https://github.com/bun4uk/chadmin) — простой графический интерфейс для визуализации запущенных запросов на вашем кластере ClickHouse. Он отображает информацию о запросах и дает возможность их завершать.
+
+[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->

@@ -1,6 +1,6 @@
 ---
 toc_priority: 1
-toc_title: 云 
+toc_title: 云
 ---
 
 # ClickHouse 云服务提供商 {#clickhouse-cloud-service-providers}
@@ -22,7 +22,7 @@ toc_title: 云
 
 [Altinity.Cloud](https://altinity.com/cloud-database/) 是针对 Amazon 公共云的完全托管的 ClickHouse-as-a-Service
 
--   在 Amazon 资源上快速部署 ClickHouse 集群 
+-   在 Amazon 资源上快速部署 ClickHouse 集群
 -   轻松进行横向扩展/纵向扩展以及节点的垂直扩展
 -   具有公共端点或VPC对等的租户隔离
 -   可配置存储类型以及卷配置
@@ -31,7 +31,7 @@ toc_title: 云
 
 ## 阿里云 {#alibaba-cloud}
 
-阿里云的 ClickHouse 托管服务 [中国站](https://www.aliyun.com/product/clickhouse) (国际站于2021年5月初开放) 提供以下主要功能：
+[阿里云的 ClickHouse 托管服务](https://www.alibabacloud.com/zh/product/clickhouse) 提供以下主要功能：
 
 -   基于阿里飞天分布式系统的高可靠云盘存储引擎
 -   按需扩容，无需手动进行数据搬迁

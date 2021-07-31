@@ -2,7 +2,6 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/FieldVisitors.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <AggregateFunctions/Helpers.h>
@@ -12,6 +11,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 /** Tracks the leftmost and rightmost (x, y) data points.
   */
-struct AggregateFunctionBoundingRatioData
+struct AggregateFunctionBoundingRatioData //-V730
 {
     struct Point
     {
@@ -126,6 +126,8 @@ public:
     {
         return std::make_shared<DataTypeFloat64>();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {

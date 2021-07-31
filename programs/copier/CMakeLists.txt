@@ -1,7 +1,7 @@
 set(CLICKHOUSE_COPIER_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/ClusterCopierApp.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/ClusterCopier.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/Internals.cpp)
+        "${CMAKE_CURRENT_SOURCE_DIR}/ClusterCopierApp.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/ClusterCopier.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Internals.cpp")
 
 set (CLICKHOUSE_COPIER_LINK
         PRIVATE
@@ -11,7 +11,6 @@ set (CLICKHOUSE_COPIER_LINK
                 clickhouse_functions
                 clickhouse_table_functions
                 clickhouse_aggregate_functions
-                clickhouse_dictionaries
                 string_utils
 
         PUBLIC

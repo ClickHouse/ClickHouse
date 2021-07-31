@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 
-
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Core/Field.h>
@@ -13,32 +12,50 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/IExternalLoadable.h>
 
+#if defined(__GNUC__)
+    /// GCC mistakenly warns about the names in enum class.
+    #pragma GCC diagnostic ignored "-Wshadow"
+#endif
+
+
+#define FOR_ATTRIBUTE_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(UInt128) \
+    M(UInt256) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(Int128) \
+    M(Int256) \
+    M(Float32) \
+    M(Float64) \
+    M(Decimal32) \
+    M(Decimal64) \
+    M(Decimal128) \
+    M(Decimal256) \
+    M(UUID) \
+    M(String) \
+    M(Array) \
+
+
 namespace DB
 {
 
 enum class AttributeUnderlyingType
 {
-    utUInt8,
-    utUInt16,
-    utUInt32,
-    utUInt64,
-    utUInt128,
-    utInt8,
-    utInt16,
-    utInt32,
-    utInt64,
-    utFloat32,
-    utFloat64,
-    utDecimal32,
-    utDecimal64,
-    utDecimal128,
-    utString
+#define M(TYPE) TYPE,
+    FOR_ATTRIBUTE_TYPES(M)
+#undef M
 };
 
 
 AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type);
 
-std::string toString(const AttributeUnderlyingType type);
+std::string toString(AttributeUnderlyingType type);
 
 /// Min and max lifetimes for a dictionary or it's entry
 using DictionaryLifetime = ExternalLoadableLifetime;
@@ -58,14 +75,13 @@ struct DictionaryAttribute final
     const std::string name;
     const AttributeUnderlyingType underlying_type;
     const DataTypePtr type;
-    const DataTypePtr nested_type;
+    const SerializationPtr type_serialization;
     const std::string expression;
     const Field null_value;
     const bool hierarchical;
     const bool injective;
     const bool is_object_id;
     const bool is_nullable;
-    const bool is_array;
 };
 
 template <typename Type>
@@ -75,55 +91,16 @@ struct DictionaryAttributeType
 };
 
 template <typename F>
-void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
+void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
 {
     switch (type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            func(DictionaryAttributeType<UInt8>());
+#define M(TYPE) \
+        case AttributeUnderlyingType::TYPE: \
+            func(DictionaryAttributeType<TYPE>()); \
             break;
-        case AttributeUnderlyingType::utUInt16:
-            func(DictionaryAttributeType<UInt16>());
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            func(DictionaryAttributeType<UInt32>());
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            func(DictionaryAttributeType<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            func(DictionaryAttributeType<UInt128>());
-            break;
-        case AttributeUnderlyingType::utInt8:
-            func(DictionaryAttributeType<Int8>());
-            break;
-        case AttributeUnderlyingType::utInt16:
-            func(DictionaryAttributeType<Int16>());
-            break;
-        case AttributeUnderlyingType::utInt32:
-            func(DictionaryAttributeType<Int32>());
-            break;
-        case AttributeUnderlyingType::utInt64:
-            func(DictionaryAttributeType<Int64>());
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            func(DictionaryAttributeType<Float32>());
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            func(DictionaryAttributeType<Float64>());
-            break;
-        case AttributeUnderlyingType::utString:
-            func(DictionaryAttributeType<String>());
-            break;
-        case AttributeUnderlyingType::utDecimal32:
-            func(DictionaryAttributeType<Decimal32>());
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            func(DictionaryAttributeType<Decimal64>());
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            func(DictionaryAttributeType<Decimal128>());
-            break;
+    FOR_ATTRIBUTE_TYPES(M)
+#undef M
     }
 };
 
@@ -152,6 +129,8 @@ struct DictionaryStructure final
     std::unordered_map<std::string, size_t> attribute_name_to_index;
     std::optional<DictionaryTypedSpecialAttribute> range_min;
     std::optional<DictionaryTypedSpecialAttribute> range_max;
+    std::optional<size_t> hierarchical_attribute_index;
+
     bool has_expressions = false;
     bool access_to_key_from_attributes = false;
 

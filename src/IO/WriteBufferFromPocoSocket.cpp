@@ -1,17 +1,24 @@
 #include <Poco/Net/NetException.h>
 
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/TimeoutSetter.h>
 
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 
 
 namespace ProfileEvents
 {
     extern const Event NetworkSendElapsedMicroseconds;
+    extern const Event NetworkSendBytes;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric NetworkSend;
 }
 
 
@@ -41,13 +48,7 @@ void WriteBufferFromPocoSocket::nextImpl()
         /// Add more details to exceptions.
         try
         {
-            /// sendBytes in SecureStreamSocket throws TimeoutException after max(receive_timeout, send_timeout),
-            /// but we want to get this exception exactly after send_timeout. So, set receive_timeout = send_timeout
-            /// before sendBytes.
-            std::unique_ptr<TimeoutSetter> timeout_setter = nullptr;
-            if (socket.secure())
-                timeout_setter = std::make_unique<TimeoutSetter>(dynamic_cast<Poco::Net::StreamSocket &>(socket), socket.getSendTimeout(), socket.getSendTimeout());
-
+            CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkSend);
             res = socket.impl()->sendBytes(working_buffer.begin() + bytes_written, offset() - bytes_written);
         }
         catch (const Poco::Net::NetException & e)
@@ -70,6 +71,7 @@ void WriteBufferFromPocoSocket::nextImpl()
     }
 
     ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
 }
 
 WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
@@ -80,7 +82,7 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     next();
 }
 

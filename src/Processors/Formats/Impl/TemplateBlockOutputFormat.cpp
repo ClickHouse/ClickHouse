@@ -21,9 +21,9 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
-    types.resize(columns);
+    serializations.resize(columns);
     for (size_t i = 0; i < columns; ++i)
-        types[i] = sample.safeGetByPosition(i).type;
+        serializations[i] = sample.safeGetByPosition(i).type->getDefaultSerialization();
 
     /// Validate format string for whole output
     size_t data_idx = format.format_idx_to_column_idx.size() + 1;
@@ -105,32 +105,32 @@ void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
         writeString(row_format.delimiters[j], out);
 
         size_t col_idx = *row_format.format_idx_to_column_idx[j];
-        serializeField(*chunk.getColumns()[col_idx], *types[col_idx], row_num, row_format.formats[j]);
+        serializeField(*chunk.getColumns()[col_idx], *serializations[col_idx], row_num, row_format.formats[j]);
     }
     writeString(row_format.delimiters[columns], out);
 }
 
-void TemplateBlockOutputFormat::serializeField(const IColumn & column, const IDataType & type, size_t row_num, ColumnFormat col_format)
+void TemplateBlockOutputFormat::serializeField(const IColumn & column, const ISerialization & serialization, size_t row_num, ColumnFormat col_format)
 {
     switch (col_format)
     {
         case ColumnFormat::Escaped:
-            type.serializeAsTextEscaped(column, row_num, out, settings);
+            serialization.serializeTextEscaped(column, row_num, out, settings);
             break;
         case ColumnFormat::Quoted:
-            type.serializeAsTextQuoted(column, row_num, out, settings);
+            serialization.serializeTextQuoted(column, row_num, out, settings);
             break;
         case ColumnFormat::Csv:
-            type.serializeAsTextCSV(column, row_num, out, settings);
+            serialization.serializeTextCSV(column, row_num, out, settings);
             break;
         case ColumnFormat::Json:
-            type.serializeAsTextJSON(column, row_num, out, settings);
+            serialization.serializeTextJSON(column, row_num, out, settings);
             break;
         case ColumnFormat::Xml:
-            type.serializeAsTextXML(column, row_num, out, settings);
+            serialization.serializeTextXML(column, row_num, out, settings);
             break;
         case ColumnFormat::Raw:
-            type.serializeAsText(column, row_num, out, settings);
+            serialization.serializeText(column, row_num, out, settings);
             break;
         default:
             __builtin_unreachable();
@@ -142,7 +142,7 @@ template <typename U, typename V> void TemplateBlockOutputFormat::writeValue(U v
     auto type = std::make_unique<V>();
     auto col = type->createColumn();
     col->insert(value);
-    serializeField(*col, *type, 0, col_format);
+    serializeField(*col, *type->getDefaultSerialization(), 0, col_format);
 }
 
 void TemplateBlockOutputFormat::consume(Chunk chunk)

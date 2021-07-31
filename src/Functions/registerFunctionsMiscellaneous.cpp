@@ -9,6 +9,8 @@ class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
 void registerFunctionCurrentUser(FunctionFactory &);
+void registerFunctionCurrentProfiles(FunctionFactory &);
+void registerFunctionCurrentRoles(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
 void registerFunctionFQDN(FunctionFactory &);
 void registerFunctionVisibleWidth(FunctionFactory &);
@@ -28,6 +30,7 @@ void registerFunctionSleep(FunctionFactory &);
 void registerFunctionSleepEachRow(FunctionFactory &);
 void registerFunctionMaterialize(FunctionFactory &);
 void registerFunctionIgnore(FunctionFactory &);
+void registerFunctionIndexHint(FunctionFactory &);
 void registerFunctionIdentity(FunctionFactory &);
 void registerFunctionArrayJoin(FunctionFactory &);
 void registerFunctionReplicate(FunctionFactory &);
@@ -70,7 +73,11 @@ void registerFunctionErrorCodeToName(FunctionFactory &);
 void registerFunctionTcpPort(FunctionFactory &);
 void registerFunctionByteSize(FunctionFactory &);
 void registerFunctionFile(FunctionFactory & factory);
-void registerFunctionConnectionID(FunctionFactory & factory);
+void registerFunctionConnectionId(FunctionFactory & factory);
+void registerFunctionPartitionId(FunctionFactory & factory);
+void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
+void registerFunctionQueryID(FunctionFactory & factory);
+void registerFunctionInitialQueryID(FunctionFactory & factory);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -80,6 +87,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
     registerFunctionCurrentUser(factory);
+    registerFunctionCurrentProfiles(factory);
+    registerFunctionCurrentRoles(factory);
     registerFunctionHostName(factory);
     registerFunctionFQDN(factory);
     registerFunctionVisibleWidth(factory);
@@ -99,6 +108,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionSleepEachRow(factory);
     registerFunctionMaterialize(factory);
     registerFunctionIgnore(factory);
+    registerFunctionIndexHint(factory);
     registerFunctionIdentity(factory);
     registerFunctionArrayJoin(factory);
     registerFunctionReplicate(factory);
@@ -141,7 +151,11 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionTcpPort(factory);
     registerFunctionByteSize(factory);
     registerFunctionFile(factory);
-    registerFunctionConnectionID(factory);
+    registerFunctionConnectionId(factory);
+    registerFunctionPartitionId(factory);
+    registerFunctionIsIPAddressContainedIn(factory);
+    registerFunctionQueryID(factory);
+    registerFunctionInitialQueryID(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

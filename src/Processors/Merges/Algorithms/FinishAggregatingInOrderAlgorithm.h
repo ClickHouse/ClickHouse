@@ -37,7 +37,8 @@ public:
         const Block & header_,
         size_t num_inputs_,
         AggregatingTransformParamsPtr params_,
-        SortDescription description_);
+        SortDescription description_,
+        size_t max_block_size_);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
@@ -45,6 +46,7 @@ public:
 
 private:
     Chunk aggregate();
+    void addToAggregation();
 
     struct State
     {
@@ -66,8 +68,13 @@ private:
     size_t num_inputs;
     AggregatingTransformParamsPtr params;
     SortDescription description;
+    size_t max_block_size;
+
     Inputs current_inputs;
     std::vector<State> states;
+    std::vector<size_t> inputs_to_update;
+    BlocksList blocks;
+    size_t accumulated_rows = 0;
 };
 
 }

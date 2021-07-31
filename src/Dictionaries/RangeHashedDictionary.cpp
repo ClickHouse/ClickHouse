@@ -2,7 +2,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/TypeList.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include "DictionaryFactory.h"
 #include "RangeDictionaryBlockInputStream.h"
 #include <Interpreters/castColumn.h>
@@ -76,7 +76,7 @@ RangeHashedDictionary::RangeHashedDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : IDictionaryBase(dict_id_)
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -110,9 +110,11 @@ ColumnPtr RangeHashedDictionary::getColumn(
     auto range_column_storage_type = std::make_shared<DataTypeInt64>();
     modified_key_columns[1] = castColumnAccurate(column_to_cast, range_column_storage_type);
 
+    bool is_attribute_nullable = attribute.is_nullable;
+
     ColumnUInt8::MutablePtr col_null_map_to;
     ColumnUInt8::Container * vec_null_map_to = nullptr;
-    if (attribute.is_nullable)
+    if (is_attribute_nullable)
     {
         col_null_map_to = ColumnUInt8::create(keys_size, false);
         vec_null_map_to = &col_null_map_to->getData();
@@ -125,43 +127,70 @@ ColumnPtr RangeHashedDictionary::getColumn(
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
-        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
-        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(dictionary_attribute.null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
-        if constexpr (std::is_same_v<AttributeType, String>)
+        if constexpr (std::is_same_v<ValueType, Array>)
         {
             auto * out = column.get();
 
-            getItemsImpl<ValueType, ValueType>(
+            getItemsImpl<ValueType, false>(
                 attribute,
                 modified_key_columns,
-                [&](const size_t row, const StringRef value, bool is_null)
+                [&](size_t, const Array & value, bool)
                 {
-                    if (attribute.is_nullable)
-                        (*vec_null_map_to)[row] = is_null;
-
-                    out->insertData(value.data, value.size);
+                    out->insert(value);
                 },
                 default_value_extractor);
+        }
+        else if constexpr (std::is_same_v<ValueType, StringRef>)
+        {
+            auto * out = column.get();
+
+            if (is_attribute_nullable)
+                getItemsImpl<ValueType, true>(
+                    attribute,
+                    modified_key_columns,
+                    [&](size_t row, const StringRef value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out->insertData(value.data, value.size);
+                    },
+                    default_value_extractor);
+            else
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    modified_key_columns,
+                    [&](size_t, const StringRef value, bool)
+                    {
+                        out->insertData(value.data, value.size);
+                    },
+                    default_value_extractor);
         }
         else
         {
             auto & out = column->getData();
 
-            getItemsImpl<ValueType, ValueType>(
-                attribute,
-                modified_key_columns,
-                [&](const size_t row, const auto value, bool is_null)
-                {
-                    if (attribute.is_nullable)
+            if (is_attribute_nullable)
+                getItemsImpl<ValueType, true>(
+                    attribute,
+                    modified_key_columns,
+                    [&](size_t row, const auto value, bool is_null)
+                    {
                         (*vec_null_map_to)[row] = is_null;
-
-                    out[row] = value;
-                },
-                default_value_extractor);
+                        out[row] = value;
+                    },
+                    default_value_extractor);
+            else
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    modified_key_columns,
+                    [&](size_t row, const auto value, bool)
+                    {
+                        out[row] = value;
+                    },
+                    default_value_extractor);
         }
 
         result = std::move(column);
@@ -169,10 +198,8 @@ ColumnPtr RangeHashedDictionary::getColumn(
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
-    if (attribute.is_nullable)
-    {
-        result = ColumnNullable::create(result, std::move(col_null_map_to));
-    }
+    if (is_attribute_nullable)
+        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
 
     return result;
 }
@@ -185,27 +212,30 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeys(const Columns & key_columns, con
     auto range_column_storage_type = std::make_shared<DataTypeInt64>();
     auto range_column_updated = castColumnAccurate(column_to_cast, range_column_storage_type);
 
-    PaddedPODArray<Key> key_backup_storage;
+    PaddedPODArray<UInt64> key_backup_storage;
     PaddedPODArray<RangeStorageType> range_backup_storage;
 
-    const PaddedPODArray<Key> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
+    const PaddedPODArray<UInt64> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
     const PaddedPODArray<RangeStorageType> & dates = getColumnVectorData(this, range_column_updated, range_backup_storage);
 
     const auto & attribute = attributes.front();
 
     ColumnUInt8::Ptr result;
 
+    size_t keys_found = 0;
+
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
-        result = hasKeysImpl<ValueType>(attribute, ids, dates);
+        result = hasKeysImpl<ValueType>(attribute, ids, dates, keys_found);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -213,15 +243,18 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeys(const Columns & key_columns, con
 template <typename AttributeType>
 ColumnUInt8::Ptr RangeHashedDictionary::hasKeysImpl(
     const Attribute & attribute,
-    const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<RangeStorageType> & dates) const
+    const PaddedPODArray<UInt64> & ids,
+    const PaddedPODArray<RangeStorageType> & dates,
+    size_t & keys_found) const
 {
     auto result = ColumnUInt8::create(ids.size());
     auto& out = result->getData();
 
     const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
 
-    for (const auto row : ext::range(0, ids.size()))
+    keys_found = 0;
+
+    for (const auto row : collections::range(0, ids.size()))
     {
         const auto it = attr.find(ids[row]);
 
@@ -237,10 +270,8 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeysImpl(
                     return v.range.contains(date);
                 });
 
-            if (val_it != std::end(ranges_and_values))
-                out[row] = true;
-            else
-                out[row] = false;
+            out[row] = val_it != std::end(ranges_and_values);
+            keys_found += out[row];
         }
         else
             out[row] = false;
@@ -257,11 +288,11 @@ void RangeHashedDictionary::createAttributes()
     for (const auto & attribute : dict_struct.attributes)
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttribute(attribute, attribute.null_value));
+        attributes.push_back(createAttribute(attribute));
 
         if (attribute.hierarchical)
-            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
-                            getDictionaryID().getNameForLogs()};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
+                            getDictionaryID().getNameForLogs());
     }
 }
 
@@ -282,12 +313,12 @@ void RangeHashedDictionary::loadData()
 
         element_count += id_column.size();
 
-        for (const auto attribute_idx : ext::range(0, attributes.size()))
+        for (const auto attribute_idx : collections::range(0, attributes.size()))
         {
             const auto & attribute_column = *block.safeGetByPosition(attribute_idx + 3).column;
             auto & attribute = attributes[attribute_idx];
 
-            for (const auto row_idx : ext::range(0, id_column.size()))
+            for (const auto row_idx : collections::range(0, id_column.size()))
             {
                 RangeStorageType lower_bound;
                 RangeStorageType upper_bound;
@@ -311,8 +342,8 @@ void RangeHashedDictionary::loadData()
     stream->readSuffix();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.",
-                        ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
+            "{}: dictionary source is empty and 'require_nonempty' property is set.");
 }
 
 template <typename T>
@@ -347,56 +378,45 @@ void RangeHashedDictionary::calculateBytesAllocated()
     }
 }
 
-template <typename T>
-void RangeHashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
+RangeHashedDictionary::Attribute RangeHashedDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute)
 {
-    attribute.null_values = T(null_value.get<T>());
-    attribute.maps = std::make_unique<Collection<T>>();
-}
-
-template <>
-void RangeHashedDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
-{
-    attribute.string_arena = std::make_unique<Arena>();
-    const String & string = null_value.get<String>();
-    const char * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-    attribute.null_values.emplace<StringRef>(string_in_arena, string.size());
-    attribute.maps = std::make_unique<Collection<StringRef>>();
-}
-
-RangeHashedDictionary::Attribute
-RangeHashedDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
-{
-    Attribute attr{attribute.underlying_type, attribute.is_nullable, {}, {}, {}};
+    Attribute attribute{dictionary_attribute.underlying_type, dictionary_attribute.is_nullable, {}, {}};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
-        createAttributeImpl<AttributeType>(attr, null_value);
+        using ValueType = DictionaryValueType<AttributeType>;
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+            attribute.string_arena = std::make_unique<Arena>();
+
+        attribute.maps = std::make_unique<Collection<ValueType>>();
     };
 
-    callOnDictionaryAttributeType(attribute.underlying_type, type_call);
+    callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
 
-    return attr;
+    return attribute;
 }
 
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
 void RangeHashedDictionary::getItemsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
-    PaddedPODArray<Key> key_backup_storage;
+    PaddedPODArray<UInt64> key_backup_storage;
     PaddedPODArray<RangeStorageType> range_backup_storage;
 
-    const PaddedPODArray<Key> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
+    const PaddedPODArray<UInt64> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
     const PaddedPODArray<RangeStorageType> & dates = getColumnVectorData(this, key_columns[1], range_backup_storage);
 
     const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
 
-    for (const auto row : ext::range(0, ids.size()))
+    size_t keys_found = 0;
+
+    for (const auto row : collections::range(0, ids.size()))
     {
         const auto it = attr.find(ids[row]);
         if (it)
@@ -413,30 +433,38 @@ void RangeHashedDictionary::getItemsImpl(
 
             if (val_it != std::end(ranges_and_values))
             {
-                auto& value = val_it->value;
+                ++keys_found;
+                auto & value = val_it->value;
 
-                if (value)
-                    set_value(row, static_cast<OutputType>(*value), false); // NOLINT
+                if constexpr (is_nullable)
+                {
+                    if (value.has_value())
+                        set_value(row, *value, false);
+                    else
+                        set_value(row, default_value_extractor[row], true);
+                }
                 else
-                    set_value(row, default_value_extractor[row], true);
-            }
-            else
-            {
-                set_value(row, default_value_extractor[row], false);
+                {
+                    set_value(row, *value, false);
+                }
+
+                continue;
             }
         }
+
+        if constexpr (is_nullable)
+            set_value(row, default_value_extractor[row], default_value_extractor.isNullAt(row));
         else
-        {
             set_value(row, default_value_extractor[row], false);
-        }
     }
 
     query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 
 template <typename T>
-void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value)
+void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value)
 {
     using ValueType = std::conditional_t<std::is_same_v<T, String>, StringRef, T>;
     auto & map = *std::get<Ptr<ValueType>>(attribute.maps);
@@ -480,7 +508,7 @@ void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const K
         map.insert({id, Values<ValueType>{std::move(value_to_insert)}});
 }
 
-void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value)
+void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const UInt64 id, const Range & range, const Field & value)
 {
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -497,7 +525,7 @@ const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttribute(con
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: no such attribute '{}'", full_name, attribute_name);
 
     return attributes[it->second];
 }
@@ -507,15 +535,16 @@ RangeHashedDictionary::getAttributeWithType(const std::string & attribute_name, 
 {
     const auto & attribute = getAttribute(attribute_name);
     if (attribute.type != type)
-        throw Exception{attribute_name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "attribute {} has type {}",
+            attribute_name,
+            toString(attribute.type));
 
     return attribute;
 }
 
 template <typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(
-    PaddedPODArray<Key> & ids,
+    PaddedPODArray<UInt64> & ids,
     PaddedPODArray<RangeType> & start_dates,
     PaddedPODArray<RangeType> & end_dates) const
 {
@@ -536,7 +565,7 @@ void RangeHashedDictionary::getIdsAndDates(
 template <typename T, typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(
     const Attribute & attribute,
-    PaddedPODArray<Key> & ids,
+    PaddedPODArray<UInt64> & ids,
     PaddedPODArray<RangeType> & start_dates,
     PaddedPODArray<RangeType> & end_dates) const
 {
@@ -567,7 +596,7 @@ void RangeHashedDictionary::getIdsAndDates(
 template <typename RangeType>
 BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const
 {
-    PaddedPODArray<Key> ids;
+    PaddedPODArray<UInt64> ids;
     PaddedPODArray<RangeType> start_dates;
     PaddedPODArray<RangeType> end_dates;
     getIdsAndDates(ids, start_dates, end_dates);
@@ -613,8 +642,9 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
     ListType::forEach(callable);
 
     if (!callable.stream)
-        throw Exception(
-            "Unexpected range type for RangeHashed dictionary: " + dict_struct.range_min->type->getName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unexpected range type for RangeHashed dictionary: {}",
+            dict_struct.range_min->type->getName());
 
     return callable.stream;
 }
@@ -626,14 +656,17 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr
+                             DictionarySourcePtr source_ptr,
+                             ContextPtr /* context */,
+                             bool /*created_from_ddl*/) -> DictionaryPtr
     {
         if (dict_struct.key)
-            throw Exception{"'key' is not supported for dictionary of layout 'range_hashed'", ErrorCodes::UNSUPPORTED_METHOD};
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'range_hashed'");
 
         if (!dict_struct.range_min || !dict_struct.range_max)
-            throw Exception{full_name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
-                            ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{}: dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
+                full_name);
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};

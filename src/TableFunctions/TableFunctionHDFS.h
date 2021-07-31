@@ -26,7 +26,7 @@ public:
 
 private:
     StoragePtr getStorage(
-        const String & source, const String & format_, const ColumnsDescription & columns, Context & global_context,
+        const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method_) const override;
     const char * getStorageTypeName() const override { return "HDFS"; }
 };

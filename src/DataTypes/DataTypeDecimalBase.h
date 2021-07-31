@@ -1,12 +1,12 @@
 #pragma once
-#include <cmath>
 
 #include <Columns/ColumnDecimal.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeWithSimpleSerialization.h>
+#include <Interpreters/Context_fwd.h>
 
+#include <cmath>
 #include <type_traits>
 
 
@@ -18,9 +18,8 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-class Context;
-bool decimalCheckComparisonOverflow(const Context & context);
-bool decimalCheckArithmeticOverflow(const Context & context);
+bool decimalCheckComparisonOverflow(ContextPtr context);
+bool decimalCheckArithmeticOverflow(ContextPtr context);
 
 inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 {
@@ -55,7 +54,7 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 ///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
 template <typename T>
-class DataTypeDecimalBase : public DataTypeWithSimpleSerialization
+class DataTypeDecimalBase : public IDataType
 {
     static_assert(IsDecimalNumber<T>);
 
@@ -77,7 +76,7 @@ public:
             throw Exception("Scale " + std::to_string(scale) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
-    TypeIndex getTypeId() const override { return TypeId<T>::value; }
+    TypeIndex getTypeId() const override { return TypeId<T>; }
 
     Field getDefault() const override;
     MutableColumnPtr createColumn() const override;
@@ -95,14 +94,6 @@ public:
     bool isSummable() const override { return true; }
     bool canBeUsedInBooleanContext() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
-
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
     /// Decimal specific
 
@@ -122,15 +113,15 @@ public:
 
     T maxWholeValue() const { return getScaleMultiplier(precision - scale) - T(1); }
 
-    template<typename U>
+    template <typename U>
     bool canStoreWhole(U x) const
     {
-        static_assert(std::is_signed_v<typename T::NativeType>);
+        static_assert(is_signed_v<typename T::NativeType>);
         T max = maxWholeValue();
-        if constexpr (std::is_signed_v<U>)
-            return -max <= x && x <= max;
+        if constexpr (is_signed_v<U>)
+            return -max.value <= x && x <= max.value;
         else
-            return x <= static_cast<std::make_unsigned_t<typename T::NativeType>>(max.value);
+            return x <= static_cast<make_unsigned_t<typename T::NativeType>>(max.value);
     }
 
     /// @returns multiplier for U to become T with correct scale

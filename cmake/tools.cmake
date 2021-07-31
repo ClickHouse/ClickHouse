@@ -8,10 +8,13 @@ endif ()
 
 if (COMPILER_GCC)
     # Require minimum version of gcc
-    set (GCC_MINIMUM_VERSION 9)
+    set (GCC_MINIMUM_VERSION 10)
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION} AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
         message (FATAL_ERROR "GCC version must be at least ${GCC_MINIMUM_VERSION}. For example, if GCC ${GCC_MINIMUM_VERSION} is available under gcc-${GCC_MINIMUM_VERSION}, g++-${GCC_MINIMUM_VERSION} names, do the following: export CC=gcc-${GCC_MINIMUM_VERSION} CXX=g++-${GCC_MINIMUM_VERSION}; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
+
+    message (WARNING "GCC compiler is not officially supported for ClickHouse. You should migrate to clang.")
+
 elseif (COMPILER_CLANG)
     # Require minimum version of clang/apple-clang
     if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
@@ -86,8 +89,3 @@ if (LINKER_NAME)
     message(STATUS "Using custom linker by name: ${LINKER_NAME}")
 endif ()
 
-if (ARCH_PPC64LE)
-    if (COMPILER_CLANG OR (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8))
-        message(FATAL_ERROR "Only gcc-8 or higher is supported for powerpc architecture")
-    endif ()
-endif ()

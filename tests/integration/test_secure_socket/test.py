@@ -59,12 +59,12 @@ def test(started_cluster):
 
 
     start = time.time()
-    NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5, use_hedged_requests=0, async_socket_for_remote=0;')
+    NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=0;')
     end = time.time()
     assert end - start < 10
 
     start = time.time()
-    error = NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5, use_hedged_requests=0;')
+    error = NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=1;')
     end = time.time()
 
     assert end - start < 10
@@ -73,7 +73,7 @@ def test(started_cluster):
     assert error.find('DB::ReadBufferFromPocoSocket::nextImpl()') == -1
 
     start = time.time()
-    error = NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5;')
+    error = NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=1, async_socket_for_remote=1;')
     end = time.time()
 
     assert end - start < 10

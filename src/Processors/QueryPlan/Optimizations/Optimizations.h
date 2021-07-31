@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
 
 namespace DB
@@ -22,7 +23,8 @@ struct Optimization
 {
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &);
     const Function apply = nullptr;
-    const char * name;
+    const char * name = "";
+    const bool QueryPlanOptimizationSettings::* const is_enabled{};
 };
 
 /// Move ARRAY JOIN up if possible.
@@ -46,11 +48,11 @@ inline const auto & getOptimizations()
 {
     static const std::array<Optimization, 5> optimizations =
     {{
-        {tryLiftUpArrayJoin, "liftUpArrayJoin"},
-        {tryPushDownLimit, "pushDownLimit"},
-        {trySplitFilter, "splitFilter"},
-        {tryMergeExpressions, "mergeExpressions"},
-        {tryPushDownFilter, "pushDownFilter"},
+        {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::optimize_plan},
+        {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
      }};
 
     return optimizations;

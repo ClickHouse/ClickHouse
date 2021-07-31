@@ -4,7 +4,7 @@ OWNER(g:clickhouse)
 LIBRARY()
 
 CFLAGS(
-    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
+    -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
@@ -15,6 +15,7 @@ ADDINCL(
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
+    GLOBAL contrib/restricted/murmurhash
 )
 
 PEERDIR(
@@ -30,6 +31,7 @@ PEERDIR(
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
+    contrib/restricted/murmurhash
     library/cpp/consistent_hashing
 )
 
@@ -37,13 +39,18 @@ PEERDIR(
 
 SRCS(
     CRC.cpp
+    FunctionChar.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
     FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
+    FunctionSQLJSON.cpp
     FunctionsAES.cpp
-    FunctionsCoding.cpp
+    FunctionsBinaryRepr.cpp
+    FunctionsBitToArray.cpp
+    FunctionsCodingIP.cpp
+    FunctionsCodingUUID.cpp
     FunctionsConversion.cpp
     FunctionsEmbeddedDictionaries.cpp
     FunctionsExternalDictionaries.cpp
@@ -74,6 +81,12 @@ SRCS(
     GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
     GeoHash.cpp
     IFunction.cpp
+    JSONPath/Parsers/ParserJSONPath.cpp
+    JSONPath/Parsers/ParserJSONPathMemberAccess.cpp
+    JSONPath/Parsers/ParserJSONPathQuery.cpp
+    JSONPath/Parsers/ParserJSONPathRange.cpp
+    JSONPath/Parsers/ParserJSONPathRoot.cpp
+    JSONPath/Parsers/ParserJSONPathStar.cpp
     TargetSpecific.cpp
     URL/URLHierarchy.cpp
     URL/URLPathHierarchy.cpp
@@ -200,7 +213,6 @@ SRCS(
     bitTestAny.cpp
     bitWrapperFunc.cpp
     bitXor.cpp
-    bitmaskToList.cpp
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
@@ -210,7 +222,7 @@ SRCS(
     cbrt.cpp
     coalesce.cpp
     concat.cpp
-    connectionID.cpp
+    connectionId.cpp
     convertCharset.cpp
     cos.cpp
     cosh.cpp
@@ -220,8 +232,11 @@ SRCS(
     countSubstringsCaseInsensitive.cpp
     countSubstringsCaseInsensitiveUTF8.cpp
     currentDatabase.cpp
+    currentProfiles.cpp
+    currentRoles.cpp
     currentUser.cpp
     dateDiff.cpp
+    dateName.cpp
     date_trunc.cpp
     decodeXMLComponent.cpp
     decrypt.cpp
@@ -229,6 +244,8 @@ SRCS(
     defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
+    divide/divide.cpp
+    divide/divideImpl.cpp
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
@@ -265,6 +282,7 @@ SRCS(
     gcd.cpp
     generateUUIDv4.cpp
     geoToH3.cpp
+    geoToS2.cpp
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp
@@ -288,6 +306,7 @@ SRCS(
     h3ToParent.cpp
     h3ToString.cpp
     h3kRing.cpp
+    h3toGeo.cpp
     hasColumnInTable.cpp
     hasThreadFuzzer.cpp
     hasToken.cpp
@@ -301,6 +320,8 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
+    indexHint.cpp
+    initialQueryID.cpp
     initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -309,6 +330,7 @@ SRCS(
     isConstant.cpp
     isDecimalOverflow.cpp
     isFinite.cpp
+    isIPAddressContainedIn.cpp
     isInfinite.cpp
     isNaN.cpp
     isNotNull.cpp
@@ -373,6 +395,8 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
+    padString.cpp
+    partitionId.cpp
     pi.cpp
     plus.cpp
     pointInEllipses.cpp
@@ -391,6 +415,7 @@ SRCS(
     positionCaseInsensitiveUTF8.cpp
     positionUTF8.cpp
     pow.cpp
+    queryID.cpp
     rand.cpp
     rand64.cpp
     randConstant.cpp
@@ -439,6 +464,15 @@ SRCS(
     runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
+    s2CapContains.cpp
+    s2CapUnion.cpp
+    s2CellsIntersect.cpp
+    s2GetNeighbors.cpp
+    s2RectAdd.cpp
+    s2RectContains.cpp
+    s2RectIntersection.cpp
+    s2RectUnion.cpp
+    s2ToGeo.cpp
     sigmoid.cpp
     sign.cpp
     sin.cpp
@@ -447,6 +481,7 @@ SRCS(
     sleepEachRow.cpp
     sqrt.cpp
     startsWith.cpp
+    stringCutToZero.cpp
     stringToH3.cpp
     substring.cpp
     subtractDays.cpp
@@ -478,6 +513,7 @@ SRCS(
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp
+    toJSONString.cpp
     toLowCardinality.cpp
     toMinute.cpp
     toModifiedJulianDay.cpp
@@ -528,6 +564,7 @@ SRCS(
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
+    validateNestedArraySizes.cpp
     version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp

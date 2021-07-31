@@ -66,7 +66,11 @@ private:
 
     void reportIncorrectData();
     void insertRow(RowRef & row);
-    void insertRows();
+
+    /// Insert ready rows into merged_data. We may want to insert 0, 1 or 2 rows.
+    /// It may happen that 2 rows is going to be inserted and, but merged data has free space only for 1 row.
+    /// In this case, Chunk with ready is pulled from merged_data before the second insertion.
+    std::optional<Chunk> insertRows();
 };
 
 }

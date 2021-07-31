@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_DIFFERS_TOO_MUCH;
+    extern const int LOGICAL_ERROR;
 }
 
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
@@ -28,7 +29,7 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreePartCheckThread)")
     , log(&Poco::Logger::get(log_name))
 {
-    task = storage.global_context.getSchedulePool().createTask(log_name, [this] { run(); });
+    task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
     task->schedule();
 }
 
@@ -189,18 +190,36 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
 
     if (missing_part_search_result == MissingPartSearchResult::LostForever)
     {
-        /// Is it in the replication queue? If there is - delete, because the task can not be processed.
-        if (!storage.queue.remove(zookeeper, part_name))
+        auto lost_part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
+        if (lost_part_info.level != 0)
         {
-            /// The part was not in our queue.
-            LOG_WARNING(log, "Missing part {} is not in our queue, this can happen rarely.", part_name);
+            Strings source_parts;
+            bool part_in_queue = storage.queue.checkPartInQueueAndGetSourceParts(part_name, source_parts);
+
+            /// If it's MERGE/MUTATION etc. we shouldn't replace result part with empty part
+            /// because some source parts can be lost, but some of them can exist.
+            if (part_in_queue && !source_parts.empty())
+            {
+                LOG_ERROR(log, "Part {} found in queue and some source parts for it was lost. Will check all source parts.", part_name);
+                for (const String & source_part_name : source_parts)
+                    enqueuePart(source_part_name);
+
+                return;
+            }
         }
 
-        /** This situation is possible if on all the replicas where the part was, it deteriorated.
-            * For example, a replica that has just written it has power turned off and the data has not been written from cache to disk.
-            */
-        LOG_ERROR(log, "Part {} is lost forever.", part_name);
-        ProfileEvents::increment(ProfileEvents::ReplicatedDataLoss);
+        if (storage.createEmptyPartInsteadOfLost(zookeeper, part_name))
+        {
+            /** This situation is possible if on all the replicas where the part was, it deteriorated.
+                * For example, a replica that has just written it has power turned off and the data has not been written from cache to disk.
+                */
+            LOG_ERROR(log, "Part {} is lost forever.", part_name);
+            ProfileEvents::increment(ProfileEvents::ReplicatedDataLoss);
+        }
+        else
+        {
+            LOG_WARNING(log, "Cannot create empty part {} instead of lost. Will retry later", part_name);
+        }
     }
 }
 
@@ -213,7 +232,7 @@ std::pair<bool, MergeTreeDataPartPtr> ReplicatedMergeTreePartCheckThread::findLo
     /// because our checks of local storage and zookeeper are not consistent.
     /// If part exists in zookeeper and doesn't exists in local storage definitely require
     /// to fetch this part. But if we check local storage first and than check zookeeper
-    /// some background process can successfully commit part between this checks (both to the local stoarge and zookeeper),
+    /// some background process can successfully commit part between this checks (both to the local storage and zookeeper),
     /// but checker thread will remove part from zookeeper and queue fetch.
     bool exists_in_zookeeper = zookeeper->exists(part_path);
 
@@ -234,6 +253,8 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
 
     auto [exists_in_zookeeper, part] = findLocalPart(part_name);
 
+    LOG_TRACE(log, "Part {} in zookeeper: {}, locally: {}", part_name, exists_in_zookeeper, part != nullptr);
+
     /// We do not have this or a covering part.
     if (!part)
     {
@@ -249,6 +270,9 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
 
         auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
             part->getColumns(), part->checksums);
+
+        /// The double get scheme is needed to retain compatibility with very old parts that were created
+        /// before the ReplicatedMergeTreePartHeader was introduced.
 
         String part_path = storage.replica_path + "/parts/" + part_name;
         String part_znode;
@@ -301,11 +325,12 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 String message = "Part " + part_name + " looks broken. Removing it and will try to fetch.";
                 LOG_ERROR(log, message);
 
+                /// Delete part locally.
+                storage.forgetPartAndMoveToDetached(part, "broken");
+
                 /// Part is broken, let's try to find it and fetch.
                 searchForMissingPartAndFetchIfPossible(part_name, exists_in_zookeeper);
 
-                /// Delete part locally.
-                storage.forgetPartAndMoveToDetached(part, "broken");
                 return {part_name, false, message};
             }
         }
@@ -362,8 +387,8 @@ void ReplicatedMergeTreePartCheckThread::run()
             {
                 if (!parts_set.empty())
                 {
-                    LOG_ERROR(log, "Non-empty parts_set with empty parts_queue. This is a bug.");
                     parts_set.clear();
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty parts_set with empty parts_queue. This is a bug.");
                 }
             }
             else
@@ -396,7 +421,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
             if (parts_queue.empty())
             {
-                LOG_ERROR(log, "Someone erased checking part from parts_queue. This is a bug.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Someone erased checking part from parts_queue. This is a bug.");
             }
             else
             {

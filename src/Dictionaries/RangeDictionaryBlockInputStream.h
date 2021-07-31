@@ -2,14 +2,14 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include "DictionaryBlockInputStreamBase.h"
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "RangeHashedDictionary.h"
+
 
 namespace DB
 {
@@ -24,7 +24,7 @@ public:
     using Key = UInt64;
 
     RangeDictionaryBlockInputStream(
-        std::shared_ptr<const IDictionaryBase> dictionary,
+        std::shared_ptr<const IDictionary> dictionary,
         size_t max_block_size,
         const Names & column_names,
         PaddedPODArray<Key> && ids_to_fill,
@@ -49,7 +49,7 @@ private:
         const PaddedPODArray<RangeType> & block_start_dates,
         const PaddedPODArray<RangeType> & block_end_dates) const;
 
-    std::shared_ptr<const IDictionaryBase> dictionary;
+    std::shared_ptr<const IDictionary> dictionary;
     NameSet column_names;
     PaddedPODArray<Key> ids;
     PaddedPODArray<RangeType> start_dates;
@@ -59,7 +59,7 @@ private:
 
 template <typename RangeType>
 RangeDictionaryBlockInputStream<RangeType>::RangeDictionaryBlockInputStream(
-    std::shared_ptr<const IDictionaryBase> dictionary_,
+    std::shared_ptr<const IDictionary> dictionary_,
     size_t max_block_size_,
     const Names & column_names_,
     PaddedPODArray<Key> && ids_,
@@ -84,7 +84,7 @@ Block RangeDictionaryBlockInputStream<RangeType>::getBlock(size_t start, size_t 
     block_start_dates.reserve(length);
     block_end_dates.reserve(length);
 
-    for (auto idx : ext::range(start, start + length))
+    for (auto idx : collections::range(start, start + length))
     {
         block_ids.push_back(ids[idx]);
         block_start_dates.push_back(start_dates[idx]);
@@ -153,7 +153,7 @@ Block RangeDictionaryBlockInputStream<RangeType>::fillBlock(
         columns.emplace_back(range_max_column, structure.range_max->type, range_max_column_name);
     }
 
-    for (const auto idx : ext::range(0, structure.attributes.size()))
+    for (const auto idx : collections::range(0, structure.attributes.size()))
     {
         const DictionaryAttribute & attribute = structure.attributes[idx];
         if (column_names.find(attribute.name) != column_names.end())

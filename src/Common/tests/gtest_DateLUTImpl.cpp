@@ -130,7 +130,6 @@ TEST(DateLUTTest, TimeValuesInMiddleOfRange)
     EXPECT_EQ(lut.toRelativeQuarterNum(time), 8078 /*unsigned*/);
     EXPECT_EQ(lut.toRelativeHourNum(time), 435736 /*time_t*/);
     EXPECT_EQ(lut.toRelativeMinuteNum(time), 26144180 /*time_t*/);
-    EXPECT_EQ(lut.toStartOfHourInterval(time, 5), 1568646000 /*time_t*/);
     EXPECT_EQ(lut.toStartOfMinuteInterval(time, 6), 1568650680 /*time_t*/);
     EXPECT_EQ(lut.toStartOfSecondInterval(time, 7), 1568650811 /*time_t*/);
     EXPECT_EQ(lut.toNumYYYYMM(time), 201909 /*UInt32*/);
@@ -191,7 +190,6 @@ TEST(DateLUTTest, TimeValuesAtLeftBoderOfRange)
     EXPECT_EQ(lut.toRelativeQuarterNum(time), 7880 /*unsigned*/); // ?
     EXPECT_EQ(lut.toRelativeHourNum(time), 0 /*time_t*/);
     EXPECT_EQ(lut.toRelativeMinuteNum(time), 0 /*time_t*/);
-    EXPECT_EQ(lut.toStartOfHourInterval(time, 5), 0 /*time_t*/);
     EXPECT_EQ(lut.toStartOfMinuteInterval(time, 6), 0 /*time_t*/);
     EXPECT_EQ(lut.toStartOfSecondInterval(time, 7), 0 /*time_t*/);
     EXPECT_EQ(lut.toNumYYYYMM(time), 197001 /*UInt32*/);
@@ -253,7 +251,6 @@ TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOldLUT)
     EXPECT_EQ(lut.toRelativeQuarterNum(time), 8424 /*unsigned*/);
     EXPECT_EQ(lut.toRelativeHourNum(time), 1192873 /*time_t*/);
     EXPECT_EQ(lut.toRelativeMinuteNum(time), 71572397 /*time_t*/);
-    EXPECT_EQ(lut.toStartOfHourInterval(time, 5), 4294332000 /*time_t*/);
     EXPECT_EQ(lut.toStartOfMinuteInterval(time, 6), 4294343520 /*time_t*/);
     EXPECT_EQ(lut.toStartOfSecondInterval(time, 7), 4294343872 /*time_t*/);
     EXPECT_EQ(lut.toNumYYYYMM(time), 210601 /*UInt32*/);
@@ -473,8 +470,8 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_Year2010,
         ::testing::ValuesIn(allTimezones()),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
             // Values from tests/date_lut3.cpp
-            {YYYYMMDDToDay(20101031), YYYYMMDDToDay(20101101), 15 * 60},
-            {YYYYMMDDToDay(20100328), YYYYMMDDToDay(20100330), 15 * 60}
+            {YYYYMMDDToDay(20101031), YYYYMMDDToDay(20101101), 10 * 15 * 60},
+            {YYYYMMDDToDay(20100328), YYYYMMDDToDay(20100330), 10 * 15 * 60}
         }))
 );
 
@@ -484,7 +481,7 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_Year1970_WHOLE,
         ::testing::ValuesIn(allTimezones(false)),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
             // Values from tests/date_lut3.cpp
-            {YYYYMMDDToDay(19700101), YYYYMMDDToDay(19701231), 3191 /*53m 11s*/},
+            {YYYYMMDDToDay(19700101), YYYYMMDDToDay(19701231), 10 * 3191 /*53m 11s*/},
         }))
 );
 
@@ -494,7 +491,7 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_Year2010_WHOLE,
         ::testing::ValuesIn(allTimezones(false)),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
             // Values from tests/date_lut3.cpp
-            {YYYYMMDDToDay(20100101), YYYYMMDDToDay(20101231), 3191 /*53m 11s*/},
+            {YYYYMMDDToDay(20100101), YYYYMMDDToDay(20101231), 10 * 3191 /*53m 11s*/},
         }))
 );
 
@@ -504,7 +501,7 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_Year2020_WHOLE,
         ::testing::ValuesIn(allTimezones()),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
             // Values from tests/date_lut3.cpp
-            {YYYYMMDDToDay(20200101), YYYYMMDDToDay(20201231), 3191 /*53m 11s*/},
+            {YYYYMMDDToDay(20200101), YYYYMMDDToDay(20201231), 10 * 3191 /*53m 11s*/},
         }))
 );
 
@@ -513,8 +510,8 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_PreEpoch,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones(false)),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
-            {YYYYMMDDToDay(19500101), YYYYMMDDToDay(19600101), 15 * 60},
-            {YYYYMMDDToDay(19300101), YYYYMMDDToDay(19350101), 11 * 15 * 60}
+            {YYYYMMDDToDay(19500101), YYYYMMDDToDay(19600101), 10 * 15 * 60},
+            {YYYYMMDDToDay(19300101), YYYYMMDDToDay(19350101), 10 * 11 * 15 * 60}
         }))
 );
 
@@ -523,8 +520,8 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_Year1970,
     ::testing::Combine(
         ::testing::ValuesIn(allTimezones(false)),
         ::testing::ValuesIn(std::initializer_list<TimeRangeParam>{
-            {YYYYMMDDToDay(19700101), YYYYMMDDToDay(19700201), 15 * 60},
-            {YYYYMMDDToDay(19700101), YYYYMMDDToDay(19701231), 11 * 13 * 17}
+            {YYYYMMDDToDay(19700101), YYYYMMDDToDay(19700201), 10 * 15 * 60},
+            {YYYYMMDDToDay(19700101), YYYYMMDDToDay(19701231), 10 * 11 * 13 * 17}
 //            // 11 was chosen as a number which can't divide product of 2-combinarions of (7, 24, 60),
 //            // to reduce likelehood of hitting same hour/minute/second values for different days.
 //            // + 12 is just to make sure that last day is covered fully.

@@ -161,7 +161,7 @@ INSTANTIATE_TEST_SUITE_P(DateTimeToString, DateTimeToStringParamTestDayNum,
         {
             "Negative DayNum value wraps as if it was UInt16 due to LUT limitations and to maintain compatibility with existing code.",
             DayNum(-10 * 365),
-            "2106-02-07"
+            "2139-06-10"
         },
     })
 );

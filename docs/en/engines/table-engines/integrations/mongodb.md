@@ -1,5 +1,5 @@
 ---
-toc_priority: 7
+toc_priority: 5
 toc_title: MongoDB
 ---
 
@@ -37,7 +37,7 @@ Table in ClickHouse which allows to read data from MongoDB collection:
 ``` text
 CREATE TABLE mongo_table
 (
-    key UInt64, 
+    key UInt64,
     data String
 ) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'clickhouse');
 ```

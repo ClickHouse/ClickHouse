@@ -1,7 +1,7 @@
 #include "DictionarySourceHelpers.h"
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include "DictionaryStructure.h"
@@ -16,14 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-}
-
-void formatBlock(BlockOutputStreamPtr & out, const Block & block)
-{
-    out->writePrefix();
-    out->write(block);
-    out->writeSuffix();
-    out->flush();
 }
 
 /// For simple key
@@ -67,12 +59,12 @@ Block blockForKeys(
     return block;
 }
 
-Context copyContextAndApplySettings(
+ContextMutablePtr copyContextAndApplySettings(
     const std::string & config_prefix,
-    const Context & context,
+    ContextPtr context,
     const Poco::Util::AbstractConfiguration & config)
 {
-    Context local_context(context);
+    auto local_context = Context::createCopy(context);
     if (config.has(config_prefix + ".settings"))
     {
         const auto prefix = config_prefix + ".settings";
@@ -88,7 +80,7 @@ Context copyContextAndApplySettings(
             changes.emplace_back(key, value);
         }
 
-        local_context.applySettingsChanges(changes);
+        local_context->applySettingsChanges(changes);
     }
     return local_context;
 }
@@ -125,9 +117,8 @@ Block BlockInputStreamWithAdditionalColumns::readImpl()
         auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, block_rows);
 
         if (cut_block.rows() != block_rows)
-            throw Exception(
-                "Number of rows in block to add after cut must equal to number of rows in block from inner stream",
-                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+                "Number of rows in block to add after cut must equal to number of rows in block from inner stream");
 
         for (Int64 i = static_cast<Int64>(cut_block.columns() - 1); i >= 0; --i)
             block.insert(0, cut_block.getByPosition(i));

@@ -6,18 +6,10 @@ toc_priority: 106
 
 Calculates the `arg` value for a maximum `val` value. If there are several different values of `arg` for maximum values of `val`, returns the first of these values encountered.
 
-Tuple version of this function will return the tuple with the maximum `val` value. It is convenient for use with [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md).
-
 **Syntax**
 
 ``` sql
 argMax(arg, val)
-```
-
-or
-
-``` sql
-argMax(tuple(arg, val))
 ```
 
 **Arguments**
@@ -29,13 +21,7 @@ argMax(tuple(arg, val))
 
 -   `arg` value that corresponds to maximum `val` value.
 
-Type: matches `arg` type. 
-
-For tuple in the input:
-
--   Tuple `(arg, val)`, where `val` is the maximum value and `arg` is a corresponding value.
-
-Type: [Tuple](../../../sql-reference/data-types/tuple.md).
+Type: matches `arg` type.
 
 **Example**
 
@@ -52,15 +38,13 @@ Input table:
 Query:
 
 ``` sql
-SELECT argMax(user, salary), argMax(tuple(user, salary), salary), argMax(tuple(user, salary)) FROM salary;
+SELECT argMax(user, salary) FROM salary;
 ```
 
 Result:
 
 ``` text
-┌─argMax(user, salary)─┬─argMax(tuple(user, salary), salary)─┬─argMax(tuple(user, salary))─┐
-│ director             │ ('director',5000)                   │ ('director',5000)           │
-└──────────────────────┴─────────────────────────────────────┴─────────────────────────────┘
+┌─argMax(user, salary)─┐
+│ director             │
+└──────────────────────┘
 ```
-
-[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/argmax/) <!--hide-->

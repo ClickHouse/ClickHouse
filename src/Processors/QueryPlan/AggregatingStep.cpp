@@ -100,7 +100,8 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQue
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),
                     transform_params,
-                    group_by_sort_description);
+                    group_by_sort_description,
+                    max_block_size);
 
                 pipeline.addTransform(std::move(transform));
                 aggregating_sorted = collector.detachProcessors(1);
@@ -160,6 +161,11 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQue
 void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings.out, settings.offset);
+}
+
+void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    params.explain(map);
 }
 
 void AggregatingStep::describePipeline(FormatSettings & settings) const

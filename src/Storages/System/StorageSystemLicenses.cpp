@@ -18,7 +18,7 @@ NamesAndTypesList StorageSystemLicenses::getNamesAndTypes()
     };
 }
 
-void StorageSystemLicenses::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemLicenses::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     for (const auto * it = library_licenses; *it; it += 4)
     {

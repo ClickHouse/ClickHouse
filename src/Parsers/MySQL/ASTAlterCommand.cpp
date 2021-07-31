@@ -242,10 +242,10 @@ static inline bool parseRenameCommand(IParser::Pos & pos, ASTPtr & node, Expecte
     }
     else if (ParserKeyword("TO").ignore(pos, expected) || ParserKeyword("AS").ignore(pos, expected))
     {
-        if (!ParserCompoundIdentifier(false).parse(pos, new_name, expected))
+        if (!ParserCompoundIdentifier(true).parse(pos, new_name, expected))
             return false;
 
-        StorageID new_table_id = getTableIdentifier(new_name);
+        auto new_table_id = new_name->as<ASTTableIdentifier>()->getTableId();
         alter_command->type = ASTAlterCommand::RENAME_TABLE;
         alter_command->new_table_name = new_table_id.table_name;
         alter_command->new_database_name = new_table_id.database_name;

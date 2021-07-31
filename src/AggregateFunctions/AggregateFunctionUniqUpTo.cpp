@@ -1,15 +1,18 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/AggregateFunctionUniqUpTo.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -24,7 +27,7 @@ namespace
 constexpr UInt8 uniq_upto_max_threshold = 100;
 
 
-AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, const DataTypes & argument_types, const Array & params)
+AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     UInt8 threshold = 5;    /// default value
 
@@ -59,6 +62,8 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
             return res;
         else if (which.isDate())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDate::FieldType>>(threshold, argument_types, params);
+        else if (which.isDate32())
+            return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDate32::FieldType>>(threshold, argument_types, params);
         else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDateTime::FieldType>>(threshold, argument_types, params);
         else if (which.isStringOrFixedString())
