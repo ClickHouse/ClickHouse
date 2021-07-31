@@ -24,7 +24,7 @@ def start_cluster():
 def test_remote(start_cluster):
     assert (
         node1.query(
-            """select hostName() h, tcpPort() p, count() from clusterAllReplicas("two_shards", system.one) group by h, p"""
+            """select hostName() h, tcpPort() p, count() from clusterAllReplicas("two_shards", system.one) group by h, p order by h, p"""
         )
         == "node1\t9000\t1\nnode2\t9000\t1\n"
     )
