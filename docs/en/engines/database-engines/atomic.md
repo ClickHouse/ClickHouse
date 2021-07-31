@@ -17,7 +17,7 @@ It supports non-blocking [DROP TABLE](#drop-detach-table) and [RENAME TABLE](#re
 
 ### Table UUID {#table-uuid}
 
-All tables in database `Atomic` have persistent [UUID](../../sql-reference/data-types/uuid.md) and store data in directory `/clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/`, where `xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` is UUID of the table. 
+All tables in database `Atomic` have persistent [UUID](../../sql-reference/data-types/uuid.md) and store data in directory `/clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/`, where `xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` is UUID of the table.
 Usually, the UUID is generated automatically, but the user can also explicitly specify the UUID in the same way when creating the table (this is not recommended). To display the `SHOW CREATE` query with the UUID you can use setting [show_table_uuid_in_table_create_query_if_not_nil](../../operations/settings/settings.md#show_table_uuid_in_table_create_query_if_not_nil). For example:
 
 ```sql
