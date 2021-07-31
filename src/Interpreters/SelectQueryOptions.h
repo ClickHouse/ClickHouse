@@ -46,7 +46,7 @@ struct SelectQueryOptions
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
     bool with_all_cols = false; /// asterisk include materialized and aliased columns
 
-    /// These two fields are used to evaluate getShardNum() and getShardCount() function when
+    /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.
     std::optional<UInt32> shard_num;
