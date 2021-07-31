@@ -257,7 +257,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
                 updated_ttl_columns.insert(column.name);
         }
     }
-    
+
     for (const auto & entry : getRecompressionTTLs())
         add_dependent_columns(entry.expression, required_ttl_columns);
 

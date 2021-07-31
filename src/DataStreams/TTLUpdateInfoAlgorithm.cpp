@@ -24,7 +24,7 @@ void TTLUpdateInfoAlgorithm::execute(Block & block)
 
 void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
-    if (description.mode == TTLMode::RECOMPRESS) 
+    if (description.mode == TTLMode::RECOMPRESS)
     {
         data_part->ttl_infos.recompression_ttl[description.result_column] = new_ttl_info;
     }
@@ -46,7 +46,7 @@ void TTLUpdateInfoAlgorithm::finalize(const MutableDataPartPtr & data_part) cons
 
         data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
     }
-    
+
 }
 
 }
