@@ -803,6 +803,9 @@ void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAd
     auto user = access->getUser();
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
+    if (!user->default_database.empty())
+        setCurrentDatabase(user->default_database);
+
     auto default_profile_info = access->getDefaultProfileInfo();
     settings_constraints_and_current_profiles = default_profile_info->getConstraintsAndProfileIDs();
     applySettingsChanges(default_profile_info->settings);
@@ -1752,6 +1755,24 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
+{
+    /// It can be nearly impossible to understand in which order global objects are initialized on server startup.
+    /// If getZooKeeper() is called before initializeSystemLogs(), then zkutil::ZooKeeper gets nullptr
+    /// instead of pointer to system table and it logs nothing.
+    /// This method explicitly sets correct pointer to system log after its initialization.
+    /// TODO get rid of this if possible
+
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (!shared->system_logs || !shared->system_logs->zookeeper_log)
+        return;
+
+    if (shared->zookeeper)
+        shared->zookeeper->setZooKeeperLog(shared->system_logs->zookeeper_log);
+
+    for (auto & zk : shared->auxiliary_zookeepers)
+        zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
+}
 
 void Context::initializeKeeperStorageDispatcher() const
 {
