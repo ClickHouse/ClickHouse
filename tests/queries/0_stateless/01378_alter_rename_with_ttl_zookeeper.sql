@@ -10,7 +10,8 @@ CREATE TABLE table_rename_with_ttl
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/test/table_rename_with_ttl_01378', '1')
 ORDER BY tuple()
-SETTINGS merge_with_ttl_timeout=0,max_number_of_merges_with_ttl_in_pool=0;
+SETTINGS merge_with_ttl_timeout=0;
+SYSTEM STOP TTL MERGES table_rename_with_ttl;
 
 INSERT INTO table_rename_with_ttl SELECT toDate('2018-10-01') + number % 3, toString(number) from numbers(9);
 
@@ -26,7 +27,7 @@ ALTER TABLE table_rename_with_ttl materialize TTL;
 
 SELECT count() FROM table_rename_with_ttl;
 
-ALTER TABLE table_rename_with_ttl MODIFY setting max_number_of_merges_with_ttl_in_pool = 1;
+SYSTEM START TTL MERGES table_rename_with_ttl;
 optimize table table_rename_with_ttl;
 
 SELECT count() FROM table_rename_with_ttl;
