@@ -7,7 +7,7 @@ toc_title: HDFS
 
 Управляет данными в HDFS. Данный движок похож на движки [File](../special/file.md#table_engines-file) и [URL](../special/url.md#table_engines-url).
 
-## Использование движка {#ispolzovanie-dvizhka}
+## Использование движка {#usage}
 
 ``` sql
 ENGINE = HDFS(URI, format)
@@ -44,9 +44,10 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-## Детали реализации {#detali-realizatsii}
+## Детали реализации {#implementation-details}
 
 -   Поддерживается многопоточное чтение и запись.
+-   Поддерживается репиликация без копирования данных (zero-copy): если данные хранятся на нескольких удаленных машинах, то при синхронизации копируются только метаданные (пути к кускам данных), а сами данные не копируются.  
 -   Не поддерживается:
     -   использование операций `ALTER` и `SELECT...SAMPLE`;
     -   индексы;
@@ -122,8 +123,9 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
   </hdfs_root>
 ```
 
-### Список возможных опций конфигурации со значениями по умолчанию
-#### Поддерживаемые из libhdfs3
+### Возможные опции конфигурации {#configuration-options}
+
+#### Поддерживаемые из libhdfs3 {#supported-by-libhdfs3}
 
 
 | **параметр**                                          | **по умолчанию**        |
@@ -193,7 +195,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 Если hadoop\_kerberos\_keytab, hadoop\_kerberos\_principal или hadoop\_kerberos\_kinit\_command указаны в настройках, kinit будет вызван. hadoop\_kerberos\_keytab и hadoop\_kerberos\_principal обязательны в этом случае. Необходимо также будет установить kinit и файлы конфигурации krb5.
 
-## Виртуальные столбцы {#virtualnye-stolbtsy}
+## Виртуальные столбцы {#virtual-columns}
 
 -   `_path` — Путь к файлу.
 -   `_file` — Имя файла.
