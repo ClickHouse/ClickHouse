@@ -1,6 +1,5 @@
 #include "LibraryBridgeHelper.h"
 
-#include <IO/ReadHelpers.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/formatBlock.h>
@@ -8,6 +7,8 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
@@ -19,6 +20,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int EXTERNAL_LIBRARY_ERROR;
+    extern const int LOGICAL_ERROR;
+}
 
 LibraryBridgeHelper::LibraryBridgeHelper(
         ContextPtr context_,
@@ -93,23 +100,29 @@ bool LibraryBridgeHelper::checkBridgeIsRunning() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {} ({}). Check bridge and server have the same version.",
                         result, parsed ? toString(dictionary_id_exists) : "failed to parse");
 
+    LOG_TRACE(log, "dictionary_id: {}, dictionary_id_exists on bridge side: {}, library confirmed to be initialized on server side: {}",
+              toString(dictionary_id), toString(dictionary_id_exists), library_initialized);
+
     if (dictionary_id_exists && !library_initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Library was not initialized, but bridge responded to already have dictionary id: {}", dictionary_id);
 
     if (!dictionary_id_exists && library_initialized)
     {
         LOG_WARNING(log, "Library bridge does not have library handler with dictionaty id: {}. It will be reinitialized.", dictionary_id);
+        bool reinitialized = false;
         try
         {
-            if (!initLibrary(false))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Failed to reinitialize library handler on bridge side for dictionary with id: {}", dictionary_id);
+            reinitialized = initLibrary(false);
         }
         catch (...)
         {
             tryLogCurrentException(log);
             return false;
         }
+
+        if (!reinitialized)
+            throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR,
+                            "Failed to reinitialize library handler on bridge side for dictionary with id: {}", dictionary_id);
     }
 
     return true;
@@ -191,12 +204,13 @@ BlockInputStreamPtr LibraryBridgeHelper::loadAll()
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string ids_str, const std::vector<uint64_t> ids)
+BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_IDS_METHOD);
     uri.addQueryParameter("ids_num", toString(ids.size())); /// Not used parameter, but helpful
-    return loadBase(uri, [ids_str](std::ostream & os) { os << ids_str; });
+    auto ids_string = getDictIdsString(ids);
+    return loadBase(uri, [ids_string](std::ostream & os) { os << ids_string; });
 }
 
 
@@ -245,5 +259,14 @@ BlockInputStreamPtr LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWri
     auto input_stream = getContext()->getInputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, DEFAULT_BLOCK_SIZE);
     return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(read_buf_ptr));
 }
+
+
+String LibraryBridgeHelper::getDictIdsString(const std::vector<UInt64> & ids)
+{
+    WriteBufferFromOwnString out;
+    writeVectorBinary(ids, out);
+    return out.str();
+}
+
 
 }

@@ -38,7 +38,7 @@ public:
 
     BlockInputStreamPtr loadAll();
 
-    BlockInputStreamPtr loadIds(std::string ids_string, const std::vector<uint64_t> ids);
+    BlockInputStreamPtr loadIds(const std::vector<uint64_t> & ids);
 
     BlockInputStreamPtr loadKeys(const Block & requested_block);
 
@@ -87,6 +87,8 @@ private:
     static constexpr inline auto SUPPORTS_SELECTIVE_LOAD_METHOD = "supportsSelectiveLoad";
 
     Poco::URI createRequestURI(const String & method) const;
+
+    static String getDictIdsString(const std::vector<UInt64> & ids);
 
     Poco::Logger * log;
     const Block sample_block;
