@@ -217,6 +217,15 @@ std::string LocalServer::getInitialCreateTableQuery()
 }
 
 
+void LocalServer::loadSuggestionData(Suggest & suggest)
+{
+    if (!config().getBool("disable_suggestion", false))
+    {
+        suggest.load(query_context, config().getInt("suggestion_limit"));
+    }
+}
+
+
 void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* parsed_query */)
 {
     ReadBufferFromString read_buf(query_to_execute);
@@ -636,6 +645,10 @@ void LocalServer::addAndCheckOptions(OptionsDescription & options_description, p
         ("multiline,m", "multiline")
         ("multiquery,n", "multiquery")
         ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
+
+        ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
+        ("suggestion_limit", po::value<int>()->default_value(10000),
+            "Suggestion limit for how many databases, tables and columns to fetch.")
         ;
 
     cmd_settings.addProgramOptions(options_description.main_description.value());
@@ -715,6 +728,11 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setBool("multiline", true);
     if (options.count("multiquery"))
         config().setBool("multiquery", true);
+
+    if (options.count("disable_suggestion"))
+        config().setBool("disable_suggestion", true);
+    if (options.count("suggestion_limit"))
+        config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
 }
 
 }
