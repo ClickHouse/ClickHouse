@@ -50,7 +50,8 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Implementation Details {#implementation-details}
 
--   Reads and writes can be parallel
+-   Reads and writes can be parallel.
+-   Zero-copy replication is supported, which means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.  
 -   Not supported:
     -   `ALTER` and `SELECT...SAMPLE` operations.
     -   Indexes.
@@ -126,8 +127,9 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
   </hdfs_root>
 ```
 
-### List of possible configuration options with default values
-#### Supported by libhdfs3
+### Configuration Options {#configuration-options}
+
+#### Supported by libhdfs3 {#supported-by-libhdfs3}
 
 
 | **parameter**                                         | **default value**       |
