@@ -28,7 +28,7 @@ ALTER TABLE table_rename_with_ttl materialize TTL;
 SELECT count() FROM table_rename_with_ttl;
 
 SYSTEM START TTL MERGES table_rename_with_ttl;
-optimize table table_rename_with_ttl;
+optimize table table_rename_with_ttl FINAL;
 
 SELECT count() FROM table_rename_with_ttl;
 
