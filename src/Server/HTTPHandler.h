@@ -21,6 +21,7 @@ namespace DB
 class Session;
 class Credentials;
 class IServer;
+struct Settings;
 class WriteBufferFromHTTPServerResponse;
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
@@ -72,15 +73,22 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
 
-    // The request_session and the request_credentials instances may outlive a single request/response loop.
+    /// Reference to the immutable settings in the global context.
+    /// Those settings are used only to extract a http request's parameters.
+    /// See settings http_max_fields, http_max_field_name_size, http_max_field_value_size in HTMLForm.
+    const Settings & default_settings;
+
+    // session is reset at the end of each request/response.
+    std::unique_ptr<Session> session;
+
+    // The request_credential instance may outlive a single request/response loop.
     // This happens only when the authentication mechanism requires more than a single request/response exchange (e.g., SPNEGO).
-    std::shared_ptr<Session> request_session;
     std::unique_ptr<Credentials> request_credentials;
 
     // Returns true when the user successfully authenticated,
-    //  the request_session instance will be configured accordingly, and the request_credentials instance will be dropped.
+    //  the session instance will be configured accordingly, and the request_credentials instance will be dropped.
     // Returns false when the user is not authenticated yet, and the 'Negotiate' response is sent,
-    //  the request_session and request_credentials instances are preserved.
+    //  the session and request_credentials instances are preserved.
     // Throws an exception if authentication failed.
     bool authenticateUser(
         HTTPServerRequest & request,

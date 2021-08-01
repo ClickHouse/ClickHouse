@@ -63,7 +63,7 @@ protected:
     uint8_t sequence_id = 0;
 
     MySQLProtocol::PacketEndpointPtr packet_endpoint;
-    std::shared_ptr<Session> session;
+    std::unique_ptr<Session> session;
 
     using ReplacementFn = std::function<String(const String & query)>;
     using Replacements = std::unordered_map<std::string, ReplacementFn>;

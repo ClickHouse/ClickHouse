@@ -15,6 +15,7 @@
 
 namespace DB
 {
+class Session;
 
 namespace MySQLProtocol
 {
@@ -32,7 +33,7 @@ public:
     virtual String getAuthPluginData() = 0;
 
     virtual void authenticate(
-        const String & user_name, std::optional<String> auth_response, Session & session,
+        const String & user_name, Session & session, std::optional<String> auth_response,
         std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address) = 0;
 };
 
@@ -49,7 +50,7 @@ public:
     String getAuthPluginData() override { return scramble; }
 
     void authenticate(
-        const String & user_name, std::optional<String> auth_response, Session & session,
+        const String & user_name, Session & session, std::optional<String> auth_response,
         std::shared_ptr<PacketEndpoint> packet_endpoint, bool /* is_secure_connection */, const Poco::Net::SocketAddress & address) override;
 
 private:
@@ -69,7 +70,7 @@ public:
     String getAuthPluginData() override { return scramble; }
 
     void authenticate(
-        const String & user_name, std::optional<String> auth_response, Session & session,
+        const String & user_name, Session & session, std::optional<String> auth_response,
         std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address) override;
 
 private:

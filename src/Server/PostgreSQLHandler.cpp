@@ -2,8 +2,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Session.h>
 #include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
 #include <Common/setThreadName.h>
@@ -53,14 +53,12 @@ void PostgreSQLHandler::run()
     setThreadName("PostgresHandler");
     ThreadStatus thread_status;
 
-    Session session(server.context(), ClientInfo::Interface::POSTGRESQL, "PostgreSQLWire");
-    auto & session_client_info = session.getClientInfo();
-
-    session_client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
+    SCOPE_EXIT({ session.reset(); });
 
     try
     {
-        if (!startup(session))
+        if (!startup())
             return;
 
         while (true)
@@ -71,7 +69,7 @@ void PostgreSQLHandler::run()
             switch (message_type)
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:
-                    processQuery(session);
+                    processQuery();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE:
                     LOG_DEBUG(log, "Client closed the connection");
@@ -110,7 +108,7 @@ void PostgreSQLHandler::run()
 
 }
 
-bool PostgreSQLHandler::startup(Session & session)
+bool PostgreSQLHandler::startup()
 {
     Int32 payload_size;
     Int32 info;
@@ -119,17 +117,20 @@ bool PostgreSQLHandler::startup(Session & session)
     if (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info) == PostgreSQLProtocol::Messaging::FrontMessageType::CANCEL_REQUEST)
     {
         LOG_DEBUG(log, "Client issued request canceling");
-        cancelRequest(session);
+        cancelRequest();
         return false;
     }
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> start_up_msg = receiveStartupMessage(payload_size);
-    authentication_manager.authenticate(start_up_msg->user, session, *message_transport, socket().peerAddress());
+    const auto & user_name = start_up_msg->user;
+    authentication_manager.authenticate(user_name, *session, *message_transport, socket().peerAddress());
 
     try
     {
+        session->makeSessionContext();
+        session->sessionContext()->setDefaultFormat("PostgreSQLWire");
         if (!start_up_msg->database.empty())
-            session.setCurrentDatabase(start_up_msg->database);
+            session->sessionContext()->setCurrentDatabase(start_up_msg->database);
     }
     catch (const Exception & exc)
     {
@@ -207,18 +208,16 @@ void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::S
     message_transport->flush();
 }
 
-void PostgreSQLHandler::cancelRequest(Session & session)
+void PostgreSQLHandler::cancelRequest()
 {
-    // TODO (nemkov): maybe run cancellation query with session context?
-    auto query_context = session.makeQueryContext(std::string{});
-    query_context->setDefaultFormat("Null");
-
     std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg =
         message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
 
     String query = Poco::format("KILL QUERY WHERE query_id = 'postgres:%d:%d'", msg->process_id, msg->secret_key);
     ReadBufferFromString replacement(query);
 
+    auto query_context = session->makeQueryContext();
+    query_context->setCurrentQueryId("");
     executeQuery(replacement, *out, true, query_context, {});
 }
 
@@ -242,7 +241,7 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
     return message;
 }
 
-void PostgreSQLHandler::processQuery(Session & session)
+void PostgreSQLHandler::processQuery()
 {
     try
     {
@@ -265,7 +264,7 @@ void PostgreSQLHandler::processQuery(Session & session)
             return;
         }
 
-        const auto & settings = session.getSettings();
+        const auto & settings = session->sessionContext()->getSettingsRef();
         std::vector<String> queries;
         auto parse_res = splitMultipartQuery(query->query, queries, settings.max_query_size, settings.max_parser_depth);
         if (!parse_res.second)
@@ -278,7 +277,8 @@ void PostgreSQLHandler::processQuery(Session & session)
         for (const auto & spl_query : queries)
         {
             secret_key = dis(gen);
-            auto query_context = session.makeQueryContext(Poco::format("postgres:%d:%d", connection_id, secret_key));
+            auto query_context = session->makeQueryContext();
+            query_context->setCurrentQueryId(Poco::format("postgres:%d:%d", connection_id, secret_key));
 
             CurrentThread::QueryScope query_scope{query_context};
             ReadBufferFromString read_buf(spl_query);

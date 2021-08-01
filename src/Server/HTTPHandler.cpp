@@ -19,9 +19,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Session.h>
 #include <Interpreters/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Session.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
@@ -262,6 +262,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
     : server(server_)
     , log(&Poco::Logger::get(name))
+    , default_settings(server.context()->getSettingsRef())
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -269,10 +270,7 @@ HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
 
 /// We need d-tor to be present in this translation unit to make it play well with some
 /// forward decls in the header. Other than that, the default d-tor would be OK.
-HTTPHandler::~HTTPHandler()
-{
-    (void)this;
-}
+HTTPHandler::~HTTPHandler() = default;
 
 
 bool HTTPHandler::authenticateUser(
@@ -352,7 +350,7 @@ bool HTTPHandler::authenticateUser(
     else
     {
         if (!request_credentials)
-            request_credentials = request_session->sessionContext()->makeGSSAcceptorContext();
+            request_credentials = server.context()->makeGSSAcceptorContext();
 
         auto * gss_acceptor_context = dynamic_cast<GSSAcceptorContext *>(request_credentials.get());
         if (!gss_acceptor_context)
@@ -378,9 +376,7 @@ bool HTTPHandler::authenticateUser(
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
-
-    ClientInfo & client_info = request_session->getClientInfo();
-    client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    ClientInfo & client_info = session->getClientInfo();
 
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
@@ -392,10 +388,11 @@ bool HTTPHandler::authenticateUser(
     client_info.http_user_agent = request.get("User-Agent", "");
     client_info.http_referer = request.get("Referer", "");
     client_info.forwarded_for = request.get("X-Forwarded-For", "");
+    client_info.quota_key = quota_key;
 
     try
     {
-        request_session->setUser(*request_credentials, request.clientAddress());
+        session->authenticate(*request_credentials, request.clientAddress());
     }
     catch (const Authentication::Require<BasicCredentials> & required_credentials)
     {
@@ -412,7 +409,7 @@ bool HTTPHandler::authenticateUser(
     }
     catch (const Authentication::Require<GSSAcceptorContext> & required_credentials)
     {
-        request_credentials = request_session->sessionContext()->makeGSSAcceptorContext();
+        request_credentials = server.context()->makeGSSAcceptorContext();
 
         if (required_credentials.getRealm().empty())
             response.set("WWW-Authenticate", "Negotiate");
@@ -425,14 +422,6 @@ bool HTTPHandler::authenticateUser(
     }
 
     request_credentials.reset();
-
-    if (!quota_key.empty())
-        request_session->setQuotaKey(quota_key);
-
-    /// Query sent through HTTP interface is initial.
-    client_info.initial_user = client_info.current_user;
-    client_info.initial_address = client_info.current_address;
-
     return true;
 }
 
@@ -463,20 +452,16 @@ void HTTPHandler::processQuery(
         session_id = params.get("session_id");
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
-        request_session->promoteToNamedSession(session_id, session_timeout, session_check == "1");
+        session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
-
-    SCOPE_EXIT({
-        request_session->releaseNamedSession();
-    });
 
     // Parse the OpenTelemetry traceparent header.
     // Disable in Arcadia -- it interferes with the
     // test_clickhouse.TestTracing.test_tracing_via_http_proxy[traceparent] test.
+    ClientInfo client_info = session->getClientInfo();
 #if !defined(ARCADIA_BUILD)
     if (request.has("traceparent"))
     {
-        ClientInfo & client_info = request_session->getClientInfo();
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
         if (!client_info.client_trace_context.parseTraceparentHeader(
@@ -486,16 +471,11 @@ void HTTPHandler::processQuery(
                 "Failed to parse OpenTelemetry traceparent header '{}': {}",
                 opentelemetry_traceparent, error);
         }
-
         client_info.client_trace_context.tracestate = request.get("tracestate", "");
     }
 #endif
 
-    // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    auto context = request_session->makeQueryContext(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
-
-    ClientInfo & client_info = context->getClientInfo();
-    client_info.initial_query_id = client_info.current_query_id;
+    auto context = session->makeQueryContext(std::move(client_info));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -560,7 +540,7 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            const std::string tmp_path(context->getTemporaryVolume()->getDisk()->getPath());
+            const std::string tmp_path(server.context()->getTemporaryVolume()->getDisk()->getPath());
             const std::string tmp_path_template(tmp_path + "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
@@ -705,6 +685,9 @@ void HTTPHandler::processQuery(
     /// For external data we also want settings
     context->checkSettingsConstraints(settings_changes);
     context->applySettingsChanges(settings_changes);
+
+    // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
+    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
 
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
@@ -856,23 +839,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
 
-    SCOPE_EXIT({
-        // If there is no request_credentials instance waiting for the next round, then the request is processed,
-        // so no need to preserve request_session either.
-        // Needs to be performed with respect to the other destructors in the scope though.
-        if (!request_credentials)
-            request_session.reset();
-    });
-
-    if (!request_session)
-    {
-        // Context should be initialized before anything, for correct memory accounting.
-        request_session = std::make_shared<Session>(server.context(), ClientInfo::Interface::HTTP);
-        request_credentials.reset();
-    }
-
-    /// Cannot be set here, since query_id is unknown.
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP);
+    SCOPE_EXIT({ session.reset(); });
     std::optional<CurrentThread::QueryScope> query_scope;
+
     Output used_output;
 
     /// In case of exception, send stack trace to client.
@@ -886,7 +856,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
-        HTMLForm params(request_session->getSettings(), request);
+        HTMLForm params(default_settings, request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
         /// FIXME: maybe this check is already unnecessary.
