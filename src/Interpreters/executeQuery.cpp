@@ -943,9 +943,10 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     ContextMutablePtr context,
-    std::function<void(const String &, const String &, const String &, const String &)> set_result_details,
+    SetResultDetailsFunc set_result_details,
     const std::optional<FormatSettings> & output_format_settings,
-    FlushBufferCallback flush_buffer_callback)
+    FlushBufferFunc flush_buffer_func,
+    SetExecutorFunc set_executor_func)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1085,7 +1086,8 @@ void executeQuery(
                     out->onProgress(progress);
                 });
 
-                out->setFlushBufferCallback(flush_buffer_callback);
+                if (flush_buffer_func)
+                    out->setFlushBufferCallback(flush_buffer_func);
 
                 if (set_result_details)
                     set_result_details(
@@ -1100,6 +1102,11 @@ void executeQuery(
 
             {
                 auto executor = pipeline.execute();
+
+                /// For clickhouse-local to process ctrl-c in interactive mode.
+                if (set_executor_func)
+                    set_executor_func(executor);
+
                 executor->execute(pipeline.getNumThreads());
             }
         }
