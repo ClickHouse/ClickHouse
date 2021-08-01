@@ -46,7 +46,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ### Удаление данных {#deleting-data}
 
-Запросы `ALTER DELETE` для таблиц с движком `Join` выполняются как [мутации](../../../sql-reference/statements/alter/index.md#mutations). При выполнении мутации `DELETE` считываются отфильтрованные данные и перезаписываются данные в оперативную память и на диск.
+Запросы `ALTER DELETE` для таблиц с движком `Join` выполняются как [мутации](../../../sql-reference/statements/alter/index.md#mutations). При выполнении мутации `DELETE` считываются отфильтрованные данные и перезаписываются в оперативную память и на диск.
 
 ### Ограничения и настройки {#join-limitations-and-settings}
 
