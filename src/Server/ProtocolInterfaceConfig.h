@@ -11,6 +11,7 @@
 #include <chrono>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,33 @@ class IServer;
 class ProtocolServerAdapter;
 class ProxyConfig;
 
+class LegacyGlobalConfigOverrides
+{
+public:
+    explicit LegacyGlobalConfigOverrides(const Poco::Util::AbstractConfiguration & config);
+
+public:
+    std::vector<std::string> listen_host;
+    std::optional<bool> listen_try;
+    std::optional<bool> listen_reuse_port;
+    std::optional<UInt32> listen_backlog;
+
+    std::optional<std::chrono::seconds> connection_timeout;
+    std::optional<std::chrono::seconds> send_timeout;
+    std::optional<std::chrono::seconds> receive_timeout;
+    std::optional<std::chrono::seconds> keep_alive_timeout;
+
+    std::optional<std::chrono::seconds> tcp_connection_timeout;
+    std::optional<std::chrono::seconds> tcp_send_timeout;
+    std::optional<std::chrono::seconds> tcp_receive_timeout;
+    std::optional<std::chrono::seconds> tcp_keep_alive_timeout;
+
+    std::optional<std::chrono::seconds> http_connection_timeout;
+    std::optional<std::chrono::seconds> http_send_timeout;
+    std::optional<std::chrono::seconds> http_receive_timeout;
+    std::optional<std::chrono::seconds> http_keep_alive_timeout;
+};
+
 /// Base class for server listening interface configs for all protocols.
 class ProtocolInterfaceConfig
 {
@@ -33,13 +61,28 @@ public:
     explicit ProtocolInterfaceConfig(const std::string & name_, const std::string & protocol_);
     virtual ~ProtocolInterfaceConfig() = default;
 
-    virtual void updateConfig(
+    void updateConfig(
+        const LegacyGlobalConfigOverrides & global_overrides,
         const Poco::Util::AbstractConfiguration & config,
-        const Settings & settings,
-        const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+        const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_,
+        const Settings & settings
     );
 
-    virtual ProtocolServerAdapter createServerAdapter(IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics) = 0;
+    virtual ProtocolServerAdapter createServerAdapter(
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) = 0;
+
+public:
+    virtual void updateConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+    ) = 0;
+
+    virtual void updateConfig(const LegacyGlobalConfigOverrides & global_overrides) = 0;
+
+    virtual void updateConfig(const Settings & settings) = 0;
 
 public:
     const std::string name;
@@ -53,16 +96,30 @@ protected:
     explicit MultiEndpointInterfaceConfigBase(const std::string & name_, const std::string & protocol_);
 
 public:
+    virtual ProtocolServerAdapter createServerAdapter(
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) final override;
+
+public:
     virtual void updateConfig(
         const Poco::Util::AbstractConfiguration & config,
-        const Settings & settings,
         const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
     ) override;
 
-    virtual ProtocolServerAdapter createServerAdapter(IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics) final override;
+    virtual void updateConfig(const LegacyGlobalConfigOverrides & global_overrides) override;
+
+    virtual void updateConfig(const Settings & settings) override;
 
 protected:
-    virtual void createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics) = 0;
+    virtual void createSingleServer(
+        ProtocolServerAdapter & adapter,
+        const std::string & host,
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) = 0;
 
 public:
     std::vector<std::string> hosts;
@@ -79,9 +136,12 @@ protected:
 public:
     virtual void updateConfig(
         const Poco::Util::AbstractConfiguration & config,
-        const Settings & settings,
         const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
     ) override;
+
+    virtual void updateConfig(const LegacyGlobalConfigOverrides & global_overrides) override;
+
+    virtual void updateConfig(const Settings & settings) override;
 
 public:
     bool reuse_port = false;
@@ -106,9 +166,12 @@ protected:
 public:
     virtual void updateConfig(
         const Poco::Util::AbstractConfiguration & config,
-        const Settings & settings,
         const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
     ) override;
+
+    virtual void updateConfig(const LegacyGlobalConfigOverrides & global_overrides) override;
+
+    virtual void updateConfig(const Settings & settings) override;
 
 public:
     std::chrono::seconds http_connection_timeout{DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT};
@@ -125,12 +188,19 @@ public:
 
     static std::unique_ptr<NativeTCPInterfaceConfig> tryParseLegacyInterface(
         const bool secure_,
+        const LegacyGlobalConfigOverrides & global_overrides,
         const Poco::Util::AbstractConfiguration & config,
         const Settings & settings
     );
 
 protected:
-    virtual void createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics) override;
+    virtual void createSingleServer(
+        ProtocolServerAdapter & adapter,
+        const std::string & host,
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) override;
 };
 
 /// Class for server listening interface configs for Native HTTP protocol.
@@ -141,12 +211,19 @@ public:
 
     static std::unique_ptr<NativeHTTPInterfaceConfig> tryParseLegacyInterface(
         const bool secure_,
+        const LegacyGlobalConfigOverrides & global_overrides,
         const Poco::Util::AbstractConfiguration & config,
         const Settings & settings
     );
 
 protected:
-    virtual void createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics) override;
+    virtual void createSingleServer(
+        ProtocolServerAdapter & adapter,
+        const std::string & host,
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) override;
 };
 
 /// Class for server listening interface configs for Native gRPC protocol.
@@ -155,18 +232,28 @@ class NativeGRPCInterfaceConfig final : public MultiEndpointInterfaceConfigBase
 public:
     explicit NativeGRPCInterfaceConfig(const std::string & name_);
 
+    static std::unique_ptr<NativeGRPCInterfaceConfig> tryParseLegacyInterface(
+        const LegacyGlobalConfigOverrides & global_overrides,
+        const Poco::Util::AbstractConfiguration & config,
+        const Settings & settings
+    );
+
+public:
     virtual void updateConfig(
         const Poco::Util::AbstractConfiguration & config,
-        const Settings & settings,
         const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
     ) override;
 
-    static std::unique_ptr<NativeGRPCInterfaceConfig> tryParseLegacyInterface(
-        const Poco::Util::AbstractConfiguration & config
-    );
+    using MultiEndpointInterfaceConfigBase::updateConfig;
 
 protected:
-    virtual void createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics) override;
+    virtual void createSingleServer(
+        ProtocolServerAdapter & adapter,
+        const std::string & host,
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) override;
 };
 
 /// Class for server listening interface configs for Interserver HTTP protocol.
@@ -177,12 +264,19 @@ public:
 
     static std::unique_ptr<InterserverHTTPInterfaceConfig> tryParseLegacyInterface(
         const bool secure_,
+        const LegacyGlobalConfigOverrides & global_overrides,
         const Poco::Util::AbstractConfiguration & config,
         const Settings & settings
     );
 
 protected:
-    virtual void createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics) override;
+    virtual void createSingleServer(
+        ProtocolServerAdapter & adapter,
+        const std::string & host,
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) override;
 };
 
 /// Class for server listening interface configs for MySQL compatibility protocol.
@@ -192,12 +286,19 @@ public:
     explicit MySQLInterfaceConfig(const std::string & name_);
 
     static std::unique_ptr<MySQLInterfaceConfig> tryParseLegacyInterface(
+        const LegacyGlobalConfigOverrides & global_overrides,
         const Poco::Util::AbstractConfiguration & config,
         const Settings & settings
     );
 
 protected:
-    virtual void createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics) override;
+    virtual void createSingleServer(
+        ProtocolServerAdapter & adapter,
+        const std::string & host,
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) override;
 };
 
 /// Class for server listening interface configs for PostgreSQL compatibility protocol.
@@ -207,12 +308,19 @@ public:
     explicit PostgreSQLInterfaceConfig(const std::string & name_);
 
     static std::unique_ptr<PostgreSQLInterfaceConfig> tryParseLegacyInterface(
+        const LegacyGlobalConfigOverrides & global_overrides,
         const Poco::Util::AbstractConfiguration & config,
         const Settings & settings
     );
 
 protected:
-    virtual void createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics) override;
+    virtual void createSingleServer(
+        ProtocolServerAdapter & adapter,
+        const std::string & host,
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) override;
 };
 
 /// Class for server listening interface configs for Prometheus protocol.
@@ -222,12 +330,19 @@ public:
     explicit PrometheusInterfaceConfig(const std::string & name_);
 
     static std::unique_ptr<PrometheusInterfaceConfig> tryParseLegacyInterface(
+        const LegacyGlobalConfigOverrides & global_overrides,
         const Poco::Util::AbstractConfiguration & config,
         const Settings & settings
     );
 
 protected:
-    virtual void createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics) override;
+    virtual void createSingleServer(
+        ProtocolServerAdapter & adapter,
+        const std::string & host,
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) override;
 };
 
 /// Class for server listening interface configs for Keeper TCP protocol.
@@ -238,12 +353,19 @@ public:
 
     static std::unique_ptr<KeeperTCPInterfaceConfig> tryParseLegacyInterface(
         const bool secure_,
+        const LegacyGlobalConfigOverrides & global_overrides,
         const Poco::Util::AbstractConfiguration & config,
         const Settings & settings
     );
 
 protected:
-    virtual void createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics) override;
+    virtual void createSingleServer(
+        ProtocolServerAdapter & adapter,
+        const std::string & host,
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) override;
 };
 
 namespace Util

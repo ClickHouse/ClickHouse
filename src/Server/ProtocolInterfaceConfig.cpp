@@ -55,42 +55,12 @@ Poco::Timespan toTimespan(const Duration & duration)
     return Poco::Timespan(std::chrono::duration_cast<std::chrono::microseconds>(duration).count());
 }
 
-struct CommonLegacyConfigValues
-{
-    std::vector<std::string> listen_host;
-    bool listen_try = false;
-    bool listen_reuse_port = false;
-    UInt32 listen_backlog = 64;
-    std::chrono::seconds keep_alive_timeout{10};
-};
-
-auto getCommonLegacyConfigValues(const Poco::Util::AbstractConfiguration & config)
-{
-    CommonLegacyConfigValues values;
-
-    values.listen_host = DB::getMultipleValuesFromConfig(config, "", "listen_host");
-    values.listen_try = config.getBool("listen_try", false);
-
-    if (values.listen_host.empty())
-    {
-        values.listen_host.emplace_back("::1");
-        values.listen_host.emplace_back("127.0.0.1");
-        values.listen_try = true;
-    }
-
-    values.listen_reuse_port = config.getBool("listen_reuse_port", false);
-    values.listen_backlog = config.getUInt("listen_backlog", 64);
-
-    values.keep_alive_timeout = std::chrono::seconds{config.getUInt("keep_alive_timeout", 10)};
-
-    return values;
-}
-
 template <typename InterfaceConfig>
-std::unique_ptr<InterfaceConfig> tryParseLegacyTCPInterface(
+std::unique_ptr<InterfaceConfig> tryParseLegacyInterfaceHelper(
     const bool secure_,
     const std::string & port_prefix,
     const std::string & name,
+    const DB::LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
     const DB::Settings & settings
 )
@@ -103,53 +73,12 @@ std::unique_ptr<InterfaceConfig> tryParseLegacyTCPInterface(
     if (raw_port > std::numeric_limits<UInt16>::max())
         throw DB::Exception{"Value for port is out of range", DB::ErrorCodes::INVALID_CONFIG_PARAMETER};
 
-    const auto legacy_values = getCommonLegacyConfigValues(config);
     auto interface = std::make_unique<InterfaceConfig>(name);
 
-    interface->hosts = legacy_values.listen_host;
+    interface->updateConfig(global_overrides);
     interface->port = raw_port;
-    interface->try_listen = legacy_values.listen_try;
-    interface->reuse_port = legacy_values.listen_reuse_port;
-    interface->backlog = legacy_values.listen_backlog;
     interface->secure = secure_;
-    interface->tcp_connection_timeout = std::chrono::seconds{settings.connect_timeout};
-    interface->tcp_send_timeout = std::chrono::seconds{settings.send_timeout};
-    interface->tcp_receive_timeout = std::chrono::seconds{settings.receive_timeout};
-    interface->tcp_keep_alive_timeout = std::chrono::seconds{settings.tcp_keep_alive_timeout};
-
-    return interface;
-}
-
-template <typename InterfaceConfig>
-std::unique_ptr<InterfaceConfig> tryParseLegacyHTTPInterface(
-    const bool secure_,
-    const std::string & port_prefix,
-    const std::string & name,
-    const Poco::Util::AbstractConfiguration & config,
-    const DB::Settings & settings
-)
-{
-    if (!config.has(port_prefix))
-        return {};
-
-    const auto raw_port = config.getUInt(port_prefix);
-
-    if (raw_port > std::numeric_limits<UInt16>::max())
-        throw DB::Exception{"Value for port is out of range", DB::ErrorCodes::INVALID_CONFIG_PARAMETER};
-
-    const auto legacy_values = getCommonLegacyConfigValues(config);
-    auto interface = std::make_unique<InterfaceConfig>(name);
-
-    interface->hosts = legacy_values.listen_host;
-    interface->port = raw_port;
-    interface->try_listen = legacy_values.listen_try;
-    interface->reuse_port = legacy_values.listen_reuse_port;
-    interface->backlog = legacy_values.listen_backlog;
-    interface->secure = secure_;
-    interface->http_connection_timeout = std::chrono::seconds{settings.http_connection_timeout};
-    interface->http_send_timeout = std::chrono::seconds{settings.http_send_timeout};
-    interface->http_receive_timeout = std::chrono::seconds{settings.http_receive_timeout};
-    interface->http_keep_alive_timeout = legacy_values.keep_alive_timeout;
+    interface->updateConfig(settings);
 
     return interface;
 }
@@ -221,6 +150,67 @@ Poco::Net::SocketAddress socketBindListen(
 namespace DB
 {
 
+LegacyGlobalConfigOverrides::LegacyGlobalConfigOverrides(const Poco::Util::AbstractConfiguration & config)
+{
+    listen_host = DB::getMultipleValuesFromConfig(config, "", "listen_host");
+
+    if (config.has("listen_try"))
+        listen_try = config.getBool("listen_try");
+
+    if (listen_host.empty())
+    {
+        listen_host.emplace_back("::1");
+        listen_host.emplace_back("127.0.0.1");
+        listen_try = true;
+    }
+
+    if (config.has("listen_reuse_port"))
+        listen_reuse_port = config.getBool("listen_reuse_port");
+
+    if (config.has("listen_backlog"))
+        listen_reuse_port = config.getUInt("listen_backlog");
+
+
+    if (config.has("connection_timeout"))
+        connection_timeout = std::chrono::seconds(config.getUInt("connection_timeout"));
+
+    if (config.has("send_timeout"))
+        send_timeout = std::chrono::seconds(config.getUInt("send_timeout"));
+
+    if (config.has("receive_timeout"))
+        receive_timeout = std::chrono::seconds(config.getUInt("receive_timeout"));
+
+    if (config.has("keep_alive_timeout"))
+        keep_alive_timeout = std::chrono::seconds(config.getUInt("keep_alive_timeout"));
+
+
+    if (config.has("tcp_connection_timeout"))
+        tcp_connection_timeout = std::chrono::seconds(config.getUInt("tcp_connection_timeout"));
+
+    if (config.has("tcp_send_timeout"))
+        tcp_send_timeout = std::chrono::seconds(config.getUInt("tcp_send_timeout"));
+
+    if (config.has("tcp_receive_timeout"))
+        tcp_receive_timeout = std::chrono::seconds(config.getUInt("tcp_receive_timeout"));
+
+    if (config.has("tcp_keep_alive_timeout"))
+        tcp_keep_alive_timeout = std::chrono::seconds(config.getUInt("tcp_keep_alive_timeout"));
+
+
+    if (config.has("http_connection_timeout"))
+        http_connection_timeout = std::chrono::seconds(config.getUInt("http_connection_timeout"));
+
+    if (config.has("http_send_timeout"))
+        http_send_timeout = std::chrono::seconds(config.getUInt("http_send_timeout"));
+
+    if (config.has("http_receive_timeout"))
+        http_receive_timeout = std::chrono::seconds(config.getUInt("http_receive_timeout"));
+
+    if (config.has("http_keep_alive_timeout"))
+        http_keep_alive_timeout = std::chrono::seconds(config.getUInt("http_keep_alive_timeout"));
+}
+
+
 ProtocolInterfaceConfig::ProtocolInterfaceConfig(const std::string & name_, const std::string & protocol_)
     : name(name_)
     , protocol(protocol_)
@@ -228,13 +218,18 @@ ProtocolInterfaceConfig::ProtocolInterfaceConfig(const std::string & name_, cons
 }
 
 void ProtocolInterfaceConfig::updateConfig(
+    const LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
-    [[maybe_unused]] const Settings & settings,
-    [[maybe_unused]] const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+    const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_,
+    const Settings & settings
 )
 {
     if (config.has("protocol") && !boost::iequals(config.getString("protocol"), protocol))
         throw Exception("Cannot modify previously configured protocol", ErrorCodes::INVALID_CONFIG_PARAMETER);
+
+    updateConfig(global_overrides);
+    updateConfig(config, proxies_);
+    updateConfig(settings);
 }
 
 MultiEndpointInterfaceConfigBase::MultiEndpointInterfaceConfigBase(const std::string & name_, const std::string & protocol_)
@@ -244,12 +239,9 @@ MultiEndpointInterfaceConfigBase::MultiEndpointInterfaceConfigBase(const std::st
 
 void MultiEndpointInterfaceConfigBase::updateConfig(
     const Poco::Util::AbstractConfiguration & config,
-    const Settings & settings,
-    const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+    const std::map<std::string, std::unique_ptr<ProxyConfig>> &
 )
 {
-    ProtocolInterfaceConfig::updateConfig(config, settings, proxies_);
-
     if (config.has("listen"))
     {
         hosts.clear();
@@ -289,6 +281,19 @@ void MultiEndpointInterfaceConfigBase::updateConfig(
         try_listen = config.getBool("try_listen");
 }
 
+void MultiEndpointInterfaceConfigBase::updateConfig(const LegacyGlobalConfigOverrides & global_overrides)
+{
+    if (!global_overrides.listen_host.empty())
+        hosts = global_overrides.listen_host;
+
+    if (global_overrides.listen_try.has_value())
+        try_listen = global_overrides.listen_try.value();
+}
+
+void MultiEndpointInterfaceConfigBase::updateConfig(const Settings &)
+{
+}
+
 ProtocolServerAdapter MultiEndpointInterfaceConfigBase::createServerAdapter(IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics * async_metrics)
 {
     ProtocolServerAdapter adapter(name);
@@ -325,16 +330,10 @@ TCPInterfaceConfigBase::TCPInterfaceConfigBase(const std::string & name_, const 
 
 void TCPInterfaceConfigBase::updateConfig(
     const Poco::Util::AbstractConfiguration & config,
-    const Settings & settings,
     const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
 )
 {
-    MultiEndpointInterfaceConfigBase::updateConfig(config, settings, proxies_);
-
-    tcp_connection_timeout = std::chrono::seconds{settings.connect_timeout};
-    tcp_send_timeout = std::chrono::seconds{settings.send_timeout};
-    tcp_receive_timeout = std::chrono::seconds{settings.receive_timeout};
-    tcp_keep_alive_timeout = std::chrono::seconds{settings.tcp_keep_alive_timeout};
+    MultiEndpointInterfaceConfigBase::updateConfig(config, proxies_);
 
     if (config.has("reuse_port"))
         reuse_port = config.getBool("reuse_port");
@@ -344,6 +343,7 @@ void TCPInterfaceConfigBase::updateConfig(
 
     if (config.has("enable_tls"))
         secure = config.getBool("enable_tls");
+
 
     if (config.has("connection_timeout"))
         tcp_connection_timeout = std::chrono::seconds{config.getUInt64("connection_timeout")};
@@ -357,6 +357,7 @@ void TCPInterfaceConfigBase::updateConfig(
     if (config.has("keep_alive_timeout"))
         tcp_keep_alive_timeout = std::chrono::seconds{config.getUInt64("keep_alive_timeout")};
 
+
     if (config.has("tcp_connection_timeout"))
         tcp_connection_timeout = std::chrono::seconds{config.getUInt64("tcp_connection_timeout")};
 
@@ -368,6 +369,7 @@ void TCPInterfaceConfigBase::updateConfig(
 
     if (config.has("tcp_keep_alive_timeout"))
         tcp_keep_alive_timeout = std::chrono::seconds{config.getUInt64("tcp_keep_alive_timeout")};
+
 
     if (config.has("allow_direct"))
         allow_direct = config.getBool("allow_direct");
@@ -401,6 +403,73 @@ void TCPInterfaceConfigBase::updateConfig(
         throw Exception{"No allowed proxies are set for the interface, and the direct connections are not allowed either", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG};
 }
 
+void TCPInterfaceConfigBase::updateConfig(const LegacyGlobalConfigOverrides & global_overrides)
+{
+    MultiEndpointInterfaceConfigBase::updateConfig(global_overrides);
+
+    if (global_overrides.listen_reuse_port.has_value())
+        reuse_port = global_overrides.listen_reuse_port.value();
+
+    if (global_overrides.listen_backlog.has_value())
+        backlog = global_overrides.listen_backlog.value();
+
+
+    if (global_overrides.connection_timeout.has_value())
+        tcp_connection_timeout = global_overrides.connection_timeout.value();
+
+    if (global_overrides.send_timeout.has_value())
+        tcp_send_timeout = global_overrides.send_timeout.value();
+
+    if (global_overrides.receive_timeout.has_value())
+        tcp_receive_timeout = global_overrides.receive_timeout.value();
+
+    if (global_overrides.keep_alive_timeout.has_value())
+        tcp_keep_alive_timeout = global_overrides.keep_alive_timeout.value();
+
+
+    if (global_overrides.tcp_connection_timeout.has_value())
+        tcp_connection_timeout = global_overrides.tcp_connection_timeout.value();
+
+    if (global_overrides.tcp_send_timeout.has_value())
+        tcp_send_timeout = global_overrides.tcp_send_timeout.value();
+
+    if (global_overrides.tcp_receive_timeout.has_value())
+        tcp_receive_timeout = global_overrides.tcp_receive_timeout.value();
+
+    if (global_overrides.tcp_keep_alive_timeout.has_value())
+        tcp_keep_alive_timeout = global_overrides.tcp_keep_alive_timeout.value();
+}
+
+void TCPInterfaceConfigBase::updateConfig(const Settings & settings)
+{
+    MultiEndpointInterfaceConfigBase::updateConfig(settings);
+
+    if (settings.has("connection_timeout"))
+        tcp_connection_timeout = std::chrono::seconds{settings.connect_timeout};
+
+    if (settings.has("send_timeout"))
+        tcp_send_timeout = std::chrono::seconds{settings.send_timeout};
+
+    if (settings.has("receive_timeout"))
+        tcp_receive_timeout = std::chrono::seconds{settings.receive_timeout};
+/*
+    if (settings.has("keep_alive_timeout"))
+        tcp_keep_alive_timeout = std::chrono::seconds{settings.keep_alive_timeout};
+
+
+    if (settings.has("tcp_connection_timeout"))
+        tcp_connection_timeout = std::chrono::seconds{settings.tcp_connection_timeout};
+
+    if (settings.has("tcp_send_timeout"))
+        tcp_send_timeout = std::chrono::seconds{settings.tcp_send_timeout};
+
+    if (settings.has("tcp_receive_timeout"))
+        tcp_receive_timeout = std::chrono::seconds{settings.tcp_receive_timeout};
+*/
+    if (settings.has("tcp_keep_alive_timeout"))
+        tcp_keep_alive_timeout = std::chrono::seconds{settings.tcp_keep_alive_timeout};
+}
+
 HTTPInterfaceConfigBase::HTTPInterfaceConfigBase(const std::string & name_, const std::string & protocol_)
     : TCPInterfaceConfigBase(name_, protocol_)
 {
@@ -408,16 +477,10 @@ HTTPInterfaceConfigBase::HTTPInterfaceConfigBase(const std::string & name_, cons
 
 void HTTPInterfaceConfigBase::updateConfig(
     const Poco::Util::AbstractConfiguration & config,
-    const Settings & settings,
     const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
 )
 {
-    TCPInterfaceConfigBase::updateConfig(config, settings, proxies_);
-
-    http_connection_timeout = std::chrono::seconds{settings.http_connection_timeout};
-    http_send_timeout = std::chrono::seconds{settings.http_send_timeout};
-    http_receive_timeout = std::chrono::seconds{settings.http_receive_timeout};
-//  http_keep_alive_timeout = std::chrono::seconds{settings.http_keep_alive_timeout};
+    TCPInterfaceConfigBase::updateConfig(config, proxies_);
 
     if (config.has("connection_timeout"))
         http_connection_timeout = std::chrono::seconds{config.getUInt64("connection_timeout")};
@@ -431,6 +494,7 @@ void HTTPInterfaceConfigBase::updateConfig(
     if (config.has("keep_alive_timeout"))
         http_keep_alive_timeout = std::chrono::seconds{config.getUInt64("keep_alive_timeout")};
 
+
     if (config.has("http_connection_timeout"))
         http_connection_timeout = std::chrono::seconds{config.getUInt64("http_connection_timeout")};
 
@@ -442,6 +506,67 @@ void HTTPInterfaceConfigBase::updateConfig(
 
     if (config.has("http_keep_alive_timeout"))
         http_keep_alive_timeout = std::chrono::seconds{config.getUInt64("http_keep_alive_timeout")};
+}
+
+void HTTPInterfaceConfigBase::updateConfig(const LegacyGlobalConfigOverrides & global_overrides)
+{
+    TCPInterfaceConfigBase::updateConfig(global_overrides);
+
+    if (global_overrides.connection_timeout.has_value())
+        http_connection_timeout = global_overrides.connection_timeout.value();
+
+    if (global_overrides.send_timeout.has_value())
+        http_send_timeout = global_overrides.send_timeout.value();
+
+    if (global_overrides.receive_timeout.has_value())
+        http_receive_timeout = global_overrides.receive_timeout.value();
+
+    if (global_overrides.keep_alive_timeout.has_value())
+        http_keep_alive_timeout = global_overrides.keep_alive_timeout.value();
+
+
+    if (global_overrides.http_connection_timeout.has_value())
+        http_connection_timeout = global_overrides.http_connection_timeout.value();
+
+    if (global_overrides.http_send_timeout.has_value())
+        http_send_timeout = global_overrides.http_send_timeout.value();
+
+    if (global_overrides.http_receive_timeout.has_value())
+        http_receive_timeout = global_overrides.http_receive_timeout.value();
+
+    if (global_overrides.http_keep_alive_timeout.has_value())
+        http_keep_alive_timeout = global_overrides.http_keep_alive_timeout.value();
+}
+
+void HTTPInterfaceConfigBase::updateConfig(const Settings & settings)
+{
+    TCPInterfaceConfigBase::updateConfig(settings);
+
+    if (settings.has("connection_timeout"))
+        http_connection_timeout = std::chrono::seconds{settings.connect_timeout};
+
+    if (settings.has("send_timeout"))
+        http_send_timeout = std::chrono::seconds{settings.send_timeout};
+
+    if (settings.has("receive_timeout"))
+        http_receive_timeout = std::chrono::seconds{settings.receive_timeout};
+/*
+    if (settings.has("keep_alive_timeout"))
+        http_keep_alive_timeout = std::chrono::seconds{settings.keep_alive_timeout};
+*/
+
+    if (settings.has("http_connection_timeout"))
+        http_connection_timeout = std::chrono::seconds{settings.http_connection_timeout};
+
+    if (settings.has("http_send_timeout"))
+        http_send_timeout = std::chrono::seconds{settings.http_send_timeout};
+
+    if (settings.has("http_receive_timeout"))
+        http_receive_timeout = std::chrono::seconds{settings.http_receive_timeout};
+/*
+    if (settings.has("http_keep_alive_timeout"))
+        http_keep_alive_timeout = std::chrono::seconds{settings.http_keep_alive_timeout};
+*/
 }
 
 NativeTCPInterfaceConfig::NativeTCPInterfaceConfig(const std::string & name_)
@@ -483,14 +608,16 @@ void NativeTCPInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapte
 
 std::unique_ptr<NativeTCPInterfaceConfig> NativeTCPInterfaceConfig::tryParseLegacyInterface(
     const bool secure_,
+    const LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
     const Settings & settings
 )
 {
-    return tryParseLegacyTCPInterface<NativeTCPInterfaceConfig>(
+    return tryParseLegacyInterfaceHelper<NativeTCPInterfaceConfig>(
         secure_,
         (secure_ ? "tcp_port_secure" : "tcp_port"),
         (secure_ ? "LegacySecureNativeTCP" : "LegacyPlainNativeTCP"),
+        global_overrides,
         config,
         settings
     );
@@ -542,14 +669,16 @@ void NativeHTTPInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapt
 
 std::unique_ptr<NativeHTTPInterfaceConfig> NativeHTTPInterfaceConfig::tryParseLegacyInterface(
     const bool secure_,
+    const LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
     const Settings & settings
 )
 {
-    return tryParseLegacyHTTPInterface<NativeHTTPInterfaceConfig>(
+    return tryParseLegacyInterfaceHelper<NativeHTTPInterfaceConfig>(
         secure_,
         (secure_ ? "https_port" : "http_port"),
         (secure_ ? "LegacyNativeHTTPS" : "LegacyNativeHTTP"),
+        global_overrides,
         config,
         settings
     );
@@ -562,11 +691,10 @@ NativeGRPCInterfaceConfig::NativeGRPCInterfaceConfig(const std::string & name_)
 
 void NativeGRPCInterfaceConfig::updateConfig(
     const Poco::Util::AbstractConfiguration & config,
-    const Settings & settings,
     const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
 )
 {
-    MultiEndpointInterfaceConfigBase::updateConfig(config, settings, proxies_);
+    MultiEndpointInterfaceConfigBase::updateConfig(config, proxies_);
 
     if (config.has("allow_direct") && !config.getBool("allow_direct"))
         throw Exception("Since proxies are not supported for Native gRPC connections, allow_direct, if specified, must be set to true", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
@@ -594,7 +722,9 @@ void NativeGRPCInterfaceConfig::createSingleServer([[maybe_unused]] ProtocolServ
 }
 
 std::unique_ptr<NativeGRPCInterfaceConfig> NativeGRPCInterfaceConfig::tryParseLegacyInterface(
-    const Poco::Util::AbstractConfiguration & config
+    const LegacyGlobalConfigOverrides & global_overrides,
+    const Poco::Util::AbstractConfiguration & config,
+    const Settings & settings
 )
 {
     const std::string port_prefix = "grpc_port";
@@ -607,12 +737,11 @@ std::unique_ptr<NativeGRPCInterfaceConfig> NativeGRPCInterfaceConfig::tryParseLe
     if (raw_port > std::numeric_limits<decltype(port)>::max())
         throw Exception{"Value for port is out of range", ErrorCodes::INVALID_CONFIG_PARAMETER};
 
-    const auto legacy_values = getCommonLegacyConfigValues(config);
     auto interface = std::make_unique<NativeGRPCInterfaceConfig>("LegacyGRPC");
 
-    interface->hosts = legacy_values.listen_host;
+    interface->updateConfig(global_overrides);
     interface->port = raw_port;
-    interface->try_listen = legacy_values.listen_try;
+    interface->updateConfig(settings);
 
     return interface;
 }
@@ -663,14 +792,16 @@ void InterserverHTTPInterfaceConfig::createSingleServer(ProtocolServerAdapter & 
 
 std::unique_ptr<InterserverHTTPInterfaceConfig> InterserverHTTPInterfaceConfig::tryParseLegacyInterface(
     const bool secure_,
+    const LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
     const Settings & settings
 )
 {
-    return tryParseLegacyHTTPInterface<InterserverHTTPInterfaceConfig>(
+    return tryParseLegacyInterfaceHelper<InterserverHTTPInterfaceConfig>(
         secure_,
         (secure_ ? "interserver_https_port" : "interserver_http_port"),
         (secure_ ? "LegacyInterserverHTTPS" : "LegacyInterserverHTTP"),
+        global_overrides,
         config,
         settings
     );
@@ -695,14 +826,16 @@ void MySQLInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapter, c
 }
 
 std::unique_ptr<MySQLInterfaceConfig> MySQLInterfaceConfig::tryParseLegacyInterface(
+    const LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
     const Settings & settings
 )
 {
-    return tryParseLegacyTCPInterface<MySQLInterfaceConfig>(
+    return tryParseLegacyInterfaceHelper<MySQLInterfaceConfig>(
         false,
         "mysql_port",
         "LegacyMySQL",
+        global_overrides,
         config,
         settings
     );
@@ -727,14 +860,16 @@ void PostgreSQLInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapt
 }
 
 std::unique_ptr<PostgreSQLInterfaceConfig> PostgreSQLInterfaceConfig::tryParseLegacyInterface(
+    const LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
     const Settings & settings
 )
 {
-    return tryParseLegacyTCPInterface<PostgreSQLInterfaceConfig>(
+    return tryParseLegacyInterfaceHelper<PostgreSQLInterfaceConfig>(
         false,
         "postgresql_port",
         "LegacyPostgreSQL",
+        global_overrides,
         config,
         settings
     );
@@ -766,14 +901,16 @@ void PrometheusInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapt
 }
 
 std::unique_ptr<PrometheusInterfaceConfig> PrometheusInterfaceConfig::tryParseLegacyInterface(
+    const LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
     const Settings & settings
 )
 {
-    return tryParseLegacyHTTPInterface<PrometheusInterfaceConfig>(
+    return tryParseLegacyInterfaceHelper<PrometheusInterfaceConfig>(
         false,
         "prometheus.port",
         "LegacyPrometheus",
+        global_overrides,
         config,
         settings
     );
@@ -822,14 +959,16 @@ void KeeperTCPInterfaceConfig::createSingleServer([[maybe_unused]] ProtocolServe
 
 std::unique_ptr<KeeperTCPInterfaceConfig> KeeperTCPInterfaceConfig::tryParseLegacyInterface(
     const bool secure_,
+    const LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
     const Settings & settings
 )
 {
-    return tryParseLegacyTCPInterface<KeeperTCPInterfaceConfig>(
+    return tryParseLegacyInterfaceHelper<KeeperTCPInterfaceConfig>(
         secure_,
         (secure_ ? "keeper_server.tcp_port_secure" : "keeper_server.tcp_port"),
         (secure_ ? "LegacyЫусгкуKeeperTCP" : "LegacyPlainKeeperTCP"),
+        global_overrides,
         config,
         settings
     );
@@ -858,13 +997,14 @@ std::unique_ptr<ProtocolInterfaceConfig> makeInterface(
 std::unique_ptr<ProtocolInterfaceConfig> parseInterface(
     const std::string & name,
     const std::string & protocol,
+    const LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
-    const Settings & settings,
-    const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies
+    const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies,
+    const Settings & settings
 )
 {
     auto interface = makeInterface(name, protocol);
-    interface->updateConfig(config, settings, proxies);
+    interface->updateConfig(global_overrides, config, proxies, settings);
     return interface;
 }
 
@@ -888,25 +1028,39 @@ std::map<std::string, std::unique_ptr<ProtocolInterfaceConfig>> parseInterfaces(
         return true;
     };
 
+    const LegacyGlobalConfigOverrides global_overrides(config);
+
     // Legacy interface configs:
 
-    const auto has_legacy_plain_native_tcp_config = add_interface(NativeTCPInterfaceConfig::tryParseLegacyInterface(/*secure = */false, config, settings));
-    const auto has_legacy_secure_native_tcp_config = add_interface(NativeTCPInterfaceConfig::tryParseLegacyInterface(/*secure = */true, config, settings));
+    const auto has_legacy_plain_native_tcp_config = add_interface(
+        NativeTCPInterfaceConfig::tryParseLegacyInterface(/*secure = */false, global_overrides, config, settings));
+    const auto has_legacy_secure_native_tcp_config = add_interface(
+        NativeTCPInterfaceConfig::tryParseLegacyInterface(/*secure = */true, global_overrides, config, settings));
 
-    const auto has_legacy_plain_native_http_config = add_interface(NativeHTTPInterfaceConfig::tryParseLegacyInterface(/*secure = */false, config, settings));
-    const auto has_legacy_secure_native_http_config = add_interface(NativeHTTPInterfaceConfig::tryParseLegacyInterface(/*secure = */true, config, settings));
+    const auto has_legacy_plain_native_http_config = add_interface(
+        NativeHTTPInterfaceConfig::tryParseLegacyInterface(/*secure = */false, global_overrides, config, settings));
+    const auto has_legacy_secure_native_http_config = add_interface(
+        NativeHTTPInterfaceConfig::tryParseLegacyInterface(/*secure = */true, global_overrides, config, settings));
 
-    const auto has_legacy_native_grpc_config = add_interface(NativeGRPCInterfaceConfig::tryParseLegacyInterface(config));
+    const auto has_legacy_native_grpc_config = add_interface(
+        NativeGRPCInterfaceConfig::tryParseLegacyInterface(global_overrides, config, settings));
 
-    const auto has_legacy_plain_interserver_http_config = add_interface(InterserverHTTPInterfaceConfig::tryParseLegacyInterface(/*secure = */false, config, settings));
-    const auto has_legacy_secure_interserver_http_config = add_interface(InterserverHTTPInterfaceConfig::tryParseLegacyInterface(/*secure = */true, config, settings));
+    const auto has_legacy_plain_interserver_http_config = add_interface(
+        InterserverHTTPInterfaceConfig::tryParseLegacyInterface(/*secure = */false, global_overrides, config, settings));
+    const auto has_legacy_secure_interserver_http_config = add_interface(
+        InterserverHTTPInterfaceConfig::tryParseLegacyInterface(/*secure = */true, global_overrides, config, settings));
 
-    const auto has_legacy_mysql_config = add_interface(MySQLInterfaceConfig::tryParseLegacyInterface(config, settings));
-    const auto has_legacy_postgresql_config = add_interface(PostgreSQLInterfaceConfig::tryParseLegacyInterface(config, settings));
-    const auto has_legacy_prometheus_config = add_interface(PrometheusInterfaceConfig::tryParseLegacyInterface(config, settings));
+    const auto has_legacy_mysql_config = add_interface(
+        MySQLInterfaceConfig::tryParseLegacyInterface(global_overrides, config, settings));
+    const auto has_legacy_postgresql_config = add_interface(
+        PostgreSQLInterfaceConfig::tryParseLegacyInterface(global_overrides, config, settings));
+    const auto has_legacy_prometheus_config = add_interface(
+        PrometheusInterfaceConfig::tryParseLegacyInterface(global_overrides, config, settings));
 
-    const auto has_legacy_plain_keeper_tcp_config = add_interface(KeeperTCPInterfaceConfig::tryParseLegacyInterface(/*secure = */false, config, settings));
-    const auto has_legacy_secure_keeper_tcp_config = add_interface(KeeperTCPInterfaceConfig::tryParseLegacyInterface(/*secure = */true, config, settings));
+    const auto has_legacy_plain_keeper_tcp_config = add_interface(
+        KeeperTCPInterfaceConfig::tryParseLegacyInterface(/*secure = */false, global_overrides, config, settings));
+    const auto has_legacy_secure_keeper_tcp_config = add_interface(
+        KeeperTCPInterfaceConfig::tryParseLegacyInterface(/*secure = */true, global_overrides, config, settings));
 
     // Regular interface configs:
 
@@ -945,7 +1099,7 @@ std::map<std::string, std::unique_ptr<ProtocolInterfaceConfig>> parseInterfaces(
 
         Poco::AutoPtr<Poco::Util::AbstractConfiguration> interface_config(
             const_cast<Poco::Util::AbstractConfiguration &>(config).createView(prefix));
-        add_interface(parseInterface(key, protocol, *interface_config, settings, proxies));
+        add_interface(parseInterface(key, protocol, global_overrides, *interface_config, proxies, settings));
     }
 
     return interfaces;
