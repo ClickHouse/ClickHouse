@@ -229,7 +229,7 @@ void loadEncryptionKey(const std::string & key_command [[maybe_unused]], Poco::L
 {
 #if USE_BASE64 && USE_SSL && USE_INTERNAL_SSL_LIBRARY
 
-    auto process = ShellCommand::execute(key_command);
+    auto process = DB::ShellCommand::execute(key_command);
 
     std::string b64_key;
     readStringUntilEOF(b64_key, process->out);
@@ -246,12 +246,12 @@ void loadEncryptionKey(const std::string & key_command [[maybe_unused]], Poco::L
     const size_t key_size = tb64dec(reinterpret_cast<const unsigned char *>(b64_key.data()), b64_key.size(),
                                     reinterpret_cast<unsigned char *>(buf.data()));
     if (!key_size)
-        throw Exception("Failed to decode encryption key", ErrorCodes::INCORRECT_DATA);
+        throw DB::Exception("Failed to decode encryption key", DB::ErrorCodes::INCORRECT_DATA);
     else if (key_size < 16)
         LOG_WARNING(log, "The encryption key should be at least 16 octets long.");
 
     const std::string_view key = std::string_view(buf.data(), key_size);
-    CompressionCodecEncrypted::setMasterKey(key);
+    DB::CompressionCodecEncrypted::setMasterKey(key);
 
 #else
     LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
