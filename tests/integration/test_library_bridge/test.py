@@ -115,7 +115,7 @@ def test_load_ids(ch_cluster):
     assert(result.strip() == '100')
 
     # Just check bridge is ok with a large vector of random ids
-    instance.query('''select number, dictGet(lib_dict_c, 'value1', toUInt64(rand())) from numbers(5000);''')
+    instance.query('''select number, dictGet(lib_dict_c, 'value1', toUInt64(rand())) from numbers(1000);''')
 
     result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(1));''')
     assert(result.strip() == '101')

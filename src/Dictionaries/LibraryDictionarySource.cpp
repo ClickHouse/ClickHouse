@@ -55,13 +55,14 @@ LibraryDictionarySource::LibraryDictionarySource(
         .library_settings = getLibrarySettingsString(config, config_prefix + ".settings"),
         .dict_attributes = getDictAttributesString()
     };
-    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, library_data);
-    auto res = bridge_helper->initLibrary();
 
-    if (!res)
-        throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to create shared library from path: {}", path);
-    else
+    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, library_data);
+
+    bool initialized = bridge_helper->initLibrary();
+    if (initialized)
         bridge_helper->setInitialized();
+    else
+        throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to create shared library from path: {}", path);
 }
 
 
@@ -90,7 +91,11 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , description{other.description}
 {
     bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, other.bridge_helper->getLibraryData());
-    bridge_helper->cloneLibrary(other.dictionary_id);
+    bool cloned = bridge_helper->cloneLibrary(other.dictionary_id);
+    if (cloned)
+        bridge_helper->setInitialized();
+    else
+        throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to clone library");
 }
 
 
@@ -116,7 +121,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
 BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
-    return bridge_helper->loadIds(getDictIdsString(ids), ids);
+    return bridge_helper->loadIds(ids);
 }
 
 
@@ -160,14 +165,6 @@ String LibraryDictionarySource::getLibrarySettingsString(const Poco::Util::Abstr
     }
 
     writeVectorBinary(settings, out);
-    return out.str();
-}
-
-
-String LibraryDictionarySource::getDictIdsString(const std::vector<UInt64> & ids)
-{
-    WriteBufferFromOwnString out;
-    writeVectorBinary(ids, out);
     return out.str();
 }
 
