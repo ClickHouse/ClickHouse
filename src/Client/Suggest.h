@@ -19,21 +19,31 @@ class Suggest : public LineReader::Suggest, boost::noncopyable
 {
 public:
     Suggest();
+
     ~Suggest()
     {
         if (loading_thread.joinable())
             loading_thread.join();
     }
 
+    /// Load suggestions for clickhouse-client.
     void load(const ConnectionParameters & connection_parameters, size_t suggestion_limit);
+
+    /// Load suggestions for clickhouse-local.
+    void load(ContextMutablePtr context, size_t suggestion_limit);
 
     /// Older server versions cannot execute the query above.
     static constexpr int MIN_SERVER_REVISION = 54406;
 
 private:
-
     void loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit);
+
+    void loadImpl(ContextMutablePtr context, size_t suggestion_limit);
+
     void fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query);
+
+    void fetch(ContextMutablePtr context, const std::string & query);
+
     void fillWordsFromBlock(const Block & block);
 
     /// Words are fetched asynchronously.

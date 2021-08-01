@@ -44,6 +44,8 @@ protected:
 
     String getQueryTextPrefix() override;
 
+    void loadSuggestionData(Suggest &) override;
+
 
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &) override;
 

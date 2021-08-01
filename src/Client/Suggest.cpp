@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/executeQuery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -70,6 +71,37 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
     });
 }
 
+void Suggest::load(ContextMutablePtr context, size_t suggestion_limit)
+{
+    loading_thread = std::thread([context, suggestion_limit, this]
+    {
+        try
+        {
+            ThreadStatus thread_status;
+            CurrentThread::QueryScope query_scope_holder(context);
+            loadImpl(context, suggestion_limit);
+        }
+        catch (...)
+        {
+            std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+        }
+
+        /// Note that keyword suggestions are available even if we cannot load data from server.
+
+        std::sort(words.begin(), words.end());
+        words_no_case = words;
+        std::sort(words_no_case.begin(), words_no_case.end(), [](const std::string & str1, const std::string & str2)
+        {
+            return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
+            {
+                return std::tolower(char1) < std::tolower(char2);
+            });
+        });
+
+        ready = true;
+    });
+}
+
 Suggest::Suggest()
 {
     /// Keywords may be not up to date with ClickHouse parser.
@@ -88,11 +120,10 @@ Suggest::Suggest()
              "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE"};
 }
 
-void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
+static String getLoadSuggestionQuery(size_t suggestion_limit)
 {
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
-
     WriteBufferFromOwnString query;
     query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
         "SELECT name FROM system.functions"
@@ -133,8 +164,17 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
     }
 
     query << ") WHERE notEmpty(res)";
+    return query.str();
+}
 
-    fetch(connection, timeouts, query.str());
+void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
+{
+    fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit));
+}
+
+void Suggest::loadImpl(ContextMutablePtr context, size_t suggestion_limit)
+{
+    executeQuery(getLoadSuggestionQuery(suggestion_limit), context);
 }
 
 void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query)

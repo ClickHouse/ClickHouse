@@ -95,7 +95,7 @@ protected:
     /// For non-interactive multi-query mode get queries text prefix.
     virtual String getQueryTextPrefix() { return ""; }
 
-    virtual void loadSuggestionData(Suggest &) {}
+    virtual void loadSuggestionData(Suggest &) = 0;
 
 
     void resetOutput();
