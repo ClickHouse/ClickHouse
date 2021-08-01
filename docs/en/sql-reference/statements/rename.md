@@ -5,11 +5,11 @@ toc_title: RENAME
 
 # RENAME Statement {#misc_operations-rename}
 
-Renames databases, tables and dictionaries. Several entities can be renamed in a single query.
+Renames databases, tables or dictionaries. Several entities can be renamed in a single query.
 Note that the `RENAME` query with several entities is non-atomic operation. To swap entity names atomically, use [EXCHANGE](./exchange.md) statement.
 
 !!! note "Note"
-    A `RENAME` query is supported by [Atomic](../../engines/database-engines/atomic.md) database engine only.
+    The `RENAME` query is supported by the [Atomic](../../engines/database-engines/atomic.md) database engine only.
 
 **Syntax**
 
@@ -19,12 +19,11 @@ RENAME DATABASE|TABLE|DICTIONARY name TO new_name [,...] [ON CLUSTER cluster]
 
 ## RENAME DATABASE {#misc_operations-rename_database}
 
-Renames databases. I
+Renames databases.
 
 **Syntax**
 
-sql
-```
+```sql
 RENAME DATABASE atomic_database1 TO atomic_database2 [,...] [ON CLUSTER cluster]
 ```
 
@@ -32,14 +31,14 @@ RENAME DATABASE atomic_database1 TO atomic_database2 [,...] [ON CLUSTER cluster]
 
 Renames one or more tables.
 
+Renaming tables is a light operation. If you pass a different database after `TO`, the table will be moved to this database. However, the directories with databases must reside in the same file system. Otherwise, an error is returned. 
+If you rename multiple tables in one query, the operation is not atomic. It may be partially executed, and queries in other sessions may get `Table ... does not exist ...` error.
+
 **Syntax**
 
 ``` sql
 RENAME TABLE [db1.]name1 TO [db2.]name2 [,...] [ON CLUSTER cluster]
 ```
-
-Renaming tables is a light operation. If you pass a different database after `TO`, the table will be moved to this database. However, the directories with databases must reside in the same file system. Otherwise, an error is returned. 
-If you rename multiple tables in one query, this is a non-atomic operation, it may be partially executed, queries in other sessions may receive the error `Table ... does not exist ..`.
 
 **Example**
 
