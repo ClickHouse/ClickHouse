@@ -391,6 +391,9 @@ void PipelineExecutor::finish()
 
 void PipelineExecutor::execute(size_t num_threads)
 {
+    if (num_threads < 1)
+        num_threads = 1;
+
     try
     {
         executeImpl(num_threads);

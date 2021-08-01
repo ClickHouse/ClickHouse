@@ -20,6 +20,29 @@ Possible values:
 -   `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
 -   `allow` — Allows the use of these types of subqueries.
 
+## prefer_global_in_and_join {#prefer-global-in-and-join}
+
+Enables the replacement of `IN`/`JOIN` operators with `GLOBAL IN`/`GLOBAL JOIN`.
+
+Possible values:
+
+-   0 — Disabled. `IN`/`JOIN` operators are not replaced with `GLOBAL IN`/`GLOBAL JOIN`.
+-   1 — Enabled. `IN`/`JOIN` operators are replaced with `GLOBAL IN`/`GLOBAL JOIN`.
+
+Default value: `0`.
+
+**Usage**
+
+Although `SET distributed_product_mode=global` can change the queries behavior for the distributed tables, it's not suitable for local tables or tables from external resources. Here is when the `prefer_global_in_and_join` setting comes into play.
+
+For example, we have query serving nodes that contain local tables, which are not suitable for distribution. We need to scatter their data on the fly during distributed processing with the `GLOBAL` keyword — `GLOBAL IN`/`GLOBAL JOIN`.
+
+Another use case of `prefer_global_in_and_join` is accessing tables created by external engines. This setting helps to reduce the number of calls to external sources while joining such tables: only one call per query.
+
+**See also:**
+
+-   [Distributed subqueries](../../sql-reference/operators/in.md#select-distributed-subqueries) for more information on how to use `GLOBAL IN`/`GLOBAL JOIN`
+
 ## enable_optimize_predicate_expression {#enable-optimize-predicate-expression}
 
 Turns on predicate pushdown in `SELECT` queries.
@@ -152,6 +175,26 @@ Possible values:
 -   Positive integer.
 
 Default value: 1048576.
+
+## table_function_remote_max_addresses {#table_function_remote_max_addresses}
+
+Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
+##  glob_expansion_max_elements  {#glob_expansion_max_elements }
+
+Sets the maximum number of addresses generated from patterns for external storages and table functions (like [url](../../sql-reference/table-functions/url.md)) except the `remote` function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
 
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
@@ -508,6 +551,23 @@ Possible values:
 -   `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
 Default value: `ALL`.
+
+## join_algorithm {#settings-join_algorithm}
+
+Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
+
+Possible values:
+
+- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
+- `partial_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
+- `prefer_partial_merge` — ClickHouse always tries to use `merge` join if possible.
+- `auto` — ClickHouse tries to change `hash` join to `merge` join on the fly to avoid out of memory.
+
+Default value: `hash`.
+
+When using `hash` algorithm the right part of `JOIN` is uploaded into RAM.
+
+When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to the disk. The `merge` algorithm in ClickHouse differs a bit from the classic realization. First ClickHouse sorts the right table by [join key](../../sql-reference/statements/select/join.md#select-join) in blocks and creates min-max index for sorted blocks. Then it sorts parts of left table by `join key` and joins them over right table. The min-max index is also used to skip unneeded right table blocks.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
@@ -1214,7 +1274,7 @@ Default value: `3`.
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
-Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations. 
+Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
 
 Possible values:
 
@@ -2007,13 +2067,13 @@ Default value: 16.
 
 ## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
 
-Sleep time for merge selecting when no part selected, a lower setting will trigger selecting tasks in background_schedule_pool frequently which result in large amount of requests to zookeeper in large-scale clusters
+Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to Zookeeper in large-scale clusters.
 
 Possible values:
 
 -   Any positive integer.
 
-Default value: 5000 
+Default value: `5000`.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
@@ -2890,7 +2950,7 @@ Result:
 └─────────────┘
 ```
 
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
+Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md) behaviour.
 
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 
@@ -3172,7 +3232,7 @@ Default value: `300`.
 
 ## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
 
-Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite. 
+Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite.
 
 Possible values:
 

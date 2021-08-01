@@ -32,7 +32,7 @@ public:
 
     void run() final;
 
-private:
+protected:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::MySQLConnection};
 
     /// Enables SSL, if client requested.
@@ -52,33 +52,25 @@ private:
     virtual void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet);
 
     IServer & server;
-
-protected:
     Poco::Logger * log;
-
-    MySQLWireContext connection_context_mysql;
-    ContextMutablePtr connection_context;
-
-    MySQLProtocol::PacketEndpointPtr packet_endpoint;
-
-private:
     UInt64 connection_id = 0;
 
-    size_t server_capability_flags = 0;
-    size_t client_capability_flags = 0;
+    uint32_t server_capabilities = 0;
+    uint32_t client_capabilities = 0;
+    size_t max_packet_size = 0;
+    uint8_t sequence_id = 0;
 
-protected:
-    std::unique_ptr<MySQLProtocol::Authentication::IPlugin> auth_plugin;
+    MySQLProtocol::PacketEndpointPtr packet_endpoint;
+    ContextMutablePtr connection_context;
 
-    std::shared_ptr<ReadBuffer> in;
-    std::shared_ptr<WriteBuffer> out;
-
-    bool secure_connection = false;
-
-private:
     using ReplacementFn = std::function<String(const String & query)>;
     using Replacements = std::unordered_map<std::string, ReplacementFn>;
     Replacements replacements;
+
+    std::unique_ptr<MySQLProtocol::Authentication::IPlugin> auth_plugin;
+    std::shared_ptr<ReadBuffer> in;
+    std::shared_ptr<WriteBuffer> out;
+    bool secure_connection = false;
 };
 
 #if USE_SSL
