@@ -5,10 +5,11 @@ toc_title: EXCHANGE
 
 # EXCHANGE Statement {#exchange}
 
-Exchanges names of two tables or dictionaries in an atomic query.
+Exchanges the names of two tables or dictionaries atomically.
+This task can also be accomplished with a [RENAME](./rename.md) query using a temporary name. But the operation in not atomic in that case.
 
 !!! note "Note"
-    An `EXCHANGE` query is supported by [Atomic](../../engines/database-engines/atomic.md) database engine only.
+    The `EXCHANGE` query is supported by the [Atomic](../../engines/database-engines/atomic.md) database engine only.
 
 **Syntax**
 
@@ -18,7 +19,7 @@ EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B
 
 ## EXCHANGE TABLES {#exchange_tables}
 
-Exchanges names of two tables in an atomic query.
+Exchanges the names of two tables.
 
 **Syntax**
 
@@ -28,7 +29,7 @@ EXCHANGE TABLES [db0.]table_A AND [db1.]table_B
 
 ## EXCHANGE DICTIONARIES {#exchange_dictionaries}
 
-Exchanges names of two dictionaries in an atomic query.
+Exchanges the names of two dictionaries.
 
 **Syntax**
 

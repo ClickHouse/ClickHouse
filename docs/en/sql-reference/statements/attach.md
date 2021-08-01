@@ -10,12 +10,12 @@ Attaches a table or a dictionary, for example, when moving a database to another
 **Syntax**
 
 ``` sql
-ATTACH TABLE|DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+ATTACH TABLE|DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
 ```
 
-The query does not create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table to the server. After executing an `ATTACH` query, the server will know about the existence of the table.
+The query does not create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table or the dictionary to the server. After executing the `ATTACH` query, the server will know about the existence of the table or the dictionary.
 
-If a table or a dictionary was previously detached ([DETACH](../../sql-reference/statements/detach.md) query), meaning that its structure is known, you can use shorthand without defining the structure.
+If a table was previously detached ([DETACH](../../sql-reference/statements/detach.md) query), meaning that its structure is known, you can use shorthand without defining the structure.
 
 ## Attach Existing Table {#attach-existing-table}
 
@@ -29,7 +29,7 @@ This query is used when starting the server. The server stores table metadata as
 
 If the table was detached permanently, it won't be reattached at the server start, so you need to use `ATTACH` query explicitly.
 
-## Сreate New Table And Attach Data {#create-new-table-and-attach-data}
+## Create New Table And Attach Data {#create-new-table-and-attach-data}
 
 **With specify path to table data**
 
