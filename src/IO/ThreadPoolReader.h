@@ -12,6 +12,23 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#if defined(__linux__)
+
+#include <sys/syscall.h>
+#include <sys/uio.h>
+
+/// We don't want to depend on specific glibc version.
+
+#if !defined(RWF_NOWAIT)
+    #define RWF_NOWAIT 8
+#endif
+
+#if !defined(SYS_preadv2)
+    #define SYS_preadv2 327 /// TODO: AArch64, PPC64
+#endif
+
+#endif
+
 
 namespace DB
 {
@@ -47,6 +64,7 @@ private:
 
     struct RequestInfo
     {
+        bool already_read = false;
         Poco::Event event;
         Result result;
     };
@@ -78,38 +96,105 @@ public:
             it = requests.emplace(std::piecewise_construct, std::forward_as_tuple(counter), std::forward_as_tuple()).first;
         }
 
-        pool.scheduleOrThrow([request, info = &it->second]
+        int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
+
+        RequestInfo & info = it->second;
+
+#if defined(__linux__)
+        /// Check if data is already in page cache with preadv2 syscall.
+
+        /// TODO ProfileEvents for page cache hits and misses.
+
+        /// We don't want to depend on new Linux kernel.
+        static std::atomic<bool> has_preadv2_syscall{true};
+
+        if (has_preadv2_syscall.load(std::memory_order_relaxed))
+        {
+            size_t bytes_read = 0;
+            while (!bytes_read)
             {
-                setThreadName("ThreadPoolRead");
+                struct iovec io_vec{ .iov_base = request.buf, .iov_len = request.size };
+                ssize_t res = syscall(
+                    SYS_preadv2, fd,
+                    &io_vec, 1,
+                    static_cast<long>(request.offset), static_cast<long>(request.offset >> 32),
+                    RWF_NOWAIT);
 
-                int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
-
-                /// TODO Instrumentation.
-
-                size_t bytes_read = 0;
-                while (!bytes_read)
+                if (!res)
                 {
-                    ssize_t res = ::pread(fd, request.buf, request.size, request.offset);
-                    if (!res)
-                        break;
+                    info.already_read = true;
+                    break;
+                }
 
-                    if (-1 == res && errno != EINTR)
+                if (-1 == res)
+                {
+                    if (errno == ENOSYS)
                     {
-                        info->result.exception = std::make_exception_ptr(ErrnoException(
+                        has_preadv2_syscall.store(false, std::memory_order_relaxed);
+                        break;
+                    }
+                    else if (errno == EAGAIN)
+                    {
+                        /// Data is not available.
+                        break;
+                    }
+                    else if (errno == EINTR)
+                    {
+                        continue;
+                    }
+                    else
+                    {
+                        info.already_read = true;
+                        info.result.exception = std::make_exception_ptr(ErrnoException(
                             fmt::format("Cannot read from file {}, {}", fd,
                                 errnoToString(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno)),
                             ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno));
                         break;
                     }
-
-                    if (res > 0)
-                        bytes_read += res;
                 }
+                else
+                {
+                    bytes_read += res;
+                    info.already_read = true;
+                }
+            }
 
-                info->result.size = bytes_read;
-                info->event.set();
-            },
-            request.priority);
+            info.result.size = bytes_read;
+        }
+#endif
+
+        if (!info.already_read)
+        {
+            pool.scheduleOrThrow([request, fd, &info]
+                {
+                    setThreadName("ThreadPoolRead");
+
+                    /// TODO Instrumentation.
+
+                    size_t bytes_read = 0;
+                    while (!bytes_read)
+                    {
+                        ssize_t res = ::pread(fd, request.buf, request.size, request.offset);
+                        if (!res)
+                            break;
+
+                        if (-1 == res && errno != EINTR)
+                        {
+                            info.result.exception = std::make_exception_ptr(ErrnoException(
+                                fmt::format("Cannot read from file {}, {}", fd,
+                                    errnoToString(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno)),
+                                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno));
+                            break;
+                        }
+
+                        bytes_read += res;
+                    }
+
+                    info.result.size = bytes_read;
+                    info.event.set();
+                },
+                request.priority);
+        }
 
         return it->first;
     }
@@ -126,13 +211,16 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find request by id {}", id);
         }
 
-        if (microseconds)
+        if (!it->second.already_read)
         {
-            if (!it->second.event.tryWait(*microseconds / 1000))
-                return {};
+            if (microseconds)
+            {
+                if (!it->second.event.tryWait(*microseconds / 1000))
+                    return {};
+            }
+            else
+                it->second.event.wait();
         }
-        else
-            it->second.event.wait();
 
         Result res = it->second.result;
 
