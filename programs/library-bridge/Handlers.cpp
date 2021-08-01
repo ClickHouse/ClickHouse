@@ -40,13 +40,12 @@ namespace
         return sample_block;
     }
 
-    // std::vector<uint64_t> parseIdsFromBinary(const std::string & ids_string)
-    // {
-    //     ReadBufferFromString buf(ids_string);
-    //     std::vector<uint64_t> ids;
-    //     readVectorBinary(ids, buf);
-    //     return ids;
-    // }
+    std::vector<uint64_t> parseIdsFromBinary(ReadBuffer & buf)
+    {
+        std::vector<uint64_t> ids;
+        readVectorBinary(ids, buf);
+        return ids;
+    }
 
     std::vector<std::string> parseNamesFromBinary(const std::string & names_string)
     {
@@ -212,6 +211,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found dictionary with id: {}", dictionary_id);
 
             const auto & sample_block = library_handler->getSampleBlock();
+            LOG_DEBUG(log, "Calling loadAll() for dictionary id: {}", dictionary_id);
             auto input = library_handler->loadAll();
 
             LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);
@@ -222,23 +222,14 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         {
             LOG_DEBUG(log, "Getting diciontary ids for dictionary with id: {}", dictionary_id);
             String ids_string;
-            readString(ids_string, request.getStream());
-
-            Strings ids_strs;
-            splitInto<'-'>(ids_strs, ids_string);
-            std::vector<uint64_t> ids;
-            for (const auto & id : ids_strs)
-                ids.push_back(parse<uint64_t>(id));
-            if (ids.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Received no ids");
-
-            // std::vector<uint64_t> ids = parseIdsFromBinary(ids_string);
+            std::vector<uint64_t> ids = parseIdsFromBinary(request.getStream());
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             if (!library_handler)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found dictionary with id: {}", dictionary_id);
 
             const auto & sample_block = library_handler->getSampleBlock();
+            LOG_DEBUG(log, "Calling loadIds() for dictionary id: {}", dictionary_id);
             auto input = library_handler->loadIds(ids);
 
             LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);
@@ -277,6 +268,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found dictionary with id: {}", dictionary_id);
 
             const auto & sample_block = library_handler->getSampleBlock();
+            LOG_DEBUG(log, "Calling loadKeys() for dictionary id: {}", dictionary_id);
             auto input = library_handler->loadKeys(block.getColumns());
 
             LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);

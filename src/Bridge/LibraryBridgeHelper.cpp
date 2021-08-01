@@ -191,24 +191,11 @@ BlockInputStreamPtr LibraryBridgeHelper::loadAll()
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string, const std::vector<uint64_t> ids)
+BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string ids_str, const std::vector<uint64_t> ids)
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_IDS_METHOD);
-
-    uri.addQueryParameter("ids_num", toString(ids.size()));
-    String ids_str;
-    for (const auto & id : ids)
-    {
-        if (!ids_str.empty())
-            ids_str += '-';
-        ids_str += toString(id);
-    }
-
-    uri.addQueryParameter("ids", ids_str);
-    std::cerr << "\n\nLibraryBridgeHelper: " << toString(dictionary_id) << " , ids_num: " << ids.size() << " , ids: " << ids_str << std::endl << std::endl;
-    LOG_ERROR(log, "dictionary_id: {}, ids_num: {}, ids: {}", dictionary_id, ids.size(), ids_str);
-
+    uri.addQueryParameter("ids_num", toString(ids.size())); /// Not used parameter, but helpful
     return loadBase(uri, [ids_str](std::ostream & os) { os << ids_str; });
 }
 
