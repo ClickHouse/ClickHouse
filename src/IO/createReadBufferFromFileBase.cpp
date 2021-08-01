@@ -42,7 +42,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
     static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);
     //static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
-    static AsynchronousReaderPtr direct_reader = std::make_shared<AIOReader>(128, 1024);
+    //static AsynchronousReaderPtr direct_reader = std::make_shared<AIOReader>(128, 1024);
 
 #if defined(OS_LINUX) || defined(__FreeBSD__)
     if (direct_io_threshold && estimated_size >= direct_io_threshold)
@@ -84,7 +84,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         try
         {
             auto res = std::make_unique<AsynchronousReadBufferFromFileWithCache>(
-                direct_reader,
+                reader,
                 filename, buffer_size, (flags == -1 ? O_RDONLY | O_CLOEXEC : flags) | O_DIRECT, existing_memory, alignment);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
             return res;
