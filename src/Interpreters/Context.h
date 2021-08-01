@@ -14,21 +14,16 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/ThreadPool.h>
 #include <common/types.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
 #endif
 
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <thread>
 
 
 namespace Poco::Net { class IPAddress; }
@@ -67,6 +62,7 @@ class ProcessList;
 class QueryStatus;
 class Macros;
 struct Progress;
+struct FileProgress;
 class Clusters;
 class QueryLog;
 class QueryThreadLog;
@@ -366,22 +362,20 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user, checks the credentials and that the specified host is allowed.
-    /// Must be called before getClientInfo() can be called.
-    void setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address);
-    void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
+    /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
+    /// The function throws an exception if there is no such user or password is wrong.
+    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
+    void authenticate(const Credentials & credentials, const Poco::Net::SocketAddress & address);
 
-    /// Sets the current user, *does not check the password/credentials and that the specified host is allowed*.
-    /// Must be called before getClientInfo.
-    ///
-    /// (Used only internally in cluster, if the secret matches)
-    void setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address);
-
-    void setQuotaKey(String quota_key_);
+    /// Sets the current user assuming that he/she is already authenticated.
+    /// WARNING: This function doesn't check password! Don't use until it's necessary!
+    void setUser(const UUID & user_id_);
 
     UserPtr getUser() const;
     String getUserName() const;
     std::optional<UUID> getUserID() const;
+
+    void setQuotaKey(String quota_key_);
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
@@ -590,8 +584,6 @@ public:
 
     std::optional<UInt16> getTCPPortSecure() const;
 
-    std::shared_ptr<NamedSession> acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check);
-
     /// For methods below you may need to acquire the context lock by yourself.
 
     ContextMutablePtr getQueryContext() const;
@@ -602,7 +594,6 @@ public:
     bool hasSessionContext() const { return !session_context.expired(); }
 
     ContextMutablePtr getGlobalContext() const;
-
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
     {

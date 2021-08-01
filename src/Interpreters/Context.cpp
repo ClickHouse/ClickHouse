@@ -588,59 +588,50 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address)
+void Context::authenticate(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
-    auto lock = getLock();
+    authenticate(BasicCredentials(name, password), address);
+}
+
+void Context::authenticate(const Credentials & credentials, const Poco::Net::SocketAddress & address)
+{
+    auto authenticated_user_id = getAccessControlManager().login(credentials, address.host());
 
     client_info.current_user = credentials.getUserName();
     client_info.current_address = address;
 
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
-    client_info.current_password.clear();
     if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
         client_info.current_password = basic_credentials->getPassword();
 #endif
 
-    /// Find a user with such name and check the credentials.
-    auto new_user_id = getAccessControlManager().login(credentials, address.host());
-    auto new_access = getAccessControlManager().getContextAccess(
-        new_user_id, /* current_roles = */ {}, /* use_default_roles = */ true,
-        settings, current_database, client_info);
+    setUser(authenticated_user_id);
+}
 
-    user_id = new_user_id;
-    access = std::move(new_access);
+void Context::setUser(const UUID & user_id_)
+{
+    auto lock = getLock();
+
+    user_id = user_id_;
+
+    access = getAccessControlManager().getContextAccess(
+        user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
 
     auto user = access->getUser();
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
-    if (!user->default_database.empty())
-        setCurrentDatabase(user->default_database);
-
     auto default_profile_info = access->getDefaultProfileInfo();
     settings_constraints_and_current_profiles = default_profile_info->getConstraintsAndProfileIDs();
     applySettingsChanges(default_profile_info->settings);
-}
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
-{
-    setUser(BasicCredentials(name, password), address);
-}
-
-void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
-{
-    setUser(AlwaysAllowCredentials(name), address);
+    if (!user->default_database.empty())
+        setCurrentDatabase(user->default_database);
 }
 
 std::shared_ptr<const User> Context::getUser() const
 {
     return getAccess()->getUser();
-}
-
-void Context::setQuotaKey(String quota_key_)
-{
-    auto lock = getLock();
-    client_info.quota_key = std::move(quota_key_);
 }
 
 String Context::getUserName() const
@@ -652,6 +643,13 @@ std::optional<UUID> Context::getUserID() const
 {
     auto lock = getLock();
     return user_id;
+}
+
+
+void Context::setQuotaKey(String quota_key_)
+{
+    auto lock = getLock();
+    client_info.quota_key = std::move(quota_key_);
 }
 
 
@@ -736,10 +734,13 @@ ASTPtr Context::getRowPolicyCondition(const String & database, const String & ta
 void Context::setInitialRowPolicy()
 {
     auto lock = getLock();
-    auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
     initial_row_policy = nullptr;
-    if (initial_user_id)
-        initial_row_policy = getAccessControlManager().getEnabledRowPolicies(*initial_user_id, {});
+    if (client_info.initial_user == client_info.current_user)
+        return;
+    auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
+    if (!initial_user_id)
+        return;
+    initial_row_policy = getAccessControlManager().getEnabledRowPolicies(*initial_user_id, {});
 }
 
 
@@ -1180,6 +1181,9 @@ void Context::setCurrentQueryId(const String & query_id)
     }
 
     client_info.current_query_id = query_id_to_set;
+
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        client_info.initial_query_id = client_info.current_query_id;
 }
 
 void Context::killCurrentQuery()

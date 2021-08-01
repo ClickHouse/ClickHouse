@@ -39,6 +39,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("PostgreSQLHandler");
 
     IServer & server;
+    std::unique_ptr<Session> session;
     bool ssl_enabled = false;
     Int32 connection_id = 0;
     Int32 secret_key = 0;
@@ -57,7 +58,7 @@ private:
 
     void changeIO(Poco::Net::StreamSocket & socket);
 
-    bool startup(Session & session);
+    bool startup();
 
     void establishSecureConnection(Int32 & payload_size, Int32 & info);
 
@@ -65,11 +66,11 @@ private:
 
     void sendParameterStatusData(PostgreSQLProtocol::Messaging::StartupMessage & start_up_message);
 
-    void cancelRequest(Session & session);
+    void cancelRequest();
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> receiveStartupMessage(int payload_size);
 
-    void processQuery(DB::Session & session);
+    void processQuery();
 
     static bool isEmptyQuery(const String & query);
 };
