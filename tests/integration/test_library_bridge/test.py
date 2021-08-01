@@ -113,6 +113,10 @@ def test_load_ids(ch_cluster):
 
     result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(0));''')
     assert(result.strip() == '100')
+
+    # Just check bridge is ok with a large vector of random ids
+    instance.query('''select number, dictGet(lib_dict_c, 'value1', toUInt64(rand())) from numbers(5000);''')
+
     result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(1));''')
     assert(result.strip() == '101')
     instance.query('DROP DICTIONARY lib_dict_c')
@@ -219,6 +223,45 @@ def test_server_restart_bridge_might_be_stil_alive(ch_cluster):
     assert(result.strip() == '101')
 
     instance.query('DROP DICTIONARY lib_dict_c')
+
+
+def test_bridge_dies_with_parent(ch_cluster):
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+    if instance.is_built_with_address_sanitizer():
+        pytest.skip("Leak sanitizer falsely reports about a leak of 16 bytes in clickhouse-odbc-bridge")
+
+    create_dict_simple()
+    result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(1));''')
+    assert(result.strip() == '101')
+
+    clickhouse_pid = instance.get_process_pid("clickhouse server")
+    bridge_pid = instance.get_process_pid("library-bridge")
+    assert clickhouse_pid is not None
+    assert bridge_pid is not None
+
+    while clickhouse_pid is not None:
+        try:
+            instance.exec_in_container(["kill", str(clickhouse_pid)], privileged=True, user='root')
+        except:
+            pass
+        clickhouse_pid = instance.get_process_pid("clickhouse server")
+        time.sleep(1)
+
+    for i in range(30):
+        time.sleep(1)
+        bridge_pid = instance.get_process_pid("library-bridge")
+        if bridge_pid is None:
+            break
+
+    if bridge_pid:
+        out = instance.exec_in_container(["gdb", "-p", str(bridge_pid), "--ex", "thread apply all bt", "--ex", "q"],
+                                      privileged=True, user='root')
+        logging.debug(f"Bridge is running, gdb output:\n{out}")
+
+    assert clickhouse_pid is None
+    assert bridge_pid is None
+    instance.start_clickhouse(20)
 
 
 if __name__ == '__main__':
