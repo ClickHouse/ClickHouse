@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
 }
 
-void Suggest::load(const ConnectionParameters & connection_parameters, size_t suggestion_limit)
+void Suggest::load(const ConnectionParameters & connection_parameters, Int32 suggestion_limit)
 {
     loading_thread = std::thread([connection_parameters, suggestion_limit, this]
     {
@@ -71,35 +71,28 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
     });
 }
 
-void Suggest::load(ContextMutablePtr context, size_t suggestion_limit)
+void Suggest::load(ContextMutablePtr context, Int32 suggestion_limit)
 {
-    loading_thread = std::thread([context, suggestion_limit, this]
+    try
     {
-        try
-        {
-            ThreadStatus thread_status;
-            CurrentThread::QueryScope query_scope_holder(context);
-            loadImpl(context, suggestion_limit);
-        }
-        catch (...)
-        {
-            std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-        }
+        loadImpl(context, suggestion_limit);
+    }
+    catch (...)
+    {
+        std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+    }
 
-        /// Note that keyword suggestions are available even if we cannot load data from server.
-
-        std::sort(words.begin(), words.end());
-        words_no_case = words;
-        std::sort(words_no_case.begin(), words_no_case.end(), [](const std::string & str1, const std::string & str2)
+    std::sort(words.begin(), words.end());
+    words_no_case = words;
+    std::sort(words_no_case.begin(), words_no_case.end(), [](const std::string & str1, const std::string & str2)
+    {
+        return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
         {
-            return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
-            {
-                return std::tolower(char1) < std::tolower(char2);
-            });
+            return std::tolower(char1) < std::tolower(char2);
         });
-
-        ready = true;
     });
+
+    ready = true;
 }
 
 Suggest::Suggest()
@@ -120,7 +113,7 @@ Suggest::Suggest()
              "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE"};
 }
 
-static String getLoadSuggestionQuery(size_t suggestion_limit)
+static String getLoadSuggestionQuery(Int32 suggestion_limit)
 {
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
@@ -136,43 +129,49 @@ static String getLoadSuggestionQuery(size_t suggestion_limit)
         " UNION ALL "
         "SELECT name FROM system.data_type_families"
         " UNION ALL "
-        "SELECT name FROM system.merge_tree_settings"
-        " UNION ALL "
         "SELECT name FROM system.settings"
-        " UNION ALL "
-        "SELECT cluster FROM system.clusters"
-        " UNION ALL "
-        "SELECT macro FROM system.macros"
-        " UNION ALL "
-        "SELECT policy_name FROM system.storage_policies"
         " UNION ALL "
         "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
 
-    /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
-    if (suggestion_limit > 0)
+    /// If suggestion limit is < 0, show only most basic suggestions - only those, which are above.
+    if (suggestion_limit >= 0)
     {
-        String limit_str = toString(suggestion_limit);
-        query <<
+        query << " UNION ALL "
+            "SELECT name FROM system.merge_tree_settings"
             " UNION ALL "
-            "SELECT name FROM system.databases LIMIT " << limit_str
-            << " UNION ALL "
-            "SELECT DISTINCT name FROM system.tables LIMIT " << limit_str
-            << " UNION ALL "
-            "SELECT DISTINCT name FROM system.dictionaries LIMIT " << limit_str
-            << " UNION ALL "
-            "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
+            "SELECT cluster FROM system.clusters"
+            " UNION ALL "
+            "SELECT macro FROM system.macros"
+            " UNION ALL "
+            "SELECT policy_name FROM system.storage_policies"
+            " UNION ALL ";
+
+        /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
+        if (suggestion_limit > 0)
+        {
+            String limit_str = toString(suggestion_limit);
+            query <<
+                " UNION ALL "
+                "SELECT name FROM system.databases LIMIT " << limit_str
+                << " UNION ALL "
+                "SELECT DISTINCT name FROM system.tables LIMIT " << limit_str
+                << " UNION ALL "
+                "SELECT DISTINCT name FROM system.dictionaries LIMIT " << limit_str
+                << " UNION ALL "
+                "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
+        }
     }
 
     query << ") WHERE notEmpty(res)";
     return query.str();
 }
 
-void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
+void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, Int32 suggestion_limit)
 {
     fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit));
 }
 
-void Suggest::loadImpl(ContextMutablePtr context, size_t suggestion_limit)
+void Suggest::loadImpl(ContextMutablePtr context, Int32 suggestion_limit)
 {
     executeQuery(getLoadSuggestionQuery(suggestion_limit), context);
 }

@@ -13,6 +13,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <common/getFQDNOrHostName.h>
+#include <common/scope_guard_safe.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -219,9 +220,38 @@ std::string LocalServer::getInitialCreateTableQuery()
 
 void LocalServer::loadSuggestionData(Suggest & suggest)
 {
-    if (!config().getBool("disable_suggestion", false))
+    if (is_interactive && !config().getBool("disable_suggestion", false))
     {
-        suggest.load(query_context, config().getInt("suggestion_limit"));
+        /// -1 suggestion_limit - suggestion level, required for local-server.
+        suggest.load(query_context, -1);
+    }
+}
+
+
+void LocalServer::checkInterruptListener()
+{
+    if (!interrupt_listener)
+        return;
+
+    if (interrupt_listener->check() && !cancelled && interrupt_listener_mutex.try_lock())
+    {
+        try
+        {
+            progress_indication.clearProgressOutput();
+            std::cout << "Cancelling query." << std::endl;
+            cancelled = true;
+
+            current_query_executor->cancel();
+            current_query_executor.reset();
+
+            interrupt_listener->unblock();
+        }
+        catch (...)
+        {
+            cancelled = false;
+        }
+
+        interrupt_listener_mutex.unlock();
     }
 }
 
@@ -231,16 +261,18 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
     ReadBufferFromString read_buf(query_to_execute);
     WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
+    cancelled = false;
+
     /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
     /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
     /// first exception or whether we need to even rethrow it because there is --ignore-error.
     if (!ignore_error)
         local_server_exception.reset();
 
-    std::function<void(WriteBuffer & out, size_t result_rows)> flush_buffer_callback;
+    std::function<void(WriteBuffer & out, size_t result_rows)> flush_buffer_func;
     if (need_render_progress)
     {
-        flush_buffer_callback = [&](WriteBuffer & out, size_t result_rows)
+        flush_buffer_func = [&](WriteBuffer & out, size_t result_rows)
         {
             written_first_block = true;
             processed_rows = result_rows;
@@ -253,12 +285,30 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
             /// Restore progress bar after data block.
             if (need_render_progress)
                 progress_indication.writeProgress();
+
+            checkInterruptListener();
         };
     }
 
+    /// To process ctrl-c in interactive mode.
+    std::function<void(PipelineExecutorPtr)> set_executor_func;
+    if (is_interactive)
+    {
+        interrupt_listener.emplace();
+        set_executor_func = [&](PipelineExecutorPtr executor)
+        {
+            current_query_executor = executor;
+        };
+    }
+
+    SCOPE_EXIT_SAFE({
+        if (interrupt_listener)
+            interrupt_listener.reset();
+    });
+
     try
     {
-        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, {}, flush_buffer_callback);
+        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, {}, flush_buffer_func, set_executor_func);
         progress_indication.clearProgressOutput();
     }
     catch (...)
@@ -410,6 +460,7 @@ try
         /// Set progress callback, which can be run from multiple threads.
         query_context->setProgressCallback([&](const Progress & value)
         {
+            checkInterruptListener();
             onProgress(value);
         });
 
@@ -646,9 +697,7 @@ void LocalServer::addAndCheckOptions(OptionsDescription & options_description, p
         ("multiquery,n", "multiquery")
         ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
 
-        ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
-        ("suggestion_limit", po::value<int>()->default_value(10000),
-            "Suggestion limit for how many databases, tables and columns to fetch.")
+        ("disable_suggestion,A", "Disable loading suggestion data. Shorthand option -A is for those who get used to mysql client.")
         ;
 
     cmd_settings.addProgramOptions(options_description.main_description.value());
@@ -728,11 +777,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setBool("multiline", true);
     if (options.count("multiquery"))
         config().setBool("multiquery", true);
-
-    if (options.count("disable_suggestion"))
-        config().setBool("disable_suggestion", true);
-    if (options.count("suggestion_limit"))
-        config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
 }
 
 }

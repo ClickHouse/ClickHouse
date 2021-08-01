@@ -4,6 +4,7 @@
 
 #include <Common/ProgressIndication.h>
 #include <Common/StatusFile.h>
+#include <Common/InterruptListener.h>
 #include <loggers/Loggers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -80,6 +81,8 @@ private:
 
     void cleanup();
 
+    void checkInterruptListener();
+
     ContextMutablePtr query_context;
 
     std::optional<StatusFile> status;
@@ -89,6 +92,17 @@ private:
     void processQuery(const String & query, std::exception_ptr exception);
 
     std::optional<std::filesystem::path> temporary_directory_to_delete;
+
+    /// Used to cancel qeury on ctrl-c. Lives for single query execution.
+    std::optional<InterruptListener> interrupt_listener;
+
+    /// Used to cancel qeury on ctrl-c. Lives for single query execution.
+    PipelineExecutorPtr current_query_executor;
+
+    std::mutex interrupt_listener_mutex;
+
+    /// Is currently executed query was cancelled by ctrl-c in interactive mode?
+    bool cancelled = true;
 };
 
 }
