@@ -17,6 +17,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_REQUEST_PARAMETER;
+}
+
 namespace
 {
     void processError(HTTPServerResponse & response, const std::string & message)
@@ -190,7 +196,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         {
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             if (!library_handler)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found dictionary with id: {}", dictionary_id);
+                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
 
             bool res = library_handler->isModified();
             writeStringBinary(std::to_string(res), out);
@@ -199,7 +205,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         {
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             if (!library_handler)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found dictionary with id: {}", dictionary_id);
+                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
 
             bool res = library_handler->supportsSelectiveLoad();
             writeStringBinary(std::to_string(res), out);
@@ -208,7 +214,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         {
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             if (!library_handler)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found dictionary with id: {}", dictionary_id);
+                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
 
             const auto & sample_block = library_handler->getSampleBlock();
             LOG_DEBUG(log, "Calling loadAll() for dictionary id: {}", dictionary_id);
@@ -226,7 +232,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             if (!library_handler)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found dictionary with id: {}", dictionary_id);
+                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
 
             const auto & sample_block = library_handler->getSampleBlock();
             LOG_DEBUG(log, "Calling loadIds() for dictionary id: {}", dictionary_id);
@@ -265,7 +271,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             if (!library_handler)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found dictionary with id: {}", dictionary_id);
+                throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
 
             const auto & sample_block = library_handler->getSampleBlock();
             LOG_DEBUG(log, "Calling loadKeys() for dictionary id: {}", dictionary_id);
@@ -304,7 +310,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 }
 
 
-void PingHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void LibraryExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
@@ -313,7 +319,7 @@ void PingHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         if (!params.has("dictionary_id"))
         {
-            processError(response, "No 'dictionary_id in request URL");
+            processError(response, "No 'dictionary_id' in request URL");
             return;
         }
 
@@ -321,9 +327,9 @@ void PingHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
         String res;
         if (library_handler)
-            res = "dictionary=1";
+            res = "1";
         else
-            res = "dictionary=0";
+            res = "0";
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
         LOG_TRACE(log, "Senging ping response: {} (dictionary id: {})", res, dictionary_id);

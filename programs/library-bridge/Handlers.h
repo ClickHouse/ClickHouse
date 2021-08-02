@@ -39,10 +39,10 @@ private:
 };
 
 
-class PingHandler : public HTTPRequestHandler, WithContext
+class LibraryExistsHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    explicit PingHandler(size_t keep_alive_timeout_, ContextPtr context_)
+    explicit LibraryExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
         : WithContext(context_)
         , keep_alive_timeout(keep_alive_timeout_)
         , log(&Poco::Logger::get("LibraryRequestHandler"))

@@ -41,6 +41,9 @@ LibraryDictionarySource::LibraryDictionarySource(
     , sample_block{sample_block_}
     , context(Context::createCopy(context_))
 {
+    if (fs::path(path).is_relative())
+        path = fs::canonical(path);
+
     if (created_from_ddl && !pathStartsWith(path, context->getDictionariesLibPath()))
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, context->getDictionariesLibPath());
 
@@ -58,10 +61,7 @@ LibraryDictionarySource::LibraryDictionarySource(
 
     bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, library_data);
 
-    bool initialized = bridge_helper->initLibrary();
-    if (initialized)
-        bridge_helper->setInitialized();
-    else
+    if (!bridge_helper->initLibrary())
         throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to create shared library from path: {}", path);
 }
 
@@ -91,10 +91,7 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , description{other.description}
 {
     bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, other.bridge_helper->getLibraryData());
-    bool cloned = bridge_helper->cloneLibrary(other.dictionary_id);
-    if (cloned)
-        bridge_helper->setInitialized();
-    else
+    if (!bridge_helper->cloneLibrary(other.dictionary_id))
         throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to clone library");
 }
 

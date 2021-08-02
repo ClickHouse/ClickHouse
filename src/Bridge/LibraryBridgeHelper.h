@@ -26,7 +26,7 @@ public:
 
     LibraryBridgeHelper(ContextPtr context_, const Block & sample_block, const Field & dictionary_id_, const LibraryInitData & library_data_);
 
-    bool initLibrary(bool check_bridge = true) const;
+    bool initLibrary();
 
     bool cloneLibrary(const Field & other_dictionary_id);
 
@@ -48,10 +48,8 @@ public:
 
     LibraryInitData getLibraryData() const { return library_data; }
 
-    void setInitialized() { library_initialized = true; }
-
 protected:
-    bool checkBridgeIsRunning() const override;
+    bool bridgeHandShake() override;
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override;
 

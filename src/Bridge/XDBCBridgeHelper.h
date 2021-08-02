@@ -74,7 +74,7 @@ public:
     }
 
 protected:
-    bool checkBridgeIsRunning() const override
+    bool bridgeHandShake() override
     {
         try
         {

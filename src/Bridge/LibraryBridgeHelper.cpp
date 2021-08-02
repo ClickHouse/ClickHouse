@@ -70,7 +70,7 @@ void LibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
 }
 
 
-bool LibraryBridgeHelper::checkBridgeIsRunning() const
+bool LibraryBridgeHelper::bridgeHandShake()
 {
     String result;
     try
@@ -89,13 +89,11 @@ bool LibraryBridgeHelper::checkBridgeIsRunning() const
      * 1. It is dictionary source creation and initialization of library handler on bridge side did not happen yet.
      * 2. Bridge crashed or restarted for some reason while server did not.
     **/
-    static constexpr auto dictionary_check = "dictionary=";
-    if (result.size() != (std::strlen(dictionary_check) + 1))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {}. Check bridge and server have the same version.",
-                        result, std::strlen(dictionary_check));
+    if (result.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {}. Check bridge and server have the same version.", result);
 
     UInt8 dictionary_id_exists;
-    auto parsed = tryParse<UInt8>(dictionary_id_exists, result.substr(std::strlen(dictionary_check)));
+    auto parsed = tryParse<UInt8>(dictionary_id_exists, result);
     if (!parsed || (dictionary_id_exists != 0 && dictionary_id_exists != 1))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {} ({}). Check bridge and server have the same version.",
                         result, parsed ? toString(dictionary_id_exists) : "failed to parse");
@@ -106,13 +104,16 @@ bool LibraryBridgeHelper::checkBridgeIsRunning() const
     if (dictionary_id_exists && !library_initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Library was not initialized, but bridge responded to already have dictionary id: {}", dictionary_id);
 
+    /// Here we want to say bridge to recreate a new library handler for current dictionary,
+    /// because it responded to have lost it, but we know that it has already been created. (It is a direct result of bridge crash).
     if (!dictionary_id_exists && library_initialized)
     {
         LOG_WARNING(log, "Library bridge does not have library handler with dictionaty id: {}. It will be reinitialized.", dictionary_id);
         bool reinitialized = false;
         try
         {
-            reinitialized = initLibrary(false);
+            auto uri = createRequestURI(LIB_NEW_METHOD);
+            reinitialized = executeRequest(uri, getInitLibraryCallback());
         }
         catch (...)
         {
@@ -148,13 +149,12 @@ ReadWriteBufferFromHTTP::OutStreamCallback LibraryBridgeHelper::getInitLibraryCa
 }
 
 
-bool LibraryBridgeHelper::initLibrary(bool check_bridge) const
+bool LibraryBridgeHelper::initLibrary()
 {
-    /// Do not check if we call initLibrary from checkBridgeSync.
-    if (check_bridge)
-        startBridgeSync();
+    startBridgeSync();
     auto uri = createRequestURI(LIB_NEW_METHOD);
-    return executeRequest(uri, getInitLibraryCallback());
+    library_initialized = executeRequest(uri, getInitLibraryCallback());
+    return library_initialized;
 }
 
 
@@ -163,7 +163,10 @@ bool LibraryBridgeHelper::cloneLibrary(const Field & other_dictionary_id)
     startBridgeSync();
     auto uri = createRequestURI(LIB_CLONE_METHOD);
     uri.addQueryParameter("from_dictionary_id", toString(other_dictionary_id));
-    return executeRequest(uri, getInitLibraryCallback());
+    /// We also pass initialization settings in order to create a library handler
+    /// in case from_dictionary_id does not exist in bridge side (possible in case of bridge crash).
+    library_initialized = executeRequest(uri, getInitLibraryCallback());
+    return library_initialized;
 }
 
 
@@ -171,7 +174,7 @@ bool LibraryBridgeHelper::removeLibrary()
 {
     /// Do not force bridge restart if it is not running in case of removeLibrary
     /// because in this case after restart it will not have this dictionaty id in memory anyway.
-    if (checkBridgeIsRunning())
+    if (bridgeHandShake())
     {
         auto uri = createRequestURI(LIB_DELETE_METHOD);
         return executeRequest(uri);
