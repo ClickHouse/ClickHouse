@@ -9,7 +9,6 @@
             <invalidCertificateHandler>
                 <name>AcceptCertificateHandler</name>  <!-- For tests only-->
             </invalidCertificateHandler>
-            <no_max_memory_usage_for_client>1</no_max_memory_usage_for_client> <!-- May be turn it off, but need to add this flag in some distributed tests-->
         </client>
     </openSSL>
 </config>

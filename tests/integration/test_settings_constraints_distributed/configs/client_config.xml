@@ -1,0 +1,7 @@
+<config>
+    <openSSL>
+        <client>
+            <no_max_memory_usage_for_client>1</no_max_memory_usage_for_client>
+        </client>
+    </openSSL>
+</config>
