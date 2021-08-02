@@ -60,7 +60,7 @@ ASTPtr TableFunctionOneHotEncodingView::wrapQuery(ASTPtr query, const String & c
     wrapped_query_str += "(SELECT *, toLowCardinality(toString(`" + column_name + "`)) AS `__mapping_" + column_name + "`,";
 
     for (const auto &value : distinct_values)
-        wrapped_query_str += "equals(`__mapping_" + column_name + "`,toLowCardinality('" + value + "')) AS `" + column_name + "." + value + "`,";
+        wrapped_query_str += "toUInt8(equals(`__mapping_" + column_name + "`,toLowCardinality('" + value + "'))) AS `" + column_name + "." + value + "`,";
 
     wrapped_query_str.pop_back(); // remove last comma
     wrapped_query_str += "FROM (" + base_query_str + "))";
