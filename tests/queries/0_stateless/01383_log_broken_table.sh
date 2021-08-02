@@ -13,24 +13,24 @@ function test_func()
 
     echo "Testing $ENGINE"
 
-    $CLICKHOUSE_CLIENT --no-max-memory-usage-for-client --query "DROP TABLE IF EXISTS log";
-    $CLICKHOUSE_CLIENT --no-max-memory-usage-for-client --query "CREATE TABLE log (x UInt64, y UInt64, z UInt64) ENGINE = $ENGINE";
+    $CLICKHOUSE_CLIENT --no_max_memory_usage_for_client --query "DROP TABLE IF EXISTS log";
+    $CLICKHOUSE_CLIENT --no_max_memory_usage_for_client --query "CREATE TABLE log (x UInt64, y UInt64, z UInt64) ENGINE = $ENGINE";
 
     while true; do
         MAX_MEM=$((2 * $MAX_MEM))
 
-        $CLICKHOUSE_CLIENT --no-max-memory-usage-for-client --query "INSERT INTO log SELECT number, number, number FROM numbers(1000000)" --max_memory_usage $MAX_MEM > "${CLICKHOUSE_TMP}"/insert_result 2>&1
+        $CLICKHOUSE_CLIENT --no_max_memory_usage_for_client --query "INSERT INTO log SELECT number, number, number FROM numbers(1000000)" --max_memory_usage $MAX_MEM > "${CLICKHOUSE_TMP}"/insert_result 2>&1
 
         grep -o -F 'Memory limit' "${CLICKHOUSE_TMP}"/insert_result || cat "${CLICKHOUSE_TMP}"/insert_result
 
-        $CLICKHOUSE_CLIENT --no-max-memory-usage-for-client --query "SELECT count(), sum(x + y + z) FROM log" > "${CLICKHOUSE_TMP}"/select_result 2>&1;
+        $CLICKHOUSE_CLIENT --no_max_memory_usage_for_client --query "SELECT count(), sum(x + y + z) FROM log" > "${CLICKHOUSE_TMP}"/select_result 2>&1;
 
         cat "${CLICKHOUSE_TMP}"/select_result
 
         [[ $MAX_MEM -gt 200000000 ]] && break;
     done
 
-    $CLICKHOUSE_CLIENT --no-max-memory-usage-for-client --query "DROP TABLE log";
+    $CLICKHOUSE_CLIENT --no_max_memory_usage_for_client --query "DROP TABLE log";
 }
 
 test_func TinyLog | grep -v -P '^(Memory limit|0\t0|[1-9]000000\t)'
