@@ -65,7 +65,7 @@ private:
 /** Get special scalar values
   */
 template <typename Scalar>
-class FunctionGetSpecialScalar : public IFunction, WithContext
+class FunctionGetSpecialScalar : public IFunction
 {
 public:
     static constexpr auto name = Scalar::name;
@@ -87,7 +87,7 @@ public:
     }
 
     explicit FunctionGetSpecialScalar(ContextPtr context_)
-        : WithContext(context_), scalar(createScalar(context_)), is_distributed(context_->isDistributed())
+        : scalar(createScalar(context_)), is_distributed(context_->isDistributed())
     {
     }
 
