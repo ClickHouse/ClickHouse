@@ -1,6 +1,6 @@
 ---
-toc_priority: 
-toc_title: 
+toc_priority:
+toc_title:
 ---
 
 # data_type_name {#data_type-name}

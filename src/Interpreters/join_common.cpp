@@ -1,21 +1,29 @@
 #include <Interpreters/join_common.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Columns/ColumnNullable.h>
+
 #include <Columns/ColumnLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/getLeastSupertype.h>
+#include <Columns/ColumnNullable.h>
+
 #include <DataStreams/materializeBlock.h>
+
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
+
 #include <IO/WriteHelpers.h>
 
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/TableJoin.h>
+
+#include <common/logger_useful.h>
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
+    extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
+    extern const int TYPE_MISMATCH;
 }
 
 namespace
@@ -220,6 +228,12 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     return ptrs;
 }
 
+ColumnPtr materializeColumn(const Block & block, const String & column_name)
+{
+    const auto & src_column = block.getByName(column_name).column;
+    return recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst());
+}
+
 Columns materializeColumns(const Block & block, const Names & names)
 {
     Columns materialized;
@@ -227,8 +241,7 @@ Columns materializeColumns(const Block & block, const Names & names)
 
     for (const auto & column_name : names)
     {
-        const auto & src_column = block.getByName(column_name).column;
-        materialized.emplace_back(recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst()));
+        materialized.emplace_back(materializeColumn(block, column_name));
     }
 
     return materialized;
@@ -294,7 +307,8 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
     return key_columns;
 }
 
-void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right, const Names & key_names_right)
+void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
+                      const Block & block_right, const Names & key_names_right)
 {
     size_t keys_size = key_names_left.size();
 
@@ -305,10 +319,36 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, co
 
         if (!left_type->equals(*right_type))
             throw Exception("Type mismatch of columns to JOIN by: "
-                + key_names_left[i] + " " + left_type->getName() + " at left, "
-                + key_names_right[i] + " " + right_type->getName() + " at right",
-                ErrorCodes::TYPE_MISMATCH);
+                            + key_names_left[i] + " " + left_type->getName() + " at left, "
+                            + key_names_right[i] + " " + right_type->getName() + " at right",
+                            ErrorCodes::TYPE_MISMATCH);
     }
+}
+
+void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const String & condition_name_left,
+                      const Block & block_right, const Names & key_names_right, const String & condition_name_right)
+{
+    checkTypesOfKeys(block_left, key_names_left,block_right,key_names_right);
+    checkTypesOfMasks(block_left, condition_name_left, block_right, condition_name_right);
+}
+
+void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
+                       const Block & block_right, const String & condition_name_right)
+{
+    auto check_cond_column_type = [](const Block & block, const String & col_name)
+    {
+        if (col_name.empty())
+            return;
+
+        DataTypePtr dtype = removeNullable(recursiveRemoveLowCardinality(block.getByName(col_name).type));
+
+        if (!dtype->equals(DataTypeUInt8{}))
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                            "Expected logical expression in JOIN ON section, got unexpected column '{}' of type '{}'",
+                            col_name, dtype->getName());
+    };
+    check_cond_column_type(block_left, condition_name_left);
+    check_cond_column_type(block_right, condition_name_right);
 }
 
 void createMissedColumns(Block & block)
@@ -359,28 +399,80 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
+ColumnPtr getColumnAsMask(const Block & block, const String & column_name)
+{
+    if (column_name.empty())
+        return nullptr;
+
+    const auto & src_col = block.getByName(column_name);
+
+    DataTypePtr col_type = recursiveRemoveLowCardinality(src_col.type);
+    if (isNothing(col_type))
+        return ColumnUInt8::create(block.rows(), 0);
+
+    const auto & join_condition_col = recursiveRemoveLowCardinality(src_col.column->convertToFullColumnIfConst());
+
+    if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
+    {
+        if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))
+            return ColumnUInt8::create(block.rows(), 0);
+
+        /// Return nested column with NULL set to false
+        const auto & nest_col = assert_cast<const ColumnUInt8 &>(nullable_col->getNestedColumn());
+        const auto & null_map = nullable_col->getNullMapColumn();
+
+        auto res = ColumnUInt8::create(nullable_col->size(), 0);
+        for (size_t i = 0, sz = nullable_col->size(); i < sz; ++i)
+            res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
+        return res;
+    }
+    else
+        return join_condition_col;
+}
+
+
+void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others)
+{
+    block_others = materializeBlock(sample_block);
+
+    for (const String & column_name : key_names)
+    {
+        /// Extract right keys with correct keys order. There could be the same key names.
+        if (!block_keys.has(column_name))
+        {
+            auto & col = block_others.getByName(column_name);
+            block_keys.insert(col);
+            block_others.erase(column_name);
+        }
+    }
+}
+
 }
 
 
 NotJoined::NotJoined(const TableJoin & table_join, const Block & saved_block_sample_, const Block & right_sample_block,
-                     const Block & result_sample_block_)
+                     const Block & result_sample_block_, const Names & key_names_left_, const Names & key_names_right_)
     : saved_block_sample(saved_block_sample_)
     , result_sample_block(materializeBlock(result_sample_block_))
+    , key_names_left(key_names_left_.empty() ? table_join.keyNamesLeft() : key_names_left_)
+    , key_names_right(key_names_right_.empty() ? table_join.keyNamesRight() : key_names_right_)
 {
     std::vector<String> tmp;
     Block right_table_keys;
     Block sample_block_with_columns_to_add;
-    table_join.splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
+
+    JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys,
+                                       sample_block_with_columns_to_add);
     Block required_right_keys = table_join.getRequiredRightKeys(right_table_keys, tmp);
 
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
     if (table_join.hasUsing())
     {
-        for (size_t i = 0; i < table_join.keyNamesLeft().size(); ++i)
+        for (size_t i = 0; i < key_names_left.size(); ++i)
         {
-            const String & left_key_name = table_join.keyNamesLeft()[i];
-            const String & right_key_name = table_join.keyNamesRight()[i];
+            const String & left_key_name = key_names_left[i];
+            const String & right_key_name = key_names_right[i];
 
             size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
             size_t right_key_pos = saved_block_sample.getPositionByName(right_key_name);

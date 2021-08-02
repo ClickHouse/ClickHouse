@@ -14,7 +14,7 @@ You can also use the following database engines:
 
 -   [MySQL](../../engines/database-engines/mysql.md)
 
--   [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md)
+-   [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)
 
 -   [Lazy](../../engines/database-engines/lazy.md)
 

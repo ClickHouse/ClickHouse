@@ -9,13 +9,13 @@ toc_title: Working with maps
 
 Arranges `key:value` pairs into [Map(key, value)](../../sql-reference/data-types/map.md) data type.
 
-**Syntax** 
+**Syntax**
 
-``` sql
+```sql
 map(key1, value1[, key2, value2, ...])
 ```
 
-**Arguments** 
+**Arguments**
 
 -   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md) or [Integer](../../sql-reference/data-types/int-uint.md).
 -   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) or [Array](../../sql-reference/data-types/array.md).
@@ -30,7 +30,7 @@ Type: [Map(key, value)](../../sql-reference/data-types/map.md).
 
 Query:
 
-``` sql
+```sql
 SELECT map('key1', number, 'key2', number * 2) FROM numbers(3);
 ```
 
@@ -46,7 +46,7 @@ Result:
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE table_map (a Map(String, UInt64)) ENGINE = MergeTree() ORDER BY a;
 INSERT INTO table_map SELECT map('key1', number, 'key2', number * 2) FROM numbers(3);
 SELECT a['key2'] FROM table_map;
@@ -54,7 +54,7 @@ SELECT a['key2'] FROM table_map;
 
 Result:
 
-``` text
+```text
 ┌─arrayElement(a, 'key2')─┐
 │                       0 │
 │                       2 │
@@ -62,7 +62,7 @@ Result:
 └─────────────────────────┘
 ```
 
-**See Also** 
+**See Also**
 
 -   [Map(key, value)](../../sql-reference/data-types/map.md) data type
 
@@ -72,7 +72,7 @@ Collect all the keys and sum corresponding values.
 
 **Syntax**
 
-``` sql
+```sql
 mapAdd(arg1, arg2 [, ...])
 ```
 
@@ -88,13 +88,13 @@ Arguments are [maps](../../sql-reference/data-types/map.md) or [tuples](../../sq
 
 Query with a tuple map:
 
-``` sql
+```sql
 SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTypeName(res) as type;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res───────────┬─type───────────────────────────────┐
 │ ([1,2],[2,2]) │ Tuple(Array(UInt8), Array(UInt64)) │
 └───────────────┴────────────────────────────────────┘
@@ -102,13 +102,13 @@ Result:
 
 Query with `Map` type:
 
-``` sql
+```sql
 SELECT mapAdd(map(1,1), map(1,1));
 ```
 
 Result:
 
-``` text
+```text
 ┌─mapAdd(map(1, 1), map(1, 1))─┐
 │ {1:2}                        │
 └──────────────────────────────┘
@@ -120,7 +120,7 @@ Collect all the keys and subtract corresponding values.
 
 **Syntax**
 
-``` sql
+```sql
 mapSubtract(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 ```
 
@@ -136,13 +136,13 @@ Arguments are [maps](../../sql-reference/data-types/map.md) or [tuples](../../sq
 
 Query with a tuple map:
 
-``` sql
+```sql
 SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1])) as res, toTypeName(res) as type;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res────────────┬─type──────────────────────────────┐
 │ ([1,2],[-1,0]) │ Tuple(Array(UInt8), Array(Int64)) │
 └────────────────┴───────────────────────────────────┘
@@ -150,13 +150,13 @@ Result:
 
 Query with `Map` type:
 
-``` sql
+```sql
 SELECT mapSubtract(map(1,1), map(1,1));
 ```
 
 Result:
 
-``` text
+```text
 ┌─mapSubtract(map(1, 1), map(1, 1))─┐
 │ {1:0}                             │
 └───────────────────────────────────┘
@@ -171,7 +171,7 @@ For array arguments the number of elements in `keys` and `values` must be the sa
 
 **Syntax**
 
-``` sql
+```sql
 mapPopulateSeries(keys, values[, max])
 mapPopulateSeries(map[, max])
 ```
@@ -203,7 +203,7 @@ select mapPopulateSeries([1,2,4], [11,22,44], 5) as res, toTypeName(res) as type
 
 Result:
 
-``` text
+```text
 ┌─res──────────────────────────┬─type──────────────────────────────┐
 │ ([1,2,3,4,5],[11,22,0,44,0]) │ Tuple(Array(UInt8), Array(UInt8)) │
 └──────────────────────────────┴───────────────────────────────────┘
@@ -211,13 +211,13 @@ Result:
 
 Query with `Map` type:
 
-``` sql
+```sql
 SELECT mapPopulateSeries(map(1, 10, 5, 20), 6);
 ```
 
 Result:
 
-``` text
+```text
 ┌─mapPopulateSeries(map(1, 10, 5, 20), 6)─┐
 │ {1:10,2:0,3:0,4:0,5:20,6:0}             │
 └─────────────────────────────────────────┘
@@ -229,7 +229,7 @@ Determines  whether the `map` contains the `key` parameter.
 
 **Syntax**
 
-``` sql
+```sql
 mapContains(map, key)
 ```
 

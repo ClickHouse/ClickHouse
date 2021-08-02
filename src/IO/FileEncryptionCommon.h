@@ -69,6 +69,7 @@ private:
     UInt128 counter = 0;
 };
 
+
 /// Encrypts or decrypts data.
 class Encryptor
 {
@@ -100,6 +101,31 @@ private:
     /// The current position in the data stream from the very beginning of data.
     size_t offset = 0;
 };
+
+
+/// File header which is stored at the beginning of encrypted files.
+struct Header
+{
+    Algorithm algorithm = Algorithm::AES_128_CTR;
+
+    /// Identifier of the key to encrypt or decrypt this file.
+    UInt64 key_id = 0;
+
+    /// Hash of the key to encrypt or decrypt this file.
+    UInt8 key_hash = 0;
+
+    InitVector init_vector;
+
+    /// The size of this header in bytes, including reserved bytes.
+    static constexpr const size_t kSize = 64;
+
+    void read(ReadBuffer & in);
+    void write(WriteBuffer & out) const;
+};
+
+/// Calculates the hash of a passed key.
+/// 1 byte is enough because this hash is used only for the first check.
+UInt8 calculateKeyHash(const String & key);
 
 }
 }
