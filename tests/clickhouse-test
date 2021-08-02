@@ -49,6 +49,7 @@ MESSAGES_TO_RETRY = [
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
+    "Shutdown is called for table", # It happens in SYSTEM SYNC REPLICA query if session with ZooKeeper is being reinitialized.
     DISTRIBUTED_DDL_TIMEOUT_MSG # FIXME
 ]
 
@@ -174,7 +175,8 @@ def configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file):
         database = 'test_{suffix}'.format(suffix=random_str())
 
         with open(stderr_file, 'w') as stderr:
-            clickhouse_proc_create = Popen(shlex.split(testcase_args.testcase_client), stdin=PIPE, stdout=PIPE, stderr=stderr, universal_newlines=True)
+            client_cmd = testcase_args.testcase_client + " " + get_additional_client_options(args)
+            clickhouse_proc_create = Popen(shlex.split(client_cmd), stdin=PIPE, stdout=PIPE, stderr=stderr, universal_newlines=True)
             try:
                 clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(testcase_args, database)), timeout=testcase_args.timeout)
             except TimeoutExpired:
@@ -273,8 +275,8 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     return proc, stdout, stderr, total_time
 
 
-def need_retry(stderr):
-    return any(msg in stderr for msg in MESSAGES_TO_RETRY)
+def need_retry(stdout, stderr):
+    return any(msg in stdout for msg in MESSAGES_TO_RETRY) or any(msg in stderr for msg in MESSAGES_TO_RETRY)
 
 
 def get_processlist(args):
@@ -493,7 +495,7 @@ def run_tests_array(all_tests_with_params):
                         status += 'Database: ' + testcase_args.testcase_database
                     else:
                         counter = 1
-                        while need_retry(stderr):
+                        while need_retry(stdout, stderr):
                             restarted_tests.append((case_file, stderr))
                             testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
                             proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
@@ -936,9 +938,10 @@ def main(args):
     def create_common_database(args, db_name):
         create_database_retries = 0
         while create_database_retries < MAX_RETRIES:
-            clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-            (_, stderr) = clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + db_name + get_db_engine(args, db_name)))
-            if not need_retry(stderr):
+            client_cmd = args.client + " " + get_additional_client_options(args)
+            clickhouse_proc_create = Popen(shlex.split(client_cmd), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+            (stdout, stderr) = clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + db_name + get_db_engine(args, db_name)))
+            if not need_retry(stdout, stderr):
                 break
             create_database_retries += 1
 
