@@ -176,7 +176,9 @@ def configure_testcase_args(j2env, args, case_file, suite_tmp_dir, file_suffix):
 
     testcase_args.testcase_database = database
 
-    case_file = render_test_template(j2env, case_file)
+    case_file = render_test_template(j2env, case_file, context={
+        'database': database,
+    })
     testcase_args.testcase_file = case_file
 
     testcase_args.reference_file = get_reference_file(case_file)
@@ -808,7 +810,7 @@ def removesuffix(text, *suffixes):
     return text
 
 
-def render_test_template(j2env, test_path):
+def render_test_template(j2env, test_path, context):
     """
     Render template for test and reference file if needed
     """
@@ -818,15 +820,18 @@ def render_test_template(j2env, test_path):
 
     test_base_path = removesuffix(test_path, ".sql.j2", ".sql")
 
+    is_concurrent = multiprocessing.current_process().name != "MainProcess"
+    file_suffix = ("." + str(os.getpid())) if is_concurrent else ""
+
     reference_file_path = test_base_path + ".reference.j2"
     if os.path.isfile(reference_file_path):
         tpl = j2env.get_template(os.path.basename(reference_file_path))
-        tpl.stream().dump(test_base_path + ".gen.reference")
+        tpl.stream(context).dump("{}{}.gen.reference".format(test_base_path, file_suffix))
 
     if test_path.endswith(".sql.j2"):
         tpl = j2env.get_template(os.path.basename(test_path))
-        generated_test_path = test_base_path + ".gen.sql"
-        tpl.stream().dump(generated_test_path)
+        generated_test_path = "{}{}.gen.sql".format(test_base_path, file_suffix)
+        tpl.stream(context).dump(generated_test_path)
         return generated_test_path
 
     return test_path
