@@ -55,7 +55,7 @@ CompressedWriteBuffer::~CompressedWriteBuffer()
 
 #ifndef NDEBUG
         /// No exception, buffer was not flushed. Consider it as a logical error.
-        if (std::uncaught_exception() == 0)
+        if (std::uncaught_exceptions() == 0)
             std::terminate();
 #endif
         /// Try our best to flush buffer.
