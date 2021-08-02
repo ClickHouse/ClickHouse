@@ -154,8 +154,8 @@ DictionaryPtr createCacheDictionaryLayout(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     DictionarySourcePtr source_ptr,
-    ContextPtr context,
-    bool created_from_ddl)
+    ContextPtr context [[maybe_unused]],
+    bool created_from_ddl [[maybe_unused]])
 {
     static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionary");
 
