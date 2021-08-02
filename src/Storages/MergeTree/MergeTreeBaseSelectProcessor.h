@@ -40,7 +40,7 @@ public:
     static std::unique_ptr<MergeTreeBlockSizePredictor> getSizePredictor(
         const MergeTreeData::DataPartPtr & data_part,
         const MergeTreeReadTaskColumns & task_columns,
-        const StorageMetadataPtr & metadata_snapshot);
+        const Block & sample_block);
 
 protected:
     Chunk generate() final;

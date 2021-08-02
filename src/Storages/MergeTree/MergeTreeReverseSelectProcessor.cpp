@@ -27,7 +27,7 @@ try
     all_mark_ranges.pop_back();
 
     auto size_predictor = (preferred_block_size_bytes == 0) ? nullptr
-        : getSizePredictor(data_part, task_columns, metadata_snapshot);
+        : getSizePredictor(data_part, task_columns, sample_block);
 
     task = std::make_unique<MergeTreeReadTask>(
         data_part, mark_ranges_for_task, part_index_in_query, ordered_names, column_name_set,

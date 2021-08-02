@@ -18,7 +18,7 @@ try
     }
 
     auto size_predictor = (preferred_block_size_bytes == 0) ? nullptr
-        : getSizePredictor(data_part, task_columns, metadata_snapshot);
+        : getSizePredictor(data_part, task_columns, sample_block);
 
     MarkRanges mark_ranges_for_task;
     /// If we need to read few rows, set one range per task to reduce number of read data.
