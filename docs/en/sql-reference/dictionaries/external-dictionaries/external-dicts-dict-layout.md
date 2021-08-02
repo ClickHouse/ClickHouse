@@ -280,12 +280,11 @@ If keys are not found in dictionary, then update cache task is created and added
 For cache dictionaries, the expiration [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used and key becomes expired, and it is re-requested the next time it needs to be used this behaviour can be configured with setting `allow_read_expired_keys`.
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the `system.dictionaries` table.
 
-If setting `allow_read_expired_keys` is set to 1, by default 0. Then dictionary can support asynchronous updates. If client requests keys and all of them are in cache, but some of them are expired, then dictionary will return expired keys for client and request them asynchronously from source.
+If setting `allow_read_expired_keys` is set to 1, by default 0. Then dictionary can support asynchronous updates. If a client requests keys and all of them are in cache, but some of them are expired, then dictionary will return expired keys for a client and request them asynchronously from the source.
 
 To improve cache performance, use a subquery with `LIMIT`, and call the function with the dictionary externally.
 
-Supported [sources](../../../
-sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
+Supported [sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
 
 Example of settings:
 
