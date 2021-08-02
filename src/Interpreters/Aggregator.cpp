@@ -294,14 +294,14 @@ Aggregator::Aggregator(const Params & params_)
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
-    compileAggregateFunctions();
+    compileAggregateFunctionsIfNeeded();
 #endif
 
 }
 
 #if USE_EMBEDDED_COMPILER
 
-void Aggregator::compileAggregateFunctions()
+void Aggregator::compileAggregateFunctionsIfNeeded()
 {
     static std::unordered_map<UInt128, UInt64, UInt128Hash> aggregate_functions_description_to_count;
     static std::mutex mtx;
@@ -363,7 +363,7 @@ void Aggregator::compileAggregateFunctions()
             {
                 LOG_TRACE(log, "Compile expression {}", functions_description);
 
-                auto compiled_aggregate_functions = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_description);
+                auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
                 return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
             });
 
@@ -372,7 +372,7 @@ void Aggregator::compileAggregateFunctions()
         else
         {
             LOG_TRACE(log, "Compile expression {}", functions_description);
-            auto compiled_aggregate_functions = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_description);
+            auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
             compiled_aggregate_functions_holder = std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
         }
     }

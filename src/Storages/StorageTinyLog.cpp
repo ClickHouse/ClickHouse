@@ -24,8 +24,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
-#include <DataStreams/IBlockOutputStream.h>
-
 #include <Columns/ColumnArray.h>
 
 #include <Interpreters/Context.h>
@@ -38,6 +36,7 @@
 #include "StorageLogSettings.h"
 
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -193,14 +192,15 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type,
 }
 
 
-class TinyLogBlockOutputStream final : public IBlockOutputStream
+class TinyLogSink final : public SinkToStorage
 {
 public:
-    explicit TinyLogBlockOutputStream(
+    explicit TinyLogSink(
         StorageTinyLog & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         std::unique_lock<std::shared_timed_mutex> && lock_)
-        : storage(storage_), metadata_snapshot(metadata_snapshot_), lock(std::move(lock_))
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_), metadata_snapshot(metadata_snapshot_), lock(std::move(lock_))
     {
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
@@ -214,7 +214,7 @@ public:
         }
     }
 
-    ~TinyLogBlockOutputStream() override
+    ~TinyLogSink() override
     {
         try
         {
@@ -232,10 +232,10 @@ public:
         }
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    String getName() const override { return "TinyLogSink"; }
 
-    void write(const Block & block) override;
-    void writeSuffix() override;
+    void consume(Chunk chunk) override;
+    void onFinish() override;
 
 private:
     StorageTinyLog & storage;
@@ -275,7 +275,7 @@ private:
 };
 
 
-ISerialization::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(
+ISerialization::OutputStreamGetter TinyLogSink::createStreamGetter(
     const NameAndTypePair & column,
     WrittenStreams & written_streams)
 {
@@ -299,7 +299,7 @@ ISerialization::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(
 }
 
 
-void TinyLogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, const IColumn & column, WrittenStreams & written_streams)
+void TinyLogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & column, WrittenStreams & written_streams)
 {
     ISerialization::SerializeBinaryBulkSettings settings;
     const auto & [name, type] = name_and_type;
@@ -319,7 +319,7 @@ void TinyLogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, 
 }
 
 
-void TinyLogBlockOutputStream::writeSuffix()
+void TinyLogSink::onFinish()
 {
     if (done)
         return;
@@ -333,7 +333,7 @@ void TinyLogBlockOutputStream::writeSuffix()
 
     WrittenStreams written_streams;
     ISerialization::SerializeBinaryBulkSettings settings;
-    for (const auto & column : getHeader())
+    for (const auto & column : getPort().getHeader())
     {
         auto it = serialize_states.find(column.name);
         if (it != serialize_states.end())
@@ -366,8 +366,9 @@ void TinyLogBlockOutputStream::writeSuffix()
 }
 
 
-void TinyLogBlockOutputStream::write(const Block & block)
+void TinyLogSink::consume(Chunk chunk)
 {
+    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
     metadata_snapshot->check(block, true);
 
     /// The set of written offset columns so that you do not write shared columns for nested structures multiple times
@@ -509,9 +510,9 @@ Pipe StorageTinyLog::read(
 }
 
 
-BlockOutputStreamPtr StorageTinyLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageTinyLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    return std::make_shared<TinyLogBlockOutputStream>(*this, metadata_snapshot, std::unique_lock{rwlock, getLockTimeout(context)});
+    return std::make_shared<TinyLogSink>(*this, metadata_snapshot, std::unique_lock{rwlock, getLockTimeout(context)});
 }
 
 
