@@ -20,6 +20,29 @@ Possible values:
 -   `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
 -   `allow` — Allows the use of these types of subqueries.
 
+## prefer_global_in_and_join {#prefer-global-in-and-join}
+
+Enables the replacement of `IN`/`JOIN` operators with `GLOBAL IN`/`GLOBAL JOIN`.
+
+Possible values:
+
+-   0 — Disabled. `IN`/`JOIN` operators are not replaced with `GLOBAL IN`/`GLOBAL JOIN`.
+-   1 — Enabled. `IN`/`JOIN` operators are replaced with `GLOBAL IN`/`GLOBAL JOIN`.
+
+Default value: `0`.
+
+**Usage**
+
+Although `SET distributed_product_mode=global` can change the queries behavior for the distributed tables, it's not suitable for local tables or tables from external resources. Here is when the `prefer_global_in_and_join` setting comes into play.
+
+For example, we have query serving nodes that contain local tables, which are not suitable for distribution. We need to scatter their data on the fly during distributed processing with the `GLOBAL` keyword — `GLOBAL IN`/`GLOBAL JOIN`.
+
+Another use case of `prefer_global_in_and_join` is accessing tables created by external engines. This setting helps to reduce the number of calls to external sources while joining such tables: only one call per query.
+
+**See also:**
+
+-   [Distributed subqueries](../../sql-reference/operators/in.md#select-distributed-subqueries) for more information on how to use `GLOBAL IN`/`GLOBAL JOIN`
+
 ## enable_optimize_predicate_expression {#enable-optimize-predicate-expression}
 
 Turns on predicate pushdown in `SELECT` queries.
@@ -542,7 +565,7 @@ Possible values:
 
 Default value: `hash`.
 
-When using `hash` algorithm the right part of `JOIN` is uploaded into RAM. 
+When using `hash` algorithm the right part of `JOIN` is uploaded into RAM.
 
 When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to the disk. The `merge` algorithm in ClickHouse differs a bit from the classic realization. First ClickHouse sorts the right table by [join key](../../sql-reference/statements/select/join.md#select-join) in blocks and creates min-max index for sorted blocks. Then it sorts parts of left table by `join key` and joins them over right table. The min-max index is also used to skip unneeded right table blocks.
 
@@ -1251,7 +1274,7 @@ Default value: `3`.
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
-Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations. 
+Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
 
 Possible values:
 
@@ -3209,7 +3232,7 @@ Default value: `300`.
 
 ## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
 
-Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite. 
+Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite.
 
 Possible values:
 
