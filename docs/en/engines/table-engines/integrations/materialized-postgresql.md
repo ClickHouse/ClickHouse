@@ -5,8 +5,6 @@ toc_title: MaterializedPostgreSQL
 
 # MaterializedPostgreSQL {#materialize-postgresql}
 
-The `MaterializedPostgreSQL` engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote PostgreSQL server.
-
 ## Creating a Table {#creating-a-table}
 
 ``` sql

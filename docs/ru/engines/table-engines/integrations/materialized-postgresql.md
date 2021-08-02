@@ -5,8 +5,6 @@ toc_title: MaterializedPostgreSQL
 
 # MaterializedPostgreSQL {#materialize-postgresql}
 
-Движок `MaterializedPostgreSQL` позволяет выполнять запросы `SELECT` и `INSERT` над данными, хранящимися на удалённом PostgreSQL сервере.
-
 ## Создание таблицы {#creating-a-table}
 
 ``` sql
