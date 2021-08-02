@@ -251,18 +251,23 @@ private:
     }
 
     template <typename T, typename Divisor>
-    static inline T roundDown(T x, Divisor divisor)
+    inline T roundDown(T x, Divisor divisor) const
     {
         static_assert(std::is_integral_v<T> && std::is_integral_v<Divisor>);
         assert(divisor > 0);
 
-        if (likely(x >= 0))
-            return x / divisor * divisor;
+        if (likely(offset_is_whole_number_of_hours_during_epoch))
+        {
+            if (likely(x >= 0))
+                return x / divisor * divisor;
 
-        /// Integer division for negative numbers rounds them towards zero (up).
-        /// We will shift the number so it will be rounded towards -inf (down).
+            /// Integer division for negative numbers rounds them towards zero (up).
+            /// We will shift the number so it will be rounded towards -inf (down).
+            return (x + 1 - divisor) / divisor * divisor;
+        }
 
-        return (x + 1 - divisor) / divisor * divisor;
+        Time date = find(x).date;
+        return date + (x - date) / divisor * divisor;
     }
 
 public:
@@ -459,7 +464,21 @@ public:
 
     inline unsigned toSecond(Time t) const
     {
-        auto res = t % 60;
+        if (offset_is_whole_number_of_hours_during_epoch)
+        {
+            auto res = t % 60;
+            if (likely(res >= 0))
+                return res;
+            return res + 60;
+        }
+
+        LUTIndex index = findIndex(t);
+        UInt32 time = t - lut[index].date;
+
+        if (time >= lut[index].time_at_offset_change())
+            time += lut[index].amount_of_offset_change();
+
+        auto res = time % 60;
         if (likely(res >= 0))
             return res;
         return res + 60;
@@ -486,26 +505,8 @@ public:
     inline Time toStartOfMinute(Time t) const { return roundDown(t, 60); }
     inline Time toStartOfFiveMinute(Time t) const { return roundDown(t, 300); }
     inline Time toStartOfFifteenMinutes(Time t) const { return roundDown(t, 900); }
-
-    inline Time toStartOfTenMinutes(Time t) const
-    {
-        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
-            return t / 600 * 600;
-
-        /// More complex logic is for Nepal - it has offset 05:45. Australia/Eucla is also unfortunate.
-        Time date = find(t).date;
-        return date + (t - date) / 600 * 600;
-    }
-
-    /// NOTE: Assuming timezone transitions are multiple of hours. Lord Howe Island in Australia is a notable exception.
-    inline Time toStartOfHour(Time t) const
-    {
-        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
-            return t / 3600 * 3600;
-
-        Time date = find(t).date;
-        return date + (t - date) / 3600 * 3600;
-    }
+    inline Time toStartOfTenMinutes(Time t) const { return roundDown(t, 600); }
+    inline Time toStartOfHour(Time t) const { return roundDown(t, 3600); }
 
     /** Number of calendar day since the beginning of UNIX epoch (1970-01-01 is zero)
       * We use just two bytes for it. It covers the range up to 2105 and slightly more.
