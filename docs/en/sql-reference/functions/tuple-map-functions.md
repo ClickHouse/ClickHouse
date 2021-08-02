@@ -197,7 +197,7 @@ or
 
 Query with mapped arrays:
 
-``` sql
+```sql
 select mapPopulateSeries([1,2,4], [11,22,44], 5) as res, toTypeName(res) as type;
 ```
 
