@@ -114,6 +114,11 @@ using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 struct BackgroundTaskSchedulingSettings;
 
+#if USE_NLP
+    class SynonymsExtensions;
+    class Lemmatizers;
+#endif
+
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
 
@@ -533,6 +538,11 @@ public:
     ExternalModelsLoader & getExternalModelsLoaderUnlocked();
     void tryCreateEmbeddedDictionaries() const;
     void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
+
+#if USE_NLP
+    SynonymsExtensions & getSynonymsExtensions() const;
+    Lemmatizers & getLemmatizers() const;
+#endif
 
     void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
