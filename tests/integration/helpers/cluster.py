@@ -64,10 +64,10 @@ def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=su
     out = res.stdout.decode('utf-8')
     err = res.stderr.decode('utf-8')
     # check_call(...) from subprocess does not print stderr, so we do it manually
-    if out:
-        logging.debug(f"Stdout:{out}")
-    if err:
-        logging.debug(f"Stderr:{err}")
+    for outline in out.splitlines():
+        logging.debug(f"Stdout:{outline}")
+    for errline in err.splitlines():
+        logging.debug(f"Stderr:{errline}")
     if res.returncode != 0:
         logging.debug(f"Exitcode:{res.returncode}")
         if env:
@@ -392,6 +392,13 @@ class ClickHouseCluster:
         self.zookeeper_instance_dir_prefix = p.join(self.instances_dir, "zk")
         self.zookeeper_dirs_to_create = []
 
+        # available when with_jdbc_bridge == True
+        self.jdbc_bridge_host = "bridge1"
+        self.jdbc_bridge_ip = None
+        self.jdbc_bridge_port = 9019
+        self.jdbc_driver_dir = p.abspath(p.join(self.instances_dir, "jdbc_driver"))
+        self.jdbc_driver_logs_dir = os.path.join(self.jdbc_driver_dir, "logs")
+
         self.docker_client = None
         self.is_up = False
         self.env = os.environ.copy()
@@ -400,15 +407,20 @@ class ClickHouseCluster:
     def cleanup(self):
         # Just in case kill unstopped containers from previous launch
         try:
+            # docker-compose names containers using the following formula:
+            # container_name = project_name + '_' + instance_name + '_1'
             # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
             # https://stackoverflow.com/questions/48767760/how-to-make-docker-container-ls-f-name-filter-by-exact-name
-            result = run_and_check(f'docker container list --all --filter name=^/{self.project_name}$ | wc -l', shell=True)
-            if int(result) > 1:
-                logging.debug(f"Trying to kill unstopped containers for project {self.project_name}...")
-                run_and_check(f'docker kill $(docker container list --all --quiet --filter name=^/{self.project_name}$)', shell=True)
-                run_and_check(f'docker rm $(docker container list --all  --quiet --filter name=^/{self.project_name}$)', shell=True)
+            filter_name = f'^/{self.project_name}_.*_1$'
+            if int(run_and_check(f'docker container list --all --filter name={filter_name} | wc -l', shell=True)) > 1:
+                logging.debug(f"Trying to kill unstopped containers for project {self.project_name}:")
+                unstopped_containers = run_and_check(f'docker container list --all --filter name={filter_name}', shell=True)
+                unstopped_containers_ids = [line.split()[0] for line in unstopped_containers.splitlines()[1:]]
+                for id in unstopped_containers_ids:
+                    run_and_check(f'docker kill {id}', shell=True, nothrow=True)
+                    run_and_check(f'docker rm {id}', shell=True, nothrow=True)
                 logging.debug("Unstopped containers killed")
-                run_and_check(['docker-compose', 'ps', '--services', '--all'])
+                run_and_check(f'docker container list --all --filter name={filter_name}', shell=True)
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
         except:
@@ -700,6 +712,8 @@ class ClickHouseCluster:
 
     def setup_jdbc_bridge_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_jdbc_bridge = True
+        env_variables['JDBC_DRIVER_LOGS'] = self.jdbc_driver_logs_dir
+        env_variables['JDBC_DRIVER_FS'] = "bind"
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_jdbc_bridge.yml')])
         self.base_jdbc_bridge_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                     '--file', p.join(docker_compose_yml_dir, 'docker_compose_jdbc_bridge.yml')]
@@ -1132,7 +1146,7 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait Postgres container")
 
-    def wait_rabbitmq_to_start(self, timeout=180):
+    def wait_rabbitmq_to_start(self, timeout=180, throw=True):
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
         start = time.time()
@@ -1142,13 +1156,15 @@ class ClickHouseCluster:
                     logging.debug("RabbitMQ is available")
                     if enable_consistent_hash_plugin(self.rabbitmq_docker_id):
                         logging.debug("RabbitMQ consistent hash plugin is available")
-                        return
+                        return True
                 time.sleep(0.5)
             except Exception as ex:
                 logging.debug("Can't connect to RabbitMQ " + str(ex))
                 time.sleep(0.5)
 
-        raise Exception("Cannot wait RabbitMQ container")
+        if throw:
+            raise Exception("Cannot wait RabbitMQ container")
+        return False
 
     def wait_zookeeper_secure_to_start(self, timeout=20):
         logging.debug("Wait ZooKeeper Secure to start")
@@ -1462,9 +1478,13 @@ class ClickHouseCluster:
                 logging.debug('Setup RabbitMQ')
                 os.makedirs(self.rabbitmq_logs_dir)
                 os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXO)
-                subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
-                self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
-                self.wait_rabbitmq_to_start()
+
+                for i in range(5):
+                    subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
+                    self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
+                    logging.debug(f"RabbitMQ checking container try: {i}")
+                    if self.wait_rabbitmq_to_start(throw=(i==4)):
+                        break
 
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug('Setup HDFS')
@@ -1512,8 +1532,12 @@ class ClickHouseCluster:
                 self.wait_cassandra_to_start()
 
             if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
+                os.makedirs(self.jdbc_driver_logs_dir)
+                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXO)
+
                 subprocess_check_call(self.base_jdbc_bridge_cmd + ['up', '-d'])
-                self.wait_for_url("http://localhost:9020/ping")
+                self.jdbc_bridge_ip = self.get_instance_ip(self.jdbc_bridge_host)
+                self.wait_for_url(f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping")
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             logging.debug(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))

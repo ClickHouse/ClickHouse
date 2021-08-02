@@ -33,6 +33,8 @@ public:
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getTypeId() const override { return TypeIndex::AggregateFunction; }
 
+    Array getParameters() const { return parameters; }
+
     bool canBeInsideNullable() const override { return false; }
 
     DataTypePtr getReturnType() const { return function->getReturnType(); }
