@@ -33,6 +33,7 @@ void registerTableFunctions()
     registerTableFunctionJDBC(factory);
 
     registerTableFunctionView(factory);
+    registerTableFunctionOneHotEncodingView(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);

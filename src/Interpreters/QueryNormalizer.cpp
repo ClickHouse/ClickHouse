@@ -165,8 +165,8 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
     {
         if (func_node->tryGetQueryArgument())
         {
-            if (func_node->name != "view")
-                throw Exception("Query argument can only be used in the `view` TableFunction", ErrorCodes::BAD_ARGUMENTS);
+            if (func_node->name != "view" || func_node->name != "one_hot_encoding_view")
+                throw Exception("Query argument can only be used in the `view` and `one_hot_encoding_view` TableFunctions", ErrorCodes::BAD_ARGUMENTS);
             /// Don't go into query argument.
             return;
         }

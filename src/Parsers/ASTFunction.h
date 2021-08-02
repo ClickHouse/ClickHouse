@@ -45,7 +45,10 @@ public:
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
+    /// try to get query argument for view table function
     ASTSelectWithUnionQuery * tryGetQueryArgument() const;
+    /// try to get column list argument for one_hot_encoding_view table function
+    ASTPtr tryGetColumnListArgument() const;
 
     ASTPtr toLiteral() const;  // Try to convert functions like Array or Tuple to a literal form.
 

@@ -171,6 +171,15 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+// A special function parser for one_hot_encoding_view table function.
+// It parses an SELECT query as its argument and doesn't support getColumnName().
+class ParserTableFunctionOneHotEncodingView : public IParserBase
+{
+protected:
+    const char * getName() const override { return "function"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 // Window reference (the thing that goes after OVER) for window function.
 // Can be either window name or window definition.
 class ParserWindowReference : public IParserBase

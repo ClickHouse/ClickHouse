@@ -200,16 +200,23 @@ static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, const 
     return false;
 }
 
-
 ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 {
-    if (arguments && arguments->children.size() == 1)
+    if (arguments && arguments->children.size() > 0)
     {
         return arguments->children[0]->as<ASTSelectWithUnionQuery>();
     }
     return nullptr;
 }
 
+ASTPtr ASTFunction::tryGetColumnListArgument() const
+{
+    if (arguments && arguments->children.size() > 1)
+    {
+        return arguments->children[1];
+    }
+    return nullptr;
+}
 
 void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {

@@ -21,6 +21,7 @@ SRCS(
     TableFunctionMySQL.cpp
     TableFunctionNull.cpp
     TableFunctionNumbers.cpp
+    TableFunctionOneHotEncodingView.cpp
     TableFunctionRemote.cpp
     TableFunctionSQLite.cpp
     TableFunctionURL.cpp

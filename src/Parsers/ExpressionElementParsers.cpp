@@ -288,6 +288,8 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (is_table_function)
     {
+        if (ParserTableFunctionOneHotEncodingView().parse(pos, node, expected))
+            return true;
         if (ParserTableFunctionView().parse(pos, node, expected))
             return true;
     }
@@ -499,6 +501,71 @@ bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     expr_list_with_single_query->children.push_back(query);
     function_node->name = "view";
     function_node->arguments = expr_list_with_single_query;
+    function_node->children.push_back(function_node->arguments);
+    node = function_node;
+    return true;
+}
+
+bool ParserTableFunctionOneHotEncodingView::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserKeyword view("ONE_HOT_ENCODING_VIEW");
+    ParserSelectWithUnionQuery select;
+    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserToken parser_comma(TokenType::Comma);
+
+    ASTPtr identifier;
+    ASTPtr query;
+    ASTPtr column_list;
+
+    if (!view.ignore(pos, expected))
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    bool maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
+
+    if (!select.parse(pos, query, expected))
+        return false;
+
+    auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
+    if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
+    {
+        // It's an subquery. Bail out.
+        return false;
+    }
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    if (!parser_comma.ignore(pos))
+        return false;
+
+    // We have finished parsing the query surrounded by quotes.
+    // Now parse a list of one or more column names separated by commas
+    if (!columns_p.parse(pos, column_list, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto function_node = std::make_shared<ASTFunction>();
+    tryGetIdentifierNameInto(identifier, function_node->name);
+
+    auto expr_list = std::make_shared<ASTExpressionList>();
+    expr_list->children.push_back(query);
+    expr_list->children.push_back(column_list);
+
+    function_node->name = "one_hot_encoding_view";
+    function_node->arguments = expr_list;
     function_node->children.push_back(function_node->arguments);
     node = function_node;
     return true;
