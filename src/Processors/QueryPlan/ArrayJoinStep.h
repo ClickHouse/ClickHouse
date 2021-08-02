@@ -15,7 +15,6 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
 
-    void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
     void updateInputStream(DataStream input_stream, Block result_header);

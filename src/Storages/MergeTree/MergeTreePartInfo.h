@@ -1,6 +1,5 @@
 #pragma once
 
-#include <limits>
 #include <tuple>
 #include <common/types.h>
 #include <common/DayNum.h>
@@ -90,7 +89,7 @@ struct MergeTreePartInfo
     static bool validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version);
 
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);  // -V1071
-
+  
     static bool tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
 
     static void parseMinMaxDatesFromPartName(const String & part_name, DayNum & min_date, DayNum & max_date);

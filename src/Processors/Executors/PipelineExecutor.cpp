@@ -9,7 +9,7 @@
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <common/scope_guard_safe.h>
+#include <ext/scope_guard_safe.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -391,9 +391,6 @@ void PipelineExecutor::finish()
 
 void PipelineExecutor::execute(size_t num_threads)
 {
-    if (num_threads < 1)
-        num_threads = 1;
-
     try
     {
         executeImpl(num_threads);

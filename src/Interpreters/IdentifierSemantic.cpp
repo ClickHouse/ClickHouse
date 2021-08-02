@@ -1,8 +1,6 @@
-#include <Interpreters/IdentifierSemantic.h>
-
 #include <Common/typeid_cast.h>
 
-#include <Interpreters/Context.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 
 #include <Parsers/ASTFunction.h>
@@ -12,6 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int SYNTAX_ERROR;
     extern const int AMBIGUOUS_COLUMN_NAME;
 }
 
@@ -82,6 +81,22 @@ std::optional<String> IdentifierSemantic::getColumnName(const ASTPtr & ast)
     return {};
 }
 
+std::optional<String> IdentifierSemantic::getTableName(const ASTIdentifier & node)
+{
+    if (node.semantic->special)
+        return node.name();
+    return {};
+}
+
+std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
+{
+    if (ast)
+        if (const auto * id = ast->as<ASTIdentifier>())
+            if (id->semantic->special)
+                return id->name();
+    return {};
+}
+
 std::optional<ASTIdentifier> IdentifierSemantic::uncover(const ASTIdentifier & identifier)
 {
     if (identifier.semantic->covered)
@@ -129,6 +144,16 @@ std::optional<size_t> IdentifierSemantic::chooseTableColumnMatch(const ASTIdenti
                                                                  bool ambiguous)
 {
     return tryChooseTable<TableWithColumnNamesAndTypes>(identifier, tables, ambiguous, true);
+}
+
+StorageID IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
+{
+    if (identifier.name_parts.size() > 2)
+        throw Exception("Syntax error: more than two components in table expression", ErrorCodes::SYNTAX_ERROR);
+
+    if (identifier.name_parts.size() == 2)
+        return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
+    return { "", identifier.name_parts[0], identifier.uuid };
 }
 
 std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const String & table_name)
@@ -282,10 +307,7 @@ IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuer
         QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
-    const auto & settings = context->getSettingsRef();
-    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context,
-                                             settings.asterisk_include_alias_columns,
-                                             settings.asterisk_include_materialized_columns);
+    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context);
 }
 
 std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr ast) const

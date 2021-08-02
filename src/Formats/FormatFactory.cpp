@@ -9,6 +9,7 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -32,7 +33,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
@@ -43,7 +43,7 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }
 
-FormatSettings getFormatSettings(ContextPtr context)
+FormatSettings getFormatSettings(ContextConstPtr context)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -51,7 +51,7 @@ FormatSettings getFormatSettings(ContextPtr context)
 }
 
 template <typename Settings>
-FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
+FormatSettings getFormatSettings(ContextConstPtr context, const Settings & settings)
 {
     FormatSettings format_settings;
 
@@ -59,7 +59,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.avro.output_codec = settings.output_format_avro_codec;
     format_settings.avro.output_sync_interval = settings.output_format_avro_sync_interval;
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
-    format_settings.avro.string_column_pattern = settings.output_format_avro_string_column_pattern.toString();
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
@@ -70,6 +69,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
     format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
+    format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
     format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
     format_settings.custom.result_before_delimiter = settings.format_custom_result_before_delimiter;
     format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
@@ -113,7 +113,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
     format_settings.write_statistics = settings.output_format_write_statistics;
-    format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -126,16 +125,16 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     return format_settings;
 }
 
-template FormatSettings getFormatSettings<FormatFactorySettings>(ContextPtr context, const FormatFactorySettings & settings);
+template FormatSettings getFormatSettings<FormatFactorySettings>(ContextConstPtr context, const FormatFactorySettings & settings);
 
-template FormatSettings getFormatSettings<Settings>(ContextPtr context, const Settings & settings);
+template FormatSettings getFormatSettings<Settings>(ContextConstPtr context, const Settings & settings);
 
 
 InputFormatPtr FormatFactory::getInput(
     const String & name,
     ReadBuffer & buf,
     const Block & sample,
-    ContextPtr context,
+    ContextConstPtr context,
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings) const
 {
@@ -204,7 +203,7 @@ BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(
     const String & name,
     WriteBuffer & buf,
     const Block & sample,
-    ContextPtr context,
+    ContextConstPtr context,
     WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
@@ -241,7 +240,7 @@ BlockOutputStreamPtr FormatFactory::getOutputStream(
     const String & name,
     WriteBuffer & buf,
     const Block & sample,
-    ContextPtr context,
+    ContextConstPtr context,
     WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
@@ -270,7 +269,7 @@ InputFormatPtr FormatFactory::getInputFormat(
     const String & name,
     ReadBuffer & buf,
     const Block & sample,
-    ContextPtr context,
+    ContextConstPtr context,
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings) const
 {
@@ -304,13 +303,13 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     const String & name,
     WriteBuffer & buf,
     const Block & sample,
-    ContextPtr context,
+    ContextConstPtr context,
     WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
-        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
+        throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
@@ -339,13 +338,13 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     const String & name,
     WriteBuffer & buf,
     const Block & sample,
-    ContextPtr context,
+    ContextConstPtr context,
     WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
-        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
+        throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
 
     if (context->hasQueryContext() && context->getSettingsRef().log_queries)
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
@@ -353,11 +352,8 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     RowOutputFormatParams params;
     params.callback = std::move(callback);
 
-    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-
-    /// If we're handling MySQL protocol connection right now then MySQLWire is only allowed output format.
-    if (format_settings.mysql_wire.sequence_id && (name != "MySQLWire"))
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
+    auto format_settings = _format_settings
+        ? *_format_settings : getFormatSettings(context);
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.

@@ -1,6 +1,8 @@
 #include <cassert>
 #include <Common/Exception.h>
 
+#include <DataStreams/IBlockInputStream.h>
+
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
@@ -9,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
-#include <Processors/Sinks/SinkToStorage.h>
 
 
 namespace DB
@@ -99,23 +100,21 @@ private:
 };
 
 
-class MemorySink : public SinkToStorage
+class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-    MemorySink(
+    MemoryBlockOutputStream(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_)
+        : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
     {
     }
 
-    String getName() const override { return "MemorySink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override
+    void write(const Block & block) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
         metadata_snapshot->check(block, true);
 
         if (storage.compress)
@@ -132,7 +131,7 @@ public:
         }
     }
 
-    void onFinish() override
+    void writeSuffix() override
     {
         size_t inserted_bytes = 0;
         size_t inserted_rows = 0;
@@ -165,14 +164,12 @@ StorageMemory::StorageMemory(
     const StorageID & table_id_,
     ColumnsDescription columns_description_,
     ConstraintsDescription constraints_,
-    const String & comment,
     bool compress_)
     : IStorage(table_id_), data(std::make_unique<const Blocks>()), compress(compress_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -229,9 +226,9 @@ Pipe StorageMemory::read(
 }
 
 
-SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<MemorySink>(*this, metadata_snapshot);
+    return std::make_shared<MemoryBlockOutputStream>(*this, metadata_snapshot);
 }
 
 
@@ -264,7 +261,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
 
-    /// When max_threads > 1, the order of returning blocks is uncertain,
+    /// When max_threads > 1, the order of returning blocks is uncentain,
     /// which will lead to inconsistency after updateBlockData.
     auto new_context = Context::createCopy(context);
     new_context->setSetting("max_streams_to_max_threads_ratio", 1);
@@ -359,7 +356,7 @@ void registerStorageMemory(StorageFactory & factory)
         if (has_settings)
             settings.loadFromQuery(*args.storage_def);
 
-        return StorageMemory::create(args.table_id, args.columns, args.constraints, args.comment, settings.compress);
+        return StorageMemory::create(args.table_id, args.columns, args.constraints, settings.compress);
     },
     {
         .supports_settings = true,

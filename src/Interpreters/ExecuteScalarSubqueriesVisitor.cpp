@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -19,7 +20,6 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-
 
 namespace DB
 {
