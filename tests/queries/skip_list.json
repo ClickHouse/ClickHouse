@@ -191,7 +191,6 @@
     [
         /// Pessimistic list of tests which work badly in parallel.
         /// Probably they need better investigation.
-        "00062_replicated_merge_tree_alter_zookeeper",
         "00080_show_tables_and_system_tables",
         "00101_materialized_views_and_insert_without_explicit_database",
         "00109_shard_totals_after_having",
