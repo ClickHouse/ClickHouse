@@ -9,7 +9,7 @@ namespace DB
 
 /* one_hot_encoding_view((query),column[,column,...])
  * Turns a subquery into a table with the selected columns
- * expanded into columns that use one hot enconding for each distinct value.
+ * expanded into columns that use one hot encoding for each distinct value.
  * Used for machine learning data preparation.
  */
 class TableFunctionOneHotEncodingView : public ITableFunction

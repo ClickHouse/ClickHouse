@@ -228,13 +228,26 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     if (auto * query = tryGetQueryArgument())
     {
+        auto column_list = tryGetColumnListArgument();
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
-        settings.ostr << (settings.hilite ? hilite_function : "") << name << "(" << nl_or_nothing;
+        std::string indent_next_str = settings.one_line ? "" : std::string(4u * (frame.indent + 1), ' ');
+        settings.ostr << (settings.hilite ? hilite_function : "") << name;
+        settings.ostr << (settings.hilite ? hilite_none : "") << "(" << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
         frame_nested.need_parens = false;
         ++frame_nested.indent;
+        if (column_list)
+        {
+            settings.ostr << (settings.hilite ? hilite_none : "") << indent_next_str << "(" << nl_or_nothing;
+            ++frame_nested.indent;
+        }
         query->formatImpl(settings, state, frame_nested);
+        if (column_list)
+        {
+            settings.ostr << nl_or_nothing << indent_next_str << ")" << ", ";
+            column_list->formatImpl(settings, state, frame_nested);
+        }
         settings.ostr << nl_or_nothing << indent_str << ")";
         return;
     }
