@@ -239,10 +239,13 @@ void LocalServer::checkInterruptListener()
         {
             progress_indication.clearProgressOutput();
             std::cout << "Cancelling query." << std::endl;
-            cancelled = true;
 
-            current_query_executor->cancel();
-            current_query_executor.reset();
+            auto * process_list_elem = query_context->getProcessListElement();
+            if (process_list_elem)
+            {
+                process_list_elem->cancelQuery(true);
+                cancelled = true;
+            }
 
             interrupt_listener->unblock();
         }
@@ -290,16 +293,8 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
         };
     }
 
-    /// To process ctrl-c in interactive mode.
-    std::function<void(PipelineExecutorPtr)> set_executor_func;
     if (is_interactive)
-    {
         interrupt_listener.emplace();
-        set_executor_func = [&](PipelineExecutorPtr executor)
-        {
-            current_query_executor = executor;
-        };
-    }
 
     SCOPE_EXIT_SAFE({
         if (interrupt_listener)
@@ -308,7 +303,7 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
 
     try
     {
-        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, {}, flush_buffer_func, set_executor_func);
+        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, {}, flush_buffer_func);
         progress_indication.clearProgressOutput();
     }
     catch (...)

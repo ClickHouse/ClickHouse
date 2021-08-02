@@ -38,7 +38,7 @@ public:
 private:
     void loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, Int32 suggestion_limit);
 
-    void loadImpl(ContextMutablePtr context, Int32 suggestion_limit);
+    static void loadImpl(ContextMutablePtr context, Int32 suggestion_limit);
 
     void fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query);
 

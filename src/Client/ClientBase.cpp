@@ -248,10 +248,8 @@ bool ClientBase::processMultiQueryImpl(const String & all_queries_text,
     const char * this_query_begin = all_queries_text.data();
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
+    String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
     String query_to_execute;
-    // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
-    String full_query;
-
     ASTPtr parsed_query;
 
     while (this_query_begin < all_queries_end)

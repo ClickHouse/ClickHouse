@@ -12,7 +12,6 @@ class WriteBuffer;
 
 using SetResultDetailsFunc = std::function<void(const String &, const String &, const String &, const String &)>;
 using FlushBufferFunc = std::function<void(WriteBuffer & out, size_t num_rows)>;
-using SetExecutorFunc = std::function<void(PipelineExecutorPtr)>;
 
 /// Parse and execute a query.
 void executeQuery(
@@ -22,8 +21,7 @@ void executeQuery(
     ContextMutablePtr context,          /// DB, tables, data types, storage engines, functions, aggregate functions...
     SetResultDetailsFunc set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone.
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
-    FlushBufferFunc flush_buffer_func = {},
-    SetExecutorFunc set_executor_func = {}
+    FlushBufferFunc flush_buffer_func = {}
 );
 
 

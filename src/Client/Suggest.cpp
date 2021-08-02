@@ -118,48 +118,46 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit)
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
     WriteBufferFromOwnString query;
-    query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
-        "SELECT name FROM system.functions"
-        " UNION ALL "
-        "SELECT name FROM system.table_engines"
-        " UNION ALL "
-        "SELECT name FROM system.formats"
-        " UNION ALL "
-        "SELECT name FROM system.table_functions"
-        " UNION ALL "
-        "SELECT name FROM system.data_type_families"
-        " UNION ALL "
-        "SELECT name FROM system.settings"
-        " UNION ALL "
-        "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
 
-    /// If suggestion limit is < 0, show only most basic suggestions - only those, which are above.
+    query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
+          "SELECT name FROM system.functions"
+          " UNION ALL "
+          "SELECT name FROM system.table_engines"
+          " UNION ALL "
+          "SELECT name FROM system.formats"
+          " UNION ALL "
+          "SELECT name FROM system.table_functions"
+          " UNION ALL "
+          "SELECT name FROM system.data_type_families"
+          " UNION ALL "
+          "SELECT name FROM system.merge_tree_settings"
+          " UNION ALL "
+          "SELECT name FROM system.settings";
+
     if (suggestion_limit >= 0)
-    {
         query << " UNION ALL "
-            "SELECT name FROM system.merge_tree_settings"
-            " UNION ALL "
             "SELECT cluster FROM system.clusters"
             " UNION ALL "
             "SELECT macro FROM system.macros"
             " UNION ALL "
-            "SELECT policy_name FROM system.storage_policies"
-            " UNION ALL ";
+            "SELECT policy_name FROM system.storage_policies";
 
-        /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
-        if (suggestion_limit > 0)
-        {
-            String limit_str = toString(suggestion_limit);
-            query <<
-                " UNION ALL "
-                "SELECT name FROM system.databases LIMIT " << limit_str
-                << " UNION ALL "
-                "SELECT DISTINCT name FROM system.tables LIMIT " << limit_str
-                << " UNION ALL "
-                "SELECT DISTINCT name FROM system.dictionaries LIMIT " << limit_str
-                << " UNION ALL "
-                "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
-        }
+    query << " UNION ALL "
+            "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
+
+      /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
+    if (suggestion_limit > 0)
+    {
+        String limit_str = toString(suggestion_limit);
+        query <<
+            " UNION ALL "
+            "SELECT name FROM system.databases LIMIT " << limit_str
+            << " UNION ALL "
+            "SELECT DISTINCT name FROM system.tables LIMIT " << limit_str
+            << " UNION ALL "
+            "SELECT DISTINCT name FROM system.dictionaries LIMIT " << limit_str
+            << " UNION ALL "
+            "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
     }
 
     query << ") WHERE notEmpty(res)";
