@@ -10,7 +10,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/deferredconsumer.cpp"
     "${LIBRARY_DIR}/src/deferredextreceiver.cpp"
     "${LIBRARY_DIR}/src/deferredget.cpp"
-    "${LIBRARY_DIR}/src/deferredpublisher.cpp"
+    "${LIBRARY_DIR}/src/deferredrecall.cpp"
     "${LIBRARY_DIR}/src/deferredreceiver.cpp"
     "${LIBRARY_DIR}/src/field.cpp"
     "${LIBRARY_DIR}/src/flags.cpp"
