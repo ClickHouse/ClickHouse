@@ -19,9 +19,12 @@ struct StorageSnapshot
     const StorageMetadataPtr metadata;
     const ColumnsDescription object_columns;
 
-    struct Data{};
-    using DataPtr = std::unique_ptr<const Data>;
+    struct Data
+    {
+        virtual ~Data() = default;
+    };
 
+    using DataPtr = std::unique_ptr<const Data>;
     const DataPtr data;
 
     /// TODO: fix

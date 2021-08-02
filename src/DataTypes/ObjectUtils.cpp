@@ -229,8 +229,11 @@ static void addConstantToWithClause(const ASTPtr & query, const String & column_
     if (!select.with())
         select.setExpression(ASTSelectQuery::Expression::WITH, std::make_shared<ASTExpressionList>());
 
-    auto literal = std::make_shared<ASTLiteral>(data_type->getDefault());
-    auto node = makeASTFunction("CAST", std::move(literal), std::make_shared<ASTLiteral>(data_type->getName()));
+    /// TODO: avoid materialize
+    auto node = makeASTFunction("materialize",
+        makeASTFunction("CAST",
+            std::make_shared<ASTLiteral>(data_type->getDefault()),
+            std::make_shared<ASTLiteral>(data_type->getName())));
 
     node->alias = column_name;
     node->prefer_alias_to_column_name = true;
