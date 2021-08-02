@@ -1,5 +1,7 @@
 #include "StorageMongoDBSocketFactory.h"
 
+#include <Common/Exception.h>
+
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config.h>
 #endif
@@ -14,6 +16,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
+}
 
 Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSocket(const std::string & host, int port, Poco::Timespan connectTimeout, bool secure)
 {
@@ -41,7 +48,7 @@ Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSecureSocket(const st
 
     return socket;
 #else
-    return createPlainSocket(host, port, connectTimeout);
+    throw Exception("SSL is not enabled at build time.", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
 }
 
