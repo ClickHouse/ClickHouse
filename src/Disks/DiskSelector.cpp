@@ -75,7 +75,6 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
 
             old_disks_minus_new_disks.erase(disk_name);
 
-            // TODO: Implement updateFromConfigIfChanged for DiskS3 (DiskLocal already done)
             result->getDisksMap().find(disk_name)->second->updateFromConfigIfChanged(config, disk_config_prefix, context);
         }
     }
