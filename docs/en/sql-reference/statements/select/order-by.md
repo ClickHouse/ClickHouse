@@ -366,7 +366,7 @@ Result:
 
 Field `d1` does not fill in and use the default value cause we do not have repeated values for `d2` value, and the sequence for `d1` can’t be properly calculated.
 
-The following query with a changed field in `ORDER BY`:
+The following query with the changed field in `ORDER BY`:
 
 ``` sql
 SELECT
