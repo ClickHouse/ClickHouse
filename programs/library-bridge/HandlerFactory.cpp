@@ -13,7 +13,7 @@ namespace DB
         LOG_DEBUG(log, "Request URI: {}", uri.toString());
 
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
-            return std::make_unique<PingHandler>(keep_alive_timeout, getContext());
+            return std::make_unique<LibraryExistsHandler>(keep_alive_timeout, getContext());
 
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
             return std::make_unique<LibraryRequestHandler>(keep_alive_timeout, getContext());

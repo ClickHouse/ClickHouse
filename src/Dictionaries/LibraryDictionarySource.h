@@ -80,7 +80,7 @@ private:
 
     const DictionaryStructure dict_struct;
     const std::string config_prefix;
-    const std::string path;
+    std::string path;
     const Field dictionary_id;
 
     Block sample_block;

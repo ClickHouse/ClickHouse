@@ -33,9 +33,9 @@ Poco::URI IBridgeHelper::getPingURI() const
 }
 
 
-void IBridgeHelper::startBridgeSync() const
+void IBridgeHelper::startBridgeSync()
 {
-    if (!checkBridgeIsRunning())
+    if (!bridgeHandShake())
     {
         LOG_TRACE(getLog(), "{} is not running, will try to start it", serviceAlias());
         startBridge(startBridgeCommand());
@@ -49,7 +49,7 @@ void IBridgeHelper::startBridgeSync() const
             ++counter;
             LOG_TRACE(getLog(), "Checking {} is running, try {}", serviceAlias(), counter);
 
-            if (checkBridgeIsRunning())
+            if (bridgeHandShake())
             {
                 started = true;
                 break;
@@ -66,7 +66,7 @@ void IBridgeHelper::startBridgeSync() const
 }
 
 
-std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand() const
+std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
 {
     if (startBridgeManually())
         throw Exception(serviceAlias() + " is not running. Please, start it manually", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);

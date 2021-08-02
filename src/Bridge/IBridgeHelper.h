@@ -35,10 +35,11 @@ public:
 
     Poco::URI getPingURI() const;
 
-    void startBridgeSync() const;
+    void startBridgeSync();
 
 protected:
-    virtual bool checkBridgeIsRunning() const = 0;
+    /// Check bridge is running. Can also check something else in the mean time.
+    virtual bool bridgeHandShake() = 0;
 
     /// clickhouse-odbc-bridge, clickhouse-library-bridge
     virtual String serviceAlias() const = 0;
@@ -63,7 +64,7 @@ protected:
 
 
 private:
-    std::unique_ptr<ShellCommand> startBridgeCommand() const;
+    std::unique_ptr<ShellCommand> startBridgeCommand();
 };
 
 }
