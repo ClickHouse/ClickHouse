@@ -48,6 +48,7 @@ struct AggregateFunctionSequenceMatchData final
 
     bool sorted = true;
     PODArrayWithStackMemory<TimestampEvents, 64> events_list;
+    std::bitset<max_events> conditions_met;
 
     void add(const Timestamp timestamp, const Events & events)
     {
@@ -56,6 +57,7 @@ struct AggregateFunctionSequenceMatchData final
         {
             events_list.emplace_back(timestamp, events);
             sorted = false;
+            conditions_met |= events;
         }
     }
 
@@ -87,6 +89,8 @@ struct AggregateFunctionSequenceMatchData final
         }
 
         sorted = true;
+
+        conditions_met |= other.conditions_met;
     }
 
     void sort()
@@ -290,6 +294,7 @@ private:
                     dfa_states.back().transition = DFATransition::SpecificEvent;
                     dfa_states.back().event = event_number - 1;
                     dfa_states.emplace_back();
+                    conditions_in_pattern.set(event_number - 1);
                 }
 
                 if (!match(")"))
@@ -627,6 +632,7 @@ private:
 protected:
     /// `True` if the parsed pattern contains time assertions (?t...), `false` otherwise.
     bool pattern_has_time;
+    std::bitset<max_events> conditions_in_pattern;
 
 private:
     std::string pattern;
@@ -653,6 +659,11 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
+        if ((this->conditions_in_pattern & this->data(place).conditions_met) != this->conditions_in_pattern)
+        {
+            assert_cast<ColumnUInt8 &>(to).getData().push_back(false);
+            return;
+        }
         this->data(place).sort();
 
         const auto & data_ref = this->data(place);
@@ -684,6 +695,11 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
+        if ((this->conditions_in_pattern & this->data(place).conditions_met) != this->conditions_in_pattern)
+        {
+            assert_cast<ColumnUInt8 &>(to).getData().push_back(0);
+            return;
+        }
         this->data(place).sort();
         assert_cast<ColumnUInt64 &>(to).getData().push_back(count(place));
     }
