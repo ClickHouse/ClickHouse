@@ -74,8 +74,6 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
             disk->applyNewSettings(config, context, disk_config_prefix, result->getDisksMap());
 
             old_disks_minus_new_disks.erase(disk_name);
-
-            result->getDisksMap().find(disk_name)->second->updateFromConfigIfChanged(config, disk_config_prefix, context);
         }
     }
 
