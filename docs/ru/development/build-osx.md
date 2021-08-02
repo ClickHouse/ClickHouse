@@ -14,7 +14,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 ## Установка Xcode и инструментов командной строки {#install-xcode-and-command-line-tools}
 
-  1. Установите из App Store последнюю версию [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12). 
+  1. Установите из App Store последнюю версию [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12).
 
   2. Запустите ее, чтобы принять лицензионное соглашение. Необходимые компоненты установятся автоматически.
 

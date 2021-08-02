@@ -38,3 +38,6 @@ select number,
 from numbers(10)
 window w as (order by number)
 ;
+
+-- the case when current_row goes past the partition end at the block end
+select number, row_number() over (partition by number rows between unbounded preceding and 1 preceding) from numbers(4) settings max_block_size = 2;
