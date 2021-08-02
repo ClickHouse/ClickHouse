@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 
 #if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
 #   include <Common/config.h>
 #endif
 
@@ -12,14 +11,6 @@
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
-#endif
-
-#ifdef __clang__
-#   pragma clang diagnostic ignored "-Wunused-parameter"
-#endif
-
-#if USE_EMBEDDED_COMPILER
-#   pragma GCC diagnostic ignored "-Wunused-parameter"
 #endif
 
 
@@ -47,7 +38,7 @@ Poco::Net::StreamSocket StorageMongoDBSocketFactory::createPlainSocket(const std
 }
 
 
-Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSecureSocket(const std::string & host, int port, Poco::Timespan connectTimeout)
+Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSecureSocket(const std::string & host [[maybe_unused]], int port [[maybe_unused]], Poco::Timespan connectTimeout [[maybe_unused]])
 {
 #if USE_SSL
     Poco::Net::SocketAddress address(host, port);
