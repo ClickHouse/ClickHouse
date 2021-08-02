@@ -280,7 +280,7 @@ To fill multiple columns, add `WITH FILL` modifier with optional parameters afte
 ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr]
 ```
 
-`WITH FILL` can be applied for fields with Numeric (all kind of float, decimal, int) or Date/DateTime types. When applied for `String` fields, missed values are filled with empty strings.
+`WITH FILL` can be applied for fields with Numeric (all kinds of float, decimal, int) or Date/DateTime types. When applied for `String` fields, missed values are filled with empty strings.
 When `FROM const_expr` not defined sequence of filling use minimal `expr` field value from `ORDER BY`.
 When `TO const_expr` not defined sequence of filling use maximum `expr` field value from `ORDER BY`.
 When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types as `days` for Date type and as `seconds` for DateTime type.
