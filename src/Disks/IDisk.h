@@ -35,7 +35,6 @@ using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
-class Context;
 class MMappedFileCache;
 
 /**
@@ -232,7 +231,7 @@ public:
     /// Required for remote disk to ensure that replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
-    /// Reload config if config changed
+    /// Reload config if it was changed
     virtual void updateFromConfigIfChanged(const Poco::Util::AbstractConfiguration & /* config */,
                                            const String & /* config_prefix */,
                                            ContextPtr /* context */) { }
