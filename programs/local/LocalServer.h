@@ -93,15 +93,12 @@ private:
 
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 
-    /// Used to cancel qeury on ctrl-c. Lives for single query execution.
+    /// Used to cancel query on ctrl-c. Lives for single query execution.
     std::optional<InterruptListener> interrupt_listener;
-
-    /// Used to cancel qeury on ctrl-c. Lives for single query execution.
-    PipelineExecutorPtr current_query_executor;
 
     std::mutex interrupt_listener_mutex;
 
-    /// Is currently executed query was cancelled by ctrl-c in interactive mode?
+    /// Was currently executed query cancelled by ctrl-c in interactive mode?
     bool cancelled = true;
 };
 

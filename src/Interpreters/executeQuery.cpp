@@ -945,8 +945,7 @@ void executeQuery(
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
     const std::optional<FormatSettings> & output_format_settings,
-    FlushBufferFunc flush_buffer_func,
-    SetExecutorFunc set_executor_func)
+    FlushBufferFunc flush_buffer_func)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1102,11 +1101,6 @@ void executeQuery(
 
             {
                 auto executor = pipeline.execute();
-
-                /// For clickhouse-local to process ctrl-c in interactive mode.
-                if (set_executor_func)
-                    set_executor_func(executor);
-
                 executor->execute(pipeline.getNumThreads());
             }
         }
