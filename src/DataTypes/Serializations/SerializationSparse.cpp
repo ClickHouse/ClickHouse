@@ -21,7 +21,7 @@ namespace
 {
 
 /// 2^62, because VarInt supports only values < 2^63.
-static constexpr auto END_OF_GRANULE_FLAG = 1ULL << 62;
+constexpr auto END_OF_GRANULE_FLAG = 1ULL << 62;
 
 struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkState
 {

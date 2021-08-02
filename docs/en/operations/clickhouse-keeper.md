@@ -30,21 +30,25 @@ Other common parameters are inherited from clickhouse-server config (`listen_hos
 
 Internal coordination settings are located in `<keeper_server>.<coordination_settings>` section:
 
--    `operation_timeout_ms` — timeout for a single client operation
--    `session_timeout_ms` — timeout for client session
--    `dead_session_check_period_ms` — how often clickhouse-keeper check dead sessions and remove them
--    `heart_beat_interval_ms` — how often a clickhouse-keeper leader will send heartbeats to followers
--    `election_timeout_lower_bound_ms` — if follower didn't receive heartbeats from the leader in this interval, then it can initiate leader election
--    `election_timeout_upper_bound_ms` — if follower didn't receive heartbeats from the leader in this interval, then it must initiate leader election
--    `rotate_log_storage_interval` — how many logs to store in a single file
--    `reserved_log_items` — how many coordination logs to store before compaction
--    `snapshot_distance` — how often clickhouse-keeper will create new snapshots (in the number of logs)
--    `snapshots_to_keep` — how many snapshots to keep
--    `stale_log_gap` — the threshold when leader consider follower as stale and send snapshot to it instead of logs
--    `force_sync` — call `fsync` on each write to coordination log
--    `raft_logs_level` — text logging level about coordination (trace, debug, and so on)
--    `shutdown_timeout` — wait to finish internal connections and shutdown
--    `startup_timeout` — if the server doesn't connect to other quorum participants in the specified timeout it will terminate
+-    `operation_timeout_ms` — timeout for a single client operation (default: 10000)
+-    `session_timeout_ms` — timeout for client session (default: 30000)
+-    `dead_session_check_period_ms` — how often clickhouse-keeper check dead sessions and remove them (default: 500)
+-    `heart_beat_interval_ms` — how often a clickhouse-keeper leader will send heartbeats to followers (default: 500)
+-    `election_timeout_lower_bound_ms` — if follower didn't receive heartbeats from the leader in this interval, then it can initiate leader election (default: 1000)
+-    `election_timeout_upper_bound_ms` — if follower didn't receive heartbeats from the leader in this interval, then it must initiate leader election (default: 2000)
+-    `rotate_log_storage_interval` — how many log records to store in a single file (default: 100000)
+-    `reserved_log_items` — how many coordination log records to store before compaction (default: 100000)
+-    `snapshot_distance` — how often clickhouse-keeper will create new snapshots (in the number of records in logs) (default: 100000)
+-    `snapshots_to_keep` — how many snapshots to keep (default: 3)
+-    `stale_log_gap` — the threshold when leader consider follower as stale and send snapshot to it instead of logs (default: 10000)
+-    `fresh_log_gap` - when node became fresh (default: 200)
+-    `max_requests_batch_size` - max size of batch in requests count before it will be sent to RAFT (default: 100)
+-    `force_sync` — call `fsync` on each write to coordination log (default: true)
+-    `quorum_reads` - execute read requests as writes through whole RAFT consesus with similar speed (default: false)
+-    `raft_logs_level` — text logging level about coordination (trace, debug, and so on) (default: system default)
+-    `auto_forwarding` - allow to forward write requests from followers to leader (default: true)
+-    `shutdown_timeout` — wait to finish internal connections and shutdown (ms) (default: 5000)
+-    `startup_timeout` — if the server doesn't connect to other quorum participants in the specified timeout it will terminate (ms) (default: 30000)
 
 Quorum configuration is located in `<keeper_server>.<raft_configuration>` section and contain servers description. The only parameter for the whole quorum is `secure`, which enables encrypted connection for communication between quorum participants. The main parameters for each `<server>` are:
 

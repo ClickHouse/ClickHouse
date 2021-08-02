@@ -1094,7 +1094,7 @@ private:
 
     /** Try to compile aggregate functions.
       */
-    void compileAggregateFunctions();
+    void compileAggregateFunctionsIfNeeded();
 
     /** Select the aggregation method based on the number and types of keys. */
     AggregatedDataVariants::Type chooseAggregationMethod();
@@ -1318,6 +1318,8 @@ private:
         AggregatedDataVariants & data_variants,
         Columns & key_columns, size_t key_row,
         MutableColumns & final_key_columns) const;
+
+    static bool hasSparseArguments(AggregateFunctionInstruction * aggregate_instructions);
 };
 
 

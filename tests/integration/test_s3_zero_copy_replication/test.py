@@ -77,16 +77,16 @@ def test_s3_zero_copy_replication(cluster, policy):
     assert node2.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data'),(2,'data'),(3,'data')"
     assert node1.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data'),(2,'data'),(3,'data')"
 
-    # Based on version 20.x - two parts
-    wait_for_large_objects_count(cluster, 2)
+    # Based on version 21.x - two parts
+    wait_for_large_objects_count(cluster, 4)
 
     node1.query("OPTIMIZE TABLE s3_test FINAL")
 
-    # Based on version 20.x - after merge, two old parts and one merged
-    wait_for_large_objects_count(cluster, 3)
+    # Based on version 21.x - after merge, two old parts and one merged
+    wait_for_large_objects_count(cluster, 6)
 
-    # Based on version 20.x - after cleanup - only one merged part
-    wait_for_large_objects_count(cluster, 1, timeout=60)
+    # Based on version 21.x - after cleanup - only one merged part
+    wait_for_large_objects_count(cluster, 2, timeout=60)
 
     node1.query("DROP TABLE IF EXISTS s3_test NO DELAY")
     node2.query("DROP TABLE IF EXISTS s3_test NO DELAY")
