@@ -389,12 +389,18 @@ static void readColumnFromArrowColumn(
         case arrow::Type::TIMESTAMP:
             fillColumnWithTimestampData(arrow_column, internal_column);
             break;
+#if defined(ARCADIA_BUILD)
+        case arrow::Type::DECIMAL:
+            fillColumnWithDecimalData<Decimal128, arrow::Decimal128Array>(arrow_column, internal_column /*, internal_nested_type*/);
+            break;
+#else
         case arrow::Type::DECIMAL128:
             fillColumnWithDecimalData<Decimal128, arrow::Decimal128Array>(arrow_column, internal_column /*, internal_nested_type*/);
             break;
         case arrow::Type::DECIMAL256:
             fillColumnWithDecimalData<Decimal256, arrow::Decimal256Array>(arrow_column, internal_column /*, internal_nested_type*/);
             break;
+#endif
         case arrow::Type::MAP: [[fallthrough]];
         case arrow::Type::LIST:
         {
@@ -505,6 +511,13 @@ static DataTypePtr getInternalType(
         return makeNullable(getInternalType(arrow_type, nested_type, column_name, format_name));
     }
 
+#if defined(ARCADIA_BUILD)
+    if (arrow_type->id() == arrow::Type::DECIMAL)
+    {
+        const auto & decimal_type = dynamic_cast<const arrow::DecimalType &>(*arrow_type);
+        return std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type.precision(), decimal_type.scale());
+    }
+#else
     if (arrow_type->id() == arrow::Type::DECIMAL128)
     {
         const auto & decimal_type = dynamic_cast<const arrow::DecimalType &>(*arrow_type);
@@ -516,6 +529,7 @@ static DataTypePtr getInternalType(
         const auto & decimal_type = dynamic_cast<const arrow::DecimalType &>(*arrow_type);
         return std::make_shared<DataTypeDecimal<Decimal256>>(decimal_type.precision(), decimal_type.scale());
     }
+#endif
 
     if (arrow_type->id() == arrow::Type::LIST)
     {
