@@ -6,7 +6,7 @@ toc_title: NLP
 # [experimental] Natural Language Processing functions {#nlp-functions}
 
 !!! warning "Warning"
-    This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in the future releases. Set `allow_experimental_nlp_functions = 1` to enable it.
+    This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in future releases. Set `allow_experimental_nlp_functions = 1` to enable it.
 
 ## stem {#stem}
 
@@ -41,7 +41,7 @@ Result:
 
 ## lemmatize {#lemmatize}
 
-Performs lemmatization on a given word. Needs dictionaries to operate. Dictionaries can be obtained [here](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
+Performs lemmatization on a given word. Needs dictionaries to operate, which can be obtained [here](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
 
 **Syntax**
 
@@ -84,9 +84,9 @@ Configuration:
 
 Finds synonyms to a given word. There are two types of synonym extensions: `plain` and `wordnet`.
 
-With `plain` extension type we need to provide a path to simple text file, where each line corresponds to certain synonym set. Words in this line must be separated with space or tab characters.
+With the `plain` extension type we need to provide a path to a simple text file, where each line corresponds to a certain synonym set. Words in this line must be separated with space or tab characters.
 
-With `wordnet` extension type we need to provide a path to directory with WordNet thesaurus in it. Thesaurus must contain WordNet sense index.
+With the `wordnet` extension type we need to provide a path to a directory with WordNet thesaurus in it. Thesaurus must contain a WordNet sense index.
 
 **Syntax**
 
