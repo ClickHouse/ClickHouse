@@ -64,7 +64,7 @@ public:
         return getNested()->read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
     {
         return getNested()->write(query, metadata_snapshot, context);
     }

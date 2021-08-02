@@ -167,7 +167,8 @@ Pipe StorageDictionary::read(
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, local_context);
+    auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
+    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
     auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
     /// TODO: update dictionary interface for processors.
     return Pipe(std::make_shared<SourceFromInputStream>(stream));

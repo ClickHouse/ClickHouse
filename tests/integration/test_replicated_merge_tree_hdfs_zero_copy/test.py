@@ -9,7 +9,7 @@ from pyhdfs import HdfsClient
 
 SHARDS = 2
 FILES_OVERHEAD_PER_TABLE = 1          # format_version.txt
-FILES_OVERHEAD_PER_PART_COMPACT = 7
+FILES_OVERHEAD_PER_PART_COMPACT = 8
 
 
 def wait_for_hdfs_objects(cluster, fp, expected, num_tries=30):
