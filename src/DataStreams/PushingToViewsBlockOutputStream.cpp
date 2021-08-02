@@ -52,7 +52,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     if (!getContext()->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
         disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
-    std::cerr << "---- storage " << storage->getName() << std::endl;
+    //std::cerr << "---- storage " << storage->getName() << std::endl;
     auto table_id = storage->getStorageID();
     Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
 
@@ -371,7 +371,7 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
 
         if (view.query)
         {
-            std::cerr << ".... pushing block " << block.dumpStructure() << "\n" << storage->getName() << "\n" << queryToString(view.query) << std::endl;
+            //std::cerr << ".... pushing block " << block.dumpStructure() << "\n" << storage->getName() << "\n" << queryToString(view.query) << std::endl;
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
             /// InterpreterSelectQuery will do processing of alias columns.

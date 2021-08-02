@@ -4,6 +4,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageValues.h>
 
 namespace DB
 {
@@ -101,7 +102,23 @@ static NamesAndTypesList getColumnsFromTableExpression(
     else if (table_expression.database_and_table_name)
     {
         auto table_id = context->resolveStorageID(table_expression.database_and_table_name);
-        const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
+        StoragePtr table;
+        if (auto view_source = context->getViewSource())
+        {
+            //std::cerr << "======= Has view source\n";
+            const auto & storage_values = static_cast<const StorageValues &>(*view_source);
+            auto tmp_table_id = storage_values.getStorageID();
+            std::cerr << table_id.database_name << ' ' << table_id.table_name << std::endl;
+            std::cerr << tmp_table_id.database_name << ' ' << tmp_table_id.table_name << std::endl;
+            if (tmp_table_id.database_name == table_id.database_name && tmp_table_id.table_name == table_id.table_name)
+            {
+                //std::cerr << ">>> using view source" << std::endl;
+                /// Read from view source.
+                table = view_source;
+            }
+        }
+        else
+            table = DatabaseCatalog::instance().getTable(table_id, context);
         auto table_metadata_snapshot = table->getInMemoryMetadataPtr();
         const auto & columns = table_metadata_snapshot->getColumns();
         names_and_type_list = columns.getOrdinary();

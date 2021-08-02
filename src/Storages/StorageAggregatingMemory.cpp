@@ -15,6 +15,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Parsers/queryToString.h>
 #include <Storages/StorageAggregatingMemory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
@@ -194,11 +195,15 @@ public:
     {
         storage.src_metadata_snapshot->check(block, true);
 
-        StoragePtr source_storage = storage.source_storage;
+        //StoragePtr source_storage = storage.source_storage;
         auto query = storage.select_query.inner_query; // .select_query->as<ASTSelectWithUnionQuery>()->list_of_selects->children.at(0);// metadata_snapshot->getSelectQuery();
 
         StoragePtr block_storage
-            = StorageValues::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), block, source_storage->getVirtuals());
+            = StorageValues::create(storage.getStorageID(), storage.src_metadata_snapshot->getColumns(), block, storage.getVirtuals());
+
+        // auto local_context = Context::createCopy(context);
+        // local_context->addViewSource(
+        // StorageValues::create(getStorageID(), source_columns, Block(), getVirtuals()));
 
         InterpreterSelectQuery select(query, context, block_storage, nullptr, SelectQueryOptions(QueryProcessingStage::WithMergeableState));
         auto select_result = select.execute();
@@ -275,30 +280,25 @@ protected:
         storage_metadata.setColumns(columns_);
         setInMemoryMetadata(storage_metadata);
     }
+
+    StorageSource(const StorageID & table_id, const ColumnsDescription & columns_) : IStorage(table_id)
+    {
+        StorageInMemoryMetadata storage_metadata;
+        storage_metadata.setColumns(columns_);
+        setInMemoryMetadata(storage_metadata);
+    }
 };
 
-StorageAggregatingMemory::StorageAggregatingMemory(
-    const StorageID & table_id_,
-    ConstraintsDescription constraints_,
-    const ASTCreateQuery & query,
-    ContextPtr context_)
-    : IStorage(table_id_),
-      log(&Poco::Logger::get("StorageAggregatingMemory"))
+static ASTSelectQuery * getFirstSelect(const IAST & select)
 {
-    if (!query.select)
-        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
-
-    if (query.select->list_of_selects->children.size() != 1)
-        throw Exception("UNION is not supported for AggregatingMemory", ErrorCodes::INCORRECT_QUERY);
-
-    // TODO check validity of aggregation query inside this func
-    select_query = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
-
-    ContextMutablePtr context_copy = Context::createCopy(context_);
-    context_copy->makeQueryContext();
-    query_context = context_copy;
-
-    constructor_constraints = constraints_;
+    const auto * new_select = select.as<ASTSelectWithUnionQuery>();
+    if (!new_select || new_select->list_of_selects->children.empty())
+        return nullptr;
+    auto & new_inner_query = new_select->list_of_selects->children.at(0);
+    if (auto * simple_select = new_inner_query->as<ASTSelectQuery>())
+        return simple_select;
+    else
+        return getFirstSelect(*new_inner_query);
 }
 
 static ColumnsDescription blockToColumnsDescription(Block header)
@@ -313,40 +313,77 @@ static ColumnsDescription blockToColumnsDescription(Block header)
     return columns;
 }
 
-static ColumnsDescription nameTypeListToColumnsDescription(NamesAndTypesList list)
+StorageAggregatingMemory::StorageAggregatingMemory(
+    const StorageID & table_id_,
+    const ColumnsDescription & columns_,
+    ConstraintsDescription constraints_,
+    const ASTCreateQuery & query,
+    ContextPtr context_)
+    : IStorage(table_id_),
+      log(&Poco::Logger::get("StorageAggregatingMemory"))
 {
-    ColumnsDescription columns;
-    for (const auto & column : list)
-    {
-        ColumnDescription column_description(column.name, column.type);
-        columns.add(column_description);
-    }
+    std::cerr << "=== creating StorageAggregatingMemory query: " << queryToString(query) << std::endl;
 
-    return columns;
-}
+    if (!query.select)
+        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-void StorageAggregatingMemory::lazyInit()
-{
-    if (is_initialized)
-        return;
+    if (query.select->list_of_selects->children.size() != 1)
+        throw Exception("UNION is not supported for AggregatingMemory", ErrorCodes::INCORRECT_QUERY);
 
-    std::lock_guard lock(init_mutex);
+    // TODO check validity of aggregation query inside this func
+    select_query = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
 
-    if (is_initialized)
-        return;
+    ContextMutablePtr context_copy = Context::createCopy(context_);
+    context_copy->makeQueryContext();
+    query_context = context_copy;
+
+    constructor_constraints = constraints_;
 
     ASTPtr select_ptr = select_query.inner_query;
     ASTSelectQuery * select = select_ptr->as<ASTSelectQuery>();
     if (!select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid create query for AggregatingMemory. SELECT query is expected");
 
-    /// Get info about source table.
-    JoinedTables joined_tables(query_context, *select);
-    source_storage = joined_tables.getLeftTableStorage();
-    NamesAndTypesList source_columns = source_storage->getInMemoryMetadata().getColumns().getAll();
+    ColumnsDescription source_columns;
+    if (query.attach)
+    {
+        source_columns = columns_;
+    }
+    else
+    {
+        if (!query.columns_list || !query.columns_list->columns || query.columns_list->columns->children.empty())
+        {
+            /// Get info about source table.
+            // JoinedTables joined_tables(query_context, *select);
+            // auto source_storage = joined_tables.getLeftTableStorage();
+            // source_columns = source_storage->getInMemoryMetadata().getColumns();
 
+            Block header = InterpreterSelectQuery(select_ptr, query_context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze()).getSampleBlock();
+            source_columns = blockToColumnsDescription(header);
+
+            ASTPtr new_columns = InterpreterCreateQuery::formatColumns(source_columns);
+            query.columns_list->setOrReplace(query.columns_list->columns, new_columns);
+        }
+        else
+        {
+            source_columns = columns_;
+        }
+    }
+
+    getFirstSelect(*query.select)->setExpression(ASTSelectQuery::Expression::TABLES, nullptr);
+
+    select->replaceDatabaseAndTable(getStorageID());
+
+    auto local_context = Context::createCopy(query_context);
+    local_context->addViewSource(
+        StorageValues::create(getStorageID(), source_columns, Block(), getVirtuals()));
+
+    //auto tmp_storage = StorageSource::create(getStorageID(), source_columns);
+
+    // std::cerr << "======= StorageAggregatingMemory::lazyInit 1\n";
     /// Get list of columns we get from select query.
-    Block header = InterpreterSelectQuery(select_ptr, query_context, SelectQueryOptions().analyze()).getSampleBlock();
+
+    Block header = InterpreterSelectQuery(select_ptr, local_context, SelectQueryOptions().analyze()).getSampleBlock();
 
     /// Init metadata for reads from this storage.
     StorageInMemoryMetadata storage_metadata;
@@ -357,11 +394,17 @@ void StorageAggregatingMemory::lazyInit()
 
     /// Init metadata for writes.
     StorageInMemoryMetadata src_metadata;
-    src_metadata.setColumns(nameTypeListToColumnsDescription(source_columns));
+    src_metadata.setColumns(source_columns);
     src_metadata_snapshot = std::make_shared<StorageInMemoryMetadata>(src_metadata);
 
     /// Create AggregatingStep to extract params from it.
-    InterpreterSelectQuery select_interpreter(select_ptr, query_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState).analyze());
+    InterpreterSelectQuery select_interpreter(select_ptr, local_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState).analyze());
+
+    if (!select_interpreter.getAnalysisResult().need_aggregate)
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "Query for AggregatingMemory storage must have aggregation. Query: {}",
+                        queryToString(select_ptr));
+
     QueryPlan query_plan;
     select_interpreter.buildQueryPlan(query_plan);
 
@@ -387,7 +430,7 @@ void StorageAggregatingMemory::lazyInit()
                               true);
 
     aggregator_transform_params = std::make_shared<AggregatingTransformParams>(params, false);
-    initState(query_context);
+    initState(local_context);
     is_initialized = true;
 }
 
@@ -406,15 +449,15 @@ void StorageAggregatingMemory::initState(ContextPtr context)
 
 void StorageAggregatingMemory::startup()
 {
-    try
-    {
-        lazyInit();
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("Failed to initialize AggregatingMemory on startup");
-        LOG_ERROR(log, "{}", getCurrentExceptionMessage(true));
-    }
+    // try
+    // {
+    //     lazyInit();
+    // }
+    // catch (Exception & e)
+    // {
+    //     e.addMessage("Failed to initialize AggregatingMemory on startup");
+    //     LOG_ERROR(log, "{}", getCurrentExceptionMessage(true));
+    // }
 }
 
 Pipe StorageAggregatingMemory::read(
@@ -426,7 +469,7 @@ Pipe StorageAggregatingMemory::read(
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    lazyInit();
+    //lazyInit();
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     // TODO implement O(1) read by aggregation key
@@ -455,7 +498,7 @@ Pipe StorageAggregatingMemory::read(
         source = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform_params, std::move(prepared_data_ptr), num_streams);
     }
 
-    StoragePtr mergable_storage = StorageSource::create(source_storage->getStorageID(), source_storage->getInMemoryMetadataPtr()->getColumns(), source, std::move(lock));
+    StoragePtr mergable_storage = StorageSource::create(getStorageID(), src_metadata_snapshot->getColumns(), source, std::move(lock));
 
     InterpreterSelectQuery select(metadata_snapshot->getSelectQuery().inner_query, context, mergable_storage);
     BlockIO select_result = select.execute();
@@ -465,7 +508,7 @@ Pipe StorageAggregatingMemory::read(
 
 BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    lazyInit();
+    //lazyInit();
 
     auto out = std::make_shared<AggregatingOutputStream>(*this, metadata_snapshot, context);
     return out;
@@ -482,7 +525,7 @@ void StorageAggregatingMemory::drop()
 
 void StorageAggregatingMemory::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
 {
-    lazyInit();
+    ///lazyInit();
 
     /// Assign fresh state.
     initState(context);
@@ -515,7 +558,7 @@ void registerStorageAggregatingMemory(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageAggregatingMemory::create(args.table_id, args.constraints, args.query, args.getLocalContext());
+        return StorageAggregatingMemory::create(args.table_id, args.columns, args.constraints, args.query, args.getLocalContext());
     },
     {
         .supports_parallel_insert = true, // TODO not sure

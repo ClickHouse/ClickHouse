@@ -595,8 +595,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     }
     else if (create.select)
     {
-        Block as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
-        properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        bool is_aggregating_memory = create.storage && create.storage->engine && create.storage->engine->name == "AggregatingMemory";
+        if (!is_aggregating_memory)
+        {
+            Block as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext());
+            properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+        }
     }
     else if (create.as_table_function)
     {

@@ -59,12 +59,6 @@ public:
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
 protected:
-    /* Initialize engine before executing any queries. This initialization is proceeding
-     * in a lazy manner, exactly once. This function will do nothing if engine is already
-     * initialized.
-     */
-    void lazyInit();
-
     /// Create ManyData, and assign zero state if needed.
     void initState(ContextPtr context);
 
@@ -78,7 +72,7 @@ private:
     ContextPtr query_context;
     ConstraintsDescription constructor_constraints;
 
-    StoragePtr source_storage;
+    // StoragePtr source_storage;
     StorageMetadataPtr src_metadata_snapshot;
 
     AggregatingTransformParamsPtr aggregator_transform_params;
@@ -88,7 +82,7 @@ private:
     mutable std::shared_mutex rwlock;
 
 protected:
-    StorageAggregatingMemory(const StorageID & table_id_, ConstraintsDescription constraints_, const ASTCreateQuery & query, ContextPtr context_);
+    StorageAggregatingMemory(const StorageID & table_id_, const ColumnsDescription & columns_, ConstraintsDescription constraints_, const ASTCreateQuery & query, ContextPtr context_);
 };
 
 }
