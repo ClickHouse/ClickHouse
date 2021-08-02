@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -24,12 +23,10 @@ namespace DB
 class AddDefaultDatabaseVisitor
 {
 public:
-    explicit AddDefaultDatabaseVisitor(
-        const String & database_name_, bool only_replace_current_database_function_ = false, WriteBuffer * ostr_ = nullptr)
-        : database_name(database_name_)
-        , only_replace_current_database_function(only_replace_current_database_function_)
-        , visit_depth(0)
-        , ostr(ostr_)
+    AddDefaultDatabaseVisitor(const String & database_name_, std::ostream * ostr_ = nullptr)
+    :   database_name(database_name_),
+        visit_depth(0),
+        ostr(ostr_)
     {}
 
     void visitDDL(ASTPtr & ast) const
@@ -37,8 +34,7 @@ public:
         visitDDLChildren(ast);
 
         if (!tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
-            !tryVisitDynamicCast<ASTRenameQuery>(ast) &&
-            !tryVisitDynamicCast<ASTFunction>(ast))
+            !tryVisitDynamicCast<ASTRenameQuery>(ast))
         {}
     }
 
@@ -64,9 +60,8 @@ public:
 
 private:
     const String database_name;
-    bool only_replace_current_database_function = false;
     mutable size_t visit_depth;
-    WriteBuffer * ostr;
+    std::ostream * ostr;
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -97,15 +92,16 @@ private:
     void visit(ASTTableExpression & table_expression, ASTPtr &) const
     {
         if (table_expression.database_and_table_name)
-            tryVisit<ASTTableIdentifier>(table_expression.database_and_table_name);
+            tryVisit<ASTIdentifier>(table_expression.database_and_table_name);
         else if (table_expression.subquery)
             tryVisit<ASTSubquery>(table_expression.subquery);
     }
 
-    void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
+    /// @note It expects that only table (not column) identifiers are visited.
+    void visit(const ASTIdentifier & identifier, ASTPtr & ast) const
     {
         if (!identifier.compound())
-            ast = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
+            ast = createTableIdentifier(database_name, identifier.name);
     }
 
     void visit(ASTSubquery & subquery, ASTPtr &) const
@@ -116,7 +112,7 @@ private:
     void visit(ASTFunction & function, ASTPtr &) const
     {
         bool is_operator_in = false;
-        for (const auto * name : {"in", "notIn", "globalIn", "globalNotIn"})
+        for (auto name : {"in", "notIn", "globalIn", "globalNotIn"})
         {
             if (function.name == name)
             {
@@ -133,14 +129,9 @@ private:
                 {
                     if (is_operator_in && i == 1)
                     {
-                        /// XXX: for some unknown reason this place assumes that argument can't be an alias,
-                        ///      like in the similar code in `MarkTableIdentifierVisitor`.
-                        if (auto * identifier = child->children[i]->as<ASTIdentifier>())
-                            child->children[i] = identifier->createTable();
-
                         /// Second argument of the "in" function (or similar) may be a table name or a subselect.
                         /// Rewrite the table name or descend into subselect.
-                        if (!tryVisit<ASTTableIdentifier>(child->children[i]))
+                        if (!tryVisit<ASTIdentifier>(child->children[i]))
                             visit(child->children[i]);
                     }
                     else
@@ -173,33 +164,18 @@ private:
 
     void visitDDL(ASTQueryWithTableAndOutput & node, ASTPtr &) const
     {
-        if (only_replace_current_database_function)
-            return;
-
         if (node.database.empty())
             node.database = database_name;
     }
 
     void visitDDL(ASTRenameQuery & node, ASTPtr &) const
     {
-        if (only_replace_current_database_function)
-            return;
-
         for (ASTRenameQuery::Element & elem : node.elements)
         {
             if (elem.from.database.empty())
                 elem.from.database = database_name;
             if (elem.to.database.empty())
                 elem.to.database = database_name;
-        }
-    }
-
-    void visitDDL(ASTFunction & function, ASTPtr & node) const
-    {
-        if (function.name == "currentDatabase")
-        {
-            node = std::make_shared<ASTLiteral>(database_name);
-            return;
         }
     }
 

@@ -4,8 +4,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Access/EnabledQuota.h>
 #include <Common/CurrentThread.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <common/sleep.h>
 
 namespace ProfileEvents
 {
@@ -25,6 +24,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_DEEP_PIPELINE;
 }
 
 
@@ -63,7 +63,7 @@ Block IBlockInputStream::read()
         if (enabled_extremes)
             updateExtremes(res);
 
-        if (limits.mode == LimitsMode::LIMITS_CURRENT && !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
+        if (limits.mode == LIMITS_CURRENT && !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
             limit_exceeded_need_break = true;
 
         if (quota)
@@ -209,11 +209,11 @@ void IBlockInputStream::checkQuota(Block & block)
 {
     switch (limits.mode)
     {
-        case LimitsMode::LIMITS_TOTAL:
+        case LIMITS_TOTAL:
             /// Checked in `progress` method.
             break;
 
-        case LimitsMode::LIMITS_CURRENT:
+        case LIMITS_CURRENT:
         {
             UInt64 total_elapsed = info.total_stopwatch.elapsedNanoseconds();
             quota->used({Quota::RESULT_ROWS, block.rows()}, {Quota::RESULT_BYTES, block.bytes()}, {Quota::EXECUTION_TIME, total_elapsed - prev_elapsed});
@@ -242,7 +242,7 @@ void IBlockInputStream::progressImpl(const Progress & value)
         /** Check the restrictions on the amount of data to read, the speed of the query, the quota on the amount of data to read.
             * NOTE: Maybe it makes sense to have them checked directly in ProcessList?
             */
-        if (limits.mode == LimitsMode::LIMITS_TOTAL)
+        if (limits.mode == LIMITS_TOTAL)
         {
             if (!limits.size_limits.check(total_rows_estimate, progress.read_bytes, "rows to read",
                                          ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
@@ -262,7 +262,7 @@ void IBlockInputStream::progressImpl(const Progress & value)
 
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
-        if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
+        if (quota && limits.mode == LIMITS_TOTAL)
             quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
 
@@ -354,6 +354,76 @@ Block IBlockInputStream::getExtremes()
         return bool(res);
     });
     return res;
+}
+
+
+String IBlockInputStream::getTreeID() const
+{
+    std::stringstream s;
+    s << getName();
+
+    if (!children.empty())
+    {
+        s << "(";
+        for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
+        {
+            if (it != children.begin())
+                s << ", ";
+            s << (*it)->getTreeID();
+        }
+        s << ")";
+    }
+
+    return s.str();
+}
+
+
+size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
+{
+    if (children.empty())
+        return 0;
+
+    if (level > max_depth)
+        throw Exception("Query pipeline is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_PIPELINE);
+
+    size_t res = 0;
+    for (const auto & child : children)
+    {
+        size_t child_depth = child->checkDepth(level + 1);
+        if (child_depth > res)
+            res = child_depth;
+    }
+
+    return res + 1;
+}
+
+
+void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t multiplier) const
+{
+    ostr << String(indent, ' ') << getName();
+    if (multiplier > 1)
+        ostr << " × " << multiplier;
+    //ostr << ": " << getHeader().dumpStructure();
+    ostr << std::endl;
+    ++indent;
+
+    /// If the subtree is repeated several times, then we output it once with the multiplier.
+    using Multipliers = std::map<String, size_t>;
+    Multipliers multipliers;
+
+    for (const auto & child : children)
+        ++multipliers[child->getTreeID()];
+
+    for (const auto & child : children)
+    {
+        String id = child->getTreeID();
+        size_t & subtree_multiplier = multipliers[id];
+        if (subtree_multiplier != 0)    /// Already printed subtrees are marked with zero in the array of multipliers.
+        {
+            child->dumpTree(ostr, indent, subtree_multiplier);
+            subtree_multiplier = 0;
+        }
+    }
 }
 
 }

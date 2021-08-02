@@ -1,3 +1,4 @@
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -14,7 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <DataStreams/MongoDBBlockInputStream.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -25,6 +26,8 @@
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitors.h>
+#include <ext/enumerate.h>
 
 namespace DB
 {
@@ -34,7 +37,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int UNKNOWN_TYPE;
 }
 
 
@@ -243,8 +245,6 @@ namespace
                 insertNumber<Float64>(column, value, name);
                 break;
 
-            case ValueType::vtEnum8:
-            case ValueType::vtEnum16:
             case ValueType::vtString:
             {
                 if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)
@@ -270,8 +270,8 @@ namespace
                     throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
                                     ErrorCodes::TYPE_MISMATCH};
 
-                assert_cast<ColumnUInt16 &>(column).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(
-                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())));
+                assert_cast<ColumnUInt16 &>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())});
                 break;
             }
 
@@ -290,7 +290,7 @@ namespace
                 if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
                 {
                     String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                    assert_cast<ColumnUUID &>(column).getData().push_back(parse<UUID>(string));
+                    assert_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(string));
                 }
                 else
                     throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) + " for column "
@@ -298,8 +298,6 @@ namespace
                                     ErrorCodes::TYPE_MISMATCH};
                 break;
             }
-            default:
-                throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
         }
     }
 
@@ -315,7 +313,7 @@ Block MongoDBBlockInputStream::readImpl()
     MutableColumns columns(description.sample_block.columns());
     const size_t size = columns.size();
 
-    for (const auto i : collections::range(0, size))
+    for (const auto i : ext::range(0, size))
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
@@ -327,7 +325,7 @@ Block MongoDBBlockInputStream::readImpl()
         {
             ++num_rows;
 
-            for (const auto idx : collections::range(0, size))
+            for (const auto idx : ext::range(0, size))
             {
                 const auto & name = description.sample_block.getByPosition(idx).name;
 

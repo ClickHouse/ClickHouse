@@ -1,8 +1,3 @@
----
-toc_priority: 39
-toc_title: REVOKE
----
-
 # REVOKE
 
 Отзывает привилегии у пользователей или ролей.
@@ -45,3 +40,4 @@ GRANT SELECT ON accounts.staff TO mira;
 REVOKE SELECT(wage) ON accounts.staff FROM mira;
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <random>
 #include <pcg_random.hpp>
+#include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
@@ -26,7 +27,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/Context.h>
@@ -35,10 +35,7 @@
 #include <Common/Config/configReadClient.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
-#include <filesystem>
 
-
-namespace fs = std::filesystem;
 
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
@@ -52,25 +49,25 @@ using Ports = std::vector<UInt16>;
 namespace ErrorCodes
 {
     extern const int CANNOT_BLOCK_SIGNAL;
+    extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
 }
 
 class Benchmark : public Poco::Util::Application
 {
 public:
-    Benchmark(unsigned concurrency_, double delay_,
-            Strings && hosts_, Ports && ports_, bool round_robin_,
+    Benchmark(unsigned concurrency_, double delay_, Strings && hosts_, Ports && ports_,
             bool cumulative_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
             const String & json_path_, size_t confidence_,
-            const String & query_id_, const String & query_to_execute_, bool continue_on_errors_,
-            bool reconnect_, bool print_stacktrace_, const Settings & settings_)
+            const String & query_id_, bool continue_on_errors_,
+            bool print_stacktrace_, const Settings & settings_)
         :
-        round_robin(round_robin_), concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
+        concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), confidence(confidence_), query_id(query_id_),
-        query_to_execute(query_to_execute_), continue_on_errors(continue_on_errors_), reconnect(reconnect_),
+        continue_on_errors(continue_on_errors_),
         print_stacktrace(print_stacktrace_), settings(settings_),
         shared_context(Context::createShared()), global_context(Context::createGlobal(shared_context.get())),
         pool(concurrency)
@@ -79,8 +76,8 @@ public:
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
 
         connections.reserve(connections_cnt);
-        comparison_info_total.reserve(round_robin ? 1 : connections_cnt);
-        comparison_info_per_interval.reserve(round_robin ? 1 : connections_cnt);
+        comparison_info_total.reserve(connections_cnt);
+        comparison_info_per_interval.reserve(connections_cnt);
 
         for (size_t i = 0; i < connections_cnt; ++i)
         {
@@ -88,24 +85,12 @@ public:
             std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
 
             connections.emplace_back(std::make_unique<ConnectionPool>(
-                concurrency,
-                cur_host, cur_port,
-                default_database_, user_, password_,
-                /* cluster_= */ "",
-                /* cluster_secret_= */ "",
-                /* client_name_= */ "benchmark",
-                Protocol::Compression::Enable,
-                secure));
-
-            if (!round_robin || comparison_info_per_interval.empty())
-            {
-                comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
-                comparison_info_total.emplace_back(std::make_shared<Stats>());
-            }
+                concurrency, cur_host, cur_port, default_database_, user_, password_, "benchmark", Protocol::Compression::Enable, secure));
+            comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
+            comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
 
-        global_context->makeGlobalContext();
-        global_context->setSettings(settings);
+        global_context.makeGlobalContext();
 
         std::cerr << std::fixed << std::setprecision(3);
 
@@ -113,7 +98,15 @@ public:
         /// (example: when using stage = 'with_mergeable_state')
         registerAggregateFunctions();
 
-        query_processing_stage = QueryProcessingStage::fromString(stage);
+        if (stage == "complete")
+            query_processing_stage = QueryProcessingStage::Complete;
+        else if (stage == "fetch_columns")
+            query_processing_stage = QueryProcessingStage::FetchColumns;
+        else if (stage == "with_mergeable_state")
+            query_processing_stage = QueryProcessingStage::WithMergeableState;
+        else
+            throw Exception("Unknown query processing stage: " + stage, ErrorCodes::BAD_ARGUMENTS);
+
     }
 
     void initialize(Poco::Util::Application & self [[maybe_unused]]) override
@@ -128,8 +121,8 @@ public:
 
     int main(const std::vector<std::string> &) override
     {
-        if (!json_path.empty() && fs::exists(json_path)) /// Clear file with previous results
-            fs::remove(json_path);
+        if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
+            Poco::File(json_path).remove();
 
         readQueries();
         runBenchmark();
@@ -141,7 +134,6 @@ private:
     using EntryPtr = std::shared_ptr<Entry>;
     using EntryPtrs = std::vector<EntryPtr>;
 
-    bool round_robin;
     unsigned concurrency;
     double delay;
 
@@ -162,14 +154,12 @@ private:
     double max_time;
     String json_path;
     size_t confidence;
-    String query_id;
-    String query_to_execute;
+    std::string query_id;
     bool continue_on_errors;
-    bool reconnect;
     bool print_stacktrace;
     const Settings & settings;
     SharedContextHolder shared_context;
-    ContextMutablePtr global_context;
+    Context global_context;
     QueryProcessingStage::Enum query_processing_stage;
 
     /// Don't execute new queries after timelimit or SIGINT or exception
@@ -227,28 +217,20 @@ private:
 
     void readQueries()
     {
-        if (query_to_execute.empty())
+        ReadBufferFromFileDescriptor in(STDIN_FILENO);
+
+        while (!in.eof())
         {
-            ReadBufferFromFileDescriptor in(STDIN_FILENO);
+            std::string query;
+            readText(query, in);
+            assertChar('\n', in);
 
-            while (!in.eof())
-            {
-                String query;
-                readText(query, in);
-                assertChar('\n', in);
-
-                if (!query.empty())
-                    queries.emplace_back(std::move(query));
-            }
-
-            if (queries.empty())
-                throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
-        }
-        else
-        {
-            queries.emplace_back(query_to_execute);
+            if (!query.empty())
+                queries.emplace_back(query);
         }
 
+        if (queries.empty())
+            throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
 
         std::cerr << "Loaded " << queries.size() << " queries.\n";
     }
@@ -279,8 +261,7 @@ private:
 
             if (max_time > 0 && total_watch.elapsedSeconds() >= max_time)
             {
-                std::cout << "Stopping launch of queries."
-                          << " Requested time limit " << max_time << " seconds is exhausted.\n";
+                std::cout << "Stopping launch of queries. Requested time limit is exhausted.\n";
                 return false;
             }
 
@@ -322,7 +303,6 @@ private:
         }
         catch (...)
         {
-            shutdown = true;
             pool.wait();
             throw;
         }
@@ -378,7 +358,8 @@ private:
             {
                 extracted = queue.tryPop(query, 100);
 
-                if (shutdown || (max_iterations && queries_executed == max_iterations))
+                if (shutdown
+                    || (max_iterations && queries_executed == max_iterations))
                 {
                     return;
                 }
@@ -391,9 +372,8 @@ private:
             }
             catch (...)
             {
-                std::lock_guard lock(mutex);
-                std::cerr << "An error occurred while processing the query " << "'" << query << "'"
-                          << ": " << getCurrentExceptionMessage(false) << std::endl;
+                std::cerr << "An error occurred while processing the query '"
+                          << query << "'.\n";
                 if (!continue_on_errors)
                 {
                     shutdown = true;
@@ -404,9 +384,8 @@ private:
                     std::cerr << getCurrentExceptionMessage(print_stacktrace,
                         true /*check embedded stack trace*/) << std::endl;
 
-                    size_t info_index = round_robin ? 0 : connection_index;
-                    comparison_info_per_interval[info_index]->errors++;
-                    comparison_info_total[info_index]->errors++;
+                    comparison_info_per_interval[connection_index]->errors++;
+                    comparison_info_total[connection_index]->errors++;
                 }
             }
             // Count failed queries toward executed, so that we'd reach
@@ -418,14 +397,9 @@ private:
     void execute(EntryPtrs & connection_entries, Query & query, size_t connection_index)
     {
         Stopwatch watch;
-
-        Connection & connection = **connection_entries[connection_index];
-
-        if (reconnect)
-            connection.disconnect();
-
         RemoteBlockInputStream stream(
-            connection, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
+            *(*connection_entries[connection_index]),
+            query, {}, global_context, &settings, nullptr, Scalars(), Tables(), query_processing_stage);
         if (!query_id.empty())
             stream.setQueryId(query_id);
 
@@ -443,10 +417,9 @@ private:
 
         std::lock_guard lock(mutex);
 
-        size_t info_index = round_robin ? 0 : connection_index;
-        comparison_info_per_interval[info_index]->add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
-        comparison_info_total[info_index]->add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
-        t_test.add(info_index, seconds);
+        comparison_info_per_interval[connection_index]->add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        comparison_info_total[connection_index]->add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        t_test.add(connection_index, seconds);
     }
 
     void report(MultiStats & infos)
@@ -464,19 +437,8 @@ private:
 
             double seconds = info->work_time / concurrency;
 
-            std::string connection_description = connections[i]->getDescription();
-            if (round_robin)
-            {
-                connection_description.clear();
-                for (const auto & conn : connections)
-                {
-                    if (!connection_description.empty())
-                        connection_description += ", ";
-                    connection_description += conn->getDescription();
-                }
-            }
             std::cerr
-                    << connection_description << ", "
+                    << connections[i]->getDescription() << ", "
                     << "queries " << info->queries << ", ";
             if (info->errors)
             {
@@ -601,17 +563,15 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
             ("help",                                                            "produce help message")
-            ("query",      value<std::string>()->default_value(""),             "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
-            ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
-            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
+            ("delay,d",       value<double>()->default_value(1), "delay between intermediate reports in seconds (set 0 to disable reports)")
+            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
             ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
-            ("host,h",        value<Strings>()->multitoken(),                   "list of hosts")
-            ("port,p",        value<Ports>()->multitoken(),                     "list of ports")
-            ("roundrobin",                                                      "Instead of comparing queries for different --host/--port just pick one random --host/--port for every query and send query to it.")
+            ("host,h",        value<Strings>()->multitoken(),                   "")
+            ("port,p",        value<Ports>()->multitoken(),                     "")
             ("cumulative",                                                      "prints cumulative data instead of data per interval")
             ("secure,s",                                                        "Use TLS connection")
             ("user",          value<std::string>()->default_value("default"),   "")
@@ -621,7 +581,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("confidence",    value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
             ("query_id",      value<std::string>()->default_value(""),         "")
             ("continue_on_errors", "continue testing even if a query fails")
-            ("reconnect", "establish new connection for every query")
         ;
 
         Settings settings;
@@ -658,7 +617,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["delay"].as<double>(),
             std::move(hosts),
             std::move(ports),
-            options.count("roundrobin"),
             options.count("cumulative"),
             options.count("secure"),
             options["database"].as<std::string>(),
@@ -671,9 +629,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["json"].as<std::string>(),
             options["confidence"].as<size_t>(),
             options["query_id"].as<std::string>(),
-            options["query"].as<std::string>(),
-            options.count("continue_on_errors"),
-            options.count("reconnect"),
+            options.count("continue_on_errors") > 0,
             print_stacktrace,
             settings);
         return benchmark.run();

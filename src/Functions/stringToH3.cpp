@@ -1,9 +1,3 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
-#if USE_H3
-
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -24,9 +18,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace
-{
-
 using namespace GatherUtils;
 
 class FunctionStringToH3 : public IFunction
@@ -34,7 +25,7 @@ class FunctionStringToH3 : public IFunction
 public:
     static constexpr auto name = "stringToH3";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringToH3>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringToH3>(); }
 
     std::string getName() const override { return name; }
 
@@ -52,9 +43,9 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
+        const auto * col_hindex = block.getByPosition(arguments[0]).column.get();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
@@ -71,7 +62,7 @@ public:
         else
             throw Exception("Illegal column as argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        return dst;
+        block.getByPosition(result).column = std::move(dst);
     }
 
 private:
@@ -99,7 +90,6 @@ private:
     }
 };
 
-}
 
 void registerFunctionStringToH3(FunctionFactory & factory)
 {
@@ -107,5 +97,3 @@ void registerFunctionStringToH3(FunctionFactory & factory)
 }
 
 }
-
-#endif

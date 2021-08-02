@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionForEach.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <Common/typeid_cast.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -10,9 +11,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 class AggregateFunctionCombinatorForEach final : public IAggregateFunctionCombinator
 {
@@ -38,13 +36,11 @@ public:
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
-        const Array & params) const override
+        const Array &) const override
     {
-        return std::make_shared<AggregateFunctionForEach>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionForEach>(nested_function, arguments);
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFactory & factory)
 {

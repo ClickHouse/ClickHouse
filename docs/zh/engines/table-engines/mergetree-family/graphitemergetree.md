@@ -70,12 +70,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 除了`config_section`，其它所有参数和`MergeTree`的相应参数一样.
 
--   `config_section` —配置文件中设置汇总规则的节点
+-   `config_section` —配置文件中设置汇总规则的节点 
 
 </details>
 
 ## 汇总配置的参数 {#rollup-configuration}
-汇总的配置参数由服务器配置的 [graphite_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) 参数定义。参数名称可以是任意的。允许为多个不同表创建多组配置并使用。
+汇总的配置参数由服务器配置的 [graphite\_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) 参数定义。参数名称可以是任意的。允许为多个不同表创建多组配置并使用。
 
 
 汇总配置的结构如下：

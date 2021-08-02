@@ -1,4 +1,4 @@
-# system.table_name {#system-tables_table-name}
+## system.table_name {#system-tables_table-name}
 
 Description.
 
@@ -8,13 +8,9 @@ Columns:
 
 **Example**
 
-Query:
-
 ``` sql
 SELECT * FROM system.table_name
 ```
-
-Result:
 
 ``` text
 Some output. It shouldn't be too long.

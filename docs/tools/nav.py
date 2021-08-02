@@ -31,16 +31,7 @@ def build_nav_entry(root, args):
                 result_items.append((prio, title, payload))
         elif filename.endswith('.md'):
             path = os.path.join(root, filename)
-
-            meta = ''
-            content = ''
-
-            try:
-                meta, content = util.read_md_file(path)
-            except:
-                print('Error in file: {}'.format(path))
-                raise
-
+            meta, content = util.read_md_file(path)
             path = path.split('/', 2)[-1]
             title = meta.get('toc_title', find_first_header(content))
             if title:
@@ -68,7 +59,7 @@ def build_docs_nav(lang, args):
     _, _, nav = build_nav_entry(docs_dir, args)
     result = []
     index_key = None
-    for key, value in list(nav.items()):
+    for key, value in nav.items():
         if key and value:
             if value == 'index.md':
                 index_key = key

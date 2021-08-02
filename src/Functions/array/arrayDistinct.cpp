@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -26,7 +26,7 @@ class FunctionArrayDistinct : public IFunction
 public:
     static constexpr auto name = "arrayDistinct";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionArrayDistinct>();
     }
@@ -55,7 +55,7 @@ public:
         return std::make_shared<DataTypeArray>(nested_type);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
@@ -85,12 +85,12 @@ private:
 };
 
 
-ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
+void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) const
 {
-    ColumnPtr array_ptr = arguments[0].column;
+    ColumnPtr array_ptr = block.getByPosition(arguments[0]).column;
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
 
-    const auto & return_type = result_type;
+    const auto & return_type = block.getByPosition(result).type;
 
     auto res_ptr = return_type->createColumn();
     ColumnArray & res = assert_cast<ColumnArray &>(*res_ptr);
@@ -127,7 +127,7 @@ ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & argu
         || executeString(*inner_col, offsets, res_data, res_offsets, nullable_col)))
         executeHashed(*inner_col, offsets, res_data, res_offsets, nullable_col);
 
-    return res_ptr;
+    block.getByPosition(result).column = std::move(res_ptr);
 }
 
 template <typename T>
@@ -270,7 +270,7 @@ void FunctionArrayDistinct::executeHashed(
             UInt128 hash;
             SipHash hash_function;
             src_data.updateHashWithValue(j, hash_function);
-            hash_function.get128(hash);
+            hash_function.get128(reinterpret_cast<char *>(&hash));
 
             if (!set.find(hash))
             {

@@ -1,9 +1,8 @@
 #pragma once
 
-#include <common/types.h>
-
 #include <unordered_map>
-#include <vector>
+
+#include <Core/Types.h>
 
 
 namespace DB
