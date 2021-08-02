@@ -55,7 +55,6 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 -   Not supported:
     -   `ALTER` and `SELECT...SAMPLE` operations.
     -   Indexes.
-    -   Replication.
 
 **Globs in path**
 
