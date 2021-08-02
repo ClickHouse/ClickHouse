@@ -367,15 +367,17 @@ SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
     return std::make_unique<LocalDirectorySyncGuard>(fs::path(disk_path) / path);
 }
 
-void DiskLocal::updateFromConfigIfChanged(const Poco::Util::AbstractConfiguration & config,
-                                          const String & config_prefix, ContextPtr context)
+
+void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &)
 {
     String new_disk_path;
     UInt64 new_keep_free_space_bytes;
+
     loadDiskLocalConfig(name, config, config_prefix, context, new_disk_path, new_keep_free_space_bytes);
 
     if (disk_path != new_disk_path)
-        throw Exception("Disk path can't update from config " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        throw Exception("Disk path can't be updated from config " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+
     if (keep_free_space_bytes != new_keep_free_space_bytes)
         keep_free_space_bytes = new_keep_free_space_bytes;
 }

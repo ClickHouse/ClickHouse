@@ -105,9 +105,7 @@ public:
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
-    void updateFromConfigIfChanged(const Poco::Util::AbstractConfiguration & config,
-                                   const String & config_prefix,
-                                   ContextPtr context) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
 
 private:
     bool tryReserve(UInt64 bytes);
