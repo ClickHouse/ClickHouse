@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Field.h>
@@ -16,7 +16,7 @@ class FunctionVersion : public IFunction
 {
 public:
     static constexpr auto name = "version";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionVersion>();
     }
@@ -49,7 +49,7 @@ public:
 
 void registerFunctionVersion(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionVersion>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionVersion>();
 }
 
 }

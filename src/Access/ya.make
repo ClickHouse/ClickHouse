@@ -15,7 +15,6 @@ SRCS(
     AllowedClientHosts.cpp
     Authentication.cpp
     ContextAccess.cpp
-    Credentials.cpp
     DiskAccessStorage.cpp
     EnabledQuota.cpp
     EnabledRoles.cpp
@@ -23,7 +22,6 @@ SRCS(
     EnabledRowPolicies.cpp
     EnabledSettings.cpp
     ExternalAuthenticators.cpp
-    GSSAcceptor.cpp
     GrantedRoles.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp
@@ -43,10 +41,8 @@ SRCS(
     SettingsProfile.cpp
     SettingsProfileElement.cpp
     SettingsProfilesCache.cpp
-    SettingsProfilesInfo.cpp
     User.cpp
     UsersConfigAccessStorage.cpp
-    tests/gtest_access_rights_ops.cpp
 
 )
 

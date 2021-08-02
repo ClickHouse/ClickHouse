@@ -3,7 +3,7 @@
 #include <Core/Field.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/TokenIterator.h>
-#include <Common/FieldVisitorDump.h>
+#include <Common/FieldVisitors.h>
 
 #include <optional>
 
@@ -44,13 +44,6 @@ protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
-    void appendColumnNameImpl(WriteBuffer & ostr, const Settings & settings) const override;
-
-private:
-    /// Legacy version of 'appendColumnNameImpl'. It differs only with tuple literals.
-    /// It's only needed to continue working of queries with tuple literals
-    /// in distributed tables while rolling update.
-    void appendColumnNameImplLegacy(WriteBuffer & ostr) const;
 };
 
 }

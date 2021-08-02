@@ -16,7 +16,7 @@
 
 namespace DB
 {
-class RangeHashedDictionary final : public IDictionary
+class RangeHashedDictionary final : public IDictionaryBase
 {
 public:
     RangeHashedDictionary(
@@ -31,14 +31,6 @@ public:
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
-
-    double getFoundRate() const override
-    {
-        size_t queries = query_count.load(std::memory_order_relaxed);
-        if (!queries)
-            return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
-    }
 
     double getHitRate() const override { return 1.0; }
 
@@ -69,7 +61,7 @@ public:
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        const ColumnPtr default_values_column) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -101,6 +93,8 @@ private:
     template <typename T>
     using Ptr = std::unique_ptr<Collection<T>>;
 
+    using NullableSet = HashSet<Key, DefaultHash<Key>>;
+
     struct Attribute final
     {
     public:
@@ -108,27 +102,38 @@ private:
         bool is_nullable;
 
         std::variant<
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            UInt128,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Float32,
+            Float64,
+            StringRef>
+            null_values;
+        std::variant<
             Ptr<UInt8>,
             Ptr<UInt16>,
             Ptr<UInt32>,
             Ptr<UInt64>,
             Ptr<UInt128>,
-            Ptr<UInt256>,
             Ptr<Int8>,
             Ptr<Int16>,
             Ptr<Int32>,
             Ptr<Int64>,
-            Ptr<Int128>,
-            Ptr<Int256>,
             Ptr<Decimal32>,
             Ptr<Decimal64>,
             Ptr<Decimal128>,
-            Ptr<Decimal256>,
             Ptr<Float32>,
             Ptr<Float64>,
-            Ptr<UUID>,
-            Ptr<StringRef>,
-            Ptr<Array>>
+            Ptr<StringRef>>
             maps;
         std::unique_ptr<Arena> string_arena;
     };
@@ -142,45 +147,41 @@ private:
 
     void calculateBytesAllocated();
 
-    static Attribute createAttribute(const DictionaryAttribute & dictionary_attribute);
+    template <typename T>
+    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
+    static Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
+
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType>
-    ColumnUInt8::Ptr hasKeysImpl(
-        const Attribute & attribute,
-        const PaddedPODArray<UInt64> & ids,
-        const PaddedPODArray<RangeStorageType> & dates,
-        size_t & keys_found) const;
-
     template <typename T>
-    static void setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
+    static void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value);
 
-    static void setAttributeValue(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
+    static void setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
     const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
 
     template <typename RangeType>
-    void getIdsAndDates(PaddedPODArray<UInt64> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
+    void getIdsAndDates(PaddedPODArray<Key> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename T, typename RangeType>
     void getIdsAndDates(
         const Attribute & attribute,
-        PaddedPODArray<UInt64> & ids,
+        PaddedPODArray<Key> & ids,
         PaddedPODArray<RangeType> & start_dates,
         PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename RangeType>
     BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const;
 
-    friend struct RangeHashedDictionaryCallGetBlockInputStreamImpl;
+    friend struct RangeHashedDIctionaryCallGetBlockInputStreamImpl;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -194,7 +195,6 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
-    mutable std::atomic<size_t> found_count{0};
 };
 
 }
