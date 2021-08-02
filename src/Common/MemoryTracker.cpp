@@ -134,7 +134,7 @@ void MemoryTracker::checkMemoryUsage() const
         const auto * description = description_ptr.load(std::memory_order_relaxed);
         throw DB::Exception(
             DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-            "Memory tracker{}{}: fault injected. It uses {}, maximum: {}",
+            "Memory tracker{}{}. It uses {}, maximum: {}",
             description ? " " : "",
             description ? description : "",
             formatReadableSizeWithBinarySuffix(amount),
