@@ -466,7 +466,7 @@ public:
     {
         if (offset_is_whole_number_of_hours_during_epoch)
         {
-            auto res = t % 60;
+            Time res = t % 60;
             if (likely(res >= 0))
                 return res;
             return res + 60;
@@ -478,7 +478,7 @@ public:
         if (time >= lut[index].time_at_offset_change())
             time += lut[index].amount_of_offset_change();
 
-        auto res = time % 60;
+        Time res = time % 60;
         if (likely(res >= 0))
             return res;
         return res + 60;
