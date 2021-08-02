@@ -205,6 +205,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("HashJoin"))
 {
+    LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
     bool multiple_disjuncts = key_names_right.size() > 1;
 
     if (multiple_disjuncts)
@@ -742,10 +743,10 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 
     BlockWithFlags structured_block = structureRightBlock(block);
     bool multiple_disjuncts = disjuncts_num > 1;
-    // if (nullable_right_side && multiple_disjuncts)
-    // {
-    //     JoinCommon::convertColumnsToNullable(structured_block.block);
-    // }
+    if (nullable_right_side && multiple_disjuncts)
+    {
+        JoinCommon::convertColumnsToNullable(structured_block.block);
+    }
     std::vector<ColumnPtr> join_mask_col_vector(disjuncts_num);
     // std::vector<const ColumnUInt8 &> join_mask_vector(disjuncts_num);
     bool use_join_mask_col = false;
