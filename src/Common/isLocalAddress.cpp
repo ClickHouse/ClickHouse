@@ -81,40 +81,9 @@ struct NetworkInterfaces
 
 bool isLocalAddress(const Poco::Net::IPAddress & address)
 {
-    /** 127.0.0.1 is treat as local address unconditionally.
-      * ::1 is also treat as local address unconditionally.
-      *
-      * 127.0.0.{2..255} are not treat as local addresses, because they are used in tests
-      *  to emulate distributed queries across localhost.
-      *
-      * But 127.{0,1}.{0,1}.{0,1} are treat as local addresses,
-      *  because they are used in Debian for localhost.
-      */
-    if (address.isLoopback())
-    {
-        if (address.family() == Poco::Net::AddressFamily::IPv4)
-        {
-            /// The address is located in memory in big endian form (network byte order).
-            const unsigned char * digits = static_cast<const unsigned char *>(address.addr());
-
-            if (digits[0] == 127
-                && digits[1] <= 1
-                && digits[2] <= 1
-                && digits[3] <= 1)
-            {
-                return true;
-            }
-        }
-        else if (address.family() == Poco::Net::AddressFamily::IPv6)
-        {
-            return true;
-        }
-    }
-
     NetworkInterfaces interfaces;
     return interfaces.hasAddress(address);
 }
-
 
 bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_port)
 {

@@ -89,9 +89,9 @@ class Task1:
         instance = cluster.instances['s0_0_0']
 
         for cluster_num in ["0", "1"]:
-            ddl_check_query(instance, "DROP DATABASE IF EXISTS default ON CLUSTER cluster{} SYNC".format(cluster_num))
+            ddl_check_query(instance, "DROP DATABASE IF EXISTS default ON CLUSTER cluster{}".format(cluster_num))
             ddl_check_query(instance,
-                            "CREATE DATABASE default ON CLUSTER cluster{} ".format(
+                            "CREATE DATABASE IF NOT EXISTS default ON CLUSTER cluster{}".format(
                                 cluster_num))
 
         ddl_check_query(instance, "CREATE TABLE hits ON CLUSTER cluster0 (d UInt64, d1 UInt64 MATERIALIZED d+1) " +
@@ -105,11 +105,11 @@ class Task1:
                        settings={"insert_distributed_sync": 1})
 
     def check(self):
-        assert self.cluster.instances['s0_0_0'].query("SELECT count() FROM hits_all").strip() == "1002"
-        assert self.cluster.instances['s1_0_0'].query("SELECT count() FROM hits_all").strip() == "1002"
+        assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM hits_all")) == TSV("1002\n")
+        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count() FROM hits_all")) == TSV("1002\n")
 
-        assert self.cluster.instances['s1_0_0'].query("SELECT DISTINCT d % 2 FROM hits").strip() == "1"
-        assert self.cluster.instances['s1_1_0'].query("SELECT DISTINCT d % 2 FROM hits").strip() == "0"
+        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("1\n")
+        assert TSV(self.cluster.instances['s1_1_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("0\n")
 
         instance = self.cluster.instances['s0_0_0']
         ddl_check_query(instance, "DROP TABLE hits_all ON CLUSTER cluster0")
@@ -325,7 +325,7 @@ class Task_self_copy:
 def execute_task(started_cluster, task, cmd_options):
     task.start()
 
-    zk = started_cluster.get_kazoo_client('zoo1')
+    zk = cluster.get_kazoo_client('zoo1')
     print("Use ZooKeeper server: {}:{}".format(zk.hosts[0][0], zk.hosts[0][1]))
 
 
@@ -335,7 +335,7 @@ def execute_task(started_cluster, task, cmd_options):
         print("No node /clickhouse-copier. It is Ok in first test.")
 
     # Run cluster-copier processes on each node
-    docker_api = started_cluster.docker_client.api
+    docker_api = docker.from_env().api
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
@@ -351,7 +351,7 @@ def execute_task(started_cluster, task, cmd_options):
     copiers = random.sample(list(started_cluster.instances.keys()), 3)
 
     for instance_name in copiers:
-        instance = started_cluster.instances[instance_name]
+        instance = cluster.instances[instance_name]
         container = instance.get_docker_handle()
         instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs/config-copier.xml"),
                                         "/etc/clickhouse-server/config-copier.xml")
@@ -364,7 +364,7 @@ def execute_task(started_cluster, task, cmd_options):
 
     # Wait for copiers stopping and check their return codes
     for exec_id, instance_name in zip(copiers_exec_ids, copiers):
-        instance = started_cluster.instances[instance_name]
+        instance = cluster.instances[instance_name]
         while True:
             res = docker_api.exec_inspect(exec_id)
             if not res['Running']:

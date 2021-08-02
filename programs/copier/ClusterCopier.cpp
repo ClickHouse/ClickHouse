@@ -1702,15 +1702,14 @@ void ClusterCopier::dropParticularPartitionPieceFromAllHelpingTables(const TaskT
     LOG_INFO(log, "All helping tables dropped partition {}", partition_name);
 }
 
-String ClusterCopier::getRemoteCreateTable(
-    const DatabaseAndTableName & table, Connection & connection, const Settings & settings)
+String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings & settings)
 {
     auto remote_context = Context::createCopy(context);
     remote_context->setSettings(settings);
 
     String query = "SHOW CREATE TABLE " + getQuotedTable(table);
-    Block block = getBlockWithAllStreamData(
-        std::make_shared<RemoteBlockInputStream>(connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context));
+    Block block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(
+            connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context));
 
     return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
 }
@@ -1720,8 +1719,10 @@ ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & time
 {
     /// Fetch and parse (possibly) new definition
     auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull, true);
-    String create_query_pull_str
-        = getRemoteCreateTable(task_shard.task_table.table_pull, *connection_entry, task_cluster->settings_pull);
+    String create_query_pull_str = getRemoteCreateTable(
+            task_shard.task_table.table_pull,
+            *connection_entry,
+            task_cluster->settings_pull);
 
     ParserCreateQuery parser_create_query;
     const auto & settings = getContext()->getSettingsRef();
@@ -1745,7 +1746,7 @@ void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeout
     task_shard.table_read_shard = DatabaseAndTableName(working_database_name, read_shard_prefix + task_table.table_id);
     task_shard.main_table_split_shard = DatabaseAndTableName(working_database_name, split_shard_prefix + task_table.table_id);
 
-    for (const auto & piece_number : collections::range(0, task_table.number_of_splits))
+    for (const auto & piece_number : ext::range(0, task_table.number_of_splits))
     {
         task_shard.list_of_split_tables_on_shard[piece_number] =
                 DatabaseAndTableName(working_database_name, split_shard_prefix + task_table.table_id + "_piece_" + toString(piece_number));
@@ -1775,7 +1776,7 @@ void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeout
         dropAndCreateLocalTable(create_table_split_piece_ast);
 
         /// Create auxiliary split tables for each piece
-        for (const auto & piece_number : collections::range(0, task_table.number_of_splits))
+        for (const auto & piece_number : ext::range(0, task_table.number_of_splits))
         {
             const auto & storage_piece_split_ast = task_table.auxiliary_engine_split_asts[piece_number];
 
@@ -1952,8 +1953,8 @@ UInt64 ClusterCopier::executeQueryOnCluster(
                 /// For unknown reason global context is passed to IStorage::read() method
                 /// So, task_identifier is passed as constructor argument. It is more obvious.
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    *connections.back(), query, header, getContext(),
-                    /*throttler=*/nullptr, Scalars(), Tables(), QueryProcessingStage::Complete);
+                        *connections.back(), query, header, getContext(),
+                        /*throttler=*/nullptr, Scalars(), Tables(), QueryProcessingStage::Complete);
 
                 try
                 {

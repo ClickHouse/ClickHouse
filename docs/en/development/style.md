@@ -195,7 +195,7 @@ std::cerr << static_cast<int>(c) << std::endl;
 
 The same is true for small methods in any classes or structs.
 
-For templated classes and structs, do not separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
+For templated classes and structs, don’t separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
 
 **31.** You can wrap lines at 140 characters, instead of 80.
 
@@ -442,7 +442,7 @@ Use `RAII` and see above.
 
 **3.** Error handling.
 
-Use exceptions. In most cases, you only need to throw an exception, and do not need to catch it (because of `RAII`).
+Use exceptions. In most cases, you only need to throw an exception, and don’t need to catch it (because of `RAII`).
 
 In offline data processing applications, it’s often acceptable to not catch exceptions.
 
@@ -599,7 +599,7 @@ public:
 
 There is no need to use a separate `namespace` for application code.
 
-Small libraries do not need this, either.
+Small libraries don’t need this, either.
 
 For medium to large libraries, put everything in a `namespace`.
 
@@ -628,7 +628,7 @@ If the class is not intended for polymorphic use, you do not need to make functi
 
 **18.** Encodings.
 
-Use UTF-8 everywhere. Use `std::string` and `char *`. Do not use `std::wstring` and `wchar_t`.
+Use UTF-8 everywhere. Use `std::string`and`char *`. Do not use `std::wstring`and`wchar_t`.
 
 **19.** Logging.
 
@@ -749,9 +749,17 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
-**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse. See [Guidelines for adding new third-party libraries](contrib.md#adding-third-party-libraries) for details.
+**2.** If necessary, you can use any well-known libraries available in the OS package.
 
-**3.** Preference is always given to libraries that are already in use.
+If there is a good solution already available, then use it, even if it means you have to install another library.
+
+(But be prepared to remove bad libraries from code.)
+
+**3.** You can install a library that isn’t in the packages, if the packages don’t have what you need or have an outdated version or the wrong type of compilation.
+
+**4.** If the library is small and doesn’t have its own complex build system, put the source files in the `contrib` folder.
+
+**5.** Preference is always given to libraries that are already in use.
 
 ## General Recommendations {#general-recommendations-1}
 

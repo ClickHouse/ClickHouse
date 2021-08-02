@@ -3,7 +3,7 @@
 #include <city.h>
 #include <type_traits>
 
-#include <common/bit_cast.h>
+#include <ext/bit_cast.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -28,7 +28,6 @@
 
 namespace DB
 {
-struct Settings;
 
 /// uniq
 
@@ -150,7 +149,7 @@ template <typename T> struct AggregateFunctionUniqTraits
     {
         if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
         {
-            return bit_cast<UInt64>(x);
+            return ext::bit_cast<UInt64>(x);
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
         {

@@ -98,7 +98,7 @@ protected:
             Names cols_required_for_sorting_key;
             Names cols_required_for_primary_key;
             Names cols_required_for_sampling;
-            IStorage::ColumnSizeByName column_sizes;
+            MergeTreeData::ColumnSizeByName column_sizes;
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
