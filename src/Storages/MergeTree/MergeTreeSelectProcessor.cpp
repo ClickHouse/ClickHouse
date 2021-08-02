@@ -31,6 +31,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
+    sample_block(metadata_snapshot_->getSampleBlock()),
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     has_limit_below_one_block(has_limit_below_one_block_),
