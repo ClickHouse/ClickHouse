@@ -121,8 +121,8 @@ Default value: `500000000`.
 
 **See Also**
 
--   [max_block_size](#setting-max_block_size).
--   [min_insert_block_size_rows](#min-insert-block-size-rows).
+-   [max_block_size](#setting-max_block_size)
+-   [min_insert_block_size_rows](#min-insert-block-size-rows)
 
 ## enable_http_compression {#settings-enable_http_compression}
 
