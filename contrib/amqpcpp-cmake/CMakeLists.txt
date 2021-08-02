@@ -15,6 +15,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/field.cpp"
     "${LIBRARY_DIR}/src/flags.cpp"
     "${LIBRARY_DIR}/src/linux_tcp/openssl.cpp"
+    "${LIBRARY_DIR}/src/linux_tcp/sslerrorprinter.cpp"
     "${LIBRARY_DIR}/src/linux_tcp/tcpconnection.cpp"
     "${LIBRARY_DIR}/src/inbuffer.cpp"
     "${LIBRARY_DIR}/src/receivedframe.cpp"
