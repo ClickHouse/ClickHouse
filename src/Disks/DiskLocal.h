@@ -17,7 +17,6 @@ namespace ErrorCodes
 
 class DiskLocalReservation;
 
-class Context;
 class DiskLocal : public IDisk
 {
 public:
