@@ -14,27 +14,32 @@ toc_title: MaterializedPostgreSQL
 ## Создание базы данных {#creating-a-database}
 
 ``` sql
-CREATE DATABASE test_database
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
-
-SELECT * FROM test_database.postgres_table;
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
 ```
+
+**Параметры движка**
+
+-   `host:port` — адрес сервера PostgreSQL.
+-   `database` — имя базы данных на удалённом сервере.
+-   `user` — пользователь PostgreSQL.
+-   `password` — пароль пользователя.
 
 ## Настройки {#settings}
 
-1. `materialized_postgresql_max_block_size` — задает максимальное количество строк, собранных перед вставкой данных в таблицу. По умолчанию: `65536`.
+-   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
 
-2. `materialized_postgresql_tables_list` — задает список таблиц для движка баз данных `MaterializedPostgreSQL`. По умолчанию: `whole database`.
+-   [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list)
 
-3. `materialized_postgresql_allow_automatic_update` — позволяет автоматически обновить таблицу в фоновом режиме при обнаружении изменений схемы. По умолчанию: `0` (`false`).
+-   [materialized_postgresql_allow_automatic_update](../../operations/settings/settings.md#materialized-postgresql-allow-automatic-update)
 
 ``` sql
-CREATE DATABASE test_database
+CREATE DATABASE database1
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS materialized_postgresql_max_block_size = 65536,
          materialized_postgresql_tables_list = 'table1,table2,table3';
 
-SELECT * FROM test_database.table1;
+SELECT * FROM database1.table1;
 ```
 
 ## Требования {#requirements}
@@ -69,4 +74,13 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 !!! warning "Предупреждение"
-    Преобразование **TOAST**-значений не поддерживается. Для типа данных будет использоваться значение по умолчанию.
+    Репликация **TOAST**-значений не поддерживается. Для типа данных будет использоваться значение по умолчанию.
+	
+## Пример использования {#example-of-use}
+
+``` sql
+CREATE DATABASE postgresql_db
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
+
+SELECT * FROM postgresql_db.postgres_table;
+```

@@ -14,32 +14,37 @@ This feature is experimental.
 ## Creating a Database {#creating-a-database}
 
 ``` sql
-CREATE DATABASE test_database
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
-
-SELECT * FROM test_database.postgres_table;
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
 ```
+
+**Engine Parameters**
+
+-   `host:port` — PostgreSQL server endpoint.
+-   `database` — PostgreSQL database name.
+-   `user` — PostgreSQL user.
+-   `password` — User password.
 
 ## Settings {#settings}
 
-1. `materialized_postgresql_max_block_size` — Number of rows collected in memory before flushing data into table. Default: `65536`.
+-   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
 
-2. `materialized_postgresql_tables_list` — A comma-separated list of PostgreSQL database tables, which will be replicated via MaterializedPostgreSQL database engine. Default: empty list - means whole PostgreSQL database will be replicated.
+-   [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list)
 
-3. `materialized_postgresql_allow_automatic_update` — Allow to reload table in the background, when schema changes are detected. Default: `0` (`false`). DDL queries on PostgreSQL side are not replicated via ClickHouse `MaterializedPostgreSQL` engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
+-   [materialized_postgresql_allow_automatic_update](../../operations/settings/settings.md#materialized-postgresql-allow-automatic-update)
 
 ``` sql
-CREATE DATABASE test_database
+CREATE DATABASE database1
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS materialized_postgresql_max_block_size = 65536,
          materialized_postgresql_tables_list = 'table1,table2,table3';
 
-SELECT * FROM test_database.table1;
+SELECT * FROM database1.table1;
 ```
 
 ## Requirements {#requirements}
 
-1. Setting [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) to `logical` and `max_replication_slots` to at least `2` in the PostgreSQL config file.
+1. The [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) setting must have a value `logical` and `max_replication_slots` parameter must have a value at least `2` in the PostgreSQL config file.
 
 2. Each replicated table must have one of the following [replica identity](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY):
 
@@ -69,4 +74,13 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 !!! warning "Warning"
-    Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. Default value for the data type will be used.
+    Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
+	
+## Example of Use {#example-of-use}
+
+``` sql
+CREATE DATABASE postgresql_db
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
+
+SELECT * FROM postgresql_db.postgres_table;
+```
