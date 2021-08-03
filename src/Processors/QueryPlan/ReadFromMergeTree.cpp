@@ -409,7 +409,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         {
             RangesInDataPart part = parts_with_ranges.back();
             parts_with_ranges.pop_back();
-
             size_t & marks_in_part = info.sum_marks_in_parts.back();
 
             /// We will not take too few rows from a part.
@@ -424,8 +423,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
             MarkRanges ranges_to_get_from_part;
 
+            /// We take full part if it contains enough marks or
+            /// if we know limit and part contains less than 'limit' rows.
+            bool take_full_part = marks_in_part <= need_marks
+                || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
+
             /// We take the whole part if it is small enough.
-            if (marks_in_part <= need_marks)
+            if (take_full_part)
             {
                 ranges_to_get_from_part = part.ranges;
 
