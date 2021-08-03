@@ -10,11 +10,41 @@ toc_title: Strings
 
 ## empty {#empty}
 
-Returns 1 for an empty string or 0 for a non-empty string.
-The result type is UInt8.
-A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
-The function also works for arrays or UUID.
-UUID is empty if it is all zeros (nil UUID).
+Checks whether the input string is empty.
+
+**Syntax**
+
+``` sql
+empty(x)
+```
+
+A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte. The UUID is empty if it contains all zeros (zero UUID).
+
+**Arguments**
+
+-   `x` — Input value. [Array](../data-types/array.md), [String](../data-types/string.md), [UUID](../data-types/uuid.md).
+
+**Returned value**
+
+-   Returns `1` for an empty string or `0` for a non-empty string. 
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT empty('');
+```
+
+Result:
+
+```text
+┌─empty('')─┐
+│         1 │
+└───────────┘
+```
 
 ## notEmpty {#notempty}
 
