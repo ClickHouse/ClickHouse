@@ -82,11 +82,11 @@ TTLBlockInputStream::TTLBlockInputStream(
 
     for (const auto & move_ttl : metadata_snapshot_->getMoveTTLs())
         algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
-            move_ttl, old_ttl_infos.moves_ttl[move_ttl.result_column], current_time_, force_));
+            move_ttl, TTLUpdateType::MOVES_TTL, move_ttl.result_column, old_ttl_infos.moves_ttl[move_ttl.result_column], current_time_, force_));
 
     for (const auto & recompression_ttl : metadata_snapshot_->getRecompressionTTLs())
         algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
-            recompression_ttl, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
+            recompression_ttl, TTLUpdateType::RECOMPRESSION_TTL, recompression_ttl.result_column, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
 }
 
 Block reorderColumns(Block block, const Block & header)

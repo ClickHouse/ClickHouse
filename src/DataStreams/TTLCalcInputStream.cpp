@@ -22,33 +22,33 @@ TTLCalcInputStream::TTLCalcInputStream(
     {
         const auto & rows_ttl = metadata_snapshot_->getRowsTTL();
         algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
-            rows_ttl, old_ttl_infos.table_ttl, current_time_, force_));
+            rows_ttl, TTLUpdateType::TABLE_TTL, rows_ttl.result_column, old_ttl_infos.table_ttl, current_time_, force_));
     }
 
     for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
         algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
-            where_ttl, old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
+            where_ttl, TTLUpdateType::ROWS_WHERE_TTL, where_ttl.result_column, old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
 
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
-            group_by_ttl, old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_));
+            group_by_ttl, TTLUpdateType::GROUP_BY_TTL, group_by_ttl.result_column, old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_));
 
     if (metadata_snapshot_->hasAnyColumnTTL())
     {
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
             algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
-                description, old_ttl_infos.columns_ttl[name], current_time_, force_));
+                description, TTLUpdateType::COLUMNS_TTL, name, old_ttl_infos.columns_ttl[name], current_time_, force_));
         }
     }
 
     for (const auto & move_ttl : metadata_snapshot_->getMoveTTLs())
         algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
-            move_ttl, old_ttl_infos.moves_ttl[move_ttl.result_column], current_time_, force_));
+            move_ttl, TTLUpdateType::MOVES_TTL, move_ttl.result_column, old_ttl_infos.moves_ttl[move_ttl.result_column], current_time_, force_));
 
     for (const auto & recompression_ttl : metadata_snapshot_->getRecompressionTTLs())
         algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
-            recompression_ttl, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
+            recompression_ttl, TTLUpdateType::RECOMPRESSION_TTL, recompression_ttl.result_column, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
 }
 
 Block TTLCalcInputStream::readImpl()
