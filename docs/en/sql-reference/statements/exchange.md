@@ -6,7 +6,7 @@ toc_title: EXCHANGE
 # EXCHANGE Statement {#exchange}
 
 Exchanges the names of two tables or dictionaries atomically.
-This task can also be accomplished with a [RENAME](./rename.md) query using a temporary name. But the operation in not atomic in that case.
+This task can also be accomplished with a [RENAME](./rename.md) query using a temporary name, but the operation is not atomic in that case.
 
 !!! note "Note"
     The `EXCHANGE` query is supported by the [Atomic](../../engines/database-engines/atomic.md) database engine only.
