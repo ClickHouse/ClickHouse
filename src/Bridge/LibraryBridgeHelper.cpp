@@ -3,6 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
+#include <DataStreams/formatBlock.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -128,7 +129,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string ids_string)
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_IDS_METHOD);
-    return loadBase(uri, [ids_string](std::ostream & os) { os << "ids=" << ids_string; });
+    return loadBase(uri, [ids_string](std::ostream & os) { os << ids_string; });
 }
 
 

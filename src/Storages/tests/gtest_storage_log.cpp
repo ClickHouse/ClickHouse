@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/tests/gtest_disk.h>
@@ -100,7 +100,7 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
         block.insert(column);
     }
 
-    BlockOutputStreamPtr out = table->write({}, metadata_snapshot, context);
+    auto out = std::make_shared<PushingToSinkBlockOutputStream>(table->write({}, metadata_snapshot, context));
     out->write(block);
     out->writeSuffix();
 
