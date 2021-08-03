@@ -7,7 +7,7 @@ toc_title: MaterializedPostgreSQL
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
 
-If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine instead of the table engine and use the [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list) setting, which specifies the tables to be replicated. It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
+If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md) database engine instead of the table engine and use the [materialized_postgresql_tables_list](../../../operations/settings/settings.md#materialized-postgresql-tables-list) setting, which specifies the tables to be replicated. It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
 
 ## Creating a Table {#creating-a-table}
 
@@ -29,15 +29,15 @@ PRIMARY KEY key;
 
 1. The [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) setting must have a value `logical` and `max_replication_slots` parameter must have a value at least `2` in the PostgreSQL config file.
 
-2. A table with `MaterializedPostgreSQL` engine must have a primary key — the same as a replica identity index (by default: primary key) of a PostgreSQL table (see [details on replica identity index](../../engines/database-engines/materialized-postgresql.md#requirements)).
+2. A table with `MaterializedPostgreSQL` engine must have a primary key — the same as a replica identity index (by default: primary key) of a PostgreSQL table (see [details on replica identity index](../../../engines/database-engines/materialized-postgresql.md#requirements)).
 
 3. Only database [Atomic](https://en.wikipedia.org/wiki/Atomicity_(database_systems)) is allowed.
 
 ## Virtual columns {#virtual-columns}
 
--   `_version` — Transaction counter. Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+-   `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
 
--   `_sign` — Deletion mark. Type: [Int8](../../sql-reference/data-types/int-uint.md). Possible values:
+-   `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
     - `1` — Row is not deleted, 
     - `-1` — Row is deleted.
 
