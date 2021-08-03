@@ -105,7 +105,7 @@
                 if (number % 2 == 0, 1, 0)
             FROM
                 system.numbers_mt
-            LIMIT 10000000
+            LIMIT 100000000
     </fill_query>
 
     <query>
@@ -114,7 +114,6 @@
             {function}(value_2),
             {function}(value_3)
         FROM {table}
-        GROUP BY key
         FORMAT Null
     </query>
 
@@ -125,7 +124,6 @@
             sum(toUInt256(value_3)),
             {function}(value_3)
         FROM {table}
-        GROUP BY key
         FORMAT Null
     </query>
 
@@ -135,7 +133,6 @@
             {function}If(value_2, predicate),
             {function}If(value_3, predicate)
         FROM {table}
-        GROUP BY key
         FORMAT Null
     </query>
 
@@ -146,7 +143,6 @@
             sumIf(toUInt256(value_3), predicate),
             {function}If(value_3, predicate)
         FROM {table}
-        GROUP BY key
         FORMAT Null
     </query>
 
@@ -158,7 +154,6 @@
             {function}(value_4),
             {function}(value_5)
         FROM {table}
-        GROUP BY key
         FORMAT Null
     </query>
 
@@ -171,7 +166,6 @@
             {function}(value_4),
             {function}(value_5)
         FROM {table}
-        GROUP BY key
         FORMAT Null
     </query>
 
@@ -183,7 +177,6 @@
             {function}If(value_4, predicate),
             {function}If(value_5, predicate)
         FROM {table}
-        GROUP BY key
         FORMAT Null
     </query>
 
@@ -196,10 +189,8 @@
             {function}If(value_4, predicate),
             {function}If(value_5, predicate)
         FROM {table}
-        GROUP BY key
         FORMAT Null
     </query>
-
 
     <query>
         SELECT
@@ -207,7 +198,6 @@
             {function}(CounterID),
             {function}(ClientIP)
         FROM hits_100m_single
-        GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
     </query>
 
@@ -218,7 +208,6 @@
             sum(toUInt256(ClientIP)),
             {function}(ClientIP)
         FROM hits_100m_single
-        GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
     </query>
 
@@ -230,7 +219,6 @@
             {function}(IPNetworkID),
             {function}(SearchEngineID)
         FROM hits_100m_single
-        GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
     </query>
 
@@ -243,7 +231,6 @@
             {function}(IPNetworkID),
             {function}(SearchEngineID)
         FROM hits_100m_single
-        GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
     </query>
 
@@ -254,7 +241,6 @@
             {function}If(CounterID, predicate),
             {function}If(ClientIP, predicate)
         FROM hits_100m_single
-        GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
     </query>
 
@@ -266,7 +252,6 @@
             sumIf(toUInt256(ClientIP), predicate),
             {function}If(ClientIP, predicate)
         FROM hits_100m_single
-        GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
     </query>
 
@@ -279,7 +264,6 @@
             {function}If(IPNetworkID, predicate),
             {function}If(SearchEngineID, predicate)
         FROM hits_100m_single
-        GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
     </query>
 
@@ -293,7 +277,6 @@
             {function}If(IPNetworkID, predicate),
             {function}If(SearchEngineID, predicate)
         FROM hits_100m_single
-        GROUP BY intHash32(UserID) % {group_scale}
         FORMAT Null
     </query>
 
