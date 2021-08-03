@@ -2,6 +2,7 @@ import os
 import os.path as p
 import pytest
 import time
+import logging
 
 from helpers.cluster import ClickHouseCluster, run_and_check
 
