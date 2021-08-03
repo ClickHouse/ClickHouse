@@ -31,7 +31,7 @@ If the table was detached permanently, it won't be reattached at the server star
 
 ## Create New Table And Attach Data {#create-new-table-and-attach-data}
 
-**With specify path to table data**
+### With Specified Path to Table Data {#attach-with-specified-path}
 
 **Syntax**
 
