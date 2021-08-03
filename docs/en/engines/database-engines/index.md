@@ -14,12 +14,8 @@ You can also use the following database engines:
 
 -   [MySQL](../../engines/database-engines/mysql.md)
 
--   [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)
+-   [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md)
 
 -   [Lazy](../../engines/database-engines/lazy.md)
 
--   [Atomic](../../engines/database-engines/atomic.md)
-
--   [PostgreSQL](../../engines/database-engines/postgresql.md)
-
--   [Replicated](../../engines/database-engines/replicated.md)
+[Original article](https://clickhouse.tech/docs/en/database_engines/) <!--hide-->

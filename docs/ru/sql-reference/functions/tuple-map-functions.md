@@ -9,13 +9,13 @@ toc_title: Работа с контейнерами map
 
 Преобразовывает пары `ключ:значение` в тип данных [Map(key, value)](../../sql-reference/data-types/map.md).
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 map(key1, value1[, key2, value2, ...])
 ```
 
-**Аргументы**
+**Параметры** 
 
 -   `key` — ключ. [String](../../sql-reference/data-types/string.md) или [Integer](../../sql-reference/data-types/int-uint.md).
 -   `value` — значение. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) или [Array](../../sql-reference/data-types/array.md).
@@ -62,21 +62,20 @@ SELECT a['key2'] FROM table_map;
 └─────────────────────────┘
 ```
 
-**Смотрите также**
+**См. также** 
 
 -   тип данных [Map(key, value)](../../sql-reference/data-types/map.md)
-
 ## mapAdd {#function-mapadd}
 
 Собирает все ключи и суммирует соответствующие значения.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 mapAdd(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 ```
 
-**Аргументы**
+**Параметры** 
 
 Аргументами являются [кортежи](../../sql-reference/data-types/tuple.md#tuplet1-t2) из двух [массивов](../../sql-reference/data-types/array.md#data-type-array), где элементы в первом массиве представляют ключи, а второй массив содержит значения для каждого ключа.
 Все массивы ключей должны иметь один и тот же тип, а все массивы значений должны содержать элементы, которые можно приводить к одному типу ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) или [Float64](../../sql-reference/data-types/float.md#float32-float64)).
@@ -106,13 +105,13 @@ SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1])) as res, toTy
 
 Собирает все ключи и вычитает соответствующие значения.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 mapSubtract(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 ```
 
-**Аргументы**
+**Параметры** 
 
 Аргументами являются [кортежи](../../sql-reference/data-types/tuple.md#tuplet1-t2) из двух [массивов](../../sql-reference/data-types/array.md#data-type-array), где элементы в первом массиве представляют ключи, а второй массив содержит значения для каждого ключа.
 Все массивы ключей должны иметь один и тот же тип, а все массивы значений должны содержать элементы, которые можно приводить к одному типу ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) или [Float64](../../sql-reference/data-types/float.md#float32-float64)).
@@ -142,7 +141,7 @@ SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt3
 
 Заполняет недостающие ключи в контейнере map (пара массивов ключей и значений), где ключи являются целыми числами. Кроме того, он поддерживает указание максимального ключа, который используется для расширения массива ключей.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 mapPopulateSeries(keys, values[, max])
@@ -152,10 +151,10 @@ mapPopulateSeries(keys, values[, max])
 
 Количество элементов в `keys` и `values` должно быть одинаковым для каждой строки.
 
-**Аргументы**
+**Параметры**
 
--   `keys` — массив ключей [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#int-ranges)).
--   `values` — массив значений. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#int-ranges)).
+-   `keys` — Массив ключей [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#int-ranges)).
+-   `values` — Массив значений. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#int-ranges)).
 
 **Возвращаемое значение**
 
@@ -187,7 +186,7 @@ select mapPopulateSeries([1,2,4], [11,22,44], 5) as res, toTypeName(res) as type
 mapContains(map, key)
 ```
 
-**Аргументы**
+**Параметры** 
 
 -   `map` — контейнер Map. [Map](../../sql-reference/data-types/map.md).
 -   `key` — ключ. Тип соответстует типу ключей параметра  `map`.
@@ -224,15 +223,13 @@ SELECT mapContains(a, 'name') FROM test;
 
 Возвращает все ключи контейнера `map`.
 
-Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [keys](../../sql-reference/data-types/map.md#map-subcolumns) вместо чтения и обработки данных всего столбца. Запрос `SELECT mapKeys(m) FROM table` преобразуется к запросу `SELECT m.keys FROM table`.
-
 **Синтаксис**
 
 ```sql
 mapKeys(map)
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `map` — контейнер Map. [Map](../../sql-reference/data-types/map.md).
 
@@ -267,15 +264,13 @@ SELECT mapKeys(a) FROM test;
 
 Возвращает все значения контейнера `map`.
 
-Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [values](../../sql-reference/data-types/map.md#map-subcolumns) вместо чтения и обработки данных всего столбца. Запрос `SELECT mapValues(m) FROM table` преобразуется к запросу `SELECT m.values FROM table`.
-
 **Синтаксис**
 
 ```sql
 mapKeys(map)
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `map` — контейнер Map. [Map](../../sql-reference/data-types/map.md).
 
@@ -306,3 +301,4 @@ SELECT mapValues(a) FROM test;
 └──────────────────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/tuple-map-functions/) <!--hide-->

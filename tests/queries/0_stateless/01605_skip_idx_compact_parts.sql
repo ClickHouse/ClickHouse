@@ -3,14 +3,14 @@ CREATE TABLE skip_idx_comp_parts (a Int, b Int, index b_idx b TYPE minmax GRANUL
     ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity=256, merge_max_block_size=100;
 
-SYSTEM STOP MERGES skip_idx_comp_parts;
+SYSTEM STOP MERGES;
 
 INSERT INTO skip_idx_comp_parts SELECT number, number FROM numbers(200);
 INSERT INTO skip_idx_comp_parts SELECT number, number FROM numbers(200);
 INSERT INTO skip_idx_comp_parts SELECT number, number FROM numbers(200);
 INSERT INTO skip_idx_comp_parts SELECT number, number FROM numbers(200);
 
-SYSTEM START MERGES skip_idx_comp_parts;
+SYSTEM START MERGES;
 OPTIMIZE TABLE skip_idx_comp_parts FINAL;
 
 SELECT count() FROM skip_idx_comp_parts WHERE b > 100;

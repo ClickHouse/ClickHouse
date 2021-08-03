@@ -1,7 +1,7 @@
 #!/usr/bin/expect -f
 
 log_user 0
-set timeout 60
+set timeout 1
 match_max 100000
 # A default timeout action is to do nothing, change it to fail
 expect_after {
@@ -23,7 +23,7 @@ set is_done 0
 while {$is_done == 0} {
     send -- "\t"
     expect {
-        "_" {
+        "_connections" {
             set is_done 1
         }
         default {

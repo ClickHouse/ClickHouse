@@ -13,7 +13,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -168,8 +167,6 @@ public:
             std::move(names)
         );
     }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void insertResultInto(
         AggregateDataPtr place,

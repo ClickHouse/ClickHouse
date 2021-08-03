@@ -6,7 +6,7 @@ toc_title: Encoding
 # Encoding Functions {#encoding-functions}
 
 ## char {#char}
-
+    
 Returns the string with the length as the number of passed arguments and each byte has the value of corresponding argument. Accepts multiple arguments of numeric types. If the value of argument is out of range of UInt8 data type, it is converted to UInt8 with possible rounding and overflow.
 
 **Syntax**
@@ -30,7 +30,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello;
+SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello
 ```
 
 Result:
@@ -85,7 +85,9 @@ hex(arg)
 
 The function is using uppercase letters `A-F` and not using any prefixes (like `0x`) or suffixes (like `h`).
 
-For integer arguments, it prints hex digits (“nibbles”) from the most significant to least significant (big-endian or “human-readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if the leading digit is zero.
+For integer arguments, it prints hex digits (“nibbles”) from the most significant to least significant (big endian or “human readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if leading digit is zero.
+
+Example:
 
 **Example**
 
@@ -105,7 +107,7 @@ Values of type `Date` and `DateTime` are formatted as corresponding integers (th
 
 For `String` and `FixedString`, all bytes are simply encoded as two hexadecimal numbers. Zero bytes are not omitted.
 
-Values of floating point and Decimal types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
+Values of floating point and Decimal types are encoded as their representation in memory. As we support little endian architecture, they are encoded in little endian. Zero leading/trailing bytes are not omitted.
 
 **Arguments**
 
@@ -149,197 +151,10 @@ Result:
 └──────────────────┘
 ```
 
-## unhex {#unhexstr}
+## unhex(str) {#unhexstr}
 
-Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
-
-If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
-
-!!! note "Note"
-    If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
-
-Alias: `UNHEX`.
-
-**Syntax**
-
-``` sql
-unhex(arg)
-```
-
-**Arguments**
-
--   `arg` — A string containing any number of hexadecimal digits. Type: [String](../../sql-reference/data-types/string.md).
-
-Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
-
-**Returned value**
-
--   A binary string (BLOB).
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-``` sql
-SELECT unhex('303132'), UNHEX('4D7953514C');
-```
-
-Result:
-``` text
-┌─unhex('303132')─┬─unhex('4D7953514C')─┐
-│ 012             │ MySQL               │
-└─────────────────┴─────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num;
-```
-
-Result:
-
-``` text
-┌──num─┐
-│ 4095 │
-└──────┘
-```
-
-## bin {#bin}
-
-Returns a string containing the argument’s binary representation.
-
-Alias: `BIN`.
-
-**Syntax**
-
-``` sql
-bin(arg)
-```
-
-For integer arguments, it prints bin digits from the most significant to least significant (big-endian or “human-readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints eight digits of every byte if the leading digit is zero.
-
-**Example**
-
-Query:
-
-``` sql
-SELECT bin(1);
-```
-
-Result:
-
-``` text
-00000001
-```
-
-Values of type `Date` and `DateTime` are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
-
-For `String` and `FixedString`, all bytes are simply encoded as eight binary numbers. Zero bytes are not omitted.
-
-Values of floating-point and Decimal types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
-
-**Arguments**
-
--   `arg` — A value to convert to binary. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
-
-**Returned value**
-
--   A string with the binary representation of the argument.
-
-Type: `String`.
-
-**Example**
-
-Query:
-
-``` sql
-SELECT bin(toFloat32(number)) as bin_presentation FROM numbers(15, 2);
-```
-
-Result:
-
-``` text
-┌─bin_presentation─────────────────┐
-│ 00000000000000000111000001000001 │
-│ 00000000000000001000000001000001 │
-└──────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT bin(toFloat64(number)) as bin_presentation FROM numbers(15, 2);
-```
-
-Result:
-
-``` text
-┌─bin_presentation─────────────────────────────────────────────────┐
-│ 0000000000000000000000000000000000000000000000000010111001000000 │
-│ 0000000000000000000000000000000000000000000000000011000001000000 │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-## unbin {#unbinstr}
-
-Performs the opposite operation of [bin](#bin). It interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
-
-If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
-
-!!! note "Note"
-    If `unbin` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
-
-Alias: `UNBIN`.
-
-**Syntax**
-
-``` sql
-unbin(arg)
-```
-
-**Arguments**
-
--   `arg` — A string containing any number of binary digits. Type: [String](../../sql-reference/data-types/string.md).
-
-Supports binary digits `0-1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of bin(N) is not performed by unbin().
-
-**Returned value**
-
--   A binary string (BLOB).
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000101001100');
-```
-
-Result:
-
-``` text
-┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
-│ 012                               │ MySQL                                             │
-└───────────────────────────────────┴───────────────────────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT reinterpretAsUInt64(reverse(unbin('1010'))) AS num;
-```
-
-Result:
-
-``` text
-┌─num─┐
-│  10 │
-└─────┘
-```
+Accepts a string containing any number of hexadecimal digits, and returns a string containing the corresponding bytes. Supports both uppercase and lowercase letters A-F. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the 00-0F byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown).
+If you want to convert the result to a number, you can use the ‘reverse’ and ‘reinterpretAsType’ functions.
 
 ## UUIDStringToNum(str) {#uuidstringtonumstr}
 
@@ -357,52 +172,4 @@ Accepts an integer. Returns a string containing the list of powers of two that t
 
 Accepts an integer. Returns an array of UInt64 numbers containing the list of powers of two that total the source number when summed. Numbers in the array are in ascending order.
 
-## bitPositionsToArray(num) {#bitpositionstoarraynum}
-
-Accepts an integer and converts it to an unsigned integer. Returns an array of `UInt64` numbers containing the list of positions of bits of `arg` that equal `1`, in ascending order.
-
-**Syntax**
-
-```sql
-bitPositionsToArray(arg)
-```
-
-**Arguments**
-
--   `arg` — Integer value. [Int/UInt](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
--   An array containing a list of positions of bits that equal `1`, in ascending order.
-
-Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT bitPositionsToArray(toInt8(1)) AS bit_positions;
-```
-
-Result:
-
-``` text
-┌─bit_positions─┐
-│ [0]           │
-└───────────────┘
-```
-
-Query:
-
-``` sql
-select bitPositionsToArray(toInt8(-1)) as bit_positions;
-```
-
-Result:
-
-``` text
-┌─bit_positions─────┐
-│ [0,1,2,3,4,5,6,7] │
-└───────────────────┘
-```
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/encoding_functions/) <!--hide-->

@@ -1,26 +1,14 @@
 ---
 toc_priority: 37
-toc_title: "Манипуляции со столбцами"
+toc_title: "\u041c\u0430\u043d\u0438\u043f\u0443\u043b\u044f\u0446\u0438\u0438\u0020\u0441\u043e\u0020\u0441\u0442\u043e\u043b\u0431\u0446\u0430\u043c\u0438"
 ---
 
 # Манипуляции со столбцами {#manipuliatsii-so-stolbtsami}
-
-Набор действий, позволяющих изменять структуру таблицы.
-
-Синтаксис:
-
-``` sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN ...
-```
-
-В запросе можно указать сразу несколько действий над одной таблицей через запятую.
-Каждое действие — это манипуляция над столбцом.
 
 Существуют следующие действия:
 
 -   [ADD COLUMN](#alter_add-column) — добавляет столбец в таблицу;
 -   [DROP COLUMN](#alter_drop-column) — удаляет столбец;
--   [RENAME COLUMN](#alter_rename-column) — переименовывает существующий столбец.
 -   [CLEAR COLUMN](#alter_clear-column) — сбрасывает все значения в столбце для заданной партиции;
 -   [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
 -   [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL.
@@ -74,29 +62,10 @@ DROP COLUMN [IF EXISTS] name
 
 Запрос удаляет данные из файловой системы. Так как это представляет собой удаление целых файлов, запрос выполняется почти мгновенно.
 
-!!! warning "Предупреждение"
-    Вы не можете удалить столбец, используемый в [материализованном представлениии](../../../sql-reference/statements/create/view.md#materialized). В противном случае будет ошибка.
-
 Пример:
 
 ``` sql
 ALTER TABLE visits DROP COLUMN browser
-```
-
-## RENAME COLUMN {#alter_rename-column}
-
-``` sql
-RENAME COLUMN [IF EXISTS] name to new_name
-```
-
-Переименовывает столбец `name` в `new_name`. Если указано выражение `IF EXISTS`, то запрос не будет возвращать ошибку при условии, что столбец `name` не существует. Поскольку переименование не затрагивает физические данные колонки, запрос выполняется практически мгновенно.
-
-**ЗАМЕЧЕНИЕ**: Столбцы, являющиеся частью основного ключа или ключа сортировки (заданные с помощью `ORDER BY` или `PRIMARY KEY`), не могут быть переименованы. Попытка переименовать эти слобцы приведет к `SQL Error [524]`. 
-
-Пример:
-
-``` sql
-ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
 ## CLEAR COLUMN {#alter_clear-column}
@@ -136,7 +105,7 @@ ALTER TABLE visits COMMENT COLUMN browser 'Столбец показывает, 
 ## MODIFY COLUMN {#alter_modify-column}
 
 ``` sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL] [AFTER name_after | FIRST]
 ```
 
 Запрос изменяет следующие свойства столбца `name`:
@@ -145,15 +114,11 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_a
 
 -   Значение по умолчанию
 
--   Кодеки сжатия
-
 -   TTL
 
-Примеры изменения кодеков сжатия смотрите в разделе [Кодеки сжатия столбцов](../create/table.md#codecs).
+        Примеры изменения TTL столбца смотрите в разделе [TTL столбца](ttl.md#mergetree-column-ttl).
 
-Примеры изменения TTL столбца смотрите в разделе [TTL столбца](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
-
-Если указано `IF EXISTS`, запрос не возвращает ошибку при условии, что столбец не существует.
+Если указано `IF EXISTS`, запрос не возвращает ошибку, если столбца не существует.
 
 Запрос также может изменять порядок столбцов при помощи `FIRST | AFTER`, смотрите описание [ADD COLUMN](#alter_add-column).
 
@@ -189,7 +154,7 @@ ALTER TABLE table_name MODIFY column_name REMOVE property;
 ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 ```
 
-**Смотрите также**
+## Смотрите также
 
 - [REMOVE TTL](ttl.md).
 
@@ -201,6 +166,8 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 Если возможностей запроса `ALTER` не хватает для нужного изменения таблицы, вы можете создать новую таблицу, скопировать туда данные с помощью запроса [INSERT SELECT](../insert-into.md#insert_query_insert-select), затем поменять таблицы местами с помощью запроса [RENAME](../misc.md#misc_operations-rename), и удалить старую таблицу. В качестве альтернативы для запроса `INSERT SELECT`, можно использовать инструмент [clickhouse-copier](../../../sql-reference/statements/alter/index.md).
 
-Запрос `ALTER` блокирует все чтения и записи для таблицы. То есть если на момент запроса `ALTER` выполнялся долгий `SELECT`, то запрос `ALTER` сначала дождётся его выполнения. И в это время все новые запросы к той же таблице будут ждать, пока завершится этот `ALTER`.
+Запрос `ALTER` блокирует все чтения и записи для таблицы. То есть, если на момент запроса `ALTER`, выполнялся долгий `SELECT`, то запрос `ALTER` сначала дождётся его выполнения. И в это время, все новые запросы к той же таблице, будут ждать, пока завершится этот `ALTER`.
 
 Для таблиц, которые не хранят данные самостоятельно (типа [Merge](../../../sql-reference/statements/alter/index.md) и [Distributed](../../../sql-reference/statements/alter/index.md)), `ALTER` всего лишь меняет структуру таблицы, но не меняет структуру подчинённых таблиц. Для примера, при ALTER-е таблицы типа `Distributed`, вам также потребуется выполнить запрос `ALTER` для таблиц на всех удалённых серверах.
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/column/) <!--hide-->
