@@ -1,7 +1,7 @@
 #include "DictionarySourceHelpers.h"
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <DataStreams/IBlockStream_fwd.h>
+#include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include "DictionaryStructure.h"
@@ -16,6 +16,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
+
+void formatBlock(BlockOutputStreamPtr & out, const Block & block)
+{
+    out->writePrefix();
+    out->write(block);
+    out->writeSuffix();
+    out->flush();
 }
 
 /// For simple key
@@ -59,7 +67,7 @@ Block blockForKeys(
     return block;
 }
 
-ContextMutablePtr copyContextAndApplySettings(
+ContextPtr copyContextAndApplySettings(
     const std::string & config_prefix,
     ContextPtr context,
     const Poco::Util::AbstractConfiguration & config)

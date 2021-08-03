@@ -18,37 +18,37 @@ toc_title: JSON
 
 Проверяет наличие поля с именем `name`.
 
-Синоним: `simpleJSONHas`.
+Алиас: `simpleJSONHas`.
 
 ## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
 
 Пытается выделить число типа UInt64 из значения поля с именем `name`. Если поле строковое, пытается выделить число из начала строки. Если такого поля нет, или если оно есть, но содержит не число, то возвращает 0.
 
-Синоним: `simpleJSONExtractUInt`.
+Алиас: `simpleJSONExtractUInt`.
 
 ## visitParamExtractInt(params, name) {#visitparamextractintparams-name}
 
 Аналогично для Int64.
 
-Синоним: `simpleJSONExtractInt`.
+Алиас: `simpleJSONExtractInt`.
 
 ## visitParamExtractFloat(params, name) {#visitparamextractfloatparams-name}
 
 Аналогично для Float64.
 
-Синоним: `simpleJSONExtractFloat`.
+Алиас: `simpleJSONExtractFloat`.
 
 ## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
 
 Пытается выделить значение true/false. Результат — UInt8.
 
-Синоним: `simpleJSONExtractBool`.
+Алиас: `simpleJSONExtractBool`.
 
 ## visitParamExtractRaw(params, name) {#visitparamextractrawparams-name}
 
 Возвращает значение поля, включая разделители.
 
-Синоним: `simpleJSONExtractRaw`.
+Алиас: `simpleJSONExtractRaw`.
 
 Примеры:
 
@@ -61,7 +61,7 @@ visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}';
 
 Разбирает строку в двойных кавычках. У значения убирается экранирование. Если убрать экранированные символы не удалось, то возвращается пустая строка.
 
-Синоним: `simpleJSONExtractString`.
+Алиас: `simpleJSONExtractString`.
 
 Примеры:
 
@@ -306,51 +306,3 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello"
 │ [('d','"hello"'),('f','"world"')]                                                                     │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-
-## toJSONString {#tojsonstring}
-
-Сериализует значение в JSON представление. Поддерживаются различные типы данных и вложенные структуры.
-По умолчанию 64-битные [целые числа](../../sql-reference/data-types/int-uint.md) и более (например, `UInt64` или `Int128`) заключаются в кавычки. Настройка [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) управляет этим поведением.
-Специальные значения `NaN` и `inf` заменяются на `null`. Чтобы они отображались, включите настройку [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals).
-Когда сериализуется значение [Enum](../../sql-reference/data-types/enum.md), то функция выводит его имя.
-
-**Синтаксис**
-
-``` sql
-toJSONString(value)
-```
-
-**Аргументы**
-
--   `value` — значение, которое необходимо сериализовать. Может быть любого типа.
-
-**Возвращаемое значение**
-
--   JSON представление значения.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Первый пример показывает сериализацию [Map](../../sql-reference/data-types/map.md).
-Во втором примере есть специальные значения, обернутые в [Tuple](../../sql-reference/data-types/tuple.md).
-
-Запрос:
-
-``` sql
-SELECT toJSONString(map('key1', 1, 'key2', 2));
-SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_format_json_quote_denormals = 1;
-```
-
-Результат:
-
-``` text
-{"key1":1,"key2":2}
-[1.25,null,"nan","inf","-inf",[]]
-```
-
-**Смотрите также**
-
--   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
--   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)

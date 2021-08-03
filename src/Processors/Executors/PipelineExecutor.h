@@ -31,7 +31,6 @@ public:
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
     explicit PipelineExecutor(Processors & processors_, QueryStatus * elem = nullptr);
-    ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
     /// In case of exception during execution throws any occurred.
@@ -128,7 +127,7 @@ private:
     ProcessorsMap processors_map;
 
     /// Now it's used to check if query was killed.
-    QueryStatus * const process_list_element = nullptr;
+    QueryStatus * process_list_element = nullptr;
 
     /// Graph related methods.
     bool expandPipeline(Stack & stack, UInt64 pid);

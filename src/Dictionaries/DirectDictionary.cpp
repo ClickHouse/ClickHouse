@@ -2,12 +2,12 @@
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
-
 
 namespace DB
 {
@@ -305,9 +305,7 @@ namespace
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        DictionarySourcePtr source_ptr,
-        ContextPtr /* context */,
-        bool /* created_from_ddl */)
+        DictionarySourcePtr source_ptr)
     {
         const auto * layout_name = dictionary_key_type == DictionaryKeyType::simple ? "direct" : "complex_key_direct";
 

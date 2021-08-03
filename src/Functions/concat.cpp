@@ -9,8 +9,8 @@
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <common/map.h>
-#include <common/range.h>
+#include <ext/map.h>
+#include <ext/range.h>
 
 #include "formatString.h"
 
@@ -60,7 +60,7 @@ public:
                     + ", should be at most " + std::to_string(FormatImpl::argument_threshold),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (const auto arg_idx : collections::range(0, arguments.size()))
+        for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))
@@ -207,7 +207,7 @@ public:
         }
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                FunctionConcat::create(context), collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
+                FunctionConcat::create(context), ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

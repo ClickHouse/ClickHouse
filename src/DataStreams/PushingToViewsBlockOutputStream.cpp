@@ -13,12 +13,12 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/checkStackSize.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <common/logger_useful.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
+
 
 namespace DB
 {
@@ -127,12 +127,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     /// Do not push to destination table if the flag is set
     if (!no_destination)
     {
-        auto sink = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), getContext());
-
-        metadata_snapshot->check(sink->getPort().getHeader().getColumnsWithTypeAndName());
-
-        replicated_output = dynamic_cast<ReplicatedMergeTreeSink *>(sink.get());
-        output = std::make_shared<PushingToSinkBlockOutputStream>(std::move(sink));
+        output = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), getContext());
+        replicated_output = dynamic_cast<ReplicatedMergeTreeBlockOutputStream *>(output.get());
     }
 }
 
