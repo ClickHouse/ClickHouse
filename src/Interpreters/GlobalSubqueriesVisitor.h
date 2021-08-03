@@ -80,6 +80,10 @@ public:
                 subquery_or_table_name = ast;
                 is_table = true;
             }
+            else if (ast->as<ASTSubquery>())
+            {
+                subquery_or_table_name = ast;
+            }
 
             if (!subquery_or_table_name)
                 throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
