@@ -8,7 +8,6 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/ZooKeeperLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
@@ -104,7 +103,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     opentelemetry_span_log = createSystemLog<OpenTelemetrySpanLog>(
         global_context, "system", "opentelemetry_span_log", config,
         "opentelemetry_span_log");
-    zookeeper_log = createSystemLog<ZooKeeperLog>(global_context, "system", "zookeeper_log", config, "zookeeper_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -124,8 +122,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(asynchronous_metric_log.get());
     if (opentelemetry_span_log)
         logs.emplace_back(opentelemetry_span_log.get());
-    if (zookeeper_log)
-        logs.emplace_back(zookeeper_log.get());
 
     try
     {

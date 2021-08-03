@@ -9,13 +9,13 @@ toc_title: Working with maps
 
 Arranges `key:value` pairs into [Map(key, value)](../../sql-reference/data-types/map.md) data type.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 map(key1, value1[, key2, value2, ...])
 ```
 
-**Arguments**
+**Arguments** 
 
 -   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md) or [Integer](../../sql-reference/data-types/int-uint.md).
 -   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) or [Array](../../sql-reference/data-types/array.md).
@@ -62,7 +62,7 @@ Result:
 └─────────────────────────┘
 ```
 
-**See Also**
+**See Also** 
 
 -   [Map(key, value)](../../sql-reference/data-types/map.md) data type
 
@@ -109,13 +109,13 @@ Query with `Map` type:
 
 Collect all the keys and subtract corresponding values.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 mapSubtract(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 ```
 
-**Arguments**
+**Arguments** 
 
 Arguments are [tuples](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../../sql-reference/data-types/int-uint.md#int-ranges), [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges) or [Float64](../../sql-reference/data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
 
@@ -143,7 +143,7 @@ Result:
 
 Fills missing keys in the maps (key and value array pair), where keys are integers. Also, it supports specifying the max key, which is used to extend the keys array.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 mapPopulateSeries(keys, values[, max])
@@ -188,7 +188,7 @@ Determines  whether the `map` contains the `key` parameter.
 mapContains(map, key)
 ```
 
-**Parameters**
+**Parameters** 
 
 -   `map` — Map. [Map](../../sql-reference/data-types/map.md).
 -   `key` — Key. Type matches the type of keys of `map` parameter.

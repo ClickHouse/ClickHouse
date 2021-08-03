@@ -12,8 +12,7 @@ struct DiskType
         Local,
         RAM,
         S3,
-        HDFS,
-        Encrypted
+        HDFS
     };
     static String toString(Type disk_type)
     {
@@ -27,8 +26,6 @@ struct DiskType
                 return "s3";
             case Type::HDFS:
                 return "hdfs";
-            case Type::Encrypted:
-                return "encrypted";
         }
         __builtin_unreachable();
     }

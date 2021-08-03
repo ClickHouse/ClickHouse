@@ -49,7 +49,7 @@ MySQLBlockInputStream::Connection::Connection(
 {
 }
 
-/// Used in MaterializedMySQL and in doInvalidateQuery for dictionary source.
+/// Used in MaterializeMySQL and in doInvalidateQuery for dictionary source.
 MySQLBlockInputStream::MySQLBlockInputStream(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,

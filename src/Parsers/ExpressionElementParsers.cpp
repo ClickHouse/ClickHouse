@@ -1555,37 +1555,26 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (pos->type != TokenType::StringLiteral && pos->type != TokenType::HereDoc)
+    if (pos->type != TokenType::StringLiteral)
         return false;
 
     String s;
+    ReadBufferFromMemory in(pos->begin, pos->size());
 
-    if (pos->type == TokenType::StringLiteral)
+    try
     {
-        ReadBufferFromMemory in(pos->begin, pos->size());
-
-        try
-        {
-            readQuotedStringWithSQLStyle(s, in);
-        }
-        catch (const Exception &)
-        {
-            expected.add(pos, "string literal");
-            return false;
-        }
-
-        if (in.count() != pos->size())
-        {
-            expected.add(pos, "string literal");
-            return false;
-        }
+        readQuotedStringWithSQLStyle(s, in);
     }
-    else if (pos->type == TokenType::HereDoc)
+    catch (const Exception &)
     {
-        std::string_view here_doc(pos->begin, pos->size());
-        size_t heredoc_size = here_doc.find('$', 1) + 1;
-        assert(heredoc_size != std::string_view::npos);
-        s = String(pos->begin + heredoc_size, pos->size() - heredoc_size * 2);
+        expected.add(pos, "string literal");
+        return false;
+    }
+
+    if (in.count() != pos->size())
+    {
+        expected.add(pos, "string literal");
+        return false;
     }
 
     auto literal = std::make_shared<ASTLiteral>(s);

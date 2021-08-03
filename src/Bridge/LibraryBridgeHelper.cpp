@@ -3,7 +3,6 @@
 #include <IO/ReadHelpers.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
-#include <DataStreams/formatBlock.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <IO/WriteBufferFromOStream.h>
