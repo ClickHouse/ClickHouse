@@ -447,6 +447,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         {
             /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
             /// (since in this case queries processed separately and the initiator is just a proxy in this case).
+            if (to_stage != QueryProcessingStage::Complete)
+                throw Exception("Queries with distributed_group_by_no_merge=1 should be processed to Complete stage", ErrorCodes::LOGICAL_ERROR);
             return QueryProcessingStage::Complete;
         }
     }
@@ -459,11 +461,22 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     /// If there is only one node, the query can be fully processed by the
     /// shard, initiator will work as a proxy only.
     if (getClusterQueriedNodes(settings, cluster) == 1)
-        return QueryProcessingStage::Complete;
+    {
+        /// In case the query was processed to
+        /// WithMergeableStateAfterAggregation/WithMergeableStateAfterAggregationAndLimit
+        /// (which are greater the Complete stage)
+        /// we cannot return Complete (will break aliases and similar),
+        /// relevant for Distributed over Distributed
+        return std::max(to_stage, QueryProcessingStage::Complete);
+    }
 
     auto optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
     if (optimized_stage)
+    {
+        if (*optimized_stage == QueryProcessingStage::Complete)
+            return std::min(to_stage, *optimized_stage);
         return *optimized_stage;
+    }
 
     return QueryProcessingStage::WithMergeableState;
 }
