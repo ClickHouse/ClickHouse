@@ -3,7 +3,7 @@ toc_priority: 30
 toc_title: MaterializedPostgreSQL
 ---
 
-# MaterializedPostgreSQL {#materialize-postgresql}
+# [experimental] MaterializedPostgreSQL {#materialize-postgresql}
 
 Creates ClickHouse database with all the tables existing in PostgreSQL, and all the data in those tables.
 
