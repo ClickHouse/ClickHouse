@@ -77,6 +77,8 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Interpreters/SynonymsExtensions.h>
+#include <Interpreters/Lemmatizers.h>
 #include <filesystem>
 
 
@@ -348,6 +350,11 @@ struct ContextSharedPart
     scope_guard models_repository_guard;
 
     scope_guard dictionaries_xmls;
+
+#if USE_NLP
+    mutable std::optional<SynonymsExtensions> synonyms_extensions;
+    mutable std::optional<Lemmatizers> lemmatizers;
+#endif
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -1000,6 +1007,13 @@ const Block & Context::getScalar(const String & name) const
     return it->second;
 }
 
+const Block * Context::tryGetLocalScalar(const String & name) const
+{
+    auto it = local_scalars.find(name);
+    if (local_scalars.end() == it)
+        return nullptr;
+    return &it->second;
+}
 
 Tables Context::getExternalTables() const
 {
@@ -1056,6 +1070,13 @@ void Context::addScalar(const String & name, const Block & block)
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     scalars[name] = block;
+}
+
+
+void Context::addLocalScalar(const String & name, const Block & block)
+{
+    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    local_scalars[name] = block;
 }
 
 
@@ -1504,6 +1525,29 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
     shared->dictionaries_xmls = getExternalDictionariesLoader().addConfigRepository(
         std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
 }
+
+#if USE_NLP
+
+SynonymsExtensions & Context::getSynonymsExtensions() const
+{
+    auto lock = getLock();
+
+    if (!shared->synonyms_extensions)
+        shared->synonyms_extensions.emplace(getConfigRef());
+
+    return *shared->synonyms_extensions;
+}
+
+Lemmatizers & Context::getLemmatizers() const
+{
+    auto lock = getLock();
+
+    if (!shared->lemmatizers)
+        shared->lemmatizers.emplace(getConfigRef());
+
+    return *shared->lemmatizers;
+}
+#endif
 
 void Context::setProgressCallback(ProgressCallback callback)
 {
