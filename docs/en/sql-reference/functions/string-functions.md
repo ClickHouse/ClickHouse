@@ -43,13 +43,93 @@ The result type is UInt64.
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it does not throw an exception).
 The result type is UInt64.
 
+## leftPad {#leftpad}
+
+Pads the current string from the left with a specified string (multiple times, if needed) until the resulting string reaches the given length.
+
+**Syntax**
+
+``` sql
+leftPad('string','length', 'string2`)
+```
+
+**Arguments**
+
+-   `string` — Input string, that need to be padded. [String](../data-types/string.md).
+-   `length` — The length of the resulting string once the input string pads. [UInt](../data-types/int-uint.md). If the value is less than input string length, then string is returned as-is.
+-   `string2` — The string to pad the current input string with. [String](../data-types/string.md).
+
+[String](../data-types/string.md)
+
+**Returned value(s)**
+
+-   The resulting string reaches the given length.
+
+Type: [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT leftPad('abc', 7, '*');
+```
+
+Result:
+
+``` text
+┌─leftPad('abc', 7, '*')─┐
+│ ****abc                │
+└────────────────────────┘
+```
+
+## rightPad {#rightpad}
+
+Pads the current string from the right with a specified string (multiple times, if needed) until the resulting string reaches the given length.
+
+**Syntax**
+
+``` sql
+leftPad('string','length', 'string2`)
+```
+
+**Arguments**
+
+-   `string` — Input string, that need to be padded. [String](../data-types/string.md).
+-   `length` — The length of the resulting string once the input string pads. [UInt](../data-types/int-uint.md). If the value is less than input string length, then string is returned as-is.
+-   `string2` — The string to pad the current input string with. [String](../data-types/string.md).
+
+[String](../data-types/string.md)
+
+**Returned value(s)**
+
+-   The resulting string reaches the given length.
+
+Type: [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT rightPad('abc', 7, '*');
+```
+
+Result:
+
+``` text
+┌─rightPad('abc', 7, '*')─┐
+│ abc****                 │
+└─────────────────────────┘
+```
+
 ## lower, lcase {#lower}
 
 Converts ASCII Latin symbols in a string to lowercase.
 
 ## upper, ucase {#upper}
 
-Converts ASCII Latin symbols in a string to uppercase.
+Converts ASCII Latin symbols in a string to uppercase.pd
 
 ## lowerUTF8 {#lowerutf8}
 
