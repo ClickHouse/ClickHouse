@@ -14,7 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Processors/NullSink.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <filesystem>
 
 
