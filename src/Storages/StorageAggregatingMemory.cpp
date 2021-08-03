@@ -319,7 +319,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     : IStorage(table_id_),
       log(&Poco::Logger::get("StorageAggregatingMemory"))
 {
-    std::cerr << "=== creating StorageAggregatingMemory query: " << queryToString(query) << std::endl;
+    // std::cerr << "=== creating StorageAggregatingMemory query: " << queryToString(query) << std::endl;
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -330,68 +330,54 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     // TODO check validity of aggregation query inside this func
     select_query = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
 
-    ContextMutablePtr context_copy = Context::createCopy(context_);
-    context_copy->makeQueryContext();
-    query_context = context_copy;
-
-    constructor_constraints = constraints_;
+    auto query_context = Context::createCopy(context_);
+    query_context->makeQueryContext();
 
     ASTPtr select_ptr = select_query.inner_query;
     ASTSelectQuery * select = select_ptr->as<ASTSelectQuery>();
     if (!select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Invalid create query for AggregatingMemory. SELECT query is expected");
 
-    ColumnsDescription source_columns;
-    if (query.attach)
+    bool has_specified_structure =
+        query.columns_list && query.columns_list->columns && !query.columns_list->columns->children.empty();
+
+    ColumnsDescription source_columns = columns_;
+
+    if (!query.attach && !has_specified_structure)
     {
-        source_columns = columns_;
-    }
-    else
-    {
-        if (!query.columns_list || !query.columns_list->columns || query.columns_list->columns->children.empty())
-        {
-            //auto select_descr = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query_context);
-            //auto source_storage = DatabaseCatalog::instance().getTable(select_descr.select_table_id, query_context);
+        /// Get info about source table.
+        JoinedTables joined_tables(query_context, *select);
+        auto source_storage = joined_tables.getLeftTableStorage();
 
-            /// Get info about source table.
-            JoinedTables joined_tables(query_context, *select);
-            auto source_storage = joined_tables.getLeftTableStorage();
+        if (!source_storage)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Invalid create query for AggregatingMemory. Cannot find storage. Query {}",
+                            queryToString(*query.select));
 
-            if (!source_storage)
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                                "Invalid create query for AggregatingMemory. Cannot find storage. Query {}",
-                                queryToString(*query.select));
+        source_columns = source_storage->getInMemoryMetadata().getColumns();
 
-            source_columns = source_storage->getInMemoryMetadata().getColumns();
-
-            ASTPtr new_columns = InterpreterCreateQuery::formatColumns(source_columns);
-            query.columns_list->setOrReplace(query.columns_list->columns, new_columns);
-        }
-        else
-        {
-            source_columns = columns_;
-        }
+        /// Here we specify explicit columns list to ATTACH query (to be independent from storage).
+        ASTPtr new_columns = InterpreterCreateQuery::formatColumns(source_columns);
+        query.columns_list->setOrReplace(query.columns_list->columns, new_columns);
     }
 
+    /// We always remove table expression from select. Because it is used only to get table structure.
+    /// But next time after ATTACH it is explicitly specified.
     getFirstSelect(*query.select)->setExpression(ASTSelectQuery::Expression::TABLES, nullptr);
 
+    /// Internal select reads from itself. It is ok, cause we will use view source.
     select->replaceDatabaseAndTable(getStorageID());
 
-    auto local_context = Context::createCopy(query_context);
-    local_context->addViewSource(
+    query_context->addViewSource(
         StorageValues::create(getStorageID(), source_columns, Block(), getVirtuals()));
 
-    //auto tmp_storage = StorageSource::create(getStorageID(), source_columns);
-
-    // std::cerr << "======= StorageAggregatingMemory::lazyInit 1\n";
     /// Get list of columns we get from select query.
-
-    Block header = InterpreterSelectQuery(select_ptr, local_context, SelectQueryOptions().analyze()).getSampleBlock();
+    Block header = InterpreterSelectQuery(select_ptr, query_context, SelectQueryOptions().analyze()).getSampleBlock();
 
     /// Init metadata for reads from this storage.
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(blockToColumnsDescription(header));
-    storage_metadata.setConstraints(constructor_constraints);
+    storage_metadata.setConstraints(constraints_);
     storage_metadata.setSelectQuery(select_query);
     setInMemoryMetadata(storage_metadata);
 
@@ -401,7 +387,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     src_metadata_snapshot = std::make_shared<StorageInMemoryMetadata>(src_metadata);
 
     /// Create AggregatingStep to extract params from it.
-    InterpreterSelectQuery select_interpreter(select_ptr, local_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState).analyze());
+    InterpreterSelectQuery select_interpreter(select_ptr, query_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState).analyze());
 
     if (!select_interpreter.getAnalysisResult().need_aggregate)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -433,8 +419,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
                               true);
 
     aggregator_transform_params = std::make_shared<AggregatingTransformParams>(params, false);
-    initState(local_context);
-    is_initialized = true;
+    initState(query_context);
 }
 
 void StorageAggregatingMemory::initState(ContextPtr context)
@@ -453,15 +438,6 @@ void StorageAggregatingMemory::initState(ContextPtr context)
 
 void StorageAggregatingMemory::startup()
 {
-    // try
-    // {
-    //     lazyInit();
-    // }
-    // catch (Exception & e)
-    // {
-    //     e.addMessage("Failed to initialize AggregatingMemory on startup");
-    //     LOG_ERROR(log, "{}", getCurrentExceptionMessage(true));
-    // }
 }
 
 Pipe StorageAggregatingMemory::read(
@@ -473,7 +449,6 @@ Pipe StorageAggregatingMemory::read(
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    //lazyInit();
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     // TODO implement O(1) read by aggregation key
@@ -512,32 +487,25 @@ Pipe StorageAggregatingMemory::read(
 
 SinkToStoragePtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    //lazyInit();
-
     auto out = std::make_shared<AggregatingMemorySink>(*this, metadata_snapshot, context);
     return out;
 }
 
 void StorageAggregatingMemory::drop()
 {
-    if (!is_initialized)
-        return;
-
     /// Drop aggregation state.
     many_data = nullptr;
 }
 
 void StorageAggregatingMemory::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
 {
-    ///lazyInit();
-
     /// Assign fresh state.
     initState(context);
 }
 
 std::optional<UInt64> StorageAggregatingMemory::totalRows(const Settings &) const
 {
-    if (!is_initialized)
+    if (!many_data)
         return 0;
 
     return many_data->variants[0]->size();
@@ -545,9 +513,6 @@ std::optional<UInt64> StorageAggregatingMemory::totalRows(const Settings &) cons
 
 std::optional<UInt64> StorageAggregatingMemory::totalBytes(const Settings &) const
 {
-    if (!is_initialized)
-        return 0;
-
     // Not possible to determine precisely.
     // TODO: can implement estimation from hash table size and size of arenas.
     return {};

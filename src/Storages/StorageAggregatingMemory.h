@@ -65,14 +65,8 @@ protected:
 private:
     Poco::Logger * log;
 
-    mutable std::mutex init_mutex;
-    std::atomic<bool> is_initialized{false};
-
     SelectQueryDescription select_query;
-    ContextPtr query_context;
-    ConstraintsDescription constructor_constraints;
 
-    // StoragePtr source_storage;
     StorageMetadataPtr src_metadata_snapshot;
 
     AggregatingTransformParamsPtr aggregator_transform_params;

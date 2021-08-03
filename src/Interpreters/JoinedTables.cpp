@@ -206,20 +206,14 @@ StoragePtr JoinedTables::getLeftTableStorage()
 
     if (auto view_source = context->getViewSource())
     {
-        std::cerr << "======= Has view source\n";
         const auto & storage_values = static_cast<const StorageValues &>(*view_source);
         auto tmp_table_id = storage_values.getStorageID();
-        std::cerr << table_id.database_name << ' ' << table_id.table_name << std::endl;
-        std::cerr << tmp_table_id.database_name << ' ' << tmp_table_id.table_name << std::endl;
         if (tmp_table_id.database_name == table_id.database_name && tmp_table_id.table_name == table_id.table_name)
         {
-            std::cerr << ">>> using view source" << std::endl;
             /// Read from view source.
             return context->getViewSource();
         }
     }
-    else
-        std::cerr << "=== No view source" << std::endl;
 
     /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
     return DatabaseCatalog::instance().getTable(table_id, context);
