@@ -5,7 +5,7 @@ toc_title: RENAME
 
 # RENAME Statement {#misc_operations-rename}
 
-Renames databases, tables or dictionaries. Several entities can be renamed in a single query.
+Renames databases, tables, or dictionaries. Several entities can be renamed in a single query.
 Note that the `RENAME` query with several entities is non-atomic operation. To swap entity names atomically, use [EXCHANGE](./exchange.md) statement.
 
 !!! note "Note"
