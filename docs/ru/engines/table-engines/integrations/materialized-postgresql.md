@@ -5,6 +5,10 @@ toc_title: MaterializedPostgreSQL
 
 # MaterializedPostgreSQL {#materialize-postgresql}
 
+Создает таблицу ClickHouse с исходным дампом данных таблицы PostgreSQL и запускает процесс репликации, т.е. выполняется применение новых изменений в фоне, как эти изменения происходят в таблице PostgreSQL в удаленной базе данных PostgreSQL.
+
+Если требуется более одной таблицы, то очень рекомендуется использовать движок баз данных [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) вместо движка таблиц и использовать настройку [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list), с помощью которой указать таблицы, которые нужно реплицировать. Это будет намного лучше с точки зрения нагрузки на процессор, меньшего количества подключений и меньшего количества слотов репликации внутри удаленной базы данных PostgreSQL.
+
 ## Создание таблицы {#creating-a-table}
 
 ``` sql
@@ -12,6 +16,14 @@ CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;
 ```
+
+**Параметры движка**
+
+-   `host:port` — адрес сервера PostgreSQL.
+-   `database` — имя базы данных на удалённом сервере.
+-   `table` — имя таблицы на удалённом сервере.
+-   `user` — пользователь PostgreSQL.
+-   `password` — пароль пользователя.
 
 ## Требования {#requirements}
 
@@ -23,9 +35,10 @@ PRIMARY KEY key;
 
 ## Виртуальные столбцы {#virtual-columns}
 
--   `_version` (тип: UInt64)
-
--   `_sign` (тип: Int8)
+-   `_version` — счетчик транзакций. Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+-   `_sign` — метка удаления. Тип: [Int8](../../sql-reference/data-types/int-uint.md). Возможные значения:
+    - `1` — строка не удалена, 
+    - `-1` — строка удалена.
 
 Эти столбцы не нужно добавлять при создании таблицы. Они всегда доступны в `SELECT` запросе.
 Столбец `_version` равен позиции `LSN` в `WAL`, поэтому его можно использовать для проверки актуальности репликации.

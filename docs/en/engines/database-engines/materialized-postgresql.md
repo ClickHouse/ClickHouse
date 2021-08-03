@@ -9,7 +9,6 @@ Creates ClickHouse database with all the tables existing in PostgreSQL, and all 
 
 ClickHouse server works as PostgreSQL replica. It reads WAL and performs DML queries. DDL is not replicated, but can be handled (described below).
 
-
 ## Creating a Database {#creating-a-database}
 
 ``` sql
