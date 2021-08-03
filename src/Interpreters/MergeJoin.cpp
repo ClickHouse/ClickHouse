@@ -507,6 +507,9 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
                             ErrorCodes::PARAMETER_OUT_OF_BOUND);
     }
 
+    if (table_join->keyNamesLeft().size() > 1)
+        throw Exception("MergeJoin does not support OR", ErrorCodes::NOT_IMPLEMENTED);
+
     std::tie(mask_column_name_left, mask_column_name_right) = table_join->joinConditionColumnNames(0);
 
     /// Add auxiliary joining keys to join only rows where conditions from JOIN ON sections holds

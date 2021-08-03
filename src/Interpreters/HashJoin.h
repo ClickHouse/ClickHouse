@@ -327,7 +327,6 @@ public:
 
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        // BlocksList blocks; /// Blocks of "right" table.
         BlocksWithFlagsList blocks;
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
