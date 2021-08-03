@@ -56,6 +56,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -221,10 +222,7 @@ std::string LocalServer::getInitialCreateTableQuery()
 void LocalServer::loadSuggestionData(Suggest & suggest)
 {
     if (is_interactive && !config().getBool("disable_suggestion", false))
-    {
-        /// -1 suggestion_limit - suggestion level, required for local-server.
-        suggest.load(query_context, -1);
-    }
+        suggest.load(global_context);
 }
 
 
@@ -232,6 +230,7 @@ void LocalServer::checkInterruptListener()
 {
     if (!interrupt_listener)
         return;
+    assert(is_interactive);
 
     if (interrupt_listener->check() && !cancelled && interrupt_listener_mutex.try_lock())
     {
@@ -242,10 +241,9 @@ void LocalServer::checkInterruptListener()
 
             auto * process_list_elem = query_context->getProcessListElement();
             if (process_list_elem)
-            {
-                process_list_elem->cancelQuery(true);
-                cancelled = true;
-            }
+                cancelled = (process_list_elem->cancelQuery(true) == CancellationCode::CancelSent);
+            else
+                std::cerr << "Cannot cancel query: no process list element.";
 
             interrupt_listener->unblock();
         }
@@ -301,19 +299,31 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
             interrupt_listener.reset();
     });
 
-    try
-    {
-        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, {}, flush_buffer_func);
-        progress_indication.clearProgressOutput();
-    }
-    catch (...)
+    auto process_error = [&]()
     {
         if (!ignore_error)
             throw;
 
         local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
         have_error = true;
+    };
+
+    try
+    {
+        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, {}, flush_buffer_func);
     }
+    catch (const Exception & e)
+    {
+        if (is_interactive && e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+            std::cout << "Query was cancelled." << std::endl;
+        else
+            process_error();
+    }
+    catch (...)
+    {
+        process_error();
+    }
+    onEndOfStream();
 }
 
 

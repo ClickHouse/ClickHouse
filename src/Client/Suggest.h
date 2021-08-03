@@ -30,7 +30,7 @@ public:
     void load(const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
 
     /// Load suggestions for clickhouse-local.
-    void load(ContextMutablePtr context, Int32 suggestion_limit);
+    void load(ContextPtr context);
 
     /// Older server versions cannot execute the query above.
     static constexpr int MIN_SERVER_REVISION = 54406;
@@ -38,11 +38,7 @@ public:
 private:
     void loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, Int32 suggestion_limit);
 
-    static void loadImpl(ContextMutablePtr context, Int32 suggestion_limit);
-
     void fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query);
-
-    void fetch(ContextMutablePtr context, const std::string & query);
 
     void fillWordsFromBlock(const Block & block);
 

@@ -58,22 +58,6 @@ namespace ErrorCodes
 namespace DB
 {
 
-void ClientBase::onProgress(const Progress & value)
-{
-    if (!progress_indication.updateProgress(value))
-    {
-        // Just a keep-alive update.
-        return;
-    }
-
-    if (block_out_stream)
-        block_out_stream->onProgress(value);
-
-    if (need_render_progress)
-        progress_indication.writeProgress();
-}
-
-
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const
 {
     ParserQuery parser(end);
@@ -156,6 +140,42 @@ static void adjustQueryEnd(const char *& this_query_end, const char * all_querie
         // Many queries on one line, can't do anything. By the way, this
         // syntax is probably going to work as expected:
         // select nonexistent /* { serverError 12345 } */; select 1
+    }
+}
+
+
+void ClientBase::onProgress(const Progress & value)
+{
+    if (!progress_indication.updateProgress(value))
+    {
+        // Just a keep-alive update.
+        return;
+    }
+
+    if (block_out_stream)
+        block_out_stream->onProgress(value);
+
+    if (need_render_progress)
+        progress_indication.writeProgress();
+}
+
+
+void ClientBase::onEndOfStream()
+{
+    progress_indication.clearProgressOutput();
+
+    if (block_out_stream)
+        block_out_stream->writeSuffix();
+
+    if (logs_out_stream)
+        logs_out_stream->writeSuffix();
+
+    resetOutput();
+
+    if (is_interactive && !written_first_block)
+    {
+        progress_indication.clearProgressOutput();
+        std::cout << "Ok." << std::endl;
     }
 }
 

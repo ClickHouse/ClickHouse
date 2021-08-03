@@ -1,11 +1,18 @@
 #include "Suggest.h"
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/executeQuery.h>
-#include <IO/WriteBufferFromString.h>
+#include <Common/Macros.h>
 #include <IO/Operators.h>
+#include <Functions/FunctionFactory.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <Formats/FormatFactory.h>
+#include <Storages/StorageFactory.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -71,16 +78,39 @@ void Suggest::load(const ConnectionParameters & connection_parameters, Int32 sug
     });
 }
 
-void Suggest::load(ContextMutablePtr context, Int32 suggestion_limit)
+void Suggest::load(ContextPtr context)
 {
-    try
-    {
-        loadImpl(context, suggestion_limit);
-    }
-    catch (...)
-    {
-        std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-    }
+    const auto & function_names = FunctionFactory::instance().getAllRegisteredNames();
+    for (const auto & function_name : function_names)
+        words.emplace_back(function_name);
+
+    const auto & table_engine_names = StorageFactory::instance().getAllRegisteredNames();
+    for (const auto & table_engine_name : table_engine_names)
+        words.emplace_back(table_engine_name);
+
+    const auto & format_names = FormatFactory::instance().getAllFormats();
+    for (const auto & format_name : format_names)
+        words.emplace_back(format_name.first);
+
+    const auto & table_function_names = TableFunctionFactory::instance().getAllRegisteredNames();
+    for (const auto & table_function_name : table_function_names)
+        words.emplace_back(table_function_name);
+
+    const auto & data_type_names = DataTypeFactory::instance().getAllRegisteredNames();
+    for (const auto & data_type_name : data_type_names)
+        words.emplace_back(data_type_name);
+
+    auto macros = context->getMacros();
+    for (const auto & macro : macros->getMacroMap())
+        words.emplace_back(macro.first);
+
+    const auto & agg_function_names = AggregateFunctionFactory::instance().getAllRegisteredNames();
+    for (const auto & agg_function_name : agg_function_names)
+        words.emplace_back(agg_function_name);
+
+    const auto & combinators = AggregateFunctionCombinatorFactory::instance().getAllAggregateFunctionCombinators();
+    for (const auto & combinator : combinators)
+        words.emplace_back(combinator.name);
 
     std::sort(words.begin(), words.end());
     words_no_case = words;
@@ -118,34 +148,29 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit)
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
     WriteBufferFromOwnString query;
-
-    query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
-          "SELECT name FROM system.functions"
-          " UNION ALL "
-          "SELECT name FROM system.table_engines"
-          " UNION ALL "
-          "SELECT name FROM system.formats"
-          " UNION ALL "
-          "SELECT name FROM system.table_functions"
-          " UNION ALL "
-          "SELECT name FROM system.data_type_families"
-          " UNION ALL "
-          "SELECT name FROM system.merge_tree_settings"
-          " UNION ALL "
-          "SELECT name FROM system.settings";
-
-    if (suggestion_limit >= 0)
-        query << " UNION ALL "
-            "SELECT cluster FROM system.clusters"
-            " UNION ALL "
-            "SELECT macro FROM system.macros"
-            " UNION ALL "
-            "SELECT policy_name FROM system.storage_policies";
-
-    query << " UNION ALL "
-            "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
-
-      /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
+ query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
+        "SELECT name FROM system.functions"
+        " UNION ALL "
+        "SELECT name FROM system.table_engines"
+        " UNION ALL "
+        "SELECT name FROM system.formats"
+        " UNION ALL "
+        "SELECT name FROM system.table_functions"
+        " UNION ALL "
+        "SELECT name FROM system.data_type_families"
+        " UNION ALL "
+        "SELECT name FROM system.merge_tree_settings"
+        " UNION ALL "
+        "SELECT name FROM system.settings"
+        " UNION ALL "
+        "SELECT cluster FROM system.clusters"
+        " UNION ALL "
+        "SELECT macro FROM system.macros"
+        " UNION ALL "
+        "SELECT policy_name FROM system.storage_policies"
+        " UNION ALL "
+        "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
+    /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
     if (suggestion_limit > 0)
     {
         String limit_str = toString(suggestion_limit);
@@ -159,8 +184,8 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit)
             << " UNION ALL "
             "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
     }
-
     query << ") WHERE notEmpty(res)";
+
     return query.str();
 }
 
@@ -169,10 +194,6 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
     fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit));
 }
 
-void Suggest::loadImpl(ContextMutablePtr context, Int32 suggestion_limit)
-{
-    executeQuery(getLoadSuggestionQuery(suggestion_limit), context);
-}
 
 void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
 {

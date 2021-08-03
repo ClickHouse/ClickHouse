@@ -1568,26 +1568,6 @@ void Client::onProfileInfo(const BlockStreamProfileInfo & profile_info)
 }
 
 
-void Client::onEndOfStream()
-{
-    progress_indication.clearProgressOutput();
-
-    if (block_out_stream)
-        block_out_stream->writeSuffix();
-
-    if (logs_out_stream)
-        logs_out_stream->writeSuffix();
-
-    resetOutput();
-
-    if (is_interactive && !written_first_block)
-    {
-        progress_indication.clearProgressOutput();
-        std::cout << "Ok." << std::endl;
-    }
-}
-
-
 void Client::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments)
 {
     /** We allow different groups of arguments:
