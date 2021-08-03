@@ -1090,7 +1090,7 @@ void executeQuery(
                     context,
                     {},
                     output_format_settings);
-                    
+
                 out->setAutoFlush();
 
                 /// Save previous progress callback if any. TODO Do it more conveniently.
