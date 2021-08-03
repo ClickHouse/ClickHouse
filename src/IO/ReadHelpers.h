@@ -436,7 +436,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        auto value = *buf.position() - '0';
+        unsigned char value = *buf.position() - '0';
 
         if (value < 10)
         {
