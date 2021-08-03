@@ -27,6 +27,8 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
+class CompiledExpressionCache;
+
 namespace JSONBuilder
 {
     class JSONMap;
@@ -83,9 +85,6 @@ public:
         ExecutableFunctionPtr function;
         /// If function is a compiled statement.
         bool is_function_compiled = false;
-        /// It is deterministic (See IFunction::isDeterministic).
-        /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
-        bool is_deterministic = true;
 
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
@@ -178,7 +177,6 @@ public:
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
-    void assertDeterministic() const; /// Throw if not isDeterministic.
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression);

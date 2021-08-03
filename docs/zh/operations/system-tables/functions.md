@@ -26,5 +26,5 @@
 │ JSONExtractInt           │            0 │                0 │          │
 └──────────────────────────┴──────────────┴──────────────────┴──────────┘
 
-10 rows in set. Elapsed: 0.002 sec.
+10 rows in set. Elapsed: 0.002 sec. 
 ```

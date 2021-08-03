@@ -24,7 +24,6 @@ SRCS(
     CompressedWriteBuffer.cpp
     CompressionCodecDelta.cpp
     CompressionCodecDoubleDelta.cpp
-    CompressionCodecEncrypted.cpp
     CompressionCodecGorilla.cpp
     CompressionCodecLZ4.cpp
     CompressionCodecMultiple.cpp

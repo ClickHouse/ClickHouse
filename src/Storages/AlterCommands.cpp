@@ -211,7 +211,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.after_index_name = command_ast->index->as<ASTIdentifier &>().name();
 
         command.if_not_exists = command_ast->if_not_exists;
-        command.first = command_ast->first;
 
         return command;
     }
@@ -310,21 +309,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SETTING;
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
-        return command;
-    }
-    else if (command_ast->type == ASTAlterCommand::RESET_SETTING)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.type = AlterCommand::RESET_SETTING;
-        for (const ASTPtr & identifier_ast : command_ast->settings_resets->children)
-        {
-            const auto & identifier = identifier_ast->as<ASTIdentifier &>();
-            auto insertion = command.settings_resets.emplace(identifier.name());
-            if (!insertion.second)
-                throw Exception("Duplicate setting name " + backQuote(identifier.name()),
-                                ErrorCodes::BAD_ARGUMENTS);
-        }
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
@@ -470,10 +454,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         auto insert_it = metadata.secondary_indices.end();
 
-        /// insert the index in the beginning of the indices list
-        if (first)
-            insert_it = metadata.secondary_indices.begin();
-
         if (!after_index_name.empty())
         {
             insert_it = std::find_if(
@@ -590,20 +570,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 settings_from_storage.push_back(change);
         }
     }
-    else if (type == RESET_SETTING)
-    {
-        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
-        for (const auto & setting_name : settings_resets)
-        {
-            auto finder = [&setting_name](const SettingChange & c) { return c.name == setting_name; };
-            auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
-
-            if (it != settings_from_storage.end())
-                settings_from_storage.erase(it);
-
-            /// Intentionally ignore if there is no such setting name
-        }
-    }
     else if (type == RENAME_COLUMN)
     {
         metadata.columns.rename(column_name, rename_to);
@@ -712,7 +678,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 bool AlterCommand::isSettingsAlter() const
 {
-    return type == MODIFY_SETTING || type == RESET_SETTING;
+    return type == MODIFY_SETTING;
 }
 
 bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata) const
@@ -872,8 +838,6 @@ String alterTypeToString(const AlterCommand::Type type)
         return "MODIFY TTL";
     case AlterCommand::Type::MODIFY_SETTING:
         return "MODIFY SETTING";
-    case AlterCommand::Type::RESET_SETTING:
-        return "RESET SETTING";
     case AlterCommand::Type::MODIFY_QUERY:
         return "MODIFY QUERY";
     case AlterCommand::Type::RENAME_COLUMN:
@@ -1159,7 +1123,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
                                     ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
             }
         }
-        else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
+        else if (command.type == AlterCommand::MODIFY_SETTING)
         {
             if (metadata.settings_changes == nullptr)
                 throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
@@ -1274,11 +1238,6 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
         throw Exception{"Cannot DROP or CLEAR all columns", ErrorCodes::BAD_ARGUMENTS};
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
-}
-
-bool AlterCommands::hasSettingsAlterCommand() const
-{
-    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
 }
 
 bool AlterCommands::isSettingsAlter() const
