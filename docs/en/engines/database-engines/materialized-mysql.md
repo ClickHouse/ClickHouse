@@ -42,12 +42,15 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
         max_wait_time_when_mysql_unavailable=10000;
 ```
 
-**Settings on MySQL-server side**
+**Settings on Mysql-server Side**
 
-For the correct work of `MaterializeMySQL`, there are few mandatory `MySQL`-side configuration settings that should be set:
+For the correct work of `MaterializeMySQL`, there are few mandatory `MySQL`-side configuration settings that must be set:
 
 - `default_authentication_plugin = mysql_native_password` since `MaterializeMySQL` can only authorize with this method.
-- `gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializeMySQL` replication. Pay attention that while turning this mode `On` you should also specify `enforce_gtid_consistency = on`.
+- `gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializeMySQL` replication.
+
+!!! attention "Attention"
+    While turning on `gtid_mode` you should also specify `enforce_gtid_consistency = on`.
 
 ## Virtual columns {#virtual-columns}
 
@@ -85,7 +88,7 @@ Other types are not supported. If MySQL table contains a column of such type, Cl
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
-### Compatibility restrictions
+### Compatibility restrictions {#compatibility-restrictions}
 
 Apart of the data types limitations there are few restrictions comparing to `MySQL` databases, that should be resolved before replication will be possible:
 
