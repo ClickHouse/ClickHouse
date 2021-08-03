@@ -39,6 +39,7 @@ LibraryBridgeHelper::LibraryBridgeHelper(
     , http_timeout(context_->getGlobalContext()->getSettingsRef().http_receive_timeout.value)
     , library_data(library_data_)
     , dictionary_id(dictionary_id_)
+    , http_timeouts(ConnectionTimeouts::getHTTPTimeouts(context_))
 {
     bridge_port = config.getUInt("library_bridge.port", DEFAULT_PORT);
     bridge_host = config.getString("library_bridge.host", DEFAULT_HOST);
@@ -75,7 +76,7 @@ bool LibraryBridgeHelper::bridgeHandShake()
     String result;
     try
     {
-        ReadWriteBufferFromHTTP buf(createRequestURI(PING), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
+        ReadWriteBufferFromHTTP buf(createRequestURI(PING), Poco::Net::HTTPRequest::HTTP_GET, {}, http_timeouts);
         readString(result, buf);
     }
     catch (...)
@@ -239,7 +240,7 @@ bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferF
         uri,
         Poco::Net::HTTPRequest::HTTP_POST,
         std::move(out_stream_callback),
-        ConnectionTimeouts::getHTTPTimeouts(getContext()));
+        http_timeouts);
 
     bool res;
     readBoolText(res, buf);
@@ -253,7 +254,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWri
         uri,
         Poco::Net::HTTPRequest::HTTP_POST,
         std::move(out_stream_callback),
-        ConnectionTimeouts::getHTTPTimeouts(getContext()),
+        http_timeouts,
         0,
         Poco::Net::HTTPBasicCredentials{},
         DBMS_DEFAULT_BUFFER_SIZE,
