@@ -5,7 +5,7 @@ toc_title: DETACH
 
 # DETACH Statement {#detach}
 
-Makes the server "forget" about the existence of a table, a materialized view or a dictionary.
+Makes the server "forget" about the existence of a table, a materialized view, or a dictionary.
 
 **Syntax**
 
@@ -72,4 +72,3 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 
 -   [Materialized View](../../sql-reference/statements/create/view.md#materialized)
 -   [Dictionaries](../../sql-reference/dictionaries/index.md)
-
