@@ -104,6 +104,8 @@ protected:
 
     void onProgress(const Progress & value);
 
+    void onEndOfStream();
+
 
     /// Prepare for and call either runInteractive() or runNonInteractive().
     virtual int mainImpl() = 0;

@@ -101,7 +101,6 @@ private:
     void writeFinalProgress();
     void onReceiveExceptionFromServer(std::unique_ptr<Exception> && e);
     void onProfileInfo(const BlockStreamProfileInfo & profile_info);
-    void onEndOfStream();
 
     std::vector<String> loadWarningMessages();
     void reconnectIfNeeded()
