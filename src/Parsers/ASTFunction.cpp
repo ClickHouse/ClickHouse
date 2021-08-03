@@ -202,7 +202,7 @@ static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, const 
 
 ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 {
-    if (arguments && arguments->children.size() > 0)
+    if (arguments && !arguments->children.empty())
     {
         return arguments->children[0]->as<ASTSelectWithUnionQuery>();
     }
