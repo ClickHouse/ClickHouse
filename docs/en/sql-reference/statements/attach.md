@@ -33,13 +33,13 @@ If the table was detached permanently, it won't be reattached at the server star
 
 ### With Specified Path to Table Data {#attach-with-specified-path}
 
+The query creates a new table with provided structure and attaches table data from the provided directory in `user_files`.
+
 **Syntax**
 
 ```sql
 ATTACH TABLE name FROM 'path/to/data/' (col1 Type1, ...)
 ```
-
-It creates new table with provided structure and attaches table data from provided directory in `user_files`.
 
 **Example**
 
@@ -59,15 +59,20 @@ Result:
 └──────┴────┘
 ```
 
-**With specify table UUID** (Only for `Atomic` database)
+### With Specified Table UUID {#attach-with-specified-uuid}
+
+This query creates a new table with provided structure and attaches data from the table with the specified UUID.
+It is supported by the [Atomic](../../engines/database-engines/atomic.md) database engine.
+
+**Syntax**
 
 ```sql
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-It creates new table with provided structure and attaches data from table with the specified UUID.
-
 ## Attach Existing Dictionary {#attach-existing-dictionary}
+
+Attaches a previously detached dictionary.
 
 **Syntax**
 
