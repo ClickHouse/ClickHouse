@@ -28,47 +28,57 @@ def partition_table_simple(started_cluster):
     q("CREATE TABLE test.t_num (id Int64) ENGINE=MergeTree() ORDER BY (id) ")
     yield
 
-    q('DROP TABLE test.partition')
+    q('DROP TABLE test.t_num')
 
 
 def test_part_type(partition_table_simple):
     q("insert into test.t_num select number from system.numbers limit 10")
     res = q("select count(1) from system.parts where database='test' and table='t_num' and part_type='InMemory'")
-    assert res == '1'
+    assert res == '1\n'
 
     q("insert into test.t_num select number from system.numbers limit 10000")
     res = q("select count(1) from system.parts where database='test' and table='t_num' and part_type='Compact'")
-    assert res == '1'
+    assert res == '1\n'
 
     q("insert into test.t_num select number from system.numbers limit 100000")
     res = q("select count(1) from system.parts where database='test' and table='t_num' and part_type='Wide'")
-    assert res == '1'
+    assert res == '1\n'
 
 def test_part_merge(partition_table_simple):
     # memory to memory
     for i in range(4):
         q(f"insert into test.t_num select number from system.numbers limit {i * 10}, 10")
     res = q("select count(1) from system.parts where database='test' and table='t_num' and part_type='InMemory'")
-    assert res == '4'
+    assert res == '4\n'
 
     q(f"system stop merges test.t_num")
     for i in range(4, 5):
         q(f"insert into test.t_num select number from system.numbers limit {i * 10}, 10")
     q("system start merges test.t_num")
     time.sleep(1)
-    res = q("select sum(rows), count(1) from system.parts where database='test' and table='t_num' and part_type='InMemory' group by part_type")
+
+    res = q("select name, active, part_type, rows from system.parts where database='test' and table='t_num'")
+    print(res)
+
+    res = q("select sum(rows), count(1) from system.parts where database='test' and table='t_num' and "
+            "part_type='InMemory' and active  group by part_type")
     assert TSV(res) == TSV("50\t1")
 
     # memory to compact
-    q(f"system stop merges test.t_num")
+    # q(f"system stop merges test.t_num")
     for i in range(5, 10):
         q(f"insert into test.t_num select number from system.numbers limit {i * 2000}, 2000")
-    q("system start merges test.t_num")
-    time.sleep(1)
+    # q("system start merges test.t_num")
+    q("optimize table test.t_num")
+    time.sleep(3)
+
+    res = q("select name, active, part_type, rows from system.parts where database='test' and table='t_num'")
+    print(res)
+
     res = q("select count(1) from system.parts where database='test' and table='t_num' and part_type='Compact'")
-    assert res == '1'
+    assert res == '1\n'
     res = q("select count(1) from system.parts where database='test' and table='t_num' and part_type='InMemory'")
-    assert res == '0'
+    assert res == '0\n'
 
     # compact to wide and memory parts only get processed by Memory Selector.
     for i in range(10, 20):
@@ -79,9 +89,9 @@ def test_part_merge(partition_table_simple):
     q("optimize table test.t_num")
     time.sleep(1)
     res = q("select count(1) from system.parts where database='test' and table='t_num' and part_type='Wide'")
-    assert res > 1
+    assert int(res) > 1
     res = q("select count(1) from system.parts where database='test' and table='t_num' and part_type='InMemory'")
-    assert res == '4'
+    assert res == '4\n'
 
 
 
