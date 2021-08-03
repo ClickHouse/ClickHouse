@@ -19,6 +19,7 @@ SRCS(
     BlockStreamProfileInfo.cpp
     CheckConstraintsBlockOutputStream.cpp
     ColumnGathererStream.cpp
+    ConnectionCollector.cpp
     ConvertingBlockInputStream.cpp
     CountingBlockOutputStream.cpp
     DistinctSortedBlockInputStream.cpp
