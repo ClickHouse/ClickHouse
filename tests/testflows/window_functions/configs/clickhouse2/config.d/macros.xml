@@ -1,7 +1,0 @@
-<?xml version="1.0"?>
-<yandex>
-    <macros>
-        <replica>clickhouse2</replica>
-        <shard>02</shard>
-    </macros>
-</yandex>

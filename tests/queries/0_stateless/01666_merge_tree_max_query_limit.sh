@@ -15,13 +15,13 @@ drop table if exists simple;
 create table simple (i int, j int) engine = MergeTree order by i
 settings index_granularity = 1, max_concurrent_queries = 1, min_marks_to_honor_max_concurrent_queries = 2;
 
-insert into simple select number, number + 100 from numbers(5000);
+insert into simple select number, number + 100 from numbers(1000);
 "
 
 query_id="long_running_query-$CLICKHOUSE_DATABASE"
 
 echo "Spin up a long running query"
-${CLICKHOUSE_CLIENT} --query "select sleepEachRow(0.1) from simple settings max_block_size = 1 format Null" --query_id "$query_id" > /dev/null 2>&1 &
+${CLICKHOUSE_CLIENT} --query "select sleepEachRow(0.01) from simple settings max_block_size = 1 format Null" --query_id "$query_id" > /dev/null 2>&1 &
 wait_for_query_to_start "$query_id"
 
 # query which reads marks >= min_marks_to_honor_max_concurrent_queries is throttled

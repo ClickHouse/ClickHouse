@@ -12,8 +12,7 @@ namespace DB
 static bool isUniq(const ASTFunction & func)
 {
     return func.name == "uniq" || func.name == "uniqExact" || func.name == "uniqHLL12"
-        || func.name == "uniqCombined" || func.name == "uniqCombined64"
-        || func.name == "uniqTheta";
+        || func.name == "uniqCombined" || func.name == "uniqCombined64";
 }
 
 /// Remove injective functions of one argument: replace with a child

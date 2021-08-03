@@ -94,7 +94,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 Обозначает, что значение отсутствует.
 
-Чтобы в поле таблицы можно было хранить `NULL`, оно должно быть типа [Nullable](../sql-reference/data-types/nullable.md).
+Чтобы в поле таблицы можно было хранить `NULL`, оно должно быть типа [Nullable](../sql-reference/syntax.md).
 
 В зависимости от формата данных (входных или выходных) `NULL` может иметь различное представление. Подробнее смотрите в документации для [форматов данных](../interfaces/formats.md#formats).
 
@@ -128,7 +128,7 @@ expr AS alias
 
         Например, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-        В функции [CAST](../sql_reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
+        В функции [CAST](sql_reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
 
 -   `expr` — любое выражение, которое поддерживает ClickHouse.
 
@@ -138,7 +138,7 @@ expr AS alias
 
         Например, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
-### Примечания по использованию {#notes-on-usage}
+### Примечания по использованию {#primechaniia-po-ispolzovaniiu}
 
 Синонимы являются глобальными для запроса или подзапроса, и вы можете определить синоним в любой части запроса для любого выражения. Например, `SELECT (1 AS n) + 2, n`.
 
@@ -169,9 +169,9 @@ Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
-В этом примере мы объявили таблицу `t` со столбцом `b`. Затем, при выборе данных, мы определили синоним `sum(b) AS b`. Поскольку синонимы глобальные, то ClickHouse заменил литерал `b` в выражении `argMax(a, b)` выражением `sum(b)`. Эта замена вызвала исключение. Можно изменить это поведение, включив настройку [prefer_column_name_to_alias](../operations/settings/settings.md#prefer_column_name_to_alias), для этого нужно установить ее в значение `1`.
+В этом примере мы объявили таблицу `t` со столбцом `b`. Затем, при выборе данных, мы определили синоним `sum(b) AS b`. Поскольку синонимы глобальные, то ClickHouse заменил литерал `b` в выражении `argMax(a, b)` выражением `sum(b)`. Эта замена вызвала исключение.
 
-## Звёздочка {#asterisk}
+## Звёздочка {#zviozdochka}
 
 В запросе `SELECT`, вместо выражения может стоять звёздочка. Подробнее смотрите раздел «SELECT».
 
@@ -180,3 +180,4 @@ Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 Выражение представляет собой функцию, идентификатор, литерал, применение оператора, выражение в скобках, подзапрос, звёздочку. А также может содержать синоним.
 Список выражений - одно выражение или несколько выражений через запятую.
 Функции и операторы, в свою очередь, в качестве аргументов, могут иметь произвольные выражения.
+

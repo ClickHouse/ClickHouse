@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB

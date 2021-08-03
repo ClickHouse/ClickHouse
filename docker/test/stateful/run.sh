@@ -2,11 +2,6 @@
 
 set -e -x
 
-# Choose random timezone for this test run
-TZ="$(grep -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
-echo "Choosen random timezone $TZ"
-ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
-
 dpkg -i package_folder/clickhouse-common-static_*.deb;
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
@@ -117,15 +112,12 @@ timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
 ./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
-grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
 if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
     tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
 fi
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
-    grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
     pigz < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.gz ||:
     pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
