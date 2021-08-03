@@ -22,8 +22,6 @@ bool FieldVisitorSum::operator() (UInt64 & x) const
 bool FieldVisitorSum::operator() (Float64 & x) const { x += get<Float64>(rhs); return x != 0; }
 
 bool FieldVisitorSum::operator() (Null &) const { throw Exception("Cannot sum Nulls", ErrorCodes::LOGICAL_ERROR); }
-bool FieldVisitorSum::operator() (NegativeInfinity &) const { throw Exception("Cannot sum -Inf", ErrorCodes::LOGICAL_ERROR); }
-bool FieldVisitorSum::operator() (PositiveInfinity &) const { throw Exception("Cannot sum +Inf", ErrorCodes::LOGICAL_ERROR); }
 bool FieldVisitorSum::operator() (String &) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
 bool FieldVisitorSum::operator() (Array &) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
 bool FieldVisitorSum::operator() (Tuple &) const { throw Exception("Cannot sum Tuples", ErrorCodes::LOGICAL_ERROR); }

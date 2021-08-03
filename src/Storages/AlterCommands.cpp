@@ -1276,11 +1276,6 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
-bool AlterCommands::hasSettingsAlterCommand() const
-{
-    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
-}
-
 bool AlterCommands::isSettingsAlter() const
 {
     return std::all_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });

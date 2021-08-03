@@ -283,7 +283,7 @@ SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'publi
 
 Result:
 
-```text
+```text 
 ┌─firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
 │ foo                                                                                      │
 └──────────────────────────────────────────────────────────────────────────────────────────┘

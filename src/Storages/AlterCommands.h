@@ -195,12 +195,9 @@ public:
     void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// At least one command modify settings.
-    bool hasSettingsAlterCommand() const;
-
-    /// All commands modify settings only.
     bool isSettingsAlter() const;
 
-    /// All commands modify comments only.
+    /// At least one command modify comments.
     bool isCommentAlter() const;
 
     /// Return mutation commands which some storages may execute as part of
