@@ -111,7 +111,7 @@ LAYOUT(HASHED())
 
 Аналогичен `hashed`, но при этом занимает меньше места в памяти и генерирует более высокую загрузку CPU.
 
-Пример конфигурации:
+Для этого типа размещения также можно задать `preallocate` в значении `true`. В данном случае это более важно, чем для типа `hashed`.
 
 ``` xml
 <layout>
@@ -326,7 +326,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 
 ``` sql
 LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict))
+    PATH ./user_files/test_dict))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}
