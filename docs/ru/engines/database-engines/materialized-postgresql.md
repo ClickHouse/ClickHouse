@@ -3,7 +3,7 @@ toc_priority: 30
 toc_title: MaterializedPostgreSQL
 ---
 
-# MaterializedPostgreSQL {#materialize-postgresql}
+# [экспериментальный] MaterializedPostgreSQL {#materialize-postgresql}
 
 Создает базу данных ClickHouse со всеми таблицами, существующими в PostgreSQL, и всеми данными в этих таблицах.
 
