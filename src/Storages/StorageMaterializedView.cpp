@@ -85,14 +85,14 @@ StorageMaterializedView::StorageMaterializedView(
         throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
     bool is_aggregating_memory = query.storage && query.storage->engine && query.storage->engine->name == "AggregatingMemory";
-    if (query.storage)
-    {
-        std::cerr << "---- has storage\n";
-        if (query.storage->engine)
-        {
-            std::cerr << "---- has engine " << query.storage->engine->name << std::endl;
-        }
-    }
+    // if (query.storage)
+    // {
+    //     std::cerr << "---- has storage\n";
+    //     if (query.storage->engine)
+    //     {
+    //         std::cerr << "---- has engine " << query.storage->engine->name << std::endl;
+    //     }
+    // }
 
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), local_context);
@@ -117,7 +117,7 @@ StorageMaterializedView::StorageMaterializedView(
     }
     else
     {
-        std::cerr << "------ Creating MV with inner table\n";
+        // std::cerr << "------ Creating MV with inner table\n";
 
         /// We will create a query to create an internal table.
         auto create_context = Context::createCopy(local_context);
@@ -127,20 +127,25 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->uuid = query.to_inner_uuid;
 
         auto new_columns_list = std::make_shared<ASTColumns>();
-        new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
 
         if (is_aggregating_memory)
         {
-            std::cerr << "-------- AggMem\n";
             /// AggregatingMemory requires SELECT to know how to do aggregation.
+            // std::cerr << "-------- AggMem\n";
             manual_create_query->set(manual_create_query->select, query.select->clone());
-            manual_create_query->set(manual_create_query->columns_list, nullptr);
+
+            Block header = InterpreterSelectQuery(select.inner_query, local_context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze()).getSampleBlock();
+            new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(header.getNamesAndTypesList()));
+            manual_create_query->set(manual_create_query->columns_list, new_columns_list);
         }
         else
+        {
+            new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
             manual_create_query->set(manual_create_query->columns_list, new_columns_list);
-        manual_create_query->set(manual_create_query->storage, query.storage->ptr());
+        }
 
-        std::cerr << "------ query " << queryToString(manual_create_query) << std::endl;
+        manual_create_query->set(manual_create_query->storage, query.storage->ptr());
+        // std::cerr << "------ query " << queryToString(manual_create_query) << std::endl;
         InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();

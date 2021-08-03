@@ -1,0 +1,68 @@
+CREATE TABLE default.src_am\n(\n    `x` UInt32,\n    `y` String\n)\nENGINE = AggregatingMemory AS\nSELECT sum(x)
+sum(x)	UInt64					
+10
+10
+CREATE TABLE default.src_am\n(\n    `x` UInt32,\n    `y` String\n)\nENGINE = AggregatingMemory AS\nSELECT\n    sum(x) AS s,\n    y\nGROUP BY y
+s	UInt64					
+y	String					
+4	a
+6	b
+4	a
+6	b
+a
+b
+CREATE TABLE default.src_am\n(\n    `x` UInt32,\n    `y` String\n)\nENGINE = AggregatingMemory AS\nSELECT\n    sum(x) AS s,\n    y\nGROUP BY y
+s	UInt64					
+y	String					
+4	a
+6	b
+CREATE TABLE default.src_am\n(\n    `x` UInt32,\n    `y` String\n)\nENGINE = AggregatingMemory AS\nSELECT\n    sum(x) AS s,\n    y\nGROUP BY y
+s	UInt64					
+y	String					
+4	a
+6	b
+4	a
+6	b
+CREATE MATERIALIZED VIEW default.mv_am TO default.src_am\n(\n    `s` UInt64,\n    `y` String\n) AS\nSELECT\n    a + 1 AS x,\n    concat(b, \'_\') AS y\nFROM default.src
+s	UInt64					
+y	String					
+4	a
+6	b
+4	a
+6	a_
+6	b
+8	b_
+4	a
+6	a_
+6	b
+8	b_
+CREATE MATERIALIZED VIEW default.mv_am TO default.src_am\n(\n    `s` UInt64,\n    `y` String\n) AS\nSELECT\n    a + 1 AS x,\n    concat(b, \'_\') AS y\nFROM default.src
+s	UInt64					
+y	String					
+CREATE MATERIALIZED VIEW default.mv_am\n(\n    `sum(x)` UInt64,\n    `y` String\n)\nENGINE = AggregatingMemory AS\nSELECT\n    sum(x),\n    y\nFROM default.src\nGROUP BY y
+sum(x)	UInt64					
+y	String					
+CREATE TABLE default.`.inner_id.00001717-1000-4000-8000-000000000001`\n(\n    `x` UInt32,\n    `y` String\n)\nENGINE = AggregatingMemory AS\nSELECT\n    sum(x),\n    y\nGROUP BY y
+sum(x)	UInt64					
+y	String					
+4	a
+6	b
+4	a
+6	b
+9	a
+12	b
+10	a
+12	b
+1	1
+10	a
+12	b
+CREATE MATERIALIZED VIEW default.mv_am\n(\n    `sum(x)` UInt64,\n    `y` String\n)\nENGINE = AggregatingMemory AS\nSELECT\n    sum(x),\n    y\nFROM default.src\nGROUP BY y
+sum(x)	UInt64					
+y	String					
+CREATE TABLE default.`.inner_id.00001717-1000-4000-8000-000000000002`\n(\n    `x` UInt32,\n    `y` String\n)\nENGINE = AggregatingMemory AS\nSELECT\n    sum(x),\n    y\nGROUP BY y
+sum(x)	UInt64					
+y	String					
+1	a
+2	a
+2	a_
+4	a_

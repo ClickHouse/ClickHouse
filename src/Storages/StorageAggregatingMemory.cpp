@@ -193,6 +193,8 @@ public:
 
     void write(const Block & block) override
     {
+        /// TODO: fix this check.
+        /// This block may have more columns then needed in case of MV.
         storage.src_metadata_snapshot->check(block, true);
 
         //StoragePtr source_storage = storage.source_storage;
@@ -322,7 +324,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     : IStorage(table_id_),
       log(&Poco::Logger::get("StorageAggregatingMemory"))
 {
-    std::cerr << "=== creating StorageAggregatingMemory query: " << queryToString(query) << std::endl;
+    // std::cerr << "=== creating StorageAggregatingMemory query: " << queryToString(query) << std::endl;
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -354,12 +356,12 @@ StorageAggregatingMemory::StorageAggregatingMemory(
         if (!query.columns_list || !query.columns_list->columns || query.columns_list->columns->children.empty())
         {
             /// Get info about source table.
-            // JoinedTables joined_tables(query_context, *select);
-            // auto source_storage = joined_tables.getLeftTableStorage();
-            // source_columns = source_storage->getInMemoryMetadata().getColumns();
+            JoinedTables joined_tables(query_context, *select);
+            auto source_storage = joined_tables.getLeftTableStorage();
+            source_columns = source_storage->getInMemoryMetadata().getColumns();
 
-            Block header = InterpreterSelectQuery(select_ptr, query_context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze()).getSampleBlock();
-            source_columns = blockToColumnsDescription(header);
+            // Block header = InterpreterSelectQuery(select_ptr, query_context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze()).getSampleBlock();
+            // source_columns = blockToColumnsDescription(header);
 
             ASTPtr new_columns = InterpreterCreateQuery::formatColumns(source_columns);
             query.columns_list->setOrReplace(query.columns_list->columns, new_columns);

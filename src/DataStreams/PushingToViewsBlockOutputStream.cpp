@@ -390,7 +390,10 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
             in = std::make_shared<ConvertingBlockInputStream>(in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
         else
+        {
             in = std::make_shared<OneBlockInputStream>(block);
+            in = std::make_shared<ConvertingBlockInputStream>(in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
+        }
 
         in->readPrefix();
 
