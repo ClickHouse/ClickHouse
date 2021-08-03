@@ -11,7 +11,6 @@ namespace DB
 {
 
 class Context;
-
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
