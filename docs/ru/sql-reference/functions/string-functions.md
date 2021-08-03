@@ -7,7 +7,7 @@ toc_title: "Функции для работы со строками"
 
 ## empty {#empty}
 
-Проверяет, является ли входное значение пустым.
+Проверяет, является ли входная стока пустой.
 
 **Синтаксис**
 
@@ -19,7 +19,7 @@ empty(x)
 
 **Параметры**
 
--   `x` — Входное значение. [Array](../data-types/array.md), [String](../data-types/string.md), [UUID](../data-types/uuid.md).
+-   `x` — Входная строка. [Array](../data-types/array.md), [String](../data-types/string.md), [UUID](../data-types/uuid.md).
 
 **Возвращаемое значение**
 
