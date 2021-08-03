@@ -26,6 +26,15 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 -   `user` — пользователь MySQL.
 -   `password` — пароль пользователя.
 
+**Настройки на стороне MySQL-сервера**
+
+Для правильной работы `MaterializeMySQL` следует обязательно указать на MySQL сервере следующие параметры конфигурации:
+- `default_authentication_plugin = mysql_native_password` — `MaterializeMySQL` может авторизоваться только с помощью этого метода.
+- `gtid_mode = on` — ведение журнала на основе GTID является обязательным для обеспечения правильной репликации.
+
+!!! attention "Внимание"
+    При включении `gtid_mode` вы также должны указать `enforce_gtid_consistency = on`.
+
 ## Виртуальные столбцы {#virtual-columns}
 
 При работе с движком баз данных `MaterializedMySQL` используются таблицы семейства [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) с виртуальными столбцами `_sign` и `_version`.
@@ -54,12 +63,20 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 | STRING                  | [String](../../sql-reference/data-types/string.md)           |
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
+| BINARY                  | [FixedString](../../sql-reference/data-types/fixedstring.md) |
 
 Другие типы не поддерживаются. Если таблица MySQL содержит столбец другого типа, ClickHouse выдаст исключение "Неподдерживаемый тип данных" ("Unhandled data type") и остановит репликацию.
 
 Тип [Nullable](../../sql-reference/data-types/nullable.md) поддерживается.
 
 ## Особенности и рекомендации {#specifics-and-recommendations}
+
+### Ограничения совместимости {#compatibility-restrictions}
+
+Кроме ограничений на типы данных, существует несколько ограничений по сравнению с базами данных MySQL, которые следует решить до того, как станет возможной репликация:
+
+- Каждая таблица в `MySQL` должна содержать `PRIMARY KEY`.
+- Репликация для таблиц, содержащих строки со значениями полей `ENUM` вне диапазона значений (определяется размерностью `ENUM`) вне диапазона (указанного в подписи "ПЕРЕЧИСЛЕНИЕ"), не будет работать.
 
 ### DDL-запросы {#ddl-queries}
 
