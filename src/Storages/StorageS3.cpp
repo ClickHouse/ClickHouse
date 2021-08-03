@@ -38,6 +38,7 @@
 #include <re2/re2.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -264,10 +265,10 @@ Chunk StorageS3Source::generate()
 }
 
 
-class StorageS3BlockOutputStream : public IBlockOutputStream
+class StorageS3Sink : public SinkToStorage
 {
 public:
-    StorageS3BlockOutputStream(
+    StorageS3Sink(
         const String & format,
         const Block & sample_block_,
         ContextPtr context,
@@ -277,34 +278,32 @@ public:
         const String & key,
         size_t min_upload_part_size,
         size_t max_single_part_upload_size)
-        : sample_block(sample_block_)
+        : SinkToStorage(sample_block_)
+        , sample_block(sample_block_)
     {
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
         writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
-    Block getHeader() const override
+    String getName() const override { return "StorageS3Sink"; }
+
+    void consume(Chunk chunk) override
     {
-        return sample_block;
+        if (is_first_chunk)
+        {
+            writer->writePrefix();
+            is_first_chunk = false;
+        }
+        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
-    void write(const Block & block) override
-    {
-        writer->write(block);
-    }
+    // void flush() override
+    // {
+    //     writer->flush();
+    // }
 
-    void writePrefix() override
-    {
-        writer->writePrefix();
-    }
-
-    void flush() override
-    {
-        writer->flush();
-    }
-
-    void writeSuffix() override
+    void onFinish() override
     {
         try
         {
@@ -324,6 +323,7 @@ private:
     Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
+    bool is_first_chunk = true;
 };
 
 
@@ -426,10 +426,10 @@ Pipe StorageS3::read(
     return pipe;
 }
 
-BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     updateClientAndAuthSettings(local_context, client_auth);
-    return std::make_shared<StorageS3BlockOutputStream>(
+    return std::make_shared<StorageS3Sink>(
         format_name,
         metadata_snapshot->getSampleBlock(),
         local_context,

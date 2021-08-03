@@ -225,6 +225,15 @@
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse-Extras/yaml-cpp.git
+[submodule "contrib/libstemmer_c"]
+	path = contrib/libstemmer_c
+	url = https://github.com/ClickHouse-Extras/libstemmer_c.git
+[submodule "contrib/wordnet-blast"]
+	path = contrib/wordnet-blast
+	url = https://github.com/ClickHouse-Extras/wordnet-blast.git
+[submodule "contrib/lemmagen-c"]
+	path = contrib/lemmagen-c
+	url = https://github.com/ClickHouse-Extras/lemmagen-c.git
 [submodule "contrib/libpqxx"]
 	path = contrib/libpqxx
 	url = https://github.com/ClickHouse-Extras/libpqxx.git

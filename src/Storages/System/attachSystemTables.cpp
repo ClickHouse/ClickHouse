@@ -1,3 +1,7 @@
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #include <Databases/IDatabase.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachSystemTablesImpl.h>
@@ -74,6 +78,10 @@
 #include <Storages/System/StorageSystemStackTrace.h>
 #endif
 
+#if USE_ROCKSDB
+#include <Storages/RocksDB/StorageSystemRocksDB.h>
+#endif
+
 
 namespace DB
 {
@@ -125,6 +133,9 @@ void attachSystemTablesLocal(IDatabase & system_database)
 #endif
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(system_database, "stack_trace");
+#endif
+#if USE_ROCKSDB
+    attach<StorageSystemRocksDB>(system_database, "rocksdb");
 #endif
 }
 
