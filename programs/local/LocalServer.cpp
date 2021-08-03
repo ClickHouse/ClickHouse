@@ -291,6 +291,8 @@ try
         fs::create_directories(fs::path(path) / "metadata/");
         loadMetadataSystem(global_context);
         attachSystemTables(global_context);
+        /// We load temporary database first, because projections need it.
+        DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
         loadMetadata(global_context);
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
