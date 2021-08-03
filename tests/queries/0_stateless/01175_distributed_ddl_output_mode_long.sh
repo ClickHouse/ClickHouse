@@ -14,7 +14,7 @@ function run_until_out_contains()
     PATTERN=$1
     shift
 
-    while true
+    for _ in {1..20}
     do
         "$@" > "${CLICKHOUSE_TMP}/out" 2>&1
         if grep -q "$PATTERN" "${CLICKHOUSE_TMP}/out"
