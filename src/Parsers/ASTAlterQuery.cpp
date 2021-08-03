@@ -125,6 +125,10 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
                       << "MATERIALIZE COLUMN " << (settings.hilite ? hilite_none : "");
         column->formatImpl(settings, state, frame);
+        if (materialize_column_final)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FINAL" << (settings.hilite ? hilite_none : "");
+        }
         if (partition)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " IN PARTITION " << (settings.hilite ? hilite_none : "");
