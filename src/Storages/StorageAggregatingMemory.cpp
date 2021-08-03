@@ -6,6 +6,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 
 #include <DataTypes/NestedUtils.h>
@@ -29,6 +30,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Sinks/SinkToStorage.h>
 
 
 namespace DB
@@ -173,35 +175,32 @@ static std::optional<AggregationKeyVisitor::Data> getFilterKeys(const Aggregator
 }
 
 /// AggregatingOutputStream is used to feed data into Aggregator.
-class AggregatingOutputStream : public IBlockOutputStream
+class AggregatingMemorySink : public SinkToStorage
 {
 public:
-    AggregatingOutputStream(StorageAggregatingMemory & storage_, const StorageMetadataPtr & metadata_snapshot_, ContextPtr context_)
-        : storage(storage_),
+    AggregatingMemorySink(StorageAggregatingMemory & storage_, const StorageMetadataPtr & metadata_snapshot_, ContextPtr context_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock()),
+          storage(storage_),
           metadata_snapshot(metadata_snapshot_),
           context(context_),
           variants(*(storage.many_data)->variants[0]),
           key_columns(storage.aggregator_transform_params->params.keys_size),
           aggregate_columns(storage.aggregator_transform_params->params.aggregates_size) {}
 
-    // OutputStream structure is same as source (before aggregation).
-    Block getHeader() const override { return storage.src_metadata_snapshot->getSampleBlock(); }
+    String getName() const override { return "AggregatingMemorySink"; }
 
-    void writePrefix() override
+    void consume(Chunk chunk) override
     {
-    }
-
-    void write(const Block & block) override
-    {
+        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
         /// TODO: fix this check.
         /// This block may have more columns then needed in case of MV.
-        storage.src_metadata_snapshot->check(block, true);
+        metadata_snapshot->check(block, true);
 
         //StoragePtr source_storage = storage.source_storage;
         auto query = storage.select_query.inner_query; // .select_query->as<ASTSelectWithUnionQuery>()->list_of_selects->children.at(0);// metadata_snapshot->getSelectQuery();
 
         StoragePtr block_storage
-            = StorageValues::create(storage.getStorageID(), storage.src_metadata_snapshot->getColumns(), block, storage.getVirtuals());
+            = StorageValues::create(storage.getStorageID(), metadata_snapshot->getColumns(), block, storage.getVirtuals());
 
         // auto local_context = Context::createCopy(context);
         // local_context->addViewSource(
@@ -225,10 +224,6 @@ public:
         }
 
         in->readSuffix();
-    }
-
-    void writeSuffix() override
-    {
     }
 
 private:
@@ -324,7 +319,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     : IStorage(table_id_),
       log(&Poco::Logger::get("StorageAggregatingMemory"))
 {
-    // std::cerr << "=== creating StorageAggregatingMemory query: " << queryToString(query) << std::endl;
+    std::cerr << "=== creating StorageAggregatingMemory query: " << queryToString(query) << std::endl;
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -355,13 +350,19 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     {
         if (!query.columns_list || !query.columns_list->columns || query.columns_list->columns->children.empty())
         {
+            //auto select_descr = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query_context);
+            //auto source_storage = DatabaseCatalog::instance().getTable(select_descr.select_table_id, query_context);
+
             /// Get info about source table.
             JoinedTables joined_tables(query_context, *select);
             auto source_storage = joined_tables.getLeftTableStorage();
-            source_columns = source_storage->getInMemoryMetadata().getColumns();
 
-            // Block header = InterpreterSelectQuery(select_ptr, query_context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze()).getSampleBlock();
-            // source_columns = blockToColumnsDescription(header);
+            if (!source_storage)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                                "Invalid create query for AggregatingMemory. Cannot find storage. Query {}",
+                                queryToString(*query.select));
+
+            source_columns = source_storage->getInMemoryMetadata().getColumns();
 
             ASTPtr new_columns = InterpreterCreateQuery::formatColumns(source_columns);
             query.columns_list->setOrReplace(query.columns_list->columns, new_columns);
@@ -444,7 +445,8 @@ void StorageAggregatingMemory::initState(ContextPtr context)
     /// To do this, we pass a block with zero rows to aggregate.
     if (aggregator_transform_params->params.keys_size == 0 && !aggregator_transform_params->params.empty_result_for_aggregation_by_empty_set)
     {
-        AggregatingOutputStream os(*this, getInMemoryMetadataPtr(), context);
+        auto sink = std::make_shared<AggregatingMemorySink>(*this, src_metadata_snapshot, context);
+        PushingToSinkBlockOutputStream os(std::move(sink));
         os.write(src_metadata_snapshot->getSampleBlock());
     }
 }
@@ -508,11 +510,11 @@ Pipe StorageAggregatingMemory::read(
     return QueryPipeline::getPipe(std::move(select_result.pipeline));
 }
 
-BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     //lazyInit();
 
-    auto out = std::make_shared<AggregatingOutputStream>(*this, metadata_snapshot, context);
+    auto out = std::make_shared<AggregatingMemorySink>(*this, metadata_snapshot, context);
     return out;
 }
 

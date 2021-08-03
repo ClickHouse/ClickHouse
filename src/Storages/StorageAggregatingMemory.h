@@ -24,7 +24,7 @@ namespace DB
   */
 class StorageAggregatingMemory final : public shared_ptr_helper<StorageAggregatingMemory>, public IStorage
 {
-    friend class AggregatingOutputStream;
+    friend class AggregatingMemorySink;
     friend struct shared_ptr_helper<StorageAggregatingMemory>;
 
 public:
@@ -48,7 +48,7 @@ public:
 
     bool noPushingToViews() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     void drop() override;
 
