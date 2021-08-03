@@ -106,9 +106,9 @@ public:
         /// TODO ProfileEvents for page cache hits and misses.
 
         /// We don't want to depend on new Linux kernel.
-        static std::atomic<bool> has_preadv2_syscall{true};
+        static std::atomic<bool> has_pread_nowait_support{true};
 
-        if (has_preadv2_syscall.load(std::memory_order_relaxed))
+        if (has_pread_nowait_support.load(std::memory_order_relaxed))
         {
             size_t bytes_read = 0;
             while (!bytes_read)
@@ -128,9 +128,9 @@ public:
 
                 if (-1 == res)
                 {
-                    if (errno == ENOSYS)
+                    if (errno == ENOSYS || errno == EOPNOTSUPP)
                     {
-                        has_preadv2_syscall.store(false, std::memory_order_relaxed);
+                        has_pread_nowait_support.store(false, std::memory_order_relaxed);
                         break;
                     }
                     else if (errno == EAGAIN)
