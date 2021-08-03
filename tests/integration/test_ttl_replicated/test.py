@@ -169,15 +169,15 @@ def test_modify_ttl(started_cluster):
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
 
     node1.query("ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2")
-    time.sleep(5)  # TTL merges shall happen.
+    time.sleep(6)  # TTL merges shall happen.
     assert node2.query("SELECT id FROM test_ttl") == "2\n3\n"
 
     node2.query("ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 2 HOUR SETTINGS mutations_sync = 2")
-    time.sleep(5)  # TTL merges shall happen.
+    time.sleep(6)  # TTL merges shall happen.
     assert node1.query("SELECT id FROM test_ttl") == "3\n"
 
     node1.query("ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2")
-    time.sleep(5)  # TTL merges shall happen.
+    time.sleep(6)  # TTL merges shall happen.
     assert node2.query("SELECT id FROM test_ttl") == ""
 
 
@@ -196,15 +196,15 @@ def test_modify_column_ttl(started_cluster):
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
 
     node1.query("ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2")
-    time.sleep(5)  # TTL merges shall happen.
+    time.sleep(6)  # TTL merges shall happen.
     assert node2.query("SELECT id FROM test_ttl") == "42\n2\n3\n"
 
     node1.query("ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 2 HOUR SETTINGS mutations_sync = 2")
-    time.sleep(5)  # TTL merges shall happen.
+    time.sleep(6)  # TTL merges shall happen.
     assert node1.query("SELECT id FROM test_ttl") == "42\n42\n3\n"
 
     node1.query("ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2")
-    time.sleep(5)  # TTL merges shall happen.
+    time.sleep(6)  # TTL merges shall happen.
     assert node2.query("SELECT id FROM test_ttl") == "42\n42\n42\n"
 
 
@@ -328,7 +328,7 @@ def test_ttl_empty_parts(started_cluster):
         node.query("SYSTEM START TTL MERGES test_ttl_empty_parts")
 
     optimize_with_retry(node1, 'test_ttl_empty_parts')
-    assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == "all_0_4_1_6\n"
+    assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == "all_0_5_1_6\n"
 
     assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "3000\n"
 
