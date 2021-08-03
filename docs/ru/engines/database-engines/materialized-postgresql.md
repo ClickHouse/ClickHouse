@@ -9,7 +9,6 @@ toc_title: MaterializedPostgreSQL
 
 Сервер ClickHouse работает как реплика PostgreSQL. Он читает файл `binlog` и выполняет DDL и DML-запросы.
 
-`MaterializedPostgreSQL` — экспериментальный движок баз данных.
 
 ## Создание базы данных {#creating-a-database}
 
