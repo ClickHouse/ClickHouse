@@ -73,6 +73,16 @@ public:
         return storage.getPartitionIDFromQuery(ast, context);
     }
 
+    bool isColumnEmpty(const String & column_name) const
+    {
+        for (const auto & part : parts)
+        {
+            if (part->getColumnSize(column_name, DataTypeString()/* not used */).data_uncompressed)
+                return false;
+        }
+        return true;
+    }
+
 protected:
     /// Used in part mutation.
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)

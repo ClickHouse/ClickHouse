@@ -188,9 +188,6 @@ bool isStorageTouchedByMutations(
     auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
     for (const MutationCommand & command : commands)
     {
-        if (!command.predicate) /// The command touches all rows.
-            return true;
-
         if (command.partition && !storage_from_merge_tree_data_part)
             throw Exception("ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables", ErrorCodes::NOT_IMPLEMENTED);
 
@@ -202,6 +199,15 @@ bool isStorageTouchedByMutations(
         }
         else
             all_commands_can_be_skipped = false;
+
+        if (command.type == MutationCommand::MATERIALIZE_COLUMN && !command.materialize_column_final)
+        {
+            if (!storage_from_merge_tree_data_part)
+                throw Exception("ALTER MATERIALIZE COLUMN is not supported for non-MergeTree tables", ErrorCodes::NOT_IMPLEMENTED);
+
+            if (storage_from_merge_tree_data_part->isColumnEmpty(command.column_name))
+                all_commands_can_be_skipped = false;
+        }
     }
 
     if (all_commands_can_be_skipped)
