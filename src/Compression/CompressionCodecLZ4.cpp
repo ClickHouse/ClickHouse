@@ -97,7 +97,7 @@ void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_si
     bool success = LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
 
     if (!success)
-        throw Exception("Cannot decomress", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception("Cannot decompress", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
 void registerCodecLZ4(CompressionCodecFactory & factory)
