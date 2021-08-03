@@ -152,6 +152,7 @@ void registerDiskS3(DiskFactory & factory)
             uri.bucket,
             uri.key,
             metadata_path,
+            context.getSettingsRef().s3_max_single_read_retries,
             context.getSettingsRef().s3_min_upload_part_size,
             context.getSettingsRef().s3_max_single_part_upload_size,
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),

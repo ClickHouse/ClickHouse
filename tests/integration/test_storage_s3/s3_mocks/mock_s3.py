@@ -1,3 +1,5 @@
+import sys
+
 from bottle import abort, route, run, request, response
 
 
@@ -21,4 +23,4 @@ def ping():
     return 'OK'
 
 
-run(host='0.0.0.0', port=8080)
+run(host='0.0.0.0', port=int(sys.argv[1]))

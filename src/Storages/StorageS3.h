@@ -31,6 +31,7 @@ public:
         const String & secret_access_key,
         const StorageID & table_id_,
         const String & format_name_,
+        UInt64 s3_max_single_read_retries_,
         UInt64 min_upload_part_size_,
         UInt64 max_single_part_upload_size_,
         UInt64 max_connections_,
@@ -65,6 +66,7 @@ private:
     const Context & global_context;
 
     String format_name;
+    UInt64 s3_max_single_read_retries;
     size_t min_upload_part_size;
     size_t max_single_part_upload_size;
     String compression_method;
