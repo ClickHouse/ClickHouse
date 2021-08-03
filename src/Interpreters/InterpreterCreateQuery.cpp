@@ -855,7 +855,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.table);
 
             if (auto* ptr = typeid_cast<DatabaseReplicated *>(database.get());
-                ptr && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+                ptr && !getContext()->getClientInfo().is_replicated_database_internal)
             {
                 create.database = database_name;
                 guard->releaseTableLock();
@@ -949,7 +949,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
 
         if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
-            ptr && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+            ptr && !getContext()->getClientInfo().is_replicated_database_internal)
         {
             assertOrSetUUID(create, database);
             guard->releaseTableLock();

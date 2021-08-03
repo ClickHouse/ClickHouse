@@ -359,6 +359,7 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    query_context->getClientInfo().is_replicated_database_internal = true;
     query_context->setCurrentDatabase(database->getDatabaseName());
 
     auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query);
