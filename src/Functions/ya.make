@@ -232,6 +232,8 @@ SRCS(
     countSubstringsCaseInsensitive.cpp
     countSubstringsCaseInsensitiveUTF8.cpp
     currentDatabase.cpp
+    currentProfiles.cpp
+    currentRoles.cpp
     currentUser.cpp
     dateDiff.cpp
     dateName.cpp
@@ -319,6 +321,7 @@ SRCS(
     ilike.cpp
     in.cpp
     indexHint.cpp
+    initialQueryID.cpp
     initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -337,6 +340,7 @@ SRCS(
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
+    lemmatize.cpp
     lengthUTF8.cpp
     less.cpp
     lessOrEquals.cpp
@@ -412,6 +416,7 @@ SRCS(
     positionCaseInsensitiveUTF8.cpp
     positionUTF8.cpp
     pow.cpp
+    queryID.cpp
     rand.cpp
     rand64.cpp
     randConstant.cpp
@@ -477,6 +482,7 @@ SRCS(
     sleepEachRow.cpp
     sqrt.cpp
     startsWith.cpp
+    stem.cpp
     stringCutToZero.cpp
     stringToH3.cpp
     substring.cpp
@@ -489,6 +495,7 @@ SRCS(
     subtractWeeks.cpp
     subtractYears.cpp
     svg.cpp
+    synonyms.cpp
     tan.cpp
     tanh.cpp
     tcpPort.cpp

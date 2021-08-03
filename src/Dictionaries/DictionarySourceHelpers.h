@@ -13,14 +13,7 @@
 namespace DB
 {
 
-class IBlockOutputStream;
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
-
 struct DictionaryStructure;
-
-/// Write keys to block output stream.
-
-void formatBlock(BlockOutputStreamPtr & out, const Block & block);
 
 /// For simple key
 

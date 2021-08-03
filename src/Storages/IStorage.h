@@ -51,6 +51,9 @@ class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
+class SinkToStorage;
+using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
+
 class QueryPipeline;
 using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
@@ -329,7 +332,7 @@ public:
       * changed during lifetime of the returned streams, but the snapshot is
       * guaranteed to be immutable.
       */
-    virtual BlockOutputStreamPtr write(
+    virtual SinkToStoragePtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/)

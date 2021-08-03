@@ -18,7 +18,7 @@ quantileBFloat16[(level)](expr)
 
 **Аргументы**
 
--   `expr` — столбец с числовыми данными. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md). 
+-   `expr` — столбец с числовыми данными. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md).
 
 **Параметры**
 

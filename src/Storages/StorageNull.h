@@ -6,6 +6,7 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
 
 
@@ -36,9 +37,9 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr) override
+    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr) override
     {
-        return std::make_shared<NullBlockOutputStream>(metadata_snapshot->getSampleBlock());
+        return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
     }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
