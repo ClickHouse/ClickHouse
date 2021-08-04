@@ -1,5 +1,5 @@
 #include <iomanip>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
@@ -19,7 +19,6 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -150,7 +149,7 @@ void TCPHandler::runImpl()
         if (!DatabaseCatalog::instance().isDatabaseExist(default_database))
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-            LOG_ERROR(log, getExceptionMessage(e, true));
+            LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
             sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
             return;
         }
@@ -423,7 +422,7 @@ void TCPHandler::runImpl()
                 }
 
                 const auto & e = *exception;
-                LOG_ERROR(log, getExceptionMessage(e, true));
+                LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
@@ -1027,17 +1026,7 @@ bool TCPHandler::receivePacket()
             return false;
 
         case Protocol::Client::Cancel:
-        {
-            /// For testing connection collector.
-            const Settings & settings = query_context->getSettingsRef();
-            if (settings.sleep_in_receive_cancel_ms.totalMilliseconds())
-            {
-                std::chrono::milliseconds ms(settings.sleep_in_receive_cancel_ms.totalMilliseconds());
-                std::this_thread::sleep_for(ms);
-            }
-
             return false;
-        }
 
         case Protocol::Client::Hello:
             receiveUnexpectedHello();
@@ -1074,13 +1063,6 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         if (packet_type == Protocol::Client::Cancel)
         {
             state.is_cancelled = true;
-            /// For testing connection collector.
-            const Settings & settings = query_context->getSettingsRef();
-            if (settings.sleep_in_receive_cancel_ms.totalMilliseconds())
-            {
-                std::chrono::milliseconds ms(settings.sleep_in_receive_cancel_ms.totalMilliseconds());
-                std::this_thread::sleep_for(ms);
-            }
             return {};
         }
         else
@@ -1153,9 +1135,8 @@ void TCPHandler::receiveQuery()
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
-    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
-        ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-        : SettingsWriteFormat::BINARY;
+    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+                                                                                                      : SettingsWriteFormat::BINARY;
     Settings passed_settings;
     passed_settings.read(*in, settings_format);
 
@@ -1331,7 +1312,7 @@ bool TCPHandler::receiveData(bool scalar)
             }
             auto metadata_snapshot = storage->getInMemoryMetadataPtr();
             /// The data will be written directly to the table.
-            auto temporary_table_out = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
+            auto temporary_table_out = storage->write(ASTPtr(), metadata_snapshot, query_context);
             temporary_table_out->write(block);
             temporary_table_out->writeSuffix();
 
@@ -1417,7 +1398,7 @@ void TCPHandler::initBlockOutput(const Block & block)
 
             if (state.compression == Protocol::Compression::Enable)
             {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs);
+                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));
@@ -1479,16 +1460,6 @@ bool TCPHandler::isQueryCancelled()
                     throw NetException("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
                 LOG_INFO(log, "Query was cancelled.");
                 state.is_cancelled = true;
-                /// For testing connection collector.
-                {
-                    const Settings & settings = query_context->getSettingsRef();
-                    if (settings.sleep_in_receive_cancel_ms.totalMilliseconds())
-                    {
-                        std::chrono::milliseconds ms(settings.sleep_in_receive_cancel_ms.totalMilliseconds());
-                        std::this_thread::sleep_for(ms);
-                    }
-                }
-
                 return true;
 
             default:

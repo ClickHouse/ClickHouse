@@ -14,7 +14,7 @@ Supports table structure modifications (`ALTER TABLE ... ADD|DROP COLUMN`). If `
 ## Creating a Database {#creating-a-database}
 
 ``` sql
-CREATE DATABASE test_database
+CREATE DATABASE test_database 
 ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cache`]);
 ```
 
@@ -43,14 +43,14 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cac
 | TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
 | INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
-
+ 
 
 ## Examples of Use {#examples-of-use}
 
 Database in ClickHouse, exchanging data with the PostgreSQL server:
 
 ``` sql
-CREATE DATABASE test_database
+CREATE DATABASE test_database 
 ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 1);
 ```
 
@@ -102,7 +102,7 @@ SELECT * FROM test_database.test_table;
 └────────┴───────┘
 ```
 
-Consider the table structure was modified in PostgreSQL:
+Consider the table structure was modified in PostgreSQL: 
 
 ``` sql
 postgre> ALTER TABLE test_table ADD COLUMN data Text

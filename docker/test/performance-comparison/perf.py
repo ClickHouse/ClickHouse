@@ -44,7 +44,7 @@ parser.add_argument('--port', nargs='*', default=[9000], help="Space-separated l
 parser.add_argument('--runs', type=int, default=1, help='Number of query runs per server.')
 parser.add_argument('--max-queries', type=int, default=None, help='Test no more than this number of queries, chosen at random.')
 parser.add_argument('--queries-to-run', nargs='*', type=int, default=None, help='Space-separated list of indexes of queries to test.')
-parser.add_argument('--max-query-seconds', type=int, default=15, help='For how many seconds at most a query is allowed to run. The script finishes with error if this time is exceeded.')
+parser.add_argument('--max-query-seconds', type=int, default=10, help='For how many seconds at most a query is allowed to run. The script finishes with error if this time is exceeded.')
 parser.add_argument('--profile-seconds', type=int, default=0, help='For how many seconds to profile a query for which the performance has changed.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
@@ -273,14 +273,8 @@ for query_index in queries_to_run:
             prewarm_id = f'{query_prefix}.prewarm0'
 
             try:
-                # During the warmup runs, we will also:
-                # * detect queries that are exceedingly long, to fail fast,
-                # * collect profiler traces, which might be helpful for analyzing
-                #   test coverage. We disable profiler for normal runs because
-                #   it makes the results unstable.
-                res = c.execute(q, query_id = prewarm_id,
-                    settings = {'max_execution_time': args.max_query_seconds,
-                        'query_profiler_real_time_period_ns': 10000000})
+                # Will also detect too long queries during warmup stage
+                res = c.execute(q, query_id = prewarm_id, settings = {'max_execution_time': args.max_query_seconds})
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (prewarm_id, *e.args)
@@ -365,11 +359,10 @@ for query_index in queries_to_run:
         # For very short queries we have a special mode where we run them for at
         # least some time. The recommended lower bound of run time for "normal"
         # queries is about 0.1 s, and we run them about 10 times, giving the
-        # time per query per server of about one second. Run "short" queries
-        # for longer time, because they have a high percentage of overhead and
-        # might give less stable results.
+        # time per query per server of about one second. Use this value as a
+        # reference for "short" queries.
         if is_short[query_index]:
-            if server_seconds >= 8 * len(this_query_connections):
+            if server_seconds >= 2 * len(this_query_connections):
                 break
             # Also limit the number of runs, so that we don't go crazy processing
             # the results -- 'eqmed.sql' is really suboptimal.

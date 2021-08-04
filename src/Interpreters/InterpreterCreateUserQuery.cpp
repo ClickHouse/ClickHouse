@@ -5,7 +5,6 @@
 #include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/ASTUserNameWithHost.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
-#include <Parsers/ASTDatabaseOrNone.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/ContextAccess.h>
@@ -59,9 +58,6 @@ namespace
             set_default_roles(*override_default_roles);
         else if (query.default_roles)
             set_default_roles(*query.default_roles);
-
-        if (query.default_database)
-            user.default_database = query.default_database->database_name;
 
         if (override_settings)
             user.settings = *override_settings;

@@ -2,7 +2,6 @@
 
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
-#include <DataStreams/formatBlock.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -10,10 +9,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/FormatFactory.h>
+#include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <Core/Field.h>
 #include <Common/escapeForFileName.h>
 

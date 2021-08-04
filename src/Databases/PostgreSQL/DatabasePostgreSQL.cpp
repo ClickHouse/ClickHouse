@@ -12,12 +12,11 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/escapeForFileName.h>
+#include <Poco/DirectoryIterator.h>
+#include <Poco/File.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
-#include <Common/filesystemHelpers.h>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -40,14 +39,14 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const ASTStorage * database_engine_define_,
         const String & dbname_,
         const String & postgres_dbname,
-        postgres::PoolWithFailoverPtr pool_,
-        bool cache_tables_)
+        postgres::PoolWithFailoverPtr connection_pool_,
+        const bool cache_tables_)
     : IDatabase(dbname_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , dbname(postgres_dbname)
-    , pool(std::move(pool_))
+    , connection_pool(std::move(connection_pool_))
     , cache_tables(cache_tables_)
 {
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
@@ -59,8 +58,7 @@ bool DatabasePostgreSQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    auto connection_holder = pool->get();
-    auto tables_list = fetchPostgreSQLTablesList(connection_holder->get());
+    auto tables_list = fetchTablesList();
 
     for (const auto & table_name : tables_list)
         if (!detached_or_dropped.count(table_name))
@@ -75,14 +73,28 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
     std::lock_guard<std::mutex> lock(mutex);
 
     Tables tables;
-    auto connection_holder = pool->get();
-    auto table_names = fetchPostgreSQLTablesList(connection_holder->get());
+    auto table_names = fetchTablesList();
 
     for (const auto & table_name : table_names)
         if (!detached_or_dropped.count(table_name))
             tables[table_name] = fetchTable(table_name, local_context, true);
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
+}
+
+
+std::unordered_set<std::string> DatabasePostgreSQL::fetchTablesList() const
+{
+    std::unordered_set<std::string> tables;
+    std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
+        "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
+    auto connection_holder = connection_pool->get();
+    pqxx::read_transaction tx(connection_holder->get());
+
+    for (auto table_name : tx.stream<std::string>(query))
+        tables.insert(std::get<0>(table_name));
+
+    return tables;
 }
 
 
@@ -95,7 +107,7 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
             "PostgreSQL table name cannot contain single quote or backslash characters, passed {}", table_name);
     }
 
-    auto connection_holder = pool->get();
+    auto connection_holder = connection_pool->get();
     pqxx::nontransaction tx(connection_holder->get());
 
     try
@@ -150,15 +162,20 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
         if (!table_checked && !checkPostgresTable(table_name))
             return StoragePtr{};
 
-        auto connection_holder = pool->get();
-        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), doubleQuoteString(table_name)).columns;
+        auto use_nulls = local_context->getSettingsRef().external_table_functions_use_nulls;
+        auto columns = fetchPostgreSQLTableStructure(connection_pool->get(), doubleQuoteString(table_name), use_nulls);
 
         if (!columns)
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
-                StorageID(database_name, table_name), pool, table_name,
-                ColumnsDescription{*columns}, ConstraintsDescription{}, String{}, local_context);
+            StorageID(database_name, table_name),
+            connection_pool,
+            table_name,
+            ColumnsDescription{*columns},
+            ConstraintsDescription{},
+            String{},
+            local_context);
 
         if (cache_tables)
             cached_tables[table_name] = storage;
@@ -192,9 +209,9 @@ void DatabasePostgreSQL::attachTable(const String & table_name, const StoragePtr
 
     detached_or_dropped.erase(table_name);
 
-    fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    if (fs::exists(table_marked_as_removed))
-        fs::remove(table_marked_as_removed);
+    Poco::File table_marked_as_removed(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
+    if (table_marked_as_removed.exists())
+        table_marked_as_removed.remove();
 }
 
 
@@ -239,8 +256,16 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
     if (detached_or_dropped.count(table_name))
         throw Exception(fmt::format("Table {}.{} is already dropped/detached", database_name, table_name), ErrorCodes::TABLE_IS_DROPPED);
 
-    fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    FS::createFile(mark_table_removed);
+    Poco::File mark_table_removed(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
+
+    try
+    {
+        mark_table_removed.createFile();
+    }
+    catch (...)
+    {
+        throw;
+    }
 
     if (cache_tables)
         cached_tables.erase(table_name);
@@ -251,22 +276,22 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 
 void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    fs::remove_all(getMetadataPath());
+    Poco::File(getMetadataPath()).remove(true);
 }
 
 
-void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool, bool /*force_attach*/)
+void DatabasePostgreSQL::loadStoredObjects(ContextPtr /* context */, bool, bool /*force_attach*/)
 {
     {
         std::lock_guard<std::mutex> lock{mutex};
-        fs::directory_iterator iter(getMetadataPath());
+        Poco::DirectoryIterator iterator(getMetadataPath());
 
         /// Check for previously dropped tables
-        for (fs::directory_iterator end; iter != end; ++iter)
+        for (Poco::DirectoryIterator end; iterator != end; ++iterator)
         {
-            if (fs::is_regular_file(iter->path()) && endsWith(iter->path().filename(), suffix))
+            if (iterator->isFile() && endsWith(iterator.name(), suffix))
             {
-                const auto & file_name = iter->path().filename().string();
+                const auto & file_name = iterator.name();
                 const auto & table_name = unescapeForFileName(file_name.substr(0, file_name.size() - strlen(suffix)));
                 detached_or_dropped.emplace(table_name);
             }
@@ -280,8 +305,7 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool
 void DatabasePostgreSQL::removeOutdatedTables()
 {
     std::lock_guard<std::mutex> lock{mutex};
-    auto connection_holder = pool->get();
-    auto actual_tables = fetchPostgreSQLTablesList(connection_holder->get());
+    auto actual_tables = fetchTablesList();
 
     if (cache_tables)
     {
@@ -301,9 +325,9 @@ void DatabasePostgreSQL::removeOutdatedTables()
         {
             auto table_name = *iter;
             iter = detached_or_dropped.erase(iter);
-            fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-            if (fs::exists(table_marked_as_removed))
-                fs::remove(table_marked_as_removed);
+            Poco::File table_marked_as_removed(getMetadataPath() + '/' + escapeForFileName(table_name) + suffix);
+            if (table_marked_as_removed.exists())
+                table_marked_as_removed.remove();
         }
         else
             ++iter;

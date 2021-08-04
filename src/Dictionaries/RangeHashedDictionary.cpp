@@ -2,7 +2,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/TypeList.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include "DictionaryFactory.h"
 #include "RangeDictionaryBlockInputStream.h"
 #include <Interpreters/castColumn.h>
@@ -110,11 +110,9 @@ ColumnPtr RangeHashedDictionary::getColumn(
     auto range_column_storage_type = std::make_shared<DataTypeInt64>();
     modified_key_columns[1] = castColumnAccurate(column_to_cast, range_column_storage_type);
 
-    bool is_attribute_nullable = attribute.is_nullable;
-
     ColumnUInt8::MutablePtr col_null_map_to;
     ColumnUInt8::Container * vec_null_map_to = nullptr;
-    if (is_attribute_nullable)
+    if (attribute.is_nullable)
     {
         col_null_map_to = ColumnUInt8::create(keys_size, false);
         vec_null_map_to = &col_null_map_to->getData();
@@ -127,70 +125,43 @@ ColumnPtr RangeHashedDictionary::getColumn(
         using ValueType = DictionaryValueType<AttributeType>;
         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(dictionary_attribute.null_value, default_values_column);
+        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
+        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
 
-        if constexpr (std::is_same_v<ValueType, Array>)
+        if constexpr (std::is_same_v<AttributeType, String>)
         {
             auto * out = column.get();
 
-            getItemsImpl<ValueType, false>(
+            getItemsImpl<ValueType, ValueType>(
                 attribute,
                 modified_key_columns,
-                [&](size_t, const Array & value, bool)
+                [&](const size_t row, const StringRef value, bool is_null)
                 {
-                    out->insert(value);
+                    if (attribute.is_nullable)
+                        (*vec_null_map_to)[row] = is_null;
+
+                    out->insertData(value.data, value.size);
                 },
                 default_value_extractor);
-        }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
-        {
-            auto * out = column.get();
-
-            if (is_attribute_nullable)
-                getItemsImpl<ValueType, true>(
-                    attribute,
-                    modified_key_columns,
-                    [&](size_t row, const StringRef value, bool is_null)
-                    {
-                        (*vec_null_map_to)[row] = is_null;
-                        out->insertData(value.data, value.size);
-                    },
-                    default_value_extractor);
-            else
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    modified_key_columns,
-                    [&](size_t, const StringRef value, bool)
-                    {
-                        out->insertData(value.data, value.size);
-                    },
-                    default_value_extractor);
         }
         else
         {
             auto & out = column->getData();
 
-            if (is_attribute_nullable)
-                getItemsImpl<ValueType, true>(
-                    attribute,
-                    modified_key_columns,
-                    [&](size_t row, const auto value, bool is_null)
-                    {
+            getItemsImpl<ValueType, ValueType>(
+                attribute,
+                modified_key_columns,
+                [&](const size_t row, const auto value, bool is_null)
+                {
+                    if (attribute.is_nullable)
                         (*vec_null_map_to)[row] = is_null;
-                        out[row] = value;
-                    },
-                    default_value_extractor);
-            else
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    modified_key_columns,
-                    [&](size_t row, const auto value, bool)
-                    {
-                        out[row] = value;
-                    },
-                    default_value_extractor);
+
+                    out[row] = value;
+                },
+                default_value_extractor);
         }
 
         result = std::move(column);
@@ -198,8 +169,10 @@ ColumnPtr RangeHashedDictionary::getColumn(
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
-    if (is_attribute_nullable)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
+    if (attribute.is_nullable)
+    {
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
+    }
 
     return result;
 }
@@ -254,7 +227,7 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeysImpl(
 
     keys_found = 0;
 
-    for (const auto row : collections::range(0, ids.size()))
+    for (const auto row : ext::range(0, ids.size()))
     {
         const auto it = attr.find(ids[row]);
 
@@ -288,7 +261,7 @@ void RangeHashedDictionary::createAttributes()
     for (const auto & attribute : dict_struct.attributes)
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttribute(attribute));
+        attributes.push_back(createAttribute(attribute, attribute.null_value));
 
         if (attribute.hierarchical)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
@@ -313,12 +286,12 @@ void RangeHashedDictionary::loadData()
 
         element_count += id_column.size();
 
-        for (const auto attribute_idx : collections::range(0, attributes.size()))
+        for (const auto attribute_idx : ext::range(0, attributes.size()))
         {
             const auto & attribute_column = *block.safeGetByPosition(attribute_idx + 3).column;
             auto & attribute = attributes[attribute_idx];
 
-            for (const auto row_idx : collections::range(0, id_column.size()))
+            for (const auto row_idx : ext::range(0, id_column.size()))
             {
                 RangeStorageType lower_bound;
                 RangeStorageType upper_bound;
@@ -378,28 +351,41 @@ void RangeHashedDictionary::calculateBytesAllocated()
     }
 }
 
-RangeHashedDictionary::Attribute RangeHashedDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute)
+template <typename T>
+void RangeHashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    Attribute attribute{dictionary_attribute.underlying_type, dictionary_attribute.is_nullable, {}, {}};
+    attribute.null_values = T(null_value.get<T>());
+    attribute.maps = std::make_unique<Collection<T>>();
+}
+
+template <>
+void RangeHashedDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
+{
+    attribute.string_arena = std::make_unique<Arena>();
+    const String & string = null_value.get<String>();
+    const char * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+    attribute.null_values.emplace<StringRef>(string_in_arena, string.size());
+    attribute.maps = std::make_unique<Collection<StringRef>>();
+}
+
+RangeHashedDictionary::Attribute
+RangeHashedDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
+{
+    Attribute attr{attribute.underlying_type, attribute.is_nullable, {}, {}, {}};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
-
-        if constexpr (std::is_same_v<AttributeType, String>)
-            attribute.string_arena = std::make_unique<Arena>();
-
-        attribute.maps = std::make_unique<Collection<ValueType>>();
+        createAttributeImpl<AttributeType>(attr, null_value);
     };
 
-    callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
+    callOnDictionaryAttributeType(attribute.underlying_type, type_call);
 
-    return attribute;
+    return attr;
 }
 
-template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void RangeHashedDictionary::getItemsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
@@ -416,7 +402,7 @@ void RangeHashedDictionary::getItemsImpl(
 
     size_t keys_found = 0;
 
-    for (const auto row : collections::range(0, ids.size()))
+    for (const auto row : ext::range(0, ids.size()))
     {
         const auto it = attr.find(ids[row]);
         if (it)
@@ -436,26 +422,20 @@ void RangeHashedDictionary::getItemsImpl(
                 ++keys_found;
                 auto & value = val_it->value;
 
-                if constexpr (is_nullable)
-                {
-                    if (value.has_value())
-                        set_value(row, *value, false);
-                    else
-                        set_value(row, default_value_extractor[row], true);
-                }
+                if (value)
+                    set_value(row, static_cast<OutputType>(*value), false); // NOLINT
                 else
-                {
-                    set_value(row, *value, false);
-                }
-
-                continue;
+                    set_value(row, default_value_extractor[row], true);
+            }
+            else
+            {
+                set_value(row, default_value_extractor[row], false);
             }
         }
-
-        if constexpr (is_nullable)
-            set_value(row, default_value_extractor[row], default_value_extractor.isNullAt(row));
         else
+        {
             set_value(row, default_value_extractor[row], false);
+        }
     }
 
     query_count.fetch_add(ids.size(), std::memory_order_relaxed);
