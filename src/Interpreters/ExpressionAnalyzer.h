@@ -65,7 +65,6 @@ struct ExpressionAnalyzerData
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
-    bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
     WindowDescriptions window_descriptions;
@@ -90,7 +89,6 @@ private:
     {
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
-        const UInt64 distributed_group_by_no_merge;
 
         ExtractedSettings(const Settings & settings_);
     };
@@ -241,7 +239,7 @@ struct ExpressionAnalysisResult
     /// Columns will be removed after prewhere actions execution.
     NameSet columns_to_remove_after_prewhere;
 
-    PrewhereInfoPtr prewhere_info;
+    PrewhereDAGInfoPtr prewhere_info;
     FilterDAGInfoPtr filter_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
@@ -311,7 +309,6 @@ public:
     bool hasTableJoin() const { return syntax->ast_join; }
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
-    bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
@@ -327,14 +324,14 @@ public:
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain) const;
 
-    /// Create Set-s that we make from IN section to use index on them.
-    void makeSetsForIndex(const ASTPtr & node);
-
 private:
     StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
     SelectQueryOptions query_options;
+
+    /// Create Set-s that we make from IN section to use index on them.
+    void makeSetsForIndex(const ASTPtr & node);
 
     JoinPtr makeTableJoin(
         const ASTTablesInSelectQueryElement & join_element,

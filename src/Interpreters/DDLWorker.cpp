@@ -31,8 +31,6 @@
 #include <pcg_random.hpp>
 #include <common/scope_guard_safe.h>
 
-#include <Interpreters/ZooKeeperLog.h>
-
 namespace fs = std::filesystem;
 
 
@@ -373,14 +371,14 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         }
     }
 
-    Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
+    Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, queue_updated_event);
     size_t size_before_filtering = queue_nodes.size();
     filterAndSortQueueNodes(queue_nodes);
     /// The following message is too verbose, but it can be useful too debug mysterious test failures in CI
     LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
                    "entries={}..{}, "
-                   "first_failed_task_name={}, current_tasks_size={}, "
-                   "last_current_task={}, "
+                   "first_failed_task_name={}, current_tasks_size={},"
+                   "last_current_task={},"
                    "last_skipped_entry_name={}",
                    initialized, size_before_filtering, queue_nodes.size(),
                    queue_nodes.empty() ? "none" : queue_nodes.front(), queue_nodes.empty() ? "none" : queue_nodes.back(),
@@ -1138,32 +1136,10 @@ void DDLWorker::runMainThread()
             cleanup_event->set();
             scheduleTasks(reinitialized);
 
-            LOG_DEBUG(log, "Waiting for queue updates (stat: {}, {}, {}, {})",
-                      queue_node_stat.version, queue_node_stat.cversion, queue_node_stat.numChildren, queue_node_stat.pzxid);
+            LOG_DEBUG(log, "Waiting for queue updates");
             /// FIXME It may hang for unknown reason. Timeout is just a hotfix.
             constexpr int queue_wait_timeout_ms = 10000;
-            bool updated = queue_updated_event->tryWait(queue_wait_timeout_ms);
-            if (!updated)
-            {
-                Coordination::Stat new_stat;
-                tryGetZooKeeper()->get(queue_dir, &new_stat);
-                bool queue_changed = memcmp(&queue_node_stat, &new_stat, sizeof(Coordination::Stat)) != 0;
-                bool watch_triggered = queue_updated_event->tryWait(0);
-                if (queue_changed && !watch_triggered)
-                {
-                    /// It should never happen.
-                    /// Maybe log message, abort() and system.zookeeper_log will help to debug it and remove timeout (#26036).
-                    LOG_TRACE(
-                        log,
-                        "Queue was not updated (stat: {}, {}, {}, {})",
-                        new_stat.version,
-                        new_stat.cversion,
-                        new_stat.numChildren,
-                        new_stat.pzxid);
-                    context->getZooKeeperLog()->flush();
-                    abort();
-                }
-            }
+            queue_updated_event->tryWait(queue_wait_timeout_ms);
         }
         catch (const Coordination::Exception & e)
         {

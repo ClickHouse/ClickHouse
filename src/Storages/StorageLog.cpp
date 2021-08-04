@@ -16,6 +16,7 @@
 
 #include <DataTypes/NestedUtils.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
@@ -25,10 +26,8 @@
 #include "StorageLogSettings.h"
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
-#include <Processors/Sinks/SinkToStorage.h>
 
 #include <cassert>
-#include <chrono>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -205,13 +204,12 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 }
 
 
-class LogSink final : public SinkToStorage
+class LogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit LogSink(
+    explicit LogBlockOutputStream(
         StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_, std::unique_lock<std::shared_timed_mutex> && lock_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_)
+        : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
         , marks_stream(
@@ -229,9 +227,7 @@ public:
         }
     }
 
-    String getName() const override { return "LogSink"; }
-
-    ~LogSink() override
+    ~LogBlockOutputStream() override
     {
         try
         {
@@ -248,8 +244,9 @@ public:
         }
     }
 
-    void consume(Chunk chunk) override;
-    void onFinish() override;
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    void write(const Block & block) override;
+    void writeSuffix() override;
 
 private:
     StorageLog & storage;
@@ -304,9 +301,8 @@ private:
 };
 
 
-void LogSink::consume(Chunk chunk)
+void LogBlockOutputStream::write(const Block & block)
 {
-    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
     metadata_snapshot->check(block, true);
 
     /// The set of written offset columns so that you do not write shared offsets of columns for nested structures multiple times
@@ -325,14 +321,14 @@ void LogSink::consume(Chunk chunk)
 }
 
 
-void LogSink::onFinish()
+void LogBlockOutputStream::writeSuffix()
 {
     if (done)
         return;
 
     WrittenStreams written_streams;
     ISerialization::SerializeBinaryBulkSettings settings;
-    for (const auto & column : getPort().getHeader())
+    for (const auto & column : getHeader())
     {
         auto it = serialize_states.find(column.name);
         if (it != serialize_states.end())
@@ -369,7 +365,7 @@ void LogSink::onFinish()
 }
 
 
-ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndTypePair & name_and_type,
+ISerialization::OutputStreamGetter LogBlockOutputStream::createStreamGetter(const NameAndTypePair & name_and_type,
                                                                        WrittenStreams & written_streams)
 {
     return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
@@ -387,7 +383,7 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 }
 
 
-void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & column,
+void LogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, const IColumn & column,
     MarksForColumns & out_marks, WrittenStreams & written_streams)
 {
     ISerialization::SerializeBinaryBulkSettings settings;
@@ -446,7 +442,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 }
 
 
-void LogSink::writeMarks(MarksForColumns && marks)
+void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
 {
     if (marks.size() != storage.file_count)
         throw Exception("Wrong number of marks generated from block. Makes no sense.", ErrorCodes::LOGICAL_ERROR);
@@ -701,7 +697,7 @@ Pipe StorageLog::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+BlockOutputStreamPtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     auto lock_timeout = getLockTimeout(context);
     loadMarks(lock_timeout);
@@ -710,7 +706,7 @@ SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetada
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
-    return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
+    return std::make_shared<LogBlockOutputStream>(*this, metadata_snapshot, std::move(lock));
 }
 
 CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr context)
@@ -722,34 +718,6 @@ CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr contex
     return file_checker.check();
 }
 
-
-IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
-{
-    std::shared_lock lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
-    if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
-    ColumnSizeByName column_sizes;
-    FileChecker::Map file_sizes = file_checker.getFileSizes();
-
-    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
-    {
-        ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
-        {
-            String stream_name = ISerialization::getFileNameForStream(column, substream_path);
-            ColumnSize & size = column_sizes[column.name];
-            auto it = files.find(stream_name);
-            if (it != files.end())
-                size.data_compressed += file_sizes[fileName(it->second.data_file_path)];
-        };
-
-        ISerialization::SubstreamPath substream_path;
-        auto serialization = column.type->getDefaultSerialization();
-        serialization->enumerateStreams(stream_callback, substream_path);
-    }
-
-    return column_sizes;
-}
 
 void registerStorageLog(StorageFactory & factory)
 {

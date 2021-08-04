@@ -92,7 +92,7 @@ ClickHouse не работает и не собирается на 32-битны
     # Две последние команды могут быть объединены вместе:
     git submodule update --init
 
-The next commands would help you to reset all submodules to the initial state (!WARING! - any changes inside will be deleted):
+The next commands would help you to reset all submodules to the initial state (!WARING! - any chenges inside will be deleted):
 Следующие команды помогут сбросить все сабмодули в изначальное состояние (!ВНИМАНИЕ! - все изменения в сабмодулях будут утеряны):
 
     # Synchronizes submodules' remote URL with .gitmodules
@@ -128,7 +128,7 @@ Ninja - система запуска сборочных задач.
     /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew install cmake ninja
 
-Проверьте версию CMake: `cmake --version`. Если версия меньше 3.12, то установите новую версию с сайта https://cmake.org/download/
+Проверьте версию CMake: `cmake --version`. Если версия меньше 3.3, то установите новую версию с сайта https://cmake.org/download/
 
 ## Необязательные внешние библиотеки {#neobiazatelnye-vneshnie-biblioteki}
 
@@ -241,8 +241,6 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 Описание архитектуры ClickHouse: https://clickhouse.tech/docs/ru/development/architecture/
 
 Стиль кода: https://clickhouse.tech/docs/ru/development/style/
-
-Рекомендации по добавлению сторонних библиотек и поддержанию в них пользовательских изменений: https://clickhouse.tech/docs/ru/development/contrib/#adding-third-party-libraries
 
 Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 
