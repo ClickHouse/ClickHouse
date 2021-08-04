@@ -5,7 +5,7 @@
 namespace DB
 {
 
-enum class TTLUpdateType
+enum class TTLUpdateField
 {
     COLUMNS_TTL,
     TABLE_TTL,
@@ -21,7 +21,7 @@ class TTLUpdateInfoAlgorithm : public ITTLAlgorithm
 public:
     TTLUpdateInfoAlgorithm(
         const TTLDescription & description_,
-        const TTLUpdateType ttl_update_type_,
+        const TTLUpdateField ttl_update_field_,
         const String ttl_update_key_,
         const TTLInfo & old_ttl_info_,
         time_t current_time_, bool force_
@@ -31,7 +31,7 @@ public:
     void finalize(const MutableDataPartPtr & data_part) const override;
 
 private:
-    const TTLUpdateType ttl_update_type;
+    const TTLUpdateField ttl_update_field;
     const String ttl_update_key;
 };
 
