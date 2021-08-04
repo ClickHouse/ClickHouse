@@ -109,7 +109,7 @@ public:
         auto & vec_res = col_res->getData();
         auto & offsets_res = col_offsets->getData();
 
-        vec_res.resize(column_haystack_size * refs.size());
+        vec_res.resize_fill(column_haystack_size * refs.size());
 
         if (col_haystack_vector)
             Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
