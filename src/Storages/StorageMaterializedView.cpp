@@ -158,8 +158,8 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (!attach_)
     {
-        auto storage = DatabaseCatalog::instance().getTable(target_table_id, local_context);
-        if (storage->getName() == "AggregatingMemory")
+        auto storage = DatabaseCatalog::instance().tryGetTable(target_table_id, local_context);
+        if (storage && storage->getName() == "AggregatingMemory")
         {
             /// That's not very good hack.
             /// Columns which are read from MV should be the same columns we read from AggregatingMemory.
