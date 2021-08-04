@@ -19,11 +19,8 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
-
-#include <Processors/QueryPipeline.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <DataTypes/DataTypeString.h>
 
@@ -38,7 +35,6 @@
 #include <re2/re2.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -208,21 +204,12 @@ bool StorageS3Source::initialize()
     file_path = fs::path(bucket) / current_key;
 
     read_buf = wrapReadBufferWithCompressionMethod(
-        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, DBMS_DEFAULT_BUFFER_SIZE),
-        chooseCompressionMethod(current_key, compression_hint));
+        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries), chooseCompressionMethod(current_key, compression_hint));
     auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
-    pipeline = std::make_unique<QueryPipeline>();
-    pipeline->init(Pipe(input_format));
+    reader = std::make_shared<InputStreamFromInputFormat>(input_format);
 
     if (columns_desc.hasDefaults())
-    {
-        pipeline->addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext());
-        });
-    }
-
-    reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+        reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_desc, getContext());
 
     initialized = false;
     return true;
@@ -238,25 +225,31 @@ Chunk StorageS3Source::generate()
     if (!reader)
         return {};
 
-    Chunk chunk;
-    if (reader->pull(chunk))
+    if (!initialized)
     {
-        UInt64 num_rows = chunk.getNumRows();
+        reader->readPrefix();
+        initialized = true;
+    }
+
+    if (auto block = reader->read())
+    {
+        auto columns = block.getColumns();
+        UInt64 num_rows = block.rows();
 
         if (with_path_column)
-            chunk.addColumn(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+            columns.push_back(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
         if (with_file_column)
         {
             size_t last_slash_pos = file_path.find_last_of('/');
-            chunk.addColumn(DataTypeString().createColumnConst(num_rows, file_path.substr(
+            columns.push_back(DataTypeString().createColumnConst(num_rows, file_path.substr(
                     last_slash_pos + 1))->convertToFullColumnIfConst());
         }
 
-        return chunk;
+        return Chunk(std::move(columns), num_rows);
     }
 
+    reader->readSuffix();
     reader.reset();
-    pipeline.reset();
     read_buf.reset();
 
     if (!initialize())
@@ -266,10 +259,10 @@ Chunk StorageS3Source::generate()
 }
 
 
-class StorageS3Sink : public SinkToStorage
+class StorageS3BlockOutputStream : public IBlockOutputStream
 {
 public:
-    StorageS3Sink(
+    StorageS3BlockOutputStream(
         const String & format,
         const Block & sample_block_,
         ContextPtr context,
@@ -279,32 +272,34 @@ public:
         const String & key,
         size_t min_upload_part_size,
         size_t max_single_part_upload_size)
-        : SinkToStorage(sample_block_)
-        , sample_block(sample_block_)
+        : sample_block(sample_block_)
     {
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
         writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
-    String getName() const override { return "StorageS3Sink"; }
-
-    void consume(Chunk chunk) override
+    Block getHeader() const override
     {
-        if (is_first_chunk)
-        {
-            writer->writePrefix();
-            is_first_chunk = false;
-        }
-        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+        return sample_block;
     }
 
-    // void flush() override
-    // {
-    //     writer->flush();
-    // }
+    void write(const Block & block) override
+    {
+        writer->write(block);
+    }
 
-    void onFinish() override
+    void writePrefix() override
+    {
+        writer->writePrefix();
+    }
+
+    void flush() override
+    {
+        writer->flush();
+    }
+
+    void writeSuffix() override
     {
         try
         {
@@ -324,7 +319,6 @@ private:
     Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
-    bool is_first_chunk = true;
 };
 
 
@@ -427,10 +421,10 @@ Pipe StorageS3::read(
     return pipe;
 }
 
-SinkToStoragePtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     updateClientAndAuthSettings(local_context, client_auth);
-    return std::make_shared<StorageS3Sink>(
+    return std::make_shared<StorageS3BlockOutputStream>(
         format_name,
         metadata_snapshot->getSampleBlock(),
         local_context,

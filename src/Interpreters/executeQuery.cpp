@@ -11,7 +11,7 @@
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <Processors/Transforms/getSourceFromFromASTInsertQuery.h>
+#include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -53,7 +53,6 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Sources/SinkToOutputStream.h>
 
 
 namespace ProfileEvents
@@ -513,9 +512,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     StoragePtr storage = context->executeTableFunction(input_function);
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
-                    auto pipe = getSourceFromFromASTInsertQuery(
+                    BlockInputStreamPtr input_stream = std::make_shared<InputStreamFromASTInsertQuery>(
                         ast, istr, input_metadata_snapshot->getSampleBlock(), context, input_function);
-                    input_storage.setPipe(std::move(pipe));
+                    input_storage.setInputStream(input_stream);
                 }
             }
         }
@@ -877,6 +876,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             res.finish_callback = std::move(finish_callback);
             res.exception_callback = std::move(exception_callback);
+
+            if (!internal && res.in)
+            {
+                WriteBufferFromOwnString msg_buf;
+                res.in->dumpTree(msg_buf);
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"), "Query pipeline:\n{}", msg_buf.str());
+            }
         }
     }
     catch (...)
@@ -944,8 +950,7 @@ void executeQuery(
     bool allow_into_outfile,
     ContextMutablePtr context,
     std::function<void(const String &, const String &, const String &, const String &)> set_result_details,
-    const std::optional<FormatSettings> & output_format_settings,
-    std::function<void()> before_finalize_callback)
+    const std::optional<FormatSettings> & output_format_settings)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -993,17 +998,8 @@ void executeQuery(
     {
         if (streams.out)
         {
-            auto pipe = getSourceFromFromASTInsertQuery(ast, &istr, streams.out->getHeader(), context, nullptr);
-
-            pipeline.init(std::move(pipe));
-            pipeline.resize(1);
-            pipeline.setSinks([&](const Block &, Pipe::StreamType)
-            {
-                return std::make_shared<SinkToOutputStream>(streams.out);
-            });
-
-            auto executor = pipeline.execute();
-            executor->execute(pipeline.getNumThreads());
+            InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context, nullptr);
+            copyData(in, *streams.out);
         }
         else if (streams.in)
         {
@@ -1084,8 +1080,6 @@ void executeQuery(
                         previous_progress_callback(progress);
                     out->onProgress(progress);
                 });
-
-                out->setBeforeFinalizeCallback(before_finalize_callback);
 
                 if (set_result_details)
                     set_result_details(

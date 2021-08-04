@@ -1093,7 +1093,7 @@ private:
 
     /** Try to compile aggregate functions.
       */
-    void compileAggregateFunctionsIfNeeded();
+    void compileAggregateFunctions();
 
     /** Select the aggregation method based on the number and types of keys. */
     AggregatedDataVariants::Type chooseAggregationMethod();

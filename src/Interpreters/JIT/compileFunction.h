@@ -78,7 +78,7 @@ struct CompiledAggregateFunctions
   * JITMergeAggregateStatesFunction will merge aggregate states for aggregate functions.
   * JITInsertAggregateStatesIntoColumnsFunction will insert aggregate states for aggregate functions into result columns.
   */
-CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name);
+CompiledAggregateFunctions compileAggregateFunctons(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name);
 
 }
 

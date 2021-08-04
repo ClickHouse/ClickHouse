@@ -16,7 +16,7 @@ limitations under the License. */
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Processors/Sources/BlocksSource.h>
+#include <DataStreams/BlocksSource.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>

@@ -771,6 +771,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 -   `cache_path` — путь в локальной файловой системе, где будут храниться кэш засечек и файлы индекса. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 -   `skip_access_check` — признак, выполнять ли проверку доступов при запуске диска. Если установлено значение `true`, то проверка не выполняется. Значение по умолчанию: `false`.
 
+
 Диск S3 может быть сконфигурирован как `main` или `cold`:
 
 ``` xml
@@ -809,44 +810,3 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
 Если диск сконфигурирован как `cold`, данные будут переноситься в S3 при срабатывании правил TTL или когда свободное место на локальном диске станет меньше порогового значения, которое определяется как `move_factor * disk_size`.
-
-## Использование сервиса HDFS для хранения данных {#table_engine-mergetree-hdfs}
-
-[HDFS](https://hadoop.apache.org/docs/r1.2.1/hdfs_design.html) — это распределенная файловая система для удаленного хранения данных.
-
-Таблицы семейства `MergeTree` могут хранить данные в сервисе HDFS при использовании диска типа `HDFS`.
-
-Пример конфигурации:
-``` xml
-<yandex>
-    <storage_configuration>
-        <disks>
-            <hdfs>
-                <type>hdfs</type>
-                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
-            </hdfs>
-        </disks>
-        <policies>
-            <hdfs>
-                <volumes>
-                    <main>
-                        <disk>hdfs</disk>
-                    </main>
-                </volumes>
-            </hdfs>
-        </policies>
-    </storage_configuration>
-
-    <merge_tree>
-        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
-    </merge_tree>
-</yandex>
-```
-
-Обязательные параметры:
-
--   `endpoint` — URL точки приема запроса на стороне HDFS в формате `path`. URL точки должен содержать путь к корневой директории на сервере, где хранятся данные.
-
-Необязательные параметры:
-
--   `min_bytes_for_seek` — минимальное количество байтов, которые используются для операций поиска вместо последовательного чтения. Значение по умолчанию: 1 МБайт.
