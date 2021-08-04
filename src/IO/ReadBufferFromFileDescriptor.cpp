@@ -143,16 +143,15 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    /// file_offset_of_buffer_end corresponds to working_buffer.end(); it's a past-the-end pos,
-    /// so the second inequality is strict.
     if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
-        && new_pos < file_offset_of_buffer_end)
+        && new_pos <= file_offset_of_buffer_end)
     {
         /// Position is still inside the buffer.
+        /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
 
         pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
         assert(pos >= working_buffer.begin());
-        assert(pos < working_buffer.end());
+        assert(pos <= working_buffer.end());
 
         return new_pos;
     }

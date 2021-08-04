@@ -19,7 +19,7 @@ protected:
     AsynchronousReaderPtr reader;
 
     Memory<> prefetch_buffer;
-    std::optional<IAsynchronousReader::RequestID> prefetch_request_id;
+    std::future<IAsynchronousReader::Result> prefetch_future;
 
     const size_t required_alignment = 0;  /// For O_DIRECT both file offsets and memory addresses have to be aligned.
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().

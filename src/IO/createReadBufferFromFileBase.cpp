@@ -4,7 +4,6 @@
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <IO/ThreadPoolReader.h>
 #include <IO/SynchronousReader.h>
-#include <IO/AIOReader.h>
 #include <Common/ProfileEvents.h>
 
 
