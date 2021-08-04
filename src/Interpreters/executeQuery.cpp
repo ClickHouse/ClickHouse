@@ -262,7 +262,11 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
     elem.query = query_for_logging;
     elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
-    // We don't calculate query_kind, databases, tables and columns when the query isn't able to start
+    // Try log query_kind if ast is valid
+    if (ast)
+        elem.query_kind = ast->getQueryKindString();
+
+    // We don't calculate databases, tables and columns when the query isn't able to start
 
     elem.exception_code = getCurrentExceptionCode();
     elem.exception = getCurrentExceptionMessage(false);
