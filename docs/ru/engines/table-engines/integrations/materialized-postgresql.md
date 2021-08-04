@@ -7,7 +7,7 @@ toc_title: MaterializedPostgreSQL
 
 Создает таблицу ClickHouse с исходным дампом данных таблицы PostgreSQL и запускает процесс репликации, т.е. выполняется применение новых изменений в фоне, как эти изменения происходят в таблице PostgreSQL в удаленной базе данных PostgreSQL.
 
-Если требуется более одной таблицы, то очень рекомендуется использовать движок баз данных [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md) вместо движка таблиц и использовать настройку [materialized_postgresql_tables_list](../../../operations/settings/settings.md#materialized-postgresql-tables-list), с помощью которой указать таблицы, которые нужно реплицировать. Это будет намного лучше с точки зрения нагрузки на процессор, меньшего количества подключений и меньшего количества слотов репликации внутри удаленной базы данных PostgreSQL.
+Если требуется более одной таблицы, вместо движка таблиц рекомендуется использовать движок баз данных [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md) и с помощью настройки [materialized_postgresql_tables_list](../../../operations/settings/settings.md#materialized-postgresql-tables-list) указывать таблицы, которые нужно реплицировать. Это будет намного лучше с точки зрения нагрузки на процессор, уменьшит количество подключений и количество слотов репликации внутри удаленной базы данных PostgreSQL.
 
 ## Создание таблицы {#creating-a-table}
 
