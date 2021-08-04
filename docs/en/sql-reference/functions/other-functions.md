@@ -2140,48 +2140,50 @@ Result:
 
 ## currentProfiles {#current-profiles}
 
-Short description.
+Returns list of the current [setting profiles](../../operations/access-rights/#settings-profiles-management) for current user. The command [SET PROFILE](../../sql-reference/statements/set.md#set-statement#query-set) could be used to change the current setting profile.
 
 **Syntax**
 
 ``` sql
-<function syntax>
+currentProfiles()
 ```
 
 **Returned value**
 
--   Returned values list. 
+-   List of the current setting profiles. 
 
-Type: [Type name](relative/path/to/type/dscr.md#type).
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## enabledProfiles {#enabled-profiles}
 
-Short description.
+ Returns setting profiles are assigned to the user both explicitly and implicitly. Implicitly assigned profiles include parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the section `default_profile` in the main configuration file).
+
+ If some profile occurs multiple times (with some other settings in between), the latest occurrence overrides all the previous ones.
 
 **Syntax**
 
 ``` sql
-<function syntax>
+enabledProfiles()
 ```
 
 **Returned value**
 
--   Returned values list. 
+-   List of the enabled setting profiles. 
 
-Type: [Type name](relative/path/to/type/dscr.md#type).
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## defaultProfiles {#default-profiles}
 
-Short description.
+Returns the default setting profiles, i.e. the settings which should be applied on the user's login.
 
 **Syntax**
 
 ``` sql
-<function syntax>
+defaultProfiles()
 ```
 
 **Returned value**
 
--   Returned values list. 
+-   List of the default setting profiles. 
 
-Type: [Type name](relative/path/to/type/dscr.md#type).
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).

@@ -1,8 +1,3 @@
----
-toc_priority: 40
-toc_title: Replicated
----
-
 # [экспериментальный] Replicated {#replicated}
 
 Движок основан на движке [Atomic](../../engines/database-engines/atomic.md). Он поддерживает репликацию метаданных через журнал DDL, записываемый в ZooKeeper и выполняемый на всех репликах для данной базы данных.
