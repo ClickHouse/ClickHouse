@@ -117,7 +117,7 @@ Possible values:
 
 -   Positive integer.
 
-Default value: `500000000`.
+Default value: `500,000,000`.
 
 **See Also**
 
