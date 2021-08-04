@@ -118,16 +118,14 @@
         "memory_tracking",
         "memory_usage",
         "live_view",
-        "01181_db_atomic_drop_on_cluster",
-        "01175_distributed_ddl_output_mode",
-        "01415_sticking_mutations",
-        "00980_zookeeper_merge_tree_alter_settings",
         "01148_zookeeper_path_macros_unfolding",
-        "01294_system_distributed_on_cluster",
         "01269_create_with_null",
         "01451_replicated_detach_drop_and_quorum",
         "01188_attach_table_from_path",
-        "01149_zookeeper_mutation_stuck_after_replace_partition",
+        /// ON CLUSTER is not allowed
+        "01181_db_atomic_drop_on_cluster",
+        "01175_distributed_ddl_output_mode",
+        "01415_sticking_mutations",
         /// user_files
         "01721_engine_file_truncate_on_insert",
         /// Fails due to additional replicas or shards
@@ -156,6 +154,8 @@
         "00152_insert_different_granularity",
         "00054_merge_tree_partitions",
         "01781_merge_tree_deduplication",
+        "00980_zookeeper_merge_tree_alter_settings",
+        "00980_merge_alter_settings",
         /// Old syntax is not allowed
         "01062_alter_on_mutataion_zookeeper",
         "00925_zookeeper_empty_replicated_merge_tree_optimize_final",
@@ -173,9 +173,12 @@
         /// Does not support renaming of multiple tables in single query
         "00634_rename_view",
         "00140_rename",
+        /// Different query_id
+        "01943_query_id_check",
         /// Requires investigation
         "00953_zookeeper_suetin_deduplication_bug",
-        "01783_http_chunk_size"
+        "01783_http_chunk_size",
+        "00166_explain_estimate"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
