@@ -72,22 +72,25 @@ BlockIO InterpreterRenameQuery::execute()
 
 BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards)
 {
+    assert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
+    assert(!rename.rename_if_cannot_exchange || rename.exchange);
     auto & database_catalog = DatabaseCatalog::instance();
 
     for (const auto & elem : descriptions)
     {
-        bool exchange_tables = rename.exchange;
-        if (exchange_tables)
+        bool exchange_tables;
+        if (rename.exchange)
         {
-            bool allow_rename_instead_of_exchange = descriptions.size() == 1 && rename.rename_if_cannot_exchange;
-            if (allow_rename_instead_of_exchange && !database_catalog.isTableExist(StorageID(elem.to_database_name, elem.to_table_name), getContext()))
-            {
-                exchange_tables = false;
-                renamed_instead_of_exchange = true;
-            }
+            exchange_tables = true;
+        }
+        else if (rename.rename_if_cannot_exchange)
+        {
+            exchange_tables = database_catalog.isTableExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
+            renamed_instead_of_exchange = !exchange_tables;
         }
         else
         {
+            exchange_tables = false;
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), getContext());
         }
 
