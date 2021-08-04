@@ -2138,158 +2138,50 @@ Result:
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
-## currentProfiles {#current-profiles}
+## currentRoles {#current-roles}
 
-Short description.
-
-**Syntax**
-
-``` sql
-<function syntax>
-```
-
-Alias: `<alias name>`. (Optional)
-
-More text (Optional).
-
-**Arguments** (Optional)
-
--   `x` — Description. Optional (only for optional arguments). Possible values: <values list>. Default value: <value>. [Type name](relative/path/to/type/dscr.md#type). 
--   `y` — Description. Optional (only for optional arguments). Possible values: <values list>.Default value: <value>. [Type name](relative/path/to/type/dscr.md#type). 
-
-**Parameters** (Optional, only for parametric aggregate functions)
-
--   `z` — Description. Optional (only for optional parameters). Possible values: <values list>. Default value: <value>. [Type name](relative/path/to/type/dscr.md#type).
-
-**Returned value(s)**
-
--   Returned values list. 
-
-Type: [Type name](relative/path/to/type/dscr.md#type).
-
-**Example**
-
-The example must show usage and/or a use cases. The following text contains recommended parts of an example.
-
-Input table (Optional):
-
-``` text
-```
-
-Query:
-
-``` sql
-```
-
-Result:
-
-``` text
-```
-
-**See Also** (Optional)
-
--   [link](#)
-
-## enabledProfiles {#enabled-profiles}
-
-Short description.
+Returns the names of the roles which are current for the current user. The command [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement) could be used to change the current roles, by default the current roles are returned by the function [defaultRoles](#default-roles) called when the current user logins.
 
 **Syntax**
 
 ``` sql
-<function syntax>
+currentRoles()
 ```
 
-Alias: `<alias name>`. (Optional)
+**Returned value**
 
-More text (Optional).
+-   List of the current roles for the current user. 
 
-**Arguments** (Optional)
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
--   `x` — Description. Optional (only for optional arguments). Possible values: <values list>. Default value: <value>. [Type name](relative/path/to/type/dscr.md#type). 
--   `y` — Description. Optional (only for optional arguments). Possible values: <values list>.Default value: <value>. [Type name](relative/path/to/type/dscr.md#type). 
+## enabledRoles {#enabled-roles}
 
-**Parameters** (Optional, only for parametric aggregate functions)
-
--   `z` — Description. Optional (only for optional parameters). Possible values: <values list>. Default value: <value>. [Type name](relative/path/to/type/dscr.md#type).
-
-**Returned value(s)**
-
--   Returned values list. 
-
-Type: [Type name](relative/path/to/type/dscr.md#type).
-
-**Example**
-
-The example must show usage and/or a use cases. The following text contains recommended parts of an example.
-
-Input table (Optional):
-
-``` text
-```
-
-Query:
-
-``` sql
-```
-
-Result:
-
-``` text
-```
-
-**See Also** (Optional)
-
--   [link](#)
-
-## defaultProfiles {#default-profiles}
-
-Short description.
+Returns the names of the current roles merged with those roles which are granted to some of the current roles.
 
 **Syntax**
 
 ``` sql
-<function syntax>
+enabledRoles()
 ```
 
-Alias: `<alias name>`. (Optional)
+**Returned value**
 
-More text (Optional).
+-   List of the enabled roles for the current user. 
 
-**Arguments** (Optional)
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
--   `x` — Description. Optional (only for optional arguments). Possible values: <values list>. Default value: <value>. [Type name](relative/path/to/type/dscr.md#type). 
--   `y` — Description. Optional (only for optional arguments). Possible values: <values list>.Default value: <value>. [Type name](relative/path/to/type/dscr.md#type). 
+## defaultRoles {#default-roles}
 
-**Parameters** (Optional, only for parametric aggregate functions)
+Returns the names of the roles which are set as current when the user logins. The command [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) could be used to change the default roles. By default are all the roles which are granted to a user.
 
--   `z` — Description. Optional (only for optional parameters). Possible values: <values list>. Default value: <value>. [Type name](relative/path/to/type/dscr.md#type).
-
-**Returned value(s)**
-
--   Returned values list. 
-
-Type: [Type name](relative/path/to/type/dscr.md#type).
-
-**Example**
-
-The example must show usage and/or a use cases. The following text contains recommended parts of an example.
-
-Input table (Optional):
-
-``` text
-```
-
-Query:
+**Syntax**
 
 ``` sql
+defaultRoles()
 ```
 
-Result:
+**Returned value**
 
-``` text
-```
+-   List of the default roles for the current user. 
 
-**See Also** (Optional)
-
--   [link](#)
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).

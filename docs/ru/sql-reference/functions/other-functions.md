@@ -2088,3 +2088,50 @@ SELECT tcpPort();
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
+## currentRoles {#current-roles}
+
+Возвращает имена текущих ролей для текущего пользователя. Для изменения текущих ролей может использоваться команда [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement). Текущие роли по умолчанию можно получить при вызове функции [defaultRoles](#default-roles), когда пользователь входит в систему.
+
+**Синтаксис**
+
+``` sql
+currentRoles()
+```
+
+**Возвращаемое значение**
+
+-   Список текущих ролей для текущего пользователя. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## enabledRoles {#enabled-roles}
+
+Возвращает имена текущих ролей вместе с теми ролями, которые предоставлены путем назначения привилегий.
+
+**Синтаксис**
+
+``` sql
+enabledRoles()
+```
+
+**Возвращаемое значение**
+
+-   Список доступных ролей для текущего пользователя. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## defaultRoles {#default-roles}
+
+Возвращает имена ролей, которые задаются как текущие для данного пользователя, когда он входит в систему. Они могут быть изменены при помощи команды [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement), но по умолчанию это все роли, которые предоставляются пользователю.
+
+**Синтаксис**
+
+``` sql
+defaultRoles()
+```
+
+**Возвращаемое значение**
+
+-   Список ролей по умолчанию. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
