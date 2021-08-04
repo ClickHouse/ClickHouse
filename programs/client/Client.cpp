@@ -1,3 +1,6 @@
+#include <string>
+#include "Common/MemoryTracker.h"
+#include "Columns/ColumnsNumber.h"
 #include "ConnectionParameters.h"
 #include "QueryFuzzer.h"
 #include "Suggest.h"
@@ -99,6 +102,14 @@
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
+
+namespace CurrentMetrics
+{
+    extern const Metric Revision;
+    extern const Metric VersionInteger;
+    extern const Metric MemoryTracking;
+    extern const Metric MaxDDLEntryID;
+}
 
 namespace fs = std::filesystem;
 
@@ -305,7 +316,7 @@ private:
         }
         catch (const Exception & e)
         {
-            bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
+                bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
 
             std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
 
@@ -450,7 +461,7 @@ private:
                {TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED},
                {TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED},
                {TokenType::ErrorSinglePipeMark, Replxx::Color::RED},
-               {TokenType::ErrorWrongNumber, Replxx::Color::RED},
+               {TokenType::ErrorWrongNumber, Replxx::Color::RED},  
                {TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }};
 
         const Replxx::Color unknown_token_color = Replxx::Color::RED;
@@ -523,6 +534,21 @@ private:
     int mainImpl()
     {
         UseSSL use_ssl;
+
+        MainThreadStatus::getInstance();
+
+        if (config().has("max_memory_usage_in_client"))
+        {
+        /// Limit on total memory usage
+        size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client");
+
+            if (max_client_memory_usage != 0)
+            {
+                total_memory_tracker.setHardLimit(max_client_memory_usage);
+                total_memory_tracker.setDescription("(total)");
+                total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+            }
+        }
 
         registerFormats();
         registerFunctions();
@@ -2573,6 +2599,7 @@ public:
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
             ("no-warnings", "disable warnings when client connects to server")
+            ("max_memory_usage_in_client", po::value<int>(), "sets memory limit in client")
         ;
 
         Settings cmd_settings;
