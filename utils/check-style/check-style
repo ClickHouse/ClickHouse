@@ -132,14 +132,8 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
             grep -q -e "ReplicatedMergeTree.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
             ;;
         *.sql)
-            # NOTE: *.sql is not supported because it is not possible right now, because:
-            # - ReplicatedMergeTree supports only ASTLiteral for zookeeper path
-            #   (and adding support of other nodes, with evaluating them are not that easy, due to zk_prefix is "optional")
-            # - Hence concat(currentDatabase(), 'foo')
-            # - Also params cannot be used, because the are wrapped with CAST()
-            #
-            # But hopefully they will not be a problem
-            # (since they do not do any "stressing" and overlap probability should be lower).
+            test_case_zk_prefix="{[ ]*database[ ]*}"
+            grep -q -e "ReplicatedMergeTree.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
             ;;
         *.py)
             # Right now there is not such tests anyway
