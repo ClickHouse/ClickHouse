@@ -1,5 +1,9 @@
 SET joined_subquery_requires_alias = 0;
 
+{% for join_algorithm in ['partial_merge', 'hash'] -%}
+
+SET join_algorithm = '{{ join_algorithm }}';
+
 SELECT 'IN empty set',count() FROM system.numbers WHERE number IN (SELECT toUInt64(1) WHERE 0);
 SELECT 'IN non-empty set',count() FROM (SELECT number FROM system.numbers LIMIT 10) t1 WHERE t1.number IN (SELECT toUInt64(1) WHERE 1);
 SELECT 'NOT IN empty set',count() FROM (SELECT number FROM system.numbers LIMIT 10) WHERE number NOT IN (SELECT toUInt64(1) WHERE 0);
@@ -22,3 +26,5 @@ SELECT 'multiple sets INNER JOIN non-empty set AND IN non-empty set',count() FRO
 
 SELECT 'IN empty set equals 0', count() FROM numbers(10) WHERE (number IN (SELECT toUInt64(1) WHERE 0)) = 0;
 SELECT 'IN empty set sum if', sum(if(number IN (SELECT toUInt64(1) WHERE 0), 2, 1)) FROM numbers(10);
+
+{% endfor -%}
