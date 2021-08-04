@@ -19,81 +19,60 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-///
-///  Wraps base query to add one-hot encoded `<column>.encoded` Array(UInt8) column
-///  using the following query:
-///
-///  WITH
-///     (
-///         SELECT groupArray(toLowCardinality(column) AS mapping
-///         FROM
-///         (
-///             SELECT DISTINCT column
-///             FROM (base_query)
-///             ORDER BY column ASC
-///         )
-///     ) AS mapping,
-///     arrayResize([0], length(mapping)) AS encoding
-/// SELECT *, EXCEPT (lc_column)
-/// FROM (
-///     SELECT
-///         *,
-///         toLowCardinality(column) AS lc_column,
-///         arrayMap((x, i) -> ((mapping[i]) = lc_column), _encoding, arrayEnumerate(mapping)) AS column.encoded
-///     FROM (base_query)
-/// )
-///
-ASTPtr TableFunctionOneHotEncodingView::wrapQuery(ASTPtr query, const String & column_name)
+std::tuple<const String, const String> TableFunctionOneHotEncodingView::getWithAndSelectForColumn(String base_query_str, const String & column_name)
 {
-    // FIXME: build query as AST
-    ASTPtr wrapped_query;
-    String base_query_str = queryToString(query);
     String encoded_column_name = column_name + ".encoded";
-    String mapping = "__one_hot_encoding_mapping_" + column_name;
-    String encoding_array = "__one_hot_encoding_array_" + column_name;
-    String lc_column_name = "__one_hot_encoding_low_cardinality_" + column_name;
+    String mapping = "__ohe_map_" + column_name;
+    String mapping_idx = "__ohe_map_idx_" + column_name;
+    String with;
+    String select;
 
-    String wrapped_query_str = "WITH (";
-    wrapped_query_str += "SELECT groupArray(toLowCardinality(`" + column_name +"`)) AS `" + mapping + "` ";
-    wrapped_query_str += "FROM (SELECT DISTINCT `" + column_name + "` FROM (" + base_query_str + ") ";
-    wrapped_query_str += "ORDER BY `" + column_name + "`)) AS `" + mapping + "`, ";
-    wrapped_query_str += "arrayResize([toUInt8(0)], length(`" + mapping + "`)) AS `" + encoding_array + "` ";
-    wrapped_query_str += "SELECT * EXCEPT (`" + lc_column_name + "`) FROM ";
-    wrapped_query_str += "(SELECT *, toLowCardinality(`" + column_name + "`) AS `" + lc_column_name + "`,";
-    wrapped_query_str += "arrayMap((x,i) -> (toUInt8((`" + mapping + "`[i] = `" + lc_column_name + "`))), `" + encoding_array;
-    wrapped_query_str += "`, arrayEnumerate(`" + mapping + "`)) AS `" + encoded_column_name + "` ";
-    wrapped_query_str += "FROM (" + base_query_str + "))";
+    with = "(SELECT groupArray(`" + column_name +"`) FROM ";
+    with += "(SELECT DISTINCT `" + column_name + "` FROM (" + base_query_str + ") ";
+    with += "ORDER BY `" + column_name + "`)) AS `" + mapping + "`, ";
+    with += "arrayEnumerate(`" + mapping + "`) AS `" + mapping_idx + "`,";
+    select = "arrayMap(i -> `" + mapping + "`[i] = `" + column_name + "`,`" + mapping_idx + "`) AS `" + encoded_column_name + "`,";
 
-    ParserSelectWithUnionQuery parser;
-    wrapped_query = parseQuery(parser, wrapped_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-
-    return wrapped_query;
+    return std::make_tuple(with, select);
 }
 
-void TableFunctionOneHotEncodingView::parseArguments(const ASTPtr & ast_function, ContextPtr /* context */)
+void TableFunctionOneHotEncodingView::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (function)
     {
         if (auto * query = function->tryGetQueryArgument())
         {
-            ASTPtr base_query = query->clone();
             if (auto * column_list = function->tryGetColumnListArgument()->as<ASTExpressionList>())
             {
-                /// iterate over the list of columns that we will use
-                /// for one-hot encoding
+                String with;
+                String select;
+                String base_query_str = queryToString(query->clone());
+                /// FIXME: need to move this code to building AST to prevent SQL injections
+                String ohe_query_str = "WITH ";
+                String ohe_select = " SELECT *,";
+                /// iterate over the list of columns that we will use for one-hot encoding
                 for (const auto & element : column_list->children)
                 {
-                    /// FIXME: need to check if column_name is in the structure of query
-                    auto * column_identifier = element->as<ASTIdentifier>();
-                    auto column_name = getIdentifierName(column_identifier);
-                    /// add a wrapper around the base query that adds
-                    /// a new column with one-hot encoding
-                    /// for each unique value in the column
-                    base_query = wrapQuery(base_query, column_name);
+                    auto column_name = getIdentifierName(element->as<ASTIdentifier>());
+                    std::tie(with, select) = getWithAndSelectForColumn(base_query_str, column_name);
+                    ohe_query_str += with;
+                    ohe_select += select;
                 }
+                ohe_query_str.pop_back(); // remove last comma
+                ohe_select.pop_back(); // remove last comma
+                ohe_query_str += ohe_select + " FROM (" + base_query_str + ")";
+
+                ParserSelectWithUnionQuery parser;
+                ASTPtr ohe_query = parseQuery(parser, ohe_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                /// FIXME: given that we are using arrayMap we
+                ///        need to force max_block_size to 2 for optimal performance
+                ///        given that the cardinality of column can be high.
+                ///        Ideally, this needs to be calculated dynamically but for that we
+                ///        would need to know the actual cardinality for each column.
+                context->getGlobalContext()->setSetting("max_block_size", 2);
                 /// set select query inside the create query for the view
-                create.set(create.select, base_query);
+                create.set(create.select, ohe_query);
                 return;
             }
         }

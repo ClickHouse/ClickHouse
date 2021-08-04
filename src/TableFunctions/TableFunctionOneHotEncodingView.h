@@ -19,7 +19,7 @@ public:
     static constexpr auto name = "one_hot_encoding_view";
     std::string getName() const override { return name; }
 private:
-    ASTPtr wrapQuery(ASTPtr base_query, const String & column_name);
+    std::tuple<const String, const String> getWithAndSelectForColumn(String base_query_str, const String & column_name);
 
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context,
         const String & table_name, ColumnsDescription cached_columns) const override;
