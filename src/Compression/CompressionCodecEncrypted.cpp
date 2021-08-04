@@ -5,9 +5,9 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTLiteral.h>
 #include <cassert>
-#include <openssl/digest.h>
+#include <openssl/digest.h> // Y_IGNORE
 #include <openssl/err.h>
-#include <openssl/hkdf.h>
+#include <openssl/hkdf.h> // Y_IGNORE
 #include <string_view>
 
 namespace DB

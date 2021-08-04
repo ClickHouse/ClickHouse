@@ -97,7 +97,7 @@
 #endif
 
 #if USE_SSL
-#    if USE_INTERNAL_SSL_LIBRARY
+#    if USE_INTERNAL_SSL_LIBRARY  && !defined(ARCADIA_BUILD)
 #        include <Compression/CompressionCodecEncrypted.h>
 #    endif
 #    include <Poco/Net/Context.h>
