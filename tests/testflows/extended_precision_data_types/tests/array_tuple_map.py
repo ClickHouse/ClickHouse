@@ -1,5 +1,6 @@
 import uuid
 
+from testflows.asserts import error
 from extended_precision_data_types.requirements import *
 from extended_precision_data_types.common import *
 
@@ -410,10 +411,11 @@ def map_func(self, data_type, node=None):
             sql = (f"INSERT INTO {table_name} SELECT mapPopulateSeries([1,2,3],",
                 f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}, {to_data_type(data_type,3)}], 5)")
 
-            exitcode, message = 0, None
+            r = node.query(sql, exitcode=None, message=None)
             if data_type.startswith("Decimal"):
-                exitcode, message = 44, "Exception:"
-            node.query(sql, exitcode=exitcode, message=message)
+                assert r.exitcode == 44, error(r.output)
+            else:
+                assert r.exitcode == 0, error(f"sql: {sql}\noutput: {r.output}")
 
         execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
