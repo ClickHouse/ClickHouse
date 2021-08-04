@@ -7,11 +7,11 @@ PEERDIR(
     clickhouse/src/Common
     contrib/libs/msgpack
     contrib/libs/protobuf
-    contrib/libs/arrow
+    contrib/libs/apache/arrow
 )
 
 ADDINCL(
-    contrib/libs/arrow/src
+    contrib/libs/apache/arrow/src
 )
 
 CFLAGS(-DUSE_ARROW=1)
