@@ -446,13 +446,8 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
     (key,) for key in table_types.keys()
 ])
 @Name("alter index")
-def feature(self, node="clickhouse1", stress=None, parallel=None):
+def feature(self, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
-
-    if parallel is not None:
-        self.context.parallel = parallel
-    if stress is not None:
-        self.context.stress = stress
 
     for example in self.examples:
         table_type, = example
@@ -462,9 +457,9 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
 
         with Example(str(example)):
             with Pool(5) as pool:
-                tasks = []
                 try:
                     for scenario in loads(current_module(), Scenario):
-                        run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
+                        Scenario(test=scenario, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(
+                            table_type=table_type)
                 finally:
-                    join(tasks)
+                    join()

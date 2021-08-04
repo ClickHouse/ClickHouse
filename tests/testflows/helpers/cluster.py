@@ -12,6 +12,21 @@ from testflows.connect import Shell as ShellBase
 from testflows.uexpect import ExpectTimeoutError
 from testflows._core.testtype import TestSubType
 
+MESSAGES_TO_RETRY = [
+    "DB::Exception: ZooKeeper session has been expired",
+    "DB::Exception: Connection loss",
+    "Coordination::Exception: Session expired",
+    "Coordination::Exception: Connection loss",
+    "Coordination::Exception: Operation timeout",
+    "DB::Exception: Operation timeout",
+    "Operation timed out",
+    "ConnectionPoolWithFailover: Connection failed at try",
+    "DB::Exception: New table appeared in database being dropped or detached. Try again",
+    "is already started to be removing by another replica right now",
+    "Shutdown is called for table", # happens in SYSTEM SYNC REPLICA query if session with ZooKeeper is being reinitialized.
+    "is executing longer than distributed_ddl_task_timeout" # distributed TTL timeout message
+]
+
 class Shell(ShellBase):
     def __exit__(self, type, value, traceback):
         # send exit and Ctrl-D repeatedly
@@ -192,23 +207,38 @@ class ClickHouseNode(Node):
             self.wait_healthy(timeout)
 
     def query(self, sql, message=None, exitcode=None, steps=True, no_checks=False,
-              raise_on_exception=False, step=By, settings=None, *args, **kwargs):
+              raise_on_exception=False, step=By, settings=None,
+              retries=5, messages_to_retry=None, retry_delay=5, *args, **kwargs):
         """Execute and check query.
         :param sql: sql query
         :param message: expected message that should be in the output, default: None
         :param exitcode: expected exitcode, default: None
+        :param steps: wrap query execution in a step, default: True
+        :param no_check: disable exitcode and message checks, default: False
+        :param step: wrapping step class, default: By
+        :param settings: list of settings to be used for the query in the form [(name, value),...], default: None
+        :param retries: number of retries, default: 5
+        :param messages_to_retry: list of messages in the query output for
+               which retry should be triggered, default: MESSAGES_TO_RETRY
+        :param retry_delay: number of seconds to sleep before retry, default: 5
         """
+        retries = max(0, int(retries))
+        retry_delay = max(0, float(retry_delay))
         settings = list(settings or [])
+        query_settings = list(settings)
+
+        if messages_to_retry is None:
+            messages_to_retry = MESSAGES_TO_RETRY
 
         if hasattr(current().context, "default_query_settings"):
-            settings += current().context.default_query_settings
+            query_settings += current().context.default_query_settings
 
         if len(sql) > 1024:
             with tempfile.NamedTemporaryFile("w", encoding="utf-8") as query:
                 query.write(sql)
                 query.flush()
                 command = f"cat \"{query.name}\" | {self.cluster.docker_compose} exec -T {self.name} clickhouse client -n"
-                for setting in settings:
+                for setting in query_settings:
                     name, value = setting
                     command += f" --{name} \"{value}\""
                 description = f"""
@@ -222,7 +252,7 @@ class ClickHouseNode(Node):
                         self.cluster.close_bash(None)
         else:
             command = f"echo -e \"{sql}\" | clickhouse client -n"
-            for setting in settings:
+            for setting in query_settings:
                 name, value = setting
                 command += f" --{name} \"{value}\""
             with Step("executing command", description=command, format_description=False) if steps else NullStep():
@@ -231,6 +261,15 @@ class ClickHouseNode(Node):
                 except ExpectTimeoutError:
                     self.cluster.close_bash(self.name)
                     raise
+
+        if retries and retries > 0:
+            if any(msg in r.output for msg in messages_to_retry):
+                time.sleep(retry_delay)
+                return self.query(sql=sql, message=message, exitcode=exitcode,
+                    steps=steps, no_checks=no_checks,
+                    raise_on_exception=raise_on_exception, step=step, settings=settings,
+                    retries=retries-1, messages_to_retry=messages_to_retry,
+                    *args, **kwargs)
 
         if no_checks:
             return r

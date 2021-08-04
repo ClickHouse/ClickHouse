@@ -172,12 +172,11 @@ def scenario_parallelization(self, table_type, privilege):
     """Runs all scenarios in parallel for a given privilege.
     """
     with Pool(4) as pool:
-        tasks = []
         try:
             for scenario in loads(current_module(), Scenario):
-                run_scenario(pool, tasks, Scenario(test=scenario), {"table_type": table_type, "privilege": privilege})
+                Scenario(test=scenario, parallel=True, executor=pool)(table_type=table_type, privilege=privilege)
         finally:
-            join(tasks)
+            join()
 
 @TestFeature
 @Requirements(
@@ -190,15 +189,10 @@ def scenario_parallelization(self, table_type, privilege):
     (key,) for key in table_types.keys()
 ])
 @Name("alter settings")
-def feature(self, node="clickhouse1", stress=None, parallel=None):
+def feature(self, node="clickhouse1"):
     """Runs test suites above which check correctness over scenarios and permutations
     """
     self.context.node = self.context.cluster.node(node)
-
-    if parallel is not None:
-        self.context.parallel = parallel
-    if stress is not None:
-        self.context.stress = stress
 
     for example in self.examples:
         table_type, = example
@@ -208,11 +202,11 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
 
         with Example(str(example)):
             with Pool(4) as pool:
-                tasks = []
                 try:
                     for alias in aliases:
-                        run_scenario(pool, tasks, Suite(test=scenario_parallelization, name=alias,
-                                                        setup=instrument_clickhouse_server_log),
-                                     {"table_type": table_type, "privilege": alias})
+                        Suite(test=scenario_parallelization, name=alias,
+                            setup=instrument_clickhouse_server_log,
+                            parallel=True, executor=pool)(
+                                table_type=table_type, privilege=alias)
                 finally:
-                    join(tasks)
+                    join()

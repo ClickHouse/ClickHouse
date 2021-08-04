@@ -700,13 +700,12 @@ def user_with_privileges_on_cluster(self, permutation, table_type, node=None):
 @TestSuite
 def scenario_parallelization(self, table_type, permutation):
     with Pool(7) as pool:
-        tasks = []
         try:
             for scenario in loads(current_module(), Scenario):
-                run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log),
-                    {"table_type": table_type, "permutation": permutation})
+                Scenario(test=scenario, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(
+                    table_type=table_type, permutation=permutation)
         finally:
-            join(tasks)
+            join()
 
 @TestFeature
 @Requirements(
@@ -724,11 +723,6 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
     """
     self.context.node = self.context.cluster.node(node)
 
-    if parallel is not None:
-        self.context.parallel = parallel
-    if stress is not None:
-        self.context.stress = stress
-
     for example in self.examples:
         table_type, = example
 
@@ -737,12 +731,11 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
 
         with Example(str(example)):
             with Pool(10) as pool:
-                tasks = []
                 try:
                     for permutation in permutations(table_type):
                         privileges = alter_column_privileges(permutation)
 
-                        run_scenario(pool, tasks, Suite(test=scenario_parallelization, name=privileges),
-                            {"table_type": table_type, "permutation": permutation})
+                        Suite(test=scenario_parallelization, name=privileges, parallel=True, executor=pool)(
+                            table_type=table_type, permutation=permutation)
                 finally:
-                    join(tasks)
+                    join()

@@ -485,7 +485,7 @@ def role_with_privilege_on_cluster(self, table_type, node=None):
     (key,) for key in table_types.keys()
 ])
 @Name("insert")
-def feature(self, table_type, parallel=None, stress=None, node="clickhouse1"):
+def feature(self, table_type, node="clickhouse1"):
     """Check the RBAC functionality of INSERT.
     """
     self.context.node = self.context.cluster.node(node)
@@ -494,15 +494,10 @@ def feature(self, table_type, parallel=None, stress=None, node="clickhouse1"):
     self.context.node2 = self.context.cluster.node("clickhouse2")
     self.context.node3 = self.context.cluster.node("clickhouse3")
 
-    if stress is not None:
-        self.context.stress = stress
-    if parallel is not None:
-        self.context.stress = parallel
-
-    tasks = []
     with Pool(10) as pool:
         try:
             for scenario in loads(current_module(), Scenario):
-                run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
+                Scenario(test=scenario, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(
+                    table_type=table_type)
         finally:
-            join(tasks)
+            join()
