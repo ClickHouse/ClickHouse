@@ -22,6 +22,9 @@ try
     if (all_mark_ranges.empty())
         return true;
 
+    if (!reader)
+        initializeReaders();
+
     /// Read ranges from right to left.
     MarkRanges mark_ranges_for_task = { all_mark_ranges.back() };
     all_mark_ranges.pop_back();

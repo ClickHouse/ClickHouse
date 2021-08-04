@@ -17,8 +17,8 @@ try
         return false;
     }
 
-    auto size_predictor = (preferred_block_size_bytes == 0) ? nullptr
-        : getSizePredictor(data_part, task_columns, sample_block);
+    if (!reader)
+        initializeReaders();
 
     MarkRanges mark_ranges_for_task;
     /// If we need to read few rows, set one range per task to reduce number of read data.
@@ -32,6 +32,9 @@ try
         mark_ranges_for_task = std::move(all_mark_ranges);
         all_mark_ranges.clear();
     }
+
+    auto size_predictor = (preferred_block_size_bytes == 0) ? nullptr
+        : getSizePredictor(data_part, task_columns, sample_block);
 
     task = std::make_unique<MergeTreeReadTask>(
         data_part, mark_ranges_for_task, part_index_in_query, ordered_names, column_name_set, task_columns.columns,
