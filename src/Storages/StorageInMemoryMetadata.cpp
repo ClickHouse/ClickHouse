@@ -331,7 +331,7 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
     /// Virtual columns must be appended after ordinary, because user can
     /// override them.
     for (const auto & column : virtuals)
-        virtuals_map.emplace(column.name, &column.type);
+        virtuals_map[column.name] = &column.type;
 
     for (const auto & name : column_names)
     {
