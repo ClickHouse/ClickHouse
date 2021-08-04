@@ -19,7 +19,21 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::tuple<const String, const String> TableFunctionOneHotEncodingView::getWithAndSelectForColumn(String base_query_str, const String & column_name)
+ColumnsDescription TableFunctionOneHotEncodingView::getActualBaseQueryTableStructure(
+    ASTPtr base_query,
+    ContextPtr context) const
+{
+    if (base_query)
+    {
+        auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(base_query, context);
+        return ColumnsDescription(sample.getNamesAndTypesList());
+    }
+    return ColumnsDescription();
+}
+
+std::tuple<const String, const String> TableFunctionOneHotEncodingView::getWithAndSelectForColumn(
+    String base_query_str,
+    const String & column_name)
 {
     String encoded_column_name = column_name + ".encoded";
     String mapping = "__ohe_map_" + column_name;
@@ -36,7 +50,9 @@ std::tuple<const String, const String> TableFunctionOneHotEncodingView::getWithA
     return std::make_tuple(with, select);
 }
 
-void TableFunctionOneHotEncodingView::parseArguments(const ASTPtr & ast_function, ContextPtr /* context */)
+void TableFunctionOneHotEncodingView::parseArguments(
+    const ASTPtr & ast_function,
+    ContextPtr context)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (function)
@@ -45,20 +61,29 @@ void TableFunctionOneHotEncodingView::parseArguments(const ASTPtr & ast_function
         {
             if (auto * column_list = function->tryGetColumnListArgument()->as<ASTExpressionList>())
             {
-                String with;
-                String select;
-                String base_query_str = queryToString(query->clone());
-                /// FIXME: need to move this code to building AST to prevent SQL injections
+                ASTPtr base_query = query->clone();
+                auto base_query_columns = getActualBaseQueryTableStructure(base_query, context);
+                String base_query_str = queryToString(base_query);
                 String ohe_query_str = "WITH ";
                 String ohe_select = " SELECT *,";
+                String with;
+                String select;
+
                 /// iterate over the list of columns that we will use for one-hot encoding
                 for (const auto & element : column_list->children)
                 {
                     auto column_name = getIdentifierName(element->as<ASTIdentifier>());
+
+                    /// prevent SQL injection by checking that identifier matches
+                    /// base query table structure
+                    if (!base_query_columns.has(column_name))
+                        throw Exception("Table function '" + getName() + "' got invalid column argument '" + column_name +"'", ErrorCodes::BAD_ARGUMENTS);
+
                     std::tie(with, select) = getWithAndSelectForColumn(base_query_str, column_name);
                     ohe_query_str += with;
                     ohe_select += select;
                 }
+
                 ohe_query_str.pop_back(); // remove last comma
                 ohe_select.pop_back(); // remove last comma
                 ohe_query_str += ohe_select + " FROM (" + base_query_str + ")";
@@ -72,7 +97,7 @@ void TableFunctionOneHotEncodingView::parseArguments(const ASTPtr & ast_function
             }
         }
     }
-    throw Exception("Table function '" + getName() + "' requires a query argument.", ErrorCodes::BAD_ARGUMENTS);
+    throw Exception("Table function '" + getName() + "' requires a query argument", ErrorCodes::BAD_ARGUMENTS);
 }
 
 ColumnsDescription TableFunctionOneHotEncodingView::getActualTableStructure(ContextPtr context) const
