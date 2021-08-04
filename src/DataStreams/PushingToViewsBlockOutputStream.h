@@ -51,6 +51,7 @@ private:
         BlockOutputStreamPtr out;
         std::exception_ptr exception;
         UInt64 elapsed_ms = 0;
+        bool is_materialized_view = false;
     };
 
     std::vector<ViewInfo> views;

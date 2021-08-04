@@ -82,9 +82,12 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
         ASTPtr query;
         BlockOutputStreamPtr out;
+        bool is_materialized_view = false;
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
+            is_materialized_view = true;
+
             addTableLock(
                 materialized_view->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout));
 
@@ -130,7 +133,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             out = std::make_shared<PushingToViewsBlockOutputStream>(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr());
 
-        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, 0 /* elapsed_ms */});
+        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, 0 /* elapsed_ms */, is_materialized_view});
     }
 
     /// Do not push to destination table if the flag is set
@@ -382,7 +385,8 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
         else
         {
             in = std::make_shared<OneBlockInputStream>(block);
-            in = std::make_shared<ConvertingBlockInputStream>(in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
+            if (view.is_materialized_view)
+                in = std::make_shared<ConvertingBlockInputStream>(in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
 
         in->readPrefix();
