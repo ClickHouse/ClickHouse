@@ -9,7 +9,8 @@ namespace DB
 
 /* one_hot_encoding_view((query),column[,column,...])
  * Turns a subquery into a table with the selected columns
- * expanded into columns that use one hot encoding for each distinct value.
+ * encoded using one hot encoding and presented
+ * as an Array(Uint8) encoded column.
  * Used for machine learning data preparation.
  */
 class TableFunctionOneHotEncodingView : public ITableFunction
@@ -18,8 +19,7 @@ public:
     static constexpr auto name = "one_hot_encoding_view";
     std::string getName() const override { return name; }
 private:
-    Strings getColumnDistinctValues(const String & base_query_str, const String & column_name, ContextPtr context);
-    ASTPtr wrapQuery(ASTPtr base_query, const String & column_name, ContextPtr context);
+    ASTPtr wrapQuery(ASTPtr base_query, const String & column_name);
 
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context,
         const String & table_name, ColumnsDescription cached_columns) const override;

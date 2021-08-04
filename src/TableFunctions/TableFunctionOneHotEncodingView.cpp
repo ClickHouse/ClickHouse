@@ -9,8 +9,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/executeQuery.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include "registerTableFunctions.h"
 
 
@@ -21,55 +19,58 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-Strings TableFunctionOneHotEncodingView::getColumnDistinctValues(const String & base_query_str, const String & column_name, ContextPtr context)
+///
+///  Wraps base query to add one-hot encoded `<column>.encoded` Array(UInt8) column
+///  using the following query:
+///
+///  WITH
+///     (
+///         SELECT groupArray(toLowCardinality(column) AS mapping
+///         FROM
+///         (
+///             SELECT DISTINCT column
+///             FROM (base_query)
+///             ORDER BY column ASC
+///         )
+///     ) AS mapping,
+///     arrayResize([0], length(mapping)) AS encoding
+/// SELECT *, EXCEPT (lc_column)
+/// FROM (
+///     SELECT
+///         *,
+///         toLowCardinality(column) AS lc_column,
+///         arrayMap((x, i) -> ((mapping[i]) = lc_column), _encoding, arrayEnumerate(mapping)) AS column.encoded
+///     FROM (base_query)
+/// )
+///
+ASTPtr TableFunctionOneHotEncodingView::wrapQuery(ASTPtr query, const String & column_name)
 {
-    Strings values;
-    String value;
-    String output;
-
-    String distinct_query_str = "SELECT DISTINCT toString(`" + column_name + "`) FROM (" + base_query_str +") ORDER BY `" + column_name + "`";
-    ReadBufferFromString istr(distinct_query_str);
-    WriteBufferFromString ostr(output);
-
-    auto query_context = Context::createCopy(context);
-    query_context->makeQueryContext();
-    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    query_context->setCurrentDatabase(context->getCurrentDatabase());
-    query_context->setCurrentQueryId(""); // generate random query_id
-
-    executeQuery(istr, ostr, false, query_context, {});
-
-    /// split output by new line
-    std::istringstream output_stream(output); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    while (getline(output_stream, value))
-        values.push_back(value);
-
-    /// remove last value as it is empty due to \n at the end of the output
-    values.pop_back();
-
-    return values;
-}
-
-ASTPtr TableFunctionOneHotEncodingView::wrapQuery(ASTPtr query, const String & column_name, ContextPtr context)
-{
+    // FIXME: build query as AST
+    ASTPtr wrapped_query;
     String base_query_str = queryToString(query);
-    Strings distinct_values = getColumnDistinctValues(base_query_str, column_name, context);
-    Strings encoded_columns;
+    String encoded_column_name = column_name + ".encoded";
+    String mapping = "__one_hot_encoding_mapping_" + column_name;
+    String encoding_array = "__one_hot_encoding_array_" + column_name;
+    String lc_column_name = "__one_hot_encoding_low_cardinality_" + column_name;
 
-    String wrapped_query_str = "SELECT * EXCEPT (`__mapping_" + column_name + "`) FROM ";
-    wrapped_query_str += "(SELECT *, toLowCardinality(toString(`" + column_name + "`)) AS `__mapping_" + column_name + "`,";
-
-    for (const auto &value : distinct_values)
-        wrapped_query_str += "toUInt8(equals(`__mapping_" + column_name + "`,toLowCardinality('" + value + "'))) AS `" + column_name + "." + value + "`,";
-
-    wrapped_query_str.pop_back(); // remove last comma
+    String wrapped_query_str = "WITH (";
+    wrapped_query_str += "SELECT groupArray(toLowCardinality(`" + column_name +"`)) AS `" + mapping + "` ";
+    wrapped_query_str += "FROM (SELECT DISTINCT `" + column_name + "` FROM (" + base_query_str + ") ";
+    wrapped_query_str += "ORDER BY `" + column_name + "`)) AS `" + mapping + "`, ";
+    wrapped_query_str += "arrayResize([toUInt8(0)], length(`" + mapping + "`)) AS `" + encoding_array + "` ";
+    wrapped_query_str += "SELECT * EXCEPT (`" + lc_column_name + "`) FROM ";
+    wrapped_query_str += "(SELECT *, toLowCardinality(`" + column_name + "`) AS `" + lc_column_name + "`,";
+    wrapped_query_str += "arrayMap((x,i) -> (toUInt8((`" + mapping + "`[i] = `" + lc_column_name + "`))), `" + encoding_array;
+    wrapped_query_str += "`, arrayEnumerate(`" + mapping + "`)) AS `" + encoded_column_name + "` ";
     wrapped_query_str += "FROM (" + base_query_str + "))";
 
     ParserSelectWithUnionQuery parser;
-    return parseQuery(parser, wrapped_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    wrapped_query = parseQuery(parser, wrapped_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+    return wrapped_query;
 }
 
-void TableFunctionOneHotEncodingView::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionOneHotEncodingView::parseArguments(const ASTPtr & ast_function, ContextPtr /* context */)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (function)
@@ -89,7 +90,7 @@ void TableFunctionOneHotEncodingView::parseArguments(const ASTPtr & ast_function
                     /// add a wrapper around the base query that adds
                     /// a new column with one-hot encoding
                     /// for each unique value in the column
-                    base_query = wrapQuery(base_query, column_name, context);
+                    base_query = wrapQuery(base_query, column_name);
                 }
                 /// set select query inside the create query for the view
                 create.set(create.select, base_query);
