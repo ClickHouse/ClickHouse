@@ -288,7 +288,8 @@ SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
-Реинициализирует состояние сессий Zookeeper для таблицы семейства `ReplicatedMergeTree`. Сравнивает текущее состояние с Zookeeper (как с эталоном) и при необходимости добавляет задачи в очередь репликации Zookeeper. В процессе инициализации очереди репликации на основе данных ZooKeeper, какое-то время таблица будет недоступна для любых операций.
+Реинициализирует состояние сессий Zookeeper для таблицы семейства `ReplicatedMergeTree`. Сравнивает текущее состояние с Zookeeper (как с эталоном) и при необходимости добавляет задачи в очередь репликации Zookeeper. 
+Инициализация очереди репликации на основе данных ZooKeeper происходит так же, как при `ATTACH TABLE`. Некоторое время таблица будет недоступна для любых операций.
 
 ``` sql
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
@@ -326,9 +327,9 @@ SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_fami
 
 **Пример**
 
-```sql
--- Создание таблицы на нескольких серверах
+Создание таблицы на нескольких серверах. После потери корневого каталога реплики таблица будет прикреплена только для чтения, так как метаданные отсутствуют. Последний запрос необходимо выполнить на каждой реплике.
 
+```sql
 CREATE TABLE test(n UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
 ORDER BY n PARTITION BY n % 10;
@@ -337,8 +338,8 @@ INSERT INTO test SELECT * FROM numbers(1000);
 
 -- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- root loss.
 
-SYSTEM RESTART REPLICA test; -- таблица будет прикреплена только для чтения, так как метаданные отсутствуют.
-SYSTEM RESTORE REPLICA test; -- необходимо выполнить на каждой реплике.
+SYSTEM RESTART REPLICA test;
+SYSTEM RESTORE REPLICA test;
 ```
 
 Альтернативный способ:

@@ -316,7 +316,7 @@ Parts present on a replica before metadata loss are not re-fetched from other on
 !!! warning "Caveat"
 Parts in all states are moved to `detached/` folder. Parts active before data loss (Committed) are attached.
 
-#### Syntax
+**Syntax**
 
 ```sql
 SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
@@ -328,11 +328,11 @@ Alternative syntax:
 SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
 ```
 
-#### Example
+**Example**
+
+Creating table on multiple servers. After the replica's root directory is lost, the table will will attach as readonly as metadata is missing. The last query need to execute on every replica.
 
 ```sql
--- Creating table on multiple servers
-
 CREATE TABLE test(n UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
 ORDER BY n PARTITION BY n % 10;
@@ -341,11 +341,12 @@ INSERT INTO test SELECT * FROM numbers(1000);
 
 -- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- root loss.
 
-SYSTEM RESTART REPLICA test; -- Table will attach as readonly as metadata is missing.
-SYSTEM RESTORE REPLICA test; -- Need to execute on every replica.
+SYSTEM RESTART REPLICA test;
+SYSTEM RESTORE REPLICA test;
 ```
 
 Another way:
+
 ```sql
 RESTORE REPLICA test ON CLUSTER cluster;
 ```
