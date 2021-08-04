@@ -614,7 +614,7 @@ class MarkTupleLiteralsAsLegacyData
 public:
     using TypeToVisit = ASTLiteral;
 
-    void visit(ASTLiteral & literal, ASTPtr &)
+    static void visit(ASTLiteral & literal, ASTPtr &)
     {
         if (literal.value.getType() == Field::Types::Tuple)
             literal.use_legacy_column_name_of_tuple = true;
