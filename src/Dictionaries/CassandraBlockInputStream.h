@@ -4,17 +4,17 @@
 
 #if USE_CASSANDRA
 #include <Core/Block.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Core/ExternalResultDescription.h>
 
 
 namespace DB
 {
 
-class CassandraBlockInputStream final : public IBlockInputStream
+class CassandraSource final : public SourceWithProgress
 {
 public:
-    CassandraBlockInputStream(
+    CassandraSource(
             const CassSessionShared & session_,
             const String & query_str,
             const Block & sample_block,
@@ -24,12 +24,11 @@ public:
 
     Block getHeader() const override { return description.sample_block.cloneEmpty(); }
 
-    void readPrefix() override;
 
 private:
     using ValueType = ExternalResultDescription::ValueType;
 
-    Block readImpl() override;
+    Chunk generate() override;
     static void insertValue(IColumn & column, ValueType type, const CassValue * cass_value);
     void assertTypes(const CassResultPtr & result);
 
@@ -40,6 +39,7 @@ private:
     ExternalResultDescription description;
     cass_bool_t has_more_pages;
     bool assert_types = true;
+    bool is_initialized = false;
 };
 
 }

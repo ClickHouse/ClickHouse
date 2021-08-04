@@ -637,7 +637,7 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
-BlockInputStreamPtr HashedDictionary<dictionary_key_type, sparse>::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_names, size_t max_block_size) const
 {
     PaddedPODArray<HashedDictionary::KeyType> keys;
 
@@ -667,9 +667,9 @@ BlockInputStreamPtr HashedDictionary<dictionary_key_type, sparse>::getBlockInput
     }
 
     if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-        return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, std::move(keys), column_names);
+        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
     else
-        return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, keys, column_names);
+        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), keys, column_names), max_block_size));
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
