@@ -2090,7 +2090,7 @@ SELECT tcpPort();
 
 ## currentRoles {#current-roles}
 
-Возвращает имена текущих ролей для текущего пользователя. Для изменения текущих ролей может использоваться команда [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement). Текущие роли по умолчанию можно получить при вызове функции [defaultRoles](#default-roles), когда пользователь входит в систему.
+Возвращает имена текущих ролей для текущего пользователя. Для изменения текущих ролей может использоваться команда [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement). Если команда `SET ROLE` не использовалась, функция возвращает тот же результат, что и функция [defaultRoles](#default-roles).
 
 **Синтаксис**
 
@@ -2122,7 +2122,7 @@ enabledRoles()
 
 ## defaultRoles {#default-roles}
 
-Возвращает имена ролей, которые задаются как текущие для данного пользователя, когда он входит в систему. Они могут быть изменены при помощи команды [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement), но по умолчанию это все роли, которые предоставляются пользователю.
+Возвращает имена ролей, которые задаются как текущие для данного пользователя при входе в систему. Они могут быть изменены при помощи команды [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement). По умолчанию это все роли, которые разрешено использовать текущему пользователю (см. команду [GRANT](../../sql-reference/statements/grant/#grant-select)).
 
 **Синтаксис**
 
