@@ -2140,7 +2140,7 @@ Result:
 
 ## currentProfiles {#current-profiles}
 
-Returns list of the current [setting profiles](../../operations/access-rights/#settings-profiles-management) for current user. The command [SET PROFILE](../../sql-reference/statements/set.md#set-statement#query-set) could be used to change the current setting profile.
+Returns list of the current [setting profiles](../../operations/access-rights.md#settings-profiles-management) for current user. The command [SET PROFILE](../../sql-reference/statements/set.md#set-statement#query-set) could be used to change the current setting profile.
 
 **Syntax**
 
@@ -2156,7 +2156,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 ## enabledProfiles {#enabled-profiles}
 
- Returns setting profiles are assigned to the user both explicitly and implicitly. Implicitly assigned profiles include parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the section `default_profile` in the main configuration file).
+ Returns setting profiles are assigned to the user both explicitly and implicitly. Implicitly assigned profiles to include parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the section `default_profile` in the main configuration file).
 
  If some profile occurs multiple times (with some other settings in between), the latest occurrence overrides all the previous ones.
 

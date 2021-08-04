@@ -2088,3 +2088,52 @@ SELECT tcpPort();
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
+## currentProfiles {#current-profiles}
+
+Возвращает список [профилей настроек](../../operations/access-rights.md#settings-profiles-management) для текущего пользователя. Для изменения текущего профиля настроек может быть использована команда [SET PROFILE](../../sql-reference/statements/set.md#set-statement#query-set).
+
+**Синтаксис**
+
+``` sql
+currentProfiles()
+```
+
+**Возвращаемое значение**
+
+-   Список профилей настроек для текущего пользователя. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## enabledProfiles {#enabled-profiles}
+
+Возвращает профили настроек, назначенные пользователю как явно, так и неявно. Неявно назначенные профили включают родительские профили других назначенных профилей, профили, назначенные с помощью предоставленных ролей, профили, назначенные с помощью собственных настроек, и основной профиль по умолчанию (см. секцию `default_profile` в основном конфигурационном файле).
+
+ Если какой-либо профиль встречается несколько раз (с некоторыми другими настройками между ними), последнее событие перезаписывает все предыдущие.
+
+**Синтаксис**
+
+``` sql
+enabledProfiles()
+```
+
+**Возвращаемое значение**
+
+-   Список доступных профилей для текущего пользователя. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## defaultProfiles {#default-profiles}
+
+Возвращает профили настроек по умолчанию, т. е. профили, которые должны быть применены при входе пользователя в систему.
+
+**Синтаксис**
+
+``` sql
+defaultProfiles()
+```
+
+**Возвращаемое значение**
+
+-   Список профилей по умолчанию. 
+
+ТИп: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
