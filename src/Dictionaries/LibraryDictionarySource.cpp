@@ -41,6 +41,9 @@ LibraryDictionarySource::LibraryDictionarySource(
     , sample_block{sample_block_}
     , context(Context::createCopy(context_))
 {
+    if (fs::path(path).is_relative())
+        path = fs::canonical(path);
+
     if (created_from_ddl && !pathStartsWith(path, context->getDictionariesLibPath()))
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, context->getDictionariesLibPath());
 
@@ -48,17 +51,32 @@ LibraryDictionarySource::LibraryDictionarySource(
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", path);
 
     description.init(sample_block);
-    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id);
-    auto res = bridge_helper->initLibrary(path, getLibrarySettingsString(config, config_prefix + ".settings"), getDictAttributesString());
 
-    if (!res)
+    LibraryBridgeHelper::LibraryInitData library_data
+    {
+        .library_path = path,
+        .library_settings = getLibrarySettingsString(config, config_prefix + ".settings"),
+        .dict_attributes = getDictAttributesString()
+    };
+
+    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, library_data);
+
+    if (!bridge_helper->initLibrary())
         throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to create shared library from path: {}", path);
 }
 
 
 LibraryDictionarySource::~LibraryDictionarySource()
 {
-    bridge_helper->removeLibrary();
+    try
+    {
+        bridge_helper->removeLibrary();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("LibraryDictionarySource");
+    }
+
 }
 
 
@@ -72,8 +90,9 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , context(other.context)
     , description{other.description}
 {
-    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id);
-    bridge_helper->cloneLibrary(other.dictionary_id);
+    bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, other.bridge_helper->getLibraryData());
+    if (!bridge_helper->cloneLibrary(other.dictionary_id))
+        throw Exception(ErrorCodes::EXTERNAL_LIBRARY_ERROR, "Failed to clone library");
 }
 
 
@@ -99,7 +118,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
 BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
-    return bridge_helper->loadIds(getDictIdsString(ids));
+    return bridge_helper->loadIds(ids);
 }
 
 
@@ -143,14 +162,6 @@ String LibraryDictionarySource::getLibrarySettingsString(const Poco::Util::Abstr
     }
 
     writeVectorBinary(settings, out);
-    return out.str();
-}
-
-
-String LibraryDictionarySource::getDictIdsString(const std::vector<UInt64> & ids)
-{
-    WriteBufferFromOwnString out;
-    writeVectorBinary(ids, out);
     return out.str();
 }
 
