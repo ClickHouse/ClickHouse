@@ -22,12 +22,13 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
 }
 
-CassandraBlockInputStream::CassandraBlockInputStream(
+CassandraSource::CassandraSource(
     const CassSessionShared & session_,
     const String & query_str,
     const Block & sample_block,
     size_t max_block_size_)
-    : session(session_)
+    : SourceWithProgress(sample_block)
+    , session(session_)
     , statement(query_str.c_str(), /*parameters count*/ 0)
     , max_block_size(max_block_size_)
     , has_more_pages(cass_true)
@@ -36,7 +37,7 @@ CassandraBlockInputStream::CassandraBlockInputStream(
     cassandraCheck(cass_statement_set_paging_size(statement, max_block_size));
 }
 
-void CassandraBlockInputStream::insertValue(IColumn & column, ValueType type, const CassValue * cass_value)
+void CassandraSource::insertValue(IColumn & column, ValueType type, const CassValue * cass_value)
 {
     switch (type)
     {
@@ -148,13 +149,15 @@ void CassandraBlockInputStream::insertValue(IColumn & column, ValueType type, co
     }
 }
 
-void CassandraBlockInputStream::readPrefix()
-{
-    result_future = cass_session_execute(*session, statement);
-}
 
-Block CassandraBlockInputStream::readImpl()
+Chunk CassandraSource::generate()
 {
+    if (!is_initialized)
+    {
+        result_future = cass_session_execute(*session, statement);
+        is_initialized = true;
+    }
+
     if (!has_more_pages)
         return {};
 
@@ -194,12 +197,13 @@ Block CassandraBlockInputStream::readImpl()
         }
     }
 
-    assert(cass_result_row_count(result) == columns.front()->size());
+    size_t num_rows = columns.front()->size();
+    assert(cass_result_row_count(result) == num_rows);
 
-    return description.sample_block.cloneWithColumns(std::move(columns));
+    return Chunk(std::move(columns), num_rows);
 }
 
-void CassandraBlockInputStream::assertTypes(const CassResultPtr & result)
+void CassandraSource::assertTypes(const CassResultPtr & result)
 {
     if (!assert_types)
         return;

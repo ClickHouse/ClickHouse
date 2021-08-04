@@ -97,10 +97,10 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size) const override;
 
 private:
-    BlockInputStreamPtr getSourceBlockInputStream(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    Pipe getSourceBlockInputStream(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
