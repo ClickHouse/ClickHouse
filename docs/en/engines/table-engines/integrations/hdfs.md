@@ -185,7 +185,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 |hadoop\_kerberos\_principal                            | ""                      |
 |hadoop\_kerberos\_kinit\_command                       | kinit                   |
 
-#### Limitations {#limitations}
+### Limitations {#limitations}
   * hadoop\_security\_kerberos\_ticket\_cache\_path can be global only, not user specific
 
 ## Kerberos support {#kerberos-support}

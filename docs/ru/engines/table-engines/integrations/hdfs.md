@@ -122,7 +122,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
   </hdfs_root>
 ```
 
-### Возможные опции конфигурации {#configuration-options}
+### Параметры конфигурации {#configuration-options}
 
 #### Поддерживаемые из libhdfs3 {#supported-by-libhdfs3}
 
@@ -181,7 +181,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 |hadoop\_kerberos\_principal                            | ""                      |
 |hadoop\_kerberos\_kinit\_command                       | kinit                   |
 
-#### Ограничения {#limitations}
+### Ограничения {#limitations}
   * hadoop\_security\_kerberos\_ticket\_cache\_path могут быть определены только на глобальном уровне
 
 ## Поддержка Kerberos {#kerberos-support}
