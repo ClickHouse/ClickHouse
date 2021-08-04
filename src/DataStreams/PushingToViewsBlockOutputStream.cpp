@@ -362,7 +362,6 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & vi
 
         if (view.query)
         {
-            //std::cerr << ".... pushing block " << block.dumpStructure() << "\n" << storage->getName() << "\n" << queryToString(view.query) << std::endl;
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
             /// InterpreterSelectQuery will do processing of alias columns.
