@@ -2140,7 +2140,7 @@ Result:
 
 ## currentRoles {#current-roles}
 
-Returns the names of the roles which are current for the current user. The command [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement) could be used to change the current roles, by default the current roles are returned by the function [defaultRoles](#default-roles) called when the current user logins.
+Returns the names of the roles which are current for the current user. The command [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement) could be used to change the current roles. If the command `SET ROLE` hasn't been used the function `currentRoles` returns the same as `defaultRoles`.
 
 **Syntax**
 
@@ -2172,7 +2172,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 ## defaultRoles {#default-roles}
 
-Returns the names of the roles which are set as current when the user logins. The command [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) could be used to change the default roles. By default are all the roles which are granted to a user.
+Returns the names of the roles which are set as current when the current user logins. The command [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) could be used to change the default roles. By default the default roles are all the roles granted to the current user.
 
 **Syntax**
 
