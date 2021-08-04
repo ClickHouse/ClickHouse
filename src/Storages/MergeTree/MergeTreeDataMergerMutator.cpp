@@ -1292,7 +1292,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto execute_ttl_type = ExecuteTTLType::NONE;
 
     if (in)
-        execute_ttl_type = shouldExecuteTTL(metadata_snapshot, interpreter->getColumnDependencies(), commands_for_part);
+        execute_ttl_type = shouldExecuteTTL(metadata_snapshot, interpreter->getColumnDependencies());
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
@@ -1980,14 +1980,12 @@ std::set<MergeTreeProjectionPtr> MergeTreeDataMergerMutator::getProjectionsToRec
     return projections_to_recalc;
 }
 
-ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(
-    const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies, const MutationCommands & commands)
+ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies)
 {
     if (!metadata_snapshot->hasAnyTTL())
         return ExecuteTTLType::NONE;
 
-    bool has_ttl_expression;
-    bool has_ttl_target;
+    bool has_ttl_expression = false;
 
     for (const auto & dependency : dependencies)
     {
