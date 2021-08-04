@@ -608,18 +608,6 @@ void makeWindowDescriptionFromAST(const Context & context,
 
 void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
 {
-    // Convenient to check here because at least we have the Context.
-    if (!syntax->window_function_asts.empty() &&
-        !getContext()->getSettingsRef().allow_experimental_window_functions)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "The support for window functions is experimental and will change"
-            " in backwards-incompatible ways in the future releases. Set"
-            " allow_experimental_window_functions = 1 to enable it."
-            " While processing '{}'",
-            syntax->window_function_asts[0]->formatForErrorMessage());
-    }
-
     // Window definitions from the WINDOW clause
     const auto * select_query = query->as<ASTSelectQuery>();
     if (select_query && select_query->window())

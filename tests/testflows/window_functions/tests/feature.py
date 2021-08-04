@@ -17,9 +17,6 @@ def feature(self, distributed, node="clickhouse1"):
     self.context.distributed = distributed
     self.context.node = self.context.cluster.node(node)
 
-    with Given("I allow experimental window functions"):
-        allow_experimental_window_functions()
-
     with And("employee salary table"):
         empsalary_table(distributed=distributed)
 
