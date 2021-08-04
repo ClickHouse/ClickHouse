@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <optional>
 #include <memory>
+#include <future>
 
 
 namespace DB
@@ -20,8 +21,6 @@ namespace DB
 class IAsynchronousReader
 {
 public:
-    using RequestID = UInt64;
-
     /// For local filesystems, the file descriptor is simply integer
     /// but it can be arbitrary opaque object for remote filesystems.
     struct IFileDescriptor
@@ -50,30 +49,15 @@ public:
     };
 
     /// Less than requested amount of data can be returned.
-    /// Also error can be returned in 'exception'.
-    /// If no error, and the size is zero - the file has ended.
+    /// If size is zero - the file has ended.
     /// (for example, EINTR must be handled by implementation automatically)
-    struct Result
-    {
-        size_t size = 0;
-        std::exception_ptr exception;
-    };
-
-    /// The methods 'submit' and 'wait' both can be called concurrently from multiple threads
-    /// but only for different requests.
+    using Result = size_t;
 
     /// Submit request and obtain a handle. This method don't perform any waits.
     /// If this method did not throw, the caller must wait for the result with 'wait' method
     /// or destroy the whole reader before destroying the buffer for request.
-    virtual RequestID submit(Request request) = 0;
-
-    /// Wait for request completion or timeout.
-    /// Optional timeout can be specified, otherwise waits until completion.
-    /// In case of timeout, nullopt is returned.
-    /// In case of completion, Result object is returned. Result may contain exception.
-    /// In case of timeout, the caller must call wait again until completion
-    /// or destroy the whole reader before destroying the buffer for request.
-    virtual std::optional<Result> wait(RequestID id, std::optional<UInt64> microseconds) = 0;
+    /// The method can be called concurrently from multiple threads.
+    virtual std::future<Result> submit(Request request) = 0;
 
     /// Destructor must wait for all not completed request and ignore the results.
     /// It may also cancel the requests.

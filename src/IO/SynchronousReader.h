@@ -25,13 +25,8 @@ namespace ErrorCodes
   */
 class SynchronousReader final : public IAsynchronousReader
 {
-private:
-    UInt64 counter = 0;
-    std::unordered_map<UInt64, Request> requests;
-    std::mutex mutex;
-
 public:
-    RequestID submit(Request request) override
+    std::future<Result> submit(Request request) override
     {
 #if defined(POSIX_FADV_WILLNEED)
         int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
@@ -39,54 +34,26 @@ public:
             throwFromErrno("Cannot posix_fadvise", ErrorCodes::CANNOT_ADVISE);
 #endif
 
-        std::lock_guard lock(mutex);
-        ++counter;
-        requests.emplace(counter, request);
-        return counter;
-    }
-
-    /// Timeout is not implemented.
-    std::optional<Result> wait(RequestID id, std::optional<UInt64>) override
-    {
-        Request request;
-        Result result;
-
+        return std::async(std::launch::deferred, [fd, request]
         {
-            std::lock_guard lock(mutex);
-            auto it = requests.find(id);
-            if (it == requests.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find request by id {}", id);
+            /// TODO Instrumentation.
 
-            request = it->second;
-            requests.erase(it);
-        }
-
-        int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
-
-        /// TODO Instrumentation.
-
-        size_t bytes_read = 0;
-        while (!bytes_read)
-        {
-            ssize_t res = ::pread(fd, request.buf, request.size, request.offset);
-            if (!res)
-                break;
-
-            if (-1 == res && errno != EINTR)
+            size_t bytes_read = 0;
+            while (!bytes_read)
             {
-                result.exception = std::make_exception_ptr(ErrnoException(
-                    fmt::format("Cannot read from file {}, {}", fd,
-                        errnoToString(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno)),
-                    ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno));
-                return result;
+                ssize_t res = ::pread(fd, request.buf, request.size, request.offset);
+                if (!res)
+                    break;
+
+                if (-1 == res && errno != EINTR)
+                    throwFromErrno(fmt::format("Cannot read from file {}", fd), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+
+                if (res > 0)
+                    bytes_read += res;
             }
 
-            if (res > 0)
-                bytes_read += res;
-        }
-
-        result.size = bytes_read;
-        return result;
+            return bytes_read;
+        });
     }
 
     ~SynchronousReader() override

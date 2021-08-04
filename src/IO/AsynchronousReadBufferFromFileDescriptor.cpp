@@ -26,7 +26,7 @@ std::string AsynchronousReadBufferFromFileDescriptor::getFileName() const
 
 void AsynchronousReadBufferFromFileDescriptor::prefetch()
 {
-    if (prefetch_request_id)
+    if (prefetch_future.valid())
         return;
 
     /// Will request the same amount of data that is read in nextImpl.
@@ -38,28 +38,25 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch()
     request.size = prefetch_buffer.size();
     request.offset = file_offset_of_buffer_end;
 
-    prefetch_request_id = reader->submit(request);
+    prefetch_future = reader->submit(request);
 }
 
 
 bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 {
-    if (!prefetch_request_id)
+    if (!prefetch_future.valid())
         prefetch();
 
-    auto response = reader->wait(*prefetch_request_id, {});
-    prefetch_request_id.reset();
+    auto size = prefetch_future.get();
+    prefetch_future = {};
 
-    if (response->exception)
-        std::rethrow_exception(response->exception);
+    file_offset_of_buffer_end += size;
 
-    file_offset_of_buffer_end += response->size;
-
-    if (response->size)
+    if (size)
     {
         prefetch_buffer.swap(memory);
         set(memory.data(), memory.size());
-        working_buffer.resize(response->size);
+        working_buffer.resize(size);
         return true;
     }
 
@@ -69,10 +66,10 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 
 void AsynchronousReadBufferFromFileDescriptor::finalize()
 {
-    if (prefetch_request_id)
+    if (prefetch_future.valid())
     {
-        reader->wait(*prefetch_request_id, {});
-        prefetch_request_id.reset();
+        prefetch_future.wait();
+        prefetch_future = {};
     }
 }
 
@@ -105,26 +102,25 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    /// file_offset_of_buffer_end corresponds to working_buffer.end(); it's a past-the-end pos,
-    /// so the second inequality is strict.
     if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
-        && new_pos < file_offset_of_buffer_end)
+        && new_pos <= file_offset_of_buffer_end)
     {
         /// Position is still inside the buffer.
+        /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
 
         pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
         assert(pos >= working_buffer.begin());
-        assert(pos < working_buffer.end());
+        assert(pos <= working_buffer.end());
 
         return new_pos;
     }
     else
     {
-        if (prefetch_request_id)
+        if (prefetch_future.valid())
         {
             std::cerr << "Ignoring prefetched data" << "\n";
-            reader->wait(*prefetch_request_id, {});
-            prefetch_request_id.reset();
+            prefetch_future.wait();
+            prefetch_future = {};
         }
 
         /// Position is out of the buffer, we need to do real seek.
@@ -151,10 +147,10 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
 void AsynchronousReadBufferFromFileDescriptor::rewind()
 {
-    if (prefetch_request_id)
+    if (prefetch_future.valid())
     {
-        reader->wait(*prefetch_request_id, {});
-        prefetch_request_id.reset();
+        prefetch_future.wait();
+        prefetch_future = {};
     }
 
     /// Clearing the buffer with existing data. New data will be read on subsequent call to 'next'.

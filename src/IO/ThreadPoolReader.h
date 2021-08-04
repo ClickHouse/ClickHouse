@@ -7,8 +7,7 @@
 #include <Common/setThreadName.h>
 #include <common/errnoToString.h>
 #include <Poco/Event.h>
-#include <unordered_map>
-#include <mutex>
+#include <future>
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -60,45 +59,17 @@ namespace ErrorCodes
 class ThreadPoolReader final : public IAsynchronousReader
 {
 private:
-    UInt64 counter = 0;
-
-    struct RequestInfo
-    {
-        bool already_read = false;
-        Poco::Event event;
-        Result result;
-    };
-
-    using Requests = std::unordered_map<UInt64, RequestInfo>;
-    Requests requests;
-    std::mutex mutex;
-
     ThreadPool pool;
-    size_t queue_size;
 
 public:
     ThreadPoolReader(size_t pool_size, size_t queue_size_)
-        : pool(pool_size, pool_size, queue_size_), queue_size(queue_size_)
+        : pool(pool_size, pool_size, queue_size_)
     {
     }
 
-    RequestID submit(Request request) override
+    std::future<Result> submit(Request request) override
     {
-        Requests::iterator it;
-
-        {
-            std::lock_guard lock(mutex);
-
-            if (requests.size() >= queue_size)
-                throw Exception("Too many read requests in flight", ErrorCodes::CANNOT_SCHEDULE_TASK);
-
-            ++counter;
-            it = requests.emplace(std::piecewise_construct, std::forward_as_tuple(counter), std::forward_as_tuple()).first;
-        }
-
         int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
-
-        RequestInfo & info = it->second;
 
 #if defined(__linux__)
         /// Check if data is already in page cache with preadv2 syscall.
@@ -110,6 +81,9 @@ public:
 
         if (has_pread_nowait_support.load(std::memory_order_relaxed))
         {
+            std::promise<Result> promise;
+            std::future<Result> future = promise.get_future();
+
             size_t bytes_read = 0;
             while (!bytes_read)
             {
@@ -120,10 +94,12 @@ public:
                     static_cast<long>(request.offset), static_cast<long>(request.offset >> 32),
                     RWF_NOWAIT);
 
+                //ssize_t res = ::pread(fd, request.buf, request.size, request.offset);
+
                 if (!res)
                 {
-                    info.already_read = true;
-                    break;
+                    promise.set_value(0);
+                    return future;
                 }
 
                 if (-1 == res)
@@ -144,92 +120,52 @@ public:
                     }
                     else
                     {
-                        info.already_read = true;
-                        info.result.exception = std::make_exception_ptr(ErrnoException(
+                        promise.set_exception(std::make_exception_ptr(ErrnoException(
                             fmt::format("Cannot read from file {}, {}", fd,
                                 errnoToString(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno)),
-                            ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno));
-                        break;
+                            ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno)));
+                        return future;
                     }
                 }
                 else
                 {
                     bytes_read += res;
-                    info.already_read = true;
                 }
             }
 
-            info.result.size = bytes_read;
+            if (bytes_read)
+            {
+                promise.set_value(bytes_read);
+                return future;
+            }
         }
 #endif
 
-        if (!info.already_read)
+        auto task = std::make_shared<std::packaged_task<Result()>>([request, fd]
         {
-            pool.scheduleOrThrow([request, fd, &info]
-                {
-                    setThreadName("ThreadPoolRead");
+            setThreadName("ThreadPoolRead");
 
-                    /// TODO Instrumentation.
+            /// TODO Instrumentation.
 
-                    size_t bytes_read = 0;
-                    while (!bytes_read)
-                    {
-                        ssize_t res = ::pread(fd, request.buf, request.size, request.offset);
-                        if (!res)
-                            break;
-
-                        if (-1 == res && errno != EINTR)
-                        {
-                            info.result.exception = std::make_exception_ptr(ErrnoException(
-                                fmt::format("Cannot read from file {}, {}", fd,
-                                    errnoToString(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno)),
-                                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, errno));
-                            break;
-                        }
-
-                        bytes_read += res;
-                    }
-
-                    info.result.size = bytes_read;
-                    info.event.set();
-                },
-                request.priority);
-        }
-
-        return it->first;
-    }
-
-    std::optional<Result> wait(RequestID id, std::optional<UInt64> microseconds) override
-    {
-        Result result;
-        Requests::iterator it;
-
-        {
-            std::lock_guard lock(mutex);
-            it = requests.find(id);
-            if (it == requests.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find request by id {}", id);
-        }
-
-        if (!it->second.already_read)
-        {
-            if (microseconds)
+            size_t bytes_read = 0;
+            while (!bytes_read)
             {
-                if (!it->second.event.tryWait(*microseconds / 1000))
-                    return {};
+                ssize_t res = ::pread(fd, request.buf, request.size, request.offset);
+                if (!res)
+                    break;
+
+                if (-1 == res && errno != EINTR)
+                    throwFromErrno(fmt::format("Cannot read from file {}", fd), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+
+                bytes_read += res;
             }
-            else
-                it->second.event.wait();
-        }
 
-        Result res = it->second.result;
+            return bytes_read;
+        });
 
-        {
-            std::lock_guard lock(mutex);
-            requests.erase(it);
-        }
-
-        return res;
+        auto future = task->get_future();
+        pool.scheduleOrThrow([task]{ (*task)(); }, request.priority);
+        return future;
     }
 
     ~ThreadPoolReader() override
