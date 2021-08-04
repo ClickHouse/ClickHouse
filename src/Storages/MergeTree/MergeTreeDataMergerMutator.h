@@ -207,8 +207,7 @@ private:
         const ProjectionsDescription & all_projections,
         const MutationCommands & commands_for_removes);
 
-    static ExecuteTTLType shouldExecuteTTL(
-        const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies, const MutationCommands & commands);
+    static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies);
 
     /// Return set of indices which should be recalculated during mutation also
     /// wraps input stream into additional expression stream
