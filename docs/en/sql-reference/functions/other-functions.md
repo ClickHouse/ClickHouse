@@ -2138,3 +2138,50 @@ Result:
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
+## currentProfiles {#current-profiles}
+
+Short description.
+
+**Syntax**
+
+``` sql
+currentProfiles()
+```
+
+**Returned value**
+
+-   Returned values list. 
+
+Type: [Type name](relative/path/to/type/dscr.md#type).
+
+## enabledProfiles {#enabled-profiles}
+
+Short description.
+
+**Syntax**
+
+``` sql
+enabledProfiles()
+```
+
+**Returned value**
+
+-   Returned values list. 
+
+Type: [Type name](relative/path/to/type/dscr.md#type).
+
+## defaultProfiles {#default-profiles}
+
+Short description.
+
+**Syntax**
+
+``` sql
+defaultProfiles()
+```
+
+**Returned value**
+
+-   Returned values list. 
+
+Type: [Type name](relative/path/to/type/dscr.md#type).
