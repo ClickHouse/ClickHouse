@@ -530,6 +530,7 @@ protected:
                     if (events_it->second.test(*det_part_it - 1))
                         ++events_it, ++det_part_it;
 
+                    /// abandon current matching, try to match the deterministic fragment further in the list
                     else
                     {
                         events_it = ++events_it_init;
@@ -650,8 +651,9 @@ public:
         const auto events_end = std::end(data_ref.events_list);
         auto events_it = events_begin;
 
-        bool couldMatch = this->couldMatchDeterministicParts(events_begin, events_end, this->pattern_has_time);
-        bool match = couldMatch && (this->pattern_has_time ? this->backtrackingMatch(events_it, events_end) : this->dfaMatch(events_it, events_end));
+        bool match = (this->pattern_has_time ?
+            (this->couldMatchDeterministicParts(events_begin, events_end) && this->backtrackingMatch(events_it, events_end)) :
+            this->dfaMatch(events_it, events_end));
         assert_cast<ColumnUInt8 &>(to).getData().push_back(match);
     }
 };
@@ -693,8 +695,7 @@ private:
 
         size_t count = 0;
         // check if there is a chance of matching the sequence at least once
-        bool couldMatch = this->couldMatchDeterministicParts(events_begin, events_end);
-        if (couldMatch) {
+        if (this->couldMatchDeterministicParts(events_begin, events_end)) {
             while (events_it != events_end && this->backtrackingMatch(events_it, events_end))
                 ++count;
         }
