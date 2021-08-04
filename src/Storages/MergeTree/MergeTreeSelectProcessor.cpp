@@ -19,7 +19,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
-    bool check_columns,
+    bool check_columns_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
     size_t part_index_in_query_,
@@ -35,15 +35,22 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     has_limit_below_one_block(has_limit_below_one_block_),
+    check_columns(check_columns_),
     total_rows(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
 {
-    /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
-    const auto & column_names = task_columns.columns.getNames();
-    column_name_set = NameSet{column_names.begin(), column_names.end()};
+    addTotalRowsApprox(total_rows);
+    ordered_names = header_without_virtual_columns.getNames();
+}
 
+void MergeTreeSelectProcessor::initializeReaders()
+{
     task_columns = getReadTaskColumns(
         storage, metadata_snapshot, data_part,
         required_columns, prewhere_info, check_columns);
+
+    /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter
+    const auto & column_names = task_columns.columns.getNames();
+    column_name_set = NameSet{column_names.begin(), column_names.end()};
 
     if (use_uncompressed_cache)
         owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
@@ -57,8 +64,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
         pre_reader = data_part->getReader(task_columns.pre_columns, metadata_snapshot, all_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
 
-    addTotalRowsApprox(total_rows);
-    ordered_names = header_without_virtual_columns.getNames();
 }
 
 void MergeTreeSelectProcessor::finish()
