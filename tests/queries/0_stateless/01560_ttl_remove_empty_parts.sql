@@ -10,9 +10,6 @@ SELECT count() FROM system.parts WHERE table = 'ttl_empty_parts' AND database = 
 
 ALTER TABLE ttl_empty_parts MODIFY TTL d;
 
-SELECT sleep(3) format Null;
-SELECT sleep(3) format Null;
-
 -- To be sure, that task, which clears outdated parts executed.
 DETACH TABLE ttl_empty_parts;
 ATTACH TABLE ttl_empty_parts;

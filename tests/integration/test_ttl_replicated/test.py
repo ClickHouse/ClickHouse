@@ -161,7 +161,7 @@ def test_modify_ttl(started_cluster):
             '''
                 CREATE TABLE test_ttl(d DateTime, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_modify', '{replica}')
-                ORDER BY id SETTINGS merge_with_ttl_timeout=0;
+                ORDER BY id
             '''.format(replica=node.name))
 
     node1.query(
@@ -169,15 +169,12 @@ def test_modify_ttl(started_cluster):
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
 
     node1.query("ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2")
-    time.sleep(6)  # TTL merges shall happen.
     assert node2.query("SELECT id FROM test_ttl") == "2\n3\n"
 
     node2.query("ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 2 HOUR SETTINGS mutations_sync = 2")
-    time.sleep(6)  # TTL merges shall happen.
     assert node1.query("SELECT id FROM test_ttl") == "3\n"
 
     node1.query("ALTER TABLE test_ttl MODIFY TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2")
-    time.sleep(6)  # TTL merges shall happen.
     assert node2.query("SELECT id FROM test_ttl") == ""
 
 
@@ -188,7 +185,7 @@ def test_modify_column_ttl(started_cluster):
             '''
                 CREATE TABLE test_ttl(d DateTime, id UInt32 DEFAULT 42)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/test_ttl_column', '{replica}')
-                ORDER BY d SETTINGS merge_with_ttl_timeout=0;
+                ORDER BY d
             '''.format(replica=node.name))
 
     node1.query(
@@ -196,15 +193,12 @@ def test_modify_column_ttl(started_cluster):
     node2.query("SYSTEM SYNC REPLICA test_ttl", timeout=20)
 
     node1.query("ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 4 HOUR SETTINGS mutations_sync = 2")
-    time.sleep(6)  # TTL merges shall happen.
     assert node2.query("SELECT id FROM test_ttl") == "42\n2\n3\n"
 
     node1.query("ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 2 HOUR SETTINGS mutations_sync = 2")
-    time.sleep(6)  # TTL merges shall happen.
     assert node1.query("SELECT id FROM test_ttl") == "42\n42\n3\n"
 
     node1.query("ALTER TABLE test_ttl MODIFY COLUMN id UInt32 TTL d + INTERVAL 30 MINUTE SETTINGS mutations_sync = 2")
-    time.sleep(6)  # TTL merges shall happen.
     assert node2.query("SELECT id FROM test_ttl") == "42\n42\n42\n"
 
 
@@ -304,9 +298,7 @@ def test_ttl_empty_parts(started_cluster):
             SETTINGS max_bytes_to_merge_at_min_space_in_pool = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
                 cleanup_delay_period = 1, cleanup_delay_period_random_add = 0
         '''.format(replica=node.name))
-        node.query("SYSTEM STOP TTL MERGES test_ttl_empty_parts")
 
-    
     for i in range (1, 7):
         node1.query("INSERT INTO test_ttl_empty_parts SELECT '2{}00-01-0{}', number FROM numbers(1000)".format(i % 2, i))
 
@@ -316,21 +308,18 @@ def test_ttl_empty_parts(started_cluster):
 
     node1.query("ALTER TABLE test_ttl_empty_parts MODIFY TTL date")
 
-    assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "6000\n"
+    assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "3000\n"
 
     time.sleep(3) # Wait for cleanup thread
     assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == \
-        "all_0_0_0_6\nall_1_1_0_6\nall_2_2_0_6\nall_3_3_0_6\nall_4_4_0_6\nall_5_5_0_6\n"
+        "all_0_0_0_6\nall_2_2_0_6\nall_4_4_0_6\n"
 
     for node in [node1, node2]:
         node.query("ALTER TABLE test_ttl_empty_parts MODIFY SETTING max_bytes_to_merge_at_min_space_in_pool = 1000000000")
         node.query("ALTER TABLE test_ttl_empty_parts MODIFY SETTING max_bytes_to_merge_at_max_space_in_pool = 1000000000")
-        node.query("SYSTEM START TTL MERGES test_ttl_empty_parts")
 
     optimize_with_retry(node1, 'test_ttl_empty_parts')
-    assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == "all_0_5_1_6\n"
-
-    assert node1.query("SELECT count() FROM test_ttl_empty_parts") == "3000\n"
+    assert node1.query("SELECT name FROM system.parts WHERE table = 'test_ttl_empty_parts' AND active ORDER BY name") == "all_0_4_1_6\n"
 
     # Check that after removing empty parts mutations and merges works
     node1.query("INSERT INTO test_ttl_empty_parts SELECT '2100-01-20', number FROM numbers(1000)")
