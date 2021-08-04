@@ -1,4 +1,6 @@
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 #include <Compression/CompressionFactory.h>
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 
