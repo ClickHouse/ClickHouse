@@ -288,7 +288,7 @@ SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
-Реинициализирует состояние сессий Zookeeper для таблицы семейства `ReplicatedMergeTree`. Сравнивает текущее состояние с Zookeeper (как источнике правильных значений) и при необходимости добавляет задачи в очередь репликации Zookeeper. В процессе инициализации очереди репликации на основе данных ZooKeeper, какое-то время таблица будет недоступна для любых операций.
+Реинициализирует состояние сессий Zookeeper для таблицы семейства `ReplicatedMergeTree`. Сравнивает текущее состояние с Zookeeper (как с эталоном) и при необходимости добавляет задачи в очередь репликации Zookeeper. В процессе инициализации очереди репликации на основе данных ZooKeeper, какое-то время таблица будет недоступна для любых операций.
 
 ``` sql
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
@@ -311,7 +311,7 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 
 Предупреждение: потерянные данные в любых состояниях перемещаются в папку `detached/`. Части, активные до потери данных (для которых сделан commit), прикрепляются.
 
-#### Синтаксис
+**Синтаксис**
 
 ```sql
 SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
@@ -323,7 +323,7 @@ SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER 
 SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
 ```
 
-#### Пример
+**Пример**
 
 ```sql
 -- Создание таблицы на нескольких серверах
