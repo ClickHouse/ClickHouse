@@ -34,9 +34,11 @@ StorageView::StorageView(
     const StorageID & table_id_,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
-    const String & comment)
+    const String & comment,
+    const bool use_global_context_)
     : IStorage(table_id_)
 {
+    use_global_context = use_global_context_;
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
@@ -87,9 +89,12 @@ void StorageView::read(
     }
 
     auto modified_context = Context::createCopy(context);
-    /// Use settings from global context,
-    /// because difference between settings set on VIEW creation and query execution can break queries
-    modified_context->setSettings(context->getGlobalContext()->getSettingsRef());
+    if (use_global_context)
+    {
+        /// Use settings from global context,
+        /// because difference between settings set on VIEW creation and query execution can break queries
+        modified_context->setSettings(context->getGlobalContext()->getSettingsRef());
+    }
 
     InterpreterSelectWithUnionQuery interpreter(current_inner_query, modified_context, {}, column_names);
     interpreter.buildQueryPlan(query_plan);

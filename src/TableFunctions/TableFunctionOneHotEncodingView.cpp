@@ -36,7 +36,7 @@ std::tuple<const String, const String> TableFunctionOneHotEncodingView::getWithA
     return std::make_tuple(with, select);
 }
 
-void TableFunctionOneHotEncodingView::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionOneHotEncodingView::parseArguments(const ASTPtr & ast_function, ContextPtr /* context */)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (function)
@@ -65,12 +65,7 @@ void TableFunctionOneHotEncodingView::parseArguments(const ASTPtr & ast_function
 
                 ParserSelectWithUnionQuery parser;
                 ASTPtr ohe_query = parseQuery(parser, ohe_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-                /// FIXME: given that we are using arrayMap we
-                ///        need to force max_block_size to 2 for optimal performance
-                ///        given that the cardinality of column can be high.
-                ///        Ideally, this needs to be calculated dynamically but for that we
-                ///        would need to know the actual cardinality for each column.
-                context->getGlobalContext()->setSetting("max_block_size", 2);
+
                 /// set select query inside the create query for the view
                 create.set(create.select, ohe_query);
                 return;
@@ -93,7 +88,7 @@ StoragePtr TableFunctionOneHotEncodingView::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
-    auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns, "");
+    auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns, "", false);
     res->startup();
     return res;
 }

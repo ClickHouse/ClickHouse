@@ -49,11 +49,14 @@ public:
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
 
 protected:
+    bool use_global_context;
+
     StorageView(
         const StorageID & table_id_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        const String & comment);
+        const String & comment,
+        const bool use_global_context_=true);
 };
 
 }
