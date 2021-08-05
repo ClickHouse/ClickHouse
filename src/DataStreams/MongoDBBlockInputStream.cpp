@@ -150,13 +150,14 @@ std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database
     return cursor;
 }
 
-MongoDBBlockInputStream::MongoDBBlockInputStream(
+MongoDBSource::MongoDBSource(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,
     std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
     const Block & sample_block,
     UInt64 max_block_size_,
     bool strict_check_names_)
-    : connection(connection_)
+    : SourceWithProgress(sample_block.cloneEmpty())
+    , connection(connection_)
     , cursor{std::move(cursor_)}
     , max_block_size{max_block_size_}
     , strict_check_names{strict_check_names_}
@@ -165,7 +166,7 @@ MongoDBBlockInputStream::MongoDBBlockInputStream(
 }
 
 
-MongoDBBlockInputStream::~MongoDBBlockInputStream() = default;
+MongoDBSource::~MongoDBSource() = default;
 
 
 namespace
@@ -307,7 +308,7 @@ namespace
 }
 
 
-Block MongoDBBlockInputStream::readImpl()
+Chunk MongoDBSource::generate()
 {
     if (all_read)
         return {};
@@ -362,7 +363,7 @@ Block MongoDBBlockInputStream::readImpl()
     if (num_rows == 0)
         return {};
 
-    return description.sample_block.cloneWithColumns(std::move(columns));
+    return Chunk(std::move(columns), num_rows);
 }
 
 }

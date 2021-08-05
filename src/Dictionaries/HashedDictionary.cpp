@@ -367,10 +367,12 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        auto stream = source_ptr->loadUpdatedAll();
-        stream->readPrefix();
+        QueryPipeline pipeline;
+        pipeline.init(source_ptr->loadUpdatedAll());
 
-        while (const auto block = stream->read())
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
+        while (executor.pull(block))
         {
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
@@ -383,15 +385,14 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
-        stream->readSuffix();
     }
     else
     {
-        auto stream = source_ptr->loadUpdatedAll();
-        mergeBlockWithStream<dictionary_key_type>(
+        auto pipe = source_ptr->loadUpdatedAll();
+        mergeBlockWithPipe<dictionary_key_type>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            stream);
+            std::move(pipe));
     }
 
     if (update_field_loaded_block)
@@ -560,15 +561,15 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
     {
         std::atomic<size_t> new_size = 0;
 
-        BlockInputStreamPtr stream;
+        QueryPipeline pipeline;
         if (configuration.preallocate)
-            stream = source_ptr->loadAllWithSizeHint(&new_size);
+            pipeline.init(source_ptr->loadAllWithSizeHint(&new_size));
         else
-            stream = source_ptr->loadAll();
+            pipeline.init(source_ptr->loadAll());
 
-        stream->readPrefix();
-
-        while (const auto block = stream->read())
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
+        while (executor.pull(block))
         {
             if (configuration.preallocate && new_size)
             {
@@ -584,8 +585,6 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 
             blockToAttributes(block);
         }
-
-        stream->readSuffix();
     }
     else
         updateData();

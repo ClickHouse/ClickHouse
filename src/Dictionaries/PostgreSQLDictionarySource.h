@@ -42,10 +42,10 @@ public:
     PostgreSQLDictionarySource(const PostgreSQLDictionarySource & other);
     PostgreSQLDictionarySource & operator=(const PostgreSQLDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll() override;
-    BlockInputStreamPtr loadUpdatedAll() override;
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadAll() override;
+    Pipe loadUpdatedAll() override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override;
@@ -57,7 +57,7 @@ public:
 private:
     String getUpdateFieldAndDate();
     String doInvalidateQuery(const std::string & request) const;
-    BlockInputStreamPtr loadBase(const String & query);
+    Pipe loadBase(const String & query);
 
     const DictionaryStructure dict_struct;
     const Configuration configuration;
