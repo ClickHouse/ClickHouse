@@ -2429,7 +2429,10 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
         }
 
         auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), limit_length, limit_offset);
-        limit->setStepDescription("preliminary LIMIT");
+        if (do_not_skip_offset)
+            limit->setStepDescription("preliminary LIMIT (with OFFSET)");
+        else
+            limit->setStepDescription("preliminary LIMIT (without OFFSET)");
         query_plan.addStep(std::move(limit));
     }
 }
