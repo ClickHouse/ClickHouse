@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS test_alter_decimal;
 
 CREATE TABLE test_alter_decimal
 (n UInt64, d Decimal(15, 8))
-ENGINE = ReplicatedMergeTree('/clickhouse/01761_alter_decimal_zookeeper', 'r1')
+ENGINE = ReplicatedMergeTree('/clickhouse/{database}/01761_alter_decimal_zookeeper', 'r1')
 ORDER BY tuple();
 
 INSERT INTO test_alter_decimal VALUES (1, toDecimal32(5, 5));

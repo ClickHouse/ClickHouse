@@ -3,8 +3,8 @@ SET send_logs_level = 'fatal';
 DROP TABLE IF EXISTS quorum1;
 DROP TABLE IF EXISTS quorum2;
 
-CREATE TABLE quorum1(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00732/quorum_have_data', '1') ORDER BY x PARTITION BY y;
-CREATE TABLE quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00732/quorum_have_data', '2') ORDER BY x PARTITION BY y;
+CREATE TABLE quorum1(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00732/quorum_have_data', '1') ORDER BY x PARTITION BY y;
+CREATE TABLE quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00732/quorum_have_data', '2') ORDER BY x PARTITION BY y;
 
 INSERT INTO quorum1 VALUES (1, '1990-11-15');
 INSERT INTO quorum1 VALUES (2, '1990-11-15');

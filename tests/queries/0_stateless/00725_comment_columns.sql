@@ -87,4 +87,4 @@ FORMAT PrettyCompactNoEscapes;
 
 DROP TABLE IF EXISTS check_query_comment_column;
 
--- TODO: add here tests with ReplicatedMergeTree
+-- TODO: add here tests with ReplicatedMergeTree({database})

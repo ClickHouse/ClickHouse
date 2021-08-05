@@ -1,8 +1,8 @@
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test2;
 
-CREATE TABLE test (x Enum('hello' = 1, 'world' = 2), y String) ENGINE = ReplicatedMergeTree('/clickhouse/test_01346/table', 'r1') PARTITION BY x ORDER BY y;
-CREATE TABLE test2 (x Enum('hello' = 1, 'world' = 2), y String) ENGINE = ReplicatedMergeTree('/clickhouse/test_01346/table', 'r2') PARTITION BY x ORDER BY y;
+CREATE TABLE test (x Enum('hello' = 1, 'world' = 2), y String) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_01346/table', 'r1') PARTITION BY x ORDER BY y;
+CREATE TABLE test2 (x Enum('hello' = 1, 'world' = 2), y String) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_01346/table', 'r2') PARTITION BY x ORDER BY y;
 INSERT INTO test VALUES ('hello', 'test');
 
 SELECT * FROM test;

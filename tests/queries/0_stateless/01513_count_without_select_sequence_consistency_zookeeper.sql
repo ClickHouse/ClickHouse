@@ -4,9 +4,9 @@ DROP TABLE IF EXISTS quorum1 SYNC;
 DROP TABLE IF EXISTS quorum2 SYNC;
 DROP TABLE IF EXISTS quorum3 SYNC;
 
-CREATE TABLE quorum1(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_01513/sequence_consistency', '1') ORDER BY x PARTITION BY y;
-CREATE TABLE quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_01513/sequence_consistency', '2') ORDER BY x PARTITION BY y;
-CREATE TABLE quorum3(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_01513/sequence_consistency', '3') ORDER BY x PARTITION BY y;
+CREATE TABLE quorum1(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_01513/sequence_consistency', '1') ORDER BY x PARTITION BY y;
+CREATE TABLE quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_01513/sequence_consistency', '2') ORDER BY x PARTITION BY y;
+CREATE TABLE quorum3(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_01513/sequence_consistency', '3') ORDER BY x PARTITION BY y;
 
 INSERT INTO quorum1 VALUES (1, '1990-11-15');
 INSERT INTO quorum1 VALUES (2, '1990-11-15');

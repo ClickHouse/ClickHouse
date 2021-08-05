@@ -9,7 +9,7 @@ CREATE TABLE table_for_rename_pk
   value1 String,
   value2 String
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01213/table_for_rename_pk1', '1')
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_01213/table_for_rename_pk1', '1')
 PARTITION BY date
 ORDER BY (key1, pow(key2, 2), key3);
 
@@ -37,7 +37,7 @@ CREATE TABLE table_for_rename_with_primary_key
   value2 String,
   INDEX idx (value1) TYPE set(1) GRANULARITY 1
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01213/table_for_rename_pk2', '1')
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_01213/table_for_rename_pk2', '1')
 PARTITION BY date
 ORDER BY (key1, key2, key3)
 PRIMARY KEY (key1, key2);
