@@ -151,7 +151,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
     }
 
-    if (create.storage->engine->name == "Atomic" || create.storage->engine->name == "Replicated")
+    if (create.storage->engine->name == "Atomic" || create.storage->engine->name == "Replicated" || create.storage->engine->name == "MaterializedPostgreSQL")
     {
         if (create.attach && create.uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "UUID must be specified for ATTACH. "
@@ -164,7 +164,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (!create.attach && fs::exists(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path.string());
     }
-    else if (create.storage->engine->name == "MaterializeMySQL")
+    else if (create.storage->engine->name == "MaterializeMySQL" || create.storage->engine->name == "MaterializedMySQL")
     {
         /// It creates nested database with Ordinary or Atomic engine depending on UUID in query and default engine setting.
         /// Do nothing if it's an internal ATTACH on server startup or short-syntax ATTACH query from user,
@@ -204,17 +204,24 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         metadata_path = metadata_path / "metadata" / database_name_escaped;
     }
 
-    if (create.storage->engine->name == "MaterializeMySQL" && !getContext()->getSettingsRef().allow_experimental_database_materialize_mysql
+    if ((create.storage->engine->name == "MaterializeMySQL" || create.storage->engine->name == "MaterializedMySQL")
+        && !getContext()->getSettingsRef().allow_experimental_database_materialized_mysql
         && !internal)
     {
-        throw Exception("MaterializeMySQL is an experimental database engine. "
-                        "Enable allow_experimental_database_materialize_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+        throw Exception("MaterializedMySQL is an experimental database engine. "
+                        "Enable allow_experimental_database_materialized_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
     if (create.storage->engine->name == "Replicated" && !getContext()->getSettingsRef().allow_experimental_database_replicated && !internal)
     {
         throw Exception("Replicated is an experimental database engine. "
                         "Enable allow_experimental_database_replicated to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+    }
+
+    if (create.storage->engine->name == "MaterializedPostgreSQL" && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql && !internal)
+    {
+        throw Exception("MaterializedPostgreSQL is an experimental database engine. "
+                        "Enable allow_experimental_database_postgresql_replica to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", getContext());
@@ -849,7 +856,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.table);
 
             if (auto* ptr = typeid_cast<DatabaseReplicated *>(database.get());
-                ptr && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+                ptr && !getContext()->getClientInfo().is_replicated_database_internal)
             {
                 create.database = database_name;
                 guard->releaseTableLock();
@@ -943,7 +950,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
 
         if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
-            ptr && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+            ptr && !getContext()->getClientInfo().is_replicated_database_internal)
         {
             assertOrSetUUID(create, database);
             guard->releaseTableLock();

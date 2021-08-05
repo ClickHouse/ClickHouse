@@ -240,7 +240,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
   }
 ]
 ```
-  
+
 With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `MinMax`, `Partition`, `PrimaryKey` or `Skip`) and optional keys:
 
 -   `Name` — An index name (for now, is used only for `Skip` index).
