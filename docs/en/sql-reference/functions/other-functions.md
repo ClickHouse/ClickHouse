@@ -2170,7 +2170,7 @@ enabledProfiles()
 
 **Returned value**
 
--   List of the enabled setting profiles. 
+-   List of the enabled settings profiles. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
