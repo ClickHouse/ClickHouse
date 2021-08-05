@@ -651,7 +651,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
         }
     }
 
-    static const String TMP_PREFIX = "tmp_fetch_";
+    static const String TMP_PREFIX = "tmp-fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
     String part_relative_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
