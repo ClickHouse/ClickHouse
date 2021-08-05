@@ -11,7 +11,7 @@ SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM modify_sample SAMPLE 0
 ALTER TABLE modify_sample MODIFY SAMPLE BY x;
 SELECT count(), min(x), max(x), sum(x), uniqExact(x) FROM modify_sample SAMPLE 0.1;
 
-CREATE TABLE modify_sample_replicated (d Date DEFAULT '2000-01-01', x UInt8, y UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01430', 'modify_sample') PARTITION BY d ORDER BY (x, y);
+CREATE TABLE modify_sample_replicated (d Date DEFAULT '2000-01-01', x UInt8, y UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_01430', 'modify_sample') PARTITION BY d ORDER BY (x, y);
 
 INSERT INTO modify_sample_replicated (x, y) SELECT toUInt8(number) AS x, toUInt64(number) as y FROM system.numbers LIMIT 256;
 

@@ -3,7 +3,7 @@ SET optimize_on_insert = 0;
 SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS old_style;
-CREATE TABLE old_style(d Date, x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00754/old_style', 'r1', d, x, 8192);
+CREATE TABLE old_style(d Date, x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00754/old_style', 'r1', d, x, 8192);
 ALTER TABLE old_style ADD COLUMN y UInt32, MODIFY ORDER BY (x, y); -- { serverError 36 }
 DROP TABLE old_style;
 
