@@ -180,9 +180,15 @@ void IBackgroundJobExecutor::triggerTask()
 }
 
 void IBackgroundJobExecutor::backgroundTaskFunction()
+try
 {
     if (!scheduleJob())
         scheduleTask(/* with_backoff = */ true);
+}
+catch (...) /// Catch any exception to avoid thread termination.
+{
+    tryLogCurrentException(__PRETTY_FUNCTION__);
+    scheduleTask(/* with_backoff = */ true);
 }
 
 IBackgroundJobExecutor::~IBackgroundJobExecutor()
