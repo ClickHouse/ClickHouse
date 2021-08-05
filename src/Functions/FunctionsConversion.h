@@ -1939,7 +1939,7 @@ public:
             }
             else if (data_type.isInt8())
             {
-                return ConvertImpl<DataTypeInt16, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
+                return ConvertImpl<DataTypeInt8, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
                     arguments, result_type, input_rows_count, scale);
             }
             else if (data_type.isInt16())
