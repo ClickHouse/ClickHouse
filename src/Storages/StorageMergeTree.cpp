@@ -958,9 +958,19 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 
             if (!commands_for_size_validation.empty())
             {
-                MutationsInterpreter interpreter(
-                    shared_from_this(), metadata_snapshot, commands_for_size_validation, getContext(), false);
-                commands_size += interpreter.evaluateCommandsSize();
+                try
+                {
+                    MutationsInterpreter interpreter(
+                        shared_from_this(), metadata_snapshot, commands_for_size_validation, getContext(), false);
+                    commands_size += interpreter.evaluateCommandsSize();
+                }
+                catch (...)
+                {
+                    MergeTreeMutationEntry & entry = it->second;
+                    entry.latest_fail_time = time(nullptr);
+                    entry.latest_fail_reason = getCurrentExceptionMessage(false);
+                    continue;
+                }
             }
 
             if (current_ast_elements + commands_size >= max_ast_elements)
@@ -970,17 +980,25 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
             commands.insert(commands.end(), it->second.commands.begin(), it->second.commands.end());
         }
 
-        auto new_part_info = part->info;
-        new_part_info.mutation = current_mutations_by_version.rbegin()->first;
+        if (!commands.empty())
+        {
+            auto new_part_info = part->info;
+            new_part_info.mutation = current_mutations_by_version.rbegin()->first;
 
-        future_part.parts.push_back(part);
-        future_part.part_info = new_part_info;
-        future_part.name = part->getNewName(new_part_info);
-        future_part.type = part->getType();
+            future_part.parts.push_back(part);
+            future_part.part_info = new_part_info;
+            future_part.name = part->getNewName(new_part_info);
+            future_part.type = part->getType();
 
-        tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
-        return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);
+            tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
+            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);
+        }
     }
+
+    /// Notify in case of errors
+    std::unique_lock lock(mutation_wait_mutex);
+    mutation_wait_event.notify_all();
+
     return {};
 }
 
