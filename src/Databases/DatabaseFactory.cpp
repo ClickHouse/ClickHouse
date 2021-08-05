@@ -103,7 +103,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;
 
-    static const std::unordered_set<String> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
+    static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
         "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
 
     bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
