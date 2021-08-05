@@ -23,25 +23,21 @@ extern "C" void * clickhouse_calloc(size_t number_of_members, size_t size)
 
 extern "C" void * clickhouse_realloc(void * ptr, size_t size)
 {
+    if (ptr)
+        Memory::untrackMemory(ptr);
     void * res = realloc(ptr, size);
     if (res)
-    {
-        if (ptr)
-            Memory::untrackMemory(ptr);
         Memory::trackMemory(size);
-    }
     return res;
 }
 
 extern "C" void * clickhouse_reallocarray(void * ptr, size_t number_of_members, size_t size)
 {
+    if (ptr)
+        Memory::untrackMemory(ptr);
     void * res = reallocarray(ptr, number_of_members, size);
     if (res)
-    {
-        if (ptr)
-            Memory::untrackMemory(ptr);
         Memory::trackMemory(number_of_members * size);
-    }
     return res;
 }
 
