@@ -224,9 +224,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
 
         ClickHouseDictionarySource::Configuration configuration
         {
-            .secure = config.getBool(settings_config_prefix + ".secure", false),
             .host = host,
-            .port = port,
             .user = config.getString(settings_config_prefix + ".user", "default"),
             .password = config.getString(settings_config_prefix + ".password", ""),
             .db = config.getString(settings_config_prefix + ".db", default_database),
@@ -235,7 +233,9 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .is_local = isLocalAddress({host, port}, default_port)
+            .port = port,
+            .is_local = isLocalAddress({host, port}, default_port),
+            .secure = config.getBool(settings_config_prefix + ".secure", false)
         };
 
         /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).

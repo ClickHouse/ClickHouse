@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 
@@ -13,7 +14,9 @@ namespace
     {
     public:
         static constexpr auto name = "toJSONString";
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToJSONString>(); }
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionToJSONString>(context); }
+
+        explicit FunctionToJSONString(ContextPtr context) : format_settings(getFormatSettings(context)) {}
 
         String getName() const override { return name; }
 
@@ -35,7 +38,7 @@ namespace
             WriteBufferFromVector<ColumnString::Chars> json(data_to);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                serializer->serializeTextJSON(*arguments[0].column, i, json, FormatSettings());
+                serializer->serializeTextJSON(*arguments[0].column, i, json, format_settings);
                 writeChar(0, json);
                 offsets_to[i] = json.count();
             }
@@ -43,6 +46,10 @@ namespace
             json.finalize();
             return res;
         }
+
+    private:
+        /// Affects only subset of part of settings related to json.
+        const FormatSettings format_settings;
     };
 }
 

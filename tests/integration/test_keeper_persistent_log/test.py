@@ -10,7 +10,7 @@ from kazoo.client import KazooClient, KazooState
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance('node', main_configs=['configs/enable_keeper.xml', 'configs/logs_conf.xml', 'configs/use_keeper.xml'], stay_alive=True)
+node = cluster.add_instance('node', main_configs=['configs/enable_keeper.xml', 'configs/use_keeper.xml'], stay_alive=True)
 
 
 def random_string(length):

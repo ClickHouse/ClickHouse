@@ -14,6 +14,8 @@ Engines of the family:
 -   [Log](../../../engines/table-engines/log-family/log.md)
 -   [TinyLog](../../../engines/table-engines/log-family/tinylog.md)
 
+`Log` family table engines can store data to [HDFS](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-hdfs) or [S3](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-s3) distributed file systems.
+
 ## Common Properties {#common-properties}
 
 Engines:

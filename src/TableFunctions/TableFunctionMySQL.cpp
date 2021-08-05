@@ -87,7 +87,7 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr contex
         throw Exception("MySQL table " + (remote_database_name.empty() ? "" : (backQuote(remote_database_name) + "."))
             + backQuote(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-    return ColumnsDescription{columns->second};
+    return columns->second;
 }
 
 StoragePtr TableFunctionMySQL::executeImpl(
