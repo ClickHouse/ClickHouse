@@ -103,7 +103,7 @@ void TableJoin::addUsingKey(const ASTPtr & ast)
         right_key = renames[right_key];
 }
 
-/// create new disjunct when see a child of a previously descovered OR
+/// create new disjunct when see a child of a previously discovered OR
 void TableJoin::addDisjunct(const ASTPtr & ast)
 {
     const IAST * addr = ast.get();
@@ -132,7 +132,7 @@ void TableJoin::addDisjunct(const ASTPtr & ast)
 }
 
 /// remember OR's children
-void TableJoin::setDisjuncts(std::vector<const ASTPtr>&& disjuncts_)
+void TableJoin::setDisjuncts(Disjuncts&& disjuncts_)
 {
     disjuncts = std::move(disjuncts_);
 }

@@ -32,11 +32,11 @@ bool isRightIdentifier(JoinIdentifierPos pos)
 
 }
 
-void CollectJoinOnKeysMatcher::Data::setDisjuncts(const ASTPtr & ast)
+void CollectJoinOnKeysMatcher::Data::setDisjuncts(const ASTPtr & or_func_ast)
 {
-    auto * func = ast->as<ASTFunction>();
+    const auto * func = or_func_ast->as<ASTFunction>();
     const auto * func_args = func->arguments->as<ASTExpressionList>();
-    std::vector<const ASTPtr> v;
+    TableJoin::Disjuncts v;
     for (const auto & child : func_args->children)
     {
         v.push_back(child);
@@ -107,7 +107,6 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
 {
     if (func.name == "or")
     {
-        // throw Exception("JOIN ON does not support OR. Unexpected '" + queryToString(ast) + "'", ErrorCodes::NOT_IMPLEMENTED);
         data.setDisjuncts(ast);
         return;
     }
