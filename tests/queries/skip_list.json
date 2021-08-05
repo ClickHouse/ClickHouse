@@ -498,6 +498,7 @@
         "01902_table_function_merge_db_repr",
         "01946_test_zstd_decompression_with_escape_sequence_at_the_end_of_buffer",
         "01946_test_wrong_host_name_access",
+        "01493_alter_remove_properties_zookeeper",
         "00510_materizlized_view_and_deduplication_zookeeper", /// static UUID
         "00509_extended_storage_definition_syntax_zookeeper", /// leftovers
         "00083_create_merge_tree_zookeeper", /// leftovers
