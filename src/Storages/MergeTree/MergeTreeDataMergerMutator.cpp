@@ -1991,7 +1991,7 @@ ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadat
     {
         if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
             has_ttl_expression = true;
-        
+
         if (dependency.kind == ColumnDependency::TTL_TARGET)
             return ExecuteTTLType::NORMAL;
     }
@@ -2243,7 +2243,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
 
     if (execute_ttl_type == ExecuteTTLType::RECALCULATE)
         mutating_stream = std::make_shared<TTLCalcInputStream>(mutating_stream, data, metadata_snapshot, new_data_part, time_of_mutation, true);
-    
+
     IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
     MergedColumnOnlyOutputStream out(
         new_data_part,

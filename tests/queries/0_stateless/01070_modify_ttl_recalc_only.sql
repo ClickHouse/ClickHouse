@@ -13,7 +13,6 @@ insert into ttl values (toDateTime('2100-10-10 00:00:00'), 4);
 
 alter table ttl modify ttl d + interval 1 day;
 select * from ttl order by a;
-select delete_ttl_info_min, delete_ttl_info_max  from system.parts where table = 'ttl' and active > 0 order by name asc;
 optimize table ttl final;
 select * from ttl order by a;
 select '=============';
@@ -27,14 +26,12 @@ insert into ttl values (1, 'a') (2, 'b') (3, 'c') (4, 'd');
 
 alter table ttl modify ttl i % 2 = 0 ? toDate('2000-01-01') : toDate('2100-01-01');
 select * from ttl order by i;
-select delete_ttl_info_min, delete_ttl_info_max  from system.parts where table = 'ttl' and active > 0;
 optimize table ttl final;
 select * from ttl order by i;
 select '=============';
 
 alter table ttl modify ttl toDate('2000-01-01');
 select * from ttl order by i;
-select delete_ttl_info_min, delete_ttl_info_max  from system.parts where table = 'ttl' and active > 0;
 optimize table ttl final;
 select * from ttl order by i;
 select '=============';
@@ -67,7 +64,6 @@ insert into ttl values (toDate('2000-01-02'), 1, 'a') (toDate('2000-01-03'), 2, 
 
 alter table ttl modify ttl i % 3 = 0 ? toDate('2000-01-01') : toDate('2100-01-01');
 select i, s from ttl order by i;
-select delete_ttl_info_min, delete_ttl_info_max  from system.parts where table = 'ttl' and active > 0;
 optimize table ttl final;
 select i, s from ttl order by i;
 select '=============';

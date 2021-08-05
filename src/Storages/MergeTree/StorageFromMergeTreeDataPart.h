@@ -76,7 +76,7 @@ public:
     {
         return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
     }
-    
+
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))
