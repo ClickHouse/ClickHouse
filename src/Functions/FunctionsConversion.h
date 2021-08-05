@@ -1020,7 +1020,8 @@ template <typename FromDataType, typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode, ConvertFromStringParsingMode parsing_mode>
 struct ConvertThroughParsing
 {
-    static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>,
+    static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>
+        || std::is_same_v<FromDataType, DataTypeUInt32>,
         "ConvertThroughParsing is only applicable for String or FixedString data types");
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
@@ -1832,7 +1833,7 @@ public:
                     ", should be 1 or 2. Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            if (!isStringOrFixedString(arguments[0].type))
+            if (!isStringOrFixedString(arguments[0].type) && !isInteger(arguments[0].type))
             {
                 if (this->getName().find("OrZero") != std::string::npos ||
                     this->getName().find("OrNull") != std::string::npos)
@@ -1870,6 +1871,10 @@ public:
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDate>)
+                res = std::make_shared<DataTypeDate>();
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDate32>)
+                res = std::make_shared<DataTypeDate32>();
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
             else if constexpr (to_decimal)
@@ -1884,7 +1889,11 @@ public:
         }
 
         if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
-            res = std::make_shared<DataTypeNullable>(res);
+        {
+            auto to_type = WhichDataType(res);
+            if (!(isInteger(arguments[0].type) && (to_type.isDateOrDate32() || to_type.isDateTime() || to_type.isDateTime64())))
+                res = std::make_shared<DataTypeNullable>(res);
+        }
 
         return res;
     }
@@ -1903,6 +1912,51 @@ public:
         {
             return ConvertThroughParsing<DataTypeFixedString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
                 arguments, result_type, input_rows_count, scale);
+        }
+        else if (isInteger(from_type))
+        {
+            auto data_type = WhichDataType(from_type);
+
+            if (data_type.isUInt8())
+            {
+                return ConvertImpl<DataTypeUInt8, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
+                    arguments, result_type, input_rows_count, scale);
+            }
+            else if (data_type.isUInt16())
+            {
+                return ConvertImpl<DataTypeUInt16, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
+                    arguments, result_type, input_rows_count, scale);
+            }
+            else if (data_type.isUInt32())
+            {
+                return ConvertImpl<DataTypeUInt32, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
+                    arguments, result_type, input_rows_count, scale);
+            }
+            else if (data_type.isUInt64())
+            {
+                return ConvertImpl<DataTypeUInt64, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
+                    arguments, result_type, input_rows_count, scale);
+            }
+            else if (data_type.isInt8())
+            {
+                return ConvertImpl<DataTypeInt16, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
+                    arguments, result_type, input_rows_count, scale);
+            }
+            else if (data_type.isInt16())
+            {
+                return ConvertImpl<DataTypeInt16, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
+                    arguments, result_type, input_rows_count, scale);
+            }
+            else if (data_type.isInt32())
+            {
+                return ConvertImpl<DataTypeInt32, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
+                    arguments, result_type, input_rows_count, scale);
+            }
+            else if (data_type.isInt64())
+            {
+                return ConvertImpl<DataTypeInt64, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
+                    arguments, result_type, input_rows_count, scale);
+            }
         }
 
         return nullptr;
