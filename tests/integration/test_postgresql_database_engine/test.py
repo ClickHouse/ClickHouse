@@ -151,7 +151,7 @@ def test_postgresql_database_engine_table_cache(started_cluster):
     cursor = conn.cursor()
 
     node1.query(
-        "CREATE DATABASE test_database ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', "", 1)")
+        "CREATE DATABASE test_database ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', '', 1)")
 
     create_postgres_table(cursor, 'test_table')
     assert node1.query('DESCRIBE TABLE test_database.test_table').rstrip() == 'id\tInt32\t\t\t\t\t\nvalue\tNullable(Int32)'

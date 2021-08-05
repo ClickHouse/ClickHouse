@@ -203,12 +203,14 @@ void DatabasePostgreSQL::attachTable(const String & table_name, const StoragePtr
     std::lock_guard<std::mutex> lock{mutex};
 
     if (!checkPostgresTable(table_name))
-        throw Exception(fmt::format("Cannot attach PostgreSQL table {} because it does not exist in PostgreSQL",
-                                    getTableNameForLogs(table_name), database_name), ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                        "Cannot attach PostgreSQL table {} because it does not exist in PostgreSQL",
+                        getTableNameForLogs(table_name), database_name);
 
     if (!detached_or_dropped.count(table_name))
-        throw Exception(fmt::format("Cannot attach PostgreSQL table {} because it already exists",
-                                    getTableNameForLogs(table_name), database_name), ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                        "Cannot attach PostgreSQL table {} because it already exists",
+                        getTableNameForLogs(table_name), database_name);
 
     if (cache_tables)
         cached_tables[table_name] = storage;
@@ -226,10 +228,10 @@ StoragePtr DatabasePostgreSQL::detachTable(const String & table_name)
     std::lock_guard<std::mutex> lock{mutex};
 
     if (detached_or_dropped.count(table_name))
-        throw Exception(fmt::format("Cannot detach table {}. It is already dropped/detached", getTableNameForLogs(table_name)), ErrorCodes::TABLE_IS_DROPPED);
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Cannot detach table {}. It is already dropped/detached", getTableNameForLogs(table_name));
 
     if (!checkPostgresTable(table_name))
-        throw Exception(fmt::format("Cannot detach table {}, because it does not exist", getTableNameForLogs(table_name)), ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot detach table {}, because it does not exist", getTableNameForLogs(table_name));
 
     if (cache_tables)
         cached_tables.erase(table_name);
@@ -257,10 +259,10 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
     std::lock_guard<std::mutex> lock{mutex};
 
     if (!checkPostgresTable(table_name))
-        throw Exception(fmt::format("Cannot drop table {} because it does not exist", getTableNameForLogs(table_name)), ErrorCodes::UNKNOWN_TABLE);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot drop table {} because it does not exist", getTableNameForLogs(table_name));
 
     if (detached_or_dropped.count(table_name))
-        throw Exception(fmt::format("Table {} is already dropped/detached", getTableNameForLogs(table_name)), ErrorCodes::TABLE_IS_DROPPED);
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
     FS::createFile(mark_table_removed);
@@ -357,7 +359,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     if (!storage)
     {
         if (throw_on_error)
-            throw Exception(fmt::format("PostgreSQL table {} does not exist", getTableNameForLogs(table_name)), ErrorCodes::UNKNOWN_TABLE);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", getTableNameForLogs(table_name));
 
         return nullptr;
     }
