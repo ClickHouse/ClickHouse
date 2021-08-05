@@ -759,38 +759,6 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     }
 
 
-    /// Save blocks that do not hold conditions in ON section
-    ColumnUInt8::MutablePtr not_joined_map = nullptr;
-    if (isRightOrFull(kind) && use_join_mask_col)
-    {
-        /// Save rows that do not hold conditions
-        not_joined_map = ColumnUInt8::create(block.rows(), 0);
-        const size_t sz = assert_cast<const ColumnUInt8 &>(*(join_mask_col_vector[0])).getData().size();
-        for (size_t i = 0; i < sz; ++i)
-        {
-            bool add_to_not_joined_map = true;
-
-            /// Condition hold, do not save row
-            for (size_t d = 0; d < disjuncts_num; ++d)
-            {
-                const auto & join_mask = assert_cast<const ColumnUInt8 &>(*(join_mask_col_vector[d])).getData();
-                if (join_mask[i])
-                {
-                    add_to_not_joined_map = false;
-                    break;
-                }
-            }
-
-
-            // !!!
-            // /// NULL key will be saved anyway because, do not save twice
-            // if (save_nullmap && (*null_map)[i])
-            //     continue;
-            if (add_to_not_joined_map)
-                not_joined_map->getData()[i] = 1;
-        }
-    }
-
     std::vector<ConstNullMapPtr> null_map_vector;
     Columns null_map_holder_vector;
 
@@ -847,9 +815,6 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
                     });
                 }
 
-                if (not_joined_map)
-                    data->blocks_nullmaps.emplace_back(stored_block, std::move(not_joined_map));
-
                 if (!check_limits)
                     return true;
 
@@ -860,9 +825,33 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         }
 
 
-        if (save_a_nullmap && !multiple_disjuncts)
+        if (!multiple_disjuncts)
         {
-            data->blocks_nullmaps.emplace_back(stored_block, null_map_holder_vector[0]);
+            /// Save blocks that do not hold conditions in ON section
+            ColumnUInt8::MutablePtr not_joined_map = nullptr;
+            if (!multiple_disjuncts && isRightOrFull(kind) && join_mask_col_vector[0])
+            {
+                const auto & join_mask = assert_cast<const ColumnUInt8 &>(*join_mask_col_vector[0]).getData();
+                /// Save rows that do not hold conditions
+                not_joined_map = ColumnUInt8::create(block.rows(), 0);
+                for (size_t i = 0, sz = join_mask.size(); i < sz; ++i)
+                {
+                    /// Condition hold, do not save row
+                    if (join_mask[i])
+                        continue;
+
+                    /// NULL key will be saved anyway because, do not save twice
+                    if (save_a_nullmap && (*null_map_vector[0])[i])
+                        continue;
+
+                    not_joined_map->getData()[i] = 1;
+                }
+            }
+
+            if (save_a_nullmap)
+                data->blocks_nullmaps.emplace_back(stored_block, null_map_holder_vector[0]);
+            if (not_joined_map)
+                data->blocks_nullmaps.emplace_back(stored_block, std::move(not_joined_map));
         }
     }
 

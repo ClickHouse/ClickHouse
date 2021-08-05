@@ -57,6 +57,7 @@ SELECT DISTINCT t1.key, toUInt8(t1.id) as e FROM t1 INNER ANY JOIN t2 ON t1.id =
 
 SELECT '--';
 SELECT t1.id, t1.key, t1.key2, t2.id, t2.key, t2.key2  FROM t1 FULL JOIN t2 ON t1.id == t2.id AND t2.key == t2.key2 AND t1.key == t1.key2 ORDER BY t1.id, t2.id;
+SELECT t1.id, t1.key, t1.key2, t22.id, t22.idd, t22.key, t22.key2  FROM t1 FULL JOIN t22 ON t1.id == t22.id AND t22.key == t22.key2 AND t1.key == t1.key2 OR t1.id = t22.idd AND t1.key = t1.key2 ORDER BY t1.id, t22.id;
 
 SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t1.id; -- { serverError 403 }
 SELECT * FROM t1 INNER ALL JOIN t2 ON t1.id == t2.id AND t2.id; -- { serverError 403 }
