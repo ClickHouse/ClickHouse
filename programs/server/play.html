@@ -367,7 +367,7 @@
         const server_address = document.getElementById('url').value;
 
         const url = server_address +
-            (~server_address.indexOf('?') ? '&' : '?') + 
+            (server_address.indexOf('?') >= 0 ? '&' : '?') + 
             /// Ask server to allow cross-domain requests.
             'add_http_cors_header=1' +
             '&user=' + encodeURIComponent(user) +
