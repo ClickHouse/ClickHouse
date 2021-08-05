@@ -510,25 +510,26 @@ protected:
     {
         size_t events_processed = 0;
         auto events_it = events_begin;
-        std::vector<UInt64> det_part;
 
-        auto find_deterministic_part = [&events_it, &events_end, &events_processed, &det_part, limit_iterations]()
+        const auto actions_end = std::end(actions);
+        auto actions_it = std::begin(actions);
+        auto det_part_begin = actions_it;
+
+        auto match_deterministic_part = [&events_it, events_end, &events_processed, det_part_begin, actions_it, limit_iterations]()
         {
             auto events_it_init = events_it;
-            const auto det_part_begin = std::begin(det_part);
-            const auto det_part_end = std::end(det_part);
             auto det_part_it = det_part_begin;
 
-            while (det_part_it != det_part_end && events_it != events_end)
+            while (det_part_it != actions_it && events_it != events_end)
             {
                 /// matching any event
-                if (*det_part_it == 0)
+                if (det_part_it->type == PatternActionType::AnyEvent)
                     ++events_it, ++det_part_it;
 
                 /// matching specific event
                 else
                 {
-                    if (events_it->second.test(*det_part_it - 1))
+                    if (events_it->second.test(det_part_it->extra))
                         ++events_it, ++det_part_it;
 
                     /// abandon current matching, try to match the deterministic fragment further in the list
@@ -544,33 +545,18 @@ protected:
                         ErrorCodes::TOO_SLOW};
             }
 
-            det_part.clear();
-            return det_part_it == det_part_end;
+            return det_part_it == actions_it;
         };
 
-        for (auto action : actions)
-        {
-            switch (action.type)
+        for (; actions_it != actions_end; ++actions_it)
+            if (actions_it->type != PatternActionType::SpecificEvent && actions_it->type != PatternActionType::AnyEvent)
             {
-                /// mark AnyEvent action with 0 and SpecificEvent with positive numbers corresponding to the events
-                case PatternActionType::SpecificEvent:
-                    det_part.push_back(action.extra + 1);
-                    break;
-                case PatternActionType::AnyEvent:
-                    det_part.push_back(0);
-                    break;
-                case PatternActionType::KleeneStar:
-                case PatternActionType::TimeLessOrEqual:
-                case PatternActionType::TimeLess:
-                case PatternActionType::TimeGreaterOrEqual:
-                case PatternActionType::TimeGreater:
-                case PatternActionType::TimeEqual:
-                    if (!find_deterministic_part())
-                        return false;
+                if (!match_deterministic_part())
+                    return false;
+                det_part_begin = std::next(actions_it);
             }
-        }
 
-        return find_deterministic_part();
+        return match_deterministic_part();
     }
 
 private:
