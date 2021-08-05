@@ -3,11 +3,14 @@ toc_priority: 67
 toc_title: NLP
 ---
 
-# Natural Language Processing functions {#nlp-functions}
+# [experimental] Natural Language Processing functions {#nlp-functions}
+
+!!! warning "Warning"
+    This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in future releases. Set `allow_experimental_nlp_functions = 1` to enable it.
 
 ## stem {#stem}
 
-Performs stemming on a previously tokenized text.
+Performs stemming on a given word.
 
 **Syntax**
 
@@ -38,7 +41,7 @@ Result:
 
 ## lemmatize {#lemmatize}
 
-Performs lemmatization on a given word.
+Performs lemmatization on a given word. Needs dictionaries to operate, which can be obtained [here](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
 
 **Syntax**
 
@@ -79,7 +82,11 @@ Configuration:
 
 ## synonyms {#synonyms}
 
-Finds synonyms to a given word. 
+Finds synonyms to a given word. There are two types of synonym extensions: `plain` and `wordnet`.
+
+With the `plain` extension type we need to provide a path to a simple text file, where each line corresponds to a certain synonym set. Words in this line must be separated with space or tab characters.
+
+With the `wordnet` extension type we need to provide a path to a directory with WordNet thesaurus in it. Thesaurus must contain a WordNet sense index.
 
 **Syntax**
 
@@ -89,7 +96,7 @@ synonyms('extension_name', word)
 
 **Arguments**
 
--   `extension_name` — Name of the extention in which search will be performed. [String](../../sql-reference/data-types/string.md#string).
+-   `extension_name` — Name of the extension in which search will be performed. [String](../../sql-reference/data-types/string.md#string).
 -   `word` — Word that will be searched in extension. [String](../../sql-reference/data-types/string.md#string).
 
 **Examples**

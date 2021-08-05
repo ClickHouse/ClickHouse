@@ -1928,11 +1928,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 }
             }
 
+            /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
+            UInt64 limit = (query.hasFiltration() || query.groupBy()) ? 0 : getLimitForSorting(query, context);
             if (query_info.projection)
                 query_info.projection->input_order_info
-                    = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context);
+                    = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context, limit);
             else
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context);
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context, limit);
         }
 
         StreamLocalLimits limits;
@@ -2292,8 +2294,14 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 {
     const Settings & settings = context->getSettingsRef();
 
+    const auto & query = getSelectQuery();
     auto finish_sorting_step = std::make_unique<FinishSortingStep>(
-        query_plan.getCurrentDataStream(), input_sorting_info->order_key_prefix_descr, output_order_descr, settings.max_block_size, limit);
+        query_plan.getCurrentDataStream(),
+        input_sorting_info->order_key_prefix_descr,
+        output_order_descr,
+        settings.max_block_size,
+        limit,
+        query.hasFiltration());
 
     query_plan.addStep(std::move(finish_sorting_step));
 }
