@@ -34,9 +34,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-    extern const int CANNOT_SCHEDULE_TASK;
 }
 
 /** Perform reads from separate thread pool of specified size.
