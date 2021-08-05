@@ -1507,9 +1507,9 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         // Select all fields
         ASTPtr query_select_ast;
         if (number_of_splits == 1)
-            get_select_query(task_shard.table_read_shard, "*", /*enable_splitting*/ false, inject_fault ? "1" : "");
+            query_select_ast = get_select_query(task_shard.table_read_shard, "*", /*enable_splitting*/ false, inject_fault ? "1" : "");
         else
-            get_select_query(task_shard.table_read_shard, "*", /*enable_splitting*/ true, inject_fault ? "1" : "");
+            query_select_ast = get_select_query(task_shard.table_read_shard, "*", /*enable_splitting*/ true, inject_fault ? "1" : "");
 
         LOG_INFO(log, "Executing SELECT query and pull from {} : {}", task_shard.getDescription(), queryToString(query_select_ast));
 
