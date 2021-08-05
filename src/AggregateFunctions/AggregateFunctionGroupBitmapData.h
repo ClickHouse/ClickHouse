@@ -68,14 +68,12 @@ public:
                 {
                     toLarge();
                     rb->add(static_cast<Value>(value));
-                    CurrentMemoryTracker::check();
                 }
             }
         }
         else
         {
             rb->add(static_cast<Value>(value));
-            CurrentMemoryTracker::check();
         }
     }
 
