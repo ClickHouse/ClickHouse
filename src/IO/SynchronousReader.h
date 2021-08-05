@@ -28,8 +28,9 @@ class SynchronousReader final : public IAsynchronousReader
 public:
     std::future<Result> submit(Request request) override
     {
-#if defined(POSIX_FADV_WILLNEED)
         int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
+
+#if defined(POSIX_FADV_WILLNEED)
         if (0 != posix_fadvise(fd, request.offset, request.size, POSIX_FADV_WILLNEED))
             throwFromErrno("Cannot posix_fadvise", ErrorCodes::CANNOT_ADVISE);
 #endif
