@@ -196,7 +196,7 @@ public:
 
     void commit();
 
-    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions()); }
+    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions() || ops.empty()); }
 };
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);

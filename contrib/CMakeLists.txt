@@ -328,6 +328,12 @@ endif()
 
 add_subdirectory(fast_float)
 
+if (USE_NLP)
+    add_subdirectory(libstemmer-c-cmake)
+    add_subdirectory(wordnet-blast-cmake)
+    add_subdirectory(lemmagen-c-cmake)
+endif()
+
 if (USE_SQLITE)
     add_subdirectory(sqlite-cmake)
 endif()
