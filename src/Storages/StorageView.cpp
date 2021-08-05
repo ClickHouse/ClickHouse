@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -29,6 +30,36 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+bool isNullableOrLcNullable(DataTypePtr type)
+{
+    if (type->isNullable())
+        return true;
+
+    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return lc_type->getDictionaryType()->isNullable();
+
+    return false;
+}
+
+/// Returns `true` if there are nullable column in src but corresponding column in dst is not
+bool changedNullabilityOneWay(const Block & src_block, const Block & dst_block)
+{
+    std::unordered_map<String, bool> src_nullable;
+    for (const auto & col : src_block)
+        src_nullable[col.name] = isNullableOrLcNullable(col.type);
+
+    for (const auto & col : dst_block)
+    {
+        if (!isNullableOrLcNullable(col.type) && src_nullable[col.name])
+            return true;
+    }
+    return false;
+}
+
+}
 
 StorageView::StorageView(
     const StorageID & table_id_,
@@ -99,10 +130,17 @@ void StorageView::read(
     query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
-    auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    const auto & expected_header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    const auto & header = query_plan.getCurrentDataStream().header;
+
+    if (changedNullabilityOneWay(header, expected_header))
+    {
+        throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Joined columns is nullable, but setting `join_use_nulls` wans't set on CREATE VIEW");
+    }
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
             header.getColumnsWithTypeAndName(),
+            expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
 
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);
