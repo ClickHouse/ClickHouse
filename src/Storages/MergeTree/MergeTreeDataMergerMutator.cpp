@@ -828,7 +828,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     UInt64 watch_prev_elapsed = 0;
 
     /// We count total amount of bytes in parts
-    /// and use direct_io + aio if there is more than min_merge_bytes_to_use_direct_io
+    /// and use direct_io if there is more than min_merge_bytes_to_use_direct_io
     bool read_with_direct_io = false;
     if (data_settings->min_merge_bytes_to_use_direct_io != 0)
     {
@@ -894,7 +894,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_transform = std::make_unique<MergingSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size, 0, rows_sources_write_buf.get(), true, blocks_are_granules_size);
+                header, pipes.size(), sort_description, merge_block_size, 0, false, rows_sources_write_buf.get(), true, blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:

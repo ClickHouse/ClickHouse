@@ -283,6 +283,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     checkStackSize();
 
     query_info.ignore_projections = options.ignore_projections;
+    query_info.is_projection_query = options.is_projection_query;
 
     initSettings();
     const Settings & settings = context->getSettingsRef();
@@ -386,6 +387,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
+        context->setDistributed(syntax_analyzer_result->is_remote_storage);
+
+        if (storage && !query.final() && storage->needRewriteQueryWithFinal(syntax_analyzer_result->requiredSourceColumns()))
+            query.setFinal();
 
         /// Save scalar sub queries's results in the query context
         if (!options.only_analyze && context->hasQueryContext())
@@ -399,7 +404,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        if (try_move_to_prewhere && storage && query.where() && !query.prewhere())
+        if (try_move_to_prewhere && storage && storage->supportsPrewhere() && query.where() && !query.prewhere())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
@@ -575,9 +580,9 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 
     /// We must guarantee that result structure is the same as in getSampleBlock()
     ///
-    /// But if we ignore aggregation, plan header does not match result_header.
+    /// But if it's a projection query, plan header does not match result_header.
     /// TODO: add special stage for InterpreterSelectQuery?
-    if (!options.ignore_aggregation && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
+    if (!options.is_projection_query && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
@@ -608,16 +613,16 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     query_info.query = query_ptr;
     query_info.has_window = query_analyzer->hasWindow();
-
     if (storage && !options.only_analyze)
     {
-        from_stage = storage->getQueryProcessingStage(context, options.to_stage, metadata_snapshot, query_info);
-
-        /// TODO how can we make IN index work if we cache parts before selecting a projection?
-        /// XXX Used for IN set index analysis. Is this a proper way?
-        if (query_info.projection)
-            metadata_snapshot->selected_projection = query_info.projection->desc;
+        auto & query = getSelectQuery();
+        query_analyzer->makeSetsForIndex(query.where());
+        query_analyzer->makeSetsForIndex(query.prewhere());
+        query_info.sets = query_analyzer->getPreparedSets();
     }
+
+    if (storage && !options.only_analyze)
+        from_stage = storage->getQueryProcessingStage(context, options.to_stage, metadata_snapshot, query_info);
 
     /// Do I need to perform the first part of the pipeline?
     /// Running on remote servers during distributed processing or if query is not distributed.
@@ -1728,7 +1733,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         syntax_analyzer_result->optimize_trivial_count
         && (settings.max_parallel_replicas <= 1)
         && storage
-        && storage->getName() != "MaterializeMySQL"
+        && storage->getName() != "MaterializedMySQL"
         && !row_policy_filter
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
@@ -1881,8 +1886,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        // TODO figure out how to make set for projections
-        query_info.sets = query_analyzer->getPreparedSets();
         auto & prewhere_info = analysis_result.prewhere_info;
 
         if (prewhere_info)
@@ -1925,11 +1928,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 }
             }
 
+            /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
+            UInt64 limit = (query.hasFiltration() || query.groupBy()) ? 0 : getLimitForSorting(query, context);
             if (query_info.projection)
                 query_info.projection->input_order_info
-                    = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context);
+                    = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context, limit);
             else
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context);
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context, limit);
         }
 
         StreamLocalLimits limits;
@@ -2013,7 +2018,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     expression_before_aggregation->setStepDescription("Before GROUP BY");
     query_plan.addStep(std::move(expression_before_aggregation));
 
-    if (options.ignore_aggregation)
+    if (options.is_projection_query)
         return;
 
     const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
@@ -2287,8 +2292,14 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 {
     const Settings & settings = context->getSettingsRef();
 
+    const auto & query = getSelectQuery();
     auto finish_sorting_step = std::make_unique<FinishSortingStep>(
-        query_plan.getCurrentDataStream(), input_sorting_info->order_key_prefix_descr, output_order_descr, settings.max_block_size, limit);
+        query_plan.getCurrentDataStream(),
+        input_sorting_info->order_key_prefix_descr,
+        output_order_descr,
+        settings.max_block_size,
+        limit,
+        query.hasFiltration());
 
     query_plan.addStep(std::move(finish_sorting_step));
 }

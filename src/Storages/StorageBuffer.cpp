@@ -5,7 +5,6 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -26,11 +25,13 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+
 
 namespace ProfileEvents
 {
@@ -137,7 +138,7 @@ public:
     BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage, const StorageMetadataPtr & metadata_snapshot)
         : SourceWithProgress(
             metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names_))
+        , column_names_and_types(metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names_, true))
         , buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
@@ -242,8 +243,8 @@ void StorageBuffer::read(
         {
             const auto & dest_columns = destination_metadata_snapshot->getColumns();
             const auto & our_columns = metadata_snapshot->getColumns();
-            return dest_columns.hasPhysicalOrSubcolumn(column_name) &&
-                   dest_columns.getPhysicalOrSubcolumn(column_name).type->equals(*our_columns.getPhysicalOrSubcolumn(column_name).type);
+            auto dest_columm = dest_columns.tryGetColumnOrSubcolumn(ColumnsDescription::AllPhysical, column_name);
+            return dest_columm && dest_columm->type->equals(*our_columns.getColumnOrSubcolumn(ColumnsDescription::AllPhysical, column_name).type);
         });
 
         if (dst_has_same_structure)
@@ -513,29 +514,29 @@ static void appendBlock(const Block & from, Block & to)
 }
 
 
-class BufferBlockOutputStream : public IBlockOutputStream
+class BufferSink : public SinkToStorage
 {
 public:
-    explicit BufferBlockOutputStream(
+    explicit BufferSink(
         StorageBuffer & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : storage(storage_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-    {}
-
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
-
-    void write(const Block & block) override
     {
-        if (!block)
-            return;
-
         // Check table structure.
-        metadata_snapshot->check(block, true);
+        metadata_snapshot->check(getPort().getHeader(), true);
+    }
 
-        size_t rows = block.rows();
+    String getName() const override { return "BufferSink"; }
+
+    void consume(Chunk chunk) override
+    {
+        size_t rows = chunk.getNumRows();
         if (!rows)
             return;
+
+        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
 
         StoragePtr destination;
         if (storage.destination_id)
@@ -642,9 +643,9 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<BufferBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<BufferSink>(*this, metadata_snapshot);
 }
 
 

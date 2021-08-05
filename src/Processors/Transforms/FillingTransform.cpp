@@ -47,7 +47,7 @@ FillingTransform::FillingTransform(
         DataTypePtr to_type;
 
         /// TODO Wrong results for big integers.
-        if (isInteger(type) || which.isDate() || which.isDateTime())
+        if (isInteger(type) || which.isDate() || which.isDate32() || which.isDateTime())
         {
             max_type = Field::Types::Int64;
             to_type = std::make_shared<DataTypeInt64>();
