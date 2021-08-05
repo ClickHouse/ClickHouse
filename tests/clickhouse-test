@@ -27,6 +27,7 @@ except ImportError:
 import random
 import string
 import multiprocessing
+import socket
 from contextlib import closing
 
 USE_JINJA = True
@@ -266,6 +267,9 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     if args.replicated_database:
         os.system("LC_ALL=C sed -i -e 's|/auto_{{shard}}||g' {file}".format(file=stdout_file))
         os.system("LC_ALL=C sed -i -e 's|auto_{{replica}}||g' {file}".format(file=stdout_file))
+
+    # Normalize hostname in stdout file.
+    os.system("LC_ALL=C sed -i -e 's/{hostname}/localhost/g' {file}".format(hostname=socket.gethostname(), file=stdout_file))
 
     stdout = open(stdout_file, 'rb').read() if os.path.exists(stdout_file) else b''
     stdout = str(stdout, errors='replace', encoding='utf-8')
