@@ -77,35 +77,35 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 }
 
 
-BlockInputStreamPtr PostgreSQLDictionarySource::loadAll()
+Pipe PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, load_all_query);
     return loadBase(load_all_query);
 }
 
 
-BlockInputStreamPtr PostgreSQLDictionarySource::loadUpdatedAll()
+Pipe PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, load_update_query);
     return loadBase(load_update_query);
 }
 
-BlockInputStreamPtr PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
     return loadBase(query);
 }
 
 
-BlockInputStreamPtr PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
     return loadBase(query);
 }
 
 
-BlockInputStreamPtr PostgreSQLDictionarySource::loadBase(const String & query)
+Pipe PostgreSQLDictionarySource::loadBase(const String & query)
 {
     return std::make_shared<PostgreSQLBlockInputStream<>>(pool->get(), query, sample_block, max_block_size);
 }

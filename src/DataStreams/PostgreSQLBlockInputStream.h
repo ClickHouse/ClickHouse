@@ -6,7 +6,7 @@
 
 #if USE_LIBPQXX
 #include <Core/Block.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
@@ -18,23 +18,20 @@ namespace DB
 {
 
 template <typename T = pqxx::ReadTransaction>
-class PostgreSQLBlockInputStream : public IBlockInputStream
+class PostgreSQLSource : public SourceWithProgress
 {
 
 public:
-    PostgreSQLBlockInputStream(
+    PostgreSQLSource(
         postgres::ConnectionHolderPtr connection_holder_,
         const String & query_str_,
         const Block & sample_block,
         const UInt64 max_block_size_);
 
     String getName() const override { return "PostgreSQL"; }
-    Block getHeader() const override { return description.sample_block.cloneEmpty(); }
-
-    void readPrefix() override;
 
 protected:
-    PostgreSQLBlockInputStream(
+    PostgreSQLSource(
         std::shared_ptr<T> tx_,
         const std::string & query_str_,
         const Block & sample_block,
@@ -45,15 +42,20 @@ protected:
     std::shared_ptr<T> tx;
     std::unique_ptr<pqxx::stream_from> stream;
 
+    Status prepare() override;
+
 private:
-    Block readImpl() override;
-    void readSuffix() override;
+    void onStart();
+    Chunk generate() override;
+    void onFinish();
 
     void init(const Block & sample_block);
 
     const UInt64 max_block_size;
     bool auto_commit = true;
     ExternalResultDescription description;
+
+    bool started = false;
 
     postgres::ConnectionHolderPtr connection_holder;
 
