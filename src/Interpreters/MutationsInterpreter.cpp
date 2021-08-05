@@ -308,7 +308,7 @@ static bool materializeTTLRecalculateOnly(const StoragePtr & storage)
     auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
     if (!storage_from_merge_tree_data_part)
         return false;
-    
+
     return storage_from_merge_tree_data_part->materializeTTLRecalculateOnly();
 }
 
@@ -409,7 +409,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         if (command.type == MutationCommand::Type::UPDATE
             || command.type == MutationCommand::Type::DELETE)
             materialize_ttl_recalculate_only = false;
-        
+
         for (const auto & kv : command.column_to_update_expression)
         {
             updated_columns.insert(kv.first);
