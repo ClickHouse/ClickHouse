@@ -1,4 +1,3 @@
-#include "config_formats.h"
 #include "ArrowColumnToCHColumn.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
@@ -17,6 +16,7 @@
 #include <common/DateLUTImpl.h>
 #include <common/types.h>
 #include <Core/Block.h>
+#include <Processors/Chunk.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
@@ -25,7 +25,6 @@
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
-#include <Processors/Chunk.h>
 #include <Interpreters/castColumn.h>
 #include <algorithm>
 #include <arrow/builder.h>
@@ -172,14 +171,8 @@ static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::Chu
         {
             Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
             if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM)
-            {
-                // TODO: will it rollback correctly?
-                throw Exception
-                    {
-                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "Input value {} of a column \"{}\" is greater than max allowed Date value, which is {}", days_num, column_name, DATE_LUT_MAX_DAY_NUM,
-                    };
-            }
+                throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" is greater than max allowed Date value, which is {}", days_num, column_name, DATE_LUT_MAX_DAY_NUM};
 
             column_data.emplace_back(days_num);
         }
@@ -314,7 +307,7 @@ static ColumnPtr readColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> 
         FOR_ARROW_INDEXES_TYPES(DISPATCH)
 #    undef DISPATCH
         default:
-            throw Exception(fmt::format("Unsupported type for indexes in LowCardinality: {}.", arrow_column->type()->name()), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for indexes in LowCardinality: {}.", arrow_column->type()->name());
     }
 }
 
@@ -466,11 +459,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             // TODO: read JSON as a string?
             // TODO: read UUID as a string?
         default:
-            throw Exception
-                {
-                    ErrorCodes::UNKNOWN_TYPE,
-                    "Unsupported {} type '{}' of an input column '{}'.", format_name, arrow_column->type()->name(), column_name,
-                };
+            throw Exception(ErrorCodes::UNKNOWN_TYPE,
+                    "Unsupported {} type '{}' of an input column '{}'.", format_name, arrow_column->type()->name(), column_name);
     }
 }
 
