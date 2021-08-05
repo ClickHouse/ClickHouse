@@ -33,12 +33,11 @@ extern "C" void * clickhouse_realloc(void * ptr, size_t size)
 
 extern "C" void * clickhouse_reallocarray(void * ptr, size_t number_of_members, size_t size)
 {
-    if (ptr)
-        Memory::untrackMemory(ptr);
-    void * res = reallocarray(ptr, number_of_members, size);
-    if (res)
-        Memory::trackMemory(number_of_members * size);
-    return res;
+    size_t real_size = 0;
+    if (__builtin_mul_overflow(number_of_members, size, &real_size))
+        return nullptr;
+
+    return clickhouse_realloc(ptr, real_size);
 }
 
 extern "C" void clickhouse_free(void * ptr)
