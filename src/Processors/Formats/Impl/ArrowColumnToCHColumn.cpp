@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <common/DateLUTImpl.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Block.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
@@ -227,7 +227,11 @@ namespace DB
             auto & chunk = static_cast<arrow::DecimalArray &>(*(arrow_column->chunk(chunk_i)));
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
-                column_data.emplace_back(chunk.IsNull(value_i) ? Decimal128(0) : *reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
+                Decimal128 value(0);
+                if (!chunk.IsNull(value_i))
+                    /// We should use memcpy instead of just reinterpret_cast to avoid misaligned address error in ubsan.
+                    memcpy(&value, chunk.Value(value_i), sizeof(value));
+                column_data.emplace_back(value);
             }
         }
     }

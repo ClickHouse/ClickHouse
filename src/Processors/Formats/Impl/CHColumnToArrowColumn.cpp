@@ -195,8 +195,10 @@ namespace DB
             if (null_bytemap && (*null_bytemap)[value_i])
                 status = builder.AppendNull();
             else
-                status = builder.Append(
-                    arrow::Decimal128(reinterpret_cast<const uint8_t *>(&column.getElement(value_i).value))); // TODO: try copy column
+            {
+                Int128 element = Int128(column.getElement(value_i).value);
+                status = builder.Append(arrow::Decimal128(reinterpret_cast<const uint8_t *>(&element))); // TODO: try copy column
+            }
 
             checkStatus(status, write_column->getName(), format_name);
         }
@@ -243,11 +245,13 @@ namespace DB
                         const auto & decimal_type = static_cast<const ToDataType *>(column_nested_type.get());
                         arrow_fields.emplace_back(std::make_shared<arrow::Field>(
                             column.name, arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale()), is_column_nullable));
+                        return true;
                     }
 
                     return false;
                 };
-                callOnIndexAndDataType<void>(column_nested_type->getTypeId(), add_decimal_field);
+                if (!callOnIndexAndDataType<void>(column_nested_type->getTypeId(), add_decimal_field))
+                    throw Exception{ErrorCodes::UNKNOWN_TYPE, "Decimal type {} is not supported for conversion into a {} data format", column_nested_type->getName(), format_name};
             }
             else
             {
@@ -299,10 +303,12 @@ namespace DB
                     {
                         const auto & decimal_type = static_cast<const ToDataType *>(column_nested_type.get());
                         fillArrowArrayWithDecimalColumnData(nested_column, arrow_array, null_bytemap, decimal_type, format_name);
+                        return true;
                     }
                     return false;
                 };
-                callOnIndexAndDataType<void>(column_nested_type->getTypeId(), fill_decimal);
+                if (!callOnIndexAndDataType<void>(column_nested_type->getTypeId(), fill_decimal))
+                    throw Exception{ErrorCodes::UNKNOWN_TYPE, "Decimal type {} is not supported for conversion into a {} data format", column_nested_type->getName(), format_name};
             }
 #define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
             else if (#CPP_NUMERIC_TYPE == column_nested_type_name) \
