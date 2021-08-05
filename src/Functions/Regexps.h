@@ -122,8 +122,6 @@ namespace MultiRegexps
 
         Regexps * operator()()
         {
-            if (regexp)
-                return &*regexp;
             std::unique_lock lock(mutex);
             if (regexp)
                 return &*regexp;
