@@ -134,7 +134,7 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
             grep -q -e "ReplicatedMergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
             ;;
         *.sql|*.sql.j2)
-            test_case_zk_prefix="{[ ]*database[ ]*}"
+            test_case_zk_prefix="{database}"
             grep -q -e "ReplicatedMergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
             ;;
         *.py)
