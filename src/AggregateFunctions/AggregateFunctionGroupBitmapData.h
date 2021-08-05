@@ -579,6 +579,57 @@ public:
         }
     }
 
+    UInt64 rb_offset_limit(UInt64 offset, UInt64 limit, RoaringBitmapWithSmallSet & r1) const
+    {
+        if (limit == 0 || offset >= size())
+            return 0;
+
+        if (isSmall())
+        {
+            UInt64 offset_count = 0;
+            std::vector<T> answer;
+            for (const auto & x : small)
+            {
+                T val = x.getValue();
+                if (offset_count >= offset)
+                {
+                    answer.push_back(val);
+                } else {
+                    offset_count++;
+                }
+            }
+            if (limit < answer.size())
+            {
+                std::nth_element(answer.begin(), answer.begin() + limit, answer.end());
+                answer.resize(limit);
+            }
+
+            for (const auto & elem : answer)
+                r1.add(elem);
+            return answer.size();
+        }
+        else
+        {
+            UInt64 count = 0;
+            UInt64 offset_count = 0;
+            for (auto it = rb->begin(); it != rb->end(); ++it)
+            {
+                offset_count++;
+                if (offset_count <= offset)
+                    continue;
+
+                if (count < limit)
+                {
+                    r1.add(*it);
+                    ++count;
+                }
+                else
+                    break;
+            }
+            return count;
+        }
+    }
+
     UInt64 rb_min() const
     {
         if (isSmall())
