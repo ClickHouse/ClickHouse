@@ -39,8 +39,25 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         auto serialization = type->getDefaultSerialization();
-        serialization->serializeBinary(hyperrectangle[i].left, ostr);
-        serialization->serializeBinary(hyperrectangle[i].right, ostr);
+
+        if (!type->isNullable())
+        {
+            serialization->serializeBinary(hyperrectangle[i].left, ostr);
+            serialization->serializeBinary(hyperrectangle[i].right, ostr);
+        }
+        else
+        {
+            /// NOTE: that this serialization differs from
+            /// IMergeTreeDataPart::MinMaxIndex::store() due to preserve
+            /// backward compatibility.
+            bool is_null = hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull(); // one is enough
+            writeBinary(is_null, ostr);
+            if (!is_null)
+            {
+                serialization->serializeBinary(hyperrectangle[i].left, ostr);
+                serialization->serializeBinary(hyperrectangle[i].right, ostr);
+            }
+        }
     }
 }
 
@@ -54,14 +71,30 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         auto serialization = type->getDefaultSerialization();
-        serialization->deserializeBinary(min_val, istr);
-        serialization->deserializeBinary(max_val, istr);
 
-        // NULL_LAST
-        if (min_val.isNull())
-            min_val = PositiveInfinity();
-        if (max_val.isNull())
-            max_val = PositiveInfinity();
+        if (!type->isNullable())
+        {
+            serialization->deserializeBinary(min_val, istr);
+            serialization->deserializeBinary(max_val, istr);
+        }
+        else
+        {
+            /// NOTE: that this serialization differs from
+            /// IMergeTreeDataPart::MinMaxIndex::load() due to preserve
+            /// backward compatibility.
+            bool is_null;
+            readBinary(is_null, istr);
+            if (!is_null)
+            {
+                serialization->deserializeBinary(min_val, istr);
+                serialization->deserializeBinary(max_val, istr);
+            }
+            else
+            {
+                min_val = Null();
+                max_val = Null();
+            }
+        }
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
 }
