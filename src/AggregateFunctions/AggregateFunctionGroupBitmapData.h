@@ -7,7 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
-#include <Common/CurrentMemoryTracker.h>
 
 // Include this header last, because it is an auto-generated dump of questionable
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).

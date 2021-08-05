@@ -2,7 +2,6 @@
 #include <Common/CurrentThread.h>
 
 #include <Common/CurrentMemoryTracker.h>
-#include <iostream>
 
 
 namespace
