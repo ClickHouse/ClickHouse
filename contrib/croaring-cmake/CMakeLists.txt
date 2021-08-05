@@ -25,4 +25,10 @@ target_include_directories(roaring PRIVATE "${LIBRARY_DIR}/include/roaring")
 target_include_directories(roaring SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include")
 target_include_directories(roaring SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/cpp")
 
-target_compile_definitions(roaring PRIVATE -Dmalloc=clickhouse_malloc -Dfree=clickhouse_free -Dposix_memalign=clickhouse_posix_memalign)
+target_compile_definitions(roaring PRIVATE
+    -Dmalloc=clickhouse_malloc
+    -Dcalloc=clickhouse_calloc
+    -Drealloc=clickhouse_realloc
+    -Dreallocarray=clickhouse_reallocarray
+    -Dfree=clickhouse_free
+    -Dposix_memalign=clickhouse_posix_memalign)
