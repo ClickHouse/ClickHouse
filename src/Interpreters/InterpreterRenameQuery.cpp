@@ -73,7 +73,7 @@ BlockIO InterpreterRenameQuery::execute()
 BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards)
 {
     assert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
-    assert(!rename.rename_if_cannot_exchange || rename.exchange);
+    assert(!(rename.rename_if_cannot_exchange && rename.exchange));
     auto & database_catalog = DatabaseCatalog::instance();
 
     for (const auto & elem : descriptions)

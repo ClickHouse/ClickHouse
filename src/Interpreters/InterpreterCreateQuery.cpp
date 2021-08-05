@@ -1156,10 +1156,20 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         };
 
         ast_rename->elements.push_back(std::move(elem));
-        ast_rename->exchange = true;
         ast_rename->dictionary = create.is_dictionary;
-        /// Will execute ordinary RENAME instead of EXCHANGE if the target table does not exist
-        ast_rename->rename_if_cannot_exchange = create.create_or_replace;
+        if (create.create_or_replace)
+        {
+            /// CREATE OR REPLACE TABLE
+            /// Will execute ordinary RENAME instead of EXCHANGE if the target table does not exist
+            ast_rename->rename_if_cannot_exchange = true;
+            ast_rename->exchange = false;
+        }
+        else
+        {
+            /// REPLACE TABLE
+            /// Will execute EXCHANGE query and fail if the target table does not exist
+            ast_rename->exchange = true;
+        }
 
         InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
         interpreter_rename.execute();
