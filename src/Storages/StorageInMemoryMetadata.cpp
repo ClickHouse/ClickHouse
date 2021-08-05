@@ -27,7 +27,6 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     : columns(other.columns)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
-    , projections(other.projections.clone())
     , partition_key(other.partition_key)
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
@@ -36,7 +35,6 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
-    , comment(other.comment)
 {
 }
 
@@ -48,7 +46,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     columns = other.columns;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
-    projections = other.projections.clone();
     partition_key = other.partition_key;
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;
@@ -60,14 +57,9 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     else
         settings_changes.reset();
     select = other.select;
-    comment = other.comment;
     return *this;
 }
 
-void StorageInMemoryMetadata::setComment(const String & comment_)
-{
-    comment = comment_;
-}
 
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
 {
@@ -84,11 +76,6 @@ void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_i
 void StorageInMemoryMetadata::setConstraints(ConstraintsDescription constraints_)
 {
     constraints = std::move(constraints_);
-}
-
-void StorageInMemoryMetadata::setProjections(ProjectionsDescription projections_)
-{
-    projections = std::move(projections_);
 }
 
 void StorageInMemoryMetadata::setTableTTLs(const TTLTableDescription & table_ttl_)
@@ -132,16 +119,6 @@ bool StorageInMemoryMetadata::hasSecondaryIndices() const
 const ConstraintsDescription & StorageInMemoryMetadata::getConstraints() const
 {
     return constraints;
-}
-
-const ProjectionsDescription & StorageInMemoryMetadata::getProjections() const
-{
-    return projections;
-}
-
-bool StorageInMemoryMetadata::hasProjections() const
-{
-    return !projections.empty();
 }
 
 TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
@@ -222,18 +199,17 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
     ColumnDependencies res;
 
     NameSet indices_columns;
-    NameSet projections_columns;
     NameSet required_ttl_columns;
     NameSet updated_ttl_columns;
 
     auto add_dependent_columns = [&updated_columns](const auto & expression, auto & to_set)
     {
-        auto required_columns = expression->getRequiredColumns();
-        for (const auto & dependency : required_columns)
+        auto requiered_columns = expression->getRequiredColumns();
+        for (const auto & dependency : requiered_columns)
         {
             if (updated_columns.count(dependency))
             {
-                to_set.insert(required_columns.begin(), required_columns.end());
+                to_set.insert(requiered_columns.begin(), requiered_columns.end());
                 return true;
             }
         }
@@ -243,9 +219,6 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     for (const auto & index : getSecondaryIndices())
         add_dependent_columns(index.expression, indices_columns);
-
-    for (const auto & projection : getProjections())
-        add_dependent_columns(&projection, projections_columns);
 
     if (hasRowsTTL())
     {
@@ -272,8 +245,6 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     for (const auto & column : indices_columns)
         res.emplace(column, ColumnDependency::SKIP_INDEX);
-    for (const auto & column : projections_columns)
-        res.emplace(column, ColumnDependency::PROJECTION);
     for (const auto & column : required_ttl_columns)
         res.emplace(column, ColumnDependency::TTL_EXPRESSION);
     for (const auto & column : updated_ttl_columns)
@@ -320,12 +291,7 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 {
     Block res;
 
-#if !defined(ARCADIA_BUILD)
     google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
-#else
-    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
-#endif
-
     virtuals_map.set_empty_key(StringRef());
 
     /// Virtual columns must be appended after ordinary, because user can

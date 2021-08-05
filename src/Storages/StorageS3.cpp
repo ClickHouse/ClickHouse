@@ -19,32 +19,23 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
-
-#include <Processors/QueryPipeline.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <DataTypes/DataTypeString.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
 
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
 #include <re2/re2.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -68,7 +59,7 @@ public:
 
         const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
 
-        /// We don't have to list bucket, because there is no asterisks.
+        /// We don't have to list bucket, because there is no asterics.
         if (key_prefix.size() == globbed_uri.key.size())
         {
             buffer.emplace_back(globbed_uri.key);
@@ -175,7 +166,6 @@ StorageS3Source::StorageS3Source(
     ContextPtr context_,
     const ColumnsDescription & columns_,
     UInt64 max_block_size_,
-    UInt64 max_single_read_retries_,
     const String compression_hint_,
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     const String & bucket_,
@@ -187,7 +177,6 @@ StorageS3Source::StorageS3Source(
     , format(format_)
     , columns_desc(columns_)
     , max_block_size(max_block_size_)
-    , max_single_read_retries(max_single_read_retries_)
     , compression_hint(compression_hint_)
     , client(client_)
     , sample_block(sample_block_)
@@ -205,24 +194,15 @@ bool StorageS3Source::initialize()
     if (current_key.empty())
         return false;
 
-    file_path = fs::path(bucket) / current_key;
+    file_path = bucket + "/" + current_key;
 
     read_buf = wrapReadBufferWithCompressionMethod(
-        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, DBMS_DEFAULT_BUFFER_SIZE),
-        chooseCompressionMethod(current_key, compression_hint));
+        std::make_unique<ReadBufferFromS3>(client, bucket, current_key), chooseCompressionMethod(current_key, compression_hint));
     auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
-    pipeline = std::make_unique<QueryPipeline>();
-    pipeline->init(Pipe(input_format));
+    reader = std::make_shared<InputStreamFromInputFormat>(input_format);
 
     if (columns_desc.hasDefaults())
-    {
-        pipeline->addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext());
-        });
-    }
-
-    reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+        reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_desc, getContext());
 
     initialized = false;
     return true;
@@ -238,25 +218,31 @@ Chunk StorageS3Source::generate()
     if (!reader)
         return {};
 
-    Chunk chunk;
-    if (reader->pull(chunk))
+    if (!initialized)
     {
-        UInt64 num_rows = chunk.getNumRows();
+        reader->readPrefix();
+        initialized = true;
+    }
+
+    if (auto block = reader->read())
+    {
+        auto columns = block.getColumns();
+        UInt64 num_rows = block.rows();
 
         if (with_path_column)
-            chunk.addColumn(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+            columns.push_back(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
         if (with_file_column)
         {
             size_t last_slash_pos = file_path.find_last_of('/');
-            chunk.addColumn(DataTypeString().createColumnConst(num_rows, file_path.substr(
+            columns.push_back(DataTypeString().createColumnConst(num_rows, file_path.substr(
                     last_slash_pos + 1))->convertToFullColumnIfConst());
         }
 
-        return chunk;
+        return Chunk(std::move(columns), num_rows);
     }
 
+    reader->readSuffix();
     reader.reset();
-    pipeline.reset();
     read_buf.reset();
 
     if (!initialize())
@@ -266,10 +252,10 @@ Chunk StorageS3Source::generate()
 }
 
 
-class StorageS3Sink : public SinkToStorage
+class StorageS3BlockOutputStream : public IBlockOutputStream
 {
 public:
-    StorageS3Sink(
+    StorageS3BlockOutputStream(
         const String & format,
         const Block & sample_block_,
         ContextPtr context,
@@ -279,52 +265,44 @@ public:
         const String & key,
         size_t min_upload_part_size,
         size_t max_single_part_upload_size)
-        : SinkToStorage(sample_block_)
-        , sample_block(sample_block_)
+        : sample_block(sample_block_)
     {
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
         writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
-    String getName() const override { return "StorageS3Sink"; }
-
-    void consume(Chunk chunk) override
+    Block getHeader() const override
     {
-        if (is_first_chunk)
-        {
-            writer->writePrefix();
-            is_first_chunk = false;
-        }
-        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+        return sample_block;
     }
 
-    // void flush() override
-    // {
-    //     writer->flush();
-    // }
-
-    void onFinish() override
+    void write(const Block & block) override
     {
-        try
-        {
-            writer->writeSuffix();
-            writer->flush();
-            write_buf->finalize();
-        }
-        catch (...)
-        {
-            /// Stop ParallelFormattingOutputFormat correctly.
-            writer.reset();
-            throw;
-        }
+        writer->write(block);
+    }
+
+    void writePrefix() override
+    {
+        writer->writePrefix();
+    }
+
+    void flush() override
+    {
+        writer->flush();
+    }
+
+    void writeSuffix() override
+    {
+        writer->writeSuffix();
+        writer->flush();
+        write_buf->finalize();
     }
 
 private:
     Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
-    bool is_first_chunk = true;
 };
 
 
@@ -334,20 +312,17 @@ StorageS3::StorageS3(
     const String & secret_access_key_,
     const StorageID & table_id_,
     const String & format_name_,
-    UInt64 max_single_read_retries_,
     UInt64 min_upload_part_size_,
     UInt64 max_single_part_upload_size_,
     UInt64 max_connections_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     ContextPtr context_,
     const String & compression_method_,
     bool distributed_processing_)
     : IStorage(table_id_)
     , client_auth{uri_, access_key_id_, secret_access_key_, max_connections_, {}, {}} /// Client and settings will be updated later
     , format_name(format_name_)
-    , max_single_read_retries(max_single_read_retries_)
     , min_upload_part_size(min_upload_part_size_)
     , max_single_part_upload_size(max_single_part_upload_size_)
     , compression_method(compression_method_)
@@ -358,7 +333,6 @@ StorageS3::StorageS3(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     updateClientAndAuthSettings(context_, client_auth);
 }
@@ -415,7 +389,6 @@ Pipe StorageS3::read(
             local_context,
             metadata_snapshot->getColumns(),
             max_block_size,
-            max_single_read_retries,
             compression_method,
             client_auth.client,
             client_auth.uri.bucket,
@@ -427,10 +400,10 @@ Pipe StorageS3::read(
     return pipe;
 }
 
-SinkToStoragePtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     updateClientAndAuthSettings(local_context, client_auth);
-    return std::make_shared<StorageS3Sink>(
+    return std::make_shared<StorageS3BlockOutputStream>(
         format_name,
         metadata_snapshot->getSampleBlock(),
         local_context,
@@ -442,31 +415,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadat
         max_single_part_upload_size);
 }
 
-
-void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
-{
-    updateClientAndAuthSettings(local_context, client_auth);
-
-    Aws::S3::Model::ObjectIdentifier obj;
-    obj.SetKey(client_auth.uri.key);
-
-    Aws::S3::Model::Delete delkeys;
-    delkeys.AddObjects(std::move(obj));
-
-    Aws::S3::Model::DeleteObjectsRequest request;
-    request.SetBucket(client_auth.uri.bucket);
-    request.SetDelete(delkeys);
-
-    auto response = client_auth.client->DeleteObjects(request);
-    if (!response.IsSuccess())
-    {
-        const auto & err = response.GetError();
-        throw Exception(std::to_string(static_cast<int>(err.GetErrorType())) + ": " + err.GetMessage(), ErrorCodes::S3_ERROR);
-    }
-}
-
-
-void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAuthentication & upd)
+void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAuthentificaiton & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.uri.uri.toString());
     if (upd.client && (!upd.access_key_id.empty() || settings == upd.auth_settings))
@@ -481,7 +430,6 @@ void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAut
     }
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        settings.region,
         ctx->getRemoteHostFilter(), ctx->getGlobalContext()->getSettingsRef().s3_max_redirects);
 
     client_configuration.endpointOverride = upd.uri.endpoint;
@@ -494,8 +442,7 @@ void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAut
         credentials.GetAWSSecretKey(),
         settings.server_side_encryption_customer_key_base64,
         std::move(headers),
-        settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
-        settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
+        settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)));
 
     upd.auth_settings = std::move(settings);
 }
@@ -526,7 +473,6 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             secret_access_key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         }
 
-        UInt64 max_single_read_retries = args.getLocalContext()->getSettingsRef().s3_max_single_read_retries;
         UInt64 min_upload_part_size = args.getLocalContext()->getSettingsRef().s3_min_upload_part_size;
         UInt64 max_single_part_upload_size = args.getLocalContext()->getSettingsRef().s3_max_single_part_upload_size;
         UInt64 max_connections = args.getLocalContext()->getSettingsRef().s3_max_connections;
@@ -550,15 +496,14 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             secret_access_key,
             args.table_id,
             format_name,
-            max_single_read_retries,
             min_upload_part_size,
             max_single_part_upload_size,
             max_connections,
             args.columns,
             args.constraints,
-            args.comment,
             args.getContext(),
-            compression_method);
+            compression_method
+        );
     },
     {
         .source_access_type = AccessType::S3,

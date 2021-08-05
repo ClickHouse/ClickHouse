@@ -1,9 +1,8 @@
 #include "ExecutablePoolDictionarySource.h"
 
 #include <functional>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/formatBlock.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -71,12 +70,12 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 
 BlockInputStreamPtr ExecutablePoolDictionarySource::loadAll()
 {
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource with implicit_key does not support loadAll method");
 }
 
 BlockInputStreamPtr ExecutablePoolDictionarySource::loadUpdatedAll()
 {
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource with implicit_key does not support loadAll method");
 }
 
 namespace
@@ -255,7 +254,7 @@ bool ExecutablePoolDictionarySource::supportsSelectiveLoad() const
 
 bool ExecutablePoolDictionarySource::hasUpdateField() const
 {
-    return false;
+    return !configuration.update_field.empty();
 }
 
 DictionarySourcePtr ExecutablePoolDictionarySource::clone() const
@@ -284,7 +283,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
-        if (created_from_ddl && context->getApplicationType() != Context::ApplicationType::LOCAL)
+        if (created_from_ddl)
             throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable pool dictionary source are not allowed to be created from DDL query");
 
         auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
@@ -296,9 +295,9 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         settings_no_parallel_parsing.input_format_parallel_parsing = false;
         context_local_copy->setSettings(settings_no_parallel_parsing);
 
-        String settings_config_prefix = config_prefix + ".executable_pool";
+        String configuration_config_prefix = config_prefix + ".executable_pool";
 
-        size_t max_command_execution_time = config.getUInt64(settings_config_prefix + ".max_command_execution_time", 10);
+        size_t max_command_execution_time = config.getUInt64(configuration_config_prefix + ".max_command_execution_time", 10);
 
         size_t max_execution_time_seconds = static_cast<size_t>(context->getSettings().max_execution_time.totalSeconds());
         if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
@@ -306,12 +305,13 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
 
         ExecutablePoolDictionarySource::Configuration configuration
         {
-            .command = config.getString(settings_config_prefix + ".command"),
-            .format = config.getString(settings_config_prefix + ".format"),
-            .pool_size = config.getUInt64(settings_config_prefix + ".size"),
-            .command_termination_timeout = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
-            .max_command_execution_time = max_command_execution_time,
-            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
+            .command = config.getString(configuration_config_prefix + ".command"),
+            .format = config.getString(configuration_config_prefix + ".format"),
+            .pool_size = config.getUInt64(configuration_config_prefix + ".size"),
+            .update_field = config.getString(configuration_config_prefix + ".update_field", ""),
+            .implicit_key = config.getBool(configuration_config_prefix + ".implicit_key", false),
+            .command_termination_timeout = config.getUInt64(configuration_config_prefix + ".command_termination_timeout", 10),
+            .max_command_execution_time = max_command_execution_time
         };
 
         return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, context_local_copy);

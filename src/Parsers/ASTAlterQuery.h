@@ -36,7 +36,6 @@ public:
         MODIFY_TTL,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
-        RESET_SETTING,
         MODIFY_QUERY,
         REMOVE_TTL,
 
@@ -46,10 +45,6 @@ public:
 
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
-
-        ADD_PROJECTION,
-        DROP_PROJECTION,
-        MATERIALIZE_PROJECTION,
 
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
@@ -111,17 +106,6 @@ public:
     */
     ASTPtr constraint;
 
-    /** The ADD PROJECTION query stores the ProjectionDeclaration there.
-     */
-    ASTPtr projection_decl;
-
-    /** The ADD PROJECTION query stores the name of the projection following AFTER.
-     *  The DROP PROJECTION query stores the name for deletion.
-     *  The MATERIALIZE PROJECTION query stores the name of the projection to materialize.
-     *  The CLEAR PROJECTION query stores the name of the projection to clear.
-     */
-    ASTPtr projection;
-
     /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
@@ -142,9 +126,6 @@ public:
     /// FOR MODIFY_SETTING
     ASTPtr settings_changes;
 
-    /// FOR RESET_SETTING
-    ASTPtr settings_resets;
-
     /// For MODIFY_QUERY
     ASTPtr select;
 
@@ -159,8 +140,6 @@ public:
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
     bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
-
-    bool clear_projection = false;   /// for CLEAR PROJECTION (do not drop projection from metadata)
 
     bool if_not_exists = false; /// option for ADD_COLUMN
 
@@ -224,8 +203,6 @@ public:
     {
         return removeOnCluster<ASTAlterQuery>(clone(), new_database);
     }
-
-    const char * getQueryKindString() const override { return "Alter"; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

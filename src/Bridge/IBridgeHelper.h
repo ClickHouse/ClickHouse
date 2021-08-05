@@ -28,19 +28,16 @@ public:
     static const inline std::string MAIN_METHOD = Poco::Net::HTTPRequest::HTTP_POST;
 
     explicit IBridgeHelper(ContextPtr context_) : WithContext(context_) {}
-
     virtual ~IBridgeHelper() = default;
+
+    void startBridgeSync() const;
 
     Poco::URI getMainURI() const;
 
     Poco::URI getPingURI() const;
 
-    void startBridgeSync();
 
 protected:
-    /// Check bridge is running. Can also check something else in the mean time.
-    virtual bool bridgeHandShake() = 0;
-
     /// clickhouse-odbc-bridge, clickhouse-library-bridge
     virtual String serviceAlias() const = 0;
 
@@ -64,7 +61,9 @@ protected:
 
 
 private:
-    std::unique_ptr<ShellCommand> startBridgeCommand();
+    bool checkBridgeIsRunning() const;
+
+    std::unique_ptr<ShellCommand> startBridgeCommand() const;
 };
 
 }

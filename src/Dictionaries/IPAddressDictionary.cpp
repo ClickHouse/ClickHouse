@@ -11,8 +11,8 @@
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
 #include <common/itoa.h>
-#include <common/map.h>
-#include <common/range.h>
+#include <ext/map.h>
+#include <ext/range.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -27,7 +27,6 @@ namespace ErrorCodes
     extern const int DICTIONARY_IS_EMPTY;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -205,6 +204,7 @@ IPAddressDictionary::IPAddressDictionary(
     , logger(&Poco::Logger::get("IPAddressDictionary"))
 {
     createAttributes();
+
     loadData();
     calculateBytesAllocated();
 }
@@ -237,21 +237,11 @@ ColumnPtr IPAddressDictionary::getColumn(
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
-        if constexpr (std::is_same_v<ValueType, Array>)
+        if constexpr (std::is_same_v<AttributeType, String>)
         {
             auto * out = column.get();
 
-            getItemsImpl<ValueType>(
-                attribute,
-                key_columns,
-                [&](const size_t, const Array & value) { out->insert(value); },
-                default_value_extractor);
-        }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
-        {
-            auto * out = column.get();
-
-            getItemsImpl<ValueType>(
+            getItemsImpl<ValueType, ValueType>(
                 attribute,
                 key_columns,
                 [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -261,7 +251,7 @@ ColumnPtr IPAddressDictionary::getColumn(
         {
             auto & out = column->getData();
 
-            getItemsImpl<ValueType>(
+            getItemsImpl<ValueType, ValueType>(
                 attribute,
                 key_columns,
                 [&](const size_t row, const auto value) { return out[row] = value; },
@@ -285,24 +275,21 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
     const auto rows = first_column->size();
 
     auto result = ColumnUInt8::create(rows);
-    auto & out = result->getData();
-
-    size_t keys_found = 0;
+    auto& out = result->getData();
 
     if (first_column->isNumeric())
     {
         uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
-        for (const auto i : collections::range(0, rows))
+        for (const auto i : ext::range(0, rows))
         {
             auto addrv4 = UInt32(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             out[i] = (found != ipNotFound());
-            keys_found += out[i];
         }
     }
     else
     {
-        for (const auto i : collections::range(0, rows))
+        for (const auto i : ext::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
             if (unlikely(addr.size != IPV6_BINARY_LENGTH))
@@ -310,12 +297,10 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             out[i] = (found != ipNotFound());
-            keys_found += out[i];
         }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -325,15 +310,8 @@ void IPAddressDictionary::createAttributes()
     auto create_attributes_from_dictionary_attributes = [this](const std::vector<DictionaryAttribute> & dict_attrs)
     {
         attributes.reserve(attributes.size() + dict_attrs.size());
-
         for (const auto & attribute : dict_attrs)
         {
-            if (attribute.is_nullable)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "{}: array or nullable attributes not supported for dictionary of type {}",
-                    full_name,
-                    getTypeName());
-
             attribute_index_by_name.emplace(attribute.name, attributes.size());
             attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
@@ -365,13 +343,13 @@ void IPAddressDictionary::loadData()
         element_count += rows;
 
         const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
-        const auto attribute_column_ptrs = collections::map<Columns>(
-            collections::range(0, dict_struct.attributes.size()),
+        const auto attribute_column_ptrs = ext::map<Columns>(
+            ext::range(0, dict_struct.attributes.size()),
             [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; });
 
-        for (const auto row : collections::range(0, rows))
+        for (const auto row : ext::range(0, rows))
         {
-            for (const auto attribute_idx : collections::range(0, dict_struct.attributes.size()))
+            for (const auto attribute_idx : ext::range(0, dict_struct.attributes.size()))
             {
                 const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
                 auto & attribute = attributes[attribute_idx];
@@ -434,7 +412,7 @@ void IPAddressDictionary::loadData()
                 return cmpres;
             });
         if (deleted_count > 0)
-            LOG_TRACE(logger, "removing {} non-unique subnets from input", deleted_count);
+            LOG_WARNING(logger, "removing {} non-unique subnets from input", deleted_count);
 
         auto & ipv6_col = ip_column.emplace<IPv6Container>();
         ipv6_col.resize_fill(IPV6_BINARY_LENGTH * ip_records.size());
@@ -461,7 +439,7 @@ void IPAddressDictionary::loadData()
                 return compareTo(a, b);
             });
         if (deleted_count > 0)
-            LOG_TRACE(logger, "removing {} non-unique subnets from input", deleted_count);
+            LOG_WARNING(logger, "removing {} non-unique subnets from input", deleted_count);
 
         auto & ipv4_col = ip_column.emplace<IPv4Container>();
         ipv4_col.reserve(ip_records.size());
@@ -476,7 +454,7 @@ void IPAddressDictionary::loadData()
 
     parent_subnet.resize(ip_records.size());
     std::stack<size_t> subnets_stack;
-    for (const auto i : collections::range(0, ip_records.size()))
+    for (const auto i : ext::range(0, ip_records.size()))
     {
         parent_subnet[i] = i;
         while (!subnets_stack.empty())
@@ -600,7 +578,7 @@ const uint8_t * IPAddressDictionary::getIPv6FromOffset(const IPAddressDictionary
     return reinterpret_cast<const uint8_t *>(&ipv6_col[i * IPV6_BINARY_LENGTH]);
 }
 
-template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
@@ -627,19 +605,19 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
             return addr < target.addr;
         };
 
-        for (const auto i : collections::range(0, rows))
+        for (const auto i : ext::range(0, rows))
         {
             UInt32 addr = key_ip_column_ptr->getElement(i);
             UInt8 mask = key_mask_column.getElement(i);
 
-            auto range = collections::range(0, row_idx.size());
+            auto range = ext::range(0, row_idx.size());
             auto found_it = std::lower_bound(range.begin(), range.end(), IPv4Subnet{addr, mask}, comp_v4);
 
             if (likely(found_it != range.end() &&
                 (*ipv4_col)[*found_it] == addr &&
                 mask_column[*found_it] == mask))
             {
-                set_value(i, vec[row_idx[*found_it]]);
+                set_value(i, static_cast<OutputType>(vec[row_idx[*found_it]]));
             }
             else
                 set_value(i, default_value_extractor[i]);
@@ -662,26 +640,26 @@ void IPAddressDictionary::getItemsByTwoKeyColumnsImpl(
         return cmpres < 0;
     };
 
-    for (const auto i : collections::range(0, rows))
+    for (const auto i : ext::range(0, rows))
     {
         auto addr = key_ip_column_ptr->getDataAt(i);
         UInt8 mask = key_mask_column.getElement(i);
 
         IPv6Subnet target{reinterpret_cast<const uint8_t *>(addr.data), mask};
 
-        auto range = collections::range(0, row_idx.size());
+        auto range = ext::range(0, row_idx.size());
         auto found_it = std::lower_bound(range.begin(), range.end(), target, comp_v6);
 
         if (likely(found_it != range.end() &&
             memequal16(getIPv6FromOffset(*ipv6_col, *found_it), target.addr) &&
             mask_column[*found_it] == mask))
-            set_value(i, vec[row_idx[*found_it]]);
+            set_value(i, static_cast<OutputType>(vec[row_idx[*found_it]]));
         else
             set_value(i, default_value_extractor[i]);
     }
 }
 
-template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void IPAddressDictionary::getItemsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
@@ -694,7 +672,7 @@ void IPAddressDictionary::getItemsImpl(
     // special case for getBlockInputStream
     if (unlikely(key_columns.size() == 2))
     {
-        getItemsByTwoKeyColumnsImpl<AttributeType>(
+        getItemsByTwoKeyColumnsImpl<AttributeType, OutputType>(
             attribute, key_columns, std::forward<ValueSetter>(set_value), default_value_extractor);
         query_count.fetch_add(rows, std::memory_order_relaxed);
         return;
@@ -702,28 +680,23 @@ void IPAddressDictionary::getItemsImpl(
 
     auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
 
-    size_t keys_found = 0;
-
     if (first_column->isNumeric())
     {
         uint8_t addrv6_buf[IPV6_BINARY_LENGTH];
-        for (const auto i : collections::range(0, rows))
+        for (const auto i : ext::range(0, rows))
         {
             // addrv4 has native endianness
             auto addrv4 = UInt32(first_column->get64(i));
             auto found = tryLookupIPv4(addrv4, addrv6_buf);
             if (found != ipNotFound())
-            {
-                set_value(i, vec[*found]);
-                ++keys_found;
-            }
+                set_value(i, static_cast<OutputType>(vec[*found]));
             else
                 set_value(i, default_value_extractor[i]);
         }
     }
     else
     {
-        for (const auto i : collections::range(0, rows))
+        for (const auto i : ext::range(0, rows))
         {
             auto addr = first_column->getDataAt(i);
             if (addr.size != IPV6_BINARY_LENGTH)
@@ -731,17 +704,13 @@ void IPAddressDictionary::getItemsImpl(
 
             auto found = tryLookupIPv6(reinterpret_cast<const uint8_t *>(addr.data));
             if (found != ipNotFound())
-            {
-                set_value(i, vec[*found]);
-                ++keys_found;
-            }
+                set_value(i, static_cast<OutputType>(vec[*found]));
             else
                 set_value(i, default_value_extractor[i]);
         }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <typename T>
@@ -789,7 +758,7 @@ Columns IPAddressDictionary::getKeyColumns() const
     {
         auto key_ip_column = ColumnVector<UInt32>::create();
         auto key_mask_column = ColumnVector<UInt8>::create();
-        for (size_t row : collections::range(0, row_idx.size()))
+        for (size_t row : ext::range(0, row_idx.size()))
         {
             key_ip_column->insertValue((*ipv4_col)[row]);
             key_mask_column->insertValue(mask_column[row]);
@@ -802,7 +771,7 @@ Columns IPAddressDictionary::getKeyColumns() const
     auto key_ip_column = ColumnFixedString::create(IPV6_BINARY_LENGTH);
     auto key_mask_column = ColumnVector<UInt8>::create();
 
-    for (size_t row : collections::range(0, row_idx.size()))
+    for (size_t row : ext::range(0, row_idx.size()))
     {
         const char * data = reinterpret_cast<const char *>(getIPv6FromOffset(*ipv6_col, row));
         key_ip_column->insertData(data, IPV6_BINARY_LENGTH);
@@ -820,7 +789,7 @@ static auto keyViewGetter()
         const auto & key_ip_column = assert_cast<const KeyColumnType &>(*columns.front());
         const auto & key_mask_column = assert_cast<const ColumnVector<UInt8> &>(*columns.back());
         char buffer[48];
-        for (size_t row : collections::range(0, key_ip_column.size()))
+        for (size_t row : ext::range(0, key_ip_column.size()))
         {
             UInt8 mask = key_mask_column.getElement(row);
             size_t str_len;
@@ -912,7 +881,7 @@ IPAddressDictionary::RowIdxConstIter IPAddressDictionary::lookupIP(IPValueType t
             return memcmp16(value, getIPv6FromOffset(*ipv4or6_col, idx)) < 0;
     };
 
-    auto range = collections::range(0, row_idx.size());
+    auto range = ext::range(0, row_idx.size());
     auto found_it = std::upper_bound(range.begin(), range.end(), target, comp);
 
     if (found_it == range.begin())

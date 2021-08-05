@@ -1,4 +1,9 @@
 #include "FileDictionarySource.h"
+
+#include <filesystem>
+
+#include <Poco/File.h>
+
 #include <common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
@@ -9,7 +14,6 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include "DictionarySourceHelpers.h"
-
 
 namespace DB
 {
@@ -64,9 +68,8 @@ std::string FileDictionarySource::toString() const
 
 Poco::Timestamp FileDictionarySource::getLastModification() const
 {
-    return FS::getModificationTimestamp(filepath);
+    return Poco::File{filepath}.getLastModified();
 }
-
 
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {

@@ -145,7 +145,7 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     query = parseQuery(parser_query, begin, end, description, 0, context->getSettingsRef().max_parser_depth);
 }
 
-ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
+ContextPtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
 {
     auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
@@ -355,11 +355,10 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
     }
 }
 
-ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
+ContextPtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    query_context->getClientInfo().is_replicated_database_internal = true;
     query_context->setCurrentDatabase(database->getDatabaseName());
 
     auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query);

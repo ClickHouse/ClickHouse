@@ -1,5 +1,4 @@
 #include "ArrowBlockInputFormat.h"
-
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
@@ -30,6 +29,7 @@ ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & hea
 Chunk ArrowBlockInputFormat::generate()
 {
     Chunk res;
+    const Block & header = getPort().getHeader();
     arrow::Result<std::shared_ptr<arrow::RecordBatch>> batch_result;
 
     if (stream)
@@ -63,7 +63,7 @@ Chunk ArrowBlockInputFormat::generate()
 
     ++record_batch_current;
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result);
+    ArrowColumnToCHColumn::arrowTableToCHChunk(res, *table_result, header, "Arrow");
 
     return res;
 }
@@ -81,8 +81,6 @@ void ArrowBlockInputFormat::resetParser()
 
 void ArrowBlockInputFormat::prepareReader()
 {
-    std::shared_ptr<arrow::Schema> schema;
-
     if (stream)
     {
         auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in));
@@ -90,7 +88,6 @@ void ArrowBlockInputFormat::prepareReader()
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                 "Error while opening a table: {}", stream_reader_status.status().ToString());
         stream_reader = *stream_reader_status;
-        schema = stream_reader->schema();
     }
     else
     {
@@ -99,10 +96,7 @@ void ArrowBlockInputFormat::prepareReader()
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                 "Error while opening a table: {}", file_reader_status.status().ToString());
         file_reader = *file_reader_status;
-        schema = file_reader->schema();
     }
-
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), std::move(schema), "Arrow");
 
     if (stream)
         record_batch_total = -1;

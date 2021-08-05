@@ -70,6 +70,8 @@ public:
     std::string toString() const override;
 
 private:
+    static String getDictIdsString(const std::vector<UInt64> & ids);
+
     String getDictAttributesString();
 
     static String getLibrarySettingsString(const Poco::Util::AbstractConfiguration & config, const std::string & config_root);
@@ -80,7 +82,7 @@ private:
 
     const DictionaryStructure dict_struct;
     const std::string config_prefix;
-    std::string path;
+    const std::string path;
     const Field dictionary_id;
 
     Block sample_block;
