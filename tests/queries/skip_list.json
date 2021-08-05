@@ -41,7 +41,8 @@
         "01473_event_time_microseconds",
         "01526_max_untracked_memory", /// requires TraceCollector, does not available under sanitizers
         "01594_too_low_memory_limits", /// requires jemalloc to track small allocations
-        "01193_metadata_loading"
+        "01193_metadata_loading",
+        "01955_clickhouse_benchmark_connection_hang" /// Limits RLIMIT_NOFILE, see comment in the test
     ],
     "memory-sanitizer": [
         "capnproto",
@@ -118,16 +119,14 @@
         "memory_tracking",
         "memory_usage",
         "live_view",
-        "01181_db_atomic_drop_on_cluster",
-        "01175_distributed_ddl_output_mode",
-        "01415_sticking_mutations",
-        "00980_zookeeper_merge_tree_alter_settings",
         "01148_zookeeper_path_macros_unfolding",
-        "01294_system_distributed_on_cluster",
         "01269_create_with_null",
         "01451_replicated_detach_drop_and_quorum",
         "01188_attach_table_from_path",
-        "01149_zookeeper_mutation_stuck_after_replace_partition",
+        /// ON CLUSTER is not allowed
+        "01181_db_atomic_drop_on_cluster",
+        "01175_distributed_ddl_output_mode",
+        "01415_sticking_mutations",
         /// user_files
         "01721_engine_file_truncate_on_insert",
         /// Fails due to additional replicas or shards
@@ -136,6 +135,7 @@
         "01532_execute_merges_on_single_replica",
         "00652_replicated_mutations_default_database_zookeeper",
         "00620_optimize_on_nonleader_replica_zookeeper",
+        "01158_zookeeper_log",
         /// grep -c
         "01018_ddl_dictionaries_bad_queries",
         "00908_bloom_filter_index",
@@ -156,6 +156,8 @@
         "00152_insert_different_granularity",
         "00054_merge_tree_partitions",
         "01781_merge_tree_deduplication",
+        "00980_zookeeper_merge_tree_alter_settings",
+        "00980_merge_alter_settings",
         /// Old syntax is not allowed
         "01062_alter_on_mutataion_zookeeper",
         "00925_zookeeper_empty_replicated_merge_tree_optimize_final",
@@ -173,13 +175,17 @@
         /// Does not support renaming of multiple tables in single query
         "00634_rename_view",
         "00140_rename",
+        /// Different query_id
+        "01943_query_id_check",
         /// Requires investigation
         "00953_zookeeper_suetin_deduplication_bug",
-        "01783_http_chunk_size"
+        "01783_http_chunk_size",
+        "00166_explain_estimate"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
-        "01482_move_to_prewhere_and_cast" /// bug, shoud be fixed
+        "01482_move_to_prewhere_and_cast", /// bug, shoud be fixed
+        "01158_zookeeper_log"
     ],
     "parallel":
     [
@@ -484,12 +490,14 @@
         "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
         "01748_dictionary_table_dot", // creates database
         "00950_dict_get",
+        "01615_random_one_shard_insertion",
         "01683_flat_dictionary",
         "01681_cache_dictionary_simple_key",
         "01682_cache_dictionary_complex_key",
         "01684_ssd_cache_dictionary_simple_key",
         "01685_ssd_cache_dictionary_complex_key",
         "01737_clickhouse_server_wait_server_pool_long", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
+        "01954_clickhouse_benchmark_round_robin", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
         "01594_too_low_memory_limits", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
         "01760_system_dictionaries",
         "01760_polygon_dictionaries",
@@ -504,6 +512,7 @@
         "01824_prefer_global_in_and_join",
         "01870_modulo_partition_key",
         "01870_buffer_flush", // creates database
+        "01889_sqlite_read_write",
         "01889_postgresql_protocol_null_fields",
         "01889_check_row_policy_defined_using_user_function",
         "01921_concurrent_ttl_and_normal_merges_zookeeper_long", // heavy test, better to run sequentially
@@ -512,6 +521,12 @@
         "01915_create_or_replace_dictionary",
         "01925_test_storage_merge_aliases",
         "01933_client_replxx_convert_history", /// Uses non unique history file
-        "01902_table_function_merge_db_repr"
+        "01939_user_with_default_database", //create user and database
+        "01999_grant_with_replace",
+        "01902_table_function_merge_db_repr",
+        "01946_test_zstd_decompression_with_escape_sequence_at_the_end_of_buffer",
+        "01946_test_wrong_host_name_access",
+        "01213_alter_rename_with_default_zookeeper", /// Warning: Removing leftovers from table.
+        "02001_add_default_database_to_system_users" ///create user
     ]
 }

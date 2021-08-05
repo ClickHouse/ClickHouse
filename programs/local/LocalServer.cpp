@@ -388,23 +388,31 @@ void LocalServer::processQueries()
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(context);
 
-    ///Set progress show
+    /// Set progress show
     need_render_progress = config().getBool("progress", false);
 
+    std::function<void()> finalize_progress;
     if (need_render_progress)
     {
+        /// Set progress callback, which can be run from multiple threads.
         context->setProgressCallback([&](const Progress & value)
         {
             /// Write progress only if progress was updated
             if (progress_indication.updateProgress(value))
                 progress_indication.writeProgress();
         });
+
+        /// Set finalizing callback for progress, which is called right before finalizing query output.
+        finalize_progress = [&]()
+        {
+            progress_indication.clearProgressOutput();
+        };
+
+        /// Set callback for file processing progress.
+        progress_indication.setFileProgressCallback(context);
     }
 
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
-
-    if (need_render_progress)
-        progress_indication.setFileProgressCallback(context);
 
     std::exception_ptr exception;
 
@@ -425,7 +433,7 @@ void LocalServer::processQueries()
 
         try
         {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {});
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {}, {}, finalize_progress);
         }
         catch (...)
         {

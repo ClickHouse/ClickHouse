@@ -6,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
+#include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
 #include <common/range.h>
 
@@ -40,6 +41,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -304,6 +306,13 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     y_scale = 1 / cell_height;
     x_shift = -min_corner.x();
     y_shift = -min_corner.y();
+
+    if (!(isFinite(x_scale)
+        && isFinite(y_scale)
+        && isFinite(x_shift)
+        && isFinite(y_shift)
+        && isFinite(grid_size)))
+        throw Exception("Polygon is not valid: bounding box is unbounded", ErrorCodes::BAD_ARGUMENTS);
 }
 
 template <typename CoordinateType>
@@ -358,7 +367,7 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
     if (has_empty_bound)
         return false;
 
-    if (std::isnan(x) || std::isnan(y))
+    if (!isFinite(x) || !isFinite(y))
         return false;
 
     CoordinateType float_row = (y + y_shift) * y_scale;

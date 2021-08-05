@@ -403,7 +403,6 @@ bool tryReadIntText(T & x, ReadBuffer & buf)  // -V1071
   * Differs in following:
   * - for numbers starting with zero, parsed only zero;
   * - symbol '+' before number is not supported;
-  * - symbols :;<=>? are parsed as some numbers.
   */
 template <typename T, bool throw_on_error = true>
 void readIntTextUnsafe(T & x, ReadBuffer & buf)
@@ -437,15 +436,12 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        /// This check is suddenly faster than
-        ///  unsigned char c = *buf.position() - '0';
-        ///  if (c < 10)
-        /// for unknown reason on Xeon E5645.
+        unsigned char value = *buf.position() - '0';
 
-        if ((*buf.position() & 0xF0) == 0x30) /// It makes sense to have this condition inside loop.
+        if (value < 10)
         {
             res *= 10;
-            res += *buf.position() & 0x0F;
+            res += value;
             ++buf.position();
         }
         else
@@ -632,6 +628,22 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf)
     return ReturnType(true);
 }
 
+template <typename ReturnType = void>
+inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    LocalDate local_date;
+
+    if constexpr (throw_exception)
+        readDateTextImpl<ReturnType>(local_date, buf);
+    else if (!readDateTextImpl<ReturnType>(local_date, buf))
+        return false;
+    /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
+    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()));
+    return ReturnType(true);
+}
+
 
 inline void readDateText(LocalDate & date, ReadBuffer & buf)
 {
@@ -643,12 +655,22 @@ inline void readDateText(DayNum & date, ReadBuffer & buf)
     readDateTextImpl<void>(date, buf);
 }
 
+inline void readDateText(ExtendedDayNum & date, ReadBuffer & buf)
+{
+    readDateTextImpl<void>(date, buf);
+}
+
 inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf)
 {
     return readDateTextImpl<bool>(date, buf);
 }
 
 inline bool tryReadDateText(DayNum & date, ReadBuffer & buf)
+{
+    return readDateTextImpl<bool>(date, buf);
+}
+
+inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf)
 {
     return readDateTextImpl<bool>(date, buf);
 }
@@ -893,6 +915,17 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
         x = __builtin_bswap32(x);
     else if constexpr (sizeof(x) == 8)
         x = __builtin_bswap64(x);
+}
+
+template <typename T>
+inline std::enable_if_t<is_big_int_v<T>, void>
+readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+{
+    for (size_t i = 0; i != std::size(x.items); ++i)
+    {
+        auto & item = x.items[std::size(x.items) - i - 1];
+        readBinaryBigEndian(item, buf);
+    }
 }
 
 

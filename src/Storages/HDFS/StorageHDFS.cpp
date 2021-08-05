@@ -15,9 +15,8 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <DataStreams/OwningBlockInputStream.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
 #include <re2/re2.h>
@@ -26,6 +25,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 #include <filesystem>
+
 
 namespace fs = std::filesystem;
 
@@ -172,36 +172,33 @@ private:
     Block sample_block;
 };
 
-class HDFSBlockOutputStream : public IBlockOutputStream
+class HDFSSink : public SinkToStorage
 {
 public:
-    HDFSBlockOutputStream(const String & uri,
+    HDFSSink(const String & uri,
         const String & format,
-        const Block & sample_block_,
+        const Block & sample_block,
         ContextPtr context,
         const CompressionMethod compression_method)
-        : sample_block(sample_block_)
+        : SinkToStorage(sample_block)
     {
         write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef()), compression_method, 3);
         writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
-    Block getHeader() const override
+    String getName() const override { return "HDFSSink"; }
+
+    void consume(Chunk chunk) override
     {
-        return sample_block;
+        if (is_first_chunk)
+        {
+            writer->writePrefix();
+            is_first_chunk = false;
+        }
+        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
-    void write(const Block & block) override
-    {
-        writer->write(block);
-    }
-
-    void writePrefix() override
-    {
-        writer->writePrefix();
-    }
-
-    void writeSuffix() override
+    void onFinish() override
     {
         try
         {
@@ -218,9 +215,9 @@ public:
     }
 
 private:
-    Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
+    bool is_first_chunk = true;
 };
 
 /* Recursive directory listing with matched paths as a result.
@@ -314,9 +311,9 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<HDFSBlockOutputStream>(uri,
+    return std::make_shared<HDFSSink>(uri,
         format_name,
         metadata_snapshot->getSampleBlock(),
         getContext(),

@@ -1081,7 +1081,7 @@ public:
         const DataTypeTuple * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
 
         bool both_represented_by_number = arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber();
-        bool has_date = left.isDate() || right.isDate();
+        bool has_date = left.isDateOrDate32() || right.isDateOrDate32();
 
         if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
             || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
@@ -1218,17 +1218,36 @@ public:
         {
             return res;
         }
-        else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
-                 // Comparing Date and DateTime64 requires implicit conversion,
-                 // otherwise Date is treated as number.
-                 && !(date_and_datetime && (isDate(left_type) || isDate(right_type))))
+        else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
-            // compare
-            if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
-                throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            // Comparing Date and DateTime64 requires implicit conversion,
+            if (date_and_datetime && (isDate(left_type) || isDate(right_type)))
+            {
+                DataTypePtr common_type = getLeastSupertype({left_type, right_type});
+                ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
+                ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
+                return executeDecimal({c0_converted, common_type, "left"}, {c1_converted, common_type, "right"});
+            }
+            else
+            {
+                // compare
+                if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
+                    throw Exception(
+                        "No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
+            }
 
-            return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
+        }
+        else if (date_and_datetime)
+        {
+            DataTypePtr common_type = getLeastSupertype({left_type, right_type});
+            ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
+            ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
+            if (!((res = executeNumLeftType<UInt32>(c0_converted.get(), c1_converted.get()))
+                  || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))))
+                throw Exception("Date related common types can only be UInt32 or UInt64", ErrorCodes::LOGICAL_ERROR);
+            return res;
         }
         else if (left_type->equals(*right_type))
         {
