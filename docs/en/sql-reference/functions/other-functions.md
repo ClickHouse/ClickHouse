@@ -2176,7 +2176,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 ## defaultProfiles {#default-profiles}
 
-Returns all the profiles specified at the current user's definition (see [CREATE USER]()).
+Returns all the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement).
 
 **Syntax**
 
