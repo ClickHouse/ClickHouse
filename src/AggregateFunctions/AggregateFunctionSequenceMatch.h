@@ -526,7 +526,8 @@ protected:
                     ++events_it, ++det_part_it;
 
                 /// matching specific event
-                else {
+                else
+                {
                     if (events_it->second.test(*det_part_it - 1))
                         ++events_it, ++det_part_it;
 
@@ -538,33 +539,34 @@ protected:
                     }
                 }
 
-                if (limit_iterations && ++events_processed > sequence_match_max_iterations) {
+                if (limit_iterations && ++events_processed > sequence_match_max_iterations)
                     throw Exception{"Pattern application proves too difficult, exceeding max iterations (" + toString(sequence_match_max_iterations) + ")",
                         ErrorCodes::TOO_SLOW};
-                }
             }
 
             det_part.clear();
             return det_part_it == det_part_end;
         };
 
-        for (auto action : actions) {
-            switch(action.type) {
-            /// mark AnyEvent action with 0 and SpecificEvent with positive numbers corresponding to the events
-            case PatternActionType::SpecificEvent:
-                det_part.push_back(action.extra + 1);
-                break;
-            case PatternActionType::AnyEvent:
-                det_part.push_back(0);
-                break;
-            case PatternActionType::KleeneStar:
-            case PatternActionType::TimeLessOrEqual:
-            case PatternActionType::TimeLess:
-            case PatternActionType::TimeGreaterOrEqual:
-            case PatternActionType::TimeGreater:
-            case PatternActionType::TimeEqual:
-                if (!find_deterministic_part())
-                    return false;
+        for (auto action : actions)
+        {
+            switch (action.type)
+            {
+                /// mark AnyEvent action with 0 and SpecificEvent with positive numbers corresponding to the events
+                case PatternActionType::SpecificEvent:
+                    det_part.push_back(action.extra + 1);
+                    break;
+                case PatternActionType::AnyEvent:
+                    det_part.push_back(0);
+                    break;
+                case PatternActionType::KleeneStar:
+                case PatternActionType::TimeLessOrEqual:
+                case PatternActionType::TimeLess:
+                case PatternActionType::TimeGreaterOrEqual:
+                case PatternActionType::TimeGreater:
+                case PatternActionType::TimeEqual:
+                    if (!find_deterministic_part())
+                        return false;
             }
         }
 
@@ -638,9 +640,10 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
+        auto & output = assert_cast<ColumnUInt8 &>(to).getData();
         if ((this->conditions_in_pattern & this->data(place).conditions_met) != this->conditions_in_pattern)
         {
-            assert_cast<ColumnUInt8 &>(to).getData().push_back(false);
+            output.push_back(false);
             return;
         }
         this->data(place).sort();
@@ -654,7 +657,7 @@ public:
         bool match = (this->pattern_has_time ?
             (this->couldMatchDeterministicParts(events_begin, events_end) && this->backtrackingMatch(events_it, events_end)) :
             this->dfaMatch(events_it, events_end));
-        assert_cast<ColumnUInt8 &>(to).getData().push_back(match);
+        output.push_back(match);
     }
 };
 
@@ -675,13 +678,14 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
+        auto & output = assert_cast<ColumnUInt64 &>(to).getData();
         if ((this->conditions_in_pattern & this->data(place).conditions_met) != this->conditions_in_pattern)
         {
-            assert_cast<ColumnUInt8 &>(to).getData().push_back(0);
+            output.push_back(0);
             return;
         }
         this->data(place).sort();
-        assert_cast<ColumnUInt64 &>(to).getData().push_back(count(place));
+        output.push_back(count(place));
     }
 
 private:
@@ -695,7 +699,8 @@ private:
 
         size_t count = 0;
         // check if there is a chance of matching the sequence at least once
-        if (this->couldMatchDeterministicParts(events_begin, events_end)) {
+        if (this->couldMatchDeterministicParts(events_begin, events_end))
+        {
             while (events_it != events_end && this->backtrackingMatch(events_it, events_end))
                 ++count;
         }
