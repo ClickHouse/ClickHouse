@@ -671,7 +671,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
 
             /// Common code for finish and exception callbacks
-            auto status_info_to_query_log = [](QueryLogElement &element, const QueryStatusInfo &info, const ASTPtr query_ast) mutable
+            auto status_info_to_query_log = [](QueryLogElement & element, const QueryStatusInfo & info, const ASTPtr query_ast, const ContextPtr context_ptr) mutable
             {
                 DB::UInt64 query_time = info.elapsed_seconds * 1000000;
                 ProfileEvents::increment(ProfileEvents::QueryTimeMicroseconds, query_time);
@@ -696,6 +696,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 element.thread_ids = std::move(info.thread_ids);
                 element.profile_counters = std::move(info.profile_counters);
+
+                const auto & factories_info = context_ptr->getQueryFactoriesInfo();
+                element.used_aggregate_functions = factories_info.aggregate_functions;
+                element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
+                element.used_database_engines = factories_info.database_engines;
+                element.used_data_type_families = factories_info.data_type_families;
+                element.used_dictionaries = factories_info.dictionaries;
+                element.used_formats = factories_info.formats;
+                element.used_functions = factories_info.functions;
+                element.used_storages = factories_info.storages;
+                element.used_table_functions = factories_info.table_functions;
             };
 
             /// Also make possible for caller to log successful query finish and exception during execution.
@@ -726,7 +737,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 const auto finish_time = std::chrono::system_clock::now();
                 elem.event_time = time_in_seconds(finish_time);
                 elem.event_time_microseconds = time_in_microseconds(finish_time);
-                status_info_to_query_log(elem, info, ast);
+                status_info_to_query_log(elem, info, ast, context);
 
                 auto progress_callback = context->getProgressCallback();
 
@@ -766,20 +777,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         static_cast<size_t>(elem.read_rows / elapsed_seconds),
                         ReadableSize(elem.read_bytes / elapsed_seconds));
                 }
-
-                elem.thread_ids = std::move(info.thread_ids);
-                elem.profile_counters = std::move(info.profile_counters);
-
-                const auto & factories_info = context->getQueryFactoriesInfo();
-                elem.used_aggregate_functions = factories_info.aggregate_functions;
-                elem.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
-                elem.used_database_engines = factories_info.database_engines;
-                elem.used_data_type_families = factories_info.data_type_families;
-                elem.used_dictionaries = factories_info.dictionaries;
-                elem.used_formats = factories_info.formats;
-                elem.used_functions = factories_info.functions;
-                elem.used_storages = factories_info.storages;
-                elem.used_table_functions = factories_info.table_functions;
 
                 if (log_queries && elem.type >= log_queries_min_type && Int64(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
                 {
@@ -849,7 +846,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (process_list_elem)
                 {
                     QueryStatusInfo info = process_list_elem->getInfo(true, current_settings.log_profile_events, false);
-                    status_info_to_query_log(elem, info, ast);
+                    status_info_to_query_log(elem, info, ast, context);
                 }
 
                 if (current_settings.calculate_text_stack_trace)
