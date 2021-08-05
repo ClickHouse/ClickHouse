@@ -161,10 +161,11 @@ public:
 
     struct ParametersToLaunchMerge
     {
+        MergeTreeDataMergerMutator & mutator;
         const StorageMetadataPtr & metadata_snapshot;
         MergeList::Entry & merge_entry;
         TableLockHolder holder;
-        time_t time_of_merge;
+        time_t time_of_mutation;
         ContextPtr context;
         ReservationSharedPtr space_reservation;
         MergeTreeData::MutableDataPartPtr new_data_part;
@@ -250,7 +251,7 @@ public:
             LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
             auto tmp_part_merge_task = parameters.mutator.mergePartsToTemporaryPart(
                 projection_future_part,
-                projection.metadata_snapshot,
+                parameters.metadata_snapshot,
                 parameters.merge_entry,
                 parameters.holder,
                 parameters.time_of_mutation,
@@ -421,7 +422,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         if (parameters.minmax_idx)
             parameters.minmax_idx->update(block, parameters.data.getMinMaxColumnsNames(parameters.metadata_snapshot->getPartitionKey()));
 
-        parameters.out.write(block);
+        parameters.out->write(block);
 
         for (size_t i = 0, size = parameters.projections_to_build.size(); i < size; ++i)
         {
@@ -492,10 +493,11 @@ void PartMergerWriter::constructTaskForProjectionPartsMerge()
         block_num,
         MergeProjectionPartsTask::ParametersToLaunchMerge
         {
+            .mutator = parameters.mutator,
             .metadata_snapshot = parameters.metadata_snapshot,
             .merge_entry = parameters.merge_entry,
             .holder = parameters.holder,
-            .time_of_merge = parameters.time_of_merge,
+            .time_of_mutation = parameters.time_of_mutation,
             .context = parameters.context
         }
     );
@@ -547,7 +549,7 @@ public:
 
     explicit MutateAllPartColumnsTask(Parameters parameters_) : parameters(parameters) {}
 
-    bool execute()
+    bool execute() override
     {
         switch (state)
         {
@@ -635,7 +637,7 @@ private:
             .holder = parameters.holder,
             .context = parameteres.context,
             .minmax_idx = parameters.minmax_idx
-        ;
+        };
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(std::move(parameters_for_task));
     }

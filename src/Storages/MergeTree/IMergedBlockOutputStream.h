@@ -45,6 +45,6 @@ protected:
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
 };
 
-using IMergedBlockOutputStreamPtr = std::shared_ptr<const IMergedBlockOutputStream>;
+using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;
 
 }
