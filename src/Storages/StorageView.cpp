@@ -86,12 +86,7 @@ void StorageView::read(
         current_inner_query = query_info.view_query->clone();
     }
 
-    auto modified_context = Context::createCopy(context);
-    /// Use settings from global context,
-    /// because difference between settings set on VIEW creation and query execution can break queries
-    modified_context->setSettings(context->getGlobalContext()->getSettingsRef());
-
-    InterpreterSelectWithUnionQuery interpreter(current_inner_query, modified_context, {}, column_names);
+    InterpreterSelectWithUnionQuery interpreter(current_inner_query, context, {}, column_names);
     interpreter.buildQueryPlan(query_plan);
 
     /// It's expected that the columns read from storage are not constant.
