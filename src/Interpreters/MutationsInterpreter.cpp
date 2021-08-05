@@ -303,6 +303,15 @@ static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPt
     return key_columns;
 }
 
+static bool materializeTTLRecalculateOnly(const StoragePtr & storage)
+{
+    auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+    if (!storage_from_merge_tree_data_part)
+        return false;
+    
+    return storage_from_merge_tree_data_part->materializeTTLRecalculateOnly();
+}
+
 static void validateUpdateColumns(
     const StoragePtr & storage,
     const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns,
@@ -394,7 +403,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;
-    bool materialize_ttl_recalculate_only = context->getSettingsRef().materialize_ttl_recalculate_only;
+    bool materialize_ttl_recalculate_only = materializeTTLRecalculateOnly(storage);
     for (const MutationCommand & command : commands)
     {
         if (command.type == MutationCommand::Type::UPDATE
