@@ -119,7 +119,7 @@ For manage uncompressed data cache parameters use following server level setting
 ## DROP COMPILED EXPRESSION CACHE {#query_language-system-drop-compiled-expression-cache}
 
 Reset the compiled expression cache. Used in development of ClickHouse and performance tests.
-Complied expression cache used when query/user/profile enable option [compile](../../operations/settings/settings.md#compile)
+Compiled expression cache used when query/user/profile enable option [compile-expressions](../../operations/settings/settings.md#compile-expressions)
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 

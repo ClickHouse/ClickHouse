@@ -26,6 +26,7 @@ public:
         const std::string & collection_name_,
         const std::string & username_,
         const std::string & password_,
+        const std::string & options_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment);
@@ -50,10 +51,12 @@ private:
     const std::string collection_name;
     const std::string username;
     const std::string password;
+    const std::string options;
+    const std::string uri;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
-    bool authentified = false;
-    std::mutex connection_mutex; /// Protects the variables `connection` and `authentified`.
+    bool authenticated = false;
+    std::mutex connection_mutex; /// Protects the variables `connection` and `authenticated`.
 };
 
 }

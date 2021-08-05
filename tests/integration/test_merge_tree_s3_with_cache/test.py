@@ -8,8 +8,8 @@ from helpers.cluster import ClickHouseCluster
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", main_configs=["configs/config.d/log_conf.xml", "configs/config.d/storage_conf.xml",
-                                                   "configs/config.d/ssl_conf.xml", "configs/config.d/query_log.xml"],
+        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml", "configs/config.d/ssl_conf.xml",
+                                                   "configs/config.d/query_log.xml"],
                              user_configs=["configs/config.d/users.xml"], with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
@@ -24,7 +24,7 @@ def get_query_stat(instance, hint):
     result = {}
     instance.query("SYSTEM FLUSH LOGS")
     events = instance.query('''
-        SELECT ProfileEvents.Names, ProfileEvents.Values
+        SELECT ProfileEvents.keys, ProfileEvents.values
         FROM system.query_log
         ARRAY JOIN ProfileEvents
         WHERE type != 1 AND query LIKE '%{}%'

@@ -11,17 +11,23 @@ toc_title: "Массивы"
 Тип результата - UInt8.
 Функция также работает для строк.
 
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
+
 ## notEmpty {#function-notempty}
 
 Возвращает 0 для пустого массива, и 1 для непустого массива.
 Тип результата - UInt8.
 Функция также работает для строк.
 
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
+
 ## length {#array_functions-length}
 
 Возвращает количество элементов в массиве.
 Тип результата - UInt64.
 Функция также работает для строк.
+
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT length(arr) FROM table` преобразуется к запросу `SELECT arr.size0 FROM TABLE`.
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 

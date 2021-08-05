@@ -39,7 +39,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
 {
     friend struct shared_ptr_helper<StorageDistributed>;
-    friend class DistributedBlockOutputStream;
+    friend class DistributedSink;
     friend class StorageDistributedDirectoryMonitor;
     friend class StorageSystemDistributionQueue;
 
@@ -81,7 +81,7 @@ public:
     bool supportsParallelInsert() const override { return true; }
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     QueryPipelinePtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 
@@ -160,7 +160,7 @@ private:
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors(const DiskPtr & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name);
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name, bool startup);
 
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)

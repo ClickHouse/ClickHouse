@@ -8,6 +8,7 @@
 #include <Core/MultiEnum.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
+#include <Storages/ColumnsDescription.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/MySQL/ConnectionMySQLSettings.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -111,7 +112,7 @@ private:
 
     std::map<String, UInt64> fetchTablesWithModificationTime(ContextPtr local_context) const;
 
-    std::map<String, NamesAndTypesList> fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr context) const;
+    std::map<String, ColumnsDescription> fetchTablesColumnsList(const std::vector<String> & tables_name, ContextPtr context) const;
 
     void destroyLocalCacheExtraTables(const std::map<String, UInt64> & tables_with_modification_time) const;
 
