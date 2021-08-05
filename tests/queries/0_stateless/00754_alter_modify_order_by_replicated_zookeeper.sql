@@ -9,8 +9,8 @@ DROP TABLE old_style;
 
 DROP TABLE IF EXISTS summing_r1;
 DROP TABLE IF EXISTS summing_r2;
-CREATE TABLE summing_r1(x UInt32, y UInt32, val UInt32) ENGINE ReplicatedSummingMergeTree('/clickhouse/tables/test_00754/summing', 'r1') ORDER BY (x, y);
-CREATE TABLE summing_r2(x UInt32, y UInt32, val UInt32) ENGINE ReplicatedSummingMergeTree('/clickhouse/tables/test_00754/summing', 'r2') ORDER BY (x, y);
+CREATE TABLE summing_r1(x UInt32, y UInt32, val UInt32) ENGINE ReplicatedSummingMergeTree('/clickhouse/tables/{database}/test_00754/summing', 'r1') ORDER BY (x, y);
+CREATE TABLE summing_r2(x UInt32, y UInt32, val UInt32) ENGINE ReplicatedSummingMergeTree('/clickhouse/tables/{database}/test_00754/summing', 'r2') ORDER BY (x, y);
 
 /* Can't add an expression with existing column to ORDER BY. */
 ALTER TABLE summing_r1 MODIFY ORDER BY (x, y, -val); -- { serverError 36 }
