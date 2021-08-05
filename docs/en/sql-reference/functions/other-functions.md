@@ -2152,7 +2152,7 @@ currentProfiles()
 
 **Returned value**
 
--   List of the current setting profiles. 
+-   List of the current user settings profiles. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
