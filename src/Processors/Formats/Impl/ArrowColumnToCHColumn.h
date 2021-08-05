@@ -22,9 +22,9 @@ class ArrowColumnToCHColumn
 public:
     ArrowColumnToCHColumn(const Block & header_, const std::string & format_name_, bool import_nested_);
 
-    /// Create header by arrow schema. It will be useful for inserting
+    /// Constructor that create header by arrow schema. It will be useful for inserting
     /// data from file without knowing table structure.
-    ArrowColumnToCHColumn(const arrow::Schema & schema, const std::string & format_name, bool import_nested_);
+    /// ArrowColumnToCHColumn(const arrow::Schema & schema, const std::string & format_name, bool import_nested_);
 
     void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
 
@@ -32,6 +32,7 @@ private:
     const Block & header;
     const std::string format_name;
     bool import_nested;
+
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.

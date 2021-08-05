@@ -45,8 +45,8 @@
         M(UINT64, arrow::UInt64Type) \
         M(INT64, arrow::Int64Type) \
         M(FLOAT, arrow::FloatType) \
-        M(DOUBLE, arrow::DoubleType)  \
-        M(STRING, arrow::StringType)
+        M(DOUBLE, arrow::DoubleType) \
+        M(BINARY, arrow::BinaryType)
 
 namespace DB
 {
