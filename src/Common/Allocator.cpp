@@ -20,7 +20,11 @@
     __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 16384;
 #endif
 
-template class Allocator<false, false>;
-template class Allocator<true, false>;
-template class Allocator<false, true>;
-template class Allocator<true, true>;
+template class Allocator<false, false, false>;
+template class Allocator<false, false, true>;
+template class Allocator<false, true, false>;
+template class Allocator<false, true, true>;
+template class Allocator<true, false, false>;
+template class Allocator<true, false, true>;
+template class Allocator<true, true, false>;
+template class Allocator<true, true, true>;

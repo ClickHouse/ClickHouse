@@ -84,7 +84,7 @@ namespace ErrorCodes
   * - random hint address for mmap
   * - mmap_threshold for using mmap less or more
   */
-template <bool clear_memory_, bool mmap_populate>
+template <bool clear_memory_, bool mmap_populate, bool mmap_huge_pages>
 class Allocator
 {
 public:
@@ -195,6 +195,7 @@ protected:
     static constexpr int mmap_flags = MAP_PRIVATE | MAP_ANONYMOUS
 #if defined(OS_LINUX)
         | (mmap_populate ? MAP_POPULATE : 0)
+        | (mmap_huge_pages ? MAP_HUGETLB : 0)
 #endif
         ;
 
@@ -362,10 +363,15 @@ constexpr size_t allocatorInitialBytes<AllocatorWithStackMemory<
 
 /// Prevent implicit template instantiation of Allocator
 
-extern template class Allocator<false, false>;
-extern template class Allocator<true, false>;
-extern template class Allocator<false, true>;
-extern template class Allocator<true, true>;
+extern template class Allocator<false, false, false>;
+extern template class Allocator<false, false, true>;
+extern template class Allocator<false, true, false>;
+extern template class Allocator<false, true, true>;
+extern template class Allocator<true, false, false>;
+extern template class Allocator<true, false, true>;
+extern template class Allocator<true, true, false>;
+extern template class Allocator<true, true, true>;
+
 
 #if !defined(__clang__)
 #pragma GCC diagnostic pop
