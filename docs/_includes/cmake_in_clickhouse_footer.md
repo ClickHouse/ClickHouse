@@ -16,8 +16,8 @@ Better:
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests" OFF)
 ```
 
-If the option's purpose can't be guessed by its name, or the purpose guess may be misleading, or option has some
-pre-conditions, leave a comment above the `option()` line and explain what it does.
+If the option's purpose can't be guessed by its name, or the purpose guess may be misleading, or option has some 
+pre-conditions, leave a comment above the `option()` line and explain what it does. 
 The best way would be linking the docs page (if it exists).
 The comment is parsed into a separate column (see below).
 
@@ -33,7 +33,7 @@ option(ENABLE_TESTS "Provide unit_test_dbms target with Google.test unit tests" 
 
 Suppose you have an option that may strip debug symbols from the ClickHouse's part.
 This can speed up the linking process, but produces a binary that cannot be debugged.
-In that case, prefer explicitly raising a warning telling the developer that he may be doing something wrong.
+In that case, prefer explicitly raising a warning telling the developer that he may be doing something wrong. 
 Also, such options should be disabled if applies.
 
 Bad:

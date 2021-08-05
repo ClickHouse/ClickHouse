@@ -76,16 +76,6 @@
 #    endif
 #endif
 
-#if !defined(UNDEFINED_BEHAVIOR_SANITIZER)
-#    if defined(__has_feature)
-#        if __has_feature(undefined_behavior_sanitizer)
-#            define UNDEFINED_BEHAVIOR_SANITIZER 1
-#        endif
-#    elif defined(__UNDEFINED_BEHAVIOR_SANITIZER__)
-#        define UNDEFINED_BEHAVIOR_SANITIZER 1
-#    endif
-#endif
-
 #if defined(ADDRESS_SANITIZER)
 #    define BOOST_USE_ASAN 1
 #    define BOOST_USE_UCONTEXT 1

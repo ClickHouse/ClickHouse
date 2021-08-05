@@ -4,6 +4,7 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -16,6 +17,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Poco/DirectoryIterator.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
@@ -34,22 +36,20 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 namespace
 {
     void tryAttachTable(
-        ContextMutablePtr context,
+        Context & context,
         const ASTCreateQuery & query,
         DatabaseOrdinary & database,
         const String & database_name,
         const String & metadata_path,
         bool has_force_restore_data_flag)
     {
+        assert(!query.is_dictionary);
         try
         {
-            auto [table_name, table] = createTableFromAST(
-                query,
-                database_name,
-                database.getTableDataPath(query),
-                context,
-                has_force_restore_data_flag);
-
+            String table_name;
+            StoragePtr table;
+            std::tie(table_name, table)
+                = createTableFromAST(query, database_name, database.getTableDataPath(query), context, has_force_restore_data_flag);
             database.attachTable(table_name, table, database.getTableDataPath(query));
         }
         catch (Exception & e)
@@ -60,6 +60,28 @@ namespace
             throw;
         }
     }
+
+
+    void tryAttachDictionary(const ASTPtr & query, DatabaseOrdinary & database, const String & metadata_path, const Context & context)
+    {
+        auto & create_query = query->as<ASTCreateQuery &>();
+        assert(create_query.is_dictionary);
+        try
+        {
+            Poco::File meta_file(metadata_path);
+            auto config = getDictionaryConfigurationFromAST(create_query, context, database.getDatabaseName());
+            time_t modification_time = meta_file.getLastModified().epochTime();
+            database.attachDictionary(create_query.table, DictionaryAttachInfo{query, config, modification_time});
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "Cannot attach dictionary " + backQuote(database.getDatabaseName()) + "." + backQuote(create_query.table)
+                + " from metadata file " + metadata_path + " from query " + serializeAST(*query));
+            throw;
+        }
+    }
+
 
     void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
     {
@@ -72,18 +94,18 @@ namespace
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context_)
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context_)
     : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
 }
 
 DatabaseOrdinary::DatabaseOrdinary(
-    const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context_)
-    : DatabaseOnDisk(name_, metadata_path_, data_path_, logger, context_)
+    const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context_)
+    : DatabaseWithDictionaries(name_, metadata_path_, data_path_, logger, context_)
 {
 }
 
-void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool /*force_attach*/)
+void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool /*force_attach*/)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -95,8 +117,7 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool h
 
     size_t total_dictionaries = 0;
 
-    auto process_metadata = [&file_names, &total_dictionaries, &file_names_mutex, this](
-                                const String & file_name)
+    auto process_metadata = [&context, &file_names, &total_dictionaries, &file_names_mutex, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -104,13 +125,14 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool h
 
         try
         {
-            auto ast = parseQueryFromMetadata(log, getContext(), full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
+            auto ast = parseQueryFromMetadata(log, context, full_path.string(), /*throw_on_error*/ true, /*remove_empty*/ false);
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
                 create_query->database = database_name;
 
-                if (fs::exists(full_path.string() + detached_suffix))
+                auto detached_permanently_flag = Poco::File(full_path.string() + detached_suffix);
+                if (detached_permanently_flag.exists())
                 {
                     /// FIXME: even if we don't load the table we can still mark the uuid of it as taken.
                     /// if (create_query->uuid != UUIDHelpers::Nil)
@@ -133,7 +155,7 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool h
         }
     };
 
-    iterateMetadataFiles(local_context, process_metadata);
+    iterateMetadataFiles(context, process_metadata);
 
     size_t total_tables = file_names.size() - total_dictionaries;
 
@@ -141,6 +163,7 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool h
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed{0};
+    std::atomic<size_t> dictionaries_processed{0};
 
     ThreadPool pool;
 
@@ -152,41 +175,27 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool h
     /// loading of its config only, it doesn't involve loading the dictionary itself.
 
     /// Attach dictionaries.
-    for (const auto & name_with_query : file_names)
+    for (const auto & [name, query] : file_names)
     {
-        const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
-
+        auto create_query = query->as<const ASTCreateQuery &>();
         if (create_query.is_dictionary)
         {
-            pool.scheduleOrThrowOnError([&]()
-            {
-                tryAttachTable(
-                    local_context,
-                    create_query,
-                    *this,
-                    database_name,
-                    getMetadataPath() + name_with_query.first,
-                    has_force_restore_data_flag);
+            tryAttachDictionary(query, *this, getMetadataPath() + name, context);
 
-                /// Messages, so that it's not boring to wait for the server to load for a long time.
-                logAboutProgress(log, ++tables_processed, total_tables, watch);
-            });
+            /// Messages, so that it's not boring to wait for the server to load for a long time.
+            logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
         }
     }
-
-    pool.wait();
 
     /// Attach tables.
     for (const auto & name_with_query : file_names)
     {
         const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
-
         if (!create_query.is_dictionary)
-        {
             pool.scheduleOrThrowOnError([&]()
             {
                 tryAttachTable(
-                    local_context,
+                    context,
                     create_query,
                     *this,
                     database_name,
@@ -196,7 +205,6 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr local_context, bool h
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);
             });
-        }
     }
 
     pool.wait();
@@ -237,7 +245,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
     thread_pool.wait();
 }
 
-void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseOrdinary::alterTable(const Context & context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
     String table_name = table_id.table_name;
     /// Read the definition of the table and replace the necessary parts with new ones.
@@ -257,7 +265,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         statement.data() + statement.size(),
         "in file " + table_metadata_path,
         0,
-        local_context->getSettingsRef().max_parser_depth);
+        context.getSettingsRef().max_parser_depth);
 
     applyMetadataChangesToCreateQuery(ast, metadata);
 
@@ -266,24 +274,24 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);
         out.next();
-        if (local_context->getSettingsRef().fsync_metadata)
+        if (context.getSettingsRef().fsync_metadata)
             out.sync();
         out.close();
     }
 
-    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
+    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, context);
 }
 
-void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & /*statement*/, ContextPtr /*query_context*/)
+void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & /*statement*/, const Context & /*query_context*/)
 {
     try
     {
         /// rename atomically replaces the old file with the new one.
-        fs::rename(table_metadata_tmp_path, table_metadata_path);
+        Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
     }
     catch (...)
     {
-        fs::remove(table_metadata_tmp_path);
+        Poco::File(table_metadata_tmp_path).remove();
         throw;
     }
 }

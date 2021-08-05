@@ -44,7 +44,6 @@ public:
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
-    bool group_by_with_constant_keys = false;
     bool limit_with_ties = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
@@ -69,8 +68,6 @@ public:
     const ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
     const ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
 
-    bool hasFiltration() const { return where() || prewhere() || having(); }
-
     /// Set/Reset/Remove expression.
     void setExpression(Expression expr, ASTPtr && ast);
 
@@ -94,10 +91,6 @@ public:
     void replaceDatabaseAndTable(const StorageID & table_id);
     void addTableFunction(ASTPtr & table_function_ptr);
     void updateTreeHashImpl(SipHash & hash_state) const override;
-
-    void setFinal();
-
-    const char * getQueryKindString() const override { return "Select"; }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

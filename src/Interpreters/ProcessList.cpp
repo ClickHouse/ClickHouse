@@ -6,7 +6,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -61,12 +60,12 @@ static bool isUnlimitedQuery(const IAST * ast)
 }
 
 
-ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, ContextPtr query_context)
+ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * ast, Context & query_context)
 {
     EntryPtr res;
 
-    const ClientInfo & client_info = query_context->getClientInfo();
-    const Settings & settings = query_context->getSettingsRef();
+    const ClientInfo & client_info = query_context.getClientInfo();
+    const Settings & settings = query_context.getSettingsRef();
 
     if (client_info.current_query_id.empty())
         throw Exception("Query id cannot be empty", ErrorCodes::LOGICAL_ERROR);
@@ -175,9 +174,11 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         }
 
         auto process_it = processes.emplace(processes.end(),
-            query_context, query_, client_info, priorities.insert(settings.priority));
+            query_, client_info, priorities.insert(settings.priority));
 
         res = std::make_shared<Entry>(*this, process_it);
+
+        process_it->query_context = &query_context;
 
         ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
         user_process_list.queries.emplace(client_info.current_query_id, &res->get());
@@ -200,7 +201,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
 
-            if (query_context->hasTraceCollector())
+            if (query_context.hasTraceCollector())
             {
                 /// Set up memory profiling
                 thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
@@ -289,19 +290,18 @@ ProcessListEntry::~ProcessListEntry()
 
 
 QueryStatus::QueryStatus(
-    ContextPtr context_, const String & query_, const ClientInfo & client_info_, QueryPriorities::Handle && priority_handle_)
-    : WithContext(context_)
-    , query(query_)
-    , client_info(client_info_)
-    , priority_handle(std::move(priority_handle_))
-    , num_queries_increment{CurrentMetrics::Query}
+    const String & query_,
+    const ClientInfo & client_info_,
+    QueryPriorities::Handle && priority_handle_)
+    :
+    query(query_),
+    client_info(client_info_),
+    priority_handle(std::move(priority_handle_)),
+    num_queries_increment{CurrentMetrics::Query}
 {
 }
 
-QueryStatus::~QueryStatus()
-{
-    assert(executors.empty());
-}
+QueryStatus::~QueryStatus() = default;
 
 void QueryStatus::setQueryStreams(const BlockIO & io)
 {
@@ -355,11 +355,6 @@ CancellationCode QueryStatus::cancelQuery(bool kill)
 
     BlockInputStreamPtr input_stream;
     BlockOutputStreamPtr output_stream;
-    SCOPE_EXIT({
-        std::lock_guard lock(query_streams_mutex);
-        for (auto * e : executors)
-            e->cancel();
-    });
 
     if (tryGetQueryStreams(input_stream, output_stream))
     {
@@ -373,20 +368,6 @@ CancellationCode QueryStatus::cancelQuery(bool kill)
     /// Query is not even started
     is_killed.store(true);
     return CancellationCode::CancelSent;
-}
-
-void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
-{
-    std::lock_guard lock(query_streams_mutex);
-    assert(std::find(executors.begin(), executors.end(), e) == executors.end());
-    executors.push_back(e);
-}
-
-void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
-{
-    std::lock_guard lock(query_streams_mutex);
-    assert(std::find(executors.begin(), executors.end(), e) != executors.end());
-    std::erase_if(executors, [e](PipelineExecutor * x) { return x == e; });
 }
 
 
@@ -473,11 +454,8 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
             res.profile_counters = std::make_shared<ProfileEvents::Counters>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
 
-    if (get_settings && getContext())
-    {
-        res.query_settings = std::make_shared<Settings>(getContext()->getSettings());
-        res.current_database = getContext()->getCurrentDatabase();
-    }
+    if (get_settings && query_context)
+        res.query_settings = std::make_shared<Settings>(query_context->getSettings());
 
     return res;
 }

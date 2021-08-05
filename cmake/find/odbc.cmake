@@ -50,6 +50,4 @@ if (NOT EXTERNAL_ODBC_LIBRARY_FOUND)
     set (USE_INTERNAL_ODBC_LIBRARY 1)
 endif ()
 
-set (USE_INTERNAL_NANODBC_LIBRARY 1)
-
 message (STATUS "Using unixodbc")

@@ -54,10 +54,6 @@ public:
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
-    void appendColumnNameImpl(WriteBuffer & ostr, const Settings & settings) const override;
-
-private:
-    void appendColumnNameImpl(WriteBuffer & ostr, const Settings * settings) const;
 };
 
 

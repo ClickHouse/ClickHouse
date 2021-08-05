@@ -2,7 +2,7 @@
 #include <errmsg.h>
 #include <mysql.h>
 #else
-#include <mysql/errmsg.h> //Y_IGNORE
+#include <mysql/errmsg.h>
 #include <mysql/mysql.h>
 #endif
 

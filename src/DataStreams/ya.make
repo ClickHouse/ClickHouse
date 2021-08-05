@@ -14,12 +14,13 @@ NO_COMPILER_WARNINGS()
 
 SRCS(
     AddingDefaultBlockOutputStream.cpp
+    AddingDefaultsBlockInputStream.cpp
     AsynchronousBlockInputStream.cpp
     BlockIO.cpp
     BlockStreamProfileInfo.cpp
     CheckConstraintsBlockOutputStream.cpp
+    CheckSortedBlockInputStream.cpp
     ColumnGathererStream.cpp
-    ConnectionCollector.cpp
     ConvertingBlockInputStream.cpp
     CountingBlockOutputStream.cpp
     DistinctSortedBlockInputStream.cpp
@@ -27,8 +28,11 @@ SRCS(
     ExpressionBlockInputStream.cpp
     IBlockInputStream.cpp
     ITTLAlgorithm.cpp
+    InputStreamFromASTInsertQuery.cpp
     InternalTextLogsRowOutputStream.cpp
+    LimitBlockInputStream.cpp
     MaterializingBlockInputStream.cpp
+    MergingSortedBlockInputStream.cpp
     MongoDBBlockInputStream.cpp
     NativeBlockInputStream.cpp
     NativeBlockOutputStream.cpp
@@ -37,7 +41,6 @@ SRCS(
     RemoteBlockOutputStream.cpp
     RemoteQueryExecutor.cpp
     RemoteQueryExecutorReadContext.cpp
-    SQLiteBlockInputStream.cpp
     SizeLimits.cpp
     SquashingBlockInputStream.cpp
     SquashingBlockOutputStream.cpp

@@ -84,8 +84,6 @@ Features:
 -   Table data preview.
 -   Full-text search.
 
-By default, DBeaver does not connect using a session (the CLI for example does). If you require session support (for example to set settings for your session), edit the driver connection properties and set session_id to a random string (it uses the http connection under the hood). Then you can use any setting from the query window 
-
 ### clickhouse-cli {#clickhouse-cli}
 
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) is an alternative command-line client for ClickHouse, written in Python 3.
@@ -168,26 +166,5 @@ Features:
 -   Powerful workflow integration via Looker’s [Data Actions](https://looker.com/platform/actions).
 
 [How to configure ClickHouse in Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
-
-### SeekTable {#seektable}
-
-[SeekTable](https://www.seektable.com) is a self-service BI tool for data exploration and operational reporting. It is available both as a cloud service and a self-hosted version. Reports from SeekTable may be embedded into any web-app.
-
-Features:
-
--   Business users-friendly reports builder.
--   Powerful report parameters for SQL filtering and report-specific query customizations.
--   Can connect to ClickHouse both with a native TCP/IP endpoint and a HTTP(S) interface (2 different drivers).
--   It is possible to use all power of ClickHouse SQL dialect in dimensions/measures definitions.
--   [Web API](https://www.seektable.com/help/web-api-integration) for automated reports generation.
--   Supports reports development flow with account data [backup/restore](https://www.seektable.com/help/self-hosted-backup-restore); data models (cubes) / reports configuration is a human-readable XML and can be stored under version control system.
-
-SeekTable is [free](https://www.seektable.com/help/cloud-pricing) for personal/individual usage.
-
-[How to configure ClickHouse connection in SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
-
-### Chadmin {#chadmin}
-
-[Chadmin](https://github.com/bun4uk/chadmin) is a simple UI where you can visualize your currently running queries on your ClickHouse cluster and info about them and kill them if you want.
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->
