@@ -461,7 +461,7 @@ private:
                {TokenType::ErrorSingleQuoteIsNotClosed, Replxx::Color::RED},
                {TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED},
                {TokenType::ErrorSinglePipeMark, Replxx::Color::RED},
-               {TokenType::ErrorWrongNumber, Replxx::Color::RED},  
+               {TokenType::ErrorWrongNumber, Replxx::Color::RED},
                {TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }};
 
         const Replxx::Color unknown_token_color = Replxx::Color::RED;
