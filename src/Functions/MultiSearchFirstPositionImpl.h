@@ -30,7 +30,7 @@ struct MultiSearchFirstPositionImpl
         };
         auto searcher = Impl::createMultiSearcherInBigHaystack(needles);
         const size_t haystack_string_size = haystack_offsets.size();
-        res.resize_fill(haystack_string_size);
+        res.resize(haystack_string_size);
         size_t iteration = 0;
         while (searcher.hasMoreToSearch())
         {
@@ -51,6 +51,8 @@ struct MultiSearchFirstPositionImpl
             }
             ++iteration;
         }
+        if (iteration == 0)
+            std::fill(res.begin(), res.end(), 0);
     }
 };
 
