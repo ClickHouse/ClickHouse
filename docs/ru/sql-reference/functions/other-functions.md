@@ -2090,7 +2090,9 @@ SELECT tcpPort();
 
 ## currentProfiles {#current-profiles}
 
-Возвращает список [профилей настроек](../../operations/access-rights.md#settings-profiles-management) для текущего пользователя. Для изменения текущего профиля настроек может быть использована команда [SET PROFILE](../../sql-reference/statements/set.md#query-set). Если команда `SET PROFILE` не использовалась, функция возвращает профили, указанные при объявлении текущего пользователя (см. [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
+Возвращает список [профилей настроек](../../operations/access-rights.md#settings-profiles-management) для текущего пользователя. 
+
+Профиль настроек может быть указан при создании пользователя (см. [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)). Позднее для изменения настроек могут применяться другие профили с помощью выражения [SET profile](../../sql-reference/statements/set.md#query-set). 
 
 **Синтаксис**
 
