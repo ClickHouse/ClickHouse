@@ -2186,6 +2186,6 @@ defaultProfiles()
 
 **Returned value**
 
--   List of the default setting profiles. 
+-   List of the default settings profiles. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
