@@ -236,7 +236,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     {
         const ASTFunction * engine = engine_define->engine;
 
-        if (!engine->arguments || engine->arguments->children.size() < 4 || engine->arguments->children.size() > 5)
+        if (!engine->arguments || engine->arguments->children.size() < 4 || engine->arguments->children.size() > 6)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "{} Database require `host:port`, `database_name`, `username`, `password` [, `schema` = "", `use_table_cache` = 0].",
                             engine_name);
@@ -255,7 +255,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (engine->arguments->children.size() >= 5)
             schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
 
-        bool use_table_cache = 0;
+        auto use_table_cache = 0;
         if (engine->arguments->children.size() >= 6)
             use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
 
