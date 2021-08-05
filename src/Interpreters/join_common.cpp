@@ -552,6 +552,8 @@ void NotJoined::extractColumnChanges(size_t right_pos, size_t result_pos)
 
 void NotJoined::correctLowcardAndNullability(MutableColumns & columns_right)
 {
+
+    assert(right_nullability_removes.size() == 0);
     for (size_t pos : right_nullability_removes)
         changeNullability(columns_right[pos]);
 
