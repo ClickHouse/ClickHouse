@@ -140,6 +140,7 @@ SRCS(
     StorageMerge.cpp
     StorageMergeTree.cpp
     StorageMongoDB.cpp
+    StorageMongoDBSocketFactory.cpp
     StorageMySQL.cpp
     StorageNull.cpp
     StorageReplicatedMergeTree.cpp
