@@ -48,10 +48,10 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 private:
-    friend class StorageMySQLBlockOutputStream;
+    friend class StorageMySQLSink;
 
     std::string remote_database_name;
     std::string remote_table_name;

@@ -20,11 +20,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Смотрите подробное описание запроса [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query).
 
-Структура таблицы может отличаться от исходной структуры таблицы MySQL:
+Структура таблицы может отличаться от структуры исходной таблицы MySQL:
 
--   Имена столбцов должны быть такими же, как в исходной таблице MySQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
--   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [приводить](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
--   Настройка `external_table_functions_use_nulls` определяет как обрабатывать Nullable столбцы. По умолчанию 1, если 0 - табличная функция не будет делать nullable столбцы и будет вместо null выставлять значения по умолчанию для скалярного типа. Это также применимо для null значений внутри массивов.
+-   Имена столбцов должны быть такими же, как в исходной таблице MySQL, но можно использовать только некоторые из этих столбцов и в любом порядке.
+-   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [привести](../../../engines/database-engines/mysql.md#data_types-support) значения к типам данных ClickHouse.
+-   Настройка [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) определяет как обрабатывать Nullable столбцы. Значение по умолчанию: 1. Если значение 0, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.
 
 **Параметры движка**
 
@@ -49,6 +49,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Простые условия `WHERE` такие как `=, !=, >, >=, <, =` выполняются на стороне сервера MySQL.
 
 Остальные условия и ограничение выборки `LIMIT` будут выполнены в ClickHouse только после выполнения запроса к MySQL.
+
+Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
 
 ## Пример использования {#primer-ispolzovaniia}
 

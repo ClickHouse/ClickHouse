@@ -138,7 +138,7 @@ def invalid_ldap_external_user_directory_config(server, roles, message, tail=30,
 
         with Then(f"{config.preprocessed_name} should be updated", description=f"timeout {timeout}"):
             started = time.time()
-            command = f"cat /var/lib/clickhouse/preprocessed_configs/_{config.preprocessed_name} | grep {config.uid}{' > /dev/null' if not settings.debug else ''}"
+            command = f"cat /var/lib/clickhouse/preprocessed_configs/{config.preprocessed_name} | grep {config.uid}{' > /dev/null' if not settings.debug else ''}"
             while time.time() - started < timeout:
                 exitcode = node.command(command, steps=False).exitcode
                 if exitcode == 0:

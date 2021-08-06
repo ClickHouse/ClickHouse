@@ -728,6 +728,11 @@ inline void writeDateText(DayNum date, WriteBuffer & buf)
     writeDateText<delimiter>(LocalDate(date), buf);
 }
 
+template <char delimiter = '-'>
+inline void writeDateText(ExtendedDayNum date, WriteBuffer & buf)
+{
+    writeDateText<delimiter>(LocalDate(date), buf);
+}
 
 /// In the format YYYY-MM-DD HH:MM:SS
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
@@ -1092,6 +1097,17 @@ writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian archi
         x = __builtin_bswap64(x);
 
     writePODBinary(x, buf);
+}
+
+template <typename T>
+inline std::enable_if_t<is_big_int_v<T>, void>
+writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
+{
+    for (size_t i = 0; i != std::size(x.items); ++i)
+    {
+        const auto & item = x.items[std::size(x.items) - i - 1];
+        writeBinaryBigEndian(item, buf);
+    }
 }
 
 struct PcgSerializer

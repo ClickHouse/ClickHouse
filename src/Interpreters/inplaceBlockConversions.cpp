@@ -53,6 +53,7 @@ void addDefaultRequiredExpressionsRecursively(
         NameSet required_columns_names = columns_context.requiredColumns();
 
         auto expr = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
+
         if (is_column_in_query && convert_null_to_default)
             expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(expr));
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
@@ -61,6 +62,15 @@ void addDefaultRequiredExpressionsRecursively(
 
         for (const auto & next_required_column_name : required_columns_names)
             addDefaultRequiredExpressionsRecursively(block, next_required_column_name, required_column_type, columns, default_expr_list_accum, added_columns, null_as_default);
+    }
+    else
+    {
+        /// This column is required, but doesn't have default expression, so lets use "default default"
+        auto column = columns.get(required_column_name);
+        auto default_value = column.type->getDefault();
+        auto default_ast = std::make_shared<ASTLiteral>(default_value);
+        default_expr_list_accum->children.emplace_back(setAlias(default_ast, required_column_name));
+        added_columns.emplace(required_column_name);
     }
 }
 

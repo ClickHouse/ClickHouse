@@ -9,7 +9,6 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -33,6 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
@@ -59,6 +59,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.avro.output_codec = settings.output_format_avro_codec;
     format_settings.avro.output_sync_interval = settings.output_format_avro_sync_interval;
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
+    format_settings.avro.string_column_pattern = settings.output_format_avro_string_column_pattern.toString();
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
@@ -112,6 +113,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
     format_settings.write_statistics = settings.output_format_write_statistics;
+    format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -308,7 +310,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
-        throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
+        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
@@ -343,7 +345,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
-        throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
+        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
 
     if (context->hasQueryContext() && context->getSettingsRef().log_queries)
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
@@ -351,8 +353,11 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     RowOutputFormatParams params;
     params.callback = std::move(callback);
 
-    auto format_settings = _format_settings
-        ? *_format_settings : getFormatSettings(context);
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+
+    /// If we're handling MySQL protocol connection right now then MySQLWire is only allowed output format.
+    if (format_settings.mysql_wire.sequence_id && (name != "MySQLWire"))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.

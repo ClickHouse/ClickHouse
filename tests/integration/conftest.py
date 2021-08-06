@@ -1,4 +1,3 @@
-import subprocess
 from helpers.cluster import run_and_check
 import pytest
 import logging
@@ -29,3 +28,9 @@ def cleanup_environment():
         pass
 
     yield
+
+def pytest_addoption(parser):
+    parser.addoption("--run-id", default="", help="run-id is used as postfix in _instances_{} directory")
+
+def pytest_configure(config):
+    os.environ['INTEGRATION_TESTS_RUN_ID'] = config.option.run_id

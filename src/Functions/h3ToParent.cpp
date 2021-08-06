@@ -44,14 +44,16 @@ public:
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
 
         arg = arguments[1].get();
         if (!WhichDataType(arg).isUInt8())
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(2) + " of function " + getName() + ". Must be UInt8",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt8",
+                arg->getName(), 2, getName());
 
         return std::make_shared<DataTypeUInt64>();
     }
@@ -71,10 +73,12 @@ public:
             const UInt8 resolution = col_resolution->getUInt(row);
 
             if (resolution > MAX_H3_RES)
-                throw Exception("The argument 'resolution' (" + toString(resolution) + ") of function " + getName()
-                    + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
+                    toString(resolution), getName(), toString(MAX_H3_RES));
 
-            UInt64 res = h3ToParent(hindex, resolution);
+            UInt64 res = cellToParent(hindex, resolution);
 
             dst_data[row] = res;
         }
