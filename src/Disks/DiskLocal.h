@@ -74,7 +74,7 @@ public:
         const String & path,
         size_t buf_size,
         size_t estimated_size,
-        size_t direct_io_threshold,
+        size_t aio_threshold,
         size_t mmap_threshold,
         MMappedFileCache * mmap_cache) const override;
 
@@ -99,8 +99,6 @@ public:
     void truncateFile(const String & path, size_t size) override;
 
     DiskType::Type getType() const override { return DiskType::Type::Local; }
-
-    bool supportZeroCopyReplication() const override { return false; }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 

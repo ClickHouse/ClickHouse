@@ -26,16 +26,6 @@ public:
         throw Exception("Cannot convert NULL to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const NegativeInfinity &) const
-    {
-        throw Exception("Cannot convert -Inf to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
-    }
-
-    T operator() (const PositiveInfinity &) const
-    {
-        throw Exception("Cannot convert +Inf to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
-    }
-
     T operator() (const String &) const
     {
         throw Exception("Cannot convert String to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);

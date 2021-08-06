@@ -118,7 +118,6 @@ SRCS(
     MySQL/MySQLSettings.cpp
     PartitionCommands.cpp
     ProjectionsDescription.cpp
-    ReadFinalForExternalReplicaStorage.cpp
     ReadInOrderOptimizer.cpp
     SelectQueryDescription.cpp
     SetSettings.cpp
@@ -143,7 +142,6 @@ SRCS(
     StorageMySQL.cpp
     StorageNull.cpp
     StorageReplicatedMergeTree.cpp
-    StorageSQLite.cpp
     StorageSet.cpp
     StorageStripeLog.cpp
     StorageTinyLog.cpp
@@ -211,7 +209,6 @@ SRCS(
     System/StorageSystemTables.cpp
     System/StorageSystemUserDirectories.cpp
     System/StorageSystemUsers.cpp
-    System/StorageSystemWarnings.cpp
     System/StorageSystemZeros.cpp
     System/StorageSystemZooKeeper.cpp
     System/attachSystemTables.cpp

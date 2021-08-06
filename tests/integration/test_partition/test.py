@@ -236,3 +236,82 @@ def test_drop_detached_parts(drop_detached_parts_table):
     q("ALTER TABLE test.drop_detached DROP DETACHED PARTITION 1", settings=s)
     detached = q("SElECT name FROM system.detached_parts WHERE table='drop_detached' AND database='test' ORDER BY name")
     assert TSV(detached) == TSV('0_3_3_0\nattaching_0_6_6_0\ndeleting_0_7_7_0')
+
+def test_system_detached_parts(drop_detached_parts_table):
+    q("create table sdp_0 (n int, x int) engine=MergeTree order by n")
+    q("create table sdp_1 (n int, x int) engine=MergeTree order by n partition by x")
+    q("create table sdp_2 (n int, x String) engine=MergeTree order by n partition by x")
+    q("create table sdp_3 (n int, x Enum('broken' = 0, 'all' = 1)) engine=MergeTree order by n partition by x")
+
+    for i in range(0, 4):
+        q("system stop merges sdp_{}".format(i))
+        q("insert into sdp_{} values (0, 0)".format(i))
+        q("insert into sdp_{} values (1, 1)".format(i))
+        for p in q("select distinct partition_id from system.parts where table='sdp_{}'".format(i))[:-1].split('\n'):
+            q("alter table sdp_{} detach partition id '{}'".format(i, p))
+
+    path_to_detached = path_to_data + 'data/default/sdp_{}/detached/{}'
+    for i in range(0, 4):
+        instance.exec_in_container(['mkdir', path_to_detached.format(i, 'attaching_0_6_6_0')])
+        instance.exec_in_container(['mkdir', path_to_detached.format(i, 'deleting_0_7_7_0')])
+        instance.exec_in_container(['mkdir', path_to_detached.format(i, 'any_other_name')])
+        instance.exec_in_container(['mkdir', path_to_detached.format(i, 'prefix_1_2_2_0_0')])
+
+        instance.exec_in_container(['mkdir', path_to_detached.format(i, 'ignored_202107_714380_714380_0')])
+        instance.exec_in_container(['mkdir', path_to_detached.format(i, 'broken_202107_714380_714380_123')])
+        instance.exec_in_container(['mkdir', path_to_detached.format(i, 'clone_all_714380_714380_42')])
+        instance.exec_in_container(['mkdir', path_to_detached.format(i, 'clone_all_714380_714380_42_123')])
+        instance.exec_in_container(['mkdir', path_to_detached.format(i, 'broken-on-start_6711e2b2592d86d18fc0f260cf33ef2b_714380_714380_42_123')])
+
+    res = q("select * from system.detached_parts where table like 'sdp_%' order by table, name")
+    assert res == \
+        "default\tsdp_0\tall\tall_1_1_0\tdefault\t\t1\t1\t0\n" \
+        "default\tsdp_0\tall\tall_2_2_0\tdefault\t\t2\t2\t0\n" \
+        "default\tsdp_0\t\\N\tany_other_name\tdefault\t\\N\t\\N\t\\N\t\\N\n" \
+        "default\tsdp_0\t0\tattaching_0_6_6_0\tdefault\tattaching\t6\t6\t0\n" \
+        "default\tsdp_0\t6711e2b2592d86d18fc0f260cf33ef2b\tbroken-on-start_6711e2b2592d86d18fc0f260cf33ef2b_714380_714380_42_123\tdefault\tbroken-on-start\t714380\t714380\t42\n" \
+        "default\tsdp_0\t202107\tbroken_202107_714380_714380_123\tdefault\tbroken\t714380\t714380\t123\n" \
+        "default\tsdp_0\tall\tclone_all_714380_714380_42\tdefault\tclone\t714380\t714380\t42\n" \
+        "default\tsdp_0\tall\tclone_all_714380_714380_42_123\tdefault\tclone\t714380\t714380\t42\n" \
+        "default\tsdp_0\t0\tdeleting_0_7_7_0\tdefault\tdeleting\t7\t7\t0\n" \
+        "default\tsdp_0\t202107\tignored_202107_714380_714380_0\tdefault\tignored\t714380\t714380\t0\n" \
+        "default\tsdp_0\t1\tprefix_1_2_2_0_0\tdefault\tprefix\t2\t2\t0\n" \
+        "default\tsdp_1\t0\t0_1_1_0\tdefault\t\t1\t1\t0\n" \
+        "default\tsdp_1\t1\t1_2_2_0\tdefault\t\t2\t2\t0\n" \
+        "default\tsdp_1\t\\N\tany_other_name\tdefault\t\\N\t\\N\t\\N\t\\N\n" \
+        "default\tsdp_1\t0\tattaching_0_6_6_0\tdefault\tattaching\t6\t6\t0\n" \
+        "default\tsdp_1\t6711e2b2592d86d18fc0f260cf33ef2b\tbroken-on-start_6711e2b2592d86d18fc0f260cf33ef2b_714380_714380_42_123\tdefault\tbroken-on-start\t714380\t714380\t42\n" \
+        "default\tsdp_1\t202107\tbroken_202107_714380_714380_123\tdefault\tbroken\t714380\t714380\t123\n" \
+        "default\tsdp_1\tall\tclone_all_714380_714380_42\tdefault\tclone\t714380\t714380\t42\n" \
+        "default\tsdp_1\tall\tclone_all_714380_714380_42_123\tdefault\tclone\t714380\t714380\t42\n" \
+        "default\tsdp_1\t0\tdeleting_0_7_7_0\tdefault\tdeleting\t7\t7\t0\n" \
+        "default\tsdp_1\t202107\tignored_202107_714380_714380_0\tdefault\tignored\t714380\t714380\t0\n" \
+        "default\tsdp_1\t1\tprefix_1_2_2_0_0\tdefault\tprefix\t2\t2\t0\n" \
+        "default\tsdp_2\t58ed7160db50ea45e1c6aa694c8cbfd1\t58ed7160db50ea45e1c6aa694c8cbfd1_1_1_0\tdefault\t\t1\t1\t0\n" \
+        "default\tsdp_2\t6711e2b2592d86d18fc0f260cf33ef2b\t6711e2b2592d86d18fc0f260cf33ef2b_2_2_0\tdefault\t\t2\t2\t0\n" \
+        "default\tsdp_2\t\\N\tany_other_name\tdefault\t\\N\t\\N\t\\N\t\\N\n" \
+        "default\tsdp_2\t0\tattaching_0_6_6_0\tdefault\tattaching\t6\t6\t0\n" \
+        "default\tsdp_2\t6711e2b2592d86d18fc0f260cf33ef2b\tbroken-on-start_6711e2b2592d86d18fc0f260cf33ef2b_714380_714380_42_123\tdefault\tbroken-on-start\t714380\t714380\t42\n" \
+        "default\tsdp_2\t202107\tbroken_202107_714380_714380_123\tdefault\tbroken\t714380\t714380\t123\n" \
+        "default\tsdp_2\tall\tclone_all_714380_714380_42\tdefault\tclone\t714380\t714380\t42\n" \
+        "default\tsdp_2\tall\tclone_all_714380_714380_42_123\tdefault\tclone\t714380\t714380\t42\n" \
+        "default\tsdp_2\t0\tdeleting_0_7_7_0\tdefault\tdeleting\t7\t7\t0\n" \
+        "default\tsdp_2\t202107\tignored_202107_714380_714380_0\tdefault\tignored\t714380\t714380\t0\n" \
+        "default\tsdp_2\t1\tprefix_1_2_2_0_0\tdefault\tprefix\t2\t2\t0\n" \
+        "default\tsdp_3\t0\t0_1_1_0\tdefault\t\t1\t1\t0\n" \
+        "default\tsdp_3\t1\t1_2_2_0\tdefault\t\t2\t2\t0\n" \
+        "default\tsdp_3\t\\N\tany_other_name\tdefault\t\\N\t\\N\t\\N\t\\N\n" \
+        "default\tsdp_3\t0\tattaching_0_6_6_0\tdefault\tattaching\t6\t6\t0\n" \
+        "default\tsdp_3\t6711e2b2592d86d18fc0f260cf33ef2b\tbroken-on-start_6711e2b2592d86d18fc0f260cf33ef2b_714380_714380_42_123\tdefault\tbroken-on-start\t714380\t714380\t42\n" \
+        "default\tsdp_3\t202107\tbroken_202107_714380_714380_123\tdefault\tbroken\t714380\t714380\t123\n" \
+        "default\tsdp_3\tall\tclone_all_714380_714380_42\tdefault\tclone\t714380\t714380\t42\n" \
+        "default\tsdp_3\tall\tclone_all_714380_714380_42_123\tdefault\tclone\t714380\t714380\t42\n" \
+        "default\tsdp_3\t0\tdeleting_0_7_7_0\tdefault\tdeleting\t7\t7\t0\n" \
+        "default\tsdp_3\t202107\tignored_202107_714380_714380_0\tdefault\tignored\t714380\t714380\t0\n" \
+        "default\tsdp_3\t1\tprefix_1_2_2_0_0\tdefault\tprefix\t2\t2\t0\n"
+
+    for i in range(0, 4):
+        for p in q("select distinct partition_id from system.detached_parts where table='sdp_{}' and partition_id is not null".format(i))[:-1].split('\n'):
+            q("alter table sdp_{} attach partition id '{}'".format(i, p))
+
+    assert q("select n, x, count() from merge('default', 'sdp_') group by n, x") == "0\t0\t4\n1\t1\t4\n"

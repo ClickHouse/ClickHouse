@@ -526,8 +526,9 @@ public:
     void clearOldWriteAheadLogs();
 
     /// Delete all directories which names begin with "tmp"
-    /// Must be called with locked lockForShare() because it's using relative_data_path.
-    void clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds);
+    /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
+    /// Must be called with locked lockForShare() because use relative_data_path.
+    void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
     void clearEmptyParts();
 
@@ -813,11 +814,11 @@ public:
     bool scheduleDataMovingJob(IBackgroundJobExecutor & executor);
     bool areBackgroundMovesNeeded() const;
 
-    /// Lock part in zookeeper for shared data in several nodes
+    /// Lock part in zookeeper for use common S3 data in several nodes
     /// Overridden in StorageReplicatedMergeTree
     virtual void lockSharedData(const IMergeTreeDataPart &) const {}
 
-    /// Unlock shared data part in zookeeper
+    /// Unlock common S3 data part in zookeeper
     /// Overridden in StorageReplicatedMergeTree
     virtual bool unlockSharedData(const IMergeTreeDataPart &) const { return true; }
 
