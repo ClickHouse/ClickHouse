@@ -26,11 +26,17 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/Lexer.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Parsers/New/parseQuery.h>  // Y_IGNORE
+#endif
+
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Parsers/queryToString.h>
 
+#include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
 #include <Access/EnabledQuota.h>
@@ -161,10 +167,11 @@ static void logQuery(const String & query, ContextPtr context, bool internal)
         if (!comment.empty())
             comment = fmt::format(" (comment: {})", comment);
 
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}){} {}",
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(from {}{}{}, using {} parser){} {}",
             client_info.current_address.toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
+            (context->getSettingsRef().use_antlr_parser ? "experimental" : "production"),
             comment,
             joinLines(query));
 
@@ -380,10 +387,24 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query_table;
     try
     {
+#if !defined(ARCADIA_BUILD)
+        if (settings.use_antlr_parser)
+        {
+            ast = parseQuery(begin, end, max_query_size, settings.max_parser_depth, context->getCurrentDatabase());
+        }
+        else
+        {
+            ParserQuery parser(end);
+
+            /// TODO: parser should fail early when max_query_size limit is reached.
+            ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+        }
+#else
         ParserQuery parser(end);
 
         /// TODO: parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
+#endif
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
@@ -948,7 +969,8 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     ContextMutablePtr context,
-    std::function<void(const String &, const String &, const String &, const String &)> set_result_details)
+    std::function<void(const String &, const String &, const String &, const String &)> set_result_details,
+    const std::optional<FormatSettings> & output_format_settings)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1019,7 +1041,7 @@ void executeQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context->getDefaultFormat();
 
-            auto out = context->getOutputStreamParallelIfPossible(format_name, *out_buf, streams.in->getHeader());
+            auto out = FormatFactory::instance().getOutputStreamParallelIfPossible(format_name, *out_buf, streams.in->getHeader(), context, {}, output_format_settings);
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context->getProgressCallback();
@@ -1065,7 +1087,7 @@ void executeQuery(
                     return std::make_shared<MaterializingTransform>(header);
                 });
 
-                auto out = context->getOutputFormatParallelIfPossible(format_name, *out_buf, pipeline.getHeader());
+                auto out = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name, *out_buf, pipeline.getHeader(), context, {}, output_format_settings);
                 out->setAutoFlush();
 
                 /// Save previous progress callback if any. TODO Do it more conveniently.

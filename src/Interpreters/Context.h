@@ -267,9 +267,6 @@ private:
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
 
-    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializePostgreSQL).
-    bool is_internal_query = false;
-
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
@@ -533,7 +530,6 @@ public:
     BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
-    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
 
@@ -745,9 +741,6 @@ public:
 
     void shutdown();
 
-    bool isInternalQuery() const { return is_internal_query; }
-    void setInternalQuery(bool internal) { is_internal_query = internal; }
-
     ActionLocksManagerPtr getActionLocksManager();
 
     enum class ApplicationType
@@ -788,15 +781,6 @@ public:
     void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
-
-    struct MySQLWireContext
-    {
-        uint8_t sequence_id = 0;
-        uint32_t client_capabilities = 0;
-        size_t max_packet_size = 0;
-    };
-
-    MySQLWireContext mysql;
 
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;

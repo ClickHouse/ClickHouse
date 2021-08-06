@@ -742,7 +742,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (!columns.empty())
             required.insert(std::min_element(columns.begin(), columns.end())->name);
-        else if (!source_columns.empty())
+        else
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
             required.insert(ExpressionActions::getSmallestColumn(source_columns));
     }
@@ -942,8 +942,13 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// rewrite filters for select query, must go after getArrayJoinedColumns
     if (settings.optimize_respect_aliases && result.metadata_snapshot)
     {
-        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
-        result.collectUsedColumns(query, true);
+        /// If query is changed, we need to redo some work to correct name resolution.
+        if (replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext()))
+        {
+            result.aggregates = getAggregates(query, *select_query);
+            result.window_function_asts = getWindowFunctions(query, *select_query);
+            result.collectUsedColumns(query, true);
+        }
     }
 
     result.ast_join = select_query->join();

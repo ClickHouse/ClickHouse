@@ -37,7 +37,6 @@
 #include <Common/StudentTTest.h>
 #include <filesystem>
 
-
 namespace fs = std::filesystem;
 
 /** A tool for evaluating ClickHouse performance.

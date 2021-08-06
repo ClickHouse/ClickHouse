@@ -45,6 +45,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -73,7 +74,6 @@
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <filesystem>
@@ -1178,26 +1178,22 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraints(const SettingChange & change) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->check(settings, change);
+    getSettingsConstraints()->check(settings, change);
 }
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->check(settings, changes);
+    getSettingsConstraints()->check(settings, changes);
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->check(settings, changes);
+    getSettingsConstraints()->check(settings, changes);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->clamp(settings, changes);
+    getSettingsConstraints()->clamp(settings, changes);
 }
 
 std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
@@ -2333,11 +2329,6 @@ BlockOutputStreamPtr Context::getOutputStream(const String & name, WriteBuffer &
 OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
 {
     return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, shared_from_this());
-}
-
-OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
-{
-    return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this());
 }
 
 

@@ -30,7 +30,6 @@ from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
 from helpers.test_tools import assert_eq_with_retry
-from helpers import pytest_xdist_logging_to_separate_files
 
 import docker
 
@@ -57,22 +56,22 @@ def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=su
         subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, shell=shell)
         return
 
-    logging.debug(f"Command:{args}")
     res = subprocess.run(args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout)
     out = res.stdout.decode('utf-8')
     err = res.stderr.decode('utf-8')
-    # check_call(...) from subprocess does not print stderr, so we do it manually
-    if out:
-        logging.debug(f"Stdout:{out}")
-    if err:
-        logging.debug(f"Stderr:{err}")
     if res.returncode != 0:
-        logging.debug(f"Exitcode:{res.returncode}")
-        if env:
-            logging.debug(f"Env:{env}")
+        # check_call(...) from subprocess does not print stderr, so we do it manually
+        logging.debug(f"Command:{args}")
+        logging.debug(f"Stderr:{err}")
+        logging.debug(f"Stdout:{out}")
+        logging.debug(f"Env: {env}")
         if not nothrow:
             raise Exception(f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}")
-    return out
+    else:
+        logging.debug(f"Command:{args}")
+        logging.debug(f"Stderr: {err}")
+        logging.debug(f"Stdout: {out}")
+        return out
 
 # Based on https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
 def get_free_port():
@@ -193,7 +192,6 @@ class ClickHouseCluster:
                  zookeeper_keyfile=None, zookeeper_certfile=None):
         for param in list(os.environ.keys()):
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
-        self.base_path = base_path
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else ''
 
@@ -1072,7 +1070,7 @@ class ClickHouseCluster:
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
-    def wait_postgres_to_start(self, timeout=260):
+    def wait_postgres_to_start(self, timeout=180):
         self.postgres_ip = self.get_instance_ip(self.postgres_host)
         start = time.time()
         while time.time() - start < timeout:
@@ -1105,7 +1103,7 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait Postgres container")
 
-    def wait_rabbitmq_to_start(self, timeout=180):
+    def wait_rabbitmq_to_start(self, timeout=180, throw=True):
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
         start = time.time()
@@ -1115,13 +1113,15 @@ class ClickHouseCluster:
                     logging.debug("RabbitMQ is available")
                     if enable_consistent_hash_plugin(self.rabbitmq_docker_id):
                         logging.debug("RabbitMQ consistent hash plugin is available")
-                        return
+                        return True
                 time.sleep(0.5)
             except Exception as ex:
                 logging.debug("Can't connect to RabbitMQ " + str(ex))
                 time.sleep(0.5)
 
-        raise Exception("Cannot wait RabbitMQ container")
+        if throw:
+            raise Exception("Cannot wait RabbitMQ container")
+        return False
 
     def wait_zookeeper_secure_to_start(self, timeout=20):
         logging.debug("Wait ZooKeeper Secure to start")
@@ -1192,18 +1192,15 @@ class ClickHouseCluster:
                 time.sleep(1)
 
 
-    def wait_hdfs_to_start(self, timeout=300, check_marker=False):
+    def wait_hdfs_to_start(self, timeout=300):
         start = time.time()
         while time.time() - start < timeout:
             try:
                 self.hdfs_api.write_data("/somefilewithrandomname222", "1")
                 logging.debug("Connected to HDFS and SafeMode disabled! ")
-                if check_marker:
-                    self.hdfs_api.read_data("/preparations_done_marker")
-
                 return
             except Exception as ex:
-                logging.exception("Can't connect to HDFS or preparations are not done yet " + str(ex))
+                logging.exception("Can't connect to HDFS " + str(ex))
                 time.sleep(1)
 
         raise Exception("Can't wait HDFS to start")
@@ -1297,9 +1294,6 @@ class ClickHouseCluster:
         raise Exception("Can't wait Cassandra to start")
 
     def start(self, destroy_dirs=True):
-        pytest_xdist_logging_to_separate_files.setup()
-        logging.info("Running tests in {}".format(self.base_path))
-
         logging.debug("Cluster start called. is_up={}, destroy_dirs={}".format(self.is_up, destroy_dirs))
         if self.is_up:
             return
@@ -1435,9 +1429,13 @@ class ClickHouseCluster:
                 logging.debug('Setup RabbitMQ')
                 os.makedirs(self.rabbitmq_logs_dir)
                 os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXO)
-                subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
-                self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
-                self.wait_rabbitmq_to_start()
+
+                for i in range(5):
+                    subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
+                    self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
+                    logging.debug(f"RabbitMQ checking container try: {i}")
+                    if self.wait_rabbitmq_to_start(throw=(i==4)):
+                        break
 
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug('Setup HDFS')
@@ -1453,7 +1451,7 @@ class ClickHouseCluster:
                 os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
                 self.make_hdfs_api(kerberized=True)
-                self.wait_hdfs_to_start(check_marker=True)
+                self.wait_hdfs_to_start()
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')
@@ -1499,9 +1497,9 @@ class ClickHouseCluster:
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
 
-                logging.debug(f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}...")
+                logging.debug("Waiting for ClickHouse start in {instance}, ip: {instance.ip_address}...")
                 instance.wait_for_start(start_timeout)
-                logging.debug(f"ClickHouse {instance.name} started")
+                logging.debug("ClickHouse {instance} started")
 
                 instance.client = Client(instance.ip_address, command=self.client_bin_path)
 
@@ -1781,14 +1779,12 @@ class ClickHouseInstance:
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
               ignore_error=False):
-        logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password,
                                  database=database, ignore_error=ignore_error)
 
     def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
                          ignore_error=False,
                          retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
-        logging.debug(f"Executing query {sql} on {self.name}")
         result = None
         for i in range(retry_count):
             try:
@@ -1806,27 +1802,23 @@ class ClickHouseInstance:
         raise Exception("Can't execute query {}".format(sql))
 
     # As query() but doesn't wait response and returns response handler
-    def get_query_request(self, sql, *args, **kwargs):
-        logging.debug(f"Executing query {sql} on {self.name}")
-        return self.client.get_query_request(sql, *args, **kwargs)
+    def get_query_request(self, *args, **kwargs):
+        return self.client.get_query_request(*args, **kwargs)
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument), expects an error and return its code
     def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None,
                             database=None):
-        logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_error(sql, stdin=stdin, timeout=timeout, settings=settings, user=user,
                                                password=password, database=database)
 
     # The same as query_and_get_error but ignores successful query.
     def query_and_get_answer_with_error(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None,
                                         database=None):
-        logging.debug(f"Executing query {sql} on {self.name}")
         return self.client.query_and_get_answer_with_error(sql, stdin=stdin, timeout=timeout, settings=settings,
                                                            user=user, password=password, database=database)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_query(self, sql, data=None, params=None, user=None, password=None, expect_fail_and_get_error=False):
-        logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         if params is None:
             params = {}
         else:
@@ -1861,13 +1853,11 @@ class ClickHouseInstance:
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_request(self, url, method='GET', params=None, data=None, headers=None):
-        logging.debug(f"Sending HTTP request {url} to {self.name}")
         url = "http://" + self.ip_address + ":8123/" + url
         return requests.request(method=method, url=url, params=params, data=data, headers=headers)
 
     # Connects to the instance via HTTP interface, sends a query, expects an error and return the error message
     def http_query_and_get_error(self, sql, data=None, params=None, user=None, password=None):
-        logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         return self.http_query(sql=sql, data=data, params=params, user=user, password=password,
                                expect_fail_and_get_error=True)
 

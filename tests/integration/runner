@@ -3,7 +3,6 @@
 import subprocess
 import os
 import getpass
-import glob
 import argparse
 import logging
 import signal
@@ -258,9 +257,6 @@ if __name__ == "__main__":
     if sys.stdout.isatty() and sys.stdin.isatty():
         tty = "-it"
 
-    # Remove old logs.
-    for old_log_path in glob.glob(args.cases_dir + "/pytest*.log"):
-        os.remove(old_log_path)
 
     cmd = "docker run {net} {tty} --rm --name {name} --privileged \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \

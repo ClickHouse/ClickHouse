@@ -215,8 +215,8 @@ public:
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
                                               const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
 
-    /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
-    bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
+    /// Get job to execute in background pool (merge, mutate, drop range and so on)
+    std::optional<JobAndPool> getDataProcessingJob() override;
 
     /// Checks that fetches are not disabled with action blocker and pool for fetches
     /// is not overloaded
@@ -257,8 +257,6 @@ public:
     {
         return replicated_sends_throttler;
     }
-
-    bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -436,7 +434,7 @@ private:
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
-    /// Accepts a PreCommitted part, atomically checks its checksums with ones on other replicas and commit the part
+    /// Accepts a PreComitted part, atomically checks its checksums with ones on other replicas and commit the part
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
@@ -635,7 +633,7 @@ private:
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       * TODO: There are wrong usages of this method that are not fixed yet.
       *
-      * One method for convenient use on current table, another for waiting on foreign shards.
+      * One method for convenient use on current table, another for waiting on foregin shards.
       */
     Strings waitForAllTableReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
     Strings waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
@@ -692,7 +690,7 @@ private:
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
-    bool checkFixedGranularityInZookeeper();
+    bool checkFixedGranualrityInZookeeper();
 
     /// Wait for timeout seconds mutation is finished on replicas
     void waitMutationToFinishOnReplicas(

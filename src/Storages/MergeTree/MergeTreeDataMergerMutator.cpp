@@ -964,12 +964,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     size_t rows_written = 0;
     const size_t initial_reservation = space_reservation ? space_reservation->getSize() : 0;
 
-    auto is_cancelled = [&]()
-    {
-        return merges_blocker.isCancelled()
-            || (need_remove_expired_values && ttl_merges_blocker.isCancelled())
-            || merge_entry->is_cancelled.load(std::memory_order_relaxed);
-    };
+    auto is_cancelled = [&]() { return merges_blocker.isCancelled()
+        || (need_remove_expired_values && ttl_merges_blocker.isCancelled()); };
 
     Block block;
     while (!is_cancelled() && (block = merged_stream->read()))

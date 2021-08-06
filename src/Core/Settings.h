@@ -93,7 +93,6 @@ class IColumn;
     M(Bool, distributed_directory_monitor_split_batch_on_failure, false, "Should StorageDistributed DirectoryMonitors try to split batch into smaller in case of failures.", 0) \
     \
     M(Bool, optimize_move_to_prewhere, true, "Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree.", 0) \
-    M(Bool, optimize_move_to_prewhere_if_final, false, "If query has `FINAL`, the optimization `move_to_prewhere` is not always correct and it is enabled only if both settings `optimize_move_to_prewhere` and `optimize_move_to_prewhere_if_final` are turned on", 0) \
     \
     M(UInt64, replication_alter_partitions_sync, 1, "Wait for actions to manipulate the partitions. 0 - do not wait, 1 - wait for execution only of itself, 2 - wait for everyone.", 0) \
     M(UInt64, replication_alter_columns_timeout, 60, "Wait for actions to change the table structure within the specified number of seconds. 0 - wait unlimited time.", 0) \
@@ -107,8 +106,6 @@ class IColumn;
     M(Bool, allow_suspicious_low_cardinality_types, false, "In CREATE TABLE statement allows specifying LowCardinality modifier for types of small fixed size (8 or less). Enabling this may increase merge times and memory consumption.", 0) \
     M(Bool, compile_expressions, true, "Compile some scalar functions and operators to native code.", 0) \
     M(UInt64, min_count_to_compile_expression, 3, "The number of identical expressions before they are JIT-compiled", 0) \
-    M(Bool, compile_aggregate_expressions, true, "Compile aggregate functions to native code.", 0) \
-    M(UInt64, min_count_to_compile_aggregate_expression, 0, "The number of identical aggreagte expressions before they are JIT-compiled", 0) \
     M(UInt64, group_by_two_level_threshold, 100000, "From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.", 0) \
     M(UInt64, group_by_two_level_threshold_bytes, 50000000, "From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.", 0) \
     M(Bool, distributed_aggregation_memory_efficient, true, "Is the memory-saving mode of distributed aggregation enabled.", 0) \
@@ -432,7 +429,6 @@ class IColumn;
     M(Bool, cast_keep_nullable, false, "CAST operator keep Nullable for result data type", 0) \
     M(Bool, alter_partition_verbose_result, false, "Output information about affected parts. Currently works only for FREEZE and ATTACH commands.", 0) \
     M(Bool, allow_experimental_database_materialize_mysql, false, "Allow to create database with Engine=MaterializeMySQL(...).", 0) \
-    M(Bool, allow_experimental_database_materialized_postgresql, false, "Allow to create database with Engine=MaterializedPostgreSQL(...).", 0) \
     M(Bool, system_events_show_zero_values, false, "Include all metrics, even with zero values", 0) \
     M(MySQLDataTypesSupport, mysql_datatypes_support_level, 0, "Which MySQL types should be converted to corresponding ClickHouse types (rather than being represented as String). Can be empty or any combination of 'decimal' or 'datetime64'. When empty MySQL's DECIMAL and DATETIME/TIMESTAMP with non-zero precision are seen as String on ClickHouse's side.", 0) \
     M(Bool, optimize_trivial_insert_select, true, "Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query", 0) \
@@ -445,10 +441,11 @@ class IColumn;
     M(Bool, asterisk_include_alias_columns, false, "Include ALIAS columns for wildcard query", 0) \
     M(Bool, optimize_skip_merged_partitions, false, "Skip partitions with one part with level > 0 in optimize final", 0) \
     M(Bool, optimize_on_insert, true, "Do the same transformation for inserted block of data as if merge was done on this block.", 0) \
-    M(Bool, allow_experimental_map_type, true, "Obsolete setting, does nothing.", 0) \
+    M(Bool, allow_experimental_map_type, false, "Allow data type Map", 0) \
     M(Bool, allow_experimental_window_functions, false, "Allow experimental window functions", 0) \
     M(Bool, allow_experimental_projection_optimization, false, "Enable projection optimization when processing SELECT queries", 0) \
     M(Bool, force_optimize_projection, false, "If projection optimization is enabled, SELECT queries need to use projection", 0) \
+    M(Bool, use_antlr_parser, false, "Parse incoming queries using ANTLR-generated experimental parser", 0) \
     M(Bool, async_socket_for_remote, true, "Asynchronously read from socket executing remote query", 0) \
     M(Bool, insert_null_as_default, true, "Insert DEFAULT values instead of NULL in INSERT SELECT (UNION ALL)", 0) \
     \
@@ -599,8 +596,8 @@ struct Settings : public BaseSettings<SettingsTraits>
     /// Load settings from configuration file, at "path" prefix in configuration.
     void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
-    /// Dumps profile events to column of type Map(String, String)
-    void dumpToMapColumn(IColumn * column, bool changed_only = true);
+    /// Dumps profile events to two columns of type Array(String)
+    void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
 
     /// Adds program options to set the settings from a command line.
     /// (Don't forget to call notify() on the `variables_map` after parsing it!)

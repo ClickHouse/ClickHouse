@@ -37,7 +37,7 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void drop() override;
-    void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;
+    void dropInnerTable(bool no_delay, ContextPtr context);
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 

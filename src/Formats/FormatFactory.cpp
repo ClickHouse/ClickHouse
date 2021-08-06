@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
@@ -309,7 +310,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
-        throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
+        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
@@ -344,7 +345,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
-        throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
+        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
 
     if (context->hasQueryContext() && context->getSettingsRef().log_queries)
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
@@ -352,8 +353,11 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     RowOutputFormatParams params;
     params.callback = std::move(callback);
 
-    auto format_settings = _format_settings
-        ? *_format_settings : getFormatSettings(context);
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+
+    /// If we're handling MySQL protocol connection right now then MySQLWire is only allowed output format.
+    if (format_settings.mysql_wire.sequence_id && (name != "MySQLWire"))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.

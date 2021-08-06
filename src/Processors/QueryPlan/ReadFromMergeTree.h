@@ -90,7 +90,6 @@ private:
     const MergeTreeData & data;
     SelectQueryInfo query_info;
     PrewhereInfoPtr prewhere_info;
-    ExpressionActionsSettings actions_settings;
 
     StorageMetadataPtr metadata_snapshot;
     StorageMetadataPtr metadata_snapshot_base;
