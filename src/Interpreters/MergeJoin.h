@@ -78,6 +78,7 @@ private:
     SortDescription right_merge_description;
     Block right_sample_block;
     Block right_table_keys;
+    /// Columns from right side of join, both key and additional
     Block right_columns_to_add;
     SortedBlocksWriter::Blocks right_blocks;
 
