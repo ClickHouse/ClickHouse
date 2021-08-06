@@ -44,11 +44,11 @@ protected:
 
     Status prepare() override;
 
-private:
     void onStart();
     Chunk generate() override;
     void onFinish();
 
+private:
     void init(const Block & sample_block);
 
     const UInt64 max_block_size;
@@ -63,24 +63,32 @@ private:
 };
 
 
-/// Passes transaction object into PostgreSQLBlockInputStream and does not close transaction after read is finished.
+/// Passes transaction object into PostgreSQLSource and does not close transaction after read is finished.
 template <typename T>
-class PostgreSQLTransactionBlockInputStream : public PostgreSQLBlockInputStream<T>
+class PostgreSQLTransactionSource : public PostgreSQLSource<T>
 {
 public:
-    using Base = PostgreSQLBlockInputStream<T>;
+    using Base = PostgreSQLSource<T>;
 
-    PostgreSQLTransactionBlockInputStream(
+    PostgreSQLTransactionSource(
         std::shared_ptr<T> tx_,
         const std::string & query_str_,
         const Block & sample_block_,
         const UInt64 max_block_size_)
-        : PostgreSQLBlockInputStream<T>(tx_, query_str_, sample_block_, max_block_size_, false) {}
+        : PostgreSQLSource<T>(tx_, query_str_, sample_block_, max_block_size_, false) {}
 
-    void readPrefix() override
+    Chunk generate() override
     {
-        Base::stream = std::make_unique<pqxx::stream_from>(*Base::tx, pqxx::from_query, std::string_view(Base::query_str));
+        if (!is_initialized)
+        {
+            Base::stream = std::make_unique<pqxx::stream_from>(*Base::tx, pqxx::from_query, std::string_view(Base::query_str));
+            is_initialized = true;
+        }
+
+        return Base::generate();
     }
+
+    bool is_initialized = false;
 };
 
 }

@@ -104,8 +104,7 @@ Pipe StorageMySQL::read(
 
     StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
         mysql_settings.connection_auto_close);
-    return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MySQLWithFailoverBlockInputStream>(pool, query, sample_block, mysql_input_stream_settings)));
+    return Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query, sample_block, mysql_input_stream_settings));
 }
 
 

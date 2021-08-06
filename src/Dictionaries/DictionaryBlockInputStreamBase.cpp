@@ -13,9 +13,9 @@ Chunk DictionarySourceBase::generate()
         return {};
 
     size_t size = std::min(max_block_size, rows_count - next_row);
-    auto chunk = getChunk(next_row, size);
+    auto block = getBlock(next_row, size);
     next_row += size;
-    return chunk;
+    return Chunk(block.getColumns(), size);
 }
 
 }
