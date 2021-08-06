@@ -741,7 +741,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     MergeTreeData::DataPart::Checksums & checksums,
     ThrottlerPtr throttler)
 {
-    static const String TMP_PREFIX = "tmp_fetch_";
+    static const String TMP_PREFIX = "tmp-fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
     /// We will remove directory if it's already exists. Make precautions.
@@ -820,7 +820,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToS3(
         }
     }
 
-    static const String TMP_PREFIX = "tmp_fetch_";
+    static const String TMP_PREFIX = "tmp-fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
     String part_relative_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
