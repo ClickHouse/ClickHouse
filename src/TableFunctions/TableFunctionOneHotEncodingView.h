@@ -2,6 +2,11 @@
 
 #include <TableFunctions/ITableFunction.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <Interpreters/RenameColumnVisitor.h>
+#include <Interpreters/RenameAliasesVisitor.h>
 #include <common/types.h>
 
 namespace DB
@@ -19,7 +24,10 @@ public:
     static constexpr auto name = "one_hot_encoding_view";
     std::string getName() const override { return name; }
 private:
-    std::tuple<const String, const String> getWithAndSelectForColumn(String base_query_str, const String & column_name);
+    std::tuple<const String, const String> getWithAndSelectForColumn(
+        String base_query_str,
+        const String & column_name,
+        const size_t & column_idx);
 
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context,
         const String & table_name, ColumnsDescription cached_columns) const override;
@@ -29,6 +37,8 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     ColumnsDescription getActualBaseQueryTableStructure(ASTPtr base_query, ContextPtr context) const;
 
+    RenameColumnsData rename_columns_data{{}, {}};
+    RenameFunctionAliasesData rename_aliases_data{{}, {}};
     ASTCreateQuery create;
 };
 
