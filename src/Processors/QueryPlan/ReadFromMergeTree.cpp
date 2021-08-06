@@ -995,27 +995,27 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
     Block cur_header = result_projection ? result_projection->getResultColumns()
                                          : pipe.getHeader();
 
-    auto append_actions = [&result_projection, &cur_header](ActionsDAGPtr actions)
+    auto append_actions = [&result_projection](ActionsDAGPtr actions)
     {
         if (!result_projection)
             result_projection = std::move(actions);
         else
             result_projection = ActionsDAG::merge(std::move(*result_projection), std::move(*actions));
-
-        cur_header = result_projection->getResultColumns();
     };
 
     /// By the way, if a distributed query or query to a Merge table is made, then the `_sample_factor` column can have different values.
     if (sample_factor_column_queried)
     {
         ColumnWithTypeAndName column;
-        column.name = "_sample_factor";
         column.type = std::make_shared<DataTypeFloat64>();
         column.column = column.type->createColumnConst(0, Field(result.sampling.used_sample_factor));
 
         auto adding_column = ActionsDAG::makeAddingColumnActions(std::move(column));
         append_actions(std::move(adding_column));
     }
+
+    if (result_projection)
+        cur_header = result_projection->updateHeader(cur_header);
 
     /// Extra columns may be returned (for example, if sampling is used).
     /// Convert pipe to step header structure.
