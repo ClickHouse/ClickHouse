@@ -992,8 +992,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
         });
     }
 
-    Block cur_header = result_projection ? result_projection->getResultColumns()
-                                         : pipe.getHeader();
+    Block cur_header = pipe.getHeader();
 
     auto append_actions = [&result_projection](ActionsDAGPtr actions)
     {
