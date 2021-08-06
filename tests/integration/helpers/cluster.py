@@ -392,11 +392,13 @@ class ClickHouseCluster:
     def cleanup(self):
         # Just in case kill unstopped containers from previous launch
         try:
-            result = run_and_check(f'docker container list --all --filter name={self.project_name} | wc -l', shell=True)
+            # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
+            # https://stackoverflow.com/questions/48767760/how-to-make-docker-container-ls-f-name-filter-by-exact-name
+            result = run_and_check(f'docker container list --all --filter name=^/{self.project_name}$ | wc -l', shell=True)
             if int(result) > 1:
-                logging.debug(f"Trying to kill unstopped containers for project{self.project_name}...")
-                run_and_check(f'docker kill $(docker container list --all --quiet --filter name={self.project_name})', shell=True)
-                run_and_check(f'docker rm $(docker container list --all  --quiet --filter name={self.project_name})', shell=True)
+                logging.debug(f"Trying to kill unstopped containers for project {self.project_name}...")
+                run_and_check(f'docker kill $(docker container list --all --quiet --filter name=^/{self.project_name}$)', shell=True)
+                run_and_check(f'docker rm $(docker container list --all  --quiet --filter name=^/{self.project_name}$)', shell=True)
                 logging.debug("Unstopped containers killed")
                 run_and_check(['docker-compose', 'ps', '--services', '--all'])
             else:

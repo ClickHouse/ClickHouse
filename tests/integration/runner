@@ -99,7 +99,7 @@ signal.signal(signal.SIGINT, docker_kill_handler_handler)
 # 2) path of runner script is used to determine paths for trivial case, when we run it from repository
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [ %(process)d ] %(levelname)s : %(message)s (%(filename)s:%(lineno)s, %(funcName)s)')
     parser = argparse.ArgumentParser(description="ClickHouse integration tests runner")
 
     parser.add_argument(
