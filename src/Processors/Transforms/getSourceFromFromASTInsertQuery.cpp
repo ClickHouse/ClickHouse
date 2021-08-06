@@ -48,18 +48,16 @@ Pipe getSourceFromFromASTInsertQuery(
     auto input_buffer_ast_part = std::make_unique<ReadBufferFromMemory>(
         ast_insert_query->data, ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0);
 
-    ConcatReadBuffer::ReadBuffers buffers;
+    auto input_buffer_contacenated = std::make_unique<ConcatReadBuffer>();
     if (ast_insert_query->data)
-        buffers.push_back(input_buffer_ast_part.get());
+        input_buffer_contacenated->appendBuffer(std::move(input_buffer_ast_part));
 
     if (input_buffer_tail_part)
-        buffers.push_back(input_buffer_tail_part);
+        input_buffer_contacenated->appendBuffer(wrapReadBufferReference(*input_buffer_tail_part));
 
-    /** NOTE Must not read from 'input_buffer_tail_part' before read all between 'ast_insert_query.data' and 'ast_insert_query.end'.
+    /** NOTE: Must not read from 'input_buffer_tail_part' before read all between 'ast_insert_query.data' and 'ast_insert_query.end'.
         * - because 'query.data' could refer to memory piece, used as buffer for 'input_buffer_tail_part'.
         */
-
-    auto input_buffer_contacenated = std::make_unique<ConcatReadBuffer>(buffers);
 
     auto source = FormatFactory::instance().getInput(format, *input_buffer_contacenated, header, context, context->getSettings().max_insert_block_size);
     Pipe pipe(source);

@@ -82,14 +82,12 @@ private:
     //  the request_context and request_credentials instances are preserved.
     // Throws an exception if authentication failed.
     bool authenticateUser(
-        ContextMutablePtr context,
         HTTPServerRequest & request,
         HTMLForm & params,
         HTTPServerResponse & response);
 
     /// Also initializes 'used_output'.
     void processQuery(
-        ContextMutablePtr context,
         HTTPServerRequest & request,
         HTMLForm & params,
         HTTPServerResponse & response,

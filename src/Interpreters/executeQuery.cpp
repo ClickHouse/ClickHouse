@@ -3,6 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
 
+#include <Interpreters/AsynchronousInsertionQueue.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
@@ -333,7 +334,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
 
 static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
 {
-    if (auto * ast_insert_into = dynamic_cast<ASTInsertQuery *>(ast.get()))
+    if (auto * ast_insert_into = ast->as<ASTInsertQuery>())
     {
         if (ast_insert_into->watch)
             context->setSetting("output_format_enable_streaming", 1);
@@ -346,7 +347,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ContextMutablePtr context,
     bool internal,
     QueryProcessingStage::Enum stage,
-    bool has_query_tail,
     ReadBuffer * istr)
 {
     const auto current_time = std::chrono::system_clock::now();
@@ -425,10 +425,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (insert_query && insert_query->settings_ast)
             InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
 
-        if (insert_query && insert_query->data)
+        if (insert_query)
         {
-            query_end = insert_query->data;
-            insert_query->has_tail = has_query_tail;
+            if (insert_query->data)
+                query_end = insert_query->data;
+            else
+                query_end = end;
+            insert_query->tail = istr;
         }
         else
         {
@@ -469,8 +472,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             query = serializeAST(*ast);
         }
 
-        /// MUST goes before any modification (except for prepared statements,
-        /// since it substitute parameters and w/o them query does not contains
+        /// MUST go before any modification (except for prepared statements,
+        /// since it substitute parameters and w/o them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
         query_for_logging = prepareQueryForLogging(query, context);
         logQuery(query_for_logging, context, internal);
@@ -501,6 +504,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         context->initializeExternalTablesIfSet();
 
         auto * insert_query = ast->as<ASTInsertQuery>();
+
+        if (insert_query && insert_query->table_id)
+            /// Resolve database before trying to use async insert feature - to properly hash the query.
+            insert_query->table_id = context->resolveStorageID(insert_query->table_id);
+
         if (insert_query && insert_query->select)
         {
             /// Prepare Input storage before executing interpreter if we already got a buffer with data.
@@ -549,6 +557,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
+        }
+
+        auto * queue = context->getAsynchronousInsertQueue();
+        const bool async_insert
+            = queue && insert_query && !insert_query->select && !insert_query->expectNativeData() && settings.async_insert_mode;
+
+        if (async_insert && queue->push(insert_query, settings))
+        {
+            /// Shortcut for already processed similar insert-queries.
+            /// Similarity is defined by hashing query text and some settings.
+            return std::make_tuple(ast, BlockIO());
         }
 
         {
@@ -878,6 +897,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             res.finish_callback = std::move(finish_callback);
             res.exception_callback = std::move(exception_callback);
         }
+
+        if (async_insert)
+        {
+            queue->push(insert_query, std::move(res), settings);
+            return std::make_tuple(ast, BlockIO());
+        }
     }
     catch (...)
     {
@@ -900,13 +925,11 @@ BlockIO executeQuery(
     const String & query,
     ContextMutablePtr context,
     bool internal,
-    QueryProcessingStage::Enum stage,
-    bool may_have_embedded_data)
+    QueryProcessingStage::Enum stage)
 {
     ASTPtr ast;
     BlockIO streams;
-    std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context,
-        internal, stage, !may_have_embedded_data, nullptr);
+    std::tie(ast, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -922,14 +945,13 @@ BlockIO executeQuery(
 }
 
 BlockIO executeQuery(
+    bool allow_processors,
     const String & query,
     ContextMutablePtr context,
     bool internal,
-    QueryProcessingStage::Enum stage,
-    bool may_have_embedded_data,
-    bool allow_processors)
+    QueryProcessingStage::Enum stage)
 {
-    BlockIO res = executeQuery(query, context, internal, stage, may_have_embedded_data);
+    BlockIO res = executeQuery(query, context, internal, stage);
 
     if (!allow_processors && res.pipeline.initialized())
         res.in = res.getInputStream();
@@ -951,25 +973,21 @@ void executeQuery(
     const char * begin;
     const char * end;
 
-    /// If 'istr' is empty now, fetch next data into buffer.
-    if (!istr.hasPendingData())
-        istr.next();
+    istr.nextIfAtEnd();
 
     size_t max_query_size = context->getSettingsRef().max_query_size;
 
-    bool may_have_tail;
     if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
         begin = istr.position();
         end = istr.buffer().end();
         istr.position() += end - begin;
-        /// Actually we don't know will query has additional data or not.
-        /// But we can't check istr.eof(), because begin and end pointers will become invalid
-        may_have_tail = true;
     }
     else
     {
+        /// FIXME: this is an extra copy not required for async insertion.
+
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
         LimitReadBuffer limit(istr, max_query_size + 1, false);
@@ -978,15 +996,12 @@ void executeQuery(
 
         begin = parse_buf.data();
         end = begin + parse_buf.size();
-        /// Can check stream for eof, because we have copied data
-        may_have_tail = !istr.eof();
     }
 
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail, &istr);
-
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
     auto & pipeline = streams.pipeline;
 
     try
@@ -1007,6 +1022,8 @@ void executeQuery(
         }
         else if (streams.in)
         {
+            assert(!pipeline.initialized());
+
             const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
@@ -1102,6 +1119,10 @@ void executeQuery(
                 auto executor = pipeline.execute();
                 executor->execute(pipeline.getNumThreads());
             }
+        }
+        else
+        {
+            /// It's possible to have queries without input and output.
         }
     }
     catch (...)

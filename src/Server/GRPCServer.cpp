@@ -781,7 +781,7 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(query, query_context, false, QueryProcessingStage::Complete, true, true);
+        io = ::DB::executeQuery(true, query, query_context);
     }
 
     void Call::processInput()

@@ -37,7 +37,7 @@ class IBlockInputStream : public TypePromotion<IBlockInputStream>
 
 public:
     IBlockInputStream() { info.parent = this; }
-    virtual ~IBlockInputStream() {}
+    virtual ~IBlockInputStream() = default;
 
     IBlockInputStream(const IBlockInputStream &) = delete;
     IBlockInputStream & operator=(const IBlockInputStream &) = delete;

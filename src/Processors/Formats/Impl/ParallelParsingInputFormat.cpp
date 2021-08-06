@@ -26,8 +26,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
             {
                 std::unique_lock<std::mutex> lock(mutex);
-                segmentator_condvar.wait(lock,
-                                         [&]{ return unit.status == READY_TO_INSERT || parsing_finished; });
+                segmentator_condvar.wait(lock, [&] { return unit.status == READY_TO_INSERT || parsing_finished; });
             }
 
             if (parsing_finished)

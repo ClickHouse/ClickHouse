@@ -125,6 +125,8 @@ using ThrottlerPtr = std::shared_ptr<Throttler>;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
+class AsynchronousInsertQueue;
+
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
 
@@ -317,8 +319,6 @@ public:
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
-
-    void copyFrom(const ContextPtr & other);
 
     ~Context();
 
@@ -822,6 +822,9 @@ public:
 
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
+
+    AsynchronousInsertQueue * getAsynchronousInsertQueue() const;
+    void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);
