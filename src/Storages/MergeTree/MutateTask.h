@@ -20,6 +20,16 @@ class MergeTreeDataMergerMutator;
 
 struct MutationContext;
 
+
+class IExecutableTask
+{
+public:
+    virtual bool execute() = 0;
+    virtual ~IExecutableTask() = default;
+};
+
+using ExecutableTaskUniquePtr = std::unique_ptr<IExecutableTask>;
+
 class MutateTask
 {
 public:
@@ -27,7 +37,7 @@ public:
         FutureMergedMutatedPartPtr future_part_,
         StorageMetadataPtr metadata_snapshot_,
         MutationCommandsConstPtr commands_,
-        MergeListEntry & mutate_entry_,
+        MergeListEntry * mutate_entry_,
         time_t time_of_mutation_,
         ContextPtr context_,
         ReservationSharedPtr space_reservation_,
@@ -47,65 +57,19 @@ private:
 
     bool prepare();
 
-    MergeTreeData::MutableDataPartPtr main();
+    enum class State
+    {
+        NEED_PREPARE,
+        NEED_EXECUTE
+    };
 
-    /// Override all columns of new part using mutating_stream
-    void mutateAllPartColumns(
-        MergeTreeData::MutableDataPartPtr new_data_part,
-        // const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeIndices & skip_indices,
-        const MergeTreeProjections & projections_to_build,
-        BlockInputStreamPtr mutating_stream,
-        // time_t time_of_mutation,
-        const CompressionCodecPtr & compression_codec,
-        MergeListEntry & merge_entry,
-        bool need_remove_expired_values,
-        bool need_sync
-        // ReservationSharedPtr space_reservation,
-        // TableLockHolder & holder,
-        // ContextPtr context
-        );
-
-    /// Mutate some columns of source part with mutation_stream
-    void mutateSomePartColumns(
-        const MergeTreeDataPartPtr & source_part,
-        // const StorageMetadataPtr & metadata_snapshot,
-        const std::set<MergeTreeIndexPtr> & indices_to_recalc,
-        const std::set<MergeTreeProjectionPtr> & projections_to_recalc,
-        const Block & mutation_header,
-        MergeTreeData::MutableDataPartPtr new_data_part,
-        BlockInputStreamPtr mutating_stream,
-        // time_t time_of_mutation,
-        const CompressionCodecPtr & compression_codec,
-        MergeListEntry & merge_entry,
-        bool need_remove_expired_values,
-        bool need_sync
-        // ReservationSharedPtr space_reservation,
-        // TableLockHolder & holder,
-        // ContextPtr context
-        );
-
-    static void writeWithProjections(
-        MergeTreeData & data_param,
-        MergeTreeDataMergerMutator & mutator_param,
-        ActionBlocker & merges_blocker_param,
-        Poco::Logger * logger,
-        MergeTreeData::MutableDataPartPtr new_data_part,
-        const StorageMetadataPtr & metadata_snapshot_param,
-        const MergeTreeProjections & projections_to_build,
-        BlockInputStreamPtr mutating_stream,
-        IMergedBlockOutputStream & out,
-        time_t time_of_mutation_param,
-        MergeListEntry & merge_entry,
-        ReservationSharedPtr space_reservation_param,
-        TableLockHolder & holder,
-        ContextPtr context,
-        IMergeTreeDataPart::MinMaxIndex * minmax_idx = nullptr);
+    State state{State::NEED_PREPARE};
 
 
     std::promise<MergeTreeData::MutableDataPartPtr> promise;
 
     std::shared_ptr<MutationContext> ctx;
+    ExecutableTaskUniquePtr task;
 
 };
 

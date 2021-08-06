@@ -108,7 +108,7 @@ public:
         FutureMergedMutatedPartPtr future_part,
         StorageMetadataPtr metadata_snapshot,
         MutationCommandsConstPtr commands,
-        MergeListEntry & merge_entry,
+        MergeListEntry * merge_entry,
         time_t time_of_mutation,
         ContextPtr context,
         ReservationSharedPtr space_reservation,

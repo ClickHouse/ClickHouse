@@ -93,7 +93,7 @@ bool MutateFromLogEntryTask::prepare()
     };
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
-            future_mutated_part, metadata_snapshot, commands, *merge_mutate_entry,
+            future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
             entry.create_time, storage.getContext(), reserved_space, table_lock_holder);
 
     return true;
