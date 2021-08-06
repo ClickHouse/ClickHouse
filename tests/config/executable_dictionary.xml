@@ -123,7 +123,7 @@
 
     <source>
         <executable>
-            <command>echo "1\tValue"</command>
+            <command>printf "1\tValue\n"</command>
             <format>TabSeparated</format>
             <implicit_key>false</implicit_key>
         </executable>
@@ -197,7 +197,7 @@
 
     <source>
         <executable>
-            <command>echo "1\tFirstKey\tValue"</command>
+            <command>printf "1\tFirstKey\tValue\n"</command>
             <format>TabSeparated</format>
             <implicit_key>false</implicit_key>
         </executable>
