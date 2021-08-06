@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <tuple>
+#include <vector>
 #include <common/types.h>
 #include <common/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
@@ -115,6 +116,10 @@ struct DetachedPartInfo : public MergeTreePartInfo
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
     bool valid_name;
 
+    static const std::vector<String> DETACH_REASONS;
+
+    /// NOTE: It may parse part info incorrectly.
+    /// For example, if prefix contain '_' or if DETACH_REASONS doesn't contain prefix.
     static bool tryParseDetachedPartName(const String & dir_name, DetachedPartInfo & part_info, MergeTreeDataFormatVersion format_version);
 };
 
