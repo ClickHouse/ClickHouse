@@ -45,7 +45,7 @@ The result type is UInt64.
 
 ## leftPad {#leftpad}
 
-Pads the current string from the left with a specified string (multiple times, if needed) until the resulting string reaches the given length.
+Pads the current string from the left with a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `LPAD` function.
 
 **Syntax**
 
@@ -83,14 +83,55 @@ Result:
 └────────────────────────┘
 ```
 
-## rightPad {#rightpad}
+## leftPadUTF8 {#leftpadutf8}
 
-Pads the current string from the right with a specified string (multiple times, if needed) until the resulting string reaches the given length.
+Pads the current string from the left with a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `LPAD` function.
 
 **Syntax**
 
 ``` sql
-leftPad('string','length', 'string2`)
+leftPadUTF8('string','length', 'string2`)
+```
+
+**Arguments**
+
+-   `string` — Input UTF-8 string, that need to be padded. [String](../data-types/string.md).
+-   `length` — The length of the resulting string once the input string pads. [UInt](../data-types/int-uint.md). If the value is less than input string length, then string is returned as-is.
+-   `string2` — The string to pad the current input string with. [String](../data-types/string.md).
+
+[String](../data-types/string.md)
+
+**Returned value(s)**
+
+-   The resulting UTF-8 string reaches the given length.
+
+Type: [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT leftPadUTF8('абвг', 7, '*');
+```
+
+Result:
+
+``` text
+┌─leftPadUTF8('абвг', 7, '*')─┐
+│ ***абвг                     │
+└─────────────────────────────┘
+
+```
+
+## rightPad {#rightpad}
+
+Pads the current string from the right with a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `RPAD` function.
+
+**Syntax**
+
+``` sql
+rightPad('string','length', 'string2`)
 ```
 
 **Arguments**
@@ -121,6 +162,46 @@ Result:
 ┌─rightPad('abc', 7, '*')─┐
 │ abc****                 │
 └─────────────────────────┘
+```
+
+## rightPadUTF8 {#rightpadutf8}
+
+Pads the current UTF-8 string from the right with a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `RPAD` function.
+
+**Syntax**
+
+``` sql
+rightPadUTF8('string','length', 'string2`)
+```
+
+**Arguments**
+
+-   `string` — Input UTF-8 string, that need to be padded. [String](../data-types/string.md).
+-   `length` — The length of the resulting string once the input string pads. [UInt](../data-types/int-uint.md). If the value is less than input string length, then string is returned as-is.
+-   `string2` — The string to pad the current input string with. [String](../data-types/string.md).
+
+[String](../data-types/string.md)
+
+**Returned value(s)**
+
+-   The resulting UTF-8 string reaches the given length.
+
+Type: [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT rightPadUTF8('абвг', 7, '*');
+```
+
+Result:
+
+``` text
+┌─rightPadUTF8('абвг', 7, '*')─┐
+│ абвг***                      │
+└──────────────────────────────┘
 ```
 
 ## lower, lcase {#lower}
