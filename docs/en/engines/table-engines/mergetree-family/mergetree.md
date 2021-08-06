@@ -864,3 +864,78 @@ Required parameters:
 Optional parameters:
 
 -   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
+
+## Using Virtual File System to Encrypt Data {#encrypted-virtual-file-system}
+
+Encrypts data and stores it in [S3](https://aws.amazon.com/s3/) and local file systems. Encryption is performed using [AES_128_CTR, AES_192_CTR and AES_256_CTR](../../../sql-reference/statements/create/table.md#create-query-encryption-codecs) algorithms. By default: AES_128_CTR. Uses a disk with type `encripted`. `Encrypted` disk ciphers all written files on the fly. When we read files from an `encrypted` disk it deciphers them automatically, so we can work with a `encrypted` disk like it is a normal disk.
+
+The `encrypted` disk configuration specifies the disk on which the data will be stored.
+
+Configuration markup:
+``` xml
+<yandex>
+    <storage_configuration>
+        <disks>
+            <disk_s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </disk_s3>
+            <disk_memory>
+                <type>memory</type>
+            </disk_memory>
+            <disk_local>
+                <type>local</type>
+                <path>/disk/</path>
+            </disk_local>
+            <disk_s3_encrypted>
+                <type>encrypted</type>
+                <disk>disk_s3</disk>
+                <path>encrypted/</path>
+                <key>1234567812345678</key>
+            </disk_s3_encrypted>
+            <disk_local_encrypted>
+                <type>encrypted</type>
+                <disk>disk_local</disk>
+                <path>encrypted/</path>
+                <key>abcdefghijklmnop</key>
+            </disk_local_encrypted>
+        </disks>
+        <policies>
+            <encrypted_policy>
+                <volumes>
+                    <main>
+                        <disk>disk_local_encrypted</disk>
+                    </main>
+                </volumes>
+            </encrypted_policy>
+            <local_policy>
+                <volumes>
+                    <main>
+                        <disk>disk_local</disk>
+                    </main>
+                    <external>
+                        <disk>disk_local_encrypted</disk>
+                    </external>
+                </volumes>
+            </local_policy>
+            <s3_policy>
+                <volumes>
+                    <main>
+                        <disk>disk_s3</disk>
+                    </main>
+                    <external>
+                        <disk>disk_s3_encrypted</disk>
+                    </external>
+                </volumes>
+            </s3_policy>
+         </policies>
+    </storage_configuration>
+</yandex>
+```
+
+Required parameters:
+
+-   `disk` — Type of disk for data storage.
+-   `key` — `Encrypted` disk key value. Type: [Uint64](../../../sql-reference/data-types/int-uint.md).
