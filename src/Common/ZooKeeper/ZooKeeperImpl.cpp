@@ -566,6 +566,7 @@ void ZooKeeper::sendThread()
                     if (info.watch)
                     {
                         info.request->has_watch = true;
+                        CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
                     }
 
                     if (expired)
@@ -772,8 +773,6 @@ void ZooKeeper::receiveEvent()
 
             if (add_watch)
             {
-                CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
-
                 /// The key of wathces should exclude the root_path
                 String req_path = request_info.request->getPath();
                 removeRootPath(req_path, root_path);
@@ -907,7 +906,6 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
         {
             std::lock_guard lock(watches_mutex);
 
-            Int64 watch_callback_count = 0;
             for (auto & path_watches : watches)
             {
                 WatchResponse response;
@@ -917,7 +915,6 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
 
                 for (auto & callback : path_watches.second)
                 {
-                    watch_callback_count += 1;
                     if (callback)
                     {
                         try
@@ -932,7 +929,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 }
             }
 
-            CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, watch_callback_count);
+            CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, watches.size());
             watches.clear();
         }
 
@@ -1016,16 +1013,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
 
-void ZooKeeper::executeGenericRequest(
-    const ZooKeeperRequestPtr & request,
-    ResponseCallback callback)
-{
-    RequestInfo request_info;
-    request_info.request = request;
-    request_info.callback = callback;
-
-    pushRequest(std::move(request_info));
-}
 
 void ZooKeeper::create(
     const String & path,

@@ -1,4 +1,4 @@
-<test>
+<test max_ignored_relative_change="0.4">
     <settings>
         <allow_experimental_bigint_types>1</allow_experimental_bigint_types>
         <max_threads>1</max_threads>

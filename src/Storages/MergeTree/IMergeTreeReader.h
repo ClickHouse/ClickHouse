@@ -94,12 +94,7 @@ private:
     MergeTreeData::AlterConversions alter_conversions;
 
     /// Actual data type of columns in part
-
-#if !defined(ARCADIA_BUILD)
     google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> columns_from_part;
-#else
-    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> columns_from_part;
-#endif
 };
 
 }

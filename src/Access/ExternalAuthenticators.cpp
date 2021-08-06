@@ -20,41 +20,12 @@ namespace ErrorCodes
 namespace
 {
 
-void parseLDAPSearchParams(LDAPClient::SearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix)
-{
-    const bool has_base_dn = config.has(prefix + ".base_dn");
-    const bool has_search_filter = config.has(prefix + ".search_filter");
-    const bool has_attribute = config.has(prefix + ".attribute");
-    const bool has_scope = config.has(prefix + ".scope");
-
-    if (has_base_dn)
-        params.base_dn = config.getString(prefix + ".base_dn");
-
-    if (has_search_filter)
-        params.search_filter = config.getString(prefix + ".search_filter");
-
-    if (has_attribute)
-        params.attribute = config.getString(prefix + ".attribute");
-
-    if (has_scope)
-    {
-        auto scope = config.getString(prefix + ".scope");
-        boost::algorithm::to_lower(scope);
-
-        if (scope == "base")           params.scope = LDAPClient::SearchParams::Scope::BASE;
-        else if (scope == "one_level") params.scope = LDAPClient::SearchParams::Scope::ONE_LEVEL;
-        else if (scope == "subtree")   params.scope = LDAPClient::SearchParams::Scope::SUBTREE;
-        else if (scope == "children")  params.scope = LDAPClient::SearchParams::Scope::CHILDREN;
-        else
-            throw Exception("Invalid value for 'scope' field of LDAP search parameters in '" + prefix +
-                "' section, must be one of 'base', 'one_level', 'subtree', or 'children'", ErrorCodes::BAD_ARGUMENTS);
-    }
-}
-
-void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConfiguration & config, const String & name)
+auto parseLDAPServer(const Poco::Util::AbstractConfiguration & config, const String & name)
 {
     if (name.empty())
         throw Exception("LDAP server name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+    LDAPClient::Params params;
 
     const String ldap_server_config = "ldap_servers." + name;
 
@@ -63,7 +34,6 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_bind_dn = config.has(ldap_server_config + ".bind_dn");
     const bool has_auth_dn_prefix = config.has(ldap_server_config + ".auth_dn_prefix");
     const bool has_auth_dn_suffix = config.has(ldap_server_config + ".auth_dn_suffix");
-    const bool has_user_dn_detection = config.has(ldap_server_config + ".user_dn_detection");
     const bool has_verification_cooldown = config.has(ldap_server_config + ".verification_cooldown");
     const bool has_enable_tls = config.has(ldap_server_config + ".enable_tls");
     const bool has_tls_minimum_protocol_version = config.has(ldap_server_config + ".tls_minimum_protocol_version");
@@ -96,17 +66,6 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         params.bind_dn = auth_dn_prefix + "{user_name}" + auth_dn_suffix;
     }
 
-    if (has_user_dn_detection)
-    {
-        if (!params.user_dn_detection)
-        {
-            params.user_dn_detection.emplace();
-            params.user_dn_detection->attribute = "dn";
-        }
-
-        parseLDAPSearchParams(*params.user_dn_detection, config, ldap_server_config + ".user_dn_detection");
-    }
-
     if (has_verification_cooldown)
         params.verification_cooldown = std::chrono::seconds{config.getUInt64(ldap_server_config + ".verification_cooldown")};
 
@@ -118,7 +77,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         if (enable_tls_lc_str == "starttls")
             params.enable_tls = LDAPClient::Params::TLSEnable::YES_STARTTLS;
         else if (config.getBool(ldap_server_config + ".enable_tls"))
-            params.enable_tls = LDAPClient::Params::TLSEnable::YES; //-V1048
+            params.enable_tls = LDAPClient::Params::TLSEnable::YES;
         else
             params.enable_tls = LDAPClient::Params::TLSEnable::NO;
     }
@@ -137,7 +96,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         else if (tls_minimum_protocol_version_lc_str == "tls1.1")
             params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_1;
         else if (tls_minimum_protocol_version_lc_str == "tls1.2")
-            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_2; //-V1048
+            params.tls_minimum_protocol_version = LDAPClient::Params::TLSProtocolVersion::TLS1_2;
         else
             throw Exception("Bad value for 'tls_minimum_protocol_version' entry, allowed values are: 'ssl2', 'ssl3', 'tls1.0', 'tls1.1', 'tls1.2'", ErrorCodes::BAD_ARGUMENTS);
     }
@@ -154,7 +113,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         else if (tls_require_cert_lc_str == "try")
             params.tls_require_cert = LDAPClient::Params::TLSRequireCert::TRY;
         else if (tls_require_cert_lc_str == "demand")
-            params.tls_require_cert = LDAPClient::Params::TLSRequireCert::DEMAND; //-V1048
+            params.tls_require_cert = LDAPClient::Params::TLSRequireCert::DEMAND;
         else
             throw Exception("Bad value for 'tls_require_cert' entry, allowed values are: 'never', 'allow', 'try', 'demand'", ErrorCodes::BAD_ARGUMENTS);
     }
@@ -184,10 +143,14 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     }
     else
         params.port = (params.enable_tls == LDAPClient::Params::TLSEnable::YES ? 636 : 389);
+
+    return params;
 }
 
-void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::AbstractConfiguration & config)
+auto parseKerberosParams(const Poco::Util::AbstractConfiguration & config)
 {
+    GSSAcceptorContext::Params params;
+
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys("kerberos", keys);
 
@@ -217,18 +180,10 @@ void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::
 
     params.realm = config.getString("kerberos.realm", "");
     params.principal = config.getString("kerberos.principal", "");
+
+    return params;
 }
 
-}
-
-void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco::Util::AbstractConfiguration & config, const String & prefix)
-{
-    parseLDAPSearchParams(params, config, prefix);
-
-    const bool has_prefix = config.has(prefix + ".prefix");
-
-    if (has_prefix)
-        params.prefix = config.getString(prefix + ".prefix");
 }
 
 void ExternalAuthenticators::reset()
@@ -274,8 +229,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     {
         try
         {
-            ldap_client_params_blueprint.erase(ldap_server_name);
-            parseLDAPServer(ldap_client_params_blueprint.emplace(ldap_server_name, LDAPClient::Params{}).first->second, config, ldap_server_name);
+            ldap_client_params_blueprint.insert_or_assign(ldap_server_name, parseLDAPServer(config, ldap_server_name));
         }
         catch (...)
         {
@@ -286,7 +240,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     try
     {
         if (kerberos_keys_count > 0)
-            parseKerberosParams(kerberos_params.emplace(), config);
+            kerberos_params = parseKerberosParams(config);
     }
     catch (...)
     {
@@ -295,7 +249,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 }
 
 bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const BasicCredentials & credentials,
-    const LDAPClient::RoleSearchParamsList * role_search_params, LDAPClient::SearchResultsList * role_search_results) const
+    const LDAPClient::SearchParamsList * search_params, LDAPClient::SearchResultsList * search_results) const
 {
     std::optional<LDAPClient::Params> params;
     std::size_t params_hash = 0;
@@ -313,9 +267,9 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
         params->password = credentials.getPassword();
 
         params->combineCoreHash(params_hash);
-        if (role_search_params)
+        if (search_params)
         {
-            for (const auto & params_instance : *role_search_params)
+            for (const auto & params_instance : *search_params)
             {
                 params_instance.combineHash(params_hash);
             }
@@ -347,14 +301,14 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
 
                         // Ensure that search_params are compatible.
                         (
-                            role_search_params == nullptr ?
-                            entry.last_successful_role_search_results.empty() :
-                            role_search_params->size() == entry.last_successful_role_search_results.size()
+                            search_params == nullptr ?
+                            entry.last_successful_search_results.empty() :
+                            search_params->size() == entry.last_successful_search_results.size()
                         )
                     )
                     {
-                        if (role_search_results)
-                            *role_search_results = entry.last_successful_role_search_results;
+                        if (search_results)
+                            *search_results = entry.last_successful_search_results;
 
                         return true;
                     }
@@ -372,7 +326,7 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
     }
 
     LDAPSimpleAuthClient client(params.value());
-    const auto result = client.authenticate(role_search_params, role_search_results);
+    const auto result = client.authenticate(search_params, search_results);
     const auto current_check_timestamp = std::chrono::steady_clock::now();
 
     // Update the cache, but only if this is the latest check and the server is still configured in a compatible way.
@@ -391,9 +345,9 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
 
         std::size_t new_params_hash = 0;
         new_params.combineCoreHash(new_params_hash);
-        if (role_search_params)
+        if (search_params)
         {
-            for (const auto & params_instance : *role_search_params)
+            for (const auto & params_instance : *search_params)
             {
                 params_instance.combineHash(new_params_hash);
             }
@@ -409,17 +363,17 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
             entry.last_successful_params_hash = params_hash;
             entry.last_successful_authentication_timestamp = current_check_timestamp;
 
-            if (role_search_results)
-                entry.last_successful_role_search_results = *role_search_results;
+            if (search_results)
+                entry.last_successful_search_results = *search_results;
             else
-                entry.last_successful_role_search_results.clear();
+                entry.last_successful_search_results.clear();
         }
         else if (
             entry.last_successful_params_hash != params_hash ||
             (
-                role_search_params == nullptr ?
-                !entry.last_successful_role_search_results.empty() :
-                role_search_params->size() != entry.last_successful_role_search_results.size()
+                search_params == nullptr ?
+                !entry.last_successful_search_results.empty() :
+                search_params->size() != entry.last_successful_search_results.size()
             )
         )
         {

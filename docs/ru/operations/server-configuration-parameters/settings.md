@@ -34,7 +34,6 @@ ClickHouse перезагружает встроенные словари с з�
       <min_part_size>...</min_part_size>
       <min_part_size_ratio>...</min_part_size_ratio>
       <method>...</method>
-      <level>...</level>
     </case>
     ...
 </compression>
@@ -44,8 +43,7 @@ ClickHouse перезагружает встроенные словари с з�
 
 -   `min_part_size` - Минимальный размер части таблицы.
 -   `min_part_size_ratio` - Отношение размера минимальной части таблицы к полному размеру таблицы.
--   `method` - Метод сжатия. Возможные значения: `lz4`, `lz4hc`, `zstd`.
--   `level` – Уровень сжатия. См. [Кодеки](../../sql-reference/statements/create/table/#create-query-common-purpose-codecs).
+-   `method` - Метод сжатия. Возможные значения: `lz4`, `zstd`.
 
 Можно сконфигурировать несколько разделов `<case>`.
 
@@ -64,7 +62,6 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
     </case>
 </compression>
 ```
@@ -418,7 +415,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
     Значения по умолчанию: при указанном `address` - `LOG_USER`, иначе - `LOG_DAEMON`
 -   format - формат сообщений. Возможные значения - `bsd` и `syslog`
 
-## send_crash_reports {#server_configuration_parameters-send_crash_reports}
+## send_crash_reports {#server_configuration_parameters-logger}
 
 Настройки для отправки сообщений о сбоях в команду разработчиков ядра ClickHouse через [Sentry](https://sentry.io).
 Включение этих настроек, особенно в pre-production среде, может дать очень ценную информацию и поможет развитию ClickHouse.

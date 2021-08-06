@@ -26,7 +26,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/narrowBlockInputStreams.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
@@ -51,6 +51,8 @@
 
 namespace DB
 {
+
+
 StorageS3Cluster::StorageS3Cluster(
     const String & filename_,
     const String & access_key_id_,
@@ -126,15 +128,8 @@ Pipe StorageS3Cluster::read(
             /// For unknown reason global context is passed to IStorage::read() method
             /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                *connections.back(),
-                queryToString(query_info.query),
-                header,
-                context,
-                /*throttler=*/nullptr,
-                scalars,
-                Tables(),
-                processed_stage,
-                callback);
+                    *connections.back(), queryToString(query_info.query), header, context,
+                    /*throttler=*/nullptr, scalars, Tables(), processed_stage, callback);
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
@@ -145,7 +140,7 @@ Pipe StorageS3Cluster::read(
 }
 
 QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
-    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageMetadataPtr &, SelectQueryInfo &) const
+    ContextPtr context, QueryProcessingStage::Enum to_stage, SelectQueryInfo &) const
 {
     /// Initiator executes query on remote node.
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)

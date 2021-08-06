@@ -29,7 +29,7 @@
 #include <common/logger_useful.h>
 #include <random>
 #include <pcg_random.hpp>
-#include <common/scope_guard_safe.h>
+#include <ext/scope_guard_safe.h>
 
 namespace fs = std::filesystem;
 
@@ -377,8 +377,8 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     /// The following message is too verbose, but it can be useful too debug mysterious test failures in CI
     LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
                    "entries={}..{}, "
-                   "first_failed_task_name={}, current_tasks_size={}, "
-                   "last_current_task={}, "
+                   "first_failed_task_name={}, current_tasks_size={},"
+                   "last_current_task={},"
                    "last_skipped_entry_name={}",
                    initialized, size_before_filtering, queue_nodes.size(),
                    queue_nodes.empty() ? "none" : queue_nodes.front(), queue_nodes.empty() ? "none" : queue_nodes.back(),
@@ -1137,9 +1137,7 @@ void DDLWorker::runMainThread()
             scheduleTasks(reinitialized);
 
             LOG_DEBUG(log, "Waiting for queue updates");
-            /// FIXME It may hang for unknown reason. Timeout is just a hotfix.
-            constexpr int queue_wait_timeout_ms = 10000;
-            queue_updated_event->tryWait(queue_wait_timeout_ms);
+            queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
         {

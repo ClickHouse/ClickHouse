@@ -2,8 +2,8 @@
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Block.h>
-#include <common/bit_cast.h>
-#include <common/range.h>
+#include <ext/bit_cast.h>
+#include <ext/range.h>
 
 #include "LibraryInterface.h"
 

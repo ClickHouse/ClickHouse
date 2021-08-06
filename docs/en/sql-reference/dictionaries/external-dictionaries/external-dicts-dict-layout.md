@@ -7,9 +7,9 @@ toc_title: Storing Dictionaries in Memory
 
 There are a variety of ways to store dictionaries in memory.
 
-We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed), which provide optimal processing speed.
+We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed). which provide optimal processing speed.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section [cache](#cache).
+Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section “[cache](#cache)”.
 
 There are several ways to improve dictionary performance:
 
@@ -68,9 +68,9 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 The dictionary is completely stored in memory in the form of flat arrays. How much memory does the dictionary use? The amount is proportional to the size of the largest key (in space used).
 
-The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type and the value is limited to `max_array_size` (by default — 500,000). If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary. Dictionary flat arrays initial size is controlled by `initial_array_size` setting (by default — 1024).
+The dictionary key has the `UInt64` type and the value is limited to 500,000. If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary.
 
-All types of sources are supported. When updating, data (from a file or from a table) is read in it entirety.
+All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 This method provides the best performance among all available methods of storing the dictionary.
 
@@ -78,27 +78,21 @@ Configuration example:
 
 ``` xml
 <layout>
-  <flat>
-    <initial_array_size>50000</initial_array_size>
-    <max_array_size>5000000</max_array_size>
-  </flat>
+  <flat />
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
+LAYOUT(FLAT())
 ```
 
 ### hashed {#dicts-external_dicts_dict_layout-hashed}
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 
-If `preallocate` is `true` (default is `false`) the hash table will be preallocated (this will make the dictionary load faster). But note that you should use it only if:
-
-- The source support an approximate number of elements (for now it is supported only by the `ClickHouse` source).
-- There are no duplicates in the data (otherwise it may increase memory usage for the hashtable).
+The hash table will be preallocated (this will make dictionary load faster), if the is approx number of total rows is known, this is supported only if the source is `clickhouse` without any `<where>` (since in case of `<where>` you can filter out too much rows and the dictionary will allocate too much memory, that will not be used eventually).
 
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
@@ -106,23 +100,21 @@ Configuration example:
 
 ``` xml
 <layout>
-  <hashed>
-    <preallocate>0</preallocate>
-  </hashed>
+  <hashed />
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(HASHED(PREALLOCATE 0))
+LAYOUT(HASHED())
 ```
 
 ### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
 
-It will be also preallocated so as `hashed` (with `preallocate` set to `true`), and note that it is even more significant for `sparse_hashed`.
+It will be also preallocated so as `hashed`, note that it is even more significant for `sparse_hashed`.
 
 Configuration example:
 
@@ -132,10 +124,8 @@ Configuration example:
 </layout>
 ```
 
-or
-
 ``` sql
-LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
+LAYOUT(SPARSE_HASHED())
 ```
 
 ### complex_key_hashed {#complex-key-hashed}

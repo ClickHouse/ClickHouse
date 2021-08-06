@@ -341,8 +341,6 @@ select number, count(*) over (partition by p)
 select number, count(*) over (partition by p)
     from window_mt order by number limit 10 settings optimize_read_in_order = 1;
 
-drop table window_mt;
-
 -- some true window functions -- rank and friends
 select number, p, o,
     count(*) over w,
@@ -374,23 +372,6 @@ window w as (partition by p order by number
     rows between unbounded preceding and unbounded following)
 order by number
 settings max_block_size = 3;
-;
-
--- careful with auto-application of Null combinator
-select lagInFrame(toNullable(1)) over ();
-select lagInFrameOrNull(1) over (); -- { serverError 36 }
--- this is the same as `select max(Null::Nullable(Nothing))`
-select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
--- to make lagInFrame return null for out-of-frame rows, cast the argument to
--- Nullable; otherwise, it returns default values.
-SELECT
-    number,
-    lagInFrame(toNullable(number), 1) OVER w,
-    lagInFrame(toNullable(number), 2) OVER w,
-    lagInFrame(number, 1) OVER w,
-    lagInFrame(number, 2) OVER w
-FROM numbers(4)
-WINDOW w AS (ORDER BY number ASC)
 ;
 
 -- case-insensitive SQL-standard synonyms for any and anyLast
@@ -434,31 +415,4 @@ from (
 -- under UBSan. Should be limited to at most INT_MAX.
 select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
 
--- Somehow in this case WindowTransform gets empty input chunks not marked as
--- input end, and then two (!) empty input chunks marked as input end. Whatever.
-select count() over () from (select 1 a) l inner join (select 2 a) r using a;
--- This case works as expected, one empty input chunk marked as input end.
-select count() over () where null;
-
--- Inheriting another window.
-select number, count() over (w1 rows unbounded preceding) from numbers(10)
-window
-    w0 as (partition by intDiv(number, 5) as p),
-    w1 as (w0 order by mod(number, 3) as o)
-order by p, o, number
-;
-
--- can't redefine PARTITION BY
-select count() over (w partition by number) from numbers(1) window w as (partition by intDiv(number, 5)); -- { serverError 36 }
-
--- can't redefine existing ORDER BY
-select count() over (w order by number) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3)); -- { serverError 36 }
-
--- parent window can't have frame
-select count() over (w range unbounded preceding) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3) rows unbounded preceding); -- { serverError 36 }
-
--- looks weird but probably should work -- this is a window that inherits and changes nothing
-select count() over (w) from numbers(1) window w as ();
-
--- nonexistent parent window
-select count() over (w2 rows unbounded preceding); -- { serverError 36 }
+drop table window_mt;
