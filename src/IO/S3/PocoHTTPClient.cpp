@@ -297,7 +297,7 @@ void PocoHTTPClient::makeRequestInternal(
             else if (status_code >= 300)
             {
                 ProfileEvents::increment(select_metric(S3MetricType::Errors));
-                if (status_code >= 500)
+                if (status_code >= 500 && error_report)
                     error_report(request_configuration);
             }
 
