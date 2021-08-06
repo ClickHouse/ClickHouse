@@ -50,14 +50,14 @@ Pads the current string from the left with a specified string (multiple times, i
 **Syntax**
 
 ``` sql
-leftPad('string','length', 'string2`)
+leftPad('string','length', 'pad_string')
 ```
 
 **Arguments**
 
 -   `string` — Input string, that need to be padded. [String](../data-types/string.md).
 -   `length` — The length of the resulting string once the input string pads. [UInt](../data-types/int-uint.md). If the value is less than input string length, then string is returned as-is.
--   `string2` — The string to pad the current input string with. [String](../data-types/string.md).
+-   `pad_string` — The string to pad the current input string with. [String](../data-types/string.md).
 
 [String](../data-types/string.md)
 
@@ -90,14 +90,14 @@ Pads the current string from the left with a specified string (multiple times, i
 **Syntax**
 
 ``` sql
-leftPadUTF8('string','length', 'string2`)
+leftPadUTF8('string','length', 'pad_string')
 ```
 
 **Arguments**
 
 -   `string` — Input UTF-8 string, that need to be padded. [String](../data-types/string.md).
 -   `length` — The length of the resulting string once the input string pads. [UInt](../data-types/int-uint.md). If the value is less than input string length, then string is returned as-is.
--   `string2` — The string to pad the current input string with. [String](../data-types/string.md).
+-   `pad_string` — The string to pad the current input string with. [String](../data-types/string.md).
 
 [String](../data-types/string.md)
 
@@ -131,14 +131,14 @@ Pads the current string from the right with a specified string (multiple times, 
 **Syntax**
 
 ``` sql
-rightPad('string','length', 'string2`)
+rightPad('string','length', 'pad_string')
 ```
 
 **Arguments**
 
 -   `string` — Input string, that need to be padded. [String](../data-types/string.md).
 -   `length` — The length of the resulting string once the input string pads. [UInt](../data-types/int-uint.md). If the value is less than input string length, then string is returned as-is.
--   `string2` — The string to pad the current input string with. [String](../data-types/string.md).
+-   `pad_string` — The string to pad the current input string with. [String](../data-types/string.md).
 
 [String](../data-types/string.md)
 
@@ -171,14 +171,14 @@ Pads the current UTF-8 string from the right with a specified string (multiple t
 **Syntax**
 
 ``` sql
-rightPadUTF8('string','length', 'string2`)
+rightPadUTF8('string','length', 'pad_string')
 ```
 
 **Arguments**
 
 -   `string` — Input UTF-8 string, that need to be padded. [String](../data-types/string.md).
 -   `length` — The length of the resulting string once the input string pads. [UInt](../data-types/int-uint.md). If the value is less than input string length, then string is returned as-is.
--   `string2` — The string to pad the current input string with. [String](../data-types/string.md).
+-   `pad_string` — The string to pad the current input string with. [String](../data-types/string.md).
 
 [String](../data-types/string.md)
 
