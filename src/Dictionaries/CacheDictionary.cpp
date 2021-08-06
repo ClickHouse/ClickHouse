@@ -487,25 +487,21 @@ template <DictionaryKeyType dictionary_key_type>
 Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size) const
 {
     Pipe pipe;
-
+    std::optional<DictionarySourceData> data;
     {
         /// Write lock on storage
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-            pipe = Pipe(std::make_shared<DictionarySource>(
-                DictionarySourceData(shared_from_this(), cache_storage_ptr->getCachedSimpleKeys(), column_names),
-                max_block_size));
+            data.emplace(shared_from_this(), cache_storage_ptr->getCachedSimpleKeys(), column_names);
         else
         {
             auto keys = cache_storage_ptr->getCachedComplexKeys();
-            pipe = Pipe(std::make_shared<DictionarySource>(
-                DictionarySourceData(shared_from_this(), keys, column_names),
-                max_block_size));
+            data.emplace(shared_from_this(), keys, column_names);
         }
     }
 
-    return pipe;
+    return Pipe(std::make_shared<DictionarySource>(std::move(*data), max_block_size));
 }
 
 template <DictionaryKeyType dictionary_key_type>
