@@ -74,6 +74,7 @@ namespace ErrorCodes
 {
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -1123,6 +1124,34 @@ void executeQuery(
                 executor->execute(pipeline.getNumThreads());
             }
         }
+    }
+    catch (...)
+    {
+        streams.onException();
+        throw;
+    }
+
+    streams.onFinish();
+}
+
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
+{
+    try
+    {
+        if (streams.out)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires input, but no input buffer provided, it's a bug");
+        if (streams.in)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires output, but no output buffer provided, it's a bug");
+
+        if (!streams.pipeline.initialized())
+            return;
+
+        if (!streams.pipeline.isCompleted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query pipeline requires output, but no output buffer provided, it's a bug");
+
+        streams.pipeline.setProgressCallback(context->getProgressCallback());
+        auto executor = streams.pipeline.execute();
+        executor->execute(streams.pipeline.getNumThreads());
     }
     catch (...)
     {
