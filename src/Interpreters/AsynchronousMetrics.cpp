@@ -896,9 +896,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     if (block_devices_rescan_delay.elapsedSeconds() >= 300)
         openBlockDevices();
 
-    for (auto & [name, device] : block_devs)
+    try
     {
-        try
+        for (auto & [name, device] : block_devs)
         {
             device->rewind();
 
@@ -947,20 +947,20 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 new_values["BlockQueueTimePerOp_" + name] = delta_values.time_in_queue * time_multiplier / delta_values.in_flight_ios;
             }
         }
+    }
+    catch (...)
+    {
+        /// Try to reopen block devices in case of error
+        /// (i.e. ENOENT means that some disk had been replaced, and it may apperas with a new name)
+        try
+        {
+            openBlockDevices();
+        }
         catch (...)
         {
-            /// Try to reopen block devices in case of error
-            /// (i.e. ENOENT means that some disk had been replaced, and it may apperas with a new name)
-            try
-            {
-                openBlockDevices();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     if (net_dev)
