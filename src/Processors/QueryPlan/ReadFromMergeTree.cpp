@@ -1007,6 +1007,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
     if (sample_factor_column_queried)
     {
         ColumnWithTypeAndName column;
+        column.name = "_sample_factor";
         column.type = std::make_shared<DataTypeFloat64>();
         column.column = column.type->createColumnConst(0, Field(result.sampling.used_sample_factor));
 
