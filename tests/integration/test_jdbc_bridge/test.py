@@ -1,6 +1,7 @@
-import logging
+import contextlib
 import os.path as p
 import pytest
+import time
 import uuid
 
 from helpers.cluster import ClickHouseCluster
@@ -22,14 +23,6 @@ def started_cluster():
             INSERT INTO test.ClickHouseTable(Num, Str)
             SELECT number, toString(number) FROM system.numbers LIMIT {};
         '''.format(records))
-
-        while True:
-            datasources = instance.query("select * from jdbc('', 'show datasources')")
-            if 'self' in datasources:
-                logging.debug(f"JDBC Driver self datasource initialized.\n{datasources}")
-                break
-            else:
-                logging.debug(f"Waiting JDBC Driver to initialize 'self' datasource.\n{datasources}")
         yield cluster
     finally:
         cluster.shutdown()
@@ -59,9 +52,8 @@ def test_jdbc_distributed_query(started_cluster):
 
 def test_jdbc_insert(started_cluster):
     """Test insert query using JDBC table function"""
-    instance.query('DROP TABLE IF EXISTS test.test_insert')
     instance.query('''
-        CREATE TABLE test.test_insert ENGINE = Memory AS
+        CREATE TABLE test.test_insert engine = Memory AS
         SELECT * FROM test.ClickHouseTable;
         SELECT * 
         FROM jdbc('{0}?mutation', 'INSERT INTO test.test_insert VALUES({1}, ''{1}'', ''{1}'')');
@@ -75,9 +67,8 @@ def test_jdbc_insert(started_cluster):
 def test_jdbc_update(started_cluster):
     """Test update query using JDBC table function"""
     secrets = str(uuid.uuid1())
-    instance.query('DROP TABLE IF EXISTS test.test_update')
     instance.query('''
-        CREATE TABLE test.test_update ENGINE = Memory AS
+        CREATE TABLE test.test_update engine = Memory AS
         SELECT * FROM test.ClickHouseTable;
         SELECT * 
         FROM jdbc(
@@ -94,9 +85,8 @@ def test_jdbc_update(started_cluster):
 
 def test_jdbc_delete(started_cluster):
     """Test delete query using JDBC table function"""
-    instance.query('DROP TABLE IF EXISTS test.test_delete')
     instance.query('''
-        CREATE TABLE test.test_delete ENGINE = Memory AS
+        CREATE TABLE test.test_delete engine = Memory AS
         SELECT * FROM test.ClickHouseTable;
         SELECT * 
         FROM jdbc(
@@ -112,7 +102,6 @@ def test_jdbc_delete(started_cluster):
 
 def test_jdbc_table_engine(started_cluster):
     """Test query against a JDBC table"""
-    instance.query('DROP TABLE IF EXISTS test.jdbc_table')
     actual = instance.query('''
         CREATE TABLE test.jdbc_table(Str String)
         ENGINE = JDBC('{}', 'test', 'ClickHouseTable');

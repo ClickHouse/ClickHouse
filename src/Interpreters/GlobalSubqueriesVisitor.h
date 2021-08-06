@@ -15,8 +15,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -151,13 +150,14 @@ public:
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
-                io.pipeline.resize(1);
-                io.pipeline.setSinks([&](const Block &, Pipe::StreamType) -> ProcessorPtr
-                {
-                    return table_out;
-                });
-                auto executor = io.pipeline.execute();
-                executor->execute(io.pipeline.getNumStreams());
+                PullingPipelineExecutor executor(io.pipeline);
+
+                table_out->writePrefix();
+                Block block;
+                while (executor.pull(block))
+                    table_out->write(block);
+
+                table_out->writeSuffix();
             }
             else
             {
@@ -198,9 +198,8 @@ private:
         {
             ASTPtr & ast = func.arguments->children[1];
 
-            /// Literal or function can use regular IN.
-            /// NOTE: We don't support passing table functions to IN.
-            if (ast->as<ASTLiteral>() || ast->as<ASTFunction>())
+            /// Literal can use regular IN
+            if (ast->as<ASTLiteral>())
             {
                 if (func.name == "globalIn")
                     func.name = "in";
