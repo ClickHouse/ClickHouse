@@ -2090,7 +2090,7 @@ SELECT tcpPort();
 
 ## currentRoles {#current-roles}
 
-Возвращает имена текущих ролей для текущего пользователя. Для изменения текущих ролей может использоваться команда [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement). Если команда `SET ROLE` не использовалась, функция возвращает тот же результат, что и функция [defaultRoles](#default-roles).
+Возвращает список текущих ролей для текущего пользователя. Список ролей пользователя можно изменить с помощью выражения [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement). Если выражение `SET ROLE` не использовалось, данная функция возвращает тот же результат, что и функция [defaultRoles](#default-roles).
 
 **Синтаксис**
 
