@@ -386,6 +386,13 @@ class ClickHouseCluster:
         self.zookeeper_instance_dir_prefix = p.join(self.instances_dir, "zk")
         self.zookeeper_dirs_to_create = []
 
+        # available when with_jdbc_bridge == True
+        self.jdbc_bridge_host = "bridge1"
+        self.jdbc_bridge_ip = None
+        self.jdbc_bridge_port = 9019
+        self.jdbc_driver_dir = p.abspath(p.join(self.instances_dir, "jdbc_driver"))
+        self.jdbc_driver_logs_dir = os.path.join(self.jdbc_driver_dir, "logs")
+
         self.docker_client = None
         self.is_up = False
         self.env = os.environ.copy()
@@ -694,6 +701,8 @@ class ClickHouseCluster:
 
     def setup_jdbc_bridge_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_jdbc_bridge = True
+        env_variables['JDBC_DRIVER_LOGS'] = self.jdbc_driver_logs_dir
+        env_variables['JDBC_DRIVER_FS'] = "bind"
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_jdbc_bridge.yml')])
         self.base_jdbc_bridge_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                     '--file', p.join(docker_compose_yml_dir, 'docker_compose_jdbc_bridge.yml')]
@@ -1491,8 +1500,12 @@ class ClickHouseCluster:
                 self.wait_cassandra_to_start()
 
             if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
+                os.makedirs(self.jdbc_driver_logs_dir)
+                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXO)
+
                 subprocess_check_call(self.base_jdbc_bridge_cmd + ['up', '-d'])
-                self.wait_for_url("http://localhost:9020/ping")
+                self.jdbc_bridge_ip = self.get_instance_ip(self.jdbc_bridge_host)
+                self.wait_for_url(f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping")
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
             logging.debug(("Trying to create ClickHouse instance by command %s", ' '.join(map(str, clickhouse_start_cmd))))
