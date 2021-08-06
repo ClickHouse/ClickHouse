@@ -140,21 +140,6 @@ private:
         MutationCommands & for_interpreter,
         MutationCommands & for_file_renames);
 
-    /// Apply commands to source_part i.e. remove and rename some columns in
-    /// source_part and return set of files, that have to be removed or renamed
-    /// from filesystem and in-memory checksums. Ordered result is important,
-    /// because we can apply renames that affects each other: x -> z, y -> x.
-    static NameToNameVector collectFilesForRenames(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
-
-    /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
-    /// Because we will generate new versions of them after we perform mutation.
-    static NameSet collectFilesToSkip(
-        const MergeTreeDataPartPtr & source_part,
-        const Block & updated_header,
-        const std::set<MergeTreeIndexPtr> & indices_to_recalc,
-        const String & mrk_extension,
-        const std::set<MergeTreeProjectionPtr> & projections_to_recalc);
-
     /// Get the columns list of the resulting part in the same order as storage_columns.
     static NamesAndTypesList getColumnsForNewDataPart(
         MergeTreeData::DataPartPtr source_part,
@@ -162,41 +147,8 @@ private:
         NamesAndTypesList storage_columns,
         const MutationCommands & commands_for_removes);
 
-    /// Get skip indices, that should exists in the resulting data part.
-    static MergeTreeIndices getIndicesForNewDataPart(
-        const IndicesDescription & all_indices,
-        const MutationCommands & commands_for_removes);
-
-    static MergeTreeProjections getProjectionsForNewDataPart(
-        const ProjectionsDescription & all_projections,
-        const MutationCommands & commands_for_removes);
-
     static bool shouldExecuteTTL(
         const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies, const MutationCommands & commands);
-
-    /// Return set of indices which should be recalculated during mutation also
-    /// wraps input stream into additional expression stream
-    static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
-        BlockInputStreamPtr & input_stream,
-        const NameSet & updated_columns,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
-        const NameSet & materialized_indices,
-        const MergeTreeData::DataPartPtr & source_part);
-
-    static std::set<MergeTreeProjectionPtr> getProjectionsToRecalculate(
-        const NameSet & updated_columns,
-        const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & materialized_projections,
-        const MergeTreeData::DataPartPtr & source_part);
-
-    /// Initialize and write to disk new part fields like checksums, columns,
-    /// etc.
-    static void finalizeMutatedPart(
-        const MergeTreeDataPartPtr & source_part,
-        MergeTreeData::MutableDataPartPtr new_data_part,
-        bool need_remove_expired_values,
-        const CompressionCodecPtr & codec);
 
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.

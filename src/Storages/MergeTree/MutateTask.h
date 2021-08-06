@@ -18,12 +18,12 @@ using MutateTaskPtr = std::shared_ptr<MutateTask>;\
 
 class MergeTreeDataMergerMutator;
 
+struct MutationContext;
 
 class MutateTask
 {
 public:
-    MutateTask
-    (
+    MutateTask(
         FutureMergedMutatedPartPtr future_part_,
         StorageMetadataPtr metadata_snapshot_,
         MutationCommandsConstPtr commands_,
@@ -34,19 +34,7 @@ public:
         TableLockHolder & table_lock_holder_,
         MergeTreeData & data_,
         MergeTreeDataMergerMutator & mutator_,
-        ActionBlocker & merges_blocker_)
-        : future_part(future_part_)
-        , metadata_snapshot(metadata_snapshot_)
-        , commands(commands_)
-        , mutate_entry(mutate_entry_)
-        , time_of_mutation(time_of_mutation_)
-        , context(context_)
-        , space_reservation(space_reservation_)
-        , holder(table_lock_holder_)
-        , data(data_)
-        , mutator(mutator_)
-        , merges_blocker(merges_blocker_)
-        {}
+        ActionBlocker & merges_blocker_);
 
     bool execute();
 
@@ -117,49 +105,8 @@ private:
 
     std::promise<MergeTreeData::MutableDataPartPtr> promise;
 
-    FutureMergedMutatedPartPtr future_part;
-    StorageMetadataPtr metadata_snapshot;
-    MutationCommandsConstPtr commands;
-    MergeListEntry & mutate_entry;
-    time_t time_of_mutation;
-    ContextPtr context;
-    ReservationSharedPtr space_reservation;
-    TableLockHolder & holder;
+    std::shared_ptr<MutationContext> ctx;
 
-    Poco::Logger * log{&Poco::Logger::get("MutateTask")};
-
-    MergeTreeData & data;
-    MergeTreeDataMergerMutator & mutator;
-    ActionBlocker & merges_blocker;
-
-
-    BlockInputStreamPtr in{nullptr};
-    Block updated_header;
-    std::unique_ptr<MutationsInterpreter> interpreter;
-    UInt64 watch_prev_elapsed{0};
-    std::unique_ptr<MergeStageProgress> stage_progress{nullptr};
-
-    MutationCommands commands_for_part;
-    MutationCommands for_interpreter;
-    MutationCommands for_file_renames;
-
-    NamesAndTypesList storage_columns = metadata_snapshot->getColumns().getAllPhysical();
-    NameSet materialized_indices;
-    NameSet materialized_projections;
-    MutationsInterpreter::MutationKind::MutationKindEnum mutation_kind
-        = MutationsInterpreter::MutationKind::MutationKindEnum::MUTATE_UNKNOWN;
-
-    VolumePtr single_disk_volume;
-    MergeTreeData::MutableDataPartPtr new_data_part;
-    DiskPtr disk;
-    String new_part_tmp_path;
-
-    SyncGuardPtr sync_guard;
-
-    String mrk_extension;
-
-    bool need_sync;
-    bool need_remove_expired_values;
 };
 
 [[ maybe_unused]] static MergeTreeData::MutableDataPartPtr executeHere(MutateTaskPtr task)

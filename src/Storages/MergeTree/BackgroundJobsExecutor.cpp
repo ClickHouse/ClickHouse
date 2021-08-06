@@ -247,7 +247,8 @@ BackgroundJobsExecutor::BackgroundJobsExecutor(
         {PoolConfig
             {
                 .pool_type = PoolType::MERGE_MUTATE,
-                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
+                // .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
+                .get_max_pool_size = [global_context_] () { return 2; },
                 .tasks_metric = CurrentMetrics::BackgroundPoolTask
             },
         PoolConfig

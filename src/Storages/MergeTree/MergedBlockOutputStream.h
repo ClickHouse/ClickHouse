@@ -59,4 +59,6 @@ private:
     CompressionCodecPtr default_codec;
 };
 
+using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;
+
 }

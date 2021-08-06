@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <common/logger_useful.h>
+#include <Common/escapeForFileName.h>
 
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -8,6 +9,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 
+#include <Parsers/queryToString.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 
@@ -142,7 +144,398 @@ static void splitMutationCommands(
 }
 
 
+/// Get skip indices, that should exists in the resulting data part.
+static MergeTreeIndices getIndicesForNewDataPart(
+    const IndicesDescription & all_indices,
+    const MutationCommands & commands_for_removes)
+{
+    NameSet removed_indices;
+    for (const auto & command : commands_for_removes)
+        if (command.type == MutationCommand::DROP_INDEX)
+            removed_indices.insert(command.column_name);
+
+    MergeTreeIndices new_indices;
+    for (const auto & index : all_indices)
+        if (!removed_indices.count(index.name))
+            new_indices.push_back(MergeTreeIndexFactory::instance().get(index));
+
+    return new_indices;
+}
+
+static MergeTreeProjections getProjectionsForNewDataPart(
+    const ProjectionsDescription & all_projections,
+    const MutationCommands & commands_for_removes)
+{
+    NameSet removed_projections;
+    for (const auto & command : commands_for_removes)
+        if (command.type == MutationCommand::DROP_PROJECTION)
+            removed_projections.insert(command.column_name);
+
+    MergeTreeProjections new_projections;
+    for (const auto & projection : all_projections)
+        if (!removed_projections.count(projection.name))
+            new_projections.push_back(MergeTreeProjectionFactory::instance().get(projection));
+
+    return new_projections;
+}
+
+
+/// Return set of indices which should be recalculated during mutation also
+/// wraps input stream into additional expression stream
+std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
+    BlockInputStreamPtr & input_stream,
+    const NameSet & updated_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
+    const NameSet & materialized_indices,
+    const MergeTreeData::DataPartPtr & source_part)
+{
+    /// Checks if columns used in skipping indexes modified.
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    std::set<MergeTreeIndexPtr> indices_to_recalc;
+    ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
+    const auto & indices = metadata_snapshot->getSecondaryIndices();
+
+    for (size_t i = 0; i < indices.size(); ++i)
+    {
+        const auto & index = indices[i];
+
+        // If we ask to materialize and it already exists
+        if (!source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") && materialized_indices.count(index.name))
+        {
+            if (indices_to_recalc.insert(index_factory.get(index)).second)
+            {
+                ASTPtr expr_list = index.expression_list_ast->clone();
+                for (const auto & expr : expr_list->children)
+                    indices_recalc_expr_list->children.push_back(expr->clone());
+            }
+        }
+        // If some dependent columns gets mutated
+        else
+        {
+            bool mutate = false;
+            const auto & index_cols = index.expression->getRequiredColumns();
+            for (const auto & col : index_cols)
+            {
+                if (updated_columns.count(col))
+                {
+                    mutate = true;
+                    break;
+                }
+            }
+            if (mutate && indices_to_recalc.insert(index_factory.get(index)).second)
+            {
+                ASTPtr expr_list = index.expression_list_ast->clone();
+                for (const auto & expr : expr_list->children)
+                    indices_recalc_expr_list->children.push_back(expr->clone());
+            }
+        }
+    }
+
+    if (!indices_to_recalc.empty() && input_stream)
+    {
+        auto indices_recalc_syntax = TreeRewriter(context).analyze(indices_recalc_expr_list, input_stream->getHeader().getNamesAndTypesList());
+        auto indices_recalc_expr = ExpressionAnalyzer(
+                indices_recalc_expr_list,
+                indices_recalc_syntax, context).getActions(false);
+
+        /// We can update only one column, but some skip idx expression may depend on several
+        /// columns (c1 + c2 * c3). It works because this stream was created with help of
+        /// MutationsInterpreter which knows about skip indices and stream 'in' already has
+        /// all required columns.
+        /// TODO move this logic to single place.
+        input_stream = std::make_shared<MaterializingBlockInputStream>(
+            std::make_shared<ExpressionBlockInputStream>(input_stream, indices_recalc_expr));
+    }
+    return indices_to_recalc;
+}
+
+std::set<MergeTreeProjectionPtr> getProjectionsToRecalculate(
+    const NameSet & updated_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    const NameSet & materialized_projections,
+    const MergeTreeData::DataPartPtr & source_part)
+{
+    /// Checks if columns used in projections modified.
+    const auto & projection_factory = MergeTreeProjectionFactory::instance();
+    std::set<MergeTreeProjectionPtr> projections_to_recalc;
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        // If we ask to materialize and it doesn't exist
+        if (!source_part->checksums.has(projection.name + ".proj") && materialized_projections.count(projection.name))
+        {
+            projections_to_recalc.insert(projection_factory.get(projection));
+        }
+        else
+        {
+            // If some dependent columns gets mutated
+            bool mutate = false;
+            const auto & projection_cols = projection.required_columns;
+            for (const auto & col : projection_cols)
+            {
+                if (updated_columns.count(col))
+                {
+                    mutate = true;
+                    break;
+                }
+            }
+            if (mutate)
+                projections_to_recalc.insert(projection_factory.get(projection));
+        }
+    }
+    return projections_to_recalc;
+}
+
+
+/// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
+/// Because we will generate new versions of them after we perform mutation.
+NameSet collectFilesToSkip(
+    const MergeTreeDataPartPtr & source_part,
+    const Block & updated_header,
+    const std::set<MergeTreeIndexPtr> & indices_to_recalc,
+    const String & mrk_extension,
+    const std::set<MergeTreeProjectionPtr> & projections_to_recalc)
+{
+    NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
+
+    /// Skip updated files
+    for (const auto & entry : updated_header)
+    {
+        ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            String stream_name = ISerialization::getFileNameForStream({entry.name, entry.type}, substream_path);
+            files_to_skip.insert(stream_name + ".bin");
+            files_to_skip.insert(stream_name + mrk_extension);
+        };
+
+        auto serialization = source_part->getSerializationForColumn({entry.name, entry.type});
+        serialization->enumerateStreams(callback);
+    }
+    for (const auto & index : indices_to_recalc)
+    {
+        files_to_skip.insert(index->getFileName() + ".idx");
+        files_to_skip.insert(index->getFileName() + mrk_extension);
+    }
+    for (const auto & projection : projections_to_recalc)
+    {
+        files_to_skip.insert(projection->getDirectoryName());
+    }
+
+    return files_to_skip;
+}
+
+
+/// Apply commands to source_part i.e. remove and rename some columns in
+/// source_part and return set of files, that have to be removed or renamed
+/// from filesystem and in-memory checksums. Ordered result is important,
+/// because we can apply renames that affects each other: x -> z, y -> x.
+static NameToNameVector collectFilesForRenames(
+    MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension)
+{
+    /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
+    std::map<String, size_t> stream_counts;
+    for (const NameAndTypePair & column : source_part->getColumns())
+    {
+        auto serialization = source_part->getSerializationForColumn(column);
+        serialization->enumerateStreams(
+            [&](const ISerialization::SubstreamPath & substream_path)
+            {
+                ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
+            },
+            {});
+    }
+
+    NameToNameVector rename_vector;
+    /// Remove old data
+    for (const auto & command : commands_for_removes)
+    {
+        if (command.type == MutationCommand::Type::DROP_INDEX)
+        {
+            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
+            {
+                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
+                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+            }
+        }
+        else if (command.type == MutationCommand::Type::DROP_PROJECTION)
+        {
+            if (source_part->checksums.has(command.column_name + ".proj"))
+                rename_vector.emplace_back(command.column_name + ".proj", "");
+        }
+        else if (command.type == MutationCommand::Type::DROP_COLUMN)
+        {
+            ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+            {
+                String stream_name = ISerialization::getFileNameForStream({command.column_name, command.data_type}, substream_path);
+                /// Delete files if they are no longer shared with another column.
+                if (--stream_counts[stream_name] == 0)
+                {
+                    rename_vector.emplace_back(stream_name + ".bin", "");
+                    rename_vector.emplace_back(stream_name + mrk_extension, "");
+                }
+            };
+
+            auto column = source_part->getColumns().tryGetByName(command.column_name);
+            if (column)
+            {
+                auto serialization = source_part->getSerializationForColumn(*column);
+                serialization->enumerateStreams(callback);
+            }
+        }
+        else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+        {
+            String escaped_name_from = escapeForFileName(command.column_name);
+            String escaped_name_to = escapeForFileName(command.rename_to);
+
+            ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+            {
+                String stream_from = ISerialization::getFileNameForStream({command.column_name, command.data_type}, substream_path);
+
+                String stream_to = boost::replace_first_copy(stream_from, escaped_name_from, escaped_name_to);
+
+                if (stream_from != stream_to)
+                {
+                    rename_vector.emplace_back(stream_from + ".bin", stream_to + ".bin");
+                    rename_vector.emplace_back(stream_from + mrk_extension, stream_to + mrk_extension);
+                }
+            };
+
+            auto column = source_part->getColumns().tryGetByName(command.column_name);
+            if (column)
+            {
+                auto serialization = source_part->getSerializationForColumn(*column);
+                serialization->enumerateStreams(callback);
+            }
+        }
+    }
+
+    return rename_vector;
+}
+
+
+/// Initialize and write to disk new part fields like checksums, columns,
+/// etc.
+void finalizeMutatedPart(
+    const MergeTreeDataPartPtr & source_part,
+    MergeTreeData::MutableDataPartPtr new_data_part,
+    bool need_remove_expired_values,
+    const CompressionCodecPtr & codec)
+{
+    auto disk = new_data_part->volume->getDisk();
+
+    if (new_data_part->uuid != UUIDHelpers::Nil)
+    {
+        auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::UUID_FILE_NAME, 4096);
+        HashingWriteBuffer out_hashing(*out);
+        writeUUIDText(new_data_part->uuid, out_hashing);
+        new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
+        new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
+    }
+
+    if (need_remove_expired_values)
+    {
+        /// Write a file with ttl infos in json format.
+        auto out_ttl = disk->writeFile(fs::path(new_data_part->getFullRelativePath()) / "ttl.txt", 4096);
+        HashingWriteBuffer out_hashing(*out_ttl);
+        new_data_part->ttl_infos.write(out_hashing);
+        new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
+        new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+    }
+
+    {
+        /// Write file with checksums.
+        auto out_checksums = disk->writeFile(fs::path(new_data_part->getFullRelativePath()) / "checksums.txt", 4096);
+        new_data_part->checksums.write(*out_checksums);
+    } /// close fd
+
+    {
+        auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096);
+        DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
+    }
+
+    {
+        /// Write a file with a description of columns.
+        auto out_columns = disk->writeFile(fs::path(new_data_part->getFullRelativePath()) / "columns.txt", 4096);
+        new_data_part->getColumns().writeText(*out_columns);
+    } /// close fd
+
+    new_data_part->rows_count = source_part->rows_count;
+    new_data_part->index_granularity = source_part->index_granularity;
+    new_data_part->index = source_part->index;
+    new_data_part->minmax_idx = source_part->minmax_idx;
+    new_data_part->modification_time = time(nullptr);
+    new_data_part->loadProjections(false, false);
+    new_data_part->setBytesOnDisk(
+        MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), new_data_part->getFullRelativePath()));
+    new_data_part->default_codec = codec;
+    new_data_part->calculateColumnsSizesOnDisk();
+    new_data_part->storage.lockSharedData(*new_data_part);
+}
+
+
+
 } // namespace MutationHelpers
+
+
+struct MutationContext
+{
+    MergeTreeData * data;
+    MergeTreeDataMergerMutator * mutator;
+    ActionBlocker * merges_blocker;
+    TableLockHolder * holder;
+    MergeListEntry * mutate_entry;
+
+    Poco::Logger * log{&Poco::Logger::get("MutateTask")};
+
+    FutureMergedMutatedPartPtr future_part;
+    MergeTreeData::DataPartPtr source_part;
+
+    StorageMetadataPtr metadata_snapshot;
+    MutationCommandsConstPtr commands;
+    time_t time_of_mutation;
+    ContextPtr context;
+    ReservationSharedPtr space_reservation;
+
+    CompressionCodecPtr compression_codec;
+
+    std::unique_ptr<CurrentMetrics::Increment> num_mutations;
+
+    BlockInputStreamPtr mutating_stream{nullptr}; // in
+    Block updated_header;
+
+    std::unique_ptr<MutationsInterpreter> interpreter;
+    UInt64 watch_prev_elapsed{0};
+    std::unique_ptr<MergeStageProgress> stage_progress{nullptr};
+
+    MutationCommands commands_for_part;
+    MutationCommands for_interpreter;
+    MutationCommands for_file_renames;
+
+    NamesAndTypesList storage_columns;
+    NameSet materialized_indices;
+    NameSet materialized_projections;
+    MutationsInterpreter::MutationKind::MutationKindEnum mutation_kind
+        = MutationsInterpreter::MutationKind::MutationKindEnum::MUTATE_UNKNOWN;
+
+    VolumePtr single_disk_volume;
+    MergeTreeData::MutableDataPartPtr new_data_part;
+    DiskPtr disk;
+    String new_part_tmp_path;
+
+    SyncGuardPtr sync_guard;
+    IMergedBlockOutputStreamPtr out{nullptr};
+
+    String mrk_extension;
+
+    MergeList::EntryPtr merge_entry;
+    MergeTreeProjections projections_to_build;
+    IMergeTreeDataPart::MinMaxIndexPtr minmax_idx{nullptr};
+
+    bool need_sync;
+    bool need_remove_expired_values;
+};
+
+using MutationContextPtr = std::shared_ptr<MutationContext>;
 
 
 class IExecutableTask
@@ -159,30 +552,18 @@ class MergeProjectionPartsTask : public IExecutableTask
 {
 public:
 
-    struct ParametersToLaunchMerge
-    {
-        MergeTreeDataMergerMutator & mutator;
-        const StorageMetadataPtr & metadata_snapshot;
-        MergeList::Entry & merge_entry;
-        TableLockHolder holder;
-        time_t time_of_mutation;
-        ContextPtr context;
-        ReservationSharedPtr space_reservation;
-        MergeTreeData::MutableDataPartPtr new_data_part;
-    };
-
     MergeProjectionPartsTask(
         String name_,
         MergeTreeData::MutableDataPartsVector && parts_,
         const ProjectionDescription & projection_,
         size_t & block_num_,
-        ParametersToLaunchMerge parameters_
+        MutationContextPtr ctx_
         )
         : name(std::move(name_))
         , parts(std::move(parts_))
         , projection(projection_)
         , block_num(block_num_)
-        , parameters(std::move(parameters_))
+        , ctx(ctx_)
         , log(&Poco::Logger::get("MergeProjectionPartsTask"))
         {
             LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
@@ -221,7 +602,7 @@ public:
                 selected_parts[0]->renameTo(projection.name + ".proj", true);
                 selected_parts[0]->name = projection.name;
                 selected_parts[0]->is_temp = false;
-                parameters.new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
+                ctx->new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
 
                 /// Task is finished
                 return false;
@@ -249,18 +630,18 @@ public:
                 projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
             LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
-            auto tmp_part_merge_task = parameters.mutator.mergePartsToTemporaryPart(
+            auto tmp_part_merge_task = ctx->mutator->mergePartsToTemporaryPart(
                 projection_future_part,
-                parameters.metadata_snapshot,
-                parameters.merge_entry,
-                parameters.holder,
-                parameters.time_of_mutation,
-                parameters.context,
-                parameters.space_reservation,
+                ctx->metadata_snapshot,
+                *ctx->merge_entry,
+                *ctx->holder,
+                ctx->time_of_mutation,
+                ctx->context,
+                ctx->space_reservation,
                 false, // TODO Do we need deduplicate for projections
                 {},
                 projection_merging_params,
-                parameters.new_data_part.get(),
+                ctx->new_data_part.get(),
                 "tmp_merge_");
 
             next_level_parts.push_back(executeHere(tmp_part_merge_task));
@@ -276,7 +657,7 @@ private:
     MergeTreeData::MutableDataPartsVector parts;
     const ProjectionDescription & projection;
     size_t & block_num;
-    ParametersToLaunchMerge parameters;
+    MutationContextPtr ctx;
 
     Poco::Logger * log;
 
@@ -314,27 +695,7 @@ class PartMergerWriter
 {
 public:
 
-    struct Parameters
-    {
-        MergeTreeData & data;
-        MergeTreeDataMergerMutator & mutator;
-        ActionBlocker & merges_blocker;
-        Poco::Logger * logger;
-        MergeTreeData::MutableDataPartPtr new_data_part;
-        const StorageMetadataPtr & metadata_snapshot;
-        MergeTreeProjections projections_to_build;
-        BlockInputStreamPtr mutating_stream;
-        IMergedBlockOutputStreamPtr out;
-        time_t time_of_mutation;
-        MergeListEntry & merge_entry;
-        ReservationSharedPtr space_reservation;
-        TableLockHolder & holder;
-        ContextPtr context;
-        IMergeTreeDataPart::MinMaxIndex * minmax_idx;
-    };
-
-
-    PartMergerWriter(Parameters parameters_) : parameters(std::move(parameters_)), projections(parameters.metadata_snapshot->projections)
+    PartMergerWriter(MutationContextPtr ctx_) : ctx(ctx_), projections(ctx->metadata_snapshot->projections)
     {
 
     }
@@ -390,12 +751,12 @@ private:
     };
 
     State state{State::NEED_PREPARE};
-    Parameters parameters;
+    MutationContextPtr ctx;
 
     Block block;
     size_t block_num = 0;
 
-    using ProjectionNameToItsBlocks =std::map<String, MergeTreeData::MutableDataPartsVector>;
+    using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
     ProjectionNameToItsBlocks projection_parts;
     std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
 
@@ -408,7 +769,7 @@ private:
 
 void PartMergerWriter::prepare()
 {
-    for (size_t i = 0, size = parameters.projections_to_build.size(); i < size; ++i)
+    for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
         projection_squashes.emplace_back(65536, 65536 * 256);
     }
@@ -417,19 +778,19 @@ void PartMergerWriter::prepare()
 
 bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 {
-    if (MutationHelpers::checkOperationIsNotCanceled(parameters.merges_blocker, parameters.merge_entry) && (block = parameters.mutating_stream->read()))
+    if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, *ctx->merge_entry) && (block = ctx->mutating_stream->read()))
     {
-        if (parameters.minmax_idx)
-            parameters.minmax_idx->update(block, parameters.data.getMinMaxColumnsNames(parameters.metadata_snapshot->getPartitionKey()));
+        if (ctx->minmax_idx)
+            ctx->minmax_idx->update(block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
-        parameters.out->write(block);
+        ctx->out->write(block);
 
-        for (size_t i = 0, size = parameters.projections_to_build.size(); i < size; ++i)
+        for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
-            const auto & projection = parameters.projections_to_build[i]->projection;
+            const auto & projection = ctx->projections_to_build[i]->projection;
             auto in = InterpreterSelectQuery(
                           projection.query_ast,
-                          parameters.context,
+                          ctx->context,
                           Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
                           SelectQueryOptions{
                               projection.type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns : QueryProcessingStage::WithMergeableState})
@@ -445,27 +806,27 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             if (projection_block)
             {
                 projection_parts[projection.name].emplace_back(
-                    MergeTreeDataWriter::writeTempProjectionPart(parameters.data, parameters.logger, projection_block, projection, parameters.new_data_part.get(), ++block_num));
+                    MergeTreeDataWriter::writeTempProjectionPart(*ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
             }
         }
 
-        parameters.merge_entry->rows_written += block.rows();
-        parameters.merge_entry->bytes_written_uncompressed += block.bytes();
+        (*ctx->merge_entry)->rows_written += block.rows();
+        (*ctx->merge_entry)->bytes_written_uncompressed += block.bytes();
 
         /// Need execute again
         return true;
     }
 
     // Write the last block
-    for (size_t i = 0, size = parameters.projections_to_build.size(); i < size; ++i)
+    for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
-        const auto & projection = parameters.projections_to_build[i]->projection;
+        const auto & projection = ctx->projections_to_build[i]->projection;
         auto & projection_squash = projection_squashes[i];
         auto projection_block = projection_squash.add({});
         if (projection_block)
         {
             projection_parts[projection.name].emplace_back(
-                MergeTreeDataWriter::writeTempProjectionPart(parameters.data, parameters.logger, projection_block, projection, parameters.new_data_part.get(), ++block_num));
+                MergeTreeDataWriter::writeTempProjectionPart(*ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
         }
     }
 
@@ -491,15 +852,7 @@ void PartMergerWriter::constructTaskForProjectionPartsMerge()
         std::move(parts),
         projection,
         block_num,
-        MergeProjectionPartsTask::ParametersToLaunchMerge
-        {
-            .mutator = parameters.mutator,
-            .metadata_snapshot = parameters.metadata_snapshot,
-            .merge_entry = parameters.merge_entry,
-            .holder = parameters.holder,
-            .time_of_mutation = parameters.time_of_mutation,
-            .context = parameters.context
-        }
+        ctx
     );
 }
 
@@ -529,25 +882,8 @@ bool PartMergerWriter::iterateThroughAllProjections()
 class MutateAllPartColumnsTask : public IExecutableTask
 {
 public:
-    struct Parameters
-    {
-        DiskPtr disk;
-        String new_part_tmp_path;
-        MergeTreeData & data;
-        const StorageMetadataPtr & metadata_snapshot;
-        MergeTreeData::MutableDataPartPtr new_data_part;
-        BlockInputStreamPtr mutating_stream;
-        time_t time_of_mutation;
-        const CompressionCodecPtr & compression_codec;
-        MergeListEntry & merge_entry;
-        bool need_remove_expired_values;
-        bool need_sync;
-        ReservationSharedPtr space_reservation;
-        TableLockHolder & holder;
-        ContextPtr context;
-    };
 
-    explicit MutateAllPartColumnsTask(Parameters parameters_) : parameters(parameters) {}
+    explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
     bool execute() override
     {
@@ -568,9 +904,9 @@ public:
                 state = State::NEED_FINALIZE;
                 return true;
             }
-            case State::FINALIZE:
+            case State::NEED_FINALIZE:
             {
-                finalize()
+                finalize();
 
                 state = State::SUCCESS;
                 return true;
@@ -586,68 +922,50 @@ private:
 
     void prepare()
     {
-        parameters.disk->createDirectories(parameters.new_part_tmp_path);
+        ctx->disk->createDirectories(ctx->new_part_tmp_path);
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())
         /// (which is locked in shared mode when input streams are created) and when inserting new data
         /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
         /// deadlock is impossible.
-        auto compression_codec = data.getCompressionCodecForPart(source_part->getBytesOnDisk(), source_part->ttl_infos, time_of_mutation);
+        ctx->compression_codec = ctx->data->getCompressionCodecForPart(ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
 
-        auto skip_part_indices = MergeTreeDataMergerMutator::getIndicesForNewDataPart(metadata_snapshot->getSecondaryIndices(), for_file_renames);
-        auto part_projections_to_build = MergeTreeDataMergerMutator::getProjectionsForNewDataPart(metadata_snapshot->getProjections(), for_file_renames);
+        auto skip_part_indices = MutationHelpers::getIndicesForNewDataPart(ctx->metadata_snapshot->getSecondaryIndices(), ctx->for_file_renames);
+        ctx->projections_to_build = MutationHelpers::getProjectionsForNewDataPart(ctx->metadata_snapshot->getProjections(), ctx->for_file_renames);
 
-        if (mutating_stream == nullptr)
+        if (ctx->mutating_stream == nullptr)
             throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-        if (metadata_snapshot->hasPrimaryKey() || metadata_snapshot->hasSecondaryIndices())
-            mutating_stream = std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(mutating_stream, data.getPrimaryKeyAndSkipIndicesExpression(metadata_snapshot)));
+        if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
+            ctx->mutating_stream = std::make_shared<MaterializingBlockInputStream>(
+                std::make_shared<ExpressionBlockInputStream>(ctx->mutating_stream, ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot)));
 
-        if (need_remove_expired_values)
-            mutating_stream = std::make_shared<TTLBlockInputStream>(mutating_stream, data, metadata_snapshot, new_data_part, time_of_mutation, true);
+        if (ctx->need_remove_expired_values)
+            ctx->mutating_stream = std::make_shared<TTLBlockInputStream>(ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
 
-        auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
-        IMergedBlockOutputStreamPtr out = std::make_shared<IMergedBlockOutputStream>(
-            new_data_part,
-            metadata_snapshot,
-            new_data_part->getColumns(),
+        ctx->out = std::make_shared<MergedBlockOutputStream>(
+            ctx->new_data_part,
+            ctx->metadata_snapshot,
+            ctx->new_data_part->getColumns(),
             skip_part_indices,
-            compression_codec);
+            ctx->compression_codec);
 
-        mutating_stream->readPrefix();
-        out.writePrefix();
+        ctx->mutating_stream->readPrefix();
+        ctx->out->writePrefix();
 
-        PartMergerWriter::Parameters parameters_for_task
-        {
-            .data = parameters.data,
-            .mutator = parameters.mutator,
-            .merges_blocker = parameters.merges_blocker,
-            .logger = &Poco::Logger::get("PartMergerWriter")
-            .new_data_part = parameters.new_data_part,
-            .metadata_snapshot = parameters.metadata_snapshot,
-            .projections_to_build = std::move(part_projections_to_build),
-            .mutating_stream = mutating_stream,
-            .out = std::move(out),
-            .time_of_mutation = parameters.time_of_mutation,
-            .merge_entry = parameters.merge_entry;
-            .space_reservation = parametes.space_reservation,
-            .holder = parameters.holder,
-            .context = parameteres.context,
-            .minmax_idx = parameters.minmax_idx
-        };
-
-        part_merger_writer_task = std::make_unique<PartMergerWriter>(std::move(parameters_for_task));
+        part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
     }
 
 
     void finalize()
     {
-        new_data_part->minmax_idx = std::move(minmax_idx);
-        mutating_stream->readSuffix();
-        out.writeSuffixAndFinalizePart(new_data_part, need_sync);
+        ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
+        ctx->mutating_stream->readSuffix();
+
+        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->writeSuffixAndFinalizePart(ctx->new_data_part, ctx->need_sync);
     }
 
     enum class State
@@ -661,7 +979,8 @@ private:
 
     State state{State::NEED_PREPARE};
 
-    Parameters parameters;
+    MutationContextPtr ctx;
+
     std::unique_ptr<PartMergerWriter> part_merger_writer_task;
 };
 
@@ -672,29 +991,7 @@ class MutateSomePartColumnsTask : public IExecutableTask
 
 public:
 
-    struct Parameters
-    {
-        DiskPtr disk;
-        String new_part_tmp_path;
-        NamesAndTypesList & storage_columns;
-        Block & updated_header;
-
-
-        MergeTreeData & data;
-        const StorageMetadataPtr & metadata_snapshot;
-        MergeTreeData::MutableDataPartPtr new_data_part;
-        BlockInputStreamPtr mutating_stream;
-        time_t time_of_mutation;
-        const CompressionCodecPtr & compression_codec;
-        MergeListEntry & merge_entry;
-        bool need_remove_expired_values;
-        bool need_sync;
-        ReservationSharedPtr space_reservation;
-        TableLockHolder & holder;
-        ContextPtr context;
-    };
-
-    explicit MutateSomePartColumnsTask(Parameters parameters_) : parameters(parameters_) {}
+    explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
 
     bool execute() override
@@ -716,9 +1013,9 @@ public:
                 state = State::NEED_FINALIZE;
                 return true;
             }
-            case State::FINALIZE:
+            case State::NEED_FINALIZE:
             {
-                finalize()
+                finalize();
 
                 state = State::SUCCESS;
                 return true;
@@ -735,44 +1032,47 @@ private:
     void prepare()
     {
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
-        if (mutation_kind != MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION)
+        if (ctx->mutation_kind != MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION)
         {
-            for (const auto & name_type : updated_header.getNamesAndTypesList())
+            for (const auto & name_type : ctx->updated_header.getNamesAndTypesList())
                 updated_columns.emplace(name_type.name);
         }
 
-        indices_to_recalc = MergeTreeDataMergerMutator::getIndicesToRecalculate(
-            in, updated_columns, metadata_snapshot, context, materialized_indices, source_part);
-        projections_to_recalc = MergeTreeDataMergerMutator::getProjectionsToRecalculate(
-            updated_columns, metadata_snapshot, materialized_projections, source_part);
+        indices_to_recalc = MutationHelpers::getIndicesToRecalculate(
+            ctx->mutating_stream, updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_indices, ctx->source_part);
+        projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(
+            updated_columns, ctx->metadata_snapshot, ctx->materialized_projections, ctx->source_part);
 
-        files_to_skip = MergeTreeDataMergerMutator::collectFilesToSkip(
-            source_part,
-            mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : updated_header,
+        files_to_skip = MutationHelpers::collectFilesToSkip(
+            ctx->source_part,
+            ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : ctx->updated_header,
             indices_to_recalc,
-            mrk_extension,
+            ctx->mrk_extension,
             projections_to_recalc);
-        files_to_rename = MergeTreeDataMergerMutator::collectFilesForRenames(source_part, for_file_renames, mrk_extension);
+        files_to_rename = MutationHelpers::collectFilesForRenames(ctx->source_part, ctx->for_file_renames, ctx->mrk_extension);
 
-        if (indices_to_recalc.empty() && projections_to_recalc.empty() && mutation_kind != MutationsInterpreter::MutationKind::MUTATE_OTHER
+        if (indices_to_recalc.empty() && projections_to_recalc.empty() && ctx->mutation_kind != MutationsInterpreter::MutationKind::MUTATE_OTHER
             && files_to_rename.empty())
         {
-            LOG_TRACE(log, "Part {} doesn't change up to mutation version {} (optimized)", source_part->name, future_part->part_info.mutation);
-            return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part->part_info, metadata_snapshot);
+            LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {} (optimized)", ctx->source_part->name, ctx->future_part->part_info.mutation);
+
+
+            //FIXME !
+            // return data.cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", future_part->part_info, metadata_snapshot);
         }
 
-        if (parameters.need_remove_expired_values)
+        if (ctx->need_remove_expired_values)
             files_to_skip.insert("ttl.txt");
 
-        parameters.disk->createDirectories(parameters.new_part_tmp_path);
+        ctx->disk->createDirectories(ctx->new_part_tmp_path);
 
         /// Create hardlinks for unchanged files
-        for (auto it = parameters.disk->iterateDirectory(source_part->getFullRelativePath()); it->isValid(); it->next())
+        for (auto it = ctx->disk->iterateDirectory(ctx->source_part->getFullRelativePath()); it->isValid(); it->next())
         {
             if (files_to_skip.count(it->name()))
                 continue;
 
-            String destination = new_part_tmp_path;
+            String destination = ctx->new_part_tmp_path;
             String file_name = it->name();
             auto rename_it = std::find_if(files_to_rename.begin(), files_to_rename.end(), [&file_name](const auto & rename_pair) { return rename_pair.first == file_name; });
             if (rename_it != files_to_rename.end())
@@ -786,75 +1086,59 @@ private:
                 destination += it->name();
             }
 
-            if (!parameters.disk->isDirectory(it->path()))
-                parameters.disk->createHardLink(it->path(), destination);
+            if (!ctx->disk->isDirectory(it->path()))
+                ctx->disk->createHardLink(it->path(), destination);
             else if (!startsWith("tmp_", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
-                parameters.disk->createDirectories(destination);
-                for (auto p_it = parameters.disk->iterateDirectory(it->path()); p_it->isValid(); p_it->next())
+                ctx->disk->createDirectories(destination);
+                for (auto p_it = ctx->disk->iterateDirectory(it->path()); p_it->isValid(); p_it->next())
                 {
                     String p_destination = destination + "/";
                     String p_file_name = p_it->name();
                     p_destination += p_it->name();
-                    parameters.disk->createHardLink(p_it->path(), p_destination);
+                    ctx->disk->createHardLink(p_it->path(), p_destination);
                 }
             }
         }
 
-        parameters.mutate_entry->columns_written = parameters.storage_columns.size() - parameters.updated_header.columns();
+        (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
-        new_data_part->checksums = source_part->checksums;
+        ctx->new_data_part->checksums = ctx->source_part->checksums;
 
-        auto compression_codec = source_part->default_codec;
+        auto compression_codec = ctx->source_part->default_codec;
 
-        if (in)
+        if (ctx->mutating_stream)
         {
-            if (mutating_stream == nullptr)
+            if (ctx->mutating_stream == nullptr)
                 throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-            if (need_remove_expired_values)
-                mutating_stream = std::make_shared<TTLBlockInputStream>(mutating_stream, data, metadata_snapshot, new_data_part, time_of_mutation, true);
+            if (ctx->need_remove_expired_values)
+                ctx->mutating_stream = std::make_shared<TTLBlockInputStream>(
+                    ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
 
-            Block mutation_header = mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : updated_header;
+            Block mutation_header =
+                ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : ctx->updated_header;
 
-            IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
-            MergedColumnOnlyOutputStream out(
-                new_data_part,
-                metadata_snapshot,
+            IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets; // ??
+            ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
+                ctx->new_data_part,
+                ctx->metadata_snapshot,
                 mutation_header,
                 compression_codec,
                 std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
                 nullptr,
-                source_part->index_granularity,
-                &source_part->index_granularity_info
+                ctx->source_part->index_granularity,
+                &ctx->source_part->index_granularity_info
             );
 
-            mutating_stream->readPrefix();
-            out.writePrefix();
+            ctx->mutating_stream->readPrefix();
+            ctx->out->writePrefix();
 
+            /// FIXME
             std::vector<MergeTreeProjectionPtr> projections_to_build(projections_to_recalc.begin(), projections_to_recalc.end());
 
-            PartMergerWriter::Parameters parameters_for_task
-            {
-                .data = parameters.data,
-                .mutator = parameters.mutator,
-                .merges_blocker = parameters.merges_blocker,
-                .logger = &Poco::Logger::get("PartMergerWriter")
-                .new_data_part = parameters.new_data_part,
-                .metadata_snapshot = parameters.metadata_snapshot,
-                .projections_to_build = std::move(projections_to_build),
-                .mutating_stream = mutating_stream,
-                .out = std::move(out),
-                .time_of_mutation = parameters.time_of_mutation,
-                .merge_entry = parameters.merge_entry;
-                .space_reservation = parametes.space_reservation,
-                .holder = parameters.holder,
-                .context = parameteres.context,
-                .minmax_idx = nullptr
-            };
-
-            part_merger_writer_task = std::make_unique<PartMergerWriter>(std::move(parameters_for_task));
+            part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
         }
 
     }
@@ -862,27 +1146,30 @@ private:
 
     void finalize()
     {
-        if (in)
+        if (ctx->mutating_stream)
         {
-            mutating_stream->readSuffix();
-            auto changed_checksums = out.writeSuffixAndGetChecksums(new_data_part, new_data_part->checksums, need_sync);
-            new_data_part->checksums.add(std::move(changed_checksums));
+            ctx->mutating_stream->readSuffix();
+
+            auto changed_checksums =
+                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->writeSuffixAndGetChecksums(
+                    ctx->new_data_part, ctx->new_data_part->checksums, ctx->need_sync);
+            ctx->new_data_part->checksums.add(std::move(changed_checksums));
         }
 
         for (const auto & [rename_from, rename_to] : files_to_rename)
         {
-            if (rename_to.empty() && parameters.new_data_part->checksums.files.count(rename_from))
+            if (rename_to.empty() && ctx->new_data_part->checksums.files.count(rename_from))
             {
-                parameters.new_data_part->checksums.files.erase(rename_from);
+                ctx->new_data_part->checksums.files.erase(rename_from);
             }
-            else if (new_data_part->checksums.files.count(rename_from))
+            else if (ctx->new_data_part->checksums.files.count(rename_from))
             {
-                parameters.new_data_part->checksums.files[rename_to] = new_data_part->checksums.files[rename_from];
-                parameters.new_data_part->checksums.files.erase(rename_from);
+                ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
+                ctx->new_data_part->checksums.files.erase(rename_from);
             }
         }
 
-        MergeTreeDataMergerMutator::finalizeMutatedPart(source_part, parameters.new_data_part, parameters.need_remove_expired_values, parameters.compression_codec);
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->need_remove_expired_values, ctx->compression_codec);
     }
 
 
@@ -897,20 +1184,51 @@ private:
 
     State state{State::NEED_PREPARE};
 
+    MutationContextPtr ctx;
 
-    Parameters parameters;
+    MergedColumnOnlyOutputStreamPtr out;
 
     /// Fields
 
     NameSet updated_columns;
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeProjectionPtr> projections_to_recalc;
-    NameSet files_to_skip
+    NameSet files_to_skip;
     NameToNameVector files_to_rename;
 
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
 };
+
+
+
+MutateTask::MutateTask(
+    FutureMergedMutatedPartPtr future_part_,
+    StorageMetadataPtr metadata_snapshot_,
+    MutationCommandsConstPtr commands_,
+    MergeListEntry & mutate_entry_,
+    time_t time_of_mutation_,
+    ContextPtr context_,
+    ReservationSharedPtr space_reservation_,
+    TableLockHolder & table_lock_holder_,
+    MergeTreeData & data_,
+    MergeTreeDataMergerMutator & mutator_,
+    ActionBlocker & merges_blocker_)
+    : ctx(std::make_shared<MutationContext>())
+{
+    ctx->data = &data_;
+    ctx->mutator = &mutator_;
+    ctx->merges_blocker = &merges_blocker_;
+    ctx->holder = &table_lock_holder_;
+    ctx->mutate_entry = &mutate_entry_;
+    ctx->commands = commands_;
+    ctx->context = context_;
+    ctx->time_of_mutation = time_of_mutation_;
+    ctx->future_part = future_part_;
+    ctx->metadata_snapshot = metadata_snapshot_;
+    ctx->space_reservation = space_reservation_;
+    ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
+}
 
 
 bool MutateTask::execute()
@@ -926,123 +1244,102 @@ bool MutateTask::execute()
 
 bool MutateTask::prepare()
 {
-    MutationHelpers::checkOperationIsNotCanceled(merges_blocker, mutate_entry);
+    MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, *ctx->mutate_entry);
 
-    if (future_part->parts.size() != 1)
-        throw Exception("Trying to mutate " + toString(future_part->parts.size()) + " parts, not one. "
-            "This is a bug.", ErrorCodes::LOGICAL_ERROR);
+    if (ctx->future_part->parts.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to mutate {} parts, not one. "
+            "This is a bug.", toString(ctx->future_part->parts.size()));
 
-    CurrentMetrics::Increment num_mutations{CurrentMetrics::PartMutation};
-    const auto & source_part = future_part->parts[0];
-    auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
+    ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
+    ctx->source_part = ctx->future_part->parts[0];
+    auto storage_from_source_part = StorageFromMergeTreeDataPart::create(ctx->source_part);
 
-    auto context_for_reading = Context::createCopy(context);
+    auto context_for_reading = Context::createCopy(ctx->context);
     context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
     context_for_reading->setSetting("max_threads", 1);
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
     context_for_reading->setSetting("force_index_by_date", Field(0));
     context_for_reading->setSetting("force_primary_key", Field(0));
 
-    for (const auto & command : *commands)
+    for (const auto & command : *ctx->commands)
     {
-        if (command.partition == nullptr || future_part->parts[0]->info.partition_id == data.getPartitionIDFromQuery(
+        if (command.partition == nullptr || ctx->future_part->parts[0]->info.partition_id == ctx->data->getPartitionIDFromQuery(
                 command.partition, context_for_reading))
-            commands_for_part.emplace_back(command);
+            ctx->commands_for_part.emplace_back(command);
     }
 
-    if (source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
-        storage_from_source_part, metadata_snapshot, commands_for_part, Context::createCopy(context_for_reading)))
+    if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
+        storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
-        LOG_TRACE(log, "Part {} doesn't change up to mutation version {}", source_part->name, future_part->part_info.mutation);
-        promise.set_value(data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part->part_info, metadata_snapshot));
+        LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
+        promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot));
         return false;
     }
     else
     {
-        LOG_TRACE(log, "Mutating part {} to mutation version {}", source_part->name, future_part->part_info.mutation);
+        LOG_TRACE(ctx->log, "Mutating part {} to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
     }
 
-    MutationHelpers::splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames);
+    MutationHelpers::splitMutationCommands(ctx->source_part, ctx->commands_for_part, ctx->for_interpreter, ctx->for_file_renames);
 
-    stage_progress = std::make_unique<MergeStageProgress>(1.0);
+    ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 
-    if (!for_interpreter.empty())
+    if (!ctx->for_interpreter.empty())
     {
-        interpreter = std::make_unique<MutationsInterpreter>(
-            storage_from_source_part, metadata_snapshot, for_interpreter, context_for_reading, true);
-        materialized_indices = interpreter->grabMaterializedIndices();
-        materialized_projections = interpreter->grabMaterializedProjections();
-        mutation_kind = interpreter->getMutationKind();
-        in = interpreter->execute();
-        updated_header = interpreter->getUpdatedHeader();
-        in->setProgressCallback(MergeProgressCallback(mutate_entry, watch_prev_elapsed, *stage_progress));
+        ctx->interpreter = std::make_unique<MutationsInterpreter>(
+            storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
+        ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
+        ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
+        ctx->mutation_kind = ctx->interpreter->getMutationKind();
+        ctx->mutating_stream = ctx->interpreter->execute();
+        ctx->updated_header = ctx->interpreter->getUpdatedHeader();
+        ctx->mutating_stream->setProgressCallback(MergeProgressCallback(*ctx->mutate_entry, ctx->watch_prev_elapsed, *ctx->stage_progress));
     }
 
-    single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + future_part->name, space_reservation->getDisk(), 0);
-    new_data_part = data.createPart(
-        future_part->name, future_part->type, future_part->part_info, single_disk_volume, "tmp_mut_" + future_part->name);
+    ctx->single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    ctx->new_data_part = ctx->data->createPart(
+        ctx->future_part->name, ctx->future_part->type, ctx->future_part->part_info, ctx->single_disk_volume, "tmp_mut_" + ctx->future_part->name);
 
-    new_data_part->uuid = future_part->uuid;
-    new_data_part->is_temp = true;
-    new_data_part->ttl_infos = source_part->ttl_infos;
+    ctx->new_data_part->uuid = ctx->future_part->uuid;
+    ctx->new_data_part->is_temp = true;
+    ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
 
     /// It shouldn't be changed by mutation.
-    new_data_part->index_granularity_info = source_part->index_granularity_info;
-    new_data_part->setColumns(MergeTreeDataMergerMutator::getColumnsForNewDataPart(source_part, updated_header, storage_columns, for_file_renames));
-    new_data_part->partition.assign(source_part->partition);
+    ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
+    ctx->new_data_part->setColumns(MergeTreeDataMergerMutator::getColumnsForNewDataPart(ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->for_file_renames));
+    ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
-    disk = new_data_part->volume->getDisk();
-    new_part_tmp_path = new_data_part->getFullRelativePath();
+    ctx->disk = ctx->new_data_part->volume->getDisk();
+    ctx->new_part_tmp_path = ctx->new_data_part->getFullRelativePath();
 
-    if (data.getSettings()->fsync_part_directory)
-        sync_guard = disk->getDirectorySyncGuard(new_part_tmp_path);
+    if (ctx->data->getSettings()->fsync_part_directory)
+        ctx->sync_guard = ctx->disk->getDirectorySyncGuard(ctx->new_part_tmp_path);
 
     /// Don't change granularity type while mutating subset of columns
-    mrk_extension = source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(new_data_part->getType())
+    ctx->mrk_extension = ctx->source_part->index_granularity_info.is_adaptive ? getAdaptiveMrkExtension(ctx->new_data_part->getType())
                                                                          : getNonAdaptiveMrkExtension();
 
-    const auto data_settings = data.getSettings();
-    need_sync = needSyncPart(source_part->rows_count, source_part->getBytesOnDisk(), *data_settings);
-    need_remove_expired_values = false;
+    const auto data_settings = ctx->data->  getSettings();
+    ctx->need_sync = needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk(), *data_settings);
+    ctx->need_remove_expired_values = false;
 
-    if (in && MergeTreeDataMergerMutator::shouldExecuteTTL(metadata_snapshot, interpreter->getColumnDependencies(), commands_for_part))
-        need_remove_expired_values = true;
+    if (ctx->mutating_stream && MergeTreeDataMergerMutator::shouldExecuteTTL(
+        ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies(), ctx->commands_for_part))
+        ctx->need_remove_expired_values = true;
 
     return true;
 }
 
 MergeTreeData::MutableDataPartPtr MutateTask::main()
 {
-    const auto & source_part = future_part->parts[0];
-
     std::unique_ptr<IExecutableTask> task;
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
-    if (!isWidePart(source_part)
-        || (mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && interpreter && interpreter->isAffectingAllColumns()))
+    if (!isWidePart(ctx->source_part)
+        || (ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
-
-
-        MutateAllPartColumnsTask::Parameters parameters_for_task
-        {
-            .disk = disk,
-            .new_part_tmp_path = new_part_tmp_path,
-            .data = data,
-            .metadata_snapshot = metadata_snapshot,
-            .new_data_part = new_data_part,
-            .mutating_stream = mutating_stream,
-            .time_of_mutation = time_of_mutation,
-            .compression_codec = compression_codec;
-            .merge_entry = merge_entry,
-            .need_remove_expired_values == need_remove_expired_values,
-            .need_sync = need_sync,
-            .space_reservation = space_reservation,
-            .holder = holder,
-            .context = context
-        };
-
-        task = std::make_unique<MutateAllPartColumnsTask>(std::move(parameters_for_task));
+        task = std::make_unique<MutateAllPartColumnsTask>(ctx);
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {
@@ -1053,7 +1350,7 @@ MergeTreeData::MutableDataPartPtr MutateTask::main()
 
     while (task->execute()) {}
 
-    return new_data_part;
+    return ctx->new_data_part;
 }
 
 
