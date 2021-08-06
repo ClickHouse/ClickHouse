@@ -109,19 +109,21 @@ void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
     column.type = convertTypeToNullable(column.type);
 
-    if (column.column)
+    if (!column.column)
+        return;
+
+    if (column.column->lowCardinality())
     {
-        if (column.column->lowCardinality())
-        {
-            /// Convert nested to nullable, not LowCardinality itself
-            auto mut_col = IColumn::mutate(std::move(column.column));
-            ColumnLowCardinality * col_as_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
-            if (!col_as_lc->nestedIsNullable())
-                col_as_lc->nestedToNullable();
-            column.column = std::move(mut_col);
-        }
-        else
-            column.column = makeNullable(column.column);
+        /// Convert nested to nullable, not LowCardinality itself
+        auto mut_col = IColumn::mutate(std::move(column.column));
+        ColumnLowCardinality * col_as_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
+        if (!col_as_lc->nestedIsNullable())
+            col_as_lc->nestedToNullable();
+        column.column = std::move(mut_col);
+    }
+    else if (column.column->canBeInsideNullable())
+    {
+        column.column = makeNullable(column.column);
     }
 }
 
