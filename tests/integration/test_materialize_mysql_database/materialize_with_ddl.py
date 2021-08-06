@@ -701,19 +701,20 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table ORDER BY id FORMAT TSV", '1\n2\n')
     check_query(clickhouse_node, "SELECT * FROM test_database_auto.test_table ORDER BY id FORMAT TSV", '11\n22\n')
 
-    get_sync_id_query = "select id from information_schema.processlist where STATE='Master has sent all binlog to slave; waiting for more updates'"
+    get_sync_id_query = "SELECT id FROM information_schema.processlist WHERE state LIKE '% has sent all binlog to % waiting for more updates%';"
     result = mysql_node.query_and_get_data(get_sync_id_query)
+    assert len(result) > 0
     for row in result:
-        row_result = {}
         query = "kill " + str(row[0]) + ";"
         mysql_node.query(query)
 
-    with pytest.raises(QueryRuntimeException) as exception:
+    with pytest.raises(QueryRuntimeException, match="Cannot read all data"):
         # https://dev.mysql.com/doc/refman/5.7/en/kill.html
-        # When you use KILL, a thread-specific kill flag is set for the thread. In most cases, it might take some time for the thread to die because the kill flag is checked only at specific intervals:
-        time.sleep(3)
-        clickhouse_node.query("SELECT * FROM test_database.test_table")
-        assert "Cannot read all data" in str(exception.value)
+        # When you use KILL, a thread-specific kill flag is set for the thread.
+        # In most cases, it might take some time for the thread to die because the kill flag is checked only at specific intervals.
+        for sleep_time in [1, 3, 5]:
+            time.sleep(sleep_time)
+            clickhouse_node.query("SELECT * FROM test_database.test_table")
 
     clickhouse_node.query("DETACH DATABASE test_database")
     clickhouse_node.query("ATTACH DATABASE test_database")
@@ -905,7 +906,7 @@ def alter_enum8_to_enum16_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS alter_enum8_to_enum16_test")
     clickhouse_node.query("DROP DATABASE IF EXISTS alter_enum8_to_enum16_test")
     mysql_node.query("CREATE DATABASE alter_enum8_to_enum16_test")
-    
+
     enum8_values_count = 100
     enum8_values = ""
     enum8_values_with_backslash = ""
@@ -920,7 +921,7 @@ def alter_enum8_to_enum16_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("INSERT INTO alter_enum8_to_enum16_test.test (id, value) VALUES (3, '75')")
     check_query(clickhouse_node, "SELECT value FROM alter_enum8_to_enum16_test.test ORDER BY id", "1\n2\n75\n")
     check_query(clickhouse_node, "DESCRIBE TABLE alter_enum8_to_enum16_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(Enum8(" + enum8_values_with_backslash + "))\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
-    
+
     enum16_values_count = 600
     enum16_values = ""
     enum16_values_with_backslash = ""
@@ -933,7 +934,7 @@ def alter_enum8_to_enum16_test(clickhouse_node, mysql_node, service_name):
     check_query(clickhouse_node, "DESCRIBE TABLE alter_enum8_to_enum16_test.test", "id\tInt32\t\t\t\t\t\nvalue\tNullable(Enum16(" + enum16_values_with_backslash + "))\t\t\t\t\t\n_sign\tInt8\tMATERIALIZED\t1\t\t\t\n_version\tUInt64\tMATERIALIZED\t1\t\t\t\n")
     mysql_node.query("INSERT INTO alter_enum8_to_enum16_test.test (id, value) VALUES (4, '500')")
     check_query(clickhouse_node, "SELECT value FROM alter_enum8_to_enum16_test.test ORDER BY id", "1\n2\n75\n500\n")
-   
+
     clickhouse_node.query("DROP DATABASE alter_enum8_to_enum16_test")
     mysql_node.query("DROP DATABASE alter_enum8_to_enum16_test")
 
