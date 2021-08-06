@@ -11,9 +11,7 @@ uuid=$(${CLICKHOUSE_CLIENT} --query "SELECT reinterpretAsUUID(currentDatabase())
 
 echo "DROP TABLE IF EXISTS tab_00738 SYNC;
 DROP TABLE IF EXISTS mv SYNC;
--- create table with fsync and 20 partitions for slower INSERT
--- (since increasing number of records will make it significantly slower in debug build, but not in release)
-CREATE TABLE tab_00738(a Int) ENGINE = MergeTree() ORDER BY a PARTITION BY a%20 SETTINGS fsync_after_insert=1;
+CREATE TABLE tab_00738(a Int) ENGINE = MergeTree() ORDER BY a;
 -- The matview will take at least 2 seconds to be finished (10000000 * 0.0000002)
 CREATE MATERIALIZED VIEW mv UUID '$uuid' ENGINE = Log AS SELECT sleepEachRow(0.0000002) FROM tab_00738;" | ${CLICKHOUSE_CLIENT} -n
 
