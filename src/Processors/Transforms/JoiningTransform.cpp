@@ -1,7 +1,6 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/join_common.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/IBlockInputStream.h>
 
 

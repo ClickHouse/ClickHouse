@@ -314,8 +314,16 @@ void removeLowCardinalityInplace(Block & block, const Names & names, bool change
     }
 }
 
-void restoreLowCardinalityInplace(Block & block)
+void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys)
 {
+    for (const auto & column_name : lowcard_keys)
+    {
+        if (!block.has(column_name))
+            continue;
+        if (auto & col = block.getByName(column_name); !col.type->lowCardinality())
+            JoinCommon::changeLowCardinalityInplace(col);
+    }
+
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & col = block.getByPosition(i);
@@ -484,49 +492,21 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 
 }
 
-
-NotJoined::NotJoined(const TableJoin & table_join, const Block & saved_block_sample_, const Block & right_sample_block,
-                     const Block & result_sample_block_, const Names & key_names_left_, const Names & key_names_right_)
+NotJoined::NotJoined(const Block & saved_block_sample_,
+                     const Block & result_sample_block_,
+                     size_t left_columns_count,
+                     const LeftToRightKeyRemap & left_to_right_key_remap)
     : saved_block_sample(saved_block_sample_)
     , result_sample_block(materializeBlock(result_sample_block_))
-    , key_names_left(key_names_left_.empty() ? table_join.keyNamesLeft() : key_names_left_)
-    , key_names_right(key_names_right_.empty() ? table_join.keyNamesRight() : key_names_right_)
 {
-    std::vector<String> tmp;
-    Block right_table_keys;
-    Block sample_block_with_columns_to_add;
-
-    JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys,
-                                       sample_block_with_columns_to_add);
-    Block required_right_keys = table_join.getRequiredRightKeys(right_table_keys, tmp);
-
-    std::unordered_map<size_t, size_t> left_to_right_key_remap;
-
-    if (table_join.hasUsing())
-    {
-        for (size_t i = 0; i < key_names_left.size(); ++i)
-        {
-            const String & left_key_name = key_names_left[i];
-            const String & right_key_name = key_names_right[i];
-
-            size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
-            size_t right_key_pos = saved_block_sample.getPositionByName(right_key_name);
-
-            if (!required_right_keys.has(right_key_name))
-                left_to_right_key_remap[left_key_pos] = right_key_pos;
-        }
-    }
-
-    /// result_sample_block: left_sample_block + left expressions, right not key columns, required right keys
-    size_t left_columns_count = result_sample_block.columns() -
-        sample_block_with_columns_to_add.columns() - required_right_keys.columns();
-
     for (size_t left_pos = 0; left_pos < left_columns_count; ++left_pos)
     {
-        /// We need right 'x' for 'RIGHT JOIN ... USING(x)'.
-        if (left_to_right_key_remap.count(left_pos))
+        /// We need right 'x' for 'RIGHT JOIN ... USING(x)'
+        auto left_name = result_sample_block.getByPosition(left_pos).name;
+        const auto & right_key = left_to_right_key_remap.find(left_name);
+        if (right_key != left_to_right_key_remap.end())
         {
-            size_t right_key_pos = left_to_right_key_remap[left_pos];
+            size_t right_key_pos = saved_block_sample.getPositionByName(right_key->second);
             setRightIndex(right_key_pos, left_pos);
         }
         else
@@ -558,7 +538,7 @@ NotJoined::NotJoined(const TableJoin & table_join, const Block & saved_block_sam
 
 void NotJoined::setRightIndex(size_t right_pos, size_t result_position)
 {
-    if (!column_indices_right.count(right_pos))
+    if (!column_indices_right.contains(right_pos))
     {
         column_indices_right[right_pos] = result_position;
         extractColumnChanges(right_pos, result_position);
