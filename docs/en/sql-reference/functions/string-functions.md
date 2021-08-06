@@ -48,9 +48,41 @@ Result:
 
 ## notEmpty {#notempty}
 
-Returns 0 for an empty string or 1 for a non-empty string.
-The result type is UInt8.
-The function also works for arrays or UUID.
+Checks whether the input string is not empty.
+
+**Syntax**
+
+``` sql
+notempty(x)
+```
+
+A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte. The UUID is empty if it contains all zeros (zero UUID).
+
+**Arguments**
+
+-   `x` — Input value. [Array](../data-types/array.md), [String](../data-types/string.md), [UUID](../data-types/uuid.md).
+
+**Returned value**
+
+-   Returns `1` for a non-empty string or `0` for an empty string string. 
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT notempty('text');
+```
+
+Result:
+
+```text
+┌─empty('')─┐
+│         1 │
+└───────────┘
+```
 
 ## length {#length}
 
