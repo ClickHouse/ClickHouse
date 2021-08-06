@@ -2122,7 +2122,7 @@ enabledRoles()
 
 ## defaultRoles {#default-roles}
 
-Возвращает имена ролей, которые задаются как текущие для данного пользователя при входе в систему. Они могут быть изменены при помощи команды [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement). По умолчанию это все роли, которые разрешено использовать текущему пользователю (см. команду [GRANT](../../sql-reference/statements/grant/#grant-select)).
+Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant/#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement). 
 
 **Синтаксис**
 
