@@ -3,7 +3,7 @@ toc_priority: 29
 toc_title: MaterializedMySQL
 ---
 
-# MaterializedMySQL {#materialized-mysql}
+# [experimental] MaterializedMySQL {#materialized-mysql}
 
 **This is experimental feature that should not be used in production.**
 
@@ -28,14 +28,16 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 -   `password` — User password.
 
 **Engine Settings**
--   `max_rows_in_buffer` — Max rows that data is allowed to cache in memory(for single table and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `65505`.
--   `max_bytes_in_buffer` —  Max bytes that data is allowed to cache in memory(for single table and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `1048576`.
--   `max_rows_in_buffers` — Max rows that data is allowed to cache in memory(for database and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `65505`.
--   `max_bytes_in_buffers` — Max bytes that data is allowed to cache in memory(for database and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `1048576`.
--   `max_flush_data_time` — Max milliseconds that data is allowed to cache in memory(for database and the cache data unable to query). when this time is exceeded, the data will be materialized. Default: `1000`.
+
+-   `max_rows_in_buffer` — Max rows that data is allowed to cache in memory (for single table and the cache data unable to query). When rows is exceeded, the data will be materialized. Default: `65 505`.
+-   `max_bytes_in_buffer` —  Max bytes that data is allowed to cache in memory (for single table and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `1 048 576`.
+-   `max_rows_in_buffers` — Max rows that data is allowed to cache in memory (for database and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `65505`.
+-   `max_bytes_in_buffers` — Max bytes that data is allowed to cache in memory (for database and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `1 048 576`.
+-   `max_flush_data_time` — Max milliseconds that data is allowed to cache in memory (for database and the cache data unable to query). when this time is exceeded, the data will be materialized. Default: `1000`.
 -   `max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disable retry. Default: `1000`.
--   `allows_query_when_mysql_lost` — Allow query materialized table when mysql is lost. Default: `0` (`false`).
-```
+-   `allows_query_when_mysql_lost` — Allow query materialized table when MySql is lost. Default: `0` (`false`).
+
+```sql
 CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***')
      SETTINGS
         allows_query_when_mysql_lost=true,
@@ -82,9 +84,9 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
 | BINARY                  | [FixedString](../../sql-reference/data-types/fixedstring.md) |
 
-Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws exception "Unhandled data type" and stops replication.
-
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
+
+Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws exception "Unhandled data type" and stops replication.
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
