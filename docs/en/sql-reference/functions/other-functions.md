@@ -2142,7 +2142,7 @@ Result:
 
 Returns a list of the current [settings profiles](../../operations/access-rights.md#settings-profiles-management) for the current user. 
 
-The settings profile can be specified at the user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)) and can be changed with the [SET PROFILE](../../sql-reference/statements/set.md#query-set) statements lately. 
+The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
 
 **Syntax**
 
