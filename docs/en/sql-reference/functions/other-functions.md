@@ -2160,8 +2160,6 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
  Returns settings profiles, assigned to the current user both explicitly and implicitly. Explicitly assigned profiles are the same as returned by the [currentProfiles](#current-profiles) function. Implicitly assigned profiles include parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the `default_profile` section in the main server configuration file).
 
- If some profile occurs multiple times (with some other settings in between), the latest occurrence overrides all the previous ones.
-
 **Syntax**
 
 ``` sql
