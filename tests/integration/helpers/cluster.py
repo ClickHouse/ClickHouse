@@ -62,10 +62,10 @@ def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=su
     out = res.stdout.decode('utf-8')
     err = res.stderr.decode('utf-8')
     # check_call(...) from subprocess does not print stderr, so we do it manually
-    if out:
-        logging.debug(f"Stdout:{out}")
-    if err:
-        logging.debug(f"Stderr:{err}")
+    for outline in out.splitlines():
+        logging.debug(f"Stdout:{outline}")
+    for errline in err.splitlines():
+        logging.debug(f"Stderr:{errline}")
     if res.returncode != 0:
         logging.debug(f"Exitcode:{res.returncode}")
         if env:
@@ -394,15 +394,20 @@ class ClickHouseCluster:
     def cleanup(self):
         # Just in case kill unstopped containers from previous launch
         try:
+            # docker-compose names containers using the following formula:
+            # container_name = project_name + '_' + instance_name + '_1'
             # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
             # https://stackoverflow.com/questions/48767760/how-to-make-docker-container-ls-f-name-filter-by-exact-name
-            result = run_and_check(f'docker container list --all --filter name=^/{self.project_name}$ | wc -l', shell=True)
-            if int(result) > 1:
-                logging.debug(f"Trying to kill unstopped containers for project {self.project_name}...")
-                run_and_check(f'docker kill $(docker container list --all --quiet --filter name=^/{self.project_name}$)', shell=True)
-                run_and_check(f'docker rm $(docker container list --all  --quiet --filter name=^/{self.project_name}$)', shell=True)
+            filter_name = f'^/{self.project_name}_.*_1$'
+            if int(run_and_check(f'docker container list --all --filter name={filter_name} | wc -l', shell=True)) > 1:
+                logging.debug(f"Trying to kill unstopped containers for project {self.project_name}:")
+                unstopped_containers = run_and_check(f'docker container list --all --filter name={filter_name}', shell=True)
+                unstopped_containers_ids = [line.split()[0] for line in unstopped_containers.splitlines()[1:]]
+                for id in unstopped_containers_ids:
+                    run_and_check(f'docker kill {id}', shell=True, nothrow=True)
+                    run_and_check(f'docker rm {id}', shell=True, nothrow=True)
                 logging.debug("Unstopped containers killed")
-                run_and_check(['docker-compose', 'ps', '--services', '--all'])
+                run_and_check(f'docker container list --all --filter name={filter_name}', shell=True)
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
         except:
