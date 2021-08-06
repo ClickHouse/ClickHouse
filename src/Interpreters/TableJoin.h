@@ -46,7 +46,7 @@ class TableJoin
 
 public:
     using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
-    using Disjuncts = std::deque<const ASTPtr>;
+    using Disjuncts = ASTs;
 
 private:
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`

@@ -115,19 +115,11 @@ void TableJoin::addDisjunct(const ASTPtr & ast)
         if (!key_names_left[disjunct_num].empty() || !on_filter_condition_asts_left[disjunct_num].empty() || !on_filter_condition_asts_right[disjunct_num].empty())
         {
             disjunct_num++;
-            key_names_left.resize(disjunct_num+1);
-            key_names_right.resize(disjunct_num+1);
-            on_filter_condition_asts_left.resize(disjunct_num+1);
-            on_filter_condition_asts_right.resize(disjunct_num+1);
+            key_names_left.resize(disjunct_num + 1);
+            key_names_right.resize(disjunct_num + 1);
+            on_filter_condition_asts_left.resize(disjunct_num + 1);
+            on_filter_condition_asts_right.resize(disjunct_num + 1);
         }
-#ifndef NDEBUG
-        else
-        {
-            /// we already have disjunct #0 ,
-            ///    that is why we are skipping left side of the very first AND
-            assert(!disjunct_num);
-        }
-#endif
     }
 }
 
