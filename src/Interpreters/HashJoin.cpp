@@ -748,15 +748,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         JoinCommon::convertColumnsToNullable(structured_block.block);
     }
     std::vector<ColumnPtr> join_mask_col_vector(disjuncts_num);
-    // std::vector<const ColumnUInt8 &> join_mask_vector(disjuncts_num);
-    bool use_join_mask_col = false;
     for (size_t d = 0; d < disjuncts_num; ++d)
-    {
         join_mask_col_vector[d] = JoinCommon::getColumnAsMask(block, condition_mask_column_name_right[d]);
-        // join_mask_vector[d] = assert_cast<const ColumnUInt8 &>(*(join_mask_col_vector[d])).getData();
-        if (join_mask_col_vector[d])
-            use_join_mask_col = true;
-    }
 
 
     std::vector<ConstNullMapPtr> null_map_vector;

@@ -36,11 +36,7 @@ void CollectJoinOnKeysMatcher::Data::setDisjuncts(const ASTPtr & or_func_ast)
 {
     const auto * func = or_func_ast->as<ASTFunction>();
     const auto * func_args = func->arguments->as<ASTExpressionList>();
-    TableJoin::Disjuncts v;
-    for (const auto & child : func_args->children)
-    {
-        v.push_back(child);
-    }
+    TableJoin::Disjuncts v = func_args->children;
 
     analyzed_join.setDisjuncts(std::move(v));
 }
