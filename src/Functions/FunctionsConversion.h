@@ -1833,7 +1833,10 @@ public:
                     ", should be 1 or 2. Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            if (!isStringOrFixedString(arguments[0].type) && !isInteger(arguments[0].type))
+            if (!isStringOrFixedString(arguments[0].type) && !(isInteger(arguments[0].type) &&
+                            ((std::is_same_v<ToDataType, DataTypeDate>) ||
+                            (std::is_same_v<ToDataType, DataTypeDate32>) ||
+                            (std::is_same_v<ToDataType, DataTypeDateTime>))))
             {
                 if (this->getName().find("OrZero") != std::string::npos ||
                     this->getName().find("OrNull") != std::string::npos)
