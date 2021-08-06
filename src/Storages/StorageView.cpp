@@ -59,6 +59,16 @@ bool changedNullabilityOneWay(const Block & src_block, const Block & dst_block)
     return false;
 }
 
+bool hasJoin(const ASTSelectWithUnionQuery & ast)
+{
+    for (const auto & child : ast.list_of_selects->children)
+    {
+        if (const auto * select = child->as<ASTSelectQuery>(); select && select->join())
+            return true;
+    }
+    return false;
+}
+
 }
 
 StorageView::StorageView(
@@ -133,11 +143,16 @@ void StorageView::read(
     const auto & expected_header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
     const auto & header = query_plan.getCurrentDataStream().header;
 
-    if (changedNullabilityOneWay(header, expected_header))
+    const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
+    if (select_with_union && hasJoin(*select_with_union) && changedNullabilityOneWay(header, expected_header))
     {
         throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
-                            "Joined columns is nullable, but setting `join_use_nulls` wans't set on CREATE VIEW");
+                            "Query from view {} returned Nullable column having not Nullable type in structure. "
+                            "If query from view has JOIN, it may be cause by different values of 'json_use_nulls' setting. "
+                            "You may explicitly specify 'json_use_nulls' in 'CREATE VIEW' query to avoid this error",
+                            getStorageID().getFullTableName());
     }
+
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             header.getColumnsWithTypeAndName(),
             expected_header.getColumnsWithTypeAndName(),
