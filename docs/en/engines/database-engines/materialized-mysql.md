@@ -26,19 +26,14 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 -   `password` — User password.
 
 **Engine Settings**
--   `max_rows_in_buffer` — Maximum number of rows allowed to be cached in memory for a single table. When this number is exceeded, the data is materialized. Default: `65505`.
--   `max_bytes_in_buffer` —  Maximum number of bytes allowed to be cached in memory for a single table. When this number is exceeded, the data is materialized. Default: `1048576`.
--   `max_rows_in_buffers` — Maximum number of rows allowed to be cached in memory for the whole database. When this number is exceeded, the data is materialized. Default: `65505`.
--   `max_bytes_in_buffers` — Maximum number of bytes allowed to be cached in memory for the whole database. When this number is exceeded, the data is materialized. Default: `1048576`.
--   `max_flush_data_time` — Maximum number of seconds that data is allowed to be in cache for the whole database. When this number is exceeded, the data is materialized. Default: `1000`.
+
+-   `max_rows_in_buffer` — The maximum number of rows allowed to be cached in memory for a single table. When this number is exceeded, the data is materialized. Default: `65505`.
+-   `max_bytes_in_buffer` — The maximum number of bytes allowed to be cached in memory for a single table. When this number is exceeded, the data is materialized. Default: `1048576`.
+-   `max_rows_in_buffers` — The maximum number of rows allowed to be cached in memory for the whole database. When this number is exceeded, the data is materialized. Default: `65505`.
+-   `max_bytes_in_buffers` — The maximum number of bytes allowed to be cached in memory for the whole database. When this number is exceeded, the data is materialized. Default: `1048576`.
+-   `max_flush_data_time` — The maximum number of seconds that data is allowed to be in cache for the whole database. When this number is exceeded, the data is materialized. Default: `1000`.
 -   `max_wait_time_when_mysql_unavailable` — A retry interval in milliseconds if MySQL is not available. A negative value disables retries. Default: `1000`.
 -   `allows_query_when_mysql_lost` — Whether to query materialized table if MySQL is not available. Default: `0` (`false`).
-```
-CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***')
-     SETTINGS
-        allows_query_when_mysql_lost=true,
-        max_wait_time_when_mysql_unavailable=10000;
-```
 
 **Settings on MySQL-server side**
 
@@ -46,6 +41,15 @@ For the correct work of `MaterializeMySQL`, there are a few mandatory `MySQL`-si
 
 - `default_authentication_plugin = mysql_native_password` since `MaterializeMySQL` can only authorize with this method.
 - `gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializeMySQL` replication. Pay attention that while turning this mode `On` you should also specify `enforce_gtid_consistency = on`.
+
+**Example**
+
+```
+CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***')
+     SETTINGS
+        allows_query_when_mysql_lost=true,
+        max_wait_time_when_mysql_unavailable=10000;
+```
 
 ## Virtual columns {#virtual-columns}
 
