@@ -197,16 +197,6 @@ WindowTransform::WindowTransform(const Block & input_header_,
     , input_header(input_header_)
     , window_description(window_description_)
 {
-    // Materialize all columns in header, because we materialize all columns
-    // in chunks and it's convenient if they match.
-    auto input_columns = input_header.getColumns();
-    for (auto & column : input_columns)
-    {
-        column = std::move(column)->convertToFullColumnIfConst();
-    }
-    input_header.setColumns(std::move(input_columns));
-
-    // Initialize window function workspaces.
     workspaces.reserve(functions.size());
     for (const auto & f : functions)
     {
@@ -861,8 +851,6 @@ void WindowTransform::updateAggregationState()
     assert(prev_frame_start <= prev_frame_end);
     assert(prev_frame_start <= frame_start);
     assert(prev_frame_end <= frame_end);
-    assert(partition_start <= frame_start);
-    assert(frame_end <= partition_end);
 
     // We might have to reset aggregation state and/or add some rows to it.
     // Figure out what to do.
@@ -1056,10 +1044,13 @@ void WindowTransform::appendChunk(Chunk & chunk)
             block.output_columns.back()->reserve(block.rows);
         }
 
-        // As a debugging aid, assert that all chunks have the same C++ type of
-        // columns, that also matches the input header, because we often have to
-        // work across chunks.
-        assertSameColumns(input_header.getColumns(), block.input_columns);
+        // As a debugging aid, assert that chunk have the same C++ type of
+        // columns, because we often have to work across chunks.
+        if (blocks.size() > 1)
+        {
+            assertSameColumns(blocks.front().input_columns,
+                blocks.back().input_columns);
+        }
     }
 
     // Start the calculations. First, advance the partition end.
@@ -1529,21 +1520,12 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        const auto supertype = getLeastSupertype({argument_types[0], argument_types[2]});
-        if (!supertype)
+        if (!getLeastSupertype({argument_types[0], argument_types[2]}))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "There is no supertype for the argument type '{}' and the default value type '{}'",
-                argument_types[0]->getName(),
-                argument_types[2]->getName());
-        }
-        if (!argument_types[0]->equals(*supertype))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The supertype '{}' for the argument type '{}' and the default value type '{}' is not the same as the argument type",
-                supertype->getName(),
-                argument_types[0]->getName(),
-                argument_types[2]->getName());
+                "The default value type '{}' is not convertible to the argument type '{}'",
+                argument_types[2]->getName(),
+                argument_types[0]->getName());
         }
 
         if (argument_types.size() > 3)
@@ -1554,7 +1536,8 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         }
     }
 
-    DataTypePtr getReturnType() const override { return argument_types[0]; }
+    DataTypePtr getReturnType() const override
+    { return argument_types[0]; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -1596,13 +1579,9 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             if (argument_types.size() > 2)
             {
                 // Column with default values is specified.
-                // The conversion through Field is inefficient, but we accept
-                // subtypes of the argument type as a default value (for convenience),
-                // and it's a pain to write conversion that respects ColumnNothing
-                // and ColumnConst and so on.
-                const IColumn & default_column = *current_block.input_columns[
-                    workspace.argument_column_indices[2]].get();
-                to.insert(default_column[transform->current_row.row]);
+                to.insertFrom(*current_block.input_columns[
+                            workspace.argument_column_indices[2]],
+                    transform->current_row.row);
             }
             else
             {
@@ -1639,49 +1618,40 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     // to a (rows between unbounded preceding and unbounded following) frame,
     // instead of adding separate logic for them.
 
-    const AggregateFunctionProperties properties = {
-        // By default, if an aggregate function has a null argument, it will be
-        // replaced with AggregateFunctionNothing. We don't need this behavior
-        // e.g. for lagInFrame(number, 1, null).
-        .returns_default_when_only_null = true,
-        // This probably doesn't make any difference for window functions because
-        // it is an Aggregator-specific setting.
-        .is_order_dependent = true };
-
-    factory.registerFunction("rank", {[](const std::string & name,
+    factory.registerFunction("rank", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
-        }, properties});
+        });
 
-    factory.registerFunction("dense_rank", {[](const std::string & name,
+    factory.registerFunction("dense_rank", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
-        }, properties});
+        });
 
-    factory.registerFunction("row_number", {[](const std::string & name,
+    factory.registerFunction("row_number", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
-        }, properties});
+        });
 
-    factory.registerFunction("lagInFrame", {[](const std::string & name,
+    factory.registerFunction("lagInFrame", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
                 name, argument_types, parameters);
-        }, properties});
+        });
 
-    factory.registerFunction("leadInFrame", {[](const std::string & name,
+    factory.registerFunction("leadInFrame", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);
-        }, properties});
+        });
 }
 
 }

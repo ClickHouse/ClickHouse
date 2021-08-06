@@ -15,8 +15,9 @@
 
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -34,7 +35,6 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 
 
 namespace fs = std::filesystem;
@@ -187,7 +187,7 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
             throw Exception("Cannot get table structure from file, because no files match specified name", ErrorCodes::INCORRECT_FILE_NAME);
 
         auto & first_path = paths[0];
-        Block header = StorageDistributedDirectoryMonitor::createSourceFromFile(first_path)->getOutputs().front().getHeader();
+        Block header = StorageDistributedDirectoryMonitor::createStreamFromFile(first_path)->getHeader();
 
         StorageInMemoryMetadata storage_metadata;
         auto columns = ColumnsDescription(header.getNamesAndTypesList());
@@ -348,9 +348,7 @@ public:
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
-                        pipeline = std::make_unique<QueryPipeline>();
-                        pipeline->init(Pipe(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path)));
-                        reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+                        reader = StorageDistributedDirectoryMonitor::createStreamFromFile(current_path);
                         continue;
                     }
                 }
@@ -388,31 +386,24 @@ public:
                 auto format = FormatFactory::instance().getInput(
                     storage->format_name, *read_buf, get_block_for_format(), context, max_block_size, storage->format_settings);
 
-                pipeline = std::make_unique<QueryPipeline>();
-                pipeline->init(Pipe(format));
+                reader = std::make_shared<InputStreamFromInputFormat>(format);
 
                 if (columns_description.hasDefaults())
-                {
-                    pipeline->addSimpleTransform([&](const Block & header)
-                    {
-                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *format, context);
-                    });
-                }
+                    reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_description, context);
 
-                reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
+                reader->readPrefix();
             }
 
-            Chunk chunk;
-            if (reader->pull(chunk))
+            if (auto res = reader->read())
             {
-                //Columns columns = res.getColumns();
-                UInt64 num_rows = chunk.getNumRows();
+                Columns columns = res.getColumns();
+                UInt64 num_rows = res.rows();
 
                 /// Enrich with virtual columns.
                 if (files_info->need_path_column)
                 {
                     auto column = DataTypeString().createColumnConst(num_rows, current_path);
-                    chunk.addColumn(column->convertToFullColumnIfConst());
+                    columns.push_back(column->convertToFullColumnIfConst());
                 }
 
                 if (files_info->need_file_column)
@@ -421,10 +412,10 @@ public:
                     auto file_name = current_path.substr(last_slash_pos + 1);
 
                     auto column = DataTypeString().createColumnConst(num_rows, std::move(file_name));
-                    chunk.addColumn(column->convertToFullColumnIfConst());
+                    columns.push_back(column->convertToFullColumnIfConst());
                 }
 
-                return chunk;
+                return Chunk(std::move(columns), num_rows);
             }
 
             /// Read only once for file descriptor.
@@ -432,8 +423,8 @@ public:
                 finished_generate = true;
 
             /// Close file prematurely if stream was ended.
+            reader->readSuffix();
             reader.reset();
-            pipeline.reset();
             read_buf.reset();
         }
 
@@ -448,8 +439,7 @@ private:
     String current_path;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;
-    std::unique_ptr<QueryPipeline> pipeline;
-    std::unique_ptr<PullingPipelineExecutor> reader;
+    BlockInputStreamPtr reader;
 
     ColumnsDescription columns_description;
 
@@ -548,7 +538,7 @@ public:
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
         if (storage.use_table_fd)
         {
-            /** NOTE: Using real file bounded to FD may be misleading:
+            /** NOTE: Using real file binded to FD may be misleading:
               * SELECT *; INSERT insert_data; SELECT *; last SELECT returns initil_fd_data + insert_data
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
@@ -652,7 +642,7 @@ Strings StorageFile::getDataPaths() const
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!is_db_table)
-        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " bounded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     if (paths.size() != 1)
         throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);

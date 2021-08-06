@@ -89,7 +89,7 @@ class ICompressionCodec;
 class AccessControlManager;
 class Credentials;
 class GSSAcceptorContext;
-struct SettingsConstraintsAndProfileIDs;
+class SettingsConstraints;
 class RemoteHostFilter;
 struct StorageID;
 class IDisk;
@@ -177,7 +177,6 @@ private:
     std::optional<UUID> user_id;
     std::vector<UUID> current_roles;
     bool use_default_roles = false;
-    std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
     String current_database;
@@ -268,9 +267,6 @@ private:
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
 
-    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializePostgreSQL).
-    bool is_internal_query = false;
-
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
@@ -320,17 +316,12 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
 
-    /// A list of warnings about server configuration to place in `system.warnings` table.
-    std::vector<String> getWarnings() const;
-
     VolumePtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
-
-    void addWarningMessage(const String & msg);
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
@@ -378,11 +369,6 @@ public:
     boost::container::flat_set<UUID> getCurrentRoles() const;
     boost::container::flat_set<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
-
-    void setCurrentProfile(const String & profile_name);
-    void setCurrentProfile(const UUID & profile_id);
-    std::vector<UUID> getCurrentProfiles() const;
-    std::vector<UUID> getEnabledProfiles() const;
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -522,7 +508,7 @@ public:
     void clampToSettingsConstraints(SettingsChanges & changes) const;
 
     /// Returns the current constraints (can return null).
-    std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
+    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
@@ -755,9 +741,6 @@ public:
 
     void shutdown();
 
-    bool isInternalQuery() const { return is_internal_query; }
-    void setInternalQuery(bool internal) { is_internal_query = internal; }
-
     ActionLocksManagerPtr getActionLocksManager();
 
     enum class ApplicationType
@@ -815,6 +798,8 @@ private:
 
     template <typename... Args>
     void checkAccessImpl(const Args &... args) const;
+
+    void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
 
