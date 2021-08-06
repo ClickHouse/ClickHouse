@@ -5,7 +5,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <Common/SettingsChanges.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Common/setThreadName.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
@@ -20,16 +21,12 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ParserQuery.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipeline.h>
-#include <Formats/FormatFactory.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -479,6 +476,40 @@ namespace
     };
 
 
+    /// A boolean state protected by mutex able to wait until other thread sets it to a specific value.
+    class BoolState
+    {
+    public:
+        explicit BoolState(bool initial_value) : value(initial_value) {}
+
+        bool get() const
+        {
+            std::lock_guard lock{mutex};
+            return value;
+        }
+
+        void set(bool new_value)
+        {
+            std::lock_guard lock{mutex};
+            if (value == new_value)
+                return;
+            value = new_value;
+            changed.notify_all();
+        }
+
+        void wait(bool wanted_value) const
+        {
+            std::unique_lock lock{mutex};
+            changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
+        }
+
+    private:
+        bool value;
+        mutable std::mutex mutex;
+        mutable std::condition_variable changed;
+    };
+
+
     /// Handles a connection after a responder is started (i.e. after getting a new call).
     class Call
     {
@@ -525,7 +556,7 @@ namespace
         Poco::Logger * log = nullptr;
 
         std::shared_ptr<NamedSession> session;
-        ContextMutablePtr query_context;
+        std::optional<Context> query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
         String query_text;
         ASTPtr ast;
@@ -551,8 +582,7 @@ namespace
 
         std::optional<ReadBufferFromCallback> read_buffer;
         std::optional<WriteBufferFromString> write_buffer;
-        std::unique_ptr<QueryPipeline> pipeline;
-        std::unique_ptr<PullingPipelineExecutor> pipeline_executor;
+        BlockInputStreamPtr block_input_stream;
         BlockOutputStreamPtr block_output_stream;
         bool need_input_data_from_insert_query = true;
         bool need_input_data_from_query_info = true;
@@ -563,18 +593,15 @@ namespace
         UInt64 waited_for_client_writing = 0;
 
         /// The following fields are accessed both from call_thread and queue_thread.
-        std::atomic<bool> reading_query_info = false;
+        BoolState reading_query_info{false};
         std::atomic<bool> failed_to_read_query_info = false;
         GRPCQueryInfo next_query_info_while_reading;
         std::atomic<bool> want_to_cancel = false;
         std::atomic<bool> check_query_info_contains_cancel_only = false;
-        std::atomic<bool> sending_result = false;
+        BoolState sending_result{false};
         std::atomic<bool> failed_to_send_result = false;
 
         ThreadFromGlobalPool call_thread;
-        std::condition_variable read_finished;
-        std::condition_variable write_finished;
-        std::mutex dummy_mutex; /// Doesn't protect anything.
     };
 
     Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_)
@@ -609,6 +636,7 @@ namespace
     {
         try
         {
+            setThreadName("GRPCServerCall");
             receiveQuery();
             executeQuery();
             processInput();
@@ -656,7 +684,7 @@ namespace
         }
 
         /// Create context.
-        query_context = Context::createCopy(iserver.context());
+        query_context.emplace(iserver.context());
 
         /// Authentication.
         query_context->setUser(user, password, user_address);
@@ -670,11 +698,11 @@ namespace
         {
             session = query_context->acquireNamedSession(
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
-            query_context = Context::createCopy(session->context);
+            query_context = session->context;
             query_context->setSessionContext(session->context);
         }
 
-        query_scope.emplace(query_context);
+        query_scope.emplace(*query_context);
 
         /// Set client info.
         ClientInfo & client_info = query_context->getClientInfo();
@@ -746,30 +774,30 @@ namespace
             output_format = query_context->getDefaultFormat();
 
         /// Set callback to create and fill external tables
-        query_context->setExternalTablesInitializer([this] (ContextPtr context)
+        query_context->setExternalTablesInitializer([this] (Context & context)
         {
-            if (context != query_context)
+            if (&context != &*query_context)
                 throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
             createExternalTables();
         });
 
         /// Set callbacks to execute function input().
-        query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
+        query_context->setInputInitializer([this] (Context & context, const StoragePtr & input_storage)
         {
-            if (context != query_context)
+            if (&context != &query_context.value())
                 throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
             input_function_is_used = true;
             initializeBlockInputStream(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
+            block_input_stream->readPrefix();
         });
 
-        query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
+        query_context->setInputBlocksReaderCallback([this](Context & context) -> Block
         {
-            if (context != query_context)
+            if (&context != &query_context.value())
                 throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
-
-            Block block;
-            while (!block && pipeline_executor->pull(block));
-
+            auto block = block_input_stream->read();
+            if (!block)
+                block_input_stream->readSuffix();
             return block;
         });
 
@@ -780,13 +808,15 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(query, query_context, false, QueryProcessingStage::Complete, true, true);
+        io = ::DB::executeQuery(query, *query_context, false, QueryProcessingStage::Complete, true, true);
     }
 
     void Call::processInput()
     {
         if (!io.out)
             return;
+
+        initializeBlockInputStream(io.out->getHeader());
 
         bool has_data_to_insert = (insert_query && insert_query->data)
                                   || !query_info.input_data().empty() || query_info.next_query_info();
@@ -798,19 +828,13 @@ namespace
                 throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
         }
 
-        /// This is significant, because parallel parsing may be used.
-        /// So we mustn't touch the input stream from other thread.
-        initializeBlockInputStream(io.out->getHeader());
-
+        block_input_stream->readPrefix();
         io.out->writePrefix();
 
-        Block block;
-        while (pipeline_executor->pull(block))
-        {
-            if (block)
-                io.out->write(block);
-        }
+        while (auto block = block_input_stream->read())
+            io.out->write(block);
 
+        block_input_stream->readSuffix();
         io.out->writeSuffix();
     }
 
@@ -873,11 +897,9 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
-        assert(!pipeline);
-        pipeline = std::make_unique<QueryPipeline>();
-        auto source = FormatFactory::instance().getInput(
-            input_format, *read_buffer, header, query_context, query_context->getSettings().max_insert_block_size);
-        pipeline->init(Pipe(source));
+        assert(!block_input_stream);
+        block_input_stream = query_context->getInputFormat(
+            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
 
         /// Add default values if necessary.
         if (ast)
@@ -887,20 +909,13 @@ namespace
                 auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
                 if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
                 {
-                    StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);
+                    StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, *query_context);
                     const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
                     if (!columns.empty())
-                    {
-                        pipeline->addSimpleTransform([&](const Block & cur_header)
-                        {
-                            return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, query_context);
-                        });
-                    }
+                        block_input_stream = std::make_shared<AddingDefaultsBlockInputStream>(block_input_stream, columns, *query_context);
                 }
             }
         }
-
-        pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
     }
 
     void Call::createExternalTables()
@@ -919,12 +934,12 @@ namespace
                 StoragePtr storage;
                 if (auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal))
                 {
-                    storage = DatabaseCatalog::instance().getTable(resolved, query_context);
+                    storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
                 }
                 else
                 {
                     NamesAndTypesList columns;
-                    for (size_t column_idx : collections::range(external_table.columns_size()))
+                    for (size_t column_idx : ext::range(external_table.columns_size()))
                     {
                         const auto & name_and_type = external_table.columns(column_idx);
                         NameAndTypePair column;
@@ -934,7 +949,7 @@ namespace
                         column.type = DataTypeFactory::instance().get(name_and_type.type());
                         columns.emplace_back(std::move(column));
                     }
-                    auto temporary_table = TemporaryTableHolder(query_context, ColumnsDescription{columns}, {});
+                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
                     storage = temporary_table.getTable();
                     query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
                 }
@@ -943,17 +958,17 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    auto out_stream = storage->write(ASTPtr(), metadata_snapshot, query_context);
+                    auto out_stream = storage->write(ASTPtr(), metadata_snapshot, *query_context);
                     ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
                     String format = external_table.format();
                     if (format.empty())
                         format = "TabSeparated";
-                    ContextMutablePtr external_table_context = query_context;
-                    ContextMutablePtr temp_context;
+                    Context * external_table_context = &*query_context;
+                    std::optional<Context> temp_context;
                     if (!external_table.settings().empty())
                     {
-                        temp_context = Context::createCopy(query_context);
-                        external_table_context = temp_context;
+                        temp_context = *query_context;
+                        external_table_context = &*temp_context;
                         SettingsChanges settings_changes;
                         for (const auto & [key, value] : external_table.settings())
                             settings_changes.push_back({key, value});
@@ -1166,7 +1181,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, getExceptionMessage(exception, true));
+        LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", exception.code(), exception.displayText(), exception.getStackTraceString());
 
         if (responder && !responder_finished)
         {
@@ -1212,8 +1227,7 @@ namespace
     void Call::close()
     {
         responder.reset();
-        pipeline_executor.reset();
-        pipeline.reset();
+        block_input_stream.reset();
         block_output_stream.reset();
         read_buffer.reset();
         write_buffer.reset();
@@ -1229,8 +1243,7 @@ namespace
     {
         auto start_reading = [&]
         {
-            assert(!reading_query_info);
-            reading_query_info = true;
+            reading_query_info.set(true);
             responder->read(next_query_info_while_reading, [this](bool ok)
             {
                 /// Called on queue_thread.
@@ -1255,18 +1268,16 @@ namespace
                     /// on queue_thread.
                     failed_to_read_query_info = true;
                 }
-                reading_query_info = false;
-                read_finished.notify_one();
+                reading_query_info.set(false);
             });
         };
 
         auto finish_reading = [&]
         {
-            if (reading_query_info)
+            if (reading_query_info.get())
             {
                 Stopwatch client_writing_watch;
-                std::unique_lock lock{dummy_mutex};
-                read_finished.wait(lock, [this] { return !reading_query_info; });
+                reading_query_info.wait(false);
                 waited_for_client_writing += client_writing_watch.elapsedNanoseconds();
             }
             throwIfFailedToReadQueryInfo();
@@ -1429,11 +1440,10 @@ namespace
 
         /// Wait for previous write to finish.
         /// (gRPC doesn't allow to start sending another result while the previous is still being sending.)
-        if (sending_result)
+        if (sending_result.get())
         {
             Stopwatch client_reading_watch;
-            std::unique_lock lock{dummy_mutex};
-            write_finished.wait(lock, [this] { return !sending_result; });
+            sending_result.wait(false);
             waited_for_client_reading += client_reading_watch.elapsedNanoseconds();
         }
         throwIfFailedToSendResult();
@@ -1444,14 +1454,13 @@ namespace
         if (write_buffer)
             write_buffer->finalize();
 
-        sending_result = true;
+        sending_result.set(true);
         auto callback = [this](bool ok)
         {
             /// Called on queue_thread.
             if (!ok)
                 failed_to_send_result = true;
-            sending_result = false;
-            write_finished.notify_one();
+            sending_result.set(false);
         };
 
         Stopwatch client_reading_final_watch;
@@ -1471,8 +1480,7 @@ namespace
         if (send_final_message)
         {
             /// Wait until the result is actually sent.
-            std::unique_lock lock{dummy_mutex};
-            write_finished.wait(lock, [this] { return !sending_result; });
+            sending_result.wait(false);
             waited_for_client_reading += client_reading_final_watch.elapsedNanoseconds();
             throwIfFailedToSendResult();
             LOG_TRACE(log, "Final result has been sent to the client");
@@ -1541,7 +1549,7 @@ private:
     {
         std::lock_guard lock{mutex};
         responders_for_new_calls.resize(CALL_MAX);
-        for (CallType call_type : collections::range(CALL_MAX))
+        for (CallType call_type : ext::range(CALL_MAX))
             makeResponderForNewCall(call_type);
     }
 
@@ -1583,7 +1591,7 @@ private:
     {
         /// Called on call_thread. That's why we can't destroy the `call` right now
         /// (thread can't join to itself). Thus here we only move the `call` from
-        /// `current_call` to `finished_calls` and run() will actually destroy the `call`.
+        /// `current_calls` to `finished_calls` and run() will actually destroy the `call`.
         std::lock_guard lock{mutex};
         auto it = current_calls.find(call);
         finished_calls.push_back(std::move(it->second));
@@ -1592,6 +1600,7 @@ private:
 
     void run()
     {
+        setThreadName("GRPCServerQueue");
         while (true)
         {
             {

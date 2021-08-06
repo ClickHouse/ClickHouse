@@ -12,9 +12,7 @@ The search is case-sensitive by default in all these functions. There are separa
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 
-Searches for the substring `needle` in the string `haystack`.
-
-Returns the position (in bytes) of the found substring in the string, starting from 1. 
+Returns the position (in bytes) of the found substring in the string, starting from 1.
 
 For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
 
@@ -22,22 +20,15 @@ For a case-insensitive search, use the function [positionCaseInsensitive](#posit
 
 ``` sql
 position(haystack, needle[, start_pos])
-``` 
-
-``` sql
-position(needle IN haystack)
-``` 
+```
 
 Alias: `locate(haystack, needle[, start_pos])`.
 
-!!! note "Note"
-    Syntax of `position(needle IN haystack)` provides SQL-compatibility, the function works the same way as to `position(haystack, needle)`.
-
 **Arguments**
 
--   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
@@ -53,7 +44,7 @@ The phrase “Hello, world!” contains a set of bytes representing a single-byt
 Query:
 
 ``` sql
-SELECT position('Hello, world!', '!');
+SELECT position('Hello, world!', '!')
 ```
 
 Result:
@@ -81,7 +72,7 @@ The same phrase in Russian contains characters which can’t be represented usin
 Query:
 
 ``` sql
-SELECT position('Привет, мир!', '!');
+SELECT position('Привет, мир!', '!')
 ```
 
 Result:
@@ -92,41 +83,11 @@ Result:
 └───────────────────────────────┘
 ```
 
-**Examples for POSITION(needle IN haystack) syntax**
-
-Query:
-
-```sql
-SELECT 3 = position('c' IN 'abc');
-```
-
-Result:
-
-```text
-┌─equals(3, position('abc', 'c'))─┐
-│                               1 │
-└─────────────────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT 6 = position('/' IN s) FROM (SELECT 'Hello/World' AS s);
-```
-
-Result:
-
-```text
-┌─equals(6, position(s, '/'))─┐
-│                           1 │
-└─────────────────────────────┘
-```
-
 ## positionCaseInsensitive {#positioncaseinsensitive}
 
 The same as [position](#position) returns the position (in bytes) of the found substring in the string, starting from 1. Use the function for a case-insensitive search.
 
-Works under the assumption that the string contains a set of bytes representing a single-byte encoded text. If this assumption is not met and a character can’t be represented using a single byte, the function does not throw an exception and returns some unexpected result. If character can be represented using two bytes, it will use two bytes and so on.
+Works under the assumption that the string contains a set of bytes representing a single-byte encoded text. If this assumption is not met and a character can’t be represented using a single byte, the function doesn’t throw an exception and returns some unexpected result. If character can be represented using two bytes, it will use two bytes and so on.
 
 **Syntax**
 
@@ -136,9 +97,9 @@ positionCaseInsensitive(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
@@ -152,7 +113,7 @@ Type: `Integer`.
 Query:
 
 ``` sql
-SELECT positionCaseInsensitive('Hello, world!', 'hello');
+SELECT positionCaseInsensitive('Hello, world!', 'hello')
 ```
 
 Result:
@@ -167,7 +128,7 @@ Result:
 
 Returns the position (in Unicode points) of the found substring in the string, starting from 1.
 
-Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function does not throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
+Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function doesn’t throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
 
 For a case-insensitive search, use the function [positionCaseInsensitiveUTF8](#positioncaseinsensitiveutf8).
 
@@ -179,9 +140,9 @@ positionUTF8(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
@@ -197,7 +158,7 @@ The phrase “Hello, world!” in Russian contains a set of Unicode points repre
 Query:
 
 ``` sql
-SELECT positionUTF8('Привет, мир!', '!');
+SELECT positionUTF8('Привет, мир!', '!')
 ```
 
 Result:
@@ -213,7 +174,7 @@ The phrase “Salut, étudiante!”, where character `é` can be represented usi
 Query for the letter `é`, which is represented one Unicode point `U+00E9`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!');
+SELECT positionUTF8('Salut, étudiante!', '!')
 ```
 
 Result:
@@ -227,7 +188,7 @@ Result:
 Query for the letter `é`, which is represented two Unicode points `U+0065U+0301`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!');
+SELECT positionUTF8('Salut, étudiante!', '!')
 ```
 
 Result:
@@ -242,7 +203,7 @@ Result:
 
 The same as [positionUTF8](#positionutf8), but is case-insensitive. Returns the position (in Unicode points) of the found substring in the string, starting from 1.
 
-Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function does not throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
+Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, the function doesn’t throw an exception and returns some unexpected result. If character can be represented using two Unicode points, it will use two and so on.
 
 **Syntax**
 
@@ -252,9 +213,9 @@ positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 **Arguments**
 
--   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned value**
 
@@ -268,7 +229,7 @@ Type: `Integer`.
 Query:
 
 ``` sql
-SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир');
+SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')
 ```
 
 Result:
@@ -297,8 +258,8 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 
 **Arguments**
 
--   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned values**
 
@@ -309,7 +270,7 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 Query:
 
 ``` sql
-SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
+SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
 ```
 
 Result:
@@ -349,7 +310,7 @@ For a case-insensitive search or/and in UTF-8 format use functions `multiSearchA
 
 Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax) of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
 
-Returns 0 if it does not match, or 1 if it matches.
+Returns 0 if it doesn’t match, or 1 if it matches.
 
 Note that the backslash symbol (`\`) is used for escaping in the regular expression. The same symbol is used for escaping in string literals. So in order to escape the symbol in a regular expression, you must write two backslashes (\\) in a string literal.
 
@@ -391,11 +352,11 @@ The same as `multiFuzzyMatchAny`, but returns the array of all indices in any or
 
 ## extract(haystack, pattern) {#extracthaystack-pattern}
 
-Extracts a fragment of a string using a regular expression. If ‘haystack’ does not match the ‘pattern’ regex, an empty string is returned. If the regex does not contain subpatterns, it takes the fragment that matches the entire regex. Otherwise, it takes the fragment that matches the first subpattern.
+Extracts a fragment of a string using a regular expression. If ‘haystack’ doesn’t match the ‘pattern’ regex, an empty string is returned. If the regex doesn’t contain subpatterns, it takes the fragment that matches the entire regex. Otherwise, it takes the fragment that matches the first subpattern.
 
 ## extractAll(haystack, pattern) {#extractallhaystack-pattern}
 
-Extracts all the fragments of a string using a regular expression. If ‘haystack’ does not match the ‘pattern’ regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the ‘extract’ function (it takes the first subpattern, or the entire expression if there isn’t a subpattern).
+Extracts all the fragments of a string using a regular expression. If ‘haystack’ doesn’t match the ‘pattern’ regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the ‘extract’ function (it takes the first subpattern, or the entire expression if there isn’t a subpattern).
 
 ## extractAllGroupsHorizontal {#extractallgroups-horizontal}
 
@@ -419,14 +380,14 @@ extractAllGroupsHorizontal(haystack, pattern)
 
 -   Type: [Array](../../sql-reference/data-types/array.md).
 
-If `haystack` does not match the `pattern` regex, an array of empty arrays is returned. 
+If `haystack` doesn’t match the `pattern` regex, an array of empty arrays is returned. 
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
+SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
 ```
 
 Result:
@@ -460,14 +421,14 @@ extractAllGroupsVertical(haystack, pattern)
 
 -   Type: [Array](../../sql-reference/data-types/array.md).
 
-If `haystack` does not match the `pattern` regex, an empty array is returned. 
+If `haystack` doesn’t match the `pattern` regex, an empty array is returned. 
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
+SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
 ```
 
 Result:
@@ -513,7 +474,7 @@ ilike(haystack, pattern)
 **Arguments**
 
 -   `haystack` — Input string. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `pattern` — If `pattern` does not contain percent signs or underscores, then the `pattern` only represents the string itself. An underscore (`_`) in `pattern` stands for (matches) any single character. A percent sign (`%`) matches any sequence of zero or more characters.
+-   `pattern` — If `pattern` doesn't contain percent signs or underscores, then the `pattern` only represents the string itself. An underscore (`_`) in `pattern` stands for (matches) any single character. A percent sign (`%`) matches any sequence of zero or more characters.
 
 Some `pattern` examples:
 
@@ -527,7 +488,7 @@ Some `pattern` examples:
 **Returned values**
 
 -   True, if the string matches `pattern`.
--   False, if the string does not match `pattern`.
+-   False, if the string doesn't match `pattern`.
 
 **Example**
 
@@ -545,7 +506,7 @@ Input table:
 Query:
 
 ``` sql
-SELECT * FROM Months WHERE ilike(name, '%j%');
+SELECT * FROM Months WHERE ilike(name, '%j%')
 ```
 
 Result:
@@ -657,7 +618,7 @@ countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 
 -   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
@@ -670,7 +631,7 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT countSubstringsCaseInsensitive('aba', 'B');
+select countSubstringsCaseInsensitive('aba', 'B');
 ```
 
 Result:
@@ -723,7 +684,7 @@ SELECT countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 -   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
@@ -811,3 +772,5 @@ Result:
 │                             2 │
 └───────────────────────────────┘
 ```
+
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_search_functions/) <!--hide-->

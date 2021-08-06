@@ -7,6 +7,7 @@
 namespace DB
 {
 
+class Context;
 class AccessRightsElements;
 class DDLGuard;
 
@@ -48,12 +49,12 @@ using TableGuards = std::map<UniqueTableName, std::unique_ptr<DDLGuard>>;
 /** Rename one table
   *  or rename many tables at once.
   */
-class InterpreterRenameQuery : public IInterpreter, WithContext
+class InterpreterRenameQuery : public IInterpreter
 {
 public:
-    InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_);
+    InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_);
     BlockIO execute() override;
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const override;
 
 private:
     BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
@@ -62,6 +63,7 @@ private:
     AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;
+    Context & context;
 };
 
 }

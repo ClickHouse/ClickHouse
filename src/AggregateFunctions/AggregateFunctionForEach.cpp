@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionForEach.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <Common/typeid_cast.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -38,9 +39,9 @@ public:
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
-        const Array &) const override
+        const Array & params) const override
     {
-        return std::make_shared<AggregateFunctionForEach>(nested_function, arguments);
+        return std::make_shared<AggregateFunctionForEach>(nested_function, arguments, params);
     }
 };
 

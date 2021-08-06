@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/Regexps.h>
 
 #include <memory>
@@ -51,7 +51,7 @@ public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractAllGroups>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionExtractAllGroups>(); }
 
     String getName() const override { return name; }
 

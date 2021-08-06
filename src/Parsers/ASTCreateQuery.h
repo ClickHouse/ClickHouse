@@ -23,9 +23,7 @@ public:
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
-    IAST * comment = nullptr;
     ASTSetQuery * settings = nullptr;
-
 
     String getID(char) const override { return "Storage definition"; }
 
@@ -43,7 +41,6 @@ public:
     ASTExpressionList * columns = nullptr;
     ASTExpressionList * indices = nullptr;
     ASTExpressionList * constraints = nullptr;
-    ASTExpressionList * projections = nullptr;
     IAST              * primary_key = nullptr;
 
     String getID(char) const override { return "Columns definition"; }
@@ -69,7 +66,6 @@ public:
     ASTExpressionList * tables = nullptr;
 
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
-    UUID to_inner_uuid = UUIDHelpers::Nil;      /// For materialized view with inner table
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;

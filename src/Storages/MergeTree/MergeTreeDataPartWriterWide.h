@@ -50,15 +50,15 @@ private:
         const NameAndTypePair & name_and_type,
         const IColumn & column,
         WrittenOffsetColumns & offset_columns,
-        ISerialization::SerializeBinaryBulkStatePtr & serialization_state,
-        ISerialization::SerializeBinaryBulkSettings & serialize_settings,
+        IDataType::SerializeBinaryBulkStatePtr & serialization_state,
+        IDataType::SerializeBinaryBulkSettings & serialize_settings,
         const Granule & granule);
 
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
         const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns,
-        ISerialization::SubstreamPath & path);
+        DB::IDataType::SubstreamPath & path);
 
     /// Write mark to disk using stream and rows count
     void flushMarkToFile(
@@ -70,12 +70,12 @@ private:
         const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns,
         size_t number_of_rows,
-        ISerialization::SubstreamPath & path);
+        DB::IDataType::SubstreamPath & path);
 
     void writeFinalMark(
         const NameAndTypePair & column,
         WrittenOffsetColumns & offset_columns,
-        ISerialization::SubstreamPath & path);
+        DB::IDataType::SubstreamPath & path);
 
     void addStreams(
         const NameAndTypePair & column,
@@ -100,16 +100,15 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
+    IDataType::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
 
-    using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
+    using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
 
     SerializationStates serialization_states;
 
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
-
     /// Non written marks to disk (for each column). Waiting until all rows for
     /// this marks will be written to disk.
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;

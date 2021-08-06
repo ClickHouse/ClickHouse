@@ -8,10 +8,9 @@
 #include <Columns/ColumnFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -44,7 +43,7 @@ class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayMapped>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayMapped>(); }
 
     String getName() const override
     {
