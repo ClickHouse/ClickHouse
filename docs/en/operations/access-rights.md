@@ -31,7 +31,7 @@ To see all users, roles, profiles, etc. and all their grants use [SHOW ACCESS](.
 
 ## Usage {#access-control-usage}
 
-By default, the ClickHouse server provides the `default` user account which is not allowed using SQL-driven access control and account management but has all the rights and permissions. The `default` user account is used in any cases when the username is not defined, for example, at login from client or in distributed queries. In distributed query processing a default user account is used, if the configuration of the server or cluster does not specify the [user and password](../engines/table-engines/special/distributed.md) properties.
+By default, the ClickHouse server provides the `default` user account which is not allowed using SQL-driven access control and account management but has all the rights and permissions. The `default` user account is used in any cases when the username is not defined, for example, at login from client or in distributed queries. In distributed query processing a default user account is used, if the configuration of the server or cluster doesn’t specify the [user and password](../engines/table-engines/special/distributed.md) properties.
 
 If you just started using ClickHouse, consider the following scenario:
 

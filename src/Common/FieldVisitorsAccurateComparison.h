@@ -26,12 +26,8 @@ public:
     template <typename T, typename U>
     bool operator() (const T & l, const U & r) const
     {
-        if constexpr (std::is_same_v<T, Null> || std::is_same_v<U, Null>
-            || std::is_same_v<T, NegativeInfinity> || std::is_same_v<T, PositiveInfinity>
-            || std::is_same_v<U, NegativeInfinity> || std::is_same_v<U, PositiveInfinity>)
-        {
+        if constexpr (std::is_same_v<T, Null> || std::is_same_v<U, Null>)
             return std::is_same_v<T, U>;
-        }
         else
         {
             if constexpr (std::is_same_v<T, U>)
@@ -41,13 +37,13 @@ public:
                 return accurate::equalsOp(l, r);
 
             /// TODO This is wrong (does not respect scale).
-            if constexpr (is_decimal_field<T> && is_decimal_field<U>)
+            if constexpr (isDecimalField<T>() && isDecimalField<U>())
                 return l == r;
 
-            if constexpr (is_decimal_field<T> && std::is_arithmetic_v<U>)
+            if constexpr (isDecimalField<T>() && std::is_arithmetic_v<U>)
                 return l == DecimalField<Decimal256>(Decimal256(r), 0);
 
-            if constexpr (std::is_arithmetic_v<T> && is_decimal_field<U>)
+            if constexpr (std::is_arithmetic_v<T> && isDecimalField<U>())
                 return DecimalField<Decimal256>(Decimal256(l), 0) == r;
 
             if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)
@@ -81,10 +77,6 @@ public:
     {
         if constexpr (std::is_same_v<T, Null> || std::is_same_v<U, Null>)
             return false;
-        else if constexpr (std::is_same_v<T, NegativeInfinity> || std::is_same_v<U, PositiveInfinity>)
-            return !std::is_same_v<T, U>;
-        else if constexpr (std::is_same_v<U, NegativeInfinity> || std::is_same_v<T, PositiveInfinity>)
-            return false;
         else
         {
             if constexpr (std::is_same_v<T, U>)
@@ -94,13 +86,13 @@ public:
                 return accurate::lessOp(l, r);
 
             /// TODO This is wrong (does not respect scale).
-            if constexpr (is_decimal_field<T> && is_decimal_field<U>)
+            if constexpr (isDecimalField<T>() && isDecimalField<U>())
                 return l < r;
 
-            if constexpr (is_decimal_field<T> && std::is_arithmetic_v<U>)
+            if constexpr (isDecimalField<T>() && std::is_arithmetic_v<U>)
                 return l < DecimalField<Decimal256>(Decimal256(r), 0);
 
-            if constexpr (std::is_arithmetic_v<T> && is_decimal_field<U>)
+            if constexpr (std::is_arithmetic_v<T> && isDecimalField<U>())
                 return DecimalField<Decimal256>(Decimal256(l), 0) < r;
 
             if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)
@@ -122,18 +114,6 @@ public:
 
         throw Exception("Cannot compare " + demangle(typeid(T).name()) + " with " + demangle(typeid(U).name()),
             ErrorCodes::BAD_TYPE_OF_FIELD);
-    }
-};
-
-
-class FieldVisitorAccurateLessOrEqual : public StaticVisitor<bool>
-{
-public:
-    template <typename T, typename U>
-    bool operator()(const T & l, const U & r) const
-    {
-        auto less_cmp = FieldVisitorAccurateLess();
-        return !less_cmp(r, l);
     }
 };
 

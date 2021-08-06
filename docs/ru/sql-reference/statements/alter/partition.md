@@ -16,11 +16,8 @@ toc_title: PARTITION
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — удалить все значения в столбце для заданной партиции;
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — очистить построенные вторичные индексы для заданной партиции;
 -   [FREEZE PARTITION](#alter_freeze-partition) — создать резервную копию партиции;
--   [UNFREEZE PARTITION](#alter_unfreeze-partition) — удалить резервную копию партиции;
--   [FETCH PARTITION\|PART](#alter_fetch-partition) — скачать партицию/кусок с другого сервера;
+-   [FETCH PARTITION](#alter_fetch-partition) — скачать партицию с другого сервера;
 -   [MOVE PARTITION\|PART](#alter_move-partition) — переместить партицию/кускок на другой диск или том.
--   [UPDATE IN PARTITION](#update-in-partition) — обновить данные внутри партиции по условию.
--   [DELETE IN PARTITION](#delete-in-partition) — удалить данные внутри партиции по условию.
 
 ## DETACH PARTITION\|PART {#alter_detach-partition}
 
@@ -173,9 +170,9 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 !!! note "Примечание"
     Создание резервной копии не требует остановки сервера.
 
-Для таблиц старого стиля имя партиций можно задавать в виде префикса (например, `2019`). В этом случае, резервные копии будут созданы для всех соответствующих партиций. Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
+Для таблиц старого стиля имя партиций можно задавать в виде префикса (например, ‘2019’). В этом случае резервные копии будут созданы для всех соответствующих партиций. Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
 
-Запрос формирует для текущего состояния таблицы жесткие ссылки на данные в этой таблице. Ссылки размещаются в директории `/var/lib/clickhouse/shadow/N/...`, где:
+Запрос делает следующее — для текущего состояния таблицы он формирует жесткие ссылки на данные в этой таблице. Ссылки размещаются в директории `/var/lib/clickhouse/shadow/N/...`, где:
 
 -   `/var/lib/clickhouse/` — рабочая директория ClickHouse, заданная в конфигурационном файле;
 -   `N` — инкрементальный номер резервной копии.
@@ -183,11 +180,11 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 !!! note "Примечание"
     При использовании [нескольких дисков для хранения данных таблицы](../../statements/alter/index.md#table_engine-mergetree-multiple-volumes) директория `shadow/N` появляется на каждом из дисков, на которых были куски, попавшие под выражение `PARTITION`.
 
-Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит `chmod` для всех файлов, запрещая запись в них.
+Структура директорий внутри резервной копии такая же, как внутри `/var/lib/clickhouse/`. Запрос выполнит ‘chmod’ для всех файлов, запрещая запись в них.
 
 Обратите внимание, запрос `ALTER TABLE t FREEZE PARTITION` не реплицируется. Он создает резервную копию только на локальном сервере. После создания резервной копии данные из `/var/lib/clickhouse/shadow/` можно скопировать на удалённый сервер, а локальную копию удалить.
 
-Резервная копия создается почти мгновенно (однако, сначала запрос дожидается завершения всех запросов, которые выполняются для соответствующей таблицы).
+Резервная копия создается почти мгновенно (однако сначала запрос дожидается завершения всех запросов, которые выполняются для соответствующей таблицы).
 
 `ALTER TABLE t FREEZE PARTITION` копирует только данные, но не метаданные таблицы. Чтобы сделать резервную копию метаданных таблицы, скопируйте файл `/var/lib/clickhouse/metadata/database/table.sql`
 
@@ -201,43 +198,29 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 
 Подробнее о резервном копировании и восстановлении данных читайте в разделе [Резервное копирование данных](../../../operations/backup.md).
 
-## UNFREEZE PARTITION {#alter_unfreeze-partition}
+## FETCH PARTITION {#alter_fetch-partition}
 
 ``` sql
-ALTER TABLE 'table_name' UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
-```
-
-Удаляет с диска "замороженные" партиции с указанным именем. Если секция `PARTITION` опущена, запрос удаляет резервную копию всех партиций сразу.
-
-## FETCH PARTITION\|PART {#alter_fetch-partition}
-
-``` sql
-ALTER TABLE table_name FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
+ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
 ```
 
 Загружает партицию с другого сервера. Этот запрос работает только для реплицированных таблиц.
 
 Запрос выполняет следующее:
 
-1.  Загружает партицию/кусок с указанного шарда. Путь к шарду задается в секции `FROM` (‘path-in-zookeeper’). Обратите внимание, нужно задавать путь к шарду в ZooKeeper.
+1.  Загружает партицию с указанного шарда. Путь к шарду задается в секции `FROM` (‘path-in-zookeeper’). Обратите внимание, нужно задавать путь к шарду в ZooKeeper.
 2.  Помещает загруженные данные в директорию `detached` таблицы `table_name`. Чтобы прикрепить эти данные к таблице, используйте запрос [ATTACH PARTITION\|PART](#alter_attach-partition).
 
 Например:
 
-1. FETCH PARTITION
 ``` sql
 ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PARTITION 201902;
 ```
-2. FETCH PART
-``` sql
-ALTER TABLE users FETCH PART 201901_2_2_0 FROM '/clickhouse/tables/01-01/visits';
-ALTER TABLE users ATTACH PART 201901_2_2_0;
-```
 
 Следует иметь в виду:
 
--   Запрос `ALTER TABLE t FETCH PARTITION|PART` не реплицируется. Он загружает партицию в директорию `detached` только на локальном сервере.
+-   Запрос `ALTER TABLE t FETCH PARTITION` не реплицируется. Он загружает партицию в директорию `detached` только на локальном сервере.
 -   Запрос `ALTER TABLE t ATTACH` реплицируется — он добавляет данные в таблицу сразу на всех репликах. На одной из реплик данные будут добавлены из директории `detached`, а на других — из соседних реплик.
 
 Перед загрузкой данных система проверяет, существует ли партиция и совпадает ли её структура со структурой таблицы. При этом автоматически выбирается наиболее актуальная реплика среди всех живых реплик.

@@ -1,6 +1,6 @@
 #include "CatBoostModel.h"
 
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitors.h>
 #include <mutex>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -13,7 +13,6 @@
 #include <Common/SharedLibrary.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-
 
 namespace DB
 {

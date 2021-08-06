@@ -8,10 +8,11 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatFactory.h>
+#include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <Core/Field.h>
 #include <Common/escapeForFileName.h>
 
@@ -128,7 +129,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::string ids_string)
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_IDS_METHOD);
-    return loadBase(uri, [ids_string](std::ostream & os) { os << "ids=" << ids_string; });
+    return loadBase(uri, [ids_string](std::ostream & os) { os << ids_string; });
 }
 
 

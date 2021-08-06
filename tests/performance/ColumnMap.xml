@@ -1,4 +1,4 @@
-<test>
+<test max_ignored_relative_change="0.2">
 
     <settings>
         <allow_experimental_map_type>1</allow_experimental_map_type>

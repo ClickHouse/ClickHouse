@@ -129,8 +129,9 @@ Block DictionaryBlockInputStream::fillBlock(
 
     auto dictionary_key_type = dictionary->getKeyType();
 
-    for (const auto & attribute : structure.attributes)
+    for (const auto idx : ext::range(0, structure.attributes.size()))
     {
+        const DictionaryAttribute & attribute = structure.attributes[idx];
         if (names.find(attribute.name) != names.end())
         {
             ColumnPtr column;
@@ -181,9 +182,9 @@ void DictionaryBlockInputStream::fillKeyColumns(
     for (const DictionaryAttribute & attribute : *dictionary_structure.key)
         columns.emplace_back(attribute.type->createColumn());
 
-    for (size_t index = start; index < size; ++index)
+    for (auto idx : ext::range(start, size))
     {
-        const auto & key = keys[index];
+        const auto & key = keys[idx];
         const auto *ptr = key.data;
         for (auto & column : columns)
             ptr = column->deserializeAndInsertFromArena(ptr);

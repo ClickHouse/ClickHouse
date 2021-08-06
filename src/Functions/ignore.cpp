@@ -49,6 +49,11 @@ public:
     {
         return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
     }
+
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName &) const override
+    {
+        return DataTypeUInt8().createColumnConst(1, 0u);
+    }
 };
 
 }

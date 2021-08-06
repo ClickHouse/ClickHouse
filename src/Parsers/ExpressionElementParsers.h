@@ -46,7 +46,6 @@ class ParserIdentifier : public IParserBase
 {
 public:
     explicit ParserIdentifier(bool allow_query_parameter_ = false) : allow_query_parameter(allow_query_parameter_) {}
-
 protected:
     const char * getName() const override { return "identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -379,8 +378,8 @@ protected:
 class ParserAlias : public IParserBase
 {
 public:
-    explicit ParserAlias(bool allow_alias_without_as_keyword_) : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) { }
-
+    ParserAlias(bool allow_alias_without_as_keyword_)
+        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
 private:
     static const char * restricted_keywords[];
 
@@ -467,10 +466,8 @@ protected:
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {
 public:
-    explicit ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false) : brackets_can_be_omitted(brackets_can_be_omitted_)
-    {
-    }
-
+    ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false)
+        : brackets_can_be_omitted(brackets_can_be_omitted_) {}
 protected:
 
     const char * getName() const override { return "function with key-value arguments"; }

@@ -1,6 +1,8 @@
 #include <cassert>
 #include <Common/Exception.h>
 
+#include <DataStreams/IBlockInputStream.h>
+
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
@@ -261,7 +263,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
 
-    /// When max_threads > 1, the order of returning blocks is uncertain,
+    /// When max_threads > 1, the order of returning blocks is uncentain,
     /// which will lead to inconsistency after updateBlockData.
     auto new_context = Context::createCopy(context);
     new_context->setSetting("max_streams_to_max_threads_ratio", 1);
