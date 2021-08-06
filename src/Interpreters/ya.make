@@ -132,6 +132,7 @@ SRCS(
     QueryParameterVisitor.cpp
     QueryThreadLog.cpp
     RemoveInjectiveFunctionsVisitor.cpp
+    RenameAliasesVisitor.cpp
     RenameColumnVisitor.cpp
     ReplaceQueryParameterVisitor.cpp
     RequiredSourceColumnsData.cpp
