@@ -67,8 +67,6 @@ void Writer::onServerInitialized()
 
     report_file_ptr = static_cast<uint32_t *>(ptr);
 
-    if (madvise(ptr, report_file_size_upper_limit, MADV_SEQUENTIAL) == -1) printErrnoAndThrow();
-
     mergeAndWriteHeader(symbolizeAddrsIntoLocalCaches());
 
     /// Testing script in docker (/docker/test/coverage/run.sh) waits for this message and starts tests afterwards.
@@ -115,7 +113,7 @@ Writer::LocalCaches Writer::symbolizeAddrsIntoLocalCaches()
 
                 assert(!src_path.empty());
 
-                if (i % 4096 == 0)
+                if (i % 8192 == 0)
                     LOG_INFO(base_log, "{} {}/{}, file: {}:{}",
                         thread_index, i - start_index, end_index - start_index, src_path, line);
 
@@ -175,7 +173,7 @@ void Writer::mergeAndWriteHeader(const LocalCaches& caches)
     ptr[0] = static_cast<uint32_t>(Magic::ReportHeader);
     ptr[++report_file_pos] = source_files.size();
 
-    for (const auto& [path, instrumented_blocks] : source_files)
+    for (const auto & [path, instrumented_blocks] : source_files)
     {
         const uint32_t path_size = path.size();
         const uint32_t path_mod4 = path_size % 4;
@@ -207,8 +205,6 @@ void Writer::onTestFinished()
 {
     report_file_ptr[++report_file_pos] = static_cast<uint32_t>(Magic::TestEntry);
 
-    //madvise(current.data(), instrumented_basic_blocks, MADV_WILLNEED);
-
     for (size_t bb_index = 0; bb_index < instrumented_basic_blocks; ++bb_index)
         if (current[bb_index])
         {
@@ -226,5 +222,7 @@ void Writer::onShutRuntime()
 
     if (ftruncate(report_file_fd, file_real_size) == -1) printErrnoAndThrow();
     if (close(report_file_fd) == -1) printErrnoAndThrow();
+
+    LOG_INFO(base_log, "Shut down coverage runtime, file size: {}", file_real_size);
 }
 }

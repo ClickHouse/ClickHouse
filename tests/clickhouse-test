@@ -594,6 +594,8 @@ def run_tests_array(all_tests_with_params):
                 testcase_args = configure_testcase_args(args, case_file, suite_tmp_dir, stderr_file)
                 proc, stdout, stderr, total_time = run_single_test(testcase_args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
 
+                coverage_test_finished(case)
+
                 if proc.returncode is None:
                     try:
                         proc.kill()
@@ -918,6 +920,7 @@ def coverage_test_finished(test_name: str) -> None:
 
 def coverage_shut_down() -> None:
     os.kill(get_server_pid_coverage(), signal.SIGRTMIN + 2)
+
     coverage_tests_file.close()
 
 
@@ -1354,7 +1357,13 @@ if __name__ == '__main__':
     if args.coverage:
         # Process all tests separately in order to calculate per-test data
         assert args.jobs == 1
-        coverage_tests_file = open("tests_lists.txt", "w")
+
+        tests_names_file_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'tests_lists.txt')
+
+        coverage_tests_file = open(tests_names_file_path, "w")
+
+        print(f"Opened tests names file {tests_names_file_path}")
 
     if args.queries and not os.path.isdir(args.queries):
         print(f"Cannot access the specified directory with queries ({args.queries})", file=sys.stderr)
