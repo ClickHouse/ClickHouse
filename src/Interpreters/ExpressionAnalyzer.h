@@ -65,6 +65,7 @@ struct ExpressionAnalyzerData
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
+    bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
     WindowDescriptions window_descriptions;
@@ -89,6 +90,7 @@ private:
     {
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
+        const UInt64 distributed_group_by_no_merge;
 
         ExtractedSettings(const Settings & settings_);
     };
@@ -96,12 +98,10 @@ private:
 public:
     /// Ctor for non-select queries. Generally its usage is:
     /// auto actions = ExpressionAnalyzer(query, syntax, context).getActions();
-    ExpressionAnalyzer(
-        const ASTPtr & query_,
-        const TreeRewriterResultPtr & syntax_analyzer_result_,
-        ContextPtr context_)
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {})
-    {}
+    ExpressionAnalyzer(const ASTPtr & query_, const TreeRewriterResultPtr & syntax_analyzer_result_, ContextPtr context_)
+        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {}, {})
+    {
+    }
 
     ~ExpressionAnalyzer();
 
@@ -124,6 +124,8 @@ public:
       *  and create all the returned sets before performing the actions.
       */
     SubqueriesForSets & getSubqueriesForSets() { return subqueries_for_sets; }
+
+    PreparedSets & getPreparedSets() { return prepared_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
@@ -153,7 +155,8 @@ protected:
         ContextPtr context_,
         size_t subquery_depth_,
         bool do_global_,
-        SubqueriesForSets subqueries_for_sets_);
+        SubqueriesForSets subqueries_for_sets_,
+        PreparedSets prepared_sets_);
 
     ASTPtr query;
     const ExtractedSettings settings;
@@ -238,7 +241,7 @@ struct ExpressionAnalysisResult
     /// Columns will be removed after prewhere actions execution.
     NameSet columns_to_remove_after_prewhere;
 
-    PrewhereDAGInfoPtr prewhere_info;
+    PrewhereInfoPtr prewhere_info;
     FilterDAGInfoPtr filter_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
@@ -285,8 +288,16 @@ public:
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
         const SelectQueryOptions & options_ = {},
-        SubqueriesForSets subqueries_for_sets_ = {})
-        : ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_, std::move(subqueries_for_sets_))
+        SubqueriesForSets subqueries_for_sets_ = {},
+        PreparedSets prepared_sets_ = {})
+        : ExpressionAnalyzer(
+            query_,
+            syntax_analyzer_result_,
+            context_,
+            options_.subquery_depth,
+            do_global_,
+            std::move(subqueries_for_sets_),
+            std::move(prepared_sets_))
         , metadata_snapshot(metadata_snapshot_)
         , required_result_columns(required_result_columns_)
         , query_options(options_)
@@ -300,6 +311,7 @@ public:
     bool hasTableJoin() const { return syntax->ast_join; }
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
+    bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
@@ -315,14 +327,14 @@ public:
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain) const;
 
+    /// Create Set-s that we make from IN section to use index on them.
+    void makeSetsForIndex(const ASTPtr & node);
+
 private:
     StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
     SelectQueryOptions query_options;
-
-    /// Create Set-s that we make from IN section to use index on them.
-    void makeSetsForIndex(const ASTPtr & node);
 
     JoinPtr makeTableJoin(
         const ASTTablesInSelectQueryElement & join_element,
@@ -348,8 +360,6 @@ private:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
     JoinPtr appendJoin(ExpressionActionsChain & chain);
-    /// Add preliminary rows filtration. Actions are created in other expression analyzer to prevent any possible alias injection.
-    void appendPreliminaryFilter(ExpressionActionsChain & chain, ActionsDAGPtr actions_dag, String column_name);
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);

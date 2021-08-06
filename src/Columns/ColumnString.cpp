@@ -11,7 +11,7 @@
 #include <Common/memcmpSmall.h>
 #include <common/sort.h>
 #include <common/unaligned.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 
 namespace DB

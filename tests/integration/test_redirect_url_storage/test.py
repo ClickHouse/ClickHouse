@@ -1,6 +1,5 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.hdfs_api import HDFSApi
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=False, with_hdfs=True)
@@ -17,7 +16,7 @@ def started_cluster():
 
 
 def test_url_without_redirect(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
 
     hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
     assert hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
@@ -29,7 +28,7 @@ def test_url_without_redirect(started_cluster):
 
 
 def test_url_with_globs(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
 
     hdfs_api.write_data("/simple_storage_1_1", "1\n")
     hdfs_api.write_data("/simple_storage_1_2", "2\n")
@@ -44,7 +43,7 @@ def test_url_with_globs(started_cluster):
 
 
 def test_url_with_globs_and_failover(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
 
     hdfs_api.write_data("/simple_storage_1_1", "1\n")
     hdfs_api.write_data("/simple_storage_1_2", "2\n")
@@ -59,7 +58,7 @@ def test_url_with_globs_and_failover(started_cluster):
 
 
 def test_url_with_redirect_not_allowed(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
 
     hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
     assert hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"
@@ -72,7 +71,7 @@ def test_url_with_redirect_not_allowed(started_cluster):
 
 
 def test_url_with_redirect_allowed(started_cluster):
-    hdfs_api = started_cluster.make_hdfs_api()
+    hdfs_api = started_cluster.hdfs_api
 
     hdfs_api.write_data("/simple_storage", "1\tMark\t72.53\n")
     assert hdfs_api.read_data("/simple_storage") == "1\tMark\t72.53\n"

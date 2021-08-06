@@ -8,7 +8,6 @@
 #include <Functions/materialize.h>
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionJIT.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -27,6 +26,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int BAD_ARGUMENTS;
 }
 
 const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
@@ -203,6 +203,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.function_base = function->build(arguments);
     node.result_type = node.function_base->getResultType();
     node.function = node.function_base->prepare(arguments);
+    node.is_deterministic = node.function_base->isDeterministic();
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
     if (node.function_base->isSuitableForConstantFolding())
@@ -427,6 +428,16 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
         {
             /// Constant folding.
             node->type = ActionsDAG::ActionType::COLUMN;
+
+            for (const auto & child : node->children)
+            {
+                if (!child->is_deterministic)
+                {
+                    node->is_deterministic = false;
+                    break;
+                }
+            }
+
             node->children.clear();
         }
 
@@ -980,6 +991,14 @@ bool ActionsDAG::trivial() const
             return false;
 
     return true;
+}
+
+void ActionsDAG::assertDeterministic() const
+{
+    for (const auto & node : nodes)
+        if (!node.is_deterministic)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expression must be deterministic but it contains non-deterministic part `{}`", node.result_name);
 }
 
 void ActionsDAG::addMaterializingOutputActions()
@@ -1554,6 +1573,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
     struct Frame
     {
         const ActionsDAG::Node * node = nullptr;
+        /// Node is a part of predicate (predicate itself, or some part of AND)
         bool is_predicate = false;
         size_t next_child_to_visit = 0;
         size_t num_allowed_children = 0;
@@ -1595,33 +1615,25 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
                 if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN && cur.node->type != ActionsDAG::ActionType::INPUT)
                     allowed_nodes.emplace(cur.node);
             }
-            else if (is_conjunction)
-            {
-                for (const auto * child : cur.node->children)
-                {
-                    if (allowed_nodes.count(child))
-                    {
-                        if (allowed.insert(child).second)
-                            conjunction.allowed.push_back(child);
 
-                    }
-                }
-            }
-            else if (cur.is_predicate)
+            /// Add parts of AND to result. Do not add function AND.
+            if (cur.is_predicate && ! is_conjunction)
             {
-                if (rejected.insert(cur.node).second)
-                    conjunction.rejected.push_back(cur.node);
+                if (allowed_nodes.count(cur.node))
+                {
+                    if (allowed.insert(cur.node).second)
+                        conjunction.allowed.push_back(cur.node);
+
+                }
+                else
+                {
+                    if (rejected.insert(cur.node).second)
+                        conjunction.rejected.push_back(cur.node);
+                }
             }
 
             stack.pop();
         }
-    }
-
-    if (conjunction.allowed.empty())
-    {
-        /// If nothing was added to conjunction, check if it is trivial.
-        if (allowed_nodes.count(predicate))
-            conjunction.allowed.push_back(predicate);
     }
 
     return conjunction;

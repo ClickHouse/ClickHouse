@@ -1,0 +1,6 @@
+<yandex>
+    <encryption>
+        <!-- "Some fixed key that is at least 16 bytes long" in Base64 -->
+        <key_command>echo "U29tZSBmaXhlZCBrZXkgdGhhdCBpcyBhdCBsZWFzdCAxNiBieXRlcyBsb25n"</key_command>
+    </encryption>
+</yandex>

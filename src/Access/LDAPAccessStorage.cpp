@@ -7,7 +7,7 @@
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -475,14 +475,14 @@ void LDAPAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
 }
 
 
-ext::scope_guard LDAPAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+scope_guard LDAPAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.subscribeForChanges(id, handler);
 }
 
 
-ext::scope_guard LDAPAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
+scope_guard LDAPAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.subscribeForChanges(type, handler);

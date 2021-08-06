@@ -1,6 +1,7 @@
 import os
 import subprocess as sp
 import tempfile
+import logging
 from threading import Timer
 
 
@@ -105,6 +106,7 @@ class CommandRequest:
         stderr = self.stderr_file.read().decode('utf-8', errors='replace')
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
+            logging.debug(f"Timed out. Last stdout:{stdout}, stderr:{stderr}")
             raise QueryTimeoutExceedException('Client timed out!')
 
         if (self.process.returncode != 0 or stderr) and not self.ignore_error:

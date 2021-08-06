@@ -90,17 +90,17 @@ DiskCacheWrapper::readFile(
     const String & path,
     size_t buf_size,
     size_t estimated_size,
-    size_t aio_threshold,
+    size_t direct_io_threshold,
     size_t mmap_threshold,
     MMappedFileCache * mmap_cache) const
 {
     if (!cache_file_predicate(path))
-        return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+        return DiskDecorator::readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
 
     LOG_DEBUG(log, "Read file {} from cache", backQuote(path));
 
     if (cache_disk->exists(path))
-        return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+        return cache_disk->readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
 
     auto metadata = acquireDownloadMetadata(path);
 
@@ -134,7 +134,7 @@ DiskCacheWrapper::readFile(
 
                 auto tmp_path = path + ".tmp";
                 {
-                    auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+                    auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
                     auto dst_buffer = cache_disk->writeFile(tmp_path, buf_size, WriteMode::Rewrite);
                     copyData(*src_buffer, *dst_buffer);
                 }
@@ -158,9 +158,9 @@ DiskCacheWrapper::readFile(
     }
 
     if (metadata->status == DOWNLOADED)
-        return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+        return cache_disk->readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
 
-    return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+    return DiskDecorator::readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

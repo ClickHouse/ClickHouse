@@ -99,8 +99,8 @@ def create_distributed_table(node, table_name):
 
 
 def drop_distributed_table(node, table_name):
-    node.query("DROP TABLE IF EXISTS {} ON CLUSTER test_cluster".format(table_name))
-    node.query("DROP TABLE IF EXISTS {}_replicated ON CLUSTER test_cluster".format(table_name))
+    node.query("DROP TABLE IF EXISTS {} ON CLUSTER test_cluster SYNC".format(table_name))
+    node.query("DROP TABLE IF EXISTS {}_replicated ON CLUSTER test_cluster SYNC".format(table_name))
     time.sleep(1)
 
 

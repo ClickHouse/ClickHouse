@@ -2,7 +2,7 @@
 
 #include <Core/SettingsFields.h>
 #include <Common/SettingsChanges.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/blank.hpp>
 #include <unordered_map>
 
@@ -303,7 +303,7 @@ template <typename Traits_>
 void BaseSettings<Traits_>::resetToDefault()
 {
     const auto & accessor = Traits::Accessor::instance();
-    for (size_t i : ext::range(accessor.size()))
+    for (size_t i : collections::range(accessor.size()))
     {
         if (accessor.isValueChanged(*this, i))
             accessor.resetValueToDefault(*this, i);
@@ -819,7 +819,7 @@ bool BaseSettings<Traits_>::SettingFieldRef::isCustom() const
             constexpr int IMPORTANT = 1; \
             UNUSED(IMPORTANT); \
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_) \
-            for (size_t i : ext::range(res.field_infos.size())) \
+            for (size_t i : collections::range(res.field_infos.size())) \
             { \
                 const auto & info = res.field_infos[i]; \
                 res.name_to_index_map.emplace(info.name, i); \

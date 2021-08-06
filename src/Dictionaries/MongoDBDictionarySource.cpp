@@ -13,7 +13,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
         Block & sample_block,
-        ContextConstPtr,
+        ContextPtr,
         const std::string & /* default_database */,
         bool /* created_from_ddl */)
     {
@@ -50,7 +50,6 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <IO/WriteHelpers.h>
-#include <ext/enumerate.h>
 #include <DataStreams/MongoDBBlockInputStream.h>
 
 
@@ -182,9 +181,12 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
     {
         auto & key = keys_array->addNewDocument(DB::toString(row_idx));
 
-        for (const auto attr : ext::enumerate(*dict_struct.key))
+        const auto & key_attributes = *dict_struct.key;
+        for (size_t attribute_index = 0; attribute_index < key_attributes.size(); ++attribute_index)
         {
-            switch (attr.second.underlying_type)
+            const auto & key_attribute = key_attributes[attribute_index];
+
+            switch (key_attribute.underlying_type)
             {
                 case AttributeUnderlyingType::UInt8:
                 case AttributeUnderlyingType::UInt16:
@@ -195,27 +197,27 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
                 case AttributeUnderlyingType::Int32:
                 case AttributeUnderlyingType::Int64:
                 {
-                    key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
+                    key.add(key_attribute.name, Int32(key_columns[attribute_index]->get64(row_idx)));
                     break;
                 }
                 case AttributeUnderlyingType::Float32:
                 case AttributeUnderlyingType::Float64:
                 {
-                    key.add(attr.second.name, key_columns[attr.first]->getFloat64(row_idx));
+                    key.add(key_attribute.name, key_columns[attribute_index]->getFloat64(row_idx));
                     break;
                 }
                 case AttributeUnderlyingType::String:
                 {
-                    String loaded_str(get<String>((*key_columns[attr.first])[row_idx]));
+                    String loaded_str(get<String>((*key_columns[attribute_index])[row_idx]));
                     /// Convert string to ObjectID
-                    if (attr.second.is_object_id)
+                    if (key_attribute.is_object_id)
                     {
                         Poco::MongoDB::ObjectId::Ptr loaded_id(new Poco::MongoDB::ObjectId(loaded_str));
-                        key.add(attr.second.name, loaded_id);
+                        key.add(key_attribute.name, loaded_id);
                     }
                     else
                     {
-                        key.add(attr.second.name, loaded_str);
+                        key.add(key_attribute.name, loaded_str);
                     }
                     break;
                 }

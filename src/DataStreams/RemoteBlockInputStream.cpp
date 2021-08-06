@@ -5,27 +5,28 @@ namespace DB
 {
 
 RemoteBlockInputStream::RemoteBlockInputStream(
-        Connection & connection,
-        const String & query_, const Block & header_, ContextPtr context_,
-        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
+    Connection & connection,
+    const String & query_, const Block & header_, ContextPtr context_,
+    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : query_executor(connection, query_, header_, context_, throttler, scalars_, external_tables_, stage_)
 {
     init();
 }
 
 RemoteBlockInputStream::RemoteBlockInputStream(
-        std::vector<IConnectionPool::Entry> && connections,
-        const String & query_, const Block & header_, ContextPtr context_,
-        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : query_executor(std::move(connections), query_, header_, context_, throttler, scalars_, external_tables_, stage_)
+    const ConnectionPoolWithFailoverPtr & pool,
+    std::vector<IConnectionPool::Entry> && connections,
+    const String & query_, const Block & header_, ContextPtr context_,
+    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
+    : query_executor(pool, std::move(connections), query_, header_, context_, throttler, scalars_, external_tables_, stage_)
 {
     init();
 }
 
 RemoteBlockInputStream::RemoteBlockInputStream(
-        const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_, const Block & header_, ContextPtr context_,
-        const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
+    const ConnectionPoolWithFailoverPtr & pool,
+    const String & query_, const Block & header_, ContextPtr context_,
+    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : query_executor(pool, query_, header_, context_, throttler, scalars_, external_tables_, stage_)
 {
     init();
@@ -36,11 +37,6 @@ void RemoteBlockInputStream::init()
     query_executor.setProgressCallback([this](const Progress & progress) { progressImpl(progress); });
     query_executor.setProfileInfoCallback([this](const BlockStreamProfileInfo & info_) { info.setFrom(info_, true); });
     query_executor.setLogger(log);
-}
-
-void RemoteBlockInputStream::readPrefix()
-{
-    query_executor.sendQuery();
 }
 
 void RemoteBlockInputStream::cancel(bool kill)

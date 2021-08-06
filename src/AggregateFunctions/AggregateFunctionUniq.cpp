@@ -4,16 +4,15 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+
 struct Settings;
 
 namespace ErrorCodes
@@ -51,6 +50,8 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             return res;
         else if (which.isDate())
             return std::make_shared<AggregateFunctionUniq<DataTypeDate::FieldType, Data>>(argument_types);
+        else if (which.isDate32())
+            return std::make_shared<AggregateFunctionUniq<DataTypeDate32::FieldType, Data>>(argument_types);
         else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data>>(argument_types);
         else if (which.isStringOrFixedString())
@@ -97,6 +98,8 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             return res;
         else if (which.isDate())
             return std::make_shared<AggregateFunctionUniq<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>(argument_types);
+        else if (which.isDate32())
+            return std::make_shared<AggregateFunctionUniq<DataTypeDate32::FieldType, Data<DataTypeDate32::FieldType>>>(argument_types);
         else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(argument_types);
         else if (which.isStringOrFixedString())
