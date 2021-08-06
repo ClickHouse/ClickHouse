@@ -50,7 +50,7 @@ struct BlockIO
         }
     }
 
-    void onException() const
+    void onException()
     {
         if (exception_callback)
             exception_callback();

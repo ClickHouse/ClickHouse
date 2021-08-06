@@ -25,7 +25,6 @@ public:
         WHERE,
         GROUP_BY,
         HAVING,
-        WINDOW,
         ORDER_BY,
         LIMIT_BY_OFFSET,
         LIMIT_BY_LENGTH,
@@ -44,7 +43,6 @@ public:
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
-    bool group_by_with_constant_keys = false;
     bool limit_with_ties = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
@@ -60,7 +58,6 @@ public:
     const ASTPtr where()          const { return getExpression(Expression::WHERE); }
     const ASTPtr groupBy()        const { return getExpression(Expression::GROUP_BY); }
     const ASTPtr having()         const { return getExpression(Expression::HAVING); }
-    const ASTPtr window() const { return getExpression(Expression::WINDOW); }
     const ASTPtr orderBy()        const { return getExpression(Expression::ORDER_BY); }
     const ASTPtr limitByOffset()  const { return getExpression(Expression::LIMIT_BY_OFFSET); }
     const ASTPtr limitByLength()  const { return getExpression(Expression::LIMIT_BY_LENGTH); }
@@ -68,8 +65,6 @@ public:
     const ASTPtr limitOffset()    const { return getExpression(Expression::LIMIT_OFFSET); }
     const ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
     const ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
-
-    bool hasFiltration() const { return where() || prewhere() || having(); }
 
     /// Set/Reset/Remove expression.
     void setExpression(Expression expr, ASTPtr && ast);
@@ -94,10 +89,6 @@ public:
     void replaceDatabaseAndTable(const StorageID & table_id);
     void addTableFunction(ASTPtr & table_function_ptr);
     void updateTreeHashImpl(SipHash & hash_state) const override;
-
-    void setFinal();
-
-    const char * getQueryKindString() const override { return "Select"; }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

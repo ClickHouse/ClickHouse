@@ -2,19 +2,15 @@
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Common/typeid_cast.h>
-
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
-namespace
-{
 
 class AggregateFunctionCombinatorDistinct final : public IAggregateFunctionCombinator
 {
@@ -34,14 +30,14 @@ public:
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
-        const Array & params) const override
+        const Array &) const override
     {
         AggregateFunctionPtr res;
         if (arguments.size() == 1)
         {
             res.reset(createWithNumericType<
                 AggregateFunctionDistinct,
-                AggregateFunctionDistinctSingleNumericData>(*arguments[0], nested_function, arguments, params));
+                AggregateFunctionDistinctSingleNumericData>(*arguments[0], nested_function, arguments));
 
             if (res)
                 return res;
@@ -49,18 +45,16 @@ public:
             if (arguments[0]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
                 return std::make_shared<
                     AggregateFunctionDistinct<
-                        AggregateFunctionDistinctSingleGenericData<true>>>(nested_function, arguments, params);
+                        AggregateFunctionDistinctSingleGenericData<true>>>(nested_function, arguments);
             else
                 return std::make_shared<
                     AggregateFunctionDistinct<
-                        AggregateFunctionDistinctSingleGenericData<false>>>(nested_function, arguments, params);
+                        AggregateFunctionDistinctSingleGenericData<false>>>(nested_function, arguments);
         }
 
-        return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericData>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionDistinct<AggregateFunctionDistinctMultipleGenericData>>(nested_function, arguments);
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory & factory)
 {

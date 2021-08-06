@@ -1,13 +1,12 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
 {
 namespace
 {
-    void formatNameOrID(const String & str, bool is_id, const IAST::FormatSettings & settings)
+    void formatRoleNameOrID(const String & str, bool is_id, const IAST::FormatSettings & settings)
     {
         if (is_id)
         {
@@ -30,21 +29,19 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
     }
 
     bool need_comma = false;
-
     if (all)
     {
         if (std::exchange(need_comma, true))
             settings.ostr << ", ";
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (use_keyword_any ? "ANY" : "ALL")
-                      << (settings.hilite ? IAST::hilite_none : "");
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ALL" << (settings.hilite ? IAST::hilite_none : "");
     }
     else
     {
-        for (const auto & name : names)
+        for (const auto & role : names)
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            formatNameOrID(name, id_mode, settings);
+            formatRoleNameOrID(role, id_mode, settings);
         }
 
         if (current_user)
@@ -60,11 +57,11 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " EXCEPT " << (settings.hilite ? IAST::hilite_none : "");
         need_comma = false;
 
-        for (const auto & name : except_names)
+        for (const auto & except_role : except_names)
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            formatNameOrID(name, id_mode, settings);
+            formatRoleNameOrID(except_role, id_mode, settings);
         }
 
         if (except_current_user)
@@ -77,7 +74,7 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
 }
 
 
-void ASTRolesOrUsersSet::replaceCurrentUserTag(const String & current_user_name)
+void ASTRolesOrUsersSet::replaceCurrentUserTagWithName(const String & current_user_name)
 {
     if (current_user)
     {

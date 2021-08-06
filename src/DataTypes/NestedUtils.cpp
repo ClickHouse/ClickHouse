@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeNested.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -34,15 +33,52 @@ std::string concatenateName(const std::string & nested_table_name, const std::st
 }
 
 
-/** Name can be treated as compound if it contains dot (.) in the middle.
+/** Name can be treated as compound if and only if both parts are simple identifiers.
   */
 std::pair<std::string, std::string> splitName(const std::string & name)
 {
-    auto idx = name.find_first_of('.');
-    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
+    const char * begin = name.data();
+    const char * pos = begin;
+    const char * end = begin + name.size();
+
+    if (pos >= end || !isValidIdentifierBegin(*pos))
         return {name, {}};
 
-    return {name.substr(0, idx), name.substr(idx + 1)};
+    ++pos;
+
+    while (pos < end && isWordCharASCII(*pos))
+        ++pos;
+
+    if (pos >= end || *pos != '.')
+        return {name, {}};
+
+    const char * first_end = pos;
+    ++pos;
+    const char * second_begin = pos;
+
+    if (pos >= end || !isValidIdentifierBegin(*pos))
+        return {name, {}};
+
+    ++pos;
+
+    while (pos < end && isWordCharASCII(*pos))
+        ++pos;
+
+    if (pos != end)
+        return {name, {}};
+
+    return {{ begin, first_end }, { second_begin, end }};
+}
+
+std::string createCommaSeparatedStringFrom(const Names & names)
+{
+    std::ostringstream ss;
+    if (!names.empty())
+    {
+        std::copy(names.begin(), std::prev(names.end()), std::ostream_iterator<std::string>(ss, ", "));
+        ss << names.back();
+    }
+    return ss.str();
 }
 
 
@@ -59,8 +95,7 @@ Block flatten(const Block & block)
 
     for (const auto & elem : block)
     {
-        const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get());
-        if (type_arr)
+        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get()))
         {
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get());
             if (type_tuple && type_tuple->haveExplicitNames())
@@ -104,67 +139,32 @@ Block flatten(const Block & block)
     return res;
 }
 
-namespace
-{
-
-using NameToDataType = std::map<String, DataTypePtr>;
-
-NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
-{
-    std::unordered_map<String, NamesAndTypesList> nested;
-    for (const auto & name_type : names_and_types)
-    {
-        const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
-
-        /// Ignore true Nested type, but try to unite flatten arrays to Nested type.
-        if (!isNested(name_type.type) && type_arr)
-        {
-            auto split = splitName(name_type.name);
-            if (!split.second.empty())
-                nested[split.first].emplace_back(split.second, type_arr->getNestedType());
-        }
-    }
-
-    std::map<String, DataTypePtr> nested_types;
-
-    for (const auto & [name, elems] : nested)
-        nested_types.emplace(name, createNested(elems.getTypes(), elems.getNames()));
-
-    return nested_types;
-}
-
-}
 
 NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
 {
     NamesAndTypesList res;
-    auto nested_types = getSubcolumnsOfNested(names_and_types);
 
+    std::map<std::string, NamesAndTypesList> nested;
     for (const auto & name_type : names_and_types)
-        if (!nested_types.count(splitName(name_type.name).first))
-            res.push_back(name_type);
-
-    for (const auto & name_type : nested_types)
-        res.emplace_back(name_type.first, name_type.second);
-
-    return res;
-}
-
-NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
-{
-    auto nested_types = getSubcolumnsOfNested(names_and_types);
-    auto res = names_and_types;
-
-    for (auto & name_type : res)
     {
-        auto split = splitName(name_type.name);
-        if (name_type.isSubcolumn() || split.second.empty())
-            continue;
+        bool collected = false;
+        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get()))
+        {
+            auto split = splitName(name_type.name);
+            if (!split.second.empty())
+            {
+                nested[split.first].emplace_back(split.second, type_arr->getNestedType());
+                collected = true;
+            }
+        }
 
-        auto it = nested_types.find(split.first);
-        if (it != nested_types.end())
-            name_type = NameAndTypePair{split.first, split.second, it->second, it->second->getSubcolumnType(split.second)};
+        if (!collected)
+            res.push_back(name_type);
     }
+
+    for (const auto & name_elems : nested)
+        res.emplace_back(name_elems.first, std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeTuple>(name_elems.second.getTypes(), name_elems.second.getNames())));
 
     return res;
 }

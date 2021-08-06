@@ -5,7 +5,6 @@
 #include <Client/Connection.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Client/IConnections.h>
 
 namespace DB
 {
@@ -17,53 +16,60 @@ namespace DB
   *
   * The interface is almost the same as Connection.
   */
-class MultiplexedConnections final : public IConnections
+class MultiplexedConnections final : private boost::noncopyable
 {
 public:
     /// Accepts ready connection.
     MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler_);
-    /// Accepts ready connection and keep it alive before drain
-    MultiplexedConnections(std::shared_ptr<Connection> connection_, const Settings & settings_, const ThrottlerPtr & throttler_);
 
     /// Accepts a vector of connections to replicas of one shard already taken from pool.
     MultiplexedConnections(
         std::vector<IConnectionPool::Entry> && connections,
         const Settings & settings_, const ThrottlerPtr & throttler_);
 
-    void sendScalarsData(Scalars & data) override;
-    void sendExternalTablesData(std::vector<ExternalTablesData> & data) override;
+    /// Send all scalars to replicas.
+    void sendScalarsData(Scalars & data);
+    /// Send all content of external tables to replicas.
+    void sendExternalTablesData(std::vector<ExternalTablesData> & data);
 
+    /// Send request to replicas.
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
         const String & query_id,
         UInt64 stage,
         const ClientInfo & client_info,
-        bool with_pending_data) override;
+        bool with_pending_data);
 
-    void sendReadTaskResponse(const String &) override;
+    /// Get packet from any replica.
+    Packet receivePacket();
 
-    Packet receivePacket() override;
+    /// Break all active connections.
+    void disconnect();
 
-    void disconnect() override;
+    /// Send a request to the replica to cancel the request
+    void sendCancel();
 
-    void sendCancel() override;
+    /** On each replica, read and skip all packets to EndOfStream or Exception.
+      * Returns EndOfStream if no exception has been received. Otherwise
+      * returns the last received packet of type Exception.
+      */
+    Packet drain();
 
-    /// Send parts' uuids to replicas to exclude them from query processing
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) override;
+    /// Get the replica addresses as a string.
+    std::string dumpAddresses() const;
 
-    Packet drain() override;
-
-    std::string dumpAddresses() const override;
-
+    /// Returns the number of replicas.
     /// Without locking, because sendCancel() does not change this number.
-    size_t size() const override { return replica_states.size(); }
+    size_t size() const { return replica_states.size(); }
 
+    /// Check if there are any valid replicas.
     /// Without locking, because sendCancel() does not change the state of the replicas.
-    bool hasActiveConnections() const override { return active_connection_count > 0; }
+    bool hasActiveConnections() const { return active_connection_count > 0; }
 
 private:
-    Packet receivePacketUnlocked(AsyncCallback async_callback, bool is_draining) override;
+    /// Internal version of `receivePacket` function without locking.
+    Packet receivePacketUnlocked();
 
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;
@@ -76,17 +82,13 @@ private:
     };
 
     /// Get a replica where you can read the data.
-    ReplicaState & getReplicaForReading(bool is_draining);
+    ReplicaState & getReplicaForReading();
 
     /// Mark the replica as invalid.
     void invalidateReplica(ReplicaState & replica_state);
 
+private:
     const Settings & settings;
-
-    /// The following two fields are from settings but can be referenced outside the lifetime of
-    /// settings when connection is drained asynchronously.
-    Poco::Timespan drain_timeout;
-    Poco::Timespan receive_timeout;
 
     /// The current number of valid connections to the replicas of this shard.
     size_t active_connection_count = 0;
@@ -96,8 +98,6 @@ private:
 
     /// Connection that received last block.
     Connection * current_connection = nullptr;
-    /// Shared connection, may be empty. Used to keep object alive before draining.
-    std::shared_ptr<Connection> connection_ptr;
 
     bool sent_query = false;
     bool cancelled = false;
@@ -105,8 +105,6 @@ private:
     /// A mutex for the sendCancel function to execute safely
     /// in separate thread.
     mutable std::mutex cancel_mutex;
-
-    friend struct RemoteQueryExecutorRoutine;
 };
 
 }

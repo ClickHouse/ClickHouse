@@ -1,16 +1,13 @@
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/SymbolIndex.h>
 #include <Core/Field.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
-{
-namespace
 {
 
 /** buildId() - returns the compiler build id of the running binary.
@@ -19,13 +16,9 @@ class FunctionBuildId : public IFunction
 {
 public:
     static constexpr auto name = "buildId";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionBuildId>(context->isDistributed());
-    }
-
-    explicit FunctionBuildId(bool is_distributed_) : is_distributed(is_distributed_)
-    {
+        return std::make_shared<FunctionBuildId>();
     }
 
     String getName() const override
@@ -38,25 +31,17 @@ public:
         return 0;
     }
 
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForConstantFolding() const override { return !is_distributed; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) const override
     {
-        return DataTypeString().createColumnConst(input_rows_count, SymbolIndex::instance()->getBuildIDHex());
+        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, SymbolIndex::instance().getBuildIDHex());
     }
-
-private:
-    bool is_distributed;
 };
 
-}
 
 void registerFunctionBuildId(FunctionFactory & factory)
 {

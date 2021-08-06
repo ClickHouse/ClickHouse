@@ -1,20 +1,16 @@
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <Common/typeid_cast.h>
-
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
-
-namespace
-{
 
 class AggregateFunctionCombinatorArray final : public IAggregateFunctionCombinator
 {
@@ -43,13 +39,11 @@ public:
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
-        const Array & params) const override
+        const Array &) const override
     {
-        return std::make_shared<AggregateFunctionArray>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionArray>(nested_function, arguments);
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory & factory)
 {

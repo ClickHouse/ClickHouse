@@ -2,7 +2,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/IndicesDescription.h>
 
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -32,7 +31,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , granularity(other.granularity)
 {
     if (other.expression)
-        expression = other.expression->clone();
+        expression = std::make_shared<ExpressionActions>(*other.expression);
 }
 
 
@@ -55,7 +54,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     type = other.type;
 
     if (other.expression)
-        expression = other.expression->clone();
+        expression = std::make_shared<ExpressionActions>(*other.expression);
     else
         expression.reset();
 
@@ -67,7 +66,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     return *this;
 }
 
-IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
+IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
 {
     const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
@@ -118,7 +117,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     return result;
 }
 
-void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
+void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, const Context & context)
 {
     *this = getIndexFromAST(definition_ast, new_columns, context);
 }
@@ -144,7 +143,7 @@ String IndicesDescription::toString() const
 }
 
 
-IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)
+IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDescription & columns, const Context & context)
 {
     IndicesDescription result;
     if (str.empty())
@@ -160,7 +159,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
 }
 
 
-ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const
+ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const ColumnsDescription & columns, const Context & context) const
 {
     ASTPtr combined_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & index : *this)

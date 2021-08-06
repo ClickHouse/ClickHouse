@@ -18,9 +18,7 @@ public:
     String destination_name;
 
     ASTs group_by_key;
-    ASTs group_by_assignments;
-
-    ASTPtr recompression_codec;
+    std::vector<std::pair<String, ASTPtr>> group_by_aggregations;
 
     ASTTTLElement(TTLMode mode_, DataDestinationType destination_type_, const String & destination_name_)
         : mode(mode_)

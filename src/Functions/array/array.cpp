@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -14,7 +14,7 @@ class FunctionArray : public IFunction
 {
 public:
     static constexpr auto name = "array";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionArray>();
     }
@@ -30,15 +30,21 @@ public:
         return std::make_shared<DataTypeArray>(getLeastSupertype(arguments));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override
     {
         size_t num_elements = arguments.size();
 
         if (num_elements == 0)
+        {
             /// We should return constant empty array.
-            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(input_rows_count);
+            return;
+        }
 
-        const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*result_type).getNestedType();
+        const DataTypePtr & return_type = block.getByPosition(result).type;
+        const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*return_type).getNestedType();
+
+        size_t block_size = input_rows_count;
 
         /** If part of columns have not same type as common type of all elements of array,
             *  then convert them to common type.
@@ -47,11 +53,11 @@ public:
             */
 
         Columns columns_holder(num_elements);
-        ColumnRawPtrs column_ptrs(num_elements);
+        ColumnRawPtrs columns(num_elements);
 
         for (size_t i = 0; i < num_elements; ++i)
         {
-            const auto & arg = arguments[i];
+            const auto & arg = block.getByPosition(arguments[i]);
 
             ColumnPtr preprocessed_column = arg.column;
 
@@ -61,7 +67,7 @@ public:
             preprocessed_column = preprocessed_column->convertToFullColumnIfConst();
 
             columns_holder[i] = std::move(preprocessed_column);
-            column_ptrs[i] = columns_holder[i].get();
+            columns[i] = columns_holder[i].get();
         }
 
         /// Create and fill the result array.
@@ -70,20 +76,20 @@ public:
         IColumn & out_data = out->getData();
         IColumn::Offsets & out_offsets = out->getOffsets();
 
-        out_data.reserve(input_rows_count * num_elements);
-        out_offsets.resize(input_rows_count);
+        out_data.reserve(block_size * num_elements);
+        out_offsets.resize(block_size);
 
         IColumn::Offset current_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < block_size; ++i)
         {
             for (size_t j = 0; j < num_elements; ++j)
-                out_data.insertFrom(*column_ptrs[j], i);
+                out_data.insertFrom(*columns[j], i);
 
             current_offset += num_elements;
             out_offsets[i] = current_offset;
         }
 
-        return out;
+        block.getByPosition(result).column = std::move(out);
     }
 
 private:

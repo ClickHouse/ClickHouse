@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
@@ -9,11 +9,12 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <common/scope_guard_safe.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -22,15 +23,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
 
-class FunctionInitializeAggregation : public IFunction, private WithContext
+class FunctionInitializeAggregation : public IFunction
 {
 public:
     static constexpr auto name = "initializeAggregation";
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionInitializeAggregation>(context_); }
-    explicit FunctionInitializeAggregation(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionInitializeAggregation>(); }
 
     String getName() const override { return name; }
 
@@ -42,10 +40,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const override;
 
 private:
-    /// TODO Rewrite with FunctionBuilder.
     mutable AggregateFunctionPtr aggregate_function;
 };
 
@@ -79,7 +76,7 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
         String aggregate_function_name;
         Array params_row;
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
+                                                   aggregate_function_name, params_row, "function " + getName());
 
         AggregateFunctionProperties properties;
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
@@ -89,9 +86,9 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
 }
 
 
-ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+void FunctionInitializeAggregation::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
 {
-    const IAggregateFunction & agg_func = *aggregate_function;
+    IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
 
     const size_t num_arguments_columns = arguments.size() - 1;
@@ -101,14 +98,14 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
-        const IColumn * col = arguments[i + 1].column.get();
+        const IColumn * col = block.getByPosition(arguments[i + 1]).column.get();
         materialized_columns.emplace_back(col->convertToFullColumnIfConst());
         aggregate_arguments_vec[i] = &(*materialized_columns.back());
     }
 
     const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
 
-    MutableColumnPtr result_holder = result_type->createColumn();
+    MutableColumnPtr result_holder = block.getByPosition(result).type->createColumn();
     IColumn & res_col = *result_holder;
 
     /// AggregateFunction's states should be inserted into column using specific way
@@ -116,7 +113,7 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
 
     if (!res_col_aggregate_function && agg_func.isState())
         throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
-                        + result_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
+                        + block.getByPosition(result).type->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     PODArray<AggregateDataPtr> places(input_rows_count);
     for (size_t i = 0; i < input_rows_count; ++i)
@@ -134,15 +131,15 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
         }
     }
 
-    SCOPE_EXIT_MEMORY_SAFE({
+    SCOPE_EXIT({
         for (size_t i = 0; i < input_rows_count; ++i)
             agg_func.destroy(places[i]);
     });
 
     {
-        const auto * that = &agg_func;
+        auto * that = &agg_func;
         /// Unnest consecutive trailing -State combinators
-        while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
+        while (auto * func = typeid_cast<AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
         that->addBatch(input_rows_count, places.data(), 0, aggregate_arguments, arena.get());
     }
@@ -152,10 +149,9 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
             agg_func.insertResultInto(places[i], res_col, arena.get());
         else
             res_col_aggregate_function->insertFrom(places[i]);
-    return result_holder;
+    block.getByPosition(result).column = std::move(result_holder);
 }
 
-}
 
 void registerFunctionInitializeAggregation(FunctionFactory & factory)
 {

@@ -3,7 +3,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <sparsehash/dense_hash_map>
 
 namespace DB
 {
@@ -17,7 +16,7 @@ class IMergeTreeReader : private boost::noncopyable
 {
 public:
     using ValueSizeMap = std::map<std::string, double>;
-    using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
+    using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
         const MergeTreeData::DataPartPtr & data_part_,
@@ -73,7 +72,6 @@ protected:
 
     /// Columns that are read.
     NamesAndTypesList columns;
-    NamesAndTypesList part_columns;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;
@@ -94,12 +92,7 @@ private:
     MergeTreeData::AlterConversions alter_conversions;
 
     /// Actual data type of columns in part
-
-#if !defined(ARCADIA_BUILD)
-    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> columns_from_part;
-#else
-    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> columns_from_part;
-#endif
+    std::unordered_map<String, DataTypePtr> columns_from_part;
 };
 
 }

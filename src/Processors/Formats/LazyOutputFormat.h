@@ -29,19 +29,11 @@ public:
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
-    void onCancel() override
+    void finish()
     {
         finished_processing = true;
         /// Clear queue in case if somebody is waiting lazy_format to push.
         queue.clear();
-    }
-
-    void finalize() override
-    {
-        finished_processing = true;
-
-        /// In case we are waiting for result.
-        queue.emplace(Chunk());
     }
 
 protected:
@@ -53,6 +45,14 @@ protected:
 
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
     void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
+
+    void finalize() override
+    {
+        finished_processing = true;
+
+        /// In case we are waiting for result.
+        queue.emplace(Chunk());
+    }
 
 private:
 

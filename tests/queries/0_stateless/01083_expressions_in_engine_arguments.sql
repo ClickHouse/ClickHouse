@@ -59,7 +59,7 @@ SHOW CREATE distributed;
 SHOW CREATE distributed_tf;
 SHOW CREATE url;
 SHOW CREATE rich_syntax;
-SHOW CREATE VIEW view;
+SHOW CREATE view;
 SHOW CREATE dict;
 
 INSERT INTO buffer VALUES (1);
@@ -68,6 +68,3 @@ INSERT INTO buffer VALUES (1);
 --                                                     |                              |-> file (1)
 --                                                     |-> remote(127.0.0.2) --> ...
 SELECT sum(n) from rich_syntax;
-
--- Clear cache to avoid future errors in the logs
-SYSTEM DROP DNS CACHE

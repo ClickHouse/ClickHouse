@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <Core/Types.h>
 
 /* This file contains macros and helpers for writing platform-dependent code.
  *
@@ -11,7 +11,7 @@
  *
  * If compiler is not gcc/clang or target isn't x86_64 or ENABLE_MULTITARGET_CODE
  * was set to OFF in cmake, all code inside these macros will be removed and
- * USE_MULTITARGET_CODE will be set to 0. Use #if USE_MULTITARGET_CODE whenever you
+ * USE_MUTLITARGE_CODE will be set to 0. Use #if USE_MUTLITARGE_CODE whenever you
  * use anything from this namespaces.
  *
  * For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code
@@ -36,15 +36,15 @@
  * int func() {
  * #if USE_MULTITARGET_CODE
  *     if (isArchSupported(TargetArch::AVX2))
- *         return TargetSpecific::AVX2::funcImpl();
+ *         return TargetSpecifc::AVX2::funcImpl();
  * #endif
- *     return TargetSpecific::Default::funcImpl();
+ *     return TargetSpecifc::Default::funcImpl();
  * }
  *
  * Sometimes code may benefit from compiling with different options.
  * For these purposes use DECLARE_MULTITARGET_CODE macros. It will create a copy
  * of the code for every supported target and compile it with different options.
- * These copies are available via TargetSpecific namespaces described above.
+ * These copies are available via TargetSpecifc namespaces described above.
  *
  * Inside every TargetSpecific namespace there is a constexpr variable BuildArch,
  * which indicates the target platform for current code.
@@ -106,7 +106,7 @@ String toString(TargetArch arch);
 /* Clang shows warning when there aren't any objects to apply pragma.
  * To prevent this warning we define this function inside every macros with pragmas.
  */
-#   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void __dummy_function_definition();
+#   define DUMMY_FUNCTION_DEFINITION void __dummy_function_definition();
 #else
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
         _Pragma("GCC push_options") \

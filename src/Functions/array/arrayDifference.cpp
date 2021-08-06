@@ -13,7 +13,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int DECIMAL_OVERFLOW;
 }
 
 /** arrayDifference() - returns an array with the difference between all pairs of neighboring elements.
@@ -49,48 +48,6 @@ struct ArrayDifferenceImpl
 
 
     template <typename Element, typename Result>
-    static void NO_SANITIZE_UNDEFINED impl(const Element * __restrict src, Result * __restrict dst, size_t begin, size_t end)
-    {
-        /// First element is zero, then the differences of ith and i-1th elements.
-
-        Element prev{};
-        for (size_t pos = begin; pos < end; ++pos)
-        {
-            if (pos == begin)
-            {
-                dst[pos] = {};
-                prev = src[pos];
-            }
-            else
-            {
-                Element curr = src[pos];
-
-                if constexpr (IsDecimalNumber<Element>)
-                {
-                    using ResultNativeType = typename Result::NativeType;
-
-                    ResultNativeType result_value;
-                    bool overflow = common::subOverflow(
-                        static_cast<ResultNativeType>(curr.value),
-                        static_cast<ResultNativeType>(prev.value),
-                        result_value);
-                    if (overflow)
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-
-                    dst[pos] = Result(result_value);
-                }
-                else
-                {
-                    dst[pos] = curr - prev;
-                }
-
-                prev = curr;
-            }
-        }
-    }
-
-
-    template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
         using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
@@ -116,14 +73,18 @@ struct ArrayDifferenceImpl
         size_t pos = 0;
         for (auto offset : offsets)
         {
-            impl(data.data(), res_values.data(), pos, offset);
-            pos = offset;
+            // skip empty arrays
+            if (pos < offset)
+            {
+                res_values[pos] = 0;
+                for (++pos; pos < offset; ++pos)
+                    res_values[pos] = static_cast<Result>(data[pos]) - static_cast<Result>(data[pos - 1]);
+            }
         }
-
         res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
         return true;
-    }
 
+    }
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
@@ -146,6 +107,7 @@ struct ArrayDifferenceImpl
         else
             throw Exception("Unexpected column for arrayDifference: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
+
 };
 
 struct NameArrayDifference { static constexpr auto name = "arrayDifference"; };

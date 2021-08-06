@@ -1,6 +1,5 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -66,9 +65,6 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
         settings.ostr << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
 
     formatOnCluster(settings);
-
-    if (permanently)
-        settings.ostr << " PERMANENTLY";
 
     if (no_delay)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " NO DELAY" << (settings.hilite ? hilite_none : "");

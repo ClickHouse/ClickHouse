@@ -1,8 +1,10 @@
+
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/MongoDB/Connection.h>
 
@@ -14,9 +16,9 @@ namespace DB
  * Read only.
  */
 
-class StorageMongoDB final : public shared_ptr_helper<StorageMongoDB>, public IStorage
+class StorageMongoDB final : public ext::shared_ptr_helper<StorageMongoDB>, public IStorage
 {
-    friend struct shared_ptr_helper<StorageMongoDB>;
+    friend struct ext::shared_ptr_helper<StorageMongoDB>;
 public:
     StorageMongoDB(
         const StorageID & table_id_,
@@ -26,18 +28,17 @@ public:
         const std::string & collection_name_,
         const std::string & username_,
         const std::string & password_,
-        const std::string & options_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment);
+        const Context & context_);
 
     std::string getName() const override { return "MongoDB"; }
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
+        const SelectQueryInfo & query_info,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -51,12 +52,11 @@ private:
     const std::string collection_name;
     const std::string username;
     const std::string password;
-    const std::string options;
-    const std::string uri;
 
+    Context global_context;
     std::shared_ptr<Poco::MongoDB::Connection> connection;
-    bool authenticated = false;
-    std::mutex connection_mutex; /// Protects the variables `connection` and `authenticated`.
+    bool authentified = false;
+    std::mutex connection_mutex; /// Protects the variables `connection` and `authentified`.
 };
 
 }

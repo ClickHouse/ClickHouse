@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionResample.h>
 
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -11,9 +12,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
-namespace
-{
 
 class AggregateFunctionCombinatorResample final : public IAggregateFunctionCombinator
 {
@@ -51,7 +49,7 @@ public:
     {
         WhichDataType which{arguments.back()};
 
-        if (which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
+        if (which.isNativeUInt() || which.isDateOrDateTime())
         {
             UInt64 begin = params[params.size() - 3].safeGet<UInt64>();
             UInt64 end = params[params.size() - 2].safeGet<UInt64>();
@@ -94,8 +92,6 @@ public:
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory)
 {

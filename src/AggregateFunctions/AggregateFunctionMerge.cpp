@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionMerge.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -11,9 +12,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
-namespace
-{
 
 class AggregateFunctionCombinatorMerge final : public IAggregateFunctionCombinator
 {
@@ -39,7 +37,7 @@ public:
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
-        const Array & params) const override
+        const Array &) const override
     {
         const DataTypePtr & argument = arguments[0];
 
@@ -53,11 +51,9 @@ public:
                 + ", because it corresponds to different aggregate function: " + function->getFunctionName() + " instead of " + nested_function->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return std::make_shared<AggregateFunctionMerge>(nested_function, argument, params);
+        return std::make_shared<AggregateFunctionMerge>(nested_function, argument);
     }
 };
-
-}
 
 void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory & factory)
 {

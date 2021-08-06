@@ -102,8 +102,7 @@ TEST(Common, SensitiveDataMasker)
     EXPECT_EQ(maskerbad.wipeSensitiveData(x), 0);
 
     {
-        std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam(R"END(<?xml version="1.0"?>
+        std::istringstream xml_isteam(R"END(<?xml version="1.0"?>
 <clickhouse>
     <query_masking_rules>
         <rule>
@@ -153,8 +152,7 @@ TEST(Common, SensitiveDataMasker)
 
     try
     {
-        std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam_bad(R"END(<?xml version="1.0"?>
+        std::istringstream xml_isteam_bad(R"END(<?xml version="1.0"?>
 <clickhouse>
     <query_masking_rules>
         <rule>
@@ -167,7 +165,6 @@ TEST(Common, SensitiveDataMasker)
         </rule>
     </query_masking_rules>
 </clickhouse>)END");
-
         Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
         DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
@@ -183,8 +180,7 @@ TEST(Common, SensitiveDataMasker)
 
     try
     {
-        std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam_bad(R"END(<?xml version="1.0"?>
+        std::istringstream xml_isteam_bad(R"END(<?xml version="1.0"?>
 <clickhouse>
     <query_masking_rules>
         <rule><name>test</name></rule>
@@ -206,8 +202,7 @@ TEST(Common, SensitiveDataMasker)
 
     try
     {
-        std::istringstream      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            xml_isteam_bad(R"END(<?xml version="1.0"?>
+        std::istringstream xml_isteam_bad(R"END(<?xml version="1.0"?>
 <clickhouse>
     <query_masking_rules>
         <rule><name>test</name><regexp>())(</regexp></rule>
@@ -223,7 +218,7 @@ TEST(Common, SensitiveDataMasker)
     {
         EXPECT_EQ(
             std::string(e.message()),
-            "SensitiveDataMasker: cannot compile re2: ())(, error: unexpected ): ())(. Look at https://github.com/google/re2/wiki/Syntax for reference.: while adding query masking rule 'test'."
+            "SensitiveDataMasker: cannot compile re2: ())(, error: missing ): ())(. Look at https://github.com/google/re2/wiki/Syntax for reference.: while adding query masking rule 'test'."
         );
         EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
     }

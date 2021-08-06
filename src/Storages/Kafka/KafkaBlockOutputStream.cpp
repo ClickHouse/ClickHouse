@@ -1,4 +1,4 @@
-#include <Storages/Kafka/KafkaBlockOutputStream.h>
+#include "KafkaBlockOutputStream.h"
 
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
@@ -6,44 +6,49 @@
 namespace DB
 {
 
-KafkaSink::KafkaSink(
+namespace ErrorCodes
+{
+    extern const int CANNOT_CREATE_IO_BUFFER;
+}
+
+KafkaBlockOutputStream::KafkaBlockOutputStream(
     StorageKafka & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const ContextPtr & context_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlockNonMaterialized())
-    , storage(storage_)
+    const std::shared_ptr<Context> & context_)
+    : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
 {
 }
 
-void KafkaSink::onStart()
+Block KafkaBlockOutputStream::getHeader() const
 {
-    buffer = storage.createWriteBuffer(getPort().getHeader());
-
-    auto format_settings = getFormatSettings(context);
-    format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
-
-    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
-        getPort().getHeader(), context,
-        [this](const Columns & columns, size_t row)
-        {
-            buffer->countRow(columns, row);
-        },
-        format_settings);
+    return metadata_snapshot->getSampleBlockNonMaterialized();
 }
 
-void KafkaSink::consume(Chunk chunk)
+void KafkaBlockOutputStream::writePrefix()
 {
-    child->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+    buffer = storage.createWriteBuffer(getHeader());
+    if (!buffer)
+        throw Exception("Failed to create Kafka producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
+
+    child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer, getHeader(), *context, [this](const Columns & columns, size_t row){ buffer->countRow(columns, row); });
 }
 
-void KafkaSink::onFinish()
+void KafkaBlockOutputStream::write(const Block & block)
+{
+    child->write(block);
+}
+
+void KafkaBlockOutputStream::writeSuffix()
 {
     if (child)
         child->writeSuffix();
-    //flush();
+    flush();
+}
 
+void KafkaBlockOutputStream::flush()
+{
     if (buffer)
         buffer->flush();
 }
