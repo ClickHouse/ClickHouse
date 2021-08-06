@@ -319,6 +319,8 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (query.select || query.watch)
     {
+        /// XXX: is this branch also triggered for select+input() case?
+
         const auto & header = out_streams.at(0)->getHeader();
         auto actions_dag = ActionsDAG::makeConvertingActions(
                 res.pipeline.getHeader().getColumnsWithTypeAndName(),
@@ -349,7 +351,7 @@ BlockIO InterpreterInsertQuery::execute()
                     throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
-    else if (query.data && !query.has_tail) /// can execute without additional data
+    else if (!query.expectNativeData())
     {
         auto pipe = getSourceFromFromASTInsertQuery(query_ptr, nullptr, query_sample_block, getContext(), nullptr);
         res.pipeline.init(std::move(pipe));

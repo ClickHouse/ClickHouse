@@ -3248,10 +3248,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
     if (fields_count)
     {
-        ReadBufferFromMemory left_paren_buf("(", 1);
-        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data(), partition_ast.fields_str.size());
-        ReadBufferFromMemory right_paren_buf(")", 1);
-        ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
+        ConcatReadBuffer buf;
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>("(", 1));
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(partition_ast.fields_str.data(), partition_ast.fields_str.size()));
+        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(")", 1));
 
         auto input_format = FormatFactory::instance().getInput(
             "Values",

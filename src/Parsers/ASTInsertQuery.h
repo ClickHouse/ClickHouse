@@ -1,31 +1,38 @@
 #pragma once
 
-#include <Parsers/IAST.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
 
+class ReadBuffer;
 
-/** INSERT query
-  */
+/// INSERT query
 class ASTInsertQuery : public IAST
 {
 public:
+    /// Part of hash
     StorageID table_id = StorageID::createEmpty();
     ASTPtr columns;
     String format;
-    ASTPtr select;
-    ASTPtr watch;
     ASTPtr table_function;
     ASTPtr settings_ast;
 
-    /// Data to insert
+    ASTPtr select;
+    ASTPtr watch;
+
+    /// Data inlined into query
     const char * data = nullptr;
     const char * end = nullptr;
 
-    /// Query has additional data, which will be sent later
-    bool has_tail = false;
+    /// Data from buffer to insert after inlined one - may be nullptr.
+    ReadBuffer * tail = nullptr;
+
+    bool expectNativeData() const
+    {
+        return !data && !tail;
+    }
 
     /// Try to find table function input() in SELECT part
     void tryFindInputFunction(ASTPtr & input_function) const;

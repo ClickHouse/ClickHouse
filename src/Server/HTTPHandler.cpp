@@ -224,8 +224,7 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
 void HTTPHandler::pushDelayedResults(Output & used_output)
 {
     std::vector<WriteBufferPtr> write_buffers;
-    std::vector<ReadBufferPtr> read_buffers;
-    std::vector<ReadBuffer *> read_buffers_raw_ptr;
+    ConcatReadBuffer::Buffers read_buffers;
 
     auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
     if (!cascade_buffer)
@@ -245,14 +244,13 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
             && (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
             && (reread_buf = write_buf_concrete->tryGetReadBuffer()))
         {
-            read_buffers.emplace_back(reread_buf);
-            read_buffers_raw_ptr.emplace_back(reread_buf.get());
+            read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
         }
     }
 
-    if (!read_buffers_raw_ptr.empty())
+    if (!read_buffers.empty())
     {
-        ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
+        ConcatReadBuffer concat_read_buffer(std::move(read_buffers));
         copyData(concat_read_buffer, *used_output.out_maybe_compressed);
     }
 }
@@ -275,7 +273,6 @@ HTTPHandler::~HTTPHandler()
 
 
 bool HTTPHandler::authenticateUser(
-    ContextMutablePtr context,
     HTTPServerRequest & request,
     HTMLForm & params,
     HTTPServerResponse & response)
@@ -379,7 +376,7 @@ bool HTTPHandler::authenticateUser(
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
 
-    ClientInfo & client_info = context->getClientInfo();
+    ClientInfo & client_info = request_context->getClientInfo();
     client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
     client_info.interface = ClientInfo::Interface::HTTP;
 
@@ -396,7 +393,7 @@ bool HTTPHandler::authenticateUser(
 
     try
     {
-        context->setUser(*request_credentials, request.clientAddress());
+        request_context->setUser(*request_credentials, request.clientAddress());
     }
     catch (const Authentication::Require<BasicCredentials> & required_credentials)
     {
@@ -428,7 +425,7 @@ bool HTTPHandler::authenticateUser(
     request_credentials.reset();
 
     if (!quota_key.empty())
-        context->setQuotaKey(quota_key);
+        request_context->setQuotaKey(quota_key);
 
     /// Query sent through HTTP interface is initial.
     client_info.initial_user = client_info.current_user;
@@ -439,7 +436,6 @@ bool HTTPHandler::authenticateUser(
 
 
 void HTTPHandler::processQuery(
-    ContextMutablePtr context,
     HTTPServerRequest & request,
     HTMLForm & params,
     HTTPServerResponse & response,
@@ -450,7 +446,7 @@ void HTTPHandler::processQuery(
 
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
-    if (!authenticateUser(context, request, params, response))
+    if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
 
     /// The user could specify session identifier and session timeout.
@@ -468,10 +464,10 @@ void HTTPHandler::processQuery(
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
 
-        session = context->acquireNamedSession(session_id, session_timeout, session_check == "1");
+        session = request_context->acquireNamedSession(session_id, session_timeout, session_check == "1");
 
-        context->copyFrom(session->context);  /// FIXME: maybe move this part to HandleRequest(), copyFrom() is used only here.
-        context->setSessionContext(session->context);
+        request_context = Context::createCopy(session->context);
+        request_context->setSessionContext(session->context);
     }
 
     SCOPE_EXIT({
@@ -487,7 +483,7 @@ void HTTPHandler::processQuery(
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!context->getClientInfo().client_trace_context.parseTraceparentHeader(
+        if (!request_context->getClientInfo().client_trace_context.parseTraceparentHeader(
             opentelemetry_traceparent, error))
         {
             throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
@@ -495,14 +491,14 @@ void HTTPHandler::processQuery(
                 opentelemetry_traceparent, error);
         }
 
-        context->getClientInfo().client_trace_context.tracestate = request.get("tracestate", "");
+        request_context->getClientInfo().client_trace_context.tracestate = request.get("tracestate", "");
     }
 #endif
 
     // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+    request_context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
 
-    ClientInfo & client_info = context->getClientInfo();
+    ClientInfo & client_info = request_context->getClientInfo();
     client_info.initial_query_id = client_info.current_query_id;
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
@@ -568,7 +564,7 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            const std::string tmp_path(context->getTemporaryVolume()->getDisk()->getPath());
+            const std::string tmp_path(request_context->getTemporaryVolume()->getDisk()->getPath());
             const std::string tmp_path_template(tmp_path + "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
@@ -656,13 +652,13 @@ void HTTPHandler::processQuery(
 
     /// In theory if initially readonly = 0, the client can change any setting and then set readonly
     /// to some other value.
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = request_context->getSettingsRef();
 
     /// Only readonly queries are allowed for HTTP GET requests.
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
     {
         if (settings.readonly == 0)
-            context->setSetting("readonly", 2);
+            request_context->setSetting("readonly", 2);
     }
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
@@ -699,22 +695,22 @@ void HTTPHandler::processQuery(
         else
         {
             /// Other than query parameters are treated as settings.
-            if (!customizeQueryParam(context, key, value))
+            if (!customizeQueryParam(request_context, key, value))
                 settings_changes.push_back({key, value});
         }
     }
 
     if (!database.empty())
-        context->setCurrentDatabase(database);
+        request_context->setCurrentDatabase(database);
 
     if (!default_format.empty())
-        context->setDefaultFormat(default_format);
+        request_context->setDefaultFormat(default_format);
 
     /// For external data we also want settings
-    context->checkSettingsConstraints(settings_changes);
-    context->applySettingsChanges(settings_changes);
+    request_context->checkSettingsConstraints(settings_changes);
+    request_context->applySettingsChanges(settings_changes);
 
-    const auto & query = getQuery(request, params, context);
+    const auto & query = getQuery(request, params, request_context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
     in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
@@ -735,7 +731,7 @@ void HTTPHandler::processQuery(
     /// Origin header.
     used_output.out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
 
-    auto append_callback = [context] (ProgressCallback callback)
+    auto append_callback = [context = request_context] (ProgressCallback callback)
     {
         auto prev = context->getProgressCallback();
 
@@ -754,7 +750,7 @@ void HTTPHandler::processQuery(
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
-        append_callback([context, &request](const Progress &)
+        append_callback([context = request_context, &request](const Progress &)
         {
             /// Assume that at the point this method is called no one is reading data from the socket any more:
             /// should be true for read-only queries.
@@ -763,11 +759,11 @@ void HTTPHandler::processQuery(
         });
     }
 
-    customizeContext(request, context);
+    customizeContext(request, request_context);
 
-    query_scope.emplace(context);
+    query_scope.emplace(request_context);
 
-    executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
+    executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, request_context,
         [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
             response.setContentType(content_type);
@@ -783,8 +779,7 @@ void HTTPHandler::processQuery(
         pushDelayedResults(used_output);
     }
 
-    /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to
-    /// the client.
+    /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to the client.
     used_output.out->finalize();
 }
 
@@ -906,7 +901,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
                 ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
-        processQuery(request_context, request, params, response, used_output, query_scope);
+        processQuery(request, params, response, used_output, query_scope);
         LOG_DEBUG(log, (request_credentials ? "Authentication in progress..." : "Done processing query"));
     }
     catch (...)

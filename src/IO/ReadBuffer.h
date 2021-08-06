@@ -197,6 +197,10 @@ public:
         return read(to, n);
     }
 
+    /// Returns total size of underlying object read by this buffer. May be helpful for a full allocations
+    /// before reading. Doesn't change after reading. Returns 0 if total size is unknown.
+    virtual size_t totalSize() const { return 0; }
+
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),
@@ -253,5 +257,33 @@ inline std::unique_ptr<ReadBuffer> wrapReadBufferReference(ReadBuffer & buf)
     return std::make_unique<ReadBufferWrapper>(buf);
 }
 
+inline std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr)
+{
+    class ReadBufferWrapper : public ReadBuffer
+    {
+        public:
+            explicit ReadBufferWrapper(ReadBufferPtr ptr_) : ReadBuffer(ptr_->position(), 0), ptr(ptr_)
+            {
+                working_buffer = Buffer(ptr->position(), ptr->buffer().end());
+            }
+
+        private:
+            ReadBufferPtr ptr;
+
+            bool nextImpl() override
+            {
+                ptr->position() = position();
+
+                if (!ptr->next())
+                    return false;
+
+                working_buffer = ptr->buffer();
+
+                return true;
+            }
+    };
+
+    return std::make_unique<ReadBufferWrapper>(ptr);
+}
 
 }

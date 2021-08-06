@@ -77,7 +77,7 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
-#include <filesystem>
+#include <Interpreters/AsynchronousInsertionQueue.h>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -119,6 +119,8 @@
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
 #endif
+
+#include <filesystem>
 
 namespace CurrentMetrics
 {
@@ -521,6 +523,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
+    // Initialize global thread pool. Do it before we fetch configs from zookeeper
+    // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
+    // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
+    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
+
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
@@ -541,11 +548,6 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
-
-    // Initialize global thread pool. Do it before we fetch configs from zookeeper
-    // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
-    // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
@@ -926,6 +928,12 @@ if (ThreadFuzzer::instance().isEffective())
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
     const Settings & settings = global_context->getSettingsRef();
+
+    if (settings.async_insert_threads)
+        global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
+            settings.async_insert_threads,
+            settings.async_insert_max_data_size,
+            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout, .stale = settings.async_insert_stale_timeout}));
 
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");

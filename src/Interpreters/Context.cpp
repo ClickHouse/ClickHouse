@@ -73,6 +73,7 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
+#include <Interpreters/AsynchronousInsertionQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
@@ -119,6 +120,7 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 
@@ -407,6 +409,8 @@ struct ContextSharedPart
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
 
+    std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
+
     bool shutdown_called = false;
 
     Stopwatch uptime_watch;
@@ -578,11 +582,6 @@ ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 {
     return createCopy(std::const_pointer_cast<const Context>(other));
-}
-
-void Context::copyFrom(const ContextPtr & other)
-{
-    *this = *other;
 }
 
 Context::~Context() = default;
@@ -2829,6 +2828,21 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
         const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
+}
+
+AsynchronousInsertQueue * Context::getAsynchronousInsertQueue() const
+{
+    return shared->async_insert_queue.get();
+}
+
+void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
+{
+    using namespace std::chrono;
+
+    if (std::chrono::seconds(settings.async_insert_busy_timeout) == 0s)
+        throw Exception("Setting async_insert_busy_timeout can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
+
+    shared->async_insert_queue = ptr;
 }
 
 }
