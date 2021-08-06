@@ -2124,7 +2124,7 @@ enabledProfiles()
 
 ## defaultProfiles {#default-profiles}
 
-Возвращает все профили, указанные при объявлении текущего пользователя (см. [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement), секция `SETTINGS`)
+Возвращает все профили, указанные при объявлении текущего пользователя (см. [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement))
 
 **Синтаксис**
 
@@ -2136,4 +2136,4 @@ defaultProfiles()
 
 -   Список профилей по умолчанию. 
 
-ТИп: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
