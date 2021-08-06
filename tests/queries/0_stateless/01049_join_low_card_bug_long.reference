@@ -405,3 +405,6 @@ str	LowCardinality(String)
 
 
 str
+str	str	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
+str_r	str_r	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
+\N	\N	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))

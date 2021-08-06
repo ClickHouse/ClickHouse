@@ -276,6 +276,11 @@ SELECT lc, toTypeName(lc)  FROM l_lc AS l RIGHT JOIN r_lc AS r USING (x) ORDER B
 
 SELECT lowCardinalityKeys(lc.lc) FROM r FULL JOIN l_lc as lc USING (lc) ORDER BY lowCardinalityKeys(lc.lc);
 
+SET join_algorithm = 'partial_merge';
+SET join_use_nulls = 1;
+
+SELECT r.lc, materialize(r.lc), toTypeName(r.lc), toTypeName(materialize(r.lc)) FROM l_lc AS l FULL OUTER JOIN r_lc AS r USING (x) ORDER BY r.lc;
+
 DROP TABLE l;
 DROP TABLE r;
 DROP TABLE nl;
