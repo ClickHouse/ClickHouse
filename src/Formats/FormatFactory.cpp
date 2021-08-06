@@ -314,6 +314,10 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
+    /// If we're handling MySQL protocol connection right now then MySQLWire is only allowed output format.
+    if (format_settings.mysql_wire.sequence_id && (name != "MySQLWire"))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
+
     const Settings & settings = context->getSettingsRef();
 
     if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
