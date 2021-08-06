@@ -2140,7 +2140,9 @@ Result:
 
 ## currentProfiles {#current-profiles}
 
-Returns list of the current [setting profiles](../../operations/access-rights.md#settings-profiles-management) for current user. The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` hasn't been called the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
+Returns a list of the current [settings profiles](../../operations/access-rights.md#settings-profiles-management) for the current user. 
+
+The settings profile can be specified at the user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)) and can be changed with the [SET PROFILE](../../sql-reference/statements/set.md#query-set) statements lately. 
 
 **Syntax**
 
@@ -2150,13 +2152,13 @@ currentProfiles()
 
 **Returned value**
 
--   List of the current setting profiles. 
+-   List of the current user settings profiles. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## enabledProfiles {#enabled-profiles}
 
- Returns setting profiles are assigned to the user both explicitly and implicitly. Explicitly assigned profiles are the same profiles as returned by the function [currentProfiles](#current-profiles). Implicitly assigned profiles includes parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the section `default_profile` in the main configuration file).
+ Returns settings profiles, assigned to the current user both explicitly and implicitly. Explicitly assigned profiles are the same as returned by the [currentProfiles](#current-profiles) function. Implicitly assigned profiles include parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the `default_profile` section in the main server configuration file).
 
  If some profile occurs multiple times (with some other settings in between), the latest occurrence overrides all the previous ones.
 
@@ -2168,13 +2170,13 @@ enabledProfiles()
 
 **Returned value**
 
--   List of the enabled setting profiles. 
+-   List of the enabled settings profiles. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## defaultProfiles {#default-profiles}
 
-Returns all the profiles specified at the current user's definition (see [CREATE USER]()).
+Returns all the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement).
 
 **Syntax**
 
@@ -2184,6 +2186,6 @@ defaultProfiles()
 
 **Returned value**
 
--   List of the default setting profiles. 
+-   List of the default settings profiles. 
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
