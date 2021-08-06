@@ -54,7 +54,7 @@ For the correct work of `MaterializeMySQL`, there are few mandatory `MySQL`-side
 !!! attention "Attention"
     While turning on `gtid_mode` you should also specify `enforce_gtid_consistency = on`.
 
-## Virtual columns {#virtual-columns}
+## Virtual Columns {#virtual-columns}
 
 When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
 
@@ -90,7 +90,7 @@ Other types are not supported. If MySQL table contains a column of such type, Cl
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
-### Compatibility restrictions {#compatibility-restrictions}
+### Compatibility Restrictions {#compatibility-restrictions}
 
 Apart of the data types limitations there are few restrictions comparing to `MySQL` databases, that should be resolved before replication will be possible:
 
