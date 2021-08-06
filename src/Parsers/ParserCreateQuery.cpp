@@ -971,6 +971,8 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
 {
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
+    ParserKeyword s_replace("REPLACE");
+    ParserKeyword s_or_replace("OR REPLACE");
     ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_on("ON");
@@ -982,6 +984,8 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserDictionary dictionary_p;
 
     bool if_not_exists = false;
+    bool replace = false;
+    bool or_replace = false;
 
     ASTPtr name;
     ASTPtr attributes;
@@ -989,13 +993,21 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     String cluster_str;
 
     bool attach = false;
-    if (!s_create.ignore(pos, expected))
+
+    if (s_create.ignore(pos, expected))
     {
-        if (s_attach.ignore(pos, expected))
-            attach = true;
-        else
-            return false;
+        if (s_or_replace.ignore(pos, expected))
+        {
+            replace = true;
+            or_replace = true;
+        }
     }
+    else if (s_attach.ignore(pos, expected))
+        attach = true;
+    else if (s_replace.ignore(pos, expected))
+        replace = true;
+    else
+        return false;
 
     if (!s_dictionary.ignore(pos, expected))
         return false;
@@ -1031,6 +1043,8 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     node = query;
     query->is_dictionary = true;
     query->attach = attach;
+    query->create_or_replace = or_replace;
+    query->replace_table = replace;
 
     auto dict_id = name->as<ASTTableIdentifier>()->getTableId();
     query->database = dict_id.database_name;

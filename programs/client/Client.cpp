@@ -26,10 +26,13 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
 #include <Poco/Util/Application.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/QueryPipeline.h>
+#include <Columns/ColumnString.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
-#include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <Common/UnicodeBar.h>
@@ -55,8 +58,7 @@
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -80,12 +82,13 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
+#include <Formats/FormatFactory.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/ProgressBar.h>
+#include <Common/ProgressIndication.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
 
@@ -113,6 +116,7 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int SYNTAX_ERROR;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 
@@ -193,7 +197,7 @@ private:
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
-    std::optional<WriteBufferFromFile> out_file_buf;
+    std::unique_ptr<WriteBuffer> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
 
     /// The user could specify special file for server logs (stderr by default)
@@ -230,13 +234,13 @@ private:
     String server_version;
     String server_display_name;
 
-    Stopwatch watch;
+    /// true by default - for interactive mode, might be changed when --progress option is checked for
+    /// non-interactive mode.
+    bool need_render_progress = true;
 
-    /// The server periodically sends information about how much data was read since last time.
-    Progress progress;
+    bool written_first_block = false;
 
-    /// Progress bar
-    ProgressBar progress_bar;
+    ProgressIndication progress_indication;
 
     /// External tables info.
     std::list<ExternalTable> external_tables;
@@ -301,26 +305,9 @@ private:
         }
         catch (const Exception & e)
         {
-            bool print_stack_trace = config().getBool("stacktrace", false);
+            bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
 
-            std::string text = e.displayText();
-
-            /** If exception is received from server, then stack trace is embedded in message.
-              * If exception is thrown on client, then stack trace is in separate field.
-              */
-
-            auto embedded_stack_trace_pos = text.find("Stack trace");
-            if (std::string::npos != embedded_stack_trace_pos && !print_stack_trace)
-                text.resize(embedded_stack_trace_pos);
-
-            std::cerr << "Code: " << e.code() << ". " << text << std::endl << std::endl;
-
-            /// Don't print the stack trace on the client if it was logged on the server.
-            /// Also don't print the stack trace in case of network errors.
-            if (print_stack_trace && e.code() != ErrorCodes::NETWORK_ERROR && std::string::npos == embedded_stack_trace_pos)
-            {
-                std::cerr << "Stack trace:" << std::endl << e.getStackTraceString();
-            }
+            std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
             return e.code() ? e.code() : -1;
@@ -430,6 +417,7 @@ private:
                {TokenType::ClosingRoundBracket, Replxx::Color::BROWN},
                {TokenType::OpeningSquareBracket, Replxx::Color::BROWN},
                {TokenType::ClosingSquareBracket, Replxx::Color::BROWN},
+               {TokenType::DoubleColon, Replxx::Color::BROWN},
                {TokenType::OpeningCurlyBrace, Replxx::Color::INTENSE},
                {TokenType::ClosingCurlyBrace, Replxx::Color::INTENSE},
 
@@ -437,6 +425,7 @@ private:
                {TokenType::Semicolon, Replxx::Color::INTENSE},
                {TokenType::Dot, Replxx::Color::INTENSE},
                {TokenType::Asterisk, Replxx::Color::INTENSE},
+               {TokenType::HereDoc, Replxx::Color::CYAN},
                {TokenType::Plus, Replxx::Color::INTENSE},
                {TokenType::Minus, Replxx::Color::INTENSE},
                {TokenType::Slash, Replxx::Color::INTENSE},
@@ -462,8 +451,7 @@ private:
                {TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED},
                {TokenType::ErrorSinglePipeMark, Replxx::Color::RED},
                {TokenType::ErrorWrongNumber, Replxx::Color::RED},
-               { TokenType::ErrorMaxQuerySizeExceeded,
-                 Replxx::Color::RED }};
+               {TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }};
 
         const Replxx::Color unknown_token_color = Replxx::Color::RED;
 
@@ -485,6 +473,52 @@ private:
         }
     }
 #endif
+
+    /// Make query to get all server warnings
+    std::vector<String> loadWarningMessages()
+    {
+        std::vector<String> messages;
+        connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */, QueryProcessingStage::Complete);
+        while (true)
+        {
+            Packet packet = connection->receivePacket();
+            switch (packet.type)
+            {
+                case Protocol::Server::Data:
+                    if (packet.block)
+                    {
+                        const ColumnString & column = typeid_cast<const ColumnString &>(*packet.block.getByPosition(0).column);
+
+                        size_t rows = packet.block.rows();
+                        for (size_t i = 0; i < rows; ++i)
+                            messages.emplace_back(column.getDataAt(i).toString());
+                    }
+                    continue;
+
+                case Protocol::Server::Progress:
+                    continue;
+                case Protocol::Server::ProfileInfo:
+                    continue;
+                case Protocol::Server::Totals:
+                    continue;
+                case Protocol::Server::Extremes:
+                    continue;
+                case Protocol::Server::Log:
+                    continue;
+
+                case Protocol::Server::Exception:
+                    packet.exception->rethrow();
+                    return messages;
+
+                case Protocol::Server::EndOfStream:
+                    return messages;
+
+                default:
+                    throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
+                        packet.type, connection->getDescription());
+            }
+        }
+    }
 
     int mainImpl()
     {
@@ -536,7 +570,7 @@ private:
 
         if (!is_interactive)
         {
-            progress_bar.need_render_progress = config().getBool("progress", false);
+            need_render_progress = config().getBool("progress", false);
             echo_queries = config().getBool("echo", false);
             ignore_error = config().getBool("ignore-error", false);
         }
@@ -564,6 +598,26 @@ private:
                 suggest->load(connection_parameters, config().getInt("suggestion_limit"));
             }
 
+            /// Load Warnings at the beginning of connection
+            if (!config().has("no-warnings"))
+            {
+                try
+                {
+                    std::vector<String> messages = loadWarningMessages();
+                    if (!messages.empty())
+                    {
+                        std::cout << "Warnings:" << std::endl;
+                        for (const auto & message : messages)
+                            std::cout << "* " << message << std::endl;
+                        std::cout << std::endl;
+                    }
+                }
+                catch (...)
+                {
+                    /// Ignore exception
+                }
+            }
+
             /// Load command history if present.
             if (config().has("history_file"))
                 history_file = config().getString("history_file");
@@ -577,7 +631,18 @@ private:
             }
 
             if (!history_file.empty() && !fs::exists(history_file))
-                FS::createFile(history_file);
+            {
+                /// Avoid TOCTOU issue.
+                try
+                {
+                    FS::createFile(history_file);
+                }
+                catch (const ErrnoException & e)
+                {
+                    if (e.getErrno() != EEXIST)
+                        throw;
+                }
+            }
 
             LineReader::Patterns query_extenders = {"\\"};
             LineReader::Patterns query_delimiters = {";", "\\G"};
@@ -621,17 +686,10 @@ private:
                 }
                 catch (const Exception & e)
                 {
-                    // We don't need to handle the test hints in the interactive
-                    // mode.
-                    std::cerr << std::endl
-                              << "Exception on client:" << std::endl
-                              << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+                    /// We don't need to handle the test hints in the interactive mode.
 
-                    if (config().getBool("stacktrace", false))
-                        std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
-
-                    std::cerr << std::endl;
-
+                    bool print_stack_trace = config().getBool("stacktrace", false);
+                    std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
                     client_exception = std::make_unique<Exception>(e);
                 }
 
@@ -928,18 +986,11 @@ private:
     {
         if (server_exception)
         {
-            std::string text = server_exception->displayText();
-            auto embedded_stack_trace_pos = text.find("Stack trace");
-            if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
-            {
-                text.resize(embedded_stack_trace_pos);
-            }
+            bool print_stack_trace = config().getBool("stacktrace", false);
             std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
-                      << "Code: " << server_exception->code() << ". " << text << std::endl;
+                << getExceptionMessage(*server_exception, print_stack_trace, true) << std::endl;
             if (is_interactive)
-            {
                 std::cerr << std::endl;
-            }
         }
 
         if (client_exception)
@@ -1268,7 +1319,8 @@ private:
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::SYNTAX_ERROR)
+            if (e.code() != ErrorCodes::SYNTAX_ERROR &&
+                e.code() != ErrorCodes::TOO_DEEP_RECURSION)
                 throw;
         }
 
@@ -1368,9 +1420,19 @@ private:
                 have_error = true;
             }
 
+            const auto * exception = server_exception ? server_exception.get() : client_exception.get();
+            // Sometimes you may get TOO_DEEP_RECURSION from the server,
+            // and TOO_DEEP_RECURSION should not fail the fuzzer check.
+            if (have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
+            {
+                have_error = false;
+                server_exception.reset();
+                client_exception.reset();
+                return true;
+            }
+
             if (have_error)
             {
-                const auto * exception = server_exception ? server_exception.get() : client_exception.get();
                 fmt::print(stderr, "Error on processing query '{}': {}\n", ast_to_process->formatForErrorMessage(), exception->message());
 
                 // Try to reconnect after errors, for two reasons:
@@ -1387,11 +1449,15 @@ private:
                 {
                     // Just report it, we'll terminate below.
                     fmt::print(stderr,
-                        "Error while reconnecting to the server: Code: {}: {}\n",
-                        getCurrentExceptionCode(),
+                        "Error while reconnecting to the server: {}\n",
                         getCurrentExceptionMessage(true));
 
-                    assert(!connection->isConnected());
+                    // The reconnection might fail, but we'll still be connected
+                    // in the sense of `connection->isConnected() = true`,
+                    // in case when the requested database doesn't exist.
+                    // Disconnect manually now, so that the following code doesn't
+                    // have any doubts, and the connection state is predictable.
+                    connection->disconnect();
                 }
             }
 
@@ -1450,10 +1516,9 @@ private:
                 }
                 catch (Exception & e)
                 {
-                    if (e.code() != ErrorCodes::SYNTAX_ERROR)
-                    {
+                    if (e.code() != ErrorCodes::SYNTAX_ERROR &&
+                        e.code() != ErrorCodes::TOO_DEEP_RECURSION)
                         throw;
-                    }
                 }
 
                 if (ast_2)
@@ -1578,12 +1643,9 @@ private:
             }
         }
 
-        watch.restart();
         processed_rows = 0;
-        progress.reset();
-        progress_bar.show_progress_bar = false;
-        progress_bar.written_progress_chars = 0;
-        progress_bar.written_first_block = false;
+        written_first_block = false;
+        progress_indication.resetProgress();
 
         {
             /// Temporarily apply query settings to context.
@@ -1651,16 +1713,15 @@ private:
 
         if (is_interactive)
         {
-            std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << watch.elapsedSeconds() << " sec. ";
-
-            if (progress.read_rows >= 1000)
-                writeFinalProgress();
+            std::cout << std::endl << processed_rows << " rows in set. Elapsed: " << progress_indication.elapsedSeconds() << " sec. ";
+            /// Write final progress if it makes sense to do so.
+            writeFinalProgress();
 
             std::cout << std::endl << std::endl;
         }
         else if (print_time_to_stderr)
         {
-            std::cerr << watch.elapsedSeconds() << "\n";
+            std::cerr << progress_indication.elapsedSeconds() << "\n";
         }
     }
 
@@ -1835,6 +1896,19 @@ private:
             /// Send data read from stdin.
             try
             {
+                if (need_render_progress)
+                {
+                    /// Set total_bytes_to_read for current fd.
+                    FileProgress file_progress(0, std_in.size());
+                    progress_indication.updateProgress(Progress(file_progress));
+
+                    /// Set callback to be called on file progress.
+                    progress_indication.setFileProgressCallback(context, true);
+
+                    /// Add callback to track reading from fd.
+                    std_in.setProgressCallback(context);
+                }
+
                 sendDataFrom(std_in, sample, columns_description);
             }
             catch (Exception & e)
@@ -1859,19 +1933,24 @@ private:
                 current_format = insert->format;
         }
 
-        BlockInputStreamPtr block_input = context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+        auto source = FormatFactory::instance().getInput(current_format, buf, sample, context, insert_format_max_block_size);
+        Pipe pipe(source);
 
         if (columns_description.hasDefaults())
-            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns_description, context);
-
-        BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
-
-        async_block_input->readPrefix();
-
-        while (true)
         {
-            Block block = async_block_input->read();
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, context);
+            });
+        }
 
+        QueryPipeline pipeline;
+        pipeline.init(std::move(pipe));
+        PullingAsyncPipelineExecutor executor(pipeline);
+
+        Block block;
+        while (executor.pull(block))
+        {
             /// Check if server send Log packet
             receiveLogs();
 
@@ -1883,18 +1962,18 @@ private:
                  * We're exiting with error, so it makes sense to kill the
                  * input stream without waiting for it to complete.
                  */
-                async_block_input->cancel(true);
+                executor.cancel();
                 return;
             }
 
-            connection->sendData(block);
-            processed_rows += block.rows();
-
-            if (!block)
-                break;
+            if (block)
+            {
+                connection->sendData(block);
+                processed_rows += block.rows();
+            }
         }
 
-        async_block_input->readSuffix();
+        connection->sendData({});
     }
 
 
@@ -1957,7 +2036,7 @@ private:
                         cancelled = true;
                         if (is_interactive)
                         {
-                            progress_bar.clearProgress();
+                            progress_indication.clearProgressOutput();
                             std::cout << "Cancelling query." << std::endl;
                         }
 
@@ -2164,8 +2243,11 @@ private:
                     const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                     const auto & out_file = out_file_node.value.safeGet<std::string>();
 
-                    out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                    out_buf = &*out_file_buf;
+                    out_file_buf = wrapWriteBufferWithCompressionMethod(
+                        std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                        chooseCompressionMethod(out_file, ""),
+                        /* compression level = */ 3
+                    );
 
                     // We are writing to file, so default format is the same as in non-interactive mode.
                     if (is_interactive && is_default_format)
@@ -2184,10 +2266,10 @@ private:
                 current_format = "Vertical";
 
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-            if (!progress_bar.need_render_progress)
-                block_out_stream = context->getOutputStreamParallelIfPossible(current_format, *out_buf, block);
+            if (!need_render_progress)
+                block_out_stream = context->getOutputStreamParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
             else
-                block_out_stream = context->getOutputStream(current_format, *out_buf, block);
+                block_out_stream = context->getOutputStream(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
             block_out_stream->writePrefix();
         }
@@ -2243,25 +2325,25 @@ private:
         if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
             return;
 
-        if (progress_bar.need_render_progress)
-            progress_bar.clearProgress();
+        if (need_render_progress)
+            progress_indication.clearProgressOutput();
 
         block_out_stream->write(block);
-        progress_bar.written_first_block = true;
+        written_first_block = true;
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (progress_bar.need_render_progress)
-            progress_bar.writeProgress(progress, watch.elapsed());
+        if (need_render_progress)
+            progress_indication.writeProgress();
     }
 
 
     void onLogData(Block & block)
     {
         initLogsOutputStream();
-        progress_bar.clearProgress();
+        progress_indication.clearProgressOutput();
         logs_out_stream->write(block);
         logs_out_stream->flush();
     }
@@ -2282,28 +2364,23 @@ private:
 
     void onProgress(const Progress & value)
     {
-        if (!progress_bar.updateProgress(progress, value))
+        if (!progress_indication.updateProgress(value))
         {
             // Just a keep-alive update.
             return;
         }
+
         if (block_out_stream)
             block_out_stream->onProgress(value);
-        progress_bar.writeProgress(progress, watch.elapsed());
+
+        if (need_render_progress)
+            progress_indication.writeProgress();
     }
 
 
     void writeFinalProgress()
     {
-        std::cout << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
-                  << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
-
-        size_t elapsed_ns = watch.elapsed();
-        if (elapsed_ns)
-            std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                      << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
-        else
-            std::cout << ". ";
+        progress_indication.writeFinalProgress();
     }
 
 
@@ -2324,7 +2401,7 @@ private:
 
     void onEndOfStream()
     {
-        progress_bar.clearProgress();
+        progress_indication.clearProgressOutput();
 
         if (block_out_stream)
             block_out_stream->writeSuffix();
@@ -2334,9 +2411,9 @@ private:
 
         resetOutput();
 
-        if (is_interactive && !progress_bar.written_first_block)
+        if (is_interactive && !written_first_block)
         {
-            progress_bar.clearProgress();
+            progress_indication.clearProgressOutput();
             std::cout << "Ok." << std::endl;
         }
     }
@@ -2431,6 +2508,8 @@ public:
                     {
                         /// param_name value
                         ++arg_num;
+                        if (arg_num >= argc)
+                            throw Exception("Parameter requires value", ErrorCodes::BAD_ARGUMENTS);
                         arg = argv[arg_num];
                         query_parameters.emplace(String(param_continuation), String(arg));
                     }
@@ -2468,7 +2547,7 @@ public:
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
             ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-            ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation")
+            ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
@@ -2501,6 +2580,7 @@ public:
             ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
+            ("no-warnings", "disable warnings when client connects to server")
         ;
 
         Settings cmd_settings;
@@ -2568,8 +2648,7 @@ public:
             }
             catch (const Exception & e)
             {
-                std::string text = e.displayText();
-                std::cerr << "Code: " << e.code() << ". " << text << std::endl;
+                std::cerr << getExceptionMessage(e, false) << std::endl;
                 std::cerr << "Table №" << i << std::endl << std::endl;
                 /// Avoid the case when error exit code can possibly overflow to normal (zero).
                 auto exit_code = e.code() % 256;
@@ -2661,6 +2740,8 @@ public:
             config().setBool("highlight", options["highlight"].as<bool>());
         if (options.count("history_file"))
             config().setString("history_file", options["history_file"].as<std::string>());
+        if (options.count("no-warnings"))
+            config().setBool("no-warnings", true);
 
         if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
         {
@@ -2712,8 +2793,7 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     }
     catch (const DB::Exception & e)
     {
-        std::string text = e.displayText();
-        std::cerr << "Code: " << e.code() << ". " << text << std::endl;
+        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         return 1;
     }
     catch (...)

@@ -69,6 +69,8 @@ public:
 
     bool findFileInMetadata(const String & path, File & file_info) const;
 
+    bool supportZeroCopyReplication() const override { return false; }
+
     String getFileName(const String & path) const;
 
     DiskType::Type getType() const override { return DiskType::Type::WebServer; }

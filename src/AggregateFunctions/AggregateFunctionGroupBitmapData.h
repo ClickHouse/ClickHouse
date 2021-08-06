@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <memory>
 #include <boost/noncopyable.hpp>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -43,7 +44,7 @@ private:
 
     void toLarge()
     {
-        rb = std::make_shared<RoaringBitmap>();
+        rb = std::make_unique<RoaringBitmap>();
         for (const auto & x : small)
             rb->add(static_cast<Value>(x.getValue()));
         small.clear();
@@ -113,7 +114,7 @@ public:
             readVarUInt(size, in);
             std::unique_ptr<char[]> buf(new char[size]);
             in.readStrict(buf.get(), size);
-            rb = std::make_shared<RoaringBitmap>(RoaringBitmap::read(buf.get()));
+            rb = std::make_unique<RoaringBitmap>(RoaringBitmap::read(buf.get()));
         }
     }
 
@@ -140,7 +141,7 @@ public:
      */
     std::shared_ptr<RoaringBitmap> getNewRoaringBitmapFromSmall() const
     {
-        std::shared_ptr<RoaringBitmap> ret = std::make_shared<RoaringBitmap>();
+        std::shared_ptr<RoaringBitmap> ret = std::make_unique<RoaringBitmap>();
         for (const auto & x : small)
             ret->add(static_cast<Value>(x.getValue()));
         return ret;

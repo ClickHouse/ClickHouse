@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Core/QueryProcessingStage.h>
 #include <Parsers/IAST.h>
 
 namespace DB
@@ -16,6 +17,8 @@ class QueryPlan;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+struct StorageID;
 
 namespace ClusterProxy
 {
@@ -38,6 +41,10 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr c
 /// (currently SELECT, DESCRIBE).
 void executeQuery(
     QueryPlan & query_plan,
+    const Block & header,
+    QueryProcessingStage::Enum processed_stage,
+    const StorageID & main_table,
+    const ASTPtr & table_func_ptr,
     IStreamFactory & stream_factory, Poco::Logger * log,
     const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,

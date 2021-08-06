@@ -49,20 +49,32 @@ public:
         const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
 private:
-    String source_database;
-    std::optional<std::unordered_set<String>> source_tables;
-    std::optional<OptimizedRegularExpression> source_table_regexp;
+    using DbToTableSetMap = std::map<String, std::set<String>>;
 
-    using StorageWithLockAndName = std::tuple<StoragePtr, TableLockHolder, String>;
+    std::optional<OptimizedRegularExpression> source_database_regexp;
+    std::optional<OptimizedRegularExpression> source_table_regexp;
+    std::optional<DbToTableSetMap> source_databases_and_tables;
+
+    String source_database_name_or_regexp;
+    bool database_is_regexp = false;
+
+    /// (Database, Table, Lock, TableName)
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
+    using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
 
     StorageMerge::StorageListWithLocks getSelectedTables(
-            ContextPtr query_context, const ASTPtr & query = nullptr, bool filter_by_virtual_column = false) const;
+        ContextPtr query_context,
+        const ASTPtr & query = nullptr,
+        bool filter_by_database_virtual_column = false,
+        bool filter_by_table_virtual_column = false) const;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
-    DatabaseTablesIteratorPtr getDatabaseIterator(ContextPtr context) const;
+    DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
+
+    DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
 
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
@@ -72,17 +84,28 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & comment,
-        const String & source_database_,
-        const Strings & source_tables_,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_,
+        const DbToTableSetMap & source_databases_and_tables_,
         ContextPtr context_);
 
     StorageMerge(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const String & comment,
-        const String & source_database_,
+        const String & source_database_name_or_regexp_,
+        bool database_is_regexp_,
         const String & source_table_regexp_,
         ContextPtr context_);
+
+    struct AliasData
+    {
+        String name;
+        DataTypePtr type;
+        ASTPtr expression;
+    };
+
+    using Aliases = std::vector<AliasData>;
 
     Pipe createSources(
         const StorageMetadataPtr & metadata_snapshot,
@@ -90,15 +113,17 @@ protected:
         const QueryProcessingStage::Enum & processed_stage,
         UInt64 max_block_size,
         const Block & header,
+        const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
         Names & real_column_names,
         ContextMutablePtr modified_context,
         size_t streams_num,
+        bool has_database_virtual_column,
         bool has_table_virtual_column,
         bool concat_streams = false);
 
     void convertingSourceStream(
-        const Block & header, const StorageMetadataPtr & metadata_snapshot,
+        const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
         ContextPtr context, ASTPtr & query,
         Pipe & pipe, QueryProcessingStage::Enum processed_stage);
 };

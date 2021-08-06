@@ -288,7 +288,8 @@ void registerDiskWebServer(DiskFactory & factory)
     auto creator = [](const String & disk_name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      ContextConstPtr context) -> DiskPtr
+                      ContextPtr context,
+                      const DisksMap & /*map*/) -> DiskPtr
     {
         String uri{config.getString(config_prefix + ".endpoint")};
         if (!uri.ends_with('/'))

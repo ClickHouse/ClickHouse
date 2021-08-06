@@ -288,21 +288,35 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     ErrorCodes::NO_COMMON_TYPE);
 
             if (have_datetime64 == 0)
+            {
+                for (const auto & type : types)
+                {
+                    if (isDateTime(type))
+                        return type;
+                }
+
                 return std::make_shared<DataTypeDateTime>();
+            }
 
             UInt8 max_scale = 0;
+            size_t max_scale_date_time_index = 0;
 
-            for (const auto & t : types)
+            for (size_t i = 0; i < types.size(); ++i)
             {
-                if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(t.get()))
+                const auto & type = types[i];
+
+                if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(type.get()))
                 {
-                    const auto scale = dt64->getScale();
-                    if (scale > max_scale)
+                    const auto scale = date_time64_type->getScale();
+                    if (scale >= max_scale)
+                    {
+                        max_scale_date_time_index = i;
                         max_scale = scale;
+                    }
                 }
             }
 
-            return std::make_shared<DataTypeDateTime64>(max_scale);
+            return types[max_scale_date_time_index];
         }
     }
 

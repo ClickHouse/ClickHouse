@@ -13,6 +13,7 @@ struct DiskType
         RAM,
         S3,
         HDFS,
+        Encrypted,
         WebServer
     };
 
@@ -28,6 +29,8 @@ struct DiskType
                 return "s3";
             case Type::HDFS:
                 return "hdfs";
+            case Type::Encrypted:
+                return "encrypted";
             case Type::WebServer:
                 return "web";
         }

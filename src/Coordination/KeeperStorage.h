@@ -116,7 +116,7 @@ public:
         session_expiry_queue.update(session_id, session_timeout_ms);
     }
 
-    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid);
+    ResponsesForSessions processRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid, bool check_acl = true);
 
     void finalize();
 

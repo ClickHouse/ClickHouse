@@ -16,6 +16,8 @@ public:
     ASTPtr clone() const override;
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
+    const char * getQueryKindString() const override { return "Select"; }
+
     enum class Mode
     {
         Unspecified,
