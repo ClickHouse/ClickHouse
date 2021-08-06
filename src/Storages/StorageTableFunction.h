@@ -113,7 +113,7 @@ public:
         return pipe;
     }
 
-    SinkToStoragePtr write(
+    BlockOutputStreamPtr write(
             const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
             ContextPtr context) override

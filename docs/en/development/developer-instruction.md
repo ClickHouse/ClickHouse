@@ -123,7 +123,7 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
     /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew install cmake ninja
 
-Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
+Next, check the version of CMake: `cmake --version`. If it is below 3.3, you should install a newer version from the website: https://cmake.org/download/.
 
 ## Optional External Libraries {#optional-external-libraries}
 
@@ -236,8 +236,6 @@ Just in case, it is worth mentioning that CLion creates `build` path on its own,
 The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
 
 The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
-
-Adding third-party libraries: https://clickhouse.tech/docs/en/development/contrib/#adding-third-party-libraries
 
 Writing tests: https://clickhouse.tech/docs/en/development/tests/
 

@@ -3,7 +3,6 @@
 #include <AggregateFunctions/AggregateFunctionUniqUpTo.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -62,8 +61,6 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
             return res;
         else if (which.isDate())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDate::FieldType>>(threshold, argument_types, params);
-        else if (which.isDate32())
-            return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDate32::FieldType>>(threshold, argument_types, params);
         else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDateTime::FieldType>>(threshold, argument_types, params);
         else if (which.isStringOrFixedString())

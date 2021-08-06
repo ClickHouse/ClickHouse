@@ -81,8 +81,6 @@ inline std::enable_if_t<IsDecimalNumber<T>, Field> toField(const T & x, UInt32 s
 
 Columns convertConstTupleToConstantElements(const ColumnConst & column);
 
-/// Returns nested column with corrected type if nullable
-ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col);
 
 /// Returns the copy of a given columns in which each column is replaced with its respective nested
 /// column if it is nullable.
