@@ -859,8 +859,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
         return first;
     }
 
-    auto mut_first = IColumn::mutate(std::move(first));
-    FilterDescription firsrt_descr(*mut_first);
+    FilterDescription firsrt_descr(*first);
 
     size_t bytes_in_first_filter = countBytesInFilter(*firsrt_descr.data);
     checkCombindeFiltersSize(bytes_in_first_filter, second->size());
@@ -868,13 +867,20 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     ConstantFilterDescription second_const_descr(*second);
 
     if (second_const_descr.always_true)
-        return mut_first;
+        return first;
 
     if (second_const_descr.always_false)
-        return second->cloneResized(mut_first->size());
+        return second->cloneResized(first->size());
 
     FilterDescription second_descr(*second);
-    auto & first_data = const_cast<IColumn::Filter &>(*firsrt_descr.data);
+
+    MutableColumnPtr mut_first;
+    if (firsrt_descr.data_holder)
+        mut_first = IColumn::mutate(std::move(firsrt_descr.data_holder));
+    else
+        mut_first = IColumn::mutate(std::move(first));
+
+    auto & first_data = typeid_cast<ColumnUInt8 *>(mut_first.get())->getData();
     const auto * second_data = second_descr.data->data();
 
     for (auto & val : first_data)
@@ -968,7 +974,6 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     {
         row_level_filter = combineFilters(std::move(row_level_filter), filter);
         result.setFilter(row_level_filter);
-
     }
     else
         result.setFilter(filter);
