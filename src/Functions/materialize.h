@@ -29,11 +29,6 @@ public:
         return name;
     }
 
-    bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override
-    {
-        return true;
-    }
-
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     size_t getNumberOfArguments() const override

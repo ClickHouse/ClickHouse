@@ -47,9 +47,6 @@ struct ReadFromMergeTree::AnalysisResult
     IndexStats index_stats;
     Names column_names_to_read;
     ReadFromMergeTree::ReadType read_type = ReadFromMergeTree::ReadType::Default;
-    UInt64 selected_rows = 0;
-    UInt64 selected_marks = 0;
-    UInt64 selected_parts = 0;
 };
 
 static MergeTreeReaderSettings getMergeTreeReaderSettings(const ContextPtr & context)
@@ -97,7 +94,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     , data(data_)
     , query_info(query_info_)
     , prewhere_info(getPrewhereInfo(query_info))
-    , actions_settings(ExpressionActionsSettings::fromContext(context_))
     , metadata_snapshot(std::move(metadata_snapshot_))
     , metadata_snapshot_base(std::move(metadata_snapshot_base_))
     , context(std::move(context_))
@@ -161,7 +157,7 @@ Pipe ReadFromMergeTree::readFromPool(
             i, pool, min_marks_for_concurrent_read, max_block_size,
             settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
             data, metadata_snapshot, use_uncompressed_cache,
-            prewhere_info, actions_settings, reader_settings, virt_column_names);
+            prewhere_info, reader_settings, virt_column_names);
 
         if (i == 0)
         {
@@ -184,7 +180,7 @@ ProcessorPtr ReadFromMergeTree::createSource(
     return std::make_shared<TSource>(
             data, metadata_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache,
-            prewhere_info, actions_settings, true, reader_settings, virt_column_names, part.part_index_in_query);
+            prewhere_info, true, reader_settings, virt_column_names, part.part_index_in_query);
 }
 
 Pipe ReadFromMergeTree::readInOrder(
@@ -832,8 +828,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
         log,
         requested_num_streams,
         result.index_stats,
-        true /* use_skip_indexes */,
-        true /* check_limits */);
+        true);
 
     size_t sum_marks_pk = total_marks_pk;
     for (const auto & stat : result.index_stats)
@@ -842,17 +837,13 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 
     size_t sum_marks = 0;
     size_t sum_ranges = 0;
-    size_t sum_rows = 0;
 
     for (const auto & part : result.parts_with_ranges)
     {
         sum_ranges += part.ranges.size();
         sum_marks += part.getMarksCount();
-        sum_rows += part.getRowsCount();
     }
-    result.selected_parts = result.parts_with_ranges.size();
-    result.selected_marks = sum_marks;
-    result.selected_rows  = sum_rows;
+
     LOG_DEBUG(
         log,
         "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
@@ -890,9 +881,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
         return;
     }
 
-    selected_marks = result.selected_marks;
-    selected_rows = result.selected_rows;
-    selected_parts = result.selected_parts;
     /// Projection, that needed to drop columns, which have appeared by execution
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.

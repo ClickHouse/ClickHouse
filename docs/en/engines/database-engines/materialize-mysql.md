@@ -49,7 +49,6 @@ When working with the `MaterializeMySQL` database engine, [ReplacingMergeTree](.
 | DATE, NEWDATE           | [Date](../../sql-reference/data-types/date.md)               |
 | DATETIME, TIMESTAMP     | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | DATETIME2, TIMESTAMP2   | [DateTime64](../../sql-reference/data-types/datetime64.md)   |
-| ENUM                    | [Enum](../../sql-reference/data-types/enum.md)               |
 | STRING                  | [String](../../sql-reference/data-types/string.md)           |
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
@@ -81,8 +80,6 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 - If `_version` is not specified in the `SELECT` query, [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used. So only rows with `MAX(_version)` are selected.
 
 - If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not included into the result set.
-
-- The result includes columns comments in case they exist in MySQL database tables.
 
 ### Index Conversion {#index-conversion}
 

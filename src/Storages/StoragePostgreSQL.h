@@ -9,7 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Storages/PostgreSQL/PoolWithFailover.h>
 
 
 namespace DB

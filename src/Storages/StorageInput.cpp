@@ -3,6 +3,7 @@
 
 #include <Interpreters/Context.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <memory>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>

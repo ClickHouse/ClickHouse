@@ -33,7 +33,6 @@ namespace DB
     \
     M(Asterisk)               /** Could be used as multiplication operator or on it's own: "SELECT *" */ \
     \
-    M(DollarSign) \
     M(Plus) \
     M(Minus) \
     M(Slash) \

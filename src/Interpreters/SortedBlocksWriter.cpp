@@ -6,7 +6,6 @@
 #include <DataStreams/materializeBlock.h>
 #include <Disks/IVolume.h>
 
-
 namespace DB
 {
 
