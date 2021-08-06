@@ -167,6 +167,28 @@ def test_bad_arguments_for_mysql_database_engine(started_cluster):
         assert 'Database engine MySQL requested literal argument.' in str(exception.value)
         mysql_node.query("DROP DATABASE test_bad_arguments")
 
+def test_column_comments_for_mysql_database_engine(started_cluster):
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_database")
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+
+        clickhouse_node.query(
+            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')")
+        assert 'test_database' in clickhouse_node.query('SHOW DATABASES')
+
+        mysql_node.query(
+            "CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`), `test` int COMMENT 'test comment') ENGINE=InnoDB;")
+        assert 'test comment' in clickhouse_node.query('DESCRIBE TABLE `test_database`.`test_table`')
+
+        time.sleep(
+            3)  # Because the unit of MySQL modification time is seconds, modifications made in the same second cannot be obtained
+        mysql_node.query("ALTER TABLE `test_database`.`test_table` ADD COLUMN `add_column` int(11) COMMENT 'add_column comment'")
+        assert 'add_column comment' in clickhouse_node.query(
+            "SELECT comment FROM system.columns WHERE table = 'test_table' AND database = 'test_database'")
+
+        clickhouse_node.query("DROP DATABASE test_database")
+        mysql_node.query("DROP DATABASE test_database")
+
 
 def test_data_types_support_level_for_mysql_database_engine(started_cluster):
     with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:

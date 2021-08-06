@@ -1,6 +1,6 @@
 #include <common/ReadlineLineReader.h>
 #include <common/errnoToString.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #include <errno.h>
 #include <signal.h>

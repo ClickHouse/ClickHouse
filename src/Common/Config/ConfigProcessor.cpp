@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <functional>
 #include <filesystem>
+#include <boost/algorithm/string.hpp>
 #include <Poco/DOM/Text.h>
 #include <Poco/DOM/Attr.h>
 #include <Poco/DOM/Comment.h>
@@ -36,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_LOAD_CONFIG;
 }
 
 /// For cutting preprocessed path to this base
@@ -296,11 +298,19 @@ void ConfigProcessor::doIncludesRecursive(
     {
         const auto * subst = attributes->getNamedItem(attr_name);
         attr_nodes[attr_name] = subst;
-        substs_count += static_cast<size_t>(subst == nullptr);
+        substs_count += static_cast<size_t>(subst != nullptr);
     }
 
-    if (substs_count < SUBSTITUTION_ATTRS.size() - 1) /// only one substitution is allowed
-        throw Poco::Exception("several substitutions attributes set for element <" + node->nodeName() + ">");
+    if (substs_count > 1) /// only one substitution is allowed
+        throw Poco::Exception("More than one substitution attribute is set for element <" + node->nodeName() + ">");
+
+    if (node->nodeName() == "include")
+    {
+        if (node->hasChildNodes())
+            throw Poco::Exception("<include> element must have no children");
+        if (substs_count == 0)
+            throw Poco::Exception("No substitution attributes set for element <include>, must have exactly one");
+    }
 
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
@@ -318,37 +328,57 @@ void ConfigProcessor::doIncludesRecursive(
             else if (throw_on_bad_incl)
                 throw Poco::Exception(error_msg + name);
             else
+            {
+                if (node->nodeName() == "include")
+                    node->parentNode()->removeChild(node);
+
                 LOG_WARNING(log, "{}{}", error_msg, name);
+            }
         }
         else
         {
-            Element & element = dynamic_cast<Element &>(*node);
-
-            for (const auto & attr_name : SUBSTITUTION_ATTRS)
-                element.removeAttribute(attr_name);
-
-            if (replace)
+            /// Replace the whole node not just contents.
+            if (node->nodeName() == "include")
             {
-                while (Node * child = node->firstChild())
-                    node->removeChild(child);
+                const NodeListPtr children = node_to_include->childNodes();
+                for (size_t i = 0, size = children->length(); i < size; ++i)
+                {
+                    NodePtr new_node = config->importNode(children->item(i), true);
+                    node->parentNode()->insertBefore(new_node, node);
+                }
 
-                element.removeAttribute("replace");
+                node->parentNode()->removeChild(node);
             }
-
-            const NodeListPtr children = node_to_include->childNodes();
-            for (size_t i = 0, size = children->length(); i < size; ++i)
+            else
             {
-                NodePtr new_node = config->importNode(children->item(i), true);
-                node->appendChild(new_node);
-            }
+                Element & element = dynamic_cast<Element &>(*node);
 
-            const NamedNodeMapPtr from_attrs = node_to_include->attributes();
-            for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
-            {
-                element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
-            }
+                for (const auto & attr_name : SUBSTITUTION_ATTRS)
+                    element.removeAttribute(attr_name);
 
-            included_something = true;
+                if (replace)
+                {
+                    while (Node * child = node->firstChild())
+                        node->removeChild(child);
+
+                    element.removeAttribute("replace");
+                }
+
+                const NodeListPtr children = node_to_include->childNodes();
+                for (size_t i = 0, size = children->length(); i < size; ++i)
+                {
+                    NodePtr new_node = config->importNode(children->item(i), true);
+                    node->appendChild(new_node);
+                }
+
+                const NamedNodeMapPtr from_attrs = node_to_include->attributes();
+                for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
+                {
+                    element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
+                }
+
+                included_something = true;
+            }
         }
     };
 
@@ -437,6 +467,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
             std::string extension = path.extension();
             std::string base_name = path.stem();
 
+            boost::algorithm::to_lower(extension);
+
             // Skip non-config and temporary files
             if (fs::is_regular_file(path)
                     && (extension == ".xml" || extension == ".conf" || extension == ".yaml" || extension == ".yml")
@@ -462,13 +494,21 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     if (fs::exists(path))
     {
         fs::path p(path);
-        if (p.extension() == ".xml")
+
+        std::string extension = p.extension();
+        boost::algorithm::to_lower(extension);
+
+        if (extension == ".yaml" || extension == ".yml")
+        {
+            config = YAMLParser::parse(path);
+        }
+        else if (extension == ".xml" || extension == ".conf" || extension.empty())
         {
             config = dom_parser.parse(path);
         }
-        else if (p.extension() == ".yaml" || p.extension() == ".yml")
+        else
         {
-            config = YAMLParser::parse(path);
+            throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Unknown format of '{}' config", path);
         }
     }
     else
@@ -507,7 +547,10 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             XMLDocumentPtr with;
 
             fs::path p(merge_file);
-            if (p.extension() == ".yaml" || p.extension() == ".yml")
+            std::string extension = p.extension();
+            boost::algorithm::to_lower(extension);
+
+            if (extension == ".yaml" || extension == ".yml")
             {
                 with = YAMLParser::parse(merge_file);
             }
@@ -649,8 +692,8 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         {
             fs::path preprocessed_configs_path("preprocessed_configs/");
             auto new_path = loaded_config.config_path;
-            if (new_path.substr(0, main_config_path.size()) == main_config_path)
-                new_path.replace(0, main_config_path.size(), "");
+            if (new_path.starts_with(main_config_path))
+                new_path.erase(0, main_config_path.size());
             std::replace(new_path.begin(), new_path.end(), '/', '_');
 
             if (preprocessed_dir.empty())
@@ -693,6 +736,8 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
 void ConfigProcessor::setConfigPath(const std::string & config_path)
 {
     main_config_path = config_path;
+    if (!main_config_path.ends_with('/'))
+        main_config_path += '/';
 }
 
 }

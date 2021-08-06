@@ -130,8 +130,8 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
         zk_exception_code = code;
 
-    const auto & clusters = context->getClusters();
-    for (const auto & name_and_cluster : clusters.getContainer())
+    const auto clusters = context->getClusters();
+    for (const auto & name_and_cluster : clusters->getContainer())
     {
         const ClusterPtr & cluster = name_and_cluster.second;
         const auto & shards_info = cluster->getShardsInfo();

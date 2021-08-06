@@ -13,14 +13,7 @@
 namespace DB
 {
 
-class IBlockOutputStream;
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
-
 struct DictionaryStructure;
-
-/// Write keys to block output stream.
-
-void formatBlock(BlockOutputStreamPtr & out, const Block & block);
 
 /// For simple key
 
@@ -38,7 +31,7 @@ Block blockForKeys(
 /// Used for applying settings to copied context in some register[...]Source functions
 ContextMutablePtr copyContextAndApplySettings(
     const std::string & config_prefix,
-    ContextConstPtr context,
+    ContextPtr context,
     const Poco::Util::AbstractConfiguration & config);
 
 /** A stream, adds additional columns to each block that it will read from inner stream.

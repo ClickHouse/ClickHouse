@@ -12,7 +12,7 @@ void registerDictionarySourceRedis(DictionarySourceFactory & factory)
                                    const Poco::Util::AbstractConfiguration & config,
                                    const String & config_prefix,
                                    Block & sample_block,
-                                   ContextConstPtr /* context */,
+                                   ContextPtr /* context */,
                                    const std::string & /* default_database */,
                                    bool /* created_from_ddl */) -> DictionarySourcePtr {
         return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);

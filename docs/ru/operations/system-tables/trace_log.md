@@ -2,7 +2,7 @@
 
 Содержит экземпляры трассировки стека адресов вызова, собранные с помощью семплирующего профайлера запросов.
 
-ClickHouse создает эту таблицу когда утсановлена настройка [trace_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) в конфигурационном файле сервереа. А также настройки [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) и [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns).
+ClickHouse создает эту таблицу когда установлена настройка [trace_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) в конфигурационном файле сервера. А также настройки [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) и [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns).
 
 Для анализа stack traces, используйте функции интроспекции `addressToLine`, `addressToSymbol` и `demangle`.
 
@@ -47,7 +47,7 @@ timestamp_ns:            1599762189872924510
 revision:                54440
 trace_type:              Memory
 thread_id:               564963
-query_id:                
+query_id:
 trace:                   [371912858,371912789,371798468,371799717,371801313,371790250,624462773,566365041,566440261,566445834,566460071,566459914,566459842,566459580,566459469,566459389,566459341,566455774,371993941,371988245,372158848,372187428,372187309,372187093,372185478,140222123165193,140222122205443]
 size:                    5244400
 ```

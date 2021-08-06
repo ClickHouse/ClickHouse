@@ -44,8 +44,13 @@ SRCS(
     ErrorCodes.cpp
     Exception.cpp
     ExternalLoaderStatus.cpp
-    FieldVisitors.cpp
+    FieldVisitorDump.cpp
+    FieldVisitorHash.cpp
+    FieldVisitorSum.cpp
+    FieldVisitorToString.cpp
+    FieldVisitorWriteBinary.cpp
     FileChecker.cpp
+    IO.cpp
     IPv6ToBinary.cpp
     IntervalKind.cpp
     JSONBuilder.cpp
@@ -58,7 +63,7 @@ SRCS(
     PipeFDs.cpp
     ProcfsMetricsProvider.cpp
     ProfileEvents.cpp
-    ProgressBar.cpp
+    ProgressIndication.cpp
     QueryProfiler.cpp
     RWLock.cpp
     RemoteHostFilter.cpp
@@ -85,6 +90,7 @@ SRCS(
     TraceCollector.cpp
     UTF8Helpers.cpp
     UnicodeBar.cpp
+    VersionNumber.cpp
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp

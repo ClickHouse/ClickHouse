@@ -90,6 +90,8 @@ void ReplicatedMergeTreeRestartingThread::run()
                     /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
                     tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
+                    /// Here we're almost sure the table is already readonly, but it doesn't hurt to enforce it.
+                    setReadonly();
                     if (first_time)
                         storage.startup_event.set();
                     task->scheduleAfter(retry_period_ms);
@@ -174,6 +176,9 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.partial_shutdown_called = false;
         storage.partial_shutdown_event.reset();
 
+        /// Start queue processing
+        storage.background_executor.start();
+
         storage.queue_updating_task->activateAndSchedule();
         storage.mutations_updating_task->activateAndSchedule();
         storage.mutations_finalizing_task->activateAndSchedule();
@@ -227,7 +232,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
         {
             LOG_DEBUG(log, "Found part {} with failed quorum. Moving to detached. This shouldn't happen often.", part_name);
             storage.forgetPartAndMoveToDetached(part, "noquorum");
-            storage.queue.removeFromVirtualParts(part->info);
+            storage.queue.removeFailedQuorumPart(part->info);
         }
     }
 }
@@ -351,6 +356,14 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 
     storage.cleanup_thread.stop();
     storage.part_check_thread.stop();
+
+    /// Stop queue processing
+    {
+        auto fetch_lock = storage.fetcher.blocker.cancel();
+        auto merge_lock = storage.merger_mutator.merges_blocker.cancel();
+        auto move_lock = storage.parts_mover.moves_blocker.cancel();
+        storage.background_executor.finish();
+    }
 
     LOG_TRACE(log, "Threads finished");
 }

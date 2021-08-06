@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 FileDictionarySource::FileDictionarySource(
     const std::string & filepath_, const std::string & format_,
-    Block & sample_block_, ContextConstPtr context_, bool created_from_ddl)
+    Block & sample_block_, ContextPtr context_, bool created_from_ddl)
     : filepath{filepath_}
     , format{format_}
     , sample_block{sample_block_}
@@ -74,7 +74,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextConstPtr context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {

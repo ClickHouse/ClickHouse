@@ -2,15 +2,15 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 namespace DB
 {
 
-class StorageSystemTableEngines final : public ext::shared_ptr_helper<StorageSystemTableEngines>,
+class StorageSystemTableEngines final : public shared_ptr_helper<StorageSystemTableEngines>,
                                   public IStorageSystemOneBlock<StorageSystemTableEngines>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemTableEngines>;
+    friend struct shared_ptr_helper<StorageSystemTableEngines>;
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 

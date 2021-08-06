@@ -5,7 +5,8 @@ set -x -e
 if [ "1" == "${IS_CROSS_DARWIN:0}" ]
 then
     mkdir -p build/cmake/toolchain/darwin-x86_64
-    tar xJf MacOSX10.15.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
+    tar xJf MacOSX11.0.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
+    ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
 fi
 
 if [ "1" == "${IS_CROSS_ARM:0}" ]

@@ -6,7 +6,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -39,7 +39,7 @@ class FunctionPointInEllipses : public IFunction
 {
 public:
     static constexpr auto name = "pointInEllipses";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionPointInEllipses>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPointInEllipses>(); }
 
 private:
 
@@ -73,7 +73,7 @@ private:
                 "Number of arguments of function " + getName() + " is too large.", ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
         }
 
-        for (const auto arg_idx : ext::range(0, arguments.size()))
+        for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!WhichDataType(arg).isFloat64())
@@ -95,10 +95,10 @@ private:
         size_t ellipses_count = (arguments.size() - 2) / 4;
         std::vector<Ellipse> ellipses(ellipses_count);
 
-        for (const auto ellipse_idx : ext::range(0, ellipses_count))
+        for (const auto ellipse_idx : collections::range(0, ellipses_count))
         {
             Float64 ellipse_data[4];
-            for (const auto idx : ext::range(0, 4))
+            for (const auto idx : collections::range(0, 4))
             {
                 int arg_idx = 2 + 4 * ellipse_idx + idx;
                 const auto * column = arguments[arg_idx].column.get();
@@ -117,7 +117,7 @@ private:
         }
 
         int const_cnt = 0;
-        for (const auto idx : ext::range(0, 2))
+        for (const auto idx : collections::range(0, 2))
         {
             const auto * column = arguments[idx].column.get();
             if (typeid_cast<const ColumnConst *> (column))
@@ -143,7 +143,7 @@ private:
                 dst_data.resize(size);
 
                 size_t start_index = 0;
-                for (const auto row : ext::range(0, size))
+                for (const auto row : collections::range(0, size))
                 {
                     dst_data[row] = isPointInEllipses(col_vec_x->getData()[row], col_vec_y->getData()[row], ellipses.data(), ellipses_count, start_index);
                 }

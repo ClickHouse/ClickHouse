@@ -9,7 +9,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/PostgreSQL/PoolWithFailover.h>
+#include <Core/PostgreSQL/PoolWithFailover.h>
 
 
 namespace DB
@@ -33,7 +33,7 @@ public:
         const ASTStorage * database_engine_define,
         const String & dbname_,
         const String & postgres_dbname,
-        postgres::PoolWithFailoverPtr connection_pool_,
+        postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_);
 
     String getEngineName() const override { return "PostgreSQL"; }
@@ -70,7 +70,7 @@ private:
     String metadata_path;
     ASTPtr database_engine_define;
     String dbname;
-    postgres::PoolWithFailoverPtr connection_pool;
+    postgres::PoolWithFailoverPtr pool;
     const bool cache_tables;
 
     mutable Tables cached_tables;
@@ -78,9 +78,11 @@ private:
     BackgroundSchedulePool::TaskHolder cleaner_task;
 
     bool checkPostgresTable(const String & table_name) const;
-    std::unordered_set<std::string> fetchTablesList() const;
-    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
+
+    StoragePtr fetchTable(const String & table_name, ContextPtr context, const bool table_checked) const;
+
     void removeOutdatedTables();
+
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };
 
