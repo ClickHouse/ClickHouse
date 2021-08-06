@@ -54,17 +54,24 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
 
 bool ReadIndirectBufferFromWebServer::nextImpl()
 {
-    if (!impl)
+    bool next_result = false, successful_read = false;
+
+    if (impl)
+    {
+        impl->position() = position();
+        assert(!impl->hasPendingData());
+    }
+    else
+    {
         impl = initialize();
+        next_result = impl->hasPendingData();
+    }
 
-    bool ret = false, successful_read = false;
-    auto sleep_milliseconds = std::chrono::milliseconds(100);
-
-    for (size_t try_num = 0; try_num < max_read_tries; ++try_num)
+    for (size_t try_num = 0; (try_num < max_read_tries) && !next_result; ++try_num)
     {
         try
         {
-            ret = impl->next();
+            next_result = impl->next();
             successful_read = true;
             break;
         }
@@ -74,23 +81,20 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
 
             impl.reset();
             impl = initialize();
+            next_result = impl->hasPendingData();
         }
-
-        std::this_thread::sleep_for(sleep_milliseconds);
-        sleep_milliseconds *= 2;
     }
 
     if (!successful_read)
         throw Exception(ErrorCodes::NETWORK_ERROR, "All read attempts ({}) failed for uri: {}", max_read_tries, url);
 
-    if (ret)
+    if (next_result)
     {
-        working_buffer = internal_buffer = impl->buffer();
-        pos = working_buffer.begin();
+        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
         offset += working_buffer.size();
     }
 
-    return ret;
+    return next_result;
 }
 
 
