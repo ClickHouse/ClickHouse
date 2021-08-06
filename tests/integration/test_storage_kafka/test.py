@@ -1482,17 +1482,20 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
         messages.append(json.dumps({'key': i, 'value': i}))
     kafka_produce(kafka_cluster, 'virt2', messages, 0)
 
-    while True:
-        result = instance.query('SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view')
-        if kafka_check_result(result, False, 'test_kafka_virtual2.reference'):
-            break
+    sql = 'SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view ORDER BY kafka_key'
+    result = instance.query(sql)
+    iterations = 0
+    while not kafka_check_result(result, False, 'test_kafka_virtual2.reference') and iterations < 10:
+        time.sleep(3)
+        iterations += 1
+        result = instance.query(sql)
+
+    kafka_check_result(result, True, 'test_kafka_virtual2.reference')
 
     instance.query('''
         DROP TABLE test.consumer;
         DROP TABLE test.view;
     ''')
-
-    kafka_check_result(result, True, 'test_kafka_virtual2.reference')
 
 
 def test_kafka_insert(kafka_cluster):
