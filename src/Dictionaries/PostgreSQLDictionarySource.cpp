@@ -107,7 +107,7 @@ Pipe PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std
 
 Pipe PostgreSQLDictionarySource::loadBase(const String & query)
 {
-    return std::make_shared<PostgreSQLBlockInputStream<>>(pool->get(), query, sample_block, max_block_size);
+    return Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size));
 }
 
 
@@ -129,8 +129,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    PostgreSQLBlockInputStream<> block_input_stream(pool->get(), request, invalidate_sample_block, 1);
-    return readInvalidateQuery(block_input_stream);
+    return readInvalidateQuery(Pipe(std::make_unique<PostgreSQLSource<>>(pool->get(), request, invalidate_sample_block, 1)));
 }
 
 

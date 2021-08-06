@@ -22,9 +22,6 @@ public:
 
     String getName() const override { return "Cassandra"; }
 
-    Block getHeader() const override { return description.sample_block.cloneEmpty(); }
-
-
 private:
     using ValueType = ExternalResultDescription::ValueType;
 
