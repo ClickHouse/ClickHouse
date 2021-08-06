@@ -1,3 +1,4 @@
+#include <string>
 #include <Common/config.h>
 #include <Compression/CompressionFactory.h>
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
@@ -54,9 +55,9 @@ namespace DB
                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
     }
 
-    CompressionCodecEncrypted::CompressionCodecEncrypted(const std::string_view & cipher)
+    CompressionCodecEncrypted::CompressionCodecEncrypted()
     {
-        setCodecDescription("Encrypted", {std::make_shared<ASTLiteral>(cipher)});
+        setCodecDescription("AES_128_GCM_SIV");
     }
 
     uint8_t CompressionCodecEncrypted::getMethodByte() const
@@ -111,8 +112,8 @@ namespace DB
 
     std::string CompressionCodecEncrypted::deriveKey(const std::string_view & master_key)
     {
-        std::string_view salt(""); // No salt: derive keys in a deterministic manner.
-        std::string_view info("Codec Encrypted('AES-128-GCM-SIV') key generation key");
+        std::string_view salt; // No salt: derive keys in a deterministic manner.
+        std::string_view info("Codec 'AES_128_GCM_SIV' key generation key");
         std::array<char, 32> result;
 
         const int ok = HKDF(reinterpret_cast<uint8_t *>(result.data()), result.size(),
@@ -128,9 +129,9 @@ namespace DB
 
     void CompressionCodecEncrypted::encrypt(const std::string_view & plaintext, char * ciphertext_and_tag)
     {
-        // Fixed nonce. Yes this is unrecommended, but we have to live
-        // with it.
-        std::string_view nonce("\0\0\0\0\0\0\0\0\0\0\0\0", 12);
+        // randomly generated nonce. Split 12 bytes, because it is too big value and cannot be converted
+        std::string random_nonce = std::to_string(0x3a3bcb9d) + std::to_string(0x7b434799) + std::to_string(0x8c424f27);
+        std::string_view nonce(random_nonce);
 
         size_t out_len;
         const int ok = EVP_AEAD_CTX_seal(&getKeys().ctx,
@@ -147,7 +148,8 @@ namespace DB
 
     void CompressionCodecEncrypted::decrypt(const std::string_view & ciphertext, char * plaintext)
     {
-        std::string_view nonce("\0\0\0\0\0\0\0\0\0\0\0\0", 12);
+        std::string random_nonce = std::to_string(0x3a3bcb9d) + std::to_string(0x7b434799) + std::to_string(0x8c424f27);
+        std::string_view nonce(random_nonce);
 
         size_t out_len;
         const int ok = EVP_AEAD_CTX_open(&getKeys().ctx,
@@ -165,27 +167,16 @@ namespace DB
     void registerCodecEncrypted(CompressionCodecFactory & factory)
     {
         const auto method_code = uint8_t(CompressionMethodByte::Encrypted);
-        factory.registerCompressionCodec("Encrypted", method_code, [&](const ASTPtr & arguments) -> CompressionCodecPtr
+        factory.registerCompressionCodec("AES_128_GCM_SIV", method_code, [&](const ASTPtr & arguments) -> CompressionCodecPtr
         {
             if (arguments)
             {
-                if (arguments->children.size() != 1)
-                    throw Exception("Codec Encrypted() must have 1 parameter, given " +
+                if (!arguments->children.empty())
+                    throw Exception("Codec AES_128_GCM_SIV must have 0 parameter, given " +
                                     std::to_string(arguments->children.size()),
                                     ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
 
-                const auto children = arguments->children;
-                const auto * literal = children[0]->as<ASTLiteral>();
-                if (!literal)
-                    throw Exception("Wrong argument for codec Encrypted(). Expected a string literal",
-                                    ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
-
-                const String cipher = literal->value.safeGet<String>();
-                if (cipher == "AES-128-GCM-SIV")
-                    return std::make_shared<CompressionCodecEncrypted>(cipher);
-                else
-                    throw Exception("Cipher '" + cipher + "' is not supported",
-                                    ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                return std::make_shared<CompressionCodecEncrypted>();
             }
             else
             {
@@ -194,7 +185,7 @@ namespace DB
                  * possible? For now we only support a single cipher
                  * so it's not really a problem, but if we were to
                  * support more ciphers it would be catastrophic. */
-                return std::make_shared<CompressionCodecEncrypted>("AES-128-GCM-SIV");
+                return std::make_shared<CompressionCodecEncrypted>();
             }
         });
     }

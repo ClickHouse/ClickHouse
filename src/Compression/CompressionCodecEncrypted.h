@@ -1,6 +1,7 @@
 #pragma once
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
+#include <unordered_map>
 #include <Common/config.h>
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 
@@ -19,7 +20,7 @@ namespace DB
       * you want to apply both compression and encryption to your
       * columns, you need to put this codec at the end of the chain
       * like "column Int32 Codec(Delta, LZ4,
-      * Encrypted('AES-128-GCM-SIV'))".
+      * Encrypted('AES_128_GCM_SIV'))".
       *
       * The key is obtained by executing a command specified in the
       * configuration file at startup, and if it doesn't specify a
@@ -51,7 +52,7 @@ namespace DB
           */
         static void setMasterKey(const std::string_view & master_key);
 
-        CompressionCodecEncrypted(const std::string_view & cipher);
+        CompressionCodecEncrypted();
 
         uint8_t getMethodByte() const override;
         void updateHash(SipHash & hash) const override;
@@ -83,12 +84,15 @@ namespace DB
         static void encrypt(const std::string_view & plaintext, char * ciphertext_and_tag);
         static void decrypt(const std::string_view & ciphertext_and_tag, char * plaintext);
 
+        
+        std::unordered_map<UInt64, String> keys_storage;
+
         /** A private class that holds keys derived from the master
           * key.
           */
         struct KeyHolder : private boost::noncopyable
         {
-            KeyHolder(const std::string_view & master_key);
+            explicit KeyHolder(const std::string_view & master_key);
             ~KeyHolder();
 
             std::string keygen_key;
