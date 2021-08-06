@@ -206,7 +206,7 @@ Converts ASCII Latin symbols in a string to lowercase.
 
 ## upper, ucase {#upper}
 
-Converts ASCII Latin symbols in a string to uppercase.pd
+Converts ASCII Latin symbols in a string to uppercase.
 
 ## lowerUTF8 {#lowerutf8}
 
