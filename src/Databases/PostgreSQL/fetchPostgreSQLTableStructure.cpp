@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/quoteString.h>
@@ -27,11 +27,12 @@ namespace ErrorCodes
 
 
 template<typename T>
-std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx)
+std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema)
 {
     std::unordered_set<std::string> tables;
-    std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
-        "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
+    std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
+                                    "WHERE schemaname != 'pg_catalog' AND {}",
+                                    postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(postgres_schema));
 
     for (auto table_name : tx.template stream<std::string>(query))
         tables.insert(std::get<0>(table_name));
@@ -71,7 +72,7 @@ static DataTypePtr convertPostgreSQLDataType(String & type, const std::function<
     else if (type == "bigserial")
         res = std::make_shared<DataTypeUInt64>();
     else if (type.starts_with("timestamp"))
-        res = std::make_shared<DataTypeDateTime>();
+        res = std::make_shared<DataTypeDateTime64>(6);
     else if (type == "date")
         res = std::make_shared<DataTypeDate>();
     else if (type.starts_with("numeric"))
@@ -270,10 +271,10 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(pqxx::connection & connec
 }
 
 
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection)
+std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection, const String & postgres_schema)
 {
     pqxx::ReadTransaction tx(connection);
-    auto result = fetchPostgreSQLTablesList(tx);
+    auto result = fetchPostgreSQLTablesList(tx, postgres_schema);
     tx.commit();
     return result;
 }
@@ -290,10 +291,10 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         bool with_primary_key, bool with_replica_identity_index);
 
 template
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx);
+std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx, const String & postgres_schema);
 
 template
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx);
+std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx, const String & postgres_schema);
 
 }
 

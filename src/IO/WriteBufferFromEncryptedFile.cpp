@@ -7,17 +7,18 @@ namespace DB
 {
 
 WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
-    size_t buf_size_,
+    size_t buffer_size_,
     std::unique_ptr<WriteBufferFromFileBase> out_,
-    const String & init_vector_,
-    const FileEncryption::EncryptionKey & key_,
-    const size_t & file_size)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    const String & key_,
+    const FileEncryption::Header & header_,
+    size_t old_file_size)
+    : WriteBufferFromFileBase(buffer_size_, nullptr, 0)
     , out(std::move(out_))
-    , flush_iv(!file_size)
-    , iv(init_vector_)
-    , encryptor(FileEncryption::Encryptor(init_vector_, key_, file_size))
+    , header(header_)
+    , flush_header(!old_file_size)
+    , encryptor(header.algorithm, key_, header.init_vector)
 {
+    encryptor.setOffset(old_file_size);
 }
 
 WriteBufferFromEncryptedFile::~WriteBufferFromEncryptedFile()
@@ -51,6 +52,11 @@ void WriteBufferFromEncryptedFile::finishImpl()
 {
     /// If buffer has pending data - write it.
     next();
+
+    /// Note that if there is no data to write an empty file will be written, even without the initialization vector
+    /// (see nextImpl(): it writes the initialization vector only if there is some data ready to write).
+    /// That's fine because DiskEncrypted allows files without initialization vectors when they're empty.
+
     out->finalize();
 }
 
@@ -58,6 +64,7 @@ void WriteBufferFromEncryptedFile::sync()
 {
     /// If buffer has pending data - write it.
     next();
+
     out->sync();
 }
 
@@ -66,14 +73,15 @@ void WriteBufferFromEncryptedFile::nextImpl()
     if (!offset())
         return;
 
-    if (flush_iv)
+    if (flush_header)
     {
-        FileEncryption::writeIV(iv, *out);
-        flush_iv = false;
+        header.write(*out);
+        flush_header = false;
     }
 
-    encryptor.encrypt(working_buffer.begin(), *out, offset());
+    encryptor.encrypt(working_buffer.begin(), offset(), *out);
 }
+
 }
 
 #endif
