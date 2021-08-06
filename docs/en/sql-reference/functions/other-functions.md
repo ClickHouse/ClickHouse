@@ -2156,7 +2156,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 ## enabledRoles {#enabled-roles}
 
-Returns the names of the current roles merged with those roles which are granted to some of the current roles.
+Returns the names of the current roles and the roles, granted to some of the current roles.
 
 **Syntax**
 
