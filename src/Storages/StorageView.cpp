@@ -59,11 +59,21 @@ bool changedNullabilityOneWay(const Block & src_block, const Block & dst_block)
     return false;
 }
 
+bool hasJoin(const ASTSelectQuery & select)
+{
+    const auto & tables = select.tables();
+    if (!tables || tables->children.size() < 2)
+        return false;
+
+    const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
+    return joined_table.table_join != nullptr;
+}
+
 bool hasJoin(const ASTSelectWithUnionQuery & ast)
 {
     for (const auto & child : ast.list_of_selects->children)
     {
-        if (const auto * select = child->as<ASTSelectQuery>(); select && select->join())
+        if (const auto * select = child->as<ASTSelectQuery>(); select && hasJoin(*select))
             return true;
     }
     return false;
