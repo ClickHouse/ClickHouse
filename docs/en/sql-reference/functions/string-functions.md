@@ -140,8 +140,6 @@ rightPad('string','length', 'pad_string')
 -   `length` — The length of the resulting string once the input string pads. [UInt](../data-types/int-uint.md). If the value is less than input string length, then string is returned as-is.
 -   `pad_string` — The string to pad the current input string with. [String](../data-types/string.md).
 
-[String](../data-types/string.md)
-
 **Returned value(s)**
 
 -   The resulting string reaches the given length.
@@ -179,8 +177,6 @@ rightPadUTF8('string','length', 'pad_string')
 -   `string` — Input UTF-8 string, that need to be padded. [String](../data-types/string.md).
 -   `length` — The length of the resulting string once the input string pads. [UInt](../data-types/int-uint.md). If the value is less than input string length, then string is returned as-is.
 -   `pad_string` — The string to pad the current input string with. [String](../data-types/string.md).
-
-[String](../data-types/string.md)
 
 **Returned value(s)**
 
