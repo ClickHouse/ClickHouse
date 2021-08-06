@@ -594,7 +594,9 @@ public:
                 if (offset_count >= offset)
                 {
                     answer.push_back(val);
-                } else {
+                }
+                else
+                {
                     offset_count++;
                 }
             }
