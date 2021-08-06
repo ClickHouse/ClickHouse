@@ -36,14 +36,23 @@ Additional join types available in ClickHouse:
 -   `LEFT ANY JOIN`, `RIGHT ANY JOIN` and `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
 -   `ASOF JOIN` and `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
-## Setting {#join-settings}
+## Settings {#join-settings}
 
-!!! note "Note"
-    The default join type can be overriden using [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
+The default join type can be overriden using [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
 
-    Also the behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
+The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
 
-### ASOF JOIN Usage {#asof-join-usage}
+**See also**
+
+- [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm)
+- [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
+- [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
+- [partial_merge_join_optimizations](../../../operations/settings/settings.md#partial_merge_join_optimizations)
+- [partial_merge_join_rows_in_right_blocks](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
+- [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
+- [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
+
+## ASOF JOIN Usage {#asof-join-usage}
 
 `ASOF JOIN` is useful when you need to join records that have no exact match.
 
@@ -93,7 +102,7 @@ For example, consider the following tables:
 !!! note "Note"
     `ASOF` join is **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
 
-## Distributed Join {#global-join}
+## Distributed JOIN {#global-join}
 
 There are two ways to execute join involving distributed tables:
 
@@ -101,6 +110,42 @@ There are two ways to execute join involving distributed tables:
 -   When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
 Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](../../../sql-reference/operators/in.md#select-distributed-subqueries) section.
+
+## Implicit Type Conversion {#implicit-type-conversion}
+
+`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for "join keys". However the query can not be executed, if join keys from the left and the right tables cannot be converted to a single type (for example, there is no data type that can hold all values from both `UInt64` and `Int64`, or `String` and `Int32`).
+
+**Example**
+
+Consider the table `t_1`:
+```text
+┌─a─┬─b─┬─toTypeName(a)─┬─toTypeName(b)─┐
+│ 1 │ 1 │ UInt16        │ UInt8         │
+│ 2 │ 2 │ UInt16        │ UInt8         │
+└───┴───┴───────────────┴───────────────┘
+```
+and the table `t_2`:
+```text
+┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
+│ -1 │    1 │ Int16         │ Nullable(Int64) │
+│  1 │   -1 │ Int16         │ Nullable(Int64) │
+│  1 │    1 │ Int16         │ Nullable(Int64) │
+└────┴──────┴───────────────┴─────────────────┘
+```
+
+The query
+```sql
+SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
+```
+returns the set:
+```text
+┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
+│  1 │    1 │ Int32         │ Nullable(Int64) │
+│  2 │    2 │ Int32         │ Nullable(Int64) │
+│ -1 │    1 │ Int32         │ Nullable(Int64) │
+│  1 │   -1 │ Int32         │ Nullable(Int64) │
+└────┴──────┴───────────────┴─────────────────┘
+```
 
 ## Usage Recommendations {#usage-recommendations}
 
@@ -139,9 +184,9 @@ If you need a `JOIN` for joining with dimension tables (these are relatively sma
 
 ### Memory Limitations {#memory-limitations}
 
-By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the `<right_table>` and creates a hash table for it in RAM. After some threshold of memory consumption, ClickHouse falls back to merge join algorithm.
+By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the right_table and creates a hash table for it in RAM. If `join_algorithm = 'auto'` is enabled, then after some threshold of memory consumption, ClickHouse falls back to [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join algorithm. For `JOIN` algorithms description see the [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm) setting.
 
-If you need to restrict join operation memory consumption use the following settings:
+If you need to restrict `JOIN` operation memory consumption use the following settings:
 
 -   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
 -   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.

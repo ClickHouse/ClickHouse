@@ -158,6 +158,16 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
             ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 }
 
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
     const String & relative_data_path_,
@@ -1246,7 +1256,11 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         PartLogElement part_log_elem;
 
         part_log_elem.event_type = PartLogElement::REMOVE_PART;
-        part_log_elem.event_time = time(nullptr);
+
+        const auto time_now = std::chrono::system_clock::now();
+        part_log_elem.event_time = time_in_seconds(time_now);
+        part_log_elem.event_time_microseconds = time_in_microseconds(time_now);
+
         part_log_elem.duration_ms = 0; //-V1048
 
         part_log_elem.database_name = table_id.database_name;
@@ -2381,7 +2395,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         /// It's a DROP PART and it's already executed by fetching some covering part
         bool is_drop_part = !drop_range.isFakeDropRangePart() && drop_range.min_block;
 
-        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block))
+        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block || part->info.getDataVersion() != drop_range.getDataVersion()))
         {
             /// Why we check only min and max blocks here without checking merge
             /// level? It's a tricky situation which can happen on a stale
@@ -2398,9 +2412,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             /// So here we just check that all_1_3_1 covers blocks from drop
             /// all_2_2_2.
             ///
-            /// NOTE: this helps only to avoid logical error during drop part.
-            /// We still get intersecting "parts" in queue.
-            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block;
+            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block && part->info.getDataVersion() >= drop_range.getDataVersion();
             if (is_covered_by_min_max_block)
             {
                 LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartName(), part->name);
@@ -3200,7 +3212,11 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     const auto & partition_ast = ast->as<ASTPartition &>();
 
     if (!partition_ast.value)
+    {
+        if (!MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version))
+            throw Exception("Invalid partition format: " + partition_ast.id, ErrorCodes::INVALID_PARTITION_VALUE);
         return partition_ast.id;
+    }
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -3854,16 +3870,20 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
                 if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(item))
                     return true;
-            if (metadata_snapshot->selected_projection
-                && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
-                return true;
+            for (const auto & projection : metadata_snapshot->getProjections())
+            {
+                if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
+                    return true;
+            }
         }
         /// The tuple itself may be part of the primary key, so check that as a last resort.
         if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot))
             return true;
-        if (metadata_snapshot->selected_projection
-            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
-            return true;
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+                return true;
+        }
         return false;
     }
     else
@@ -3872,10 +3892,11 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(left_in_operand))
                 return true;
 
-        if (metadata_snapshot->selected_projection
-            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
-            return true;
-
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+                return true;
+        }
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot);
     }
 }
@@ -3915,7 +3936,7 @@ static void selectBestProjection(
         candidate.required_columns,
         metadata_snapshot,
         candidate.desc->metadata,
-        query_info, // TODO syntax_analysis_result set in index
+        query_info,
         query_context,
         settings.max_threads,
         max_added_blocks);
@@ -3933,7 +3954,7 @@ static void selectBestProjection(
             required_columns,
             metadata_snapshot,
             metadata_snapshot,
-            query_info, // TODO syntax_analysis_result set in index
+            query_info,
             query_context,
             settings.max_threads,
             max_added_blocks);
@@ -4103,7 +4124,8 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             candidate.before_aggregation = analysis_result.before_aggregation->clone();
             auto required_columns = candidate.before_aggregation->foldActionsByProjection(keys, projection.sample_block_for_keys);
 
-            if (required_columns.empty() && !keys.empty())
+            // TODO Let's find out the exact required_columns for keys.
+            if (required_columns.empty() && (!keys.empty() && !candidate.before_aggregation->getRequiredColumns().empty()))
                 continue;
 
             if (analysis_result.optimize_aggregation_in_order)
@@ -4191,7 +4213,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                 analysis_result.required_columns,
                 metadata_snapshot,
                 metadata_snapshot,
-                query_info, // TODO syntax_analysis_result set in index
+                query_info,
                 query_context,
                 settings.max_threads,
                 max_added_blocks);
@@ -4572,17 +4594,6 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
             return false;
     }
     return true;
-}
-
-inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
-}
-
-
-inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
 void MergeTreeData::writePartLog(
