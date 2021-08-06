@@ -79,7 +79,10 @@ def test_upgrade_while_mutation(start_cluster):
 
     node3.restart_with_latest_version(signal=9)
 
-    exec_query_with_retry(node3, "ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})
+    # checks for readonly
+    exec_query_with_retry(node3, "OPTIMIZE TABLE mt1", sleep_time=5, retry_count=60)
+
+    node3.query("ALTER TABLE mt1 DELETE WHERE id > 100000", settings={"mutations_sync": "2"})
     # will delete nothing, but previous async mutation will finish with this query
 
     assert_eq_with_retry(node3, "SELECT COUNT() from mt1", "50000\n")
