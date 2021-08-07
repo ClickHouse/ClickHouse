@@ -822,7 +822,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         {
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
-            if (!multiple_disjuncts && isRightOrFull(kind) && join_mask_col_vector[0])
+            if (isRightOrFull(kind) && join_mask_col_vector[0])
             {
                 const auto & join_mask = assert_cast<const ColumnUInt8 &>(*join_mask_col_vector[0]).getData();
                 /// Save rows that do not hold conditions
