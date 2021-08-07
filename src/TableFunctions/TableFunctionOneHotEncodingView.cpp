@@ -127,7 +127,7 @@ StoragePtr TableFunctionOneHotEncodingView::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
-    auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns, "", false);
+    auto res = StorageView::create(StorageID(getDatabaseName(), table_name), create, columns, "");
     res->startup();
     return res;
 }
