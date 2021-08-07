@@ -13,7 +13,9 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
