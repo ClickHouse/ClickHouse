@@ -728,7 +728,7 @@ During this time, they are not moved to other volumes or disks. Therefore, until
 
 ## Using S3 for Data Storage {#table_engine-mergetree-s3}
 
-`MergeTree` family table engines can store data to [S3](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-s3) using a disk with type `s3`.
+`MergeTree` family table engines can store data to [S3](https://en.wikipedia.org/wiki/Amazon_S3) using a disk with type `s3`.
 
 This feature is under development and not ready for production. There are known drawbacks such as very low performance.
 
@@ -867,7 +867,7 @@ Optional parameters:
 
 ## Using Virtual File System to Encrypt Data {#encrypted-virtual-file-system}
 
-Encrypts data and stores it in [S3](https://aws.amazon.com/s3/) and local file systems. Encryption is performed using [AES_128_CTR, AES_192_CTR and AES_256_CTR](../../../sql-reference/statements/create/table.md#create-query-encryption-codecs) algorithms. By default: AES_128_CTR. Uses a disk with type `encripted`. `Encrypted` disk ciphers all written files on the fly. When we read files from an `encrypted` disk it deciphers them automatically, so we can work with a `encrypted` disk like it is a normal disk.
+Encrypts data and stores it in [S3](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-s3) and local file systems. Encryption is performed using [AES_128_CTR, AES_192_CTR and AES_256_CTR](../../../sql-reference/statements/create/table.md#create-query-encryption-codecs) algorithms. By default: AES_128_CTR. Uses a disk with type `encripted`. `Encrypted` disk ciphers all written files on the fly. When we read files from an `encrypted` disk it deciphers them automatically, so we can work with a `encrypted` disk like it is a normal disk.
 
 The `encrypted` disk configuration specifies the disk on which the data will be stored.
 
