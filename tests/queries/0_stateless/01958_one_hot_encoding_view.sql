@@ -11,4 +11,7 @@ SELECT * FROM one_hot_encoding_view((),`SHOW TABLES`); -- { clientError 62}
 SELECT * FROM one_hot_encoding_view((SELECT 1),`SHOW TABLES`); -- {serverError 36}
 -- check dummy base query with valid colum
 SELECT * FROM one_hot_encoding_view((SELECT 1),`1`);
+-- check that we can apply max_block_size
+SET max_block_size = 1;
+SELECT * FROM one_hot_encoding_view((SELECT number FROM numbers(1,100000)),number) LIMIT 1;
 DROP TABLE one_hot_source;
