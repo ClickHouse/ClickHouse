@@ -21,6 +21,40 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
 }
 
 
+bool MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
+{
+    if (partition_id.empty())
+        return false;
+
+    ReadBufferFromString in(partition_id);
+
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        UInt32 min_yyyymmdd = 0;
+        UInt32 max_yyyymmdd = 0;
+        if (!tryReadIntText(min_yyyymmdd, in)
+            || !checkChar('_', in)
+            || !tryReadIntText(max_yyyymmdd, in)
+            || !checkChar('_', in))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        while (!in.eof())
+        {
+            char c;
+            readChar(c, in);
+
+            if (c == '_')
+                break;
+        }
+    }
+
+    return in.eof();
+}
+
 bool MergeTreePartInfo::tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version)
 {
     ReadBufferFromString in(part_name);
