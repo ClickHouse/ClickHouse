@@ -15,10 +15,8 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <DataStreams/OwningBlockInputStream.h>
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
 #include <re2/re2.h>
@@ -26,13 +24,17 @@
 #include <hdfs/hdfs.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
+#include <filesystem>
 
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ACCESS_DENIED;
 }
 
 StorageHDFS::StorageHDFS(
@@ -170,36 +172,33 @@ private:
     Block sample_block;
 };
 
-class HDFSBlockOutputStream : public IBlockOutputStream
+class HDFSSink : public SinkToStorage
 {
 public:
-    HDFSBlockOutputStream(const String & uri,
+    HDFSSink(const String & uri,
         const String & format,
-        const Block & sample_block_,
+        const Block & sample_block,
         ContextPtr context,
         const CompressionMethod compression_method)
-        : sample_block(sample_block_)
+        : SinkToStorage(sample_block)
     {
         write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef()), compression_method, 3);
         writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
-    Block getHeader() const override
+    String getName() const override { return "HDFSSink"; }
+
+    void consume(Chunk chunk) override
     {
-        return sample_block;
+        if (is_first_chunk)
+        {
+            writer->writePrefix();
+            is_first_chunk = false;
+        }
+        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
-    void write(const Block & block) override
-    {
-        writer->write(block);
-    }
-
-    void writePrefix() override
-    {
-        writer->writePrefix();
-    }
-
-    void writeSuffix() override
+    void onFinish() override
     {
         try
         {
@@ -216,9 +215,9 @@ public:
     }
 
 private:
-    Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
+    bool is_first_chunk = true;
 };
 
 /* Recursive directory listing with matched paths as a result.
@@ -257,7 +256,7 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
-                Strings result_part = LSWithRegexpMatching(full_path + "/", fs, suffix_with_globs.substr(next_slash));
+                Strings result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash));
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
@@ -279,15 +278,7 @@ Pipe StorageHDFS::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    size_t begin_of_path;
-    /// This uri is checked for correctness in constructor of StorageHDFS and never modified afterwards
-    auto two_slash = uri.find("//");
-
-    if (two_slash == std::string::npos)
-        begin_of_path = uri.find('/');
-    else
-        begin_of_path = uri.find('/', two_slash + 2);
-
+    const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
     const String path_from_uri = uri.substr(begin_of_path);
     const String uri_without_path = uri.substr(0, begin_of_path);
 
@@ -320,14 +311,29 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<HDFSBlockOutputStream>(uri,
+    return std::make_shared<HDFSSink>(uri,
         format_name,
         metadata_snapshot->getSampleBlock(),
         getContext(),
         chooseCompressionMethod(uri, compression_method));
 }
+
+void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr context_, TableExclusiveLockHolder &)
+{
+    const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
+    const String path = uri.substr(begin_of_path);
+    const String url = uri.substr(0, begin_of_path);
+
+    HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", context_->getGlobalContext()->getConfigRef());
+    HDFSFSPtr fs = createHDFSFS(builder.get());
+
+    int ret = hdfsDelete(fs.get(), path.data(), 0);
+    if (ret)
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Unable to truncate hdfs table: {}", std::string(hdfsGetLastError()));
+}
+
 
 void registerStorageHDFS(StorageFactory & factory)
 {

@@ -22,15 +22,15 @@ def started_cluster():
 
 
 def test_replica_always_download(started_cluster):
-    node1.query("""
-        CREATE TABLE test_table(
+    node1.query_with_retry("""
+        CREATE TABLE IF NOT EXISTS test_table(
             key UInt64,
             value String
         ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table/replicated', '1')
         ORDER BY tuple()
     """)
-    node2.query("""
-        CREATE TABLE test_table(
+    node2.query_with_retry("""
+        CREATE TABLE IF NOT EXISTS test_table(
             key UInt64,
             value String
         ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table/replicated', '2')
@@ -42,12 +42,12 @@ def test_replica_always_download(started_cluster):
     node1.query("SYSTEM STOP MERGES")
 
     for i in range(0, 10):
-        node1.query("INSERT INTO test_table VALUES ({}, '{}')".format(i, i))
+        node1.query_with_retry("INSERT INTO test_table VALUES ({}, '{}')".format(i, i))
 
     assert node1.query("SELECT COUNT() FROM test_table") == "10\n"
     assert_eq_with_retry(node2, "SELECT COUNT() FROM test_table", "10\n")
 
-    time.sleep(3)
+    time.sleep(5)
 
     # Nothing is merged
     assert node1.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1") == "10\n"

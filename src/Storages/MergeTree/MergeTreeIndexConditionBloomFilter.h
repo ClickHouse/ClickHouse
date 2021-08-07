@@ -24,6 +24,7 @@ public:
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
+            FUNCTION_HAS_ANY,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_UNKNOWN, /// Can take any value.

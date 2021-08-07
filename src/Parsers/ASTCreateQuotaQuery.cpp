@@ -2,7 +2,7 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
 #include <Common/IntervalKind.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <IO/Operators.h>
 
 
@@ -93,7 +93,7 @@ namespace
         else
         {
             bool limit_found = false;
-            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
             {
                 if (limits.max[resource_type])
                     limit_found = true;
@@ -102,7 +102,7 @@ namespace
             {
                 settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX" << (settings.hilite ? IAST::hilite_none : "");
                 bool need_comma = false;
-                for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+                for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
                 {
                     if (limits.max[resource_type])
                     {

@@ -3,6 +3,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context.h>
@@ -110,7 +111,7 @@ protected:
     void runMainThread();
     void runCleanupThread();
 
-    ContextPtr context;
+    ContextMutablePtr context;
     Poco::Logger * log;
 
     std::string host_fqdn;      /// current host domain name
@@ -125,6 +126,7 @@ protected:
     std::optional<String> first_failed_task_name;
     std::list<DDLTaskPtr> current_tasks;
 
+    Coordination::Stat queue_node_stat;
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;

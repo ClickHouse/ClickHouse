@@ -8,7 +8,6 @@
 namespace DB
 {
 
-/// Stores data in S3/HDFS and adds the object key (S3 path) and object size to metadata file on local FS.
 template <typename T>
 WriteIndirectBufferFromRemoteFS<T>::WriteIndirectBufferFromRemoteFS(
     std::unique_ptr<T> impl_,

@@ -29,10 +29,11 @@ private:
     size_t num_arguments;
 
 public:
-    AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments)
-        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, {})
+    AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
+        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_)
         , nested_func(nested_), num_arguments(arguments.size())
     {
+        assert(parameters == nested_func->getParameters());
         for (const auto & type : arguments)
             if (!isArray(type))
                 throw Exception("All arguments for aggregate function " + getName() + " must be arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

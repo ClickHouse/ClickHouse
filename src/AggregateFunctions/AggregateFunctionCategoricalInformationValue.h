@@ -8,7 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -71,7 +71,7 @@ public:
         auto y_col = static_cast<const ColumnUInt8 *>(columns[category_count]);
         bool y = y_col->getData()[row_num];
 
-        for (size_t i : ext::range(0, category_count))
+        for (size_t i : collections::range(0, category_count))
         {
             auto x_col = static_cast<const ColumnUInt8 *>(columns[i]);
             bool x = x_col->getData()[row_num];
@@ -89,7 +89,7 @@ public:
         Arena *
     ) const override
     {
-        for (size_t i : ext::range(0, category_count + 1))
+        for (size_t i : collections::range(0, category_count + 1))
         {
             reinterpret_cast<T *>(place)[i * 2] += reinterpret_cast<const T *>(rhs)[i * 2];
             reinterpret_cast<T *>(place)[i * 2 + 1] += reinterpret_cast<const T *>(rhs)[i * 2 + 1];
@@ -139,7 +139,7 @@ public:
         Float64 rev_no = 1. / sum_no;
         Float64 rev_yes = 1. / sum_yes;
 
-        for (size_t i : ext::range(0, category_count))
+        for (size_t i : collections::range(0, category_count))
         {
             T no = reinterpret_cast<const T *>(place)[i * 2];
             T yes = reinterpret_cast<const T *>(place)[i * 2 + 1];

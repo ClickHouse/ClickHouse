@@ -14,7 +14,7 @@
 /// outside of try/catch block of thread functions. ALLOW_ALLOCATIONS_IN_SCOPE cancels effect of
 /// DENY_ALLOCATIONS_IN_SCOPE in the inner scope. In Release builds these macros do nothing.
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 extern thread_local bool _memory_tracker_always_throw_logical_error_on_allocation;
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
         bool _allocations_flag_prev_val##n = _memory_tracker_always_throw_logical_error_on_allocation; \

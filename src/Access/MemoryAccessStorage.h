@@ -33,8 +33,8 @@ private:
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
-    ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
+    scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
+    scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
     bool hasSubscriptionImpl(EntityType type) const override;
 
@@ -51,7 +51,7 @@ private:
     void setAllNoLock(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, Notifications & notifications);
     void prepareNotifications(const Entry & entry, bool remove, Notifications & notifications) const;
 
-    mutable std::mutex mutex;
+    mutable std::recursive_mutex mutex;
     std::unordered_map<UUID, Entry> entries_by_id; /// We want to search entries both by ID and by the pair of name and type.
     std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(EntityType::MAX)];
     mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];

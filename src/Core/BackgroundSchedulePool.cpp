@@ -5,7 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <common/logger_useful.h>
 #include <chrono>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 
 namespace DB

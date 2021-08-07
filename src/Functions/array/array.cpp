@@ -14,7 +14,7 @@ class FunctionArray : public IFunction
 {
 public:
     static constexpr auto name = "array";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionArray>();
     }

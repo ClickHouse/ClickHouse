@@ -1,14 +1,18 @@
 #pragma once
+
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #include <atomic>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
-#include <Poco/DirectoryIterator.h>
 #include <utility>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -79,11 +83,13 @@ public:
 
     void removeFile(const String & path) override { removeSharedFile(path, false); }
 
-    void removeFileIfExists(const String & path) override;
+    void removeFileIfExists(const String & path) override { removeSharedFileIfExists(path, false); }
 
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
 
     void removeSharedFile(const String & path, bool keep_in_remote_fs) override;
+
+    void removeSharedFileIfExists(const String & path, bool keep_in_remote_fs) override;
 
     void removeSharedRecursive(const String & path, bool keep_in_remote_fs) override;
 
@@ -112,6 +118,10 @@ public:
     void createHardLink(const String & src_path, const String & dst_path) override;
 
     ReservationPtr reserve(UInt64 bytes) override;
+
+    String getUniqueId(const String & path) const override;
+
+    bool checkUniqueId(const String & id) const override = 0;
 
     virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) = 0;
 
@@ -189,25 +199,26 @@ struct IDiskRemote::Metadata
 class RemoteDiskDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
+    RemoteDiskDirectoryIterator() {}
     RemoteDiskDirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
 
     void next() override { ++iter; }
 
-    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
+    bool isValid() const override { return iter != fs::directory_iterator(); }
 
     String path() const override
     {
-        if (iter->isDirectory())
-            return folder_path + iter.name() + '/';
+        if (fs::is_directory(iter->path()))
+            return folder_path / iter->path().filename().string() / "";
         else
-            return folder_path + iter.name();
+            return folder_path / iter->path().filename().string();
     }
 
-    String name() const override { return iter.name(); }
+    String name() const override { return iter->path().filename(); }
 
 private:
-    Poco::DirectoryIterator iter;
-    String folder_path;
+    fs::directory_iterator iter;
+    fs::path folder_path;
 };
 
 

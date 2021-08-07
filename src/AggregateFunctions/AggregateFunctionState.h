@@ -33,7 +33,15 @@ public:
         return nested_func->getName() + "State";
     }
 
-    DataTypePtr getReturnType() const override;
+    DataTypePtr getReturnType() const override
+    {
+        return getStateType();
+    }
+
+    DataTypePtr getStateType() const override
+    {
+        return nested_func->getStateType();
+    }
 
     void create(AggregateDataPtr __restrict place) const override
     {

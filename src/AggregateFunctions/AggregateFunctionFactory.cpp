@@ -17,9 +17,9 @@
 #include <Common/CurrentThread.h>
 
 #include <Poco/String.h>
-#include "registerAggregateFunctions.h"
 
 #include <Functions/FunctionFactory.h>
+
 
 namespace DB
 {
@@ -95,18 +95,18 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         // nullability themselves. Another special case is functions from Nothing
         // that are rewritten to AggregateFunctionNothing, in this case
         // nested_function is nullptr.
-        if (nested_function && nested_function->asWindowFunction())
+        if (!nested_function || !nested_function->isOnlyWindowFunction())
         {
-            return nested_function;
+            return combinator->transformAggregateFunction(nested_function,
+                out_properties, type_without_low_cardinality, parameters);
         }
-
-        return combinator->transformAggregateFunction(nested_function, out_properties, type_without_low_cardinality, parameters);
     }
 
-    auto res = getImpl(name, type_without_low_cardinality, parameters, out_properties, false);
-    if (!res)
+    auto with_original_arguments = getImpl(name, type_without_low_cardinality, parameters, out_properties, false);
+
+    if (!with_original_arguments)
         throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
-    return res;
+    return with_original_arguments;
 }
 
 
@@ -133,7 +133,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         is_case_insensitive = true;
     }
 
-    ContextConstPtr query_context;
+    ContextPtr query_context;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 

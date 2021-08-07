@@ -43,8 +43,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllPhysical();
-        columns_for_reader = physical_columns.addTypes(columns_to_read);
+        columns_for_reader = metadata_snapshot->getColumns().getByNames(ColumnsDescription::AllPhysical, columns_to_read, false);
     }
     else
     {
@@ -54,7 +53,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     MergeTreeReaderSettings reader_settings =
     {
-        /// bytes to use AIO (this is hack)
+        /// bytes to use direct IO (this is hack)
         .min_bytes_to_use_direct_io = read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
         .max_read_buffer_size = DBMS_DEFAULT_BUFFER_SIZE,
         .save_marks_in_cache = false

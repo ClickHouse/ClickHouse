@@ -54,7 +54,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (typeid_cast<DatabaseReplicated *>(database.get())
-        && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+        && !getContext()->getClientInfo().is_replicated_database_internal)
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
@@ -65,8 +65,7 @@ BlockIO InterpreterAlterQuery::execute()
     auto alter_lock = table->lockForAlter(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    /// Add default database to table identifiers that we can encounter in e.g. default expressions,
-    /// mutation expression, etc.
+    /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(table_id.getDatabaseName());
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
@@ -101,7 +100,8 @@ BlockIO InterpreterAlterQuery::execute()
     if (typeid_cast<DatabaseReplicated *>(database.get()))
     {
         int command_types_count = !mutation_commands.empty() + !partition_commands.empty() + !live_view_commands.empty() + !alter_commands.empty();
-        if (1 < command_types_count)
+        bool mixed_settings_amd_metadata_alter = alter_commands.hasSettingsAlterCommand() && !alter_commands.isSettingsAlter();
+        if (1 < command_types_count || mixed_settings_amd_metadata_alter)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "For Replicated databases it's not allowed "
                                                          "to execute ALTERs of different types in single query");
     }
@@ -270,6 +270,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_TTL, database, table);
             break;
         }
+        case ASTAlterCommand::RESET_SETTING: [[fallthrough]];
         case ASTAlterCommand::MODIFY_SETTING:
         {
             required_access.emplace_back(AccessType::ALTER_SETTINGS, database, table);
@@ -289,15 +290,22 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         }
         case ASTAlterCommand::MOVE_PARTITION:
         {
-            if ((command.move_destination_type == DataDestinationType::DISK)
-                || (command.move_destination_type == DataDestinationType::VOLUME))
+            switch (command.move_destination_type)
             {
-                required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
-            }
-            else if (command.move_destination_type == DataDestinationType::TABLE)
-            {
-                required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
-                required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
+                case DataDestinationType::DISK: [[fallthrough]];
+                case DataDestinationType::VOLUME:
+                    required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
+                    break;
+                case DataDestinationType::TABLE:
+                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
+                    required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
+                    break;
+                case DataDestinationType::SHARD:
+                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
+                    required_access.emplace_back(AccessType::MOVE_PARTITION_BETWEEN_SHARDS);
+                    break;
+                case DataDestinationType::DELETE:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected destination type for command.");
             }
             break;
         }

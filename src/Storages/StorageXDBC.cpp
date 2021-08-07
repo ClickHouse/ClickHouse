@@ -8,7 +8,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Poco/Path.h>
 #include <Processors/Pipe.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
@@ -115,7 +114,7 @@ Pipe StorageXDBC::read(
     return IStorageURLBase::read(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     bridge_helper->startBridgeSync();
 
@@ -131,7 +130,7 @@ BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageM
     request_uri.addQueryParameter("format_name", format_name);
     request_uri.addQueryParameter("sample_block", metadata_snapshot->getSampleBlock().getNamesAndTypesList().toString());
 
-    return std::make_shared<StorageURLBlockOutputStream>(
+    return std::make_shared<StorageURLSink>(
         request_uri,
         format_name,
         getFormatSettings(local_context),
