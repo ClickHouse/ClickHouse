@@ -1139,6 +1139,18 @@ ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
     return {};
 }
 
+void StorageDistributed::flush()
+{
+    try
+    {
+        flushClusterNodesAllData(getContext());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot flush");
+    }
+}
+
 void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
 {
     /// Sync SYSTEM FLUSH DISTRIBUTED with TRUNCATE
