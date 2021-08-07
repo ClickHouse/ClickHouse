@@ -28,7 +28,7 @@ RUN apt-get update --yes \
 ENV PKG_VERSION="pvs-studio-latest"
 
 RUN set -x \
-    && export PUBKEY_HASHSUM="486a0694c7f92e96190bbfac01c3b5ac2cb7823981db510a28f744c99eabbbf17a7bcee53ca42dc6d84d4323c2742761" \
+    && export PUBKEY_HASHSUM="686e5eb8b3c543a5c54442c39ec876b6c2d912fe8a729099e600017ae53c877dda3368fe38ed7a66024fe26df6b5892a" \
     && wget -nv https://files.viva64.com/etc/pubkey.txt -O /tmp/pubkey.txt \
     && echo "${PUBKEY_HASHSUM} /tmp/pubkey.txt" | sha384sum -c \
     && apt-key add /tmp/pubkey.txt \
