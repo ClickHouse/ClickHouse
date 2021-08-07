@@ -473,6 +473,12 @@ endif ()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 
+if (USE_NLP)
+    dbms_target_link_libraries (PUBLIC stemmer)
+    dbms_target_link_libraries (PUBLIC wnb)
+    dbms_target_link_libraries (PUBLIC lemmagen)
+endif()
+
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
 if (ENABLE_TESTS AND USE_GTEST)

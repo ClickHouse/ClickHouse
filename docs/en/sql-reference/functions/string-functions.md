@@ -504,7 +504,7 @@ Replaces literals, sequences of literals and complex aliases with placeholders.
 normalizeQuery(x)
 ```
 
-**Arguments** 
+**Arguments**
 
 -   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -534,13 +534,13 @@ Result:
 
 Returns identical 64bit hash values without the values of literals for similar queries. It helps to analyze query log.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 normalizedQueryHash(x)
 ```
 
-**Arguments** 
+**Arguments**
 
 -   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -572,13 +572,13 @@ Escapes characters to place string into XML text node or attribute.
 
 The following five XML predefined entities will be replaced: `<`, `&`, `>`, `"`, `'`.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 encodeXMLComponent(x)
 ```
 
-**Arguments** 
+**Arguments**
 
 -   `x` — The sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -641,7 +641,7 @@ SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
 Result:
 
 ``` text
-'foo' 
+'foo'
 < Σ >
 ```
 
@@ -683,7 +683,7 @@ extractTextFromHTML(x)
 
 **Arguments**
 
--   `x` — input text. [String](../../sql-reference/data-types/string.md). 
+-   `x` — input text. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 

@@ -26,7 +26,8 @@ public:
         const ASTPtr & table_func_ptr,
         ContextPtr context,
         std::vector<QueryPlanPtr> & local_plans,
-        Shards & remote_shards) override;
+        Shards & remote_shards,
+        UInt32 shard_count) override;
 
 private:
     const Block header;
