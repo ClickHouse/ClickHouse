@@ -44,7 +44,7 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
         max_wait_time_when_mysql_unavailable=10000;
 ```
 
-**Settings on Mysql-server Side**
+**Settings on MySQL-server Side**
 
 For the correct work of `MaterializeMySQL`, there are few mandatory `MySQL`-side configuration settings that must be set:
 
