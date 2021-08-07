@@ -13,7 +13,7 @@ ALTER TABLE mutations_and_quorum1 DELETE WHERE something = 'test1' SETTINGS muta
 SELECT COUNT() FROM mutations_and_quorum1;
 SELECT COUNT() FROM mutations_and_quorum2;
 
-SELECT COUNT() FROM system.mutations WHERE table like 'mutations_and_quorum%' and is_done = 0;
+SELECT COUNT() FROM system.mutations WHERE database = currentDatabase() AND table like 'mutations_and_quorum%' and is_done = 0;
 
 DROP TABLE IF EXISTS mutations_and_quorum1;
 DROP TABLE IF EXISTS mutations_and_quorum2;
