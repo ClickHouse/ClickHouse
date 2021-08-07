@@ -3,6 +3,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
+#include <Common/Stopwatch.h>
 #include <common/sleep.h>
 
 namespace ProfileEvents
@@ -104,14 +105,18 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
     }
 }
 
-bool ExecutionSpeedLimits::checkTimeLimit(UInt64 elapsed_ns, OverflowMode overflow_mode) const
+bool ExecutionSpeedLimits::checkTimeLimit(const Stopwatch & stopwatch, OverflowMode overflow_mode) const
 {
-    if (max_execution_time != 0
-        && elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
-        return handleOverflowMode(overflow_mode,
+    if (max_execution_time != 0)
+    {
+        auto elapsed_ns = stopwatch.elapsed();
+
+        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+            return handleOverflowMode(overflow_mode,
                                   "Timeout exceeded: elapsed " + toString(static_cast<double>(elapsed_ns) / 1000000000ULL)
                                   + " seconds, maximum: " + toString(max_execution_time.totalMicroseconds() / 1000000.0),
                                   ErrorCodes::TIMEOUT_EXCEEDED);
+    }
 
     return true;
 }
