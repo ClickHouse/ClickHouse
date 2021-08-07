@@ -245,4 +245,4 @@
 	url = https://github.com/ClickHouse-Extras/s2geometry.git
 [submodule "contrib/bzip2"]
 	path = contrib/bzip2
-	url = https://gitlab.com/federicomenaquintero/bzip2.git
+	url = https://github.com/ClickHouse-Extras/bzip2.git
