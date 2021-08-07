@@ -5,7 +5,7 @@ LIBRARY()
 
 ADDINCL(
     contrib/libs/zstd/include
-    contrib/restricted/fast_float
+    contrib/restricted/fast_float/include
 )
 
 PEERDIR(
