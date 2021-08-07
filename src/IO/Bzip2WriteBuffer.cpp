@@ -20,7 +20,7 @@ namespace ErrorCodes
 class Bzip2WriteBuffer::Bzip2StateWrapper
 {
 public:
-    Bzip2StateWrapper(int compression_level)
+    explicit Bzip2StateWrapper(int compression_level)
     {
         memset(&stream, 0, sizeof(stream));
 
