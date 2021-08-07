@@ -469,7 +469,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         if (context->hasQueryParameters())
         {
-            ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
+            ReplaceQueryParameterVisitor visitor(context);
             visitor.visit(ast);
             query = serializeAST(*ast);
         }

@@ -33,7 +33,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 {
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
     auto ast = node->clone();
-    ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
+    ReplaceQueryParameterVisitor param_visitor(context);
     param_visitor.visit(ast);
 
     if (context->getSettingsRef().normalize_function_names)

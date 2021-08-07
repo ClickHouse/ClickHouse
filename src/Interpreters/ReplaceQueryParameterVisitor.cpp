@@ -11,6 +11,9 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 
 
 namespace DB
@@ -70,6 +73,12 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
             value, type_name, ast_param.name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
 
     ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(temp_column[0]), type_name);
+
+    /// Inefficient, but will make ast consistent with how it would have been if the value was not passed
+    /// as a parameter, because otherwise query might be analyzed incorrectly in some cases and will result in unexpected ast changes.
+    auto cast = serializeAST(*ast);
+    ParserFunction parser;
+    ast = parseQuery(parser, cast, cast.data() + cast.size(), settings.max_query_size, settings.max_parser_depth);
 
     /// Keep the original alias.
     ast->setAlias(alias);

@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Parsers/IAST_fwd.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -13,14 +14,17 @@ class ASTQueryParameter;
 class ReplaceQueryParameterVisitor
 {
 public:
-    ReplaceQueryParameterVisitor(const NameToNameMap & parameters)
-        : query_parameters(parameters)
+    ReplaceQueryParameterVisitor(ContextPtr context)
+        : query_parameters(context->getQueryParameters())
+        , settings(context->getSettingsRef())
     {}
 
     void visit(ASTPtr & ast);
 
 private:
     const NameToNameMap & query_parameters;
+    const Settings & settings;
+
     const String & getParamValue(const String & name);
     void visitIdentifier(ASTPtr & ast);
     void visitQueryParameter(ASTPtr & ast);

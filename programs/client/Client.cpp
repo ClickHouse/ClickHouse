@@ -1750,7 +1750,7 @@ private:
         if (!query_parameters.empty())
         {
             /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-            ReplaceQueryParameterVisitor visitor(query_parameters);
+            ReplaceQueryParameterVisitor visitor(context);
             visitor.visit(parsed_query);
 
             /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
