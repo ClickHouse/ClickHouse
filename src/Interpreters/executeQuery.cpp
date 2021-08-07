@@ -74,6 +74,7 @@ namespace ErrorCodes
 {
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -262,7 +263,11 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
     elem.query = query_for_logging;
     elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
-    // We don't calculate query_kind, databases, tables and columns when the query isn't able to start
+    // Try log query_kind if ast is valid
+    if (ast)
+        elem.query_kind = ast->getQueryKindString();
+
+    // We don't calculate databases, tables and columns when the query isn't able to start
 
     elem.exception_code = getCurrentExceptionCode();
     elem.exception = getCurrentExceptionMessage(false);
@@ -1007,22 +1012,31 @@ void executeQuery(
             const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
-            std::optional<WriteBufferFromFile> out_file_buf;
+            std::unique_ptr<WriteBuffer> compressed_buffer;
             if (ast_query_with_output && ast_query_with_output->out_file)
             {
                 if (!allow_into_outfile)
                     throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
 
                 const auto & out_file = ast_query_with_output->out_file->as<ASTLiteral &>().value.safeGet<std::string>();
-                out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                out_buf = &*out_file_buf;
+                compressed_buffer = wrapWriteBufferWithCompressionMethod(
+                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                    chooseCompressionMethod(out_file, ""),
+                    /* compression level = */ 3
+                );
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                 ? getIdentifierName(ast_query_with_output->format)
                 : context->getDefaultFormat();
 
-            auto out = FormatFactory::instance().getOutputStreamParallelIfPossible(format_name, *out_buf, streams.in->getHeader(), context, {}, output_format_settings);
+            auto out = FormatFactory::instance().getOutputStreamParallelIfPossible(
+                format_name,
+                compressed_buffer ? *compressed_buffer : *out_buf,
+                streams.in->getHeader(),
+                context,
+                {},
+                output_format_settings);
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context->getProgressCallback();
@@ -1046,15 +1060,18 @@ void executeQuery(
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
-            std::optional<WriteBufferFromFile> out_file_buf;
+            std::unique_ptr<WriteBuffer> compressed_buffer;
             if (ast_query_with_output && ast_query_with_output->out_file)
             {
                 if (!allow_into_outfile)
                     throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
 
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
-                out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                out_buf = &*out_file_buf;
+                compressed_buffer = wrapWriteBufferWithCompressionMethod(
+                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                    chooseCompressionMethod(out_file, ""),
+                    /* compression level = */ 3
+                );
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
@@ -1068,7 +1085,14 @@ void executeQuery(
                     return std::make_shared<MaterializingTransform>(header);
                 });
 
-                auto out = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name, *out_buf, pipeline.getHeader(), context, {}, output_format_settings);
+                auto out = FormatFactory::instance().getOutputFormatParallelIfPossible(
+                    format_name,
+                    compressed_buffer ? *compressed_buffer : *out_buf,
+                    pipeline.getHeader(),
+                    context,
+                    {},
+                    output_format_settings);
+
                 out->setAutoFlush();
 
                 /// Save previous progress callback if any. TODO Do it more conveniently.
@@ -1101,6 +1125,34 @@ void executeQuery(
                 executor->execute(pipeline.getNumThreads());
             }
         }
+    }
+    catch (...)
+    {
+        streams.onException();
+        throw;
+    }
+
+    streams.onFinish();
+}
+
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
+{
+    try
+    {
+        if (streams.out)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires input, but no input buffer provided, it's a bug");
+        if (streams.in)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires output, but no output buffer provided, it's a bug");
+
+        if (!streams.pipeline.initialized())
+            return;
+
+        if (!streams.pipeline.isCompleted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query pipeline requires output, but no output buffer provided, it's a bug");
+
+        streams.pipeline.setProgressCallback(context->getProgressCallback());
+        auto executor = streams.pipeline.execute();
+        executor->execute(streams.pipeline.getNumThreads());
     }
     catch (...)
     {
