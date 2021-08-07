@@ -639,7 +639,7 @@ void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const I
         expr = makeASTFunction("assumeNotNull", std::move(expr));
     }
 
-    expr = makeASTFunction("CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
+    expr = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
 
     if (null_as_default)
     {

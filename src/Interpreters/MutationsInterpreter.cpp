@@ -503,10 +503,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     }
                 }
 
-                auto updated_column = makeASTFunction("CAST",
+                auto updated_column = makeASTFunction("_CAST",
                     makeASTFunction("if",
                         condition,
-                        makeASTFunction("CAST",
+                        makeASTFunction("_CAST",
                             update_expr->clone(),
                             type_literal),
                         std::make_shared<ASTIdentifier>(column)),
