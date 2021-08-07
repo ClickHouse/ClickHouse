@@ -3470,7 +3470,7 @@ protected:
         if constexpr (internal)
             return type;
 
-        if (keep_nullable && arguments.front().type->isNullable())
+        if (keep_nullable && arguments.front().type->isNullable() && type->canBeInsideNullable())
             return makeNullable(type);
 
         return type;
