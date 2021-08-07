@@ -2222,7 +2222,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 ## defaultRoles {#default-roles}
 
-Returns the names of the roles which are enabled by default for the current user when he logins. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant/#grant-select)). The list of the user roles can be changed lately with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement. 
+Returns the names of the roles which are enabled by default for the current user when he logins. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant/#grant-select)). But this list can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement. 
 
 **Syntax**
 
