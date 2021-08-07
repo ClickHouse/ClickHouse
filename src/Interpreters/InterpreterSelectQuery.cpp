@@ -1327,15 +1327,20 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             }
 
             bool apply_limit = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregation;
+            bool apply_prelimit = apply_limit &&
+                                  query.limitLength() && !query.limit_with_ties &&
+                                  !hasWithTotalsInAnySubqueryInFromClause(query) &&
+                                  !query.arrayJoinExpressionList() &&
+                                  !query.distinct &&
+                                  !expressions.hasLimitBy() &&
+                                  !settings.extremes &&
+                                  !has_withfill;
             bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-            bool has_prelimit = false;
-            if (apply_limit &&
-                query.limitLength() && !query.limit_with_ties && !hasWithTotalsInAnySubqueryInFromClause(query) &&
-                !query.arrayJoinExpressionList() && !query.distinct && !expressions.hasLimitBy() && !settings.extremes &&
-                !has_withfill)
+            bool limit_applied = false;
+            if (apply_prelimit)
             {
                 executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
-                has_prelimit = true;
+                limit_applied = true;
             }
 
             /** If there was more than one stream,
@@ -1354,10 +1359,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
-            if (query.limit_with_ties)
+            if (query.limit_with_ties && apply_offset)
             {
                 executeLimit(query_plan);
-                has_prelimit = true;
+                limit_applied = true;
             }
 
             /// Projection not be done on the shards, since then initiator will not find column in blocks.
@@ -1372,7 +1377,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             executeExtremes(query_plan);
 
             /// Limit is no longer needed if there is prelimit.
-            if (apply_limit && !has_prelimit)
+            ///
+            /// NOTE: that LIMIT cannot be applied of OFFSET should not be applied,
+            /// since LIMIT will apply OFFSET too.
+            /// This is the case for various optimizations for distributed queries,
+            /// and when LIMIT cannot be applied it will be applied on the initiator anyway.
+            if (apply_limit && !limit_applied && apply_offset)
                 executeLimit(query_plan);
 
             if (apply_offset)
@@ -1928,11 +1938,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 }
             }
 
+            /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
+            UInt64 limit = (query.hasFiltration() || query.groupBy()) ? 0 : getLimitForSorting(query, context);
             if (query_info.projection)
                 query_info.projection->input_order_info
-                    = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context);
+                    = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context, limit);
             else
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context);
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context, limit);
         }
 
         StreamLocalLimits limits;
@@ -2290,8 +2302,14 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 {
     const Settings & settings = context->getSettingsRef();
 
+    const auto & query = getSelectQuery();
     auto finish_sorting_step = std::make_unique<FinishSortingStep>(
-        query_plan.getCurrentDataStream(), input_sorting_info->order_key_prefix_descr, output_order_descr, settings.max_block_size, limit);
+        query_plan.getCurrentDataStream(),
+        input_sorting_info->order_key_prefix_descr,
+        output_order_descr,
+        settings.max_block_size,
+        limit,
+        query.hasFiltration());
 
     query_plan.addStep(std::move(finish_sorting_step));
 }
@@ -2421,7 +2439,10 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
         }
 
         auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), limit_length, limit_offset);
-        limit->setStepDescription("preliminary LIMIT");
+        if (do_not_skip_offset)
+            limit->setStepDescription("preliminary LIMIT (with OFFSET)");
+        else
+            limit->setStepDescription("preliminary LIMIT (without OFFSET)");
         query_plan.addStep(std::move(limit));
     }
 }
