@@ -463,7 +463,7 @@ public:
 struct BitmapSubsetOffsetLimitImpl
 {
 public:
-    static constexpr auto name = "bitmapSubsetOffsetLimit";
+    static constexpr auto name = "subBitmap";
     template <typename T>
     static void apply(
         const AggregateFunctionGroupBitmapData<T> & bitmap_data_0,

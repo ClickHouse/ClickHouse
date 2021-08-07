@@ -88,11 +88,11 @@ SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12
     │ [30,31,32,33,100,200,500] │
     └───────────────────────────┘
 
-## bitmapSubsetOffsetLimit {#bitmapsubsetoffsetlimit}
+## subBitmap {#subBitmap}
 
 将位图跳过`offset`个元素，限制大小为`limit`个的结果转换为另一个位图。
 
-    bitmapSubsetOffsetLimit(bitmap, offset, limit)
+    subBitmap(bitmap, offset, limit)
 
 **参数**
 
@@ -103,7 +103,7 @@ SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12
 **示例**
 
 ``` sql
-SELECT bitmapToArray(bitmapSubsetOffsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(10), toUInt32(10))) AS res
+SELECT bitmapToArray(subBitmap(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(10), toUInt32(10))) AS res
 ```
 
 ```text
