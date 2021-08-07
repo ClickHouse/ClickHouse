@@ -586,48 +586,26 @@ public:
 
         if (isSmall())
         {
+            UInt64 count = 0;
             UInt64 offset_count = 0;
-            std::vector<T> answer;
-            for (const auto & x : small)
-            {
-                T val = x.getValue();
-                if (offset_count >= offset)
-                {
-                    answer.push_back(val);
-                }
-                else
-                {
-                    offset_count++;
-                }
-            }
-            if (limit < answer.size())
-            {
-                std::nth_element(answer.begin(), answer.begin() + limit, answer.end());
-                answer.resize(limit);
-            }
+            auto it = small.begin();
+            for (;it != small.end() && offset_count < offset; ++it)
+                ++offset_count;
 
-            for (const auto & elem : answer)
-                r1.add(elem);
-            return answer.size();
+            for (;it != small.end() && count < limit; ++it, ++count)
+                r1.add(it->getValue());
+            return count;
         }
         else
         {
             UInt64 count = 0;
             UInt64 offset_count = 0;
-            for (auto it = rb->begin(); it != rb->end(); ++it)
-            {
-                offset_count++;
-                if (offset_count <= offset)
-                    continue;
+            auto it = rb->begin();
+            for (;it != rb->end() && offset_count < offset; ++it)
+                ++offset_count;
 
-                if (count < limit)
-                {
-                    r1.add(*it);
-                    ++count;
-                }
-                else
-                    break;
-            }
+            for (;it != rb->end() && count < limit; ++it, ++count)
+                r1.add(*it);
             return count;
         }
     }
