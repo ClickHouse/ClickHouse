@@ -46,7 +46,7 @@ Result:
 └───────────┘
 ```
 
-## notEmpty {#notempty}
+## notempty {#notempty}
 
 Checks whether the input string is not empty.
 
