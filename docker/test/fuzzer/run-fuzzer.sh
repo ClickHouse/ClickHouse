@@ -103,7 +103,6 @@ function fuzz
     kill -0 $server_pid
 
     echo "
-set follow-fork-mode child
 handle all noprint
 handle SIGSEGV stop print
 handle SIGBUS stop print
@@ -193,10 +192,6 @@ continue
     sleep 10
     jobs
     pstree -aspgT
-
-    server_exit_code=0
-    wait $server_pid || server_exit_code=$?
-    echo "Server exit code is $server_exit_code"
 
     # Make files with status and description we'll show for this check on Github.
     task_exit_code=$fuzzer_exit_code

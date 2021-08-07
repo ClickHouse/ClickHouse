@@ -95,8 +95,10 @@ private:
     std::string base_path;
     std::vector<std::string> paths;
 
-    bool is_db_table = true;        /// Table is stored in real database, not user's file
-    bool use_table_fd = false;      /// Use table_fd instead of path
+    bool is_db_table = true;                     /// Table is stored in real database, not user's file
+    bool use_table_fd = false;                    /// Use table_fd instead of path
+    std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
+    off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
 
     mutable std::shared_timed_mutex rwlock;
 

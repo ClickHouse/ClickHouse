@@ -25,8 +25,7 @@ struct TextLogElement
     UInt64 source_line{};
 
     static std::string name() { return "TextLog"; }
-    static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases() { return {}; }
+    static Block createBlock();
     void appendToBlock(MutableColumns & columns) const;
 };
 
