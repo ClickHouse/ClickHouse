@@ -188,9 +188,11 @@ protected:
     /// Console output.
     WriteBufferFromFileDescriptor std_out{STDOUT_FILENO};
     std::unique_ptr<ShellCommand> pager_cmd;
+
     /// The user can specify to redirect query output to a file.
-    std::optional<WriteBufferFromFile> out_file_buf;
+    std::unique_ptr<WriteBuffer> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
+
     /// The user could specify special file for server logs (stderr by default)
     std::unique_ptr<WriteBuffer> out_logs_buf;
     String server_logs_file;
