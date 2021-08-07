@@ -4,9 +4,10 @@
 #include <AggregateFunctions/Helpers.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -17,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNKNOWN_AGGREGATE_FUNCTION;
 }
 
 namespace
@@ -25,15 +25,8 @@ namespace
 
 template <template <typename> class Data>
 AggregateFunctionPtr
-createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & arguments, const Array & params, const Settings * settings)
+createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & arguments, const Array & params, const Settings *)
 {
-    if (settings == nullptr || !settings->allow_experimental_funnel_functions)
-    {
-        throw Exception(
-            "Aggregate function " + name + " is experimental. Set `allow_experimental_funnel_functions` setting to enable it",
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
-    }
-
     if (params.empty())
         throw Exception{"Aggregate function " + name + " requires at least one parameter: <window>, [option, [option, ...]]", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
@@ -43,7 +36,7 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
     if (arguments.size() > max_events + 1)
         throw Exception("Too many event arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (const auto i : ext::range(1, arguments.size()))
+    for (const auto i : collections::range(1, arguments.size()))
     {
         const auto * cond_arg = arguments[i].get();
         if (!isUInt8(cond_arg))

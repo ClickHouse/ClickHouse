@@ -1165,15 +1165,20 @@ SELECT * FROM topic1_stream;
 | `DOUBLE`                      | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                      |
 | `DATE32`                      | [Date](../sql-reference/data-types/date.md)               | `UINT16`                      |
 | `DATE64`, `TIMESTAMP`         | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                      |
-| `STRING`, `BINARY`            | [String](../sql-reference/data-types/string.md)           | `STRING`                      |
-| —                             | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                      |
+| `STRING`, `BINARY`            | [String](../sql-reference/data-types/string.md)           | `BINARY`                      |
+| —                             | [FixedString](../sql-reference/data-types/fixedstring.md) | `BINARY`                      |
 | `DECIMAL`                     | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                     |
+| `LIST`                        | [Array](../sql-reference/data-types/array.md)             | `LIST`                        |
+| `STRUCT`                      | [Tuple](../sql-reference/data-types/tuple.md)             | `STRUCT`                      |
+| `MAP`                         | [Map](../sql-reference/data-types/map.md)                 | `MAP`                         |
 
-ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Типы `Tuple` и `Map` также могут быть вложенными.
 
-Неподдержанные типы данных Parquet: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
 
-Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных, ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+Неподдерживаемые типы данных Parquet: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
 ### Вставка и выборка данных {#vstavka-i-vyborka-dannykh}
 
@@ -1196,6 +1201,58 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 [Apache Arrow](https://arrow.apache.org/) поставляется с двумя встроенными поколоночнами форматами хранения. ClickHouse поддерживает операции чтения и записи для этих форматов.
 
 `Arrow` — это Apache Arrow's "file mode" формат. Он предназначен для произвольного доступа в памяти.
+
+### Соответствие типов данных {#data_types-matching-arrow}
+
+Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
+
+| Тип данных Arrow (`INSERT`) | Тип данных ClickHouse                               | Тип данных Arrow (`SELECT`) |
+|-----------------------------|-----------------------------------------------------|-----------------------------|
+| `UINT8`, `BOOL`             | [UInt8](../sql-reference/data-types/int-uint.md)    | `UINT8`                     |
+| `INT8`                      | [Int8](../sql-reference/data-types/int-uint.md)     | `INT8`                      |
+| `UINT16`                    | [UInt16](../sql-reference/data-types/int-uint.md)   | `UINT16`                    |
+| `INT16`                     | [Int16](../sql-reference/data-types/int-uint.md)    | `INT16`                     |
+| `UINT32`                    | [UInt32](../sql-reference/data-types/int-uint.md)   | `UINT32`                    |
+| `INT32`                     | [Int32](../sql-reference/data-types/int-uint.md)    | `INT32`                     |
+| `UINT64`                    | [UInt64](../sql-reference/data-types/int-uint.md)   | `UINT64`                    |
+| `INT64`                     | [Int64](../sql-reference/data-types/int-uint.md)    | `INT64`                     |
+| `FLOAT`, `HALF_FLOAT`       | [Float32](../sql-reference/data-types/float.md)     | `FLOAT32`                   |
+| `DOUBLE`                    | [Float64](../sql-reference/data-types/float.md)     | `FLOAT64`                   |
+| `DATE32`                    | [Date](../sql-reference/data-types/date.md)         | `UINT16`                    |
+| `DATE64`, `TIMESTAMP`       | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                    |
+| `STRING`, `BINARY`          | [String](../sql-reference/data-types/string.md)     | `BINARY`                    |
+| `STRING`, `BINARY`          | [FixedString](../sql-reference/data-types/fixedstring.md)   | `BINARY`                        |
+| `DECIMAL`                   | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                   |
+| `DECIMAL256`                | [Decimal256](../sql-reference/data-types/decimal.md)| `DECIMAL256`                |
+| `LIST`                      | [Array](../sql-reference/data-types/array.md)       | `LIST`                      |
+| `STRUCT`                    | [Tuple](../sql-reference/data-types/tuple.md)       | `STRUCT`                    |
+| `MAP`                       | [Map](../sql-reference/data-types/map.md)           | `MAP`                       |
+
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Типы `Tuple` и `Map` также могут быть вложенными.
+
+Тип `DICTIONARY` поддерживается для запросов `INSERT`. Для запросов `SELECT` есть настройка [output_format_arrow_low_cardinality_as_dictionary](../operations/settings/settings.md#output-format-arrow-low-cardinality-as-dictionary), которая позволяет выводить тип [LowCardinality](../sql-reference/data-types/lowcardinality.md) как `DICTIONARY`.
+
+ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных Arrow `DECIMAL` как `Decimal128`.
+
+Неподдерживаемые типы данных Arrow: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Arrow. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+
+### Вставка данных {#inserting-data-arrow}
+
+Чтобы вставить в ClickHouse данные из файла в формате Arrow, используйте команду следующего вида:
+
+``` bash
+$ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
+```
+
+### Вывод данных {#selecting-data-arrow}
+
+Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Arrow, используйте команду следующего вида:
+
+``` bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filename.arrow}
+```
 
 ## ArrowStream {#data-format-arrow-stream}
 
@@ -1225,9 +1282,13 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 | `DATE64`, `TIMESTAMP`     | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`               |
 | `STRING`, `BINARY`        | [String](../sql-reference/data-types/string.md)     | `BINARY`                  |
 | `DECIMAL`                 | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                 |
-| `-`                       | [Array](../sql-reference/data-types/array.md)       | `LIST`                    |
+| `LIST`                    | [Array](../sql-reference/data-types/array.md)       | `LIST`                    |
+| `STRUCT`                  | [Tuple](../sql-reference/data-types/tuple.md)       | `STRUCT`                  |
+| `MAP`                     | [Map](../sql-reference/data-types/map.md)           | `MAP`                     |
 
-ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных ORC `DECIMAL` как `Decimal128`.
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Типы `Tuple` и `Map` также могут быть вложенными.
+
+ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных ORC `DECIMAL` как `Decimal128`.
 
 Неподдерживаемые типы данных ORC: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
@@ -1397,4 +1458,3 @@ $ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
 ``` text
 f9725a22f9191e064120d718e26862a9  -
 ```
-

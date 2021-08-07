@@ -6,13 +6,12 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <Core/Names.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <common/logger_useful.h>
-#include <ext/range.h>
 #include "DictionaryBlockInputStreamBase.h"
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
+
 
 namespace DB
 {

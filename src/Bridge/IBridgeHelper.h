@@ -14,7 +14,7 @@ namespace DB
 
 /// Common base class for XDBC and Library bridge helpers.
 /// Contains helper methods to check/start bridge sync.
-class IBridgeHelper: protected WithConstContext
+class IBridgeHelper: protected WithContext
 {
 
 public:
@@ -27,17 +27,20 @@ public:
     static const inline std::string PING_METHOD = Poco::Net::HTTPRequest::HTTP_GET;
     static const inline std::string MAIN_METHOD = Poco::Net::HTTPRequest::HTTP_POST;
 
-    explicit IBridgeHelper(ContextConstPtr context_) : WithConstContext(context_) {}
-    virtual ~IBridgeHelper() = default;
+    explicit IBridgeHelper(ContextPtr context_) : WithContext(context_) {}
 
-    void startBridgeSync() const;
+    virtual ~IBridgeHelper() = default;
 
     Poco::URI getMainURI() const;
 
     Poco::URI getPingURI() const;
 
+    void startBridgeSync();
 
 protected:
+    /// Check bridge is running. Can also check something else in the mean time.
+    virtual bool bridgeHandShake() = 0;
+
     /// clickhouse-odbc-bridge, clickhouse-library-bridge
     virtual String serviceAlias() const = 0;
 
@@ -61,9 +64,7 @@ protected:
 
 
 private:
-    bool checkBridgeIsRunning() const;
-
-    std::unique_ptr<ShellCommand> startBridgeCommand() const;
+    std::unique_ptr<ShellCommand> startBridgeCommand();
 };
 
 }

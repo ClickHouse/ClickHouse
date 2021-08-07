@@ -21,6 +21,40 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
 }
 
 
+bool MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
+{
+    if (partition_id.empty())
+        return false;
+
+    ReadBufferFromString in(partition_id);
+
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        UInt32 min_yyyymmdd = 0;
+        UInt32 max_yyyymmdd = 0;
+        if (!tryReadIntText(min_yyyymmdd, in)
+            || !checkChar('_', in)
+            || !tryReadIntText(max_yyyymmdd, in)
+            || !checkChar('_', in))
+        {
+            return false;
+        }
+    }
+    else
+    {
+        while (!in.eof())
+        {
+            char c;
+            readChar(c, in);
+
+            if (c == '_')
+                break;
+        }
+    }
+
+    return in.eof();
+}
+
 bool MergeTreePartInfo::tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version)
 {
     ReadBufferFromString in(part_name);
@@ -213,13 +247,39 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     return wb.str();
 }
 
+
+const std::vector<String> DetachedPartInfo::DETACH_REASONS =
+    {
+        "broken",
+        "unexpected",
+        "noquorum",
+        "ignored",
+        "broken-on-start",
+        "clone",
+        "attaching",
+        "deleting",
+        "tmp-fetch",
+    };
+
 bool DetachedPartInfo::tryParseDetachedPartName(const String & dir_name, DetachedPartInfo & part_info,
                                                 MergeTreeDataFormatVersion format_version)
 {
     part_info.dir_name = dir_name;
 
-    /// First, try to parse as <part_name>.
-    // TODO what if tryParsePartName will parse prefix as partition_id? It can happen if dir_name doesn't contain mutation number at the end
+    /// First, try to find known prefix and parse dir_name as <prefix>_<partname>.
+    /// Arbitrary strings are not allowed for partition_id, so known_prefix cannot be confused with partition_id.
+    for (const auto & known_prefix : DETACH_REASONS)
+    {
+        if (dir_name.starts_with(known_prefix) && known_prefix.size() < dir_name.size() && dir_name[known_prefix.size()] == '_')
+        {
+            part_info.prefix = known_prefix;
+            String part_name = dir_name.substr(known_prefix.size() + 1);
+            bool parsed = MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version);
+            return part_info.valid_name = parsed;
+        }
+    }
+
+    /// Next, try to parse dir_name as <part_name>.
     if (MergeTreePartInfo::tryParsePartName(dir_name, &part_info, format_version))
         return part_info.valid_name = true;
 
@@ -229,7 +289,6 @@ bool DetachedPartInfo::tryParseDetachedPartName(const String & dir_name, Detache
     if (first_separator == String::npos)
         return part_info.valid_name = false;
 
-    // TODO what if <prefix> contains '_'?
     const auto part_name = dir_name.substr(first_separator + 1,
                                            dir_name.size() - first_separator - 1);
     if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))

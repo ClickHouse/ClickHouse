@@ -13,7 +13,7 @@ class Logger;
 namespace DB
 {
 
-class ReplicatedMergeTreeBlockOutputStream;
+class ReplicatedMergeTreeSink;
 
 /** Writes data to the specified table and to all dependent materialized views.
   */
@@ -38,7 +38,7 @@ private:
     StoragePtr storage;
     StorageMetadataPtr metadata_snapshot;
     BlockOutputStreamPtr output;
-    ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
+    ReplicatedMergeTreeSink * replicated_output = nullptr;
     Poco::Logger * log;
 
     ASTPtr query_ptr;
@@ -54,8 +54,8 @@ private:
     };
 
     std::vector<ViewInfo> views;
-    ContextPtr select_context;
-    ContextPtr insert_context;
+    ContextMutablePtr select_context;
+    ContextMutablePtr insert_context;
 
     void process(const Block & block, ViewInfo & view);
 };

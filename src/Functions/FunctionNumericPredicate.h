@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -23,7 +23,7 @@ class FunctionNumericPredicate : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionNumericPredicate>();
     }
@@ -80,7 +80,7 @@ public:
             const auto & in_data = in->getData();
             auto & out_data = out->getData();
 
-            for (const auto i : ext::range(0, size))
+            for (const auto i : collections::range(0, size))
                 out_data[i] = Impl::execute(in_data[i]);
 
             return out;

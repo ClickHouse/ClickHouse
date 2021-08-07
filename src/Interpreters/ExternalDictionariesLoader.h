@@ -13,21 +13,21 @@ namespace DB
 class IExternalLoaderConfigRepository;
 
 /// Manages user-defined dictionaries.
-class ExternalDictionariesLoader : public ExternalLoader, WithConstContext
+class ExternalDictionariesLoader : public ExternalLoader, WithContext
 {
 public:
     using DictPtr = std::shared_ptr<const IDictionary>;
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    explicit ExternalDictionariesLoader(ContextConstPtr global_context_);
+    explicit ExternalDictionariesLoader(ContextPtr global_context_);
 
-    DictPtr getDictionary(const std::string & dictionary_name, ContextConstPtr context) const;
+    DictPtr getDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
-    DictPtr tryGetDictionary(const std::string & dictionary_name, ContextConstPtr context) const;
+    DictPtr tryGetDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
-    void reloadDictionary(const std::string & dictionary_name, ContextConstPtr context) const;
+    void reloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
-    DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextConstPtr context) const;
+    DictionaryStructure getDictionaryStructure(const std::string & dictionary_name, ContextPtr context) const;
 
     static DictionaryStructure getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config = "dictionary");
 

@@ -413,6 +413,34 @@ ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String
     return res;
 }
 
+std::optional<String> ReplicatedMergeTreeLogEntryData::getDropRange(MergeTreeDataFormatVersion format_version) const
+{
+    if (type == DROP_RANGE)
+        return new_part_name;
+
+    if (type == REPLACE_RANGE)
+    {
+        auto drop_range_info = MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version);
+        if (!ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range_info))
+        {
+            /// It's REPLACE, not MOVE or ATTACH, so drop range is real
+            return replace_range_entry->drop_range_part_name;
+        }
+    }
+
+    return {};
+}
+
+bool ReplicatedMergeTreeLogEntryData::isDropPart(MergeTreeDataFormatVersion format_version) const
+{
+    if (type == DROP_RANGE)
+    {
+        auto drop_range_info = MergeTreePartInfo::fromPartName(new_part_name, format_version);
+        return !drop_range_info.isFakeDropRangePart();
+    }
+    return false;
+}
+
 Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormatVersion format_version) const
 {
     /// Doesn't produce any part
@@ -421,21 +449,37 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
 
     /// DROP_RANGE does not add a real part, but we must disable merges in that range
     if (type == DROP_RANGE)
-        return {new_part_name};
+    {
+        auto drop_range_part_info = MergeTreePartInfo::fromPartName(new_part_name, format_version);
 
-    /// CLEAR_COLUMN and CLEAR_INDEX are deprecated since 20.3
-    if (type == CLEAR_COLUMN || type == CLEAR_INDEX)
-        return {};
+        /// It's DROP PART and we don't want to add it into virtual parts
+        /// because it can lead to intersecting parts on stale replicas and this
+        /// problem is fundamental. So we have very weak guarantees for DROP
+        /// PART. If any concurrent merge will be assigned then DROP PART will
+        /// delete nothing and part will be successfully merged into bigger part.
+        ///
+        /// dropPart used in the following cases:
+        /// 1) Remove empty parts after TTL.
+        /// 2) Remove parts after move between shards.
+        /// 3) User queries: ALTER TABLE DROP PART 'part_name'.
+        ///
+        /// In the first case merge of empty part is even better than DROP. In
+        /// the second case part UUIDs used to forbid merges for moding parts so
+        /// there is no problem with concurrent merges. The third case is quite
+        /// rare and we give very weak guarantee: there will be no active part
+        /// with this name, but possibly it was merged to some other part.
+        if (!drop_range_part_info.isFakeDropRangePart())
+            return {};
+
+        return {new_part_name};
+    }
 
     if (type == REPLACE_RANGE)
     {
         Strings res = replace_range_entry->new_part_names;
         auto drop_range_info = MergeTreePartInfo::fromPartName(replace_range_entry->drop_range_part_name, format_version);
-        if (!ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range_info))
-        {
-            /// It's REPLACE, not MOVE or ATTACH, so drop range is real
-            res.emplace_back(replace_range_entry->drop_range_part_name);
-        }
+        if (auto drop_range = getDropRange(format_version))
+            res.emplace_back(*drop_range);
         return res;
     }
 

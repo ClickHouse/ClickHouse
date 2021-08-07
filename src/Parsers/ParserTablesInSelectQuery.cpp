@@ -23,7 +23,8 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (!ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), true).parse(pos, res->subquery, expected)
         && !ParserWithOptionalAlias(std::make_unique<ParserFunction>(true, true), true).parse(pos, res->table_function, expected)
-        && !ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(false, true), true).parse(pos, res->database_and_table_name, expected))
+        && !ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(true, true), true)
+                .parse(pos, res->database_and_table_name, expected))
         return false;
 
     /// FINAL
@@ -56,6 +57,8 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         res->children.emplace_back(res->sample_size);
     if (res->sample_offset)
         res->children.emplace_back(res->sample_offset);
+
+    assert(res->database_and_table_name || res->table_function || res->subquery);
 
     node = res;
     return true;

@@ -29,6 +29,9 @@ public:
 
     void shutdown() override;
 
+    static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
+                                   DatabaseReplicated * const database, bool committed = false);
+
 private:
     bool initializeMainThread() override;
     void initializeReplication();
@@ -40,7 +43,7 @@ private:
     mutable std::mutex mutex;
     std::condition_variable wait_current_task_change;
     String current_task;
-    UInt32 logs_to_keep = std::numeric_limits<UInt32>::max();
+    std::atomic<UInt32> logs_to_keep = std::numeric_limits<UInt32>::max();
 };
 
 }

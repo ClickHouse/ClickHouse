@@ -12,7 +12,7 @@ For information on connecting and configuring external dictionaries, see [Extern
 
 ## dictGet, dictGetOrDefault, dictGetOrNull {#dictget}
 
-Retrieves values from an external dictionary. 
+Retrieves values from an external dictionary.
 
 ``` sql
 dictGet('dict_name', attr_names, id_expr)
@@ -24,7 +24,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `attr_names` — Name of the column of the dictionary, [String literal](../../sql-reference/syntax.md#syntax-string-literal), or tuple of column names, [Tuple](../../sql-reference/data-types/tuple.md)([String literal](../../sql-reference/syntax.md#syntax-string-literal)).
--   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
+-   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning dictionary key-type value or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
 -   `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
 
 **Returned value**
@@ -87,7 +87,7 @@ SELECT
     dictGetOrDefault('ext-dict-test', 'c1', number + 1, toUInt32(number * 10)) AS val,
     toTypeName(val) AS type
 FROM system.numbers
-LIMIT 3
+LIMIT 3;
 ```
 
 ``` text
@@ -138,7 +138,7 @@ Configure the external dictionary:
                 <name>c2</name>
                 <type>String</type>
                 <null_value></null_value>
-            </attribute>            
+            </attribute>
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
@@ -237,7 +237,7 @@ dictHas('dict_name', id_expr)
 **Arguments**
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
+-   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning dictionary key-type value or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
 
 **Returned value**
 
@@ -287,6 +287,119 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 -   1, if `child_id_expr` is a child of `ancestor_id_expr` or if `child_id_expr` is an `ancestor_id_expr`.
 
 Type: `UInt8`.
+
+## dictGetChildren {#dictgetchildren}
+
+Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictgethierarchy).
+
+**Syntax**
+
+``` sql
+dictGetChildren(dict_name, key)
+```
+
+**Arguments**
+
+-   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
+-   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
+
+**Returned values**
+
+-   First-level descendants for the key.
+
+Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Consider the hierarchic dictionary:
+
+``` text
+┌─id─┬─parent_id─┐
+│  1 │         0 │
+│  2 │         1 │
+│  3 │         1 │
+│  4 │         2 │
+└────┴───────────┘
+```
+
+First-level children:
+
+``` sql
+SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
+```
+
+``` text
+┌─dictGetChildren('hierarchy_flat_dictionary', number)─┐
+│ [1]                                                  │
+│ [2,3]                                                │
+│ [4]                                                  │
+│ []                                                   │
+└──────────────────────────────────────────────────────┘
+```
+
+## dictGetDescendant {#dictgetdescendant}
+
+Returns all descendants as if [dictGetChildren](#dictgetchildren) function was applied `level` times recursively.
+
+**Syntax**
+
+``` sql
+dictGetDescendants(dict_name, key, level)
+```
+
+**Arguments**
+
+-   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
+-   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
+-   `level` — Hierarchy level. If `level = 0` returns all descendants to the end. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned values**
+
+-   Descendants for the key.
+
+Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Consider the hierarchic dictionary:
+
+``` text
+┌─id─┬─parent_id─┐
+│  1 │         0 │
+│  2 │         1 │
+│  3 │         1 │
+│  4 │         2 │
+└────┴───────────┘
+```
+All descendants:
+
+``` sql
+SELECT dictGetDescendants('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
+```
+
+``` text
+┌─dictGetDescendants('hierarchy_flat_dictionary', number)─┐
+│ [1,2,3,4]                                               │
+│ [2,3,4]                                                 │
+│ [4]                                                     │
+│ []                                                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+First-level descendants:
+
+``` sql
+SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.numbers LIMIT 4;
+```
+
+``` text
+┌─dictGetDescendants('hierarchy_flat_dictionary', number, 1)─┐
+│ [1]                                                        │
+│ [2,3]                                                      │
+│ [4]                                                        │
+│ []                                                         │
+└────────────────────────────────────────────────────────────┘
+```
 
 ## Other Functions {#ext_dict_functions-other}
 

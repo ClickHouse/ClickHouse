@@ -1,5 +1,5 @@
 #include <type_traits>
-#include <ext/bit_cast.h>
+#include <common/bit_cast.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 
@@ -31,14 +31,14 @@ template <typename T>
 inline std::enable_if_t<std::is_same_v<T, Float32>, T>
 roundDownToPowerOfTwo(T x)
 {
-    return ext::bit_cast<T>(ext::bit_cast<UInt32>(x) & ~((1ULL << 23) - 1));
+    return bit_cast<T>(bit_cast<UInt32>(x) & ~((1ULL << 23) - 1));
 }
 
 template <typename T>
 inline std::enable_if_t<std::is_same_v<T, Float64>, T>
 roundDownToPowerOfTwo(T x)
 {
-    return ext::bit_cast<T>(ext::bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
+    return bit_cast<T>(bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
 }
 
 template <typename T>

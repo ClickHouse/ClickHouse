@@ -32,6 +32,7 @@ public:
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
         RESTART_REPLICA,
+        RESTORE_REPLICA,
         DROP_REPLICA,
         SYNC_REPLICA,
         RELOAD_DICTIONARY,
@@ -65,7 +66,6 @@ public:
 
     Type type = Type::UNKNOWN;
 
-    String target_dictionary;
     String target_model;
     String database;
     String table;
@@ -85,6 +85,8 @@ public:
     {
         return removeOnCluster<ASTSystemQuery>(clone(), new_database);
     }
+
+    const char * getQueryKindString() const override { return "System"; }
 
 protected:
 

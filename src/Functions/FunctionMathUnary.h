@@ -35,7 +35,7 @@ class FunctionMathUnary : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionMathUnary>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMathUnary>(); }
 
 private:
     String getName() const override { return name; }
