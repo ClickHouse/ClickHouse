@@ -46,7 +46,7 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
 
 **Настройки на стороне MySQL-сервера**
 
-Для правильной работы `MaterializeMySQL` следует обязательно указать на MySQL сервере следующие параметры конфигурации:
+Для правильной работы `MaterializeMySQL` следует обязательно указать на сервере MySQL следующие параметры конфигурации:
 - `default_authentication_plugin = mysql_native_password` — `MaterializeMySQL` может авторизоваться только с помощью этого метода.
 - `gtid_mode = on` — ведение журнала на основе GTID является обязательным для обеспечения правильной репликации.
 
