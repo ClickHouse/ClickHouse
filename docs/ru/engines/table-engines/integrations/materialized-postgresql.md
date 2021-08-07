@@ -29,7 +29,7 @@ PRIMARY KEY key;
 
 1. Настройка [wal_level](https://postgrespro.ru/docs/postgrespro/10/runtime-config-wal) должна иметь значение `logical`, параметр `max_replication_slots` должен быть равен по меньшей мере `2` в конфигурационном файле в PostgreSQL.
 
-2. Таблица, созданная с помощью движка `MaterializedPostgreSQL`, должна иметь первичный ключ — такой же, как индекс идентичности реплики (по умолчанию: первичный ключ) таблицы PostgreSQL (смотрите [индекс идентичности реплики](../../../engines/database-engines/materialized-postgresql.md#requirements)).
+2. Таблица, созданная с помощью движка `MaterializedPostgreSQL`, должна иметь первичный ключ — такой же, как replica identity index (по умолчанию: первичный ключ) таблицы PostgreSQL (смотрите [replica identity index](../../../engines/database-engines/materialized-postgresql.md#requirements)).
 
 3. Допускается только база данных [Atomic](https://en.wikipedia.org/wiki/Atomicity_(database_systems)).
 
