@@ -5,7 +5,7 @@ toc_title: MaterializedPostgreSQL
 
 # [experimental] MaterializedPostgreSQL {#materialize-postgresql}
 
-Creates ClickHouse database with all the tables existing in PostgreSQL, and all the data in those tables.
+Creates ClickHouse database with an initial data dump of PostgreSQL database tables and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL database tables in the remote PostgreSQL database.
 
 ClickHouse server works as PostgreSQL replica. It reads WAL and performs DML queries. DDL is not replicated, but can be handled (described below).
 
