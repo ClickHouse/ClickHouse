@@ -197,7 +197,7 @@ private:
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
-    std::optional<WriteBufferFromFile> out_file_buf;
+    std::unique_ptr<WriteBuffer> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
 
     /// The user could specify special file for server logs (stderr by default)
@@ -1452,7 +1452,12 @@ private:
                         "Error while reconnecting to the server: {}\n",
                         getCurrentExceptionMessage(true));
 
-                    assert(!connection->isConnected());
+                    // The reconnection might fail, but we'll still be connected
+                    // in the sense of `connection->isConnected() = true`,
+                    // in case when the requested database doesn't exist.
+                    // Disconnect manually now, so that the following code doesn't
+                    // have any doubts, and the connection state is predictable.
+                    connection->disconnect();
                 }
             }
 
@@ -2238,8 +2243,11 @@ private:
                     const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                     const auto & out_file = out_file_node.value.safeGet<std::string>();
 
-                    out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                    out_buf = &*out_file_buf;
+                    out_file_buf = wrapWriteBufferWithCompressionMethod(
+                        std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                        chooseCompressionMethod(out_file, ""),
+                        /* compression level = */ 3
+                    );
 
                     // We are writing to file, so default format is the same as in non-interactive mode.
                     if (is_interactive && is_default_format)
@@ -2259,9 +2267,9 @@ private:
 
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
             if (!need_render_progress)
-                block_out_stream = context->getOutputStreamParallelIfPossible(current_format, *out_buf, block);
+                block_out_stream = context->getOutputStreamParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
             else
-                block_out_stream = context->getOutputStream(current_format, *out_buf, block);
+                block_out_stream = context->getOutputStream(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
             block_out_stream->writePrefix();
         }
