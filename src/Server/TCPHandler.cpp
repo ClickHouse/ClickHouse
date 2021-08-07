@@ -56,7 +56,8 @@ std::string formatHTTPErrorResponse(const Poco::Util::AbstractConfiguration& con
         "Port {} is for clickhouse-client program\r\n",
         config.getString("tcp_port"));
 
-    if (config.has("http_port")) {
+    if (config.has("http_port"))
+    {
         result += fmt::format(
             "You must use port {} for HTTP.\r\n",
             config.getString("http_port"));
