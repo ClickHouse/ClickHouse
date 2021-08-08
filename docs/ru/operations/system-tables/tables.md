@@ -1,10 +1,10 @@
 # system.tables {#system-tables}
 
-Содержит метаданные каждой таблицы, о которой знает сервер. 
+Содержит метаданные каждой таблицы, о которой знает сервер.
 
 Отсоединённые таблицы ([DETACH](../../sql-reference/statements/detach.md)) не отображаются в `system.tables`.
 
-Информация о [временных таблицах](../../sql-reference/statements/create/table.md#temporary-tables) содержится в `system.tables` только в тех сессиях, в которых эти таблицы были созданы. Поле `database` у таких таблиц пустое, а флаг `is_temporary` включен. 
+Информация о [временных таблицах](../../sql-reference/statements/create/table.md#temporary-tables) содержится в `system.tables` только в тех сессиях, в которых эти таблицы были созданы. Поле `database` у таких таблиц пустое, а флаг `is_temporary` включен.
 
 Столбцы:
 

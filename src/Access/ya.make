@@ -43,8 +43,10 @@ SRCS(
     SettingsProfile.cpp
     SettingsProfileElement.cpp
     SettingsProfilesCache.cpp
+    SettingsProfilesInfo.cpp
     User.cpp
     UsersConfigAccessStorage.cpp
+    tests/gtest_access_rights_ops.cpp
 
 )
 

@@ -33,11 +33,12 @@ namespace ErrorCodes
   * arrayReduce('agg', arr1, ...) - apply the aggregate function `agg` to arrays `arr1...`
   *  If multiple arrays passed, then elements on corresponding positions are passed as multiple arguments to the aggregate function.
   */
-class FunctionArrayReduce : public IFunction
+class FunctionArrayReduce : public IFunction, private WithContext
 {
 public:
     static constexpr auto name = "arrayReduce";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReduce>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayReduce>(context_); }
+    explicit FunctionArrayReduce(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
@@ -95,7 +96,7 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
         String aggregate_function_name;
         Array params_row;
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
-                                                   aggregate_function_name, params_row, "function " + getName());
+                                                   aggregate_function_name, params_row, "function " + getName(), getContext());
 
         AggregateFunctionProperties properties;
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
