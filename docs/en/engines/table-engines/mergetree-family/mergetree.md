@@ -867,7 +867,7 @@ Optional parameters:
 
 ## Using Virtual File System to Encrypt Data {#encrypted-virtual-file-system}
 
-Encrypts data and stores it in [S3](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-s3) and local file systems. Encryption is performed using [AES_128_CTR, AES_192_CTR and AES_256_CTR](../../../sql-reference/statements/create/table.md#create-query-encryption-codecs) algorithms. By default: AES_128_CTR. Uses a disk with type `encripted`. `Encrypted` disk ciphers all written files on the fly. When we read files from an `encrypted` disk it deciphers them automatically, so we can work with a `encrypted` disk like it is a normal disk.
+You can encrypt data stored in [S3](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-s3) and local file systems. Encryption is performed using [AES_128_CTR, AES_192_CTR and AES_256_CTR](../../../sql-reference/statements/create/table.md#create-query-encryption-codecs) algorithms. By default: `AES_128_CTR`. Uses a disk with type `encrypted`. An `encrypted` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically. So you can work with an `encrypted` disk like with a normal one.
 
 The `encrypted` disk configuration specifies the disk on which the data will be stored.
 
