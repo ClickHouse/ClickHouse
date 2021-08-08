@@ -553,7 +553,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     if (const ASTPtr order_by = select.orderBy())
         return default_stage;
 
-    // LIMIT BY
     // LIMIT
     // OFFSET
     if (select.limitLength() || select.limitOffset())
