@@ -1,42 +1,30 @@
 #include "TestHint.h"
 
-#include <sstream>
-#include <iostream>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/Lexer.h>
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_PARSE_TEXT;
-}
-
-}
 
 namespace
 {
 
-int parseErrorCode(std::stringstream & ss) // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+/// Parse error as number or as a string (name of the error code const)
+int parseErrorCode(DB::ReadBufferFromString & in)
 {
-    using namespace DB;
-
-    int code;
+    int code = -1;
     String code_name;
 
-    ss >> code;
-    if (ss.fail())
+    auto * pos = in.position();
+    tryReadText(code, in);
+    if (pos != in.position())
     {
-        ss.clear();
-        ss >> code_name;
-        if (ss.fail())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                "Cannot parse test hint '{}'", ss.str());
-        return ErrorCodes::getErrorCodeByName(code_name);
+        return code;
     }
-    return code;
+
+    /// Try parse as string
+    readStringUntilWhitespace(code_name, in);
+    return DB::ErrorCodes::getErrorCodeByName(code_name);
 }
 
 }
@@ -86,22 +74,23 @@ TestHint::TestHint(bool enabled_, const String & query_)
 
 void TestHint::parse(const String & hint, bool is_leading_hint)
 {
-    std::stringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ss << hint;
+    ReadBufferFromString in(hint);
     String item;
 
-    while (!ss.eof())
+    while (!in.eof())
     {
-        ss >> item;
-        if (ss.eof())
+        readStringUntilWhitespace(item, in);
+        if (in.eof())
             break;
+
+        skipWhitespaceIfAny(in);
 
         if (!is_leading_hint)
         {
             if (item == "serverError")
-                server_error = parseErrorCode(ss);
+                server_error = parseErrorCode(in);
             else if (item == "clientError")
-                client_error = parseErrorCode(ss);
+                client_error = parseErrorCode(in);
         }
 
         if (item == "echo")
