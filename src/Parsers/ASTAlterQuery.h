@@ -225,6 +225,8 @@ public:
         return removeOnCluster<ASTAlterQuery>(clone(), new_database);
     }
 
+    const char * getQueryKindString() const override { return "Alter"; }
+
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
