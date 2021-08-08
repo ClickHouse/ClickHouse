@@ -5582,8 +5582,11 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
             res.total_replicas = all_replicas.size();
 
             for (const String & replica : all_replicas)
-                if (zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active"))
-                    ++res.active_replicas;
+            {
+                bool is_replica_active = zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active");
+                res.active_replicas += static_cast<UInt8>(is_replica_active);
+                res.replica_is_active.emplace(replica, is_replica_active);
+            }
         }
         catch (const Coordination::Exception &)
         {
