@@ -265,7 +265,11 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
 
     // Try log query_kind if ast is valid
     if (ast)
+    {
         elem.query_kind = ast->getQueryKindString();
+        if (settings.log_formatted_queries)
+            elem.formatted_query = queryToString(ast);
+    }
 
     // We don't calculate databases, tables and columns when the query isn't able to start
 
@@ -641,6 +645,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.current_database = context->getCurrentDatabase();
             elem.query = query_for_logging;
+            if (settings.log_formatted_queries)
+                elem.formatted_query = queryToString(ast);
             elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
             elem.client_info = client_info;
