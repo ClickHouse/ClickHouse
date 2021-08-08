@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
@@ -100,7 +101,11 @@ public:
 
     DiskType::Type getType() const override { return DiskType::Type::Local; }
 
+    bool supportZeroCopyReplication() const override { return false; }
+
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
+
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
 
 private:
     bool tryReserve(UInt64 bytes);
@@ -108,7 +113,7 @@ private:
 private:
     const String name;
     const String disk_path;
-    const UInt64 keep_free_space_bytes;
+    std::atomic<UInt64> keep_free_space_bytes;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
@@ -117,5 +122,6 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("DiskLocal");
 };
+
 
 }

@@ -39,7 +39,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
 {
     friend struct shared_ptr_helper<StorageDistributed>;
-    friend class DistributedBlockOutputStream;
+    friend class DistributedSink;
     friend class StorageDistributedDirectoryMonitor;
     friend class StorageSystemDistributionQueue;
 
@@ -81,7 +81,7 @@ public:
     bool supportsParallelInsert() const override { return true; }
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     QueryPipelinePtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 
@@ -98,6 +98,7 @@ public:
 
     void startup() override;
     void shutdown() override;
+    void flush() override;
     void drop() override;
 
     bool storesDataOnDisk() const override { return true; }
@@ -175,6 +176,24 @@ private:
     ClusterPtr getOptimizedCluster(ContextPtr, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const;
     ClusterPtr
     skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
+
+    /// This method returns optimal query processing stage.
+    ///
+    /// Here is the list of stages (from the less optimal to more optimal):
+    /// - WithMergeableState
+    /// - WithMergeableStateAfterAggregation
+    /// - WithMergeableStateAfterAggregationAndLimit
+    /// - Complete
+    ///
+    /// Some simple queries w/o GROUP BY/DISTINCT can use more optimal stage.
+    ///
+    /// Also in case of optimize_distributed_group_by_sharding_key=1 the queries
+    /// with GROUP BY/DISTINCT sharding_key can also use more optimal stage.
+    /// (see also optimize_skip_unused_shards/allow_nondeterministic_optimize_skip_unused_shards)
+    ///
+    /// @return QueryProcessingStage or empty std::optoinal
+    /// (in this case regular WithMergeableState should be used)
+    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
 

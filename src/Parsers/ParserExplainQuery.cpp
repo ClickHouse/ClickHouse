@@ -19,6 +19,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_syntax("SYNTAX");
     ParserKeyword s_pipeline("PIPELINE");
     ParserKeyword s_plan("PLAN");
+    ParserKeyword s_estimates("ESTIMATE");
 
     if (s_explain.ignore(pos, expected))
     {
@@ -32,6 +33,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             kind = ASTExplainQuery::ExplainKind::QueryPipeline;
         else if (s_plan.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::QueryPlan; //-V1048
+        else if (s_estimates.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::QueryEstimates; //-V1048
     }
     else
         return false;

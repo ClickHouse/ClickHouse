@@ -83,9 +83,10 @@ struct InputOrderInfo
 {
     SortDescription order_key_prefix_descr;
     int direction;
+    UInt64 limit;
 
-    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_)
-        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
+    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_, UInt64 limit_)
+        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_), limit(limit_) {}
 
     bool operator ==(const InputOrderInfo & other) const
     {
@@ -156,6 +157,7 @@ struct SelectQueryInfo
     /// If not null, it means we choose a projection to execute current query.
     std::optional<ProjectionCandidate> projection;
     bool ignore_projections = false;
+    bool is_projection_query = false;
 };
 
 }
