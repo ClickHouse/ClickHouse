@@ -8,6 +8,8 @@
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+
 
 namespace DB
 {
@@ -17,16 +19,20 @@ namespace ErrorCodes
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
 }
 
-InterpreterIntersectOrExcept::InterpreterIntersectOrExcept(const ASTPtr & query_ptr_, ContextPtr context_)
-    : query_ptr(query_ptr_), context(Context::createCopy(context_))
+InterpreterIntersectOrExcept::InterpreterIntersectOrExcept(const ASTPtr & query_ptr, ContextPtr context_)
+    : context(Context::createCopy(context_))
+    , is_except(query_ptr->as<ASTIntersectOrExcept>()->is_except)
 {
     ASTIntersectOrExcept * ast = query_ptr->as<ASTIntersectOrExcept>();
+
     size_t num_children = ast->children.size();
+    if (!num_children)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: no children in ASTIntersectOrExceptQuery");
+
     nested_interpreters.resize(num_children);
+
     for (size_t i = 0; i < num_children; ++i)
-    {
         nested_interpreters[i] = buildCurrentChildInterpreter(ast->children[i]);
-    }
 
     Blocks headers(num_children);
     for (size_t query_num = 0; query_num < num_children; ++query_num)
@@ -35,8 +41,7 @@ InterpreterIntersectOrExcept::InterpreterIntersectOrExcept(const ASTPtr & query_
     result_header = getCommonHeader(headers);
 }
 
-
-Block InterpreterIntersectOrExcept::getCommonHeader(const Blocks & headers)
+Block InterpreterIntersectOrExcept::getCommonHeader(const Blocks & headers) const
 {
     size_t num_selects = headers.size();
     Block common_header = headers.front();
@@ -45,16 +50,12 @@ Block InterpreterIntersectOrExcept::getCommonHeader(const Blocks & headers)
     for (size_t query_num = 1; query_num < num_selects; ++query_num)
     {
         if (headers[query_num].columns() != num_columns)
-            throw Exception(
-                "Different number of columns in "
-                    + toString(query_ptr->as<ASTIntersectOrExcept>()->is_except ? "EXCEPT" : "INTERSECT")
-                    + " elements:\n" + common_header.dumpNames() + "\nand\n"
-                    + headers[query_num].dumpNames() + "\n",
-                    ErrorCodes::INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH);
+            throw Exception(ErrorCodes::INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH,
+                            "Different number of columns in {} elements:\n {} \nand\n {}",
+                            getName(), common_header.dumpNames(), headers[query_num].dumpNames());
     }
 
     std::vector<const ColumnWithTypeAndName *> columns(num_selects);
-
     for (size_t column_num = 0; column_num < num_columns; ++column_num)
     {
         for (size_t i = 0; i < num_selects; ++i)
@@ -66,7 +67,6 @@ Block InterpreterIntersectOrExcept::getCommonHeader(const Blocks & headers)
 
     return common_header;
 }
-
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
 InterpreterIntersectOrExcept::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_)
@@ -80,7 +80,6 @@ InterpreterIntersectOrExcept::buildCurrentChildInterpreter(const ASTPtr & ast_pt
 void InterpreterIntersectOrExcept::buildQueryPlan(QueryPlan & query_plan)
 {
     size_t num_plans = nested_interpreters.size();
-
     std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
     DataStreams data_streams(num_plans);
 
@@ -88,12 +87,23 @@ void InterpreterIntersectOrExcept::buildQueryPlan(QueryPlan & query_plan)
     {
         plans[i] = std::make_unique<QueryPlan>();
         nested_interpreters[i]->buildQueryPlan(*plans[i]);
+
+        if (!blocksHaveEqualStructure(plans[i]->getCurrentDataStream().header, result_header))
+        {
+            auto actions_dag = ActionsDAG::makeConvertingActions(
+                    plans[i]->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                    result_header.getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Position);
+            auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentDataStream(), std::move(actions_dag));
+            converting_step->setStepDescription("Conversion before UNION");
+            plans[i]->addStep(std::move(converting_step));
+        }
+
         data_streams[i] = plans[i]->getCurrentDataStream();
     }
 
     auto max_threads = context->getSettingsRef().max_threads;
-    auto step = std::make_unique<IntersectOrExceptStep>(
-        query_ptr->as<ASTIntersectOrExcept>()->is_except, std::move(data_streams), result_header, max_threads);
+    auto step = std::make_unique<IntersectOrExceptStep>(is_except, std::move(data_streams), max_threads);
     query_plan.unitePlans(std::move(step), std::move(plans));
 }
 
@@ -113,4 +123,5 @@ BlockIO InterpreterIntersectOrExcept::execute()
 
     return res;
 }
+
 }

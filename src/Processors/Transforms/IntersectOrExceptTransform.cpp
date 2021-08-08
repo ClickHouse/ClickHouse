@@ -1,9 +1,12 @@
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
 
+
 namespace DB
 {
+
 IntersectOrExceptTransform::IntersectOrExceptTransform(bool is_except_, const Block & header_)
-    : IProcessor(InputPorts(2, header_), {header_}), is_except(is_except_), output(outputs.front())
+    : IProcessor(InputPorts(2, header_), {header_})
+    , is_except(is_except_)
 {
     const Names & columns = header_.getNames();
     size_t num_columns = columns.empty() ? header_.columns() : columns.size();
@@ -11,18 +14,17 @@ IntersectOrExceptTransform::IntersectOrExceptTransform(bool is_except_, const Bl
     key_columns_pos.reserve(columns.size());
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto pos = columns.empty() ? i : header_.getPositionByName(columns[i]);
-
-        const auto & col = header_.getByPosition(pos).column;
-
-        if (!(col && isColumnConst(*col)))
-            key_columns_pos.emplace_back(pos);
+        auto pos = columns.empty() ? i
+                                   : header_.getPositionByName(columns[i]);
+        key_columns_pos.emplace_back(pos);
     }
 }
 
+
 IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 {
-    /// Check can output.
+    auto & output = outputs.front();
+
     if (output.isFinished())
     {
         for (auto & in : inputs)
@@ -32,14 +34,8 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
     if (!output.canPush())
     {
-        if (inputs.front().isFinished())
-        {
-            inputs.back().setNotNeeded();
-        }
-        else
-        {
-            inputs.front().setNotNeeded();
-        }
+        for (auto & input : inputs)
+            input.setNotNeeded();
         return Status::PortFull;
     }
 
@@ -74,10 +70,9 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
     if (!has_input)
     {
         input.setNeeded();
+
         if (!input.hasData())
-        {
             return Status::NeedData;
-        }
 
         current_input_chunk = input.pull();
         has_input = true;
@@ -85,6 +80,7 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
     return Status::Ready;
 }
+
 
 void IntersectOrExceptTransform::work()
 {
@@ -101,16 +97,16 @@ void IntersectOrExceptTransform::work()
     has_input = false;
 }
 
+
 template <typename Method>
 void IntersectOrExceptTransform::addToSet(Method & method, const ColumnRawPtrs & columns, size_t rows, SetVariants & variants) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
 
     for (size_t i = 0; i < rows; ++i)
-    {
         state.emplaceKey(method.data, i, variants.string_pool);
-    }
 }
+
 
 template <typename Method>
 size_t IntersectOrExceptTransform::buildFilter(
@@ -129,6 +125,7 @@ size_t IntersectOrExceptTransform::buildFilter(
     return new_rows_num;
 }
 
+
 void IntersectOrExceptTransform::accumulate(Chunk chunk)
 {
     auto num_rows = chunk.getNumRows();
@@ -136,6 +133,7 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
 
     ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(key_columns_pos.size());
+
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
 
@@ -155,6 +153,7 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
     }
 }
 
+
 void IntersectOrExceptTransform::filter(Chunk & chunk)
 {
     auto num_rows = chunk.getNumRows();
@@ -162,6 +161,7 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
 
     ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(key_columns_pos.size());
+
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
 
