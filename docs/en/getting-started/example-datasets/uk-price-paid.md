@@ -19,7 +19,7 @@ Contains HM Land Registry data © Crown copyright and database right 2021. This 
 wget http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv
 ```
 
-Download will took about 2 minutes with good internet connection.
+Download will take about 2 minutes with good internet connection.
 
 ## Create the Table
 
@@ -98,7 +98,7 @@ clickhouse-local --input-format CSV --structure '
     FROM table" --date_time_input_format best_effort < pp-complete.csv | clickhouse-client --query "INSERT INTO uk_price_paid FORMAT TSV"
 ```
 
-It will took about 40 seconds.
+It will take about 40 seconds.
 
 ## Validate the Data
 
