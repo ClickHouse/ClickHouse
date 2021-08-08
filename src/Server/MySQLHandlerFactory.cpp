@@ -5,6 +5,7 @@
 #include <common/logger_useful.h>
 #include <common/scope_guard.h>
 #include <Server/MySQLHandler.h>
+#include <Server/ProxyConfig.h>
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
@@ -18,11 +19,13 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int OPENSSL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
-MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
+MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_, const MySQLInterfaceConfig & config_)
     : server(server_)
     , log(&Poco::Logger::get("MySQLHandlerFactory"))
+    , config(config_)
 {
 #if USE_SSL
     try
@@ -51,18 +54,18 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
 #if USE_SSL
 void MySQLHandlerFactory::readRSAKeys()
 {
-    const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
+    const Poco::Util::LayeredConfiguration & config_ = Poco::Util::Application::instance().config();
     String certificate_file_property = "openSSL.server.certificateFile";
     String private_key_file_property = "openSSL.server.privateKeyFile";
 
-    if (!config.has(certificate_file_property))
+    if (!config_.has(certificate_file_property))
         throw Exception("Certificate file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    if (!config.has(private_key_file_property))
+    if (!config_.has(private_key_file_property))
         throw Exception("Private key file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     {
-        String certificate_file = config.getString(certificate_file_property);
+        String certificate_file = config_.getString(certificate_file_property);
         FILE * fp = fopen(certificate_file.data(), "r");
         if (fp == nullptr)
             throw Exception("Cannot open certificate file: " + certificate_file + ".", ErrorCodes::CANNOT_OPEN_FILE);
@@ -84,7 +87,7 @@ void MySQLHandlerFactory::readRSAKeys()
     }
 
     {
-        String private_key_file = config.getString(private_key_file_property);
+        String private_key_file = config_.getString(private_key_file_property);
 
         FILE * fp = fopen(private_key_file.data(), "r");
         if (fp == nullptr)
@@ -123,9 +126,9 @@ Poco::Net::TCPServerConnection * MySQLHandlerFactory::createConnection(const Poc
     size_t connection_id = last_connection_id++;
     LOG_TRACE(log, "MySQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
 #if USE_SSL
-    return new MySQLHandlerSSL(server, socket, ssl_enabled, connection_id, *public_key, *private_key);
+    return new MySQLHandlerSSL(server, socket, ssl_enabled, connection_id, *public_key, *private_key, config);
 #else
-    return new MySQLHandler(server, socket, ssl_enabled, connection_id);
+    return new MySQLHandler(server, socket, ssl_enabled, connection_id, config);
 #endif
 
 }

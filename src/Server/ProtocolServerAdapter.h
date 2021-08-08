@@ -22,6 +22,7 @@ class AsynchronousMetrics;
 class GRPCServer;
 class IServer;
 class ProtocolInterfaceConfig;
+using ProtocolInterfaceConfigs = std::map<std::string, std::unique_ptr<ProtocolInterfaceConfig>>;
 
 /// Provides an unified interface to access a protocol implementing server
 /// no matter what type it has (HTTPServer, TCPServer, MySQLServer, GRPCServer, ...)
@@ -76,11 +77,10 @@ namespace Util
 
 std::vector<ProtocolServerAdapter> createServers(
     const std::vector<std::string> & protocols,
-    const std::map<std::string, std::unique_ptr<ProtocolInterfaceConfig>> & interfaces,
+    const ProtocolInterfaceConfigs & interfaces,
     IServer & server,
     Poco::ThreadPool & pool,
-    AsynchronousMetrics * async_metrics,
-    bool & keeper_initialized
+    AsynchronousMetrics * async_metrics
 );
 
 }

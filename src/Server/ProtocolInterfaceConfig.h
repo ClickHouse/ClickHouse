@@ -26,6 +26,7 @@ class AsynchronousMetrics;
 class IServer;
 class ProtocolServerAdapter;
 class ProxyConfig;
+using ProxyConfigs = std::map<std::string, std::unique_ptr<ProxyConfig>>;
 
 class LegacyGlobalConfigOverrides
 {
@@ -64,7 +65,7 @@ public:
     void updateConfig(
         const LegacyGlobalConfigOverrides & global_overrides,
         const Poco::Util::AbstractConfiguration & config,
-        const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_,
+        const ProxyConfigs & proxies_,
         const Settings & settings
     );
 
@@ -77,7 +78,7 @@ public:
 public:
     virtual void updateConfig(
         const Poco::Util::AbstractConfiguration & config,
-        const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+        const ProxyConfigs & proxies_
     ) = 0;
 
     virtual void updateConfig(const LegacyGlobalConfigOverrides & global_overrides) = 0;
@@ -88,6 +89,8 @@ public:
     const std::string name;
     const std::string protocol;
 };
+
+using ProtocolInterfaceConfigs = std::map<std::string, std::unique_ptr<ProtocolInterfaceConfig>>;
 
 /// Base class for server listening interface configs for all milti-endpoint protocols.
 class MultiEndpointInterfaceConfigBase : public ProtocolInterfaceConfig
@@ -105,7 +108,7 @@ public:
 public:
     virtual void updateConfig(
         const Poco::Util::AbstractConfiguration & config,
-        const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+        const ProxyConfigs & proxies_
     ) override;
 
     virtual void updateConfig(const LegacyGlobalConfigOverrides & global_overrides) override;
@@ -132,11 +135,12 @@ class TCPInterfaceConfigBase : public MultiEndpointInterfaceConfigBase
 {
 protected:
     explicit TCPInterfaceConfigBase(const std::string & name_, const std::string & protocol_);
+    TCPInterfaceConfigBase(const TCPInterfaceConfigBase& other);
 
 public:
     virtual void updateConfig(
         const Poco::Util::AbstractConfiguration & config,
-        const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+        const ProxyConfigs & proxies_
     ) override;
 
     virtual void updateConfig(const LegacyGlobalConfigOverrides & global_overrides) override;
@@ -149,12 +153,28 @@ public:
     bool secure = false;
 
     bool allow_direct = true;
-    std::map<std::string, std::unique_ptr<ProxyConfig>> proxies;
+    ProxyConfigs proxies;
 
     std::chrono::seconds tcp_connection_timeout{DBMS_DEFAULT_CONNECT_TIMEOUT_SEC};
     std::chrono::seconds tcp_send_timeout{DBMS_DEFAULT_SEND_TIMEOUT_SEC};
     std::chrono::seconds tcp_receive_timeout{DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC};
     std::chrono::seconds tcp_keep_alive_timeout{0};
+};
+
+/// A helper class for storing generic TCP interface config.
+class TCPInterfaceConfig final : public TCPInterfaceConfigBase
+{
+public:
+    explicit TCPInterfaceConfig(const TCPInterfaceConfigBase & base);
+
+protected:
+    virtual void createSingleServer(
+        ProtocolServerAdapter & adapter,
+        const std::string & host,
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) override;
 };
 
 /// Base class for server listening interface configs for all HTTP-based protocols.
@@ -166,7 +186,7 @@ protected:
 public:
     virtual void updateConfig(
         const Poco::Util::AbstractConfiguration & config,
-        const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+        const ProxyConfigs & proxies_
     ) override;
 
     virtual void updateConfig(const LegacyGlobalConfigOverrides & global_overrides) override;
@@ -178,6 +198,22 @@ public:
     std::chrono::seconds http_send_timeout{DEFAULT_HTTP_READ_BUFFER_TIMEOUT};
     std::chrono::seconds http_receive_timeout{DEFAULT_HTTP_READ_BUFFER_TIMEOUT};
     std::chrono::seconds http_keep_alive_timeout{10};
+};
+
+/// A helper class for storing generic HTTP interface config.
+class HTTPInterfaceConfig final : public HTTPInterfaceConfigBase
+{
+public:
+    explicit HTTPInterfaceConfig(const HTTPInterfaceConfigBase & base);
+
+protected:
+    virtual void createSingleServer(
+        ProtocolServerAdapter & adapter,
+        const std::string & host,
+        IServer & server,
+        Poco::ThreadPool & pool,
+        AsynchronousMetrics * async_metrics
+    ) override;
 };
 
 /// Class for server listening interface configs for Native TCP protocol.
@@ -241,7 +277,7 @@ public:
 public:
     virtual void updateConfig(
         const Poco::Util::AbstractConfiguration & config,
-        const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+        const ProxyConfigs & proxies_
     ) override;
 
     using MultiEndpointInterfaceConfigBase::updateConfig;
@@ -371,10 +407,10 @@ protected:
 namespace Util
 {
 
-std::map<std::string, std::unique_ptr<ProtocolInterfaceConfig>> parseInterfaces(
+ProtocolInterfaceConfigs parseInterfaces(
     const Poco::Util::AbstractConfiguration & config,
     const Settings & settings,
-    const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies
+    const ProxyConfigs & proxies
 );
 
 }

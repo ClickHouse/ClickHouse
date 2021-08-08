@@ -1633,12 +1633,13 @@ private:
 };
 
 
-GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_)
+GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_, const NativeGRPCInterfaceConfig &)
     : iserver(iserver_)
     , address_to_listen(address_to_listen_)
     , log(&Poco::Logger::get("GRPCServer"))
     , runner(std::make_unique<Runner>(*this))
-{}
+{
+}
 
 GRPCServer::~GRPCServer()
 {

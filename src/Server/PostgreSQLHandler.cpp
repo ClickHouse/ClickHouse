@@ -6,6 +6,8 @@
 #include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
 #include <Common/setThreadName.h>
+#include <Server/ProxyConfig.h>
+#include <Server/ProxyProtocolHandler.h>
 #include <random>
 
 #if !defined(ARCADIA_BUILD)
@@ -22,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int SYNTAX_ERROR;
 }
 
@@ -30,10 +33,12 @@ PostgreSQLHandler::PostgreSQLHandler(
     IServer & server_,
     bool ssl_enabled_,
     Int32 connection_id_,
-    std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_)
-    : Poco::Net::TCPServerConnection(socket_)
+    std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+    const PostgreSQLInterfaceConfig & config_)
+    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies, {"PROXY"})
     , server(server_)
     , connection_context(Context::createCopy(server.context()))
+    , config(config_)
     , ssl_enabled(ssl_enabled_)
     , connection_id(connection_id_)
     , authentication_manager(auth_methods_)
@@ -56,6 +61,10 @@ void PostgreSQLHandler::run()
     connection_context->getClientInfo().interface = ClientInfo::Interface::POSTGRESQL;
     connection_context->setDefaultFormat("PostgreSQLWire");
     connection_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+
+    handleProxyProtocol(socket());
+    if (!config.allow_direct && !isIndirect())
+        throw Exception("Direct connections are not allowed on the interface", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 
     try
     {

@@ -16,6 +16,8 @@
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <Server/ProxyConfig.h>
+#include <Server/ProxyProtocolHandler.h>
 #include <queue>
 #include <mutex>
 
@@ -34,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int SYSTEM_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
 }
@@ -189,11 +192,12 @@ struct SocketInterruptablePollWrapper
 #endif
 };
 
-KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
-    : Poco::Net::TCPServerConnection(socket_)
+KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, const KeeperTCPInterfaceConfig & config_)
+    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies, {"PROXY"})
     , server(server_)
     , log(&Poco::Logger::get("NuKeeperTCPHandler"))
     , global_context(Context::createCopy(server.context()))
+    , config(config_)
     , keeper_dispatcher(global_context->getKeeperStorageDispatcher())
     , operation_timeout(0, global_context->getConfigRef().getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
     , session_timeout(0, global_context->getConfigRef().getUInt("test_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
@@ -264,6 +268,10 @@ void KeeperTCPHandler::runImpl()
     socket().setReceiveTimeout(global_receive_timeout);
     socket().setSendTimeout(global_send_timeout);
     socket().setNoDelay(true);
+
+    handleProxyProtocol(socket());
+    if (!config.allow_direct && !isIndirect())
+        throw Exception("Direct connections are not allowed on the interface", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());

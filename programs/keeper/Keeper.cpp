@@ -264,14 +264,21 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     const auto proxies = Util::parseProxies(config());
     const auto interfaces = Util::parseInterfaces(config(), settings, proxies);
 
-    Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
+    for (const auto & interface : interfaces)
+    {
+        if (boost::iequals(interface.second->protocol, "keeper"))
+        {
+            context()->initializeKeeperStorageDispatcher();
+            break;
+        }
+    }
 
-    bool keeper_initialized = false;
+    Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
 
     auto servers = std::make_shared<std::vector<DB::ProtocolServerAdapter>>();
     *servers = Util::createServers(
         {"keeper"},
-        interfaces, *this, server_pool, /*async_metrics = */ nullptr, keeper_initialized
+        interfaces, *this, server_pool, /*async_metrics = */ nullptr
     );
 
     for (auto & server : *servers)

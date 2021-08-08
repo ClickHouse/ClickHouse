@@ -105,11 +105,10 @@ namespace Util
 
 std::vector<ProtocolServerAdapter> createServers(
     const std::vector<std::string> & protocols,
-    const std::map<std::string, std::unique_ptr<ProtocolInterfaceConfig>> & interfaces,
+    const ProtocolInterfaceConfigs & interfaces,
     IServer & server,
     Poco::ThreadPool & pool,
-    AsynchronousMetrics * async_metrics,
-    bool & keeper_initialized
+    AsynchronousMetrics * async_metrics
 )
 {
     std::vector<ProtocolServerAdapter> servers;
@@ -119,24 +118,14 @@ std::vector<ProtocolServerAdapter> createServers(
     for (auto protocol : protocols)
     {
         // Skip duplicates.
-        if (!uniques.insert(boost::to_lower_copy(protocol)).second)
-            continue;
-
-        for (const auto & interface : interfaces)
+        if (uniques.insert(boost::to_lower_copy(protocol)).second)
         {
-            // Choose only applicable interfaces.
-            if (!boost::iequals(protocol, interface.second->protocol))
-                continue;
-
-#if USE_NURAFT
-            if (!keeper_initialized && boost::iequals(protocol, "keeper"))
+            for (const auto & interface : interfaces)
             {
-                server.context()->initializeKeeperStorageDispatcher();
-                keeper_initialized = true;
+                // Choose only applicable interfaces.
+                if (boost::iequals(protocol, interface.second->protocol))
+                    servers.push_back(interface.second->createServerAdapter(server, pool, async_metrics));
             }
-#endif
-
-            servers.push_back(interface.second->createServerAdapter(server, pool, async_metrics));
         }
     }
 

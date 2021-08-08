@@ -1,22 +1,38 @@
 #include <Server/HTTP/HTTPServerConnection.h>
+#include <Server/ProxyConfig.h>
+#include <Server/ProxyProtocolHandler.h>
 
 #include <Poco/Net/NetException.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int IP_ADDRESS_NOT_ALLOWED;
+}
+
 HTTPServerConnection::HTTPServerConnection(
     ContextPtr context_,
     const Poco::Net::StreamSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params_,
-    HTTPRequestHandlerFactoryPtr factory_)
-    : TCPServerConnection(socket), context(Context::createCopy(context_)), params(params_), factory(factory_), stopped(false)
+    HTTPRequestHandlerFactoryPtr factory_,
+    const HTTPInterfaceConfigBase & config_
+)
+    : IndirectTCPServerConnection(config_.name, socket, config_.proxies, {"PROXY"})
+    , context(Context::createCopy(context_))
+    , params(params_)
+    , factory(factory_)
+    , stopped(false)
+    , config(config_)
 {
     poco_check_ptr(factory);
 }
 
 void HTTPServerConnection::run()
 {
+    handleProxyProtocol(socket());
+
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 
@@ -29,6 +45,10 @@ void HTTPServerConnection::run()
             {
                 HTTPServerResponse response(session);
                 HTTPServerRequest request(context, response, session);
+
+                handleProxyProtocol(request);
+                if (!config.allow_direct && !isIndirect())
+                    throw Exception("Direct connections are not allowed on the interface", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 
                 Poco::Timestamp now;
                 response.setDate(now);

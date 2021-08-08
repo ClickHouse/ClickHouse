@@ -25,6 +25,8 @@
 #include <Access/User.h>
 #include <Access/AccessControlManager.h>
 #include <Common/setThreadName.h>
+#include <Server/ProxyConfig.h>
+#include <Server/ProxyProtocolHandler.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -53,6 +55,7 @@ using Poco::Net::SSLManager;
 
 namespace ErrorCodes
 {
+    extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
@@ -69,10 +72,11 @@ static String killConnectionIdReplacementQuery(const String & query);
 static String selectLimitReplacementQuery(const String & query);
 
 MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, size_t connection_id_)
-    : Poco::Net::TCPServerConnection(socket_)
+    bool ssl_enabled, size_t connection_id_, const MySQLInterfaceConfig & config_)
+    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies, {"PROXY"})
     , server(server_)
     , log(&Poco::Logger::get("MySQLHandler"))
+    , config(config_)
     , connection_id(connection_id_)
     , connection_context(Context::createCopy(server.context()))
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
@@ -96,6 +100,10 @@ void MySQLHandler::run()
     connection_context->setDefaultFormat("MySQLWire");
     connection_context->getClientInfo().connection_id = connection_id;
     connection_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+
+    handleProxyProtocol(socket());
+    if (!config.allow_direct && !isIndirect())
+        throw Exception("Direct connections are not allowed on the interface", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
@@ -377,11 +385,12 @@ void MySQLHandler::finishHandshakeSSL(
 }
 
 #if USE_SSL
-MySQLHandlerSSL::MySQLHandlerSSL(IServer & server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_)
-    : MySQLHandler(server_, socket_, ssl_enabled, connection_id_)
+MySQLHandlerSSL::MySQLHandlerSSL(IServer & server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_, const MySQLInterfaceConfig & config_)
+    : MySQLHandler(server_, socket_, ssl_enabled, connection_id_, config_)
     , public_key(public_key_)
     , private_key(private_key_)
-{}
+{
+}
 
 void MySQLHandlerSSL::authPluginSSL()
 {

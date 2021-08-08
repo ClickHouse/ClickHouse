@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <Server/IServer.h>
+#include <Server/ProtocolInterfaceConfig.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -21,6 +22,7 @@ class MySQLHandlerFactory : public Poco::Net::TCPServerConnectionFactory
 private:
     IServer & server;
     Poco::Logger * log;
+    MySQLInterfaceConfig config;
 
 #if USE_SSL
     struct RSADeleter
@@ -39,7 +41,7 @@ private:
 
     std::atomic<size_t> last_connection_id = 0;
 public:
-    explicit MySQLHandlerFactory(IServer & server_);
+    explicit MySQLHandlerFactory(IServer & server_, const MySQLInterfaceConfig & config_);
 
     void readRSAKeys();
 

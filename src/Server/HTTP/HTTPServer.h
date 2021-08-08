@@ -12,28 +12,18 @@ namespace DB
 {
 
 class Context;
+class HTTPInterfaceConfigBase;
 
 class HTTPServer : public Poco::Net::TCPServer
 {
 public:
-    explicit HTTPServer(
-        ContextPtr context,
-        HTTPRequestHandlerFactoryPtr factory,
-        UInt16 port_number = 80,
-        Poco::Net::HTTPServerParams::Ptr params = new Poco::Net::HTTPServerParams);
-
-    HTTPServer(
-        ContextPtr context,
-        HTTPRequestHandlerFactoryPtr factory,
-        const Poco::Net::ServerSocket & socket,
-        Poco::Net::HTTPServerParams::Ptr params);
-
     HTTPServer(
         ContextPtr context,
         HTTPRequestHandlerFactoryPtr factory,
         Poco::ThreadPool & thread_pool,
         const Poco::Net::ServerSocket & socket,
-        Poco::Net::HTTPServerParams::Ptr params);
+        Poco::Net::HTTPServerParams::Ptr params,
+        const HTTPInterfaceConfigBase & config);
 
     ~HTTPServer() override;
 

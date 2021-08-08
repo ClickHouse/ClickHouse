@@ -2,13 +2,20 @@
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <memory>
 #include <Server/PostgreSQLHandler.h>
+#include <Server/ProxyConfig.h>
 
 namespace DB
 {
 
-PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(IServer & server_)
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(IServer & server_, const PostgreSQLInterfaceConfig & config_)
     : server(server_)
     , log(&Poco::Logger::get("PostgreSQLHandlerFactory"))
+    , config(config_)
 {
     auth_methods =
     {
@@ -21,7 +28,7 @@ Poco::Net::TCPServerConnection * PostgreSQLHandlerFactory::createConnection(cons
 {
     Int32 connection_id = last_connection_id++;
     LOG_TRACE(log, "PostgreSQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
-    return new PostgreSQLHandler(socket, server, ssl_enabled, connection_id, auth_methods);
+    return new PostgreSQLHandler(socket, server, ssl_enabled, connection_id, auth_methods, config);
 }
 
 }

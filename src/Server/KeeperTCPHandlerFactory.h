@@ -5,16 +5,24 @@
 #include <Poco/Net/NetException.h>
 #include <common/logger_useful.h>
 #include <Server/IServer.h>
+#include <Server/ProtocolInterfaceConfig.h>
 #include <string>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class KeeperTCPHandlerFactory : public Poco::Net::TCPServerConnectionFactory
 {
 private:
     IServer & server;
     Poco::Logger * log;
+    KeeperTCPInterfaceConfig config;
+
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
     {
     public:
@@ -22,9 +30,10 @@ private:
         void run() override {}
     };
 public:
-    KeeperTCPHandlerFactory(IServer & server_, bool secure)
+    KeeperTCPHandlerFactory(IServer & server_, bool secure, const KeeperTCPInterfaceConfig & config_)
         : server(server_)
         , log(&Poco::Logger::get(std::string{"KeeperTCP"} + (secure ? "S" : "") + "HandlerFactory"))
+        , config(config_)
     {
     }
 
@@ -33,7 +42,7 @@ public:
         try
         {
             LOG_TRACE(log, "Keeper request. Address: {}", socket.peerAddress().toString());
-            return new KeeperTCPHandler(server, socket);
+            return new KeeperTCPHandler(server, socket, config);
         }
         catch (const Poco::Net::NetException &)
         {

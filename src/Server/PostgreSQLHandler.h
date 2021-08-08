@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
+#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/IndirectTCPServerConnection.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <common/logger_useful.h>
@@ -21,7 +23,7 @@ namespace DB
 /** PostgreSQL wire protocol implementation.
  * For more info see https://www.postgresql.org/docs/current/protocol.html
  */
-class PostgreSQLHandler : public Poco::Net::TCPServerConnection
+class PostgreSQLHandler : public IndirectTCPServerConnection
 {
 public:
     PostgreSQLHandler(
@@ -29,7 +31,8 @@ public:
         IServer & server_,
         bool ssl_enabled_,
         Int32 connection_id_,
-        std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_);
+        std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+        const PostgreSQLInterfaceConfig & config_);
 
     void run() final;
 
@@ -38,6 +41,8 @@ private:
 
     IServer & server;
     ContextMutablePtr connection_context;
+    PostgreSQLInterfaceConfig config;
+
     bool ssl_enabled = false;
     Int32 connection_id = 0;
     Int32 secret_key = 0;

@@ -12,6 +12,8 @@
 #include <common/errnoToString.h>
 #include <IO/ReadHelpers.h>
 #include <Formats/registerFormats.h>
+#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/ProxyConfig.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -239,7 +241,8 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
         getHandlerFactoryPtr(context),
         server_pool,
         socket,
-        http_params);
+        http_params,
+        NativeHTTPInterfaceConfig("bridge_http"));
 
     SCOPE_EXIT({
         LOG_DEBUG(log, "Received termination signal.");

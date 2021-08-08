@@ -3,6 +3,8 @@
 #include <Poco/Net/TCPServerConnection.h>
 #include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
+#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/IndirectTCPServerConnection.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsConnection.h>
@@ -25,10 +27,10 @@ namespace CurrentMetrics
 namespace DB
 {
 /// Handler for MySQL wire protocol connections. Allows to connect to ClickHouse using MySQL client.
-class MySQLHandler : public Poco::Net::TCPServerConnection
+class MySQLHandler : public IndirectTCPServerConnection
 {
 public:
-    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_);
+    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, const MySQLInterfaceConfig & config_);
 
     void run() final;
 
@@ -53,6 +55,7 @@ protected:
 
     IServer & server;
     Poco::Logger * log;
+    MySQLInterfaceConfig config;
     UInt64 connection_id = 0;
 
     uint32_t server_capabilities = 0;
@@ -77,7 +80,7 @@ protected:
 class MySQLHandlerSSL : public MySQLHandler
 {
 public:
-    MySQLHandlerSSL(IServer & server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_);
+    MySQLHandlerSSL(IServer & server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_, const MySQLInterfaceConfig & config_);
 
 private:
     void authPluginSSL() override;

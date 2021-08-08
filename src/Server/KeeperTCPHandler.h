@@ -17,6 +17,8 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Coordination/ThreadSafeQueue.h>
+#include <Server/IndirectTCPServerConnection.h>
+#include <Server/ProtocolInterfaceConfig.h>
 #include <unordered_map>
 
 namespace DB
@@ -29,15 +31,16 @@ using ThreadSafeResponseQueue = ThreadSafeQueue<Coordination::ZooKeeperResponseP
 
 using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
 
-class KeeperTCPHandler : public Poco::Net::TCPServerConnection
+class KeeperTCPHandler : public IndirectTCPServerConnection
 {
 public:
-    KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
+    KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, const KeeperTCPInterfaceConfig & config_);
     void run() override;
 private:
     IServer & server;
     Poco::Logger * log;
     ContextPtr global_context;
+    KeeperTCPInterfaceConfig config;
     std::shared_ptr<KeeperStorageDispatcher> keeper_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan session_timeout;

@@ -1,23 +1,26 @@
 #pragma once
 
 #include <Interpreters/Context.h>
+#include <Server/IndirectTCPServerConnection.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
+#include <Server/ProtocolInterfaceConfig.h>
 
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPServerSession.h>
-#include <Poco/Net/TCPServerConnection.h>
 
 namespace DB
 {
 
-class HTTPServerConnection : public Poco::Net::TCPServerConnection
+class HTTPServerConnection : public IndirectTCPServerConnection
 {
 public:
     HTTPServerConnection(
         ContextPtr context,
         const Poco::Net::StreamSocket & socket,
         Poco::Net::HTTPServerParams::Ptr params,
-        HTTPRequestHandlerFactoryPtr factory);
+        HTTPRequestHandlerFactoryPtr factory,
+        const HTTPInterfaceConfigBase & config
+    );
 
     void run() override;
 
@@ -29,6 +32,7 @@ private:
     Poco::Net::HTTPServerParams::Ptr params;
     HTTPRequestHandlerFactoryPtr factory;
     bool stopped;
+    HTTPInterfaceConfig config;
     std::mutex mutex;  // guards the |factory| with assumption that creating handlers is not thread-safe.
 };
 

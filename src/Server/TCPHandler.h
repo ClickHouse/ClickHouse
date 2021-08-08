@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Poco/Net/TCPServerConnection.h>
-
 #include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -13,6 +11,8 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context.h>
+#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/IndirectTCPServerConnection.h>
 
 #include "IServer.h"
 
@@ -103,18 +103,20 @@ struct LastBlockInputParameters
     Block header;
 };
 
-class TCPHandler : public Poco::Net::TCPServerConnection
+class TCPHandler : public IndirectTCPServerConnection
 {
 public:
-    /** parse_proxy_protocol_ - if true, expect and parse the header of PROXY protocol in every connection
-      * and set the information about forwarded address accordingly.
-      * See https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
-      *
-      * Note: immediate IP address is always used for access control (accept-list of IP networks),
+    /** Note: immediate IP address is always used for access control (accept-list of IP networks),
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
+    TCPHandler(
+        IServer & server_,
+        const Poco::Net::StreamSocket & socket_,
+        std::string server_display_name_,
+        const TCPInterfaceConfigBase & config_
+    );
+
     ~TCPHandler() override;
 
     void run() override;
@@ -124,8 +126,8 @@ public:
 
 private:
     IServer & server;
-    bool parse_proxy_protocol = false;
     Poco::Logger * log;
+    TCPInterfaceConfig config;
 
     String client_name;
     UInt64 client_version_major = 0;
@@ -168,7 +170,6 @@ private:
 
     void runImpl();
 
-    bool receiveProxyHeader();
     void receiveHello();
     bool receivePacket();
     void receiveQuery();

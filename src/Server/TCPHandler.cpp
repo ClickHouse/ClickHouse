@@ -24,6 +24,8 @@
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Server/ProxyConfig.h>
+#include <Server/ProxyProtocolHandler.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
@@ -49,6 +51,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
     extern const int UNKNOWN_DATABASE;
@@ -61,16 +64,22 @@ namespace ErrorCodes
     extern const int UNKNOWN_PROTOCOL;
 }
 
-TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
-    : Poco::Net::TCPServerConnection(socket_)
+TCPHandler::TCPHandler(
+    IServer & server_,
+    const Poco::Net::StreamSocket & socket_,
+    std::string server_display_name_,
+    const TCPInterfaceConfigBase & config_
+)
+    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies, {"PROXY"})
     , server(server_)
-    , parse_proxy_protocol(parse_proxy_protocol_)
     , log(&Poco::Logger::get("TCPHandler"))
+    , config(config_)
     , connection_context(Context::createCopy(server.context()))
     , query_context(Context::createCopy(server.context()))
     , server_display_name(std::move(server_display_name_))
 {
 }
+
 TCPHandler::~TCPHandler()
 {
     try
@@ -102,12 +111,12 @@ void TCPHandler::runImpl()
     socket().setSendTimeout(global_send_timeout);
     socket().setNoDelay(true);
 
+    handleProxyProtocol(socket());
+    if (!config.allow_direct && !isIndirect())
+        throw Exception("Direct connections are not allowed on the interface", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
-
-    /// Support for PROXY protocol
-    if (parse_proxy_protocol && !receiveProxyHeader())
-        return;
 
     if (in->eof())
     {
@@ -832,78 +841,6 @@ void TCPHandler::sendExtremes(const Block & extremes)
         state.maybe_compressed_out->next();
         out->next();
     }
-}
-
-
-bool TCPHandler::receiveProxyHeader()
-{
-    if (in->eof())
-    {
-        LOG_WARNING(log, "Client has not sent any data.");
-        return false;
-    }
-
-    String forwarded_address;
-
-    /// Only PROXYv1 is supported.
-    /// Validation of protocol is not fully performed.
-
-    LimitReadBuffer limit_in(*in, 107, true); /// Maximum length from the specs.
-
-    assertString("PROXY ", limit_in);
-
-    if (limit_in.eof())
-    {
-        LOG_WARNING(log, "Incomplete PROXY header is received.");
-        return false;
-    }
-
-    /// TCP4 / TCP6 / UNKNOWN
-    if ('T' == *limit_in.position())
-    {
-        assertString("TCP", limit_in);
-
-        if (limit_in.eof())
-        {
-            LOG_WARNING(log, "Incomplete PROXY header is received.");
-            return false;
-        }
-
-        if ('4' != *limit_in.position() && '6' != *limit_in.position())
-        {
-            LOG_WARNING(log, "Unexpected protocol in PROXY header is received.");
-            return false;
-        }
-
-        ++limit_in.position();
-        assertChar(' ', limit_in);
-
-        /// Read the first field and ignore other.
-        readStringUntilWhitespace(forwarded_address, limit_in);
-
-        /// Skip until \r\n
-        while (!limit_in.eof() && *limit_in.position() != '\r')
-            ++limit_in.position();
-        assertString("\r\n", limit_in);
-    }
-    else if (checkString("UNKNOWN", limit_in))
-    {
-        /// This is just a health check, there is no subsequent data in this connection.
-
-        while (!limit_in.eof() && *limit_in.position() != '\r')
-            ++limit_in.position();
-        assertString("\r\n", limit_in);
-        return false;
-    }
-    else
-    {
-        LOG_WARNING(log, "Unexpected protocol in PROXY header is received.");
-        return false;
-    }
-
-    LOG_TRACE(log, "Forwarded client address from PROXY header: {}", forwarded_address);
-    connection_context->getClientInfo().forwarded_for = forwarded_address;
-    return true;
 }
 
 

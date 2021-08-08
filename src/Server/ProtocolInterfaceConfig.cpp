@@ -220,7 +220,7 @@ ProtocolInterfaceConfig::ProtocolInterfaceConfig(const std::string & name_, cons
 void ProtocolInterfaceConfig::updateConfig(
     const LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
-    const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_,
+    const ProxyConfigs & proxies_,
     const Settings & settings
 )
 {
@@ -239,7 +239,7 @@ MultiEndpointInterfaceConfigBase::MultiEndpointInterfaceConfigBase(const std::st
 
 void MultiEndpointInterfaceConfigBase::updateConfig(
     const Poco::Util::AbstractConfiguration & config,
-    const std::map<std::string, std::unique_ptr<ProxyConfig>> &
+    const ProxyConfigs &
 )
 {
     if (config.has("listen"))
@@ -328,9 +328,23 @@ TCPInterfaceConfigBase::TCPInterfaceConfigBase(const std::string & name_, const 
 {
 }
 
+TCPInterfaceConfigBase::TCPInterfaceConfigBase(const TCPInterfaceConfigBase& other)
+    : MultiEndpointInterfaceConfigBase(other)
+    , reuse_port(other.reuse_port)
+    , backlog(other.backlog)
+    , secure(other.secure)
+    , allow_direct(other.allow_direct)
+    , proxies(Util::clone(other.proxies))
+    , tcp_connection_timeout(other.tcp_connection_timeout)
+    , tcp_send_timeout(other.tcp_send_timeout)
+    , tcp_receive_timeout(other.tcp_receive_timeout)
+    , tcp_keep_alive_timeout(other.tcp_keep_alive_timeout)
+{
+}
+
 void TCPInterfaceConfigBase::updateConfig(
     const Poco::Util::AbstractConfiguration & config,
-    const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+    const ProxyConfigs & proxies_
 )
 {
     MultiEndpointInterfaceConfigBase::updateConfig(config, proxies_);
@@ -470,6 +484,22 @@ void TCPInterfaceConfigBase::updateConfig(const Settings & settings)
         tcp_keep_alive_timeout = std::chrono::seconds{settings.tcp_keep_alive_timeout};
 }
 
+TCPInterfaceConfig::TCPInterfaceConfig(const TCPInterfaceConfigBase & base)
+    : TCPInterfaceConfigBase(base)
+{
+}
+
+void TCPInterfaceConfig::createSingleServer(
+    ProtocolServerAdapter &,
+    const std::string &,
+    IServer &,
+    Poco::ThreadPool &,
+    AsynchronousMetrics *
+)
+{
+    throw Exception{"Not supposed to be called", ErrorCodes::LOGICAL_ERROR};
+}
+
 HTTPInterfaceConfigBase::HTTPInterfaceConfigBase(const std::string & name_, const std::string & protocol_)
     : TCPInterfaceConfigBase(name_, protocol_)
 {
@@ -477,7 +507,7 @@ HTTPInterfaceConfigBase::HTTPInterfaceConfigBase(const std::string & name_, cons
 
 void HTTPInterfaceConfigBase::updateConfig(
     const Poco::Util::AbstractConfiguration & config,
-    const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+    const ProxyConfigs & proxies_
 )
 {
     TCPInterfaceConfigBase::updateConfig(config, proxies_);
@@ -569,12 +599,28 @@ void HTTPInterfaceConfigBase::updateConfig(const Settings & settings)
 */
 }
 
+HTTPInterfaceConfig::HTTPInterfaceConfig(const HTTPInterfaceConfigBase & base)
+    : HTTPInterfaceConfigBase(base)
+{
+}
+
+void HTTPInterfaceConfig::createSingleServer(
+    ProtocolServerAdapter &,
+    const std::string &,
+    IServer &,
+    Poco::ThreadPool &,
+    AsynchronousMetrics *
+)
+{
+    throw Exception{"Not supposed to be called", ErrorCodes::LOGICAL_ERROR};
+}
+
 NativeTCPInterfaceConfig::NativeTCPInterfaceConfig(const std::string & name_)
     : TCPInterfaceConfigBase(name_, "native_tcp")
 {
 }
 
-void NativeTCPInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, [[maybe_unused]] AsynchronousMetrics * async_metrics)
+void NativeTCPInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics *)
 {
     if (secure)
     {
@@ -585,7 +631,7 @@ void NativeTCPInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapte
         socket.setSendTimeout(toTimespan(tcp_send_timeout));
 
         adapter.add(std::make_unique<Poco::Net::TCPServer>(
-            new TCPHandlerFactory(server, secure, /*proxy protocol = */false), pool, socket, new Poco::Net::TCPServerParams));
+            new TCPHandlerFactory(server, secure, *this), pool, socket, new Poco::Net::TCPServerParams));
 
         LOG_INFO(&server.logger(), "Listening for connections with secure Native TCP protocol ({}): {}", name, address.toString());
 #else
@@ -600,7 +646,7 @@ void NativeTCPInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapte
         socket.setSendTimeout(toTimespan(tcp_send_timeout));
 
         adapter.add(std::make_unique<Poco::Net::TCPServer>(
-            new TCPHandlerFactory(server, secure, /*proxy protocol = */false), pool, socket, new Poco::Net::TCPServerParams));
+            new TCPHandlerFactory(server, secure, *this), pool, socket, new Poco::Net::TCPServerParams));
 
         LOG_INFO(&server.logger(), "Listening for connections with Native TCP protocol ({}): {}", name, address.toString());
     }
@@ -646,7 +692,7 @@ void NativeHTTPInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapt
         socket.setSendTimeout(toTimespan(http_send_timeout));
 
         adapter.add(std::make_unique<HTTPServer>(
-            server.context(), createHandlerFactory(server, *async_metrics, "HTTPSHandler-factory"), pool, socket, http_params));
+            server.context(), createHandlerFactory(server, *async_metrics, "HTTPSHandler-factory"), pool, socket, http_params, *this));
 
         LOG_INFO(&server.logger(), "Listening for connections with Native HTTPS protocol ({}): https://{}", name, address.toString());
 #else
@@ -661,7 +707,7 @@ void NativeHTTPInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapt
         socket.setSendTimeout(toTimespan(http_send_timeout));
 
         adapter.add(std::make_unique<HTTPServer>(
-            server.context(), createHandlerFactory(server, *async_metrics, "HTTPHandler-factory"), pool, socket, http_params));
+            server.context(), createHandlerFactory(server, *async_metrics, "HTTPHandler-factory"), pool, socket, http_params, *this));
 
         LOG_INFO(&server.logger(), "Listening for connections with Native HTTP protocol ({}): http://{}", name, address.toString());
     }
@@ -691,7 +737,7 @@ NativeGRPCInterfaceConfig::NativeGRPCInterfaceConfig(const std::string & name_)
 
 void NativeGRPCInterfaceConfig::updateConfig(
     const Poco::Util::AbstractConfiguration & config,
-    const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies_
+    const ProxyConfigs & proxies_
 )
 {
     MultiEndpointInterfaceConfigBase::updateConfig(config, proxies_);
@@ -713,7 +759,7 @@ void NativeGRPCInterfaceConfig::createSingleServer([[maybe_unused]] ProtocolServ
 {
 #if USE_GRPC
     auto address = makeSocketAddress(host, port, &server.logger());
-    adapter.add(std::make_unique<GRPCServer>(server, address));
+    adapter.add(std::make_unique<GRPCServer>(server, address, *this));
 
     LOG_INFO(&server.logger(), "Listening for connections with Native gRPC protocol ({}): {}", name, address.toString());
 #else
@@ -769,7 +815,7 @@ void InterserverHTTPInterfaceConfig::createSingleServer(ProtocolServerAdapter & 
         socket.setSendTimeout(toTimespan(http_send_timeout));
 
         adapter.add(std::make_unique<HTTPServer>(
-            server.context(), createHandlerFactory(server, *async_metrics, "InterserverIOHTTPSHandler-factory"), pool, socket, http_params));
+            server.context(), createHandlerFactory(server, *async_metrics, "InterserverIOHTTPSHandler-factory"), pool, socket, http_params, *this));
 
         LOG_INFO(&server.logger(), "Listening for secure replica communication (interserver) protocol ({}): https://{}", name, address.toString());
 #else
@@ -784,7 +830,7 @@ void InterserverHTTPInterfaceConfig::createSingleServer(ProtocolServerAdapter & 
         socket.setSendTimeout(toTimespan(http_send_timeout));
 
         adapter.add(std::make_unique<HTTPServer>(
-            server.context(), createHandlerFactory(server, *async_metrics, "InterserverIOHTTPHandler-factory"), pool, socket, http_params));
+            server.context(), createHandlerFactory(server, *async_metrics, "InterserverIOHTTPHandler-factory"), pool, socket, http_params, *this));
 
         LOG_INFO(&server.logger(), "Listening for replica communication (interserver) protocol ({}): http://{}", name, address.toString());
     }
@@ -812,7 +858,7 @@ MySQLInterfaceConfig::MySQLInterfaceConfig(const std::string & name_)
 {
 }
 
-void MySQLInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, [[maybe_unused]] AsynchronousMetrics * async_metrics)
+void MySQLInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics *)
 {
     Poco::Net::ServerSocket socket;
     auto address = socketBindListen(socket, host, port, secure, reuse_port, backlog, &server.logger());
@@ -820,7 +866,7 @@ void MySQLInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapter, c
     socket.setSendTimeout(toTimespan(tcp_send_timeout));
 
     adapter.add(std::make_unique<Poco::Net::TCPServer>(
-        new MySQLHandlerFactory(server), pool, socket, new Poco::Net::TCPServerParams));
+        new MySQLHandlerFactory(server, *this), pool, socket, new Poco::Net::TCPServerParams));
 
     LOG_INFO(&server.logger(), "Listening for connections with MySQL compatibility protocol ({}): {}", name, address.toString());
 }
@@ -846,7 +892,7 @@ PostgreSQLInterfaceConfig::PostgreSQLInterfaceConfig(const std::string & name_)
 {
 }
 
-void PostgreSQLInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, [[maybe_unused]] AsynchronousMetrics * async_metrics)
+void PostgreSQLInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapter, const std::string & host, IServer & server, Poco::ThreadPool & pool, AsynchronousMetrics *)
 {
     Poco::Net::ServerSocket socket;
     auto address = socketBindListen(socket, host, port, secure, reuse_port, backlog, &server.logger());
@@ -854,7 +900,7 @@ void PostgreSQLInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapt
     socket.setSendTimeout(toTimespan(tcp_send_timeout));
 
     adapter.add(std::make_unique<Poco::Net::TCPServer>(
-        new PostgreSQLHandlerFactory(server), pool, socket, new Poco::Net::TCPServerParams));
+        new PostgreSQLHandlerFactory(server, *this), pool, socket, new Poco::Net::TCPServerParams));
 
     LOG_INFO(&server.logger(), "Listening for connections with PostgreSQL compatibility protocol ({}): {}", name, address.toString());
 }
@@ -895,7 +941,7 @@ void PrometheusInterfaceConfig::createSingleServer(ProtocolServerAdapter & adapt
     socket.setSendTimeout(toTimespan(http_send_timeout));
 
     adapter.add(std::make_unique<HTTPServer>(
-        server.context(), createHandlerFactory(server, *async_metrics, "PrometheusHandler-factory"), pool, socket, http_params));
+        server.context(), createHandlerFactory(server, *async_metrics, "PrometheusHandler-factory"), pool, socket, http_params, *this));
 
     LOG_INFO(&server.logger(), "Listening for connections with Prometheus protocol ({}): http://{}", name, address.toString());
 }
@@ -933,7 +979,7 @@ void KeeperTCPInterfaceConfig::createSingleServer([[maybe_unused]] ProtocolServe
         socket.setSendTimeout(toTimespan(tcp_send_timeout));
 
         adapter.add(std::make_unique<Poco::Net::TCPServer>(
-            new KeeperTCPHandlerFactory(server, secure), pool, socket, new Poco::Net::TCPServerParams));
+            new KeeperTCPHandlerFactory(server, secure, *this), pool, socket, new Poco::Net::TCPServerParams));
 
         LOG_INFO(&server.logger(), "Listening for connections with secure Keeper TCP protocol ({}): {}", name, address.toString());
 #else
@@ -948,7 +994,7 @@ void KeeperTCPInterfaceConfig::createSingleServer([[maybe_unused]] ProtocolServe
         socket.setSendTimeout(toTimespan(tcp_send_timeout));
 
         adapter.add(std::make_unique<Poco::Net::TCPServer>(
-            new KeeperTCPHandlerFactory(server, secure), pool, socket, new Poco::Net::TCPServerParams));
+            new KeeperTCPHandlerFactory(server, secure, *this), pool, socket, new Poco::Net::TCPServerParams));
 
         LOG_INFO(&server.logger(), "Listening for connections with Keeper TCP protocol ({}): {}", name, address.toString());
     }
@@ -967,7 +1013,7 @@ std::unique_ptr<KeeperTCPInterfaceConfig> KeeperTCPInterfaceConfig::tryParseLega
     return tryParseLegacyInterfaceHelper<KeeperTCPInterfaceConfig>(
         secure_,
         (secure_ ? "keeper_server.tcp_port_secure" : "keeper_server.tcp_port"),
-        (secure_ ? "LegacyЫусгкуKeeperTCP" : "LegacyPlainKeeperTCP"),
+        (secure_ ? "LegacySecureKeeperTCP" : "LegacyPlainKeeperTCP"),
         global_overrides,
         config,
         settings
@@ -999,7 +1045,7 @@ std::unique_ptr<ProtocolInterfaceConfig> parseInterface(
     const std::string & protocol,
     const LegacyGlobalConfigOverrides & global_overrides,
     const Poco::Util::AbstractConfiguration & config,
-    const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies,
+    const ProxyConfigs & proxies,
     const Settings & settings
 )
 {
@@ -1008,13 +1054,13 @@ std::unique_ptr<ProtocolInterfaceConfig> parseInterface(
     return interface;
 }
 
-std::map<std::string, std::unique_ptr<ProtocolInterfaceConfig>> parseInterfaces(
+ProtocolInterfaceConfigs parseInterfaces(
     const Poco::Util::AbstractConfiguration & config,
     const Settings & settings,
-    const std::map<std::string, std::unique_ptr<ProxyConfig>> & proxies
+    const ProxyConfigs & proxies
 )
 {
-    std::map<std::string, std::unique_ptr<ProtocolInterfaceConfig>> interfaces;
+    ProtocolInterfaceConfigs interfaces;
 
     const auto add_interface = [&] (std::unique_ptr<ProtocolInterfaceConfig> && interface)
     {

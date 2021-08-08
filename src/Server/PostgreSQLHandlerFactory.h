@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <Server/IServer.h>
+#include <Server/ProtocolInterfaceConfig.h>
 #include <Core/PostgreSQLProtocol.h>
 
 namespace DB
@@ -14,6 +15,7 @@ class PostgreSQLHandlerFactory : public Poco::Net::TCPServerConnectionFactory
 private:
     IServer & server;
     Poco::Logger * log;
+    PostgreSQLInterfaceConfig config;
 
 #if USE_SSL
     bool ssl_enabled = true;
@@ -25,7 +27,7 @@ private:
     std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> auth_methods;
 
 public:
-    explicit PostgreSQLHandlerFactory(IServer & server_);
+    explicit PostgreSQLHandlerFactory(IServer & server_, const PostgreSQLInterfaceConfig & config_);
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override;
 };

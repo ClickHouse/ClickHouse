@@ -5,6 +5,7 @@
 #endif
 
 #if USE_GRPC
+#include <Server/ProtocolInterfaceConfig.h>
 #include <Poco/Net/SocketAddress.h>
 #include "clickhouse_grpc.grpc.pb.h"
 
@@ -23,7 +24,7 @@ class IServer;
 class GRPCServer
 {
 public:
-    GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_);
+    GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_, const NativeGRPCInterfaceConfig & config_);
     ~GRPCServer();
 
     /// Starts the server. A new thread will be created that waits for and accepts incoming connections.

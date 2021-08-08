@@ -21,6 +21,7 @@ SRCS(
     HTTP/WriteBufferFromHTTPServerResponse.cpp
     HTTPHandler.cpp
     HTTPHandlerFactory.cpp
+    IndirectTCPServerConnection.cpp
     InterserverIOHTTPHandler.cpp
     KeeperTCPHandler.cpp
     MySQLHandler.cpp
@@ -33,6 +34,7 @@ SRCS(
     ProtocolInterfaceConfig.cpp
     ProtocolServerAdapter.cpp
     ProxyConfig.cpp
+    ProxyProtocolHandler.cpp
     ReplicasStatusHandler.cpp
     StaticRequestHandler.cpp
     TCPHandler.cpp
