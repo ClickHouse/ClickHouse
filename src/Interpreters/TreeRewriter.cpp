@@ -532,9 +532,12 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-        if (!data.has_some)
+        if (analyzed_join.keyNamesLeft().empty())
+        {
             throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+        }
+
         if (is_asof)
             data.asofToJoinKeys();
     }
@@ -604,6 +607,27 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
     }
 
     return data.window_functions;
+}
+
+class MarkTupleLiteralsAsLegacyData
+{
+public:
+    using TypeToVisit = ASTLiteral;
+
+    static void visit(ASTLiteral & literal, ASTPtr &)
+    {
+        if (literal.value.getType() == Field::Types::Tuple)
+            literal.use_legacy_column_name_of_tuple = true;
+    }
+};
+
+using MarkTupleLiteralsAsLegacyMatcher = OneTypeMatcher<MarkTupleLiteralsAsLegacyData>;
+using MarkTupleLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkTupleLiteralsAsLegacyMatcher, true>;
+
+void markTupleLiteralsAsLegacy(ASTPtr & query)
+{
+    MarkTupleLiteralsAsLegacyVisitor::Data data;
+    MarkTupleLiteralsAsLegacyVisitor(data).visit(query);
 }
 
 }
@@ -924,6 +948,9 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, select_options.only_analyze);
 
+    if (settings.legacy_column_name_of_tuple_literal)
+        markTupleLiteralsAsLegacy(query);
+
     TreeOptimizer::apply(query, result, tables_with_columns, getContext());
 
     /// array_join_alias_to_name, array_join_result_to_source.
@@ -951,8 +978,13 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// rewrite filters for select query, must go after getArrayJoinedColumns
     if (settings.optimize_respect_aliases && result.metadata_snapshot)
     {
-        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
-        result.collectUsedColumns(query, true);
+        /// If query is changed, we need to redo some work to correct name resolution.
+        if (replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext()))
+        {
+            result.aggregates = getAggregates(query, *select_query);
+            result.window_function_asts = getWindowFunctions(query, *select_query);
+            result.collectUsedColumns(query, true);
+        }
     }
 
     result.ast_join = select_query->join();
@@ -985,6 +1017,9 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, getContext(), 0, result.scalars, false);
+
+    if (settings.legacy_column_name_of_tuple_literal)
+        markTupleLiteralsAsLegacy(query);
 
     TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
