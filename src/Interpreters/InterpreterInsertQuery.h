@@ -5,6 +5,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {
@@ -14,8 +15,18 @@ namespace DB
 class InterpreterInsertQuery : public IInterpreter, WithContext
 {
 public:
+    using ReadBuffers = std::vector<std::unique_ptr<ReadBuffer>>;
+
     InterpreterInsertQuery(
         const ASTPtr & query_ptr_,
+        ContextPtr context_,
+        bool allow_materialized_ = false,
+        bool no_squash_ = false,
+        bool no_destination_ = false);
+
+    InterpreterInsertQuery(
+        const ASTPtr & query_ptr_,
+        ReadBuffers read_buffers_,
         ContextPtr context_,
         bool allow_materialized_ = false,
         bool no_squash_ = false,
@@ -37,6 +48,7 @@ private:
     Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
 
     ASTPtr query_ptr;
+    ReadBuffers read_buffers;
     const bool allow_materialized;
     const bool no_squash;
     const bool no_destination;

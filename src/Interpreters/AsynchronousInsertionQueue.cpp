@@ -2,8 +2,9 @@
 
 #include <Core/Settings.h>
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/IBlockStream_fwd.h>
-#include <DataStreams/copyData.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Context.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -18,10 +19,17 @@ namespace DB
 
 struct AsynchronousInsertQueue::InsertData
 {
+    InsertData(ASTPtr query_, const Settings & settings_)
+        : query(std::move(query_)), settings(settings_)
+    {
+    }
+
+    ASTPtr query;
+    Settings settings;
+
     std::mutex mutex;
     std::list<std::string> data;
     size_t size = 0;
-    BlockIO io;
 
     /// Timestamp of the first insert into queue, or after the last queue dump.
     /// Used to detect for how long the queue is active, so we can dump it by timer.
@@ -32,7 +40,13 @@ struct AsynchronousInsertQueue::InsertData
     std::chrono::time_point<std::chrono::steady_clock> last_update;
 
     /// Indicates that the BlockIO should be updated, because we can't read/write prefix and suffix more than once.
-    bool reset = false;
+    bool is_reset = false;
+
+    void reset()
+    {
+        data.clear();
+        is_reset = true;
+    }
 };
 
 std::size_t AsynchronousInsertQueue::InsertQueryHash::operator() (const InsertQuery & query) const
@@ -65,8 +79,9 @@ bool AsynchronousInsertQueue::InsertQueryEquality::operator() (const InsertQuery
     return true;
 }
 
-AsynchronousInsertQueue::AsynchronousInsertQueue(size_t pool_size, size_t max_data_size_, const Timeout & timeouts)
-    : max_data_size(max_data_size_)
+AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, size_t max_data_size_, const Timeout & timeouts)
+    : WithContext(context_)
+    , max_data_size(max_data_size_)
     , busy_timeout(timeouts.busy)
     , stale_timeout(timeouts.stale)
     , lock(RWLockImpl::create())
@@ -97,45 +112,41 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     pool.wait();
 }
 
-bool AsynchronousInsertQueue::push(ASTInsertQuery * query, const Settings & settings)
-{
-    auto read_lock = lock->getLock(RWLockImpl::Read, String());
-
-    auto it = queue->find(InsertQuery{query->shared_from_this(), settings});
-
-    if (it != queue->end())
-    {
-        std::unique_lock<std::mutex> data_lock(it->second->mutex);
-
-        if (it->second->reset)
-            return false;
-
-        pushImpl(query, it);
-        return true;
-    }
-
-    return false;
-}
-
-void AsynchronousInsertQueue::push(ASTInsertQuery * query, BlockIO && io, const Settings & settings)
+void AsynchronousInsertQueue::push(const ASTPtr & query, const Settings & settings)
 {
     auto write_lock = lock->getLock(RWLockImpl::Write, String());
 
-    InsertQuery key{query->shared_from_this(), settings};
+    InsertQuery key{query, settings};
+
     auto it = queue->find(key);
     if (it == queue->end())
-    {
-        it = queue->insert({key, std::make_shared<InsertData>()}).first;
-        it->second->io = std::move(io);
-    }
-    else if (it->second->reset)
-    {
-        it->second = std::make_shared<InsertData>();
-        it->second->io = std::move(io);
-    }
+        it = queue->insert({key, std::make_shared<InsertData>(query, settings)}).first;
+    else if (it->second->is_reset)
+        it->second = std::make_shared<InsertData>(query, settings);
 
     std::unique_lock<std::mutex> data_lock(it->second->mutex);
-    pushImpl(query, it);
+
+    auto read_buffers = getReadBuffersFromASTInsertQuery(query);
+    ConcatReadBuffer concat_buf(std::move(read_buffers));
+
+    /// NOTE: must not read from |query->tail| before read all between |query->data| and |query->end|.
+
+    /// It's important to read the whole data per query as a single chunk, so we can safely drop it in case of parsing failure.
+    auto & new_data = it->second->data.emplace_back();
+    new_data.reserve(concat_buf.totalSize());
+    WriteBufferFromString write_buf(new_data);
+
+    copyData(concat_buf, write_buf);
+    it->second->size += concat_buf.count();
+    it->second->last_update = std::chrono::steady_clock::now();
+
+    LOG_INFO(&Poco::Logger::get("AsynchronousInsertQueue"),
+        "Queue size {} for query '{}'", it->second->size, queryToString(*query));
+
+    if (it->second->size > max_data_size)
+        /// Since we're under lock here, it's safe to pass-by-copy the shared_ptr
+        /// without a race with the cleanup thread, which may reset last shared_ptr instance.
+        pool.scheduleOrThrowOnError([data = it->second, global_context = getContext()] { processData(data, global_context); });
 }
 
 void AsynchronousInsertQueue::busyCheck()
@@ -157,7 +168,7 @@ void AsynchronousInsertQueue::busyCheck()
             auto lag = std::chrono::steady_clock::now() - data->first_update;
 
             if (lag >= busy_timeout)
-                pool.scheduleOrThrowOnError([data = data] { processData(data); });
+                pool.scheduleOrThrowOnError([data = data, global_context = getContext()] { processData(data, global_context); });
             else
                 timeout = std::min(timeout, std::chrono::ceil<std::chrono::seconds>(busy_timeout - lag));
         }
@@ -179,64 +190,47 @@ void AsynchronousInsertQueue::staleCheck()
             auto lag = std::chrono::steady_clock::now() - data->last_update;
 
             if (lag >= stale_timeout)
-                pool.scheduleOrThrowOnError([data = data] { processData(data); });
+                pool.scheduleOrThrowOnError([data = data, global_context = getContext()] { processData(data, global_context); });
         }
     }
 }
 
-void AsynchronousInsertQueue::pushImpl(ASTInsertQuery * query, QueueIterator & it)
-{
-    ConcatReadBuffer concat_buf;
-
-    auto ast_buf = std::make_unique<ReadBufferFromMemory>(query->data, query->data ? query->end - query->data : 0);
-
-    if (query->data)
-        concat_buf.appendBuffer(std::move(ast_buf));
-
-    if (query->tail)
-        concat_buf.appendBuffer(wrapReadBufferReference(*query->tail));
-
-    /// NOTE: must not read from |query->tail| before read all between |query->data| and |query->end|.
-
-    /// It's important to read the whole data per query as a single chunk, so we can safely drop it in case of parsing failure.
-    auto & new_data = it->second->data.emplace_back();
-    new_data.reserve(concat_buf.totalSize());
-    WriteBufferFromString write_buf(new_data);
-
-    copyData(concat_buf, write_buf);
-    it->second->size += concat_buf.count();
-    it->second->last_update = std::chrono::steady_clock::now();
-
-    LOG_INFO(&Poco::Logger::get("AsynchronousInsertQueue"), "Queue size {} for query '{}'", it->second->size, queryToString(*query));
-
-    if (it->second->size > max_data_size)
-        /// Since we're under lock here, it's safe to pass-by-copy the shared_ptr
-        /// without a race with the cleanup thread, which may reset last shared_ptr instance.
-        pool.scheduleOrThrowOnError([data = it->second] { processData(data); });
-}
-
 // static
-void AsynchronousInsertQueue::processData(std::shared_ptr<InsertData> data)
+void AsynchronousInsertQueue::processData(std::shared_ptr<InsertData> data, ContextPtr global_context)
+try
 {
     std::unique_lock<std::mutex> data_lock(data->mutex);
 
-    if (data->reset)
+    if (data->is_reset)
         return;
 
-    // auto in = std::dynamic_pointer_cast<InputStreamFromASTInsertQuery>(data->io.in);
-    // assert(in);
+    ReadBuffers read_buffers;
+    for (const auto & datum : data->data)
+        read_buffers.emplace_back(std::make_unique<ReadBufferFromString>(datum));
 
-    // auto log_progress = [](const Block & block)
-    // {
-    //     LOG_INFO(&Poco::Logger::get("AsynchronousInsertQueue"), "Flushed {} rows", block.rows());
-    // };
+    auto insert_context = Context::createCopy(global_context);
+    insert_context->makeQueryContext();
+    insert_context->setSettings(data->settings);
 
-    // for (const auto & datum : data->data)
-    //     in->appendBuffer(std::make_unique<ReadBufferFromString>(datum));
-    // copyData(*in, *data->io.out, [] {return false;}, log_progress);
+    InterpreterInsertQuery interpreter(data->query, std::move(read_buffers), insert_context);
+    auto io = interpreter.execute();
+    assert(io.pipeline.initialized());
 
-    data->io = BlockIO();  /// Release all potential table locks
-    data->reset = true;
+    auto log_progress = [&](const Progress & progress)
+    {
+        LOG_INFO(&Poco::Logger::get("AsynchronousInsertQueue"),
+            "Flushed {} rows, {} bytes", progress.written_rows, progress.written_bytes);
+    };
+
+    io.pipeline.setProgressCallback(log_progress);
+    auto executor = io.pipeline.execute();
+    executor->execute(io.pipeline.getNumThreads());
+
+    data->reset();
+}
+catch (...)
+{
+    tryLogCurrentException("AsynchronousInsertQueue", __PRETTY_FUNCTION__);
 }
 
 }

@@ -14,7 +14,7 @@ namespace DB
 class ASTInsertQuery;
 struct BlockIO;
 
-class AsynchronousInsertQueue
+class AsynchronousInsertQueue : public WithContext
 {
     public:
         /// Using structure to allow and benefit from designated initialization and not mess with a positional arguments in ctor.
@@ -23,11 +23,10 @@ class AsynchronousInsertQueue
             std::chrono::seconds busy, stale;
         };
 
-        AsynchronousInsertQueue(size_t pool_size, size_t max_data_size, const Timeout & timeouts);
+        AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, size_t max_data_size, const Timeout & timeouts);
         ~AsynchronousInsertQueue();
 
-        bool push(ASTInsertQuery * query, const Settings & settings);
-        void push(ASTInsertQuery * query, BlockIO && io, const Settings & settings);
+        void push(const ASTPtr & query, const Settings & settings);
 
     private:
         struct InsertQuery
@@ -75,9 +74,7 @@ class AsynchronousInsertQueue
         void busyCheck();
         void staleCheck();
 
-        void pushImpl(ASTInsertQuery * query, QueueIterator & it);  /// use only under lock
-
-        static void processData(std::shared_ptr<InsertData> data);
+        static void processData(std::shared_ptr<InsertData> data, ContextPtr global_context);
 };
 
 }

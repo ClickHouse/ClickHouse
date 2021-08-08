@@ -12,7 +12,7 @@
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <Processors/Transforms/getSourceFromFromASTInsertQuery.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -431,6 +431,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 query_end = insert_query->data;
             else
                 query_end = end;
+
             insert_query->tail = istr;
         }
         else
@@ -521,8 +522,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     StoragePtr storage = context->executeTableFunction(input_function);
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
-                    auto pipe = getSourceFromFromASTInsertQuery(
-                        ast, istr, input_metadata_snapshot->getSampleBlock(), context, input_function);
+                    auto read_buffers = getReadBuffersFromASTInsertQuery(ast);
+                    auto pipe = getSourceFromASTInsertQuery(
+                        ast, input_metadata_snapshot->getSampleBlock(), std::move(read_buffers), context, input_function);
                     input_storage.setPipe(std::move(pipe));
                 }
             }
@@ -530,6 +532,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         else
             /// reset Input callbacks if query is not INSERT SELECT
             context->resetInputCallbacks();
+
+        auto * queue = context->getAsynchronousInsertQueue();
+        const bool async_insert
+            = queue && insert_query && !insert_query->select && !insert_query->expectNativeData() && settings.async_insert_mode;
+
+        if (async_insert)
+        {
+            /// Shortcut for already processed similar insert-queries.
+            /// Similarity is defined by hashing query text and some settings.
+            queue->push(ast, settings);
+            return std::make_tuple(ast, BlockIO());
+        }
 
         auto interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
@@ -557,17 +571,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
-        }
-
-        auto * queue = context->getAsynchronousInsertQueue();
-        const bool async_insert
-            = queue && insert_query && !insert_query->select && !insert_query->expectNativeData() && settings.async_insert_mode;
-
-        if (async_insert && queue->push(insert_query, settings))
-        {
-            /// Shortcut for already processed similar insert-queries.
-            /// Similarity is defined by hashing query text and some settings.
-            return std::make_tuple(ast, BlockIO());
         }
 
         {
@@ -897,12 +900,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             res.finish_callback = std::move(finish_callback);
             res.exception_callback = std::move(exception_callback);
         }
-
-        if (async_insert)
-        {
-            queue->push(insert_query, std::move(res), settings);
-            return std::make_tuple(ast, BlockIO());
-        }
     }
     catch (...)
     {
@@ -1008,7 +1005,8 @@ void executeQuery(
     {
         if (streams.out)
         {
-            auto pipe = getSourceFromFromASTInsertQuery(ast, &istr, streams.out->getHeader(), context, nullptr);
+            auto read_buffers = getReadBuffersFromASTInsertQuery(ast);
+            auto pipe = getSourceFromASTInsertQuery(ast, streams.out->getHeader(), std::move(read_buffers), context);
 
             pipeline.init(std::move(pipe));
             pipeline.resize(1);

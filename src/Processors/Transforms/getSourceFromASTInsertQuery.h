@@ -5,22 +5,24 @@
 #include <cstddef>
 #include <memory>
 
-
 namespace DB
 {
+
+class ReadBuffer;
+class ASTInsertQuery;
+using ReadBuffers = std::vector<std::unique_ptr<ReadBuffer>>;
 
 /** Prepares a pipe which produce data containing in INSERT query
   * Head of inserting data could be stored in INSERT ast directly
   * Remaining (tail) data could be stored in input_buffer_tail_part
   */
-
-class Pipe;
-
-Pipe getSourceFromFromASTInsertQuery(
+Pipe getSourceFromASTInsertQuery(
         const ASTPtr & ast,
-        ReadBuffer * input_buffer_tail_part,
         const Block & header,
+        ReadBuffers read_buffers,
         ContextPtr context,
-        const ASTPtr & input_function);
+        const ASTPtr & input_function = nullptr);
+
+ReadBuffers getReadBuffersFromASTInsertQuery(const ASTPtr & ast);
 
 }
