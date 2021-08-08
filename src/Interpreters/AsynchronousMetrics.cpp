@@ -765,43 +765,60 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
                 uint64_t kb = 0;
                 readText(kb, *meminfo);
-                if (kb)
+
+                if (!kb)
                 {
-                    skipWhitespaceIfAny(*meminfo, true);
-                    assertString("kB", *meminfo);
+                    skipToNextLineOrEOF(*meminfo);
+                    continue;
+                }
 
-                    uint64_t bytes = kb * 1024;
+                skipWhitespaceIfAny(*meminfo, true);
 
-                    if (name == "MemTotal:")
-                    {
-                        new_values["OSMemoryTotal"] = bytes;
-                    }
-                    else if (name == "MemFree:")
-                    {
-                        /// We cannot simply name this metric "Free", because it confuses users.
-                        /// See https://www.linuxatemyram.com/
-                        /// For convenience we also provide OSMemoryFreePlusCached, that should be somewhat similar to OSMemoryAvailable.
+                /**
+                 * Not all entries in /proc/meminfo contain the kB suffix, e.g.
+                 * HugePages_Total:       0
+                 * HugePages_Free:        0
+                 * We simply skip such entries as they're not needed
+                 */
+                if (*meminfo->position() == '\n')
+                {
+                    skipToNextLineOrEOF(*meminfo);
+                    continue;
+                }
 
-                        free_plus_cached_bytes += bytes;
-                        new_values["OSMemoryFreeWithoutCached"] = bytes;
-                    }
-                    else if (name == "MemAvailable:")
-                    {
-                        new_values["OSMemoryAvailable"] = bytes;
-                    }
-                    else if (name == "Buffers:")
-                    {
-                        new_values["OSMemoryBuffers"] = bytes;
-                    }
-                    else if (name == "Cached:")
-                    {
-                        free_plus_cached_bytes += bytes;
-                        new_values["OSMemoryCached"] = bytes;
-                    }
-                    else if (name == "SwapCached:")
-                    {
-                        new_values["OSMemorySwapCached"] = bytes;
-                    }
+                assertString("kB", *meminfo);
+
+                uint64_t bytes = kb * 1024;
+
+                if (name == "MemTotal:")
+                {
+                    new_values["OSMemoryTotal"] = bytes;
+                }
+                else if (name == "MemFree:")
+                {
+                    /// We cannot simply name this metric "Free", because it confuses users.
+                    /// See https://www.linuxatemyram.com/
+                    /// For convenience we also provide OSMemoryFreePlusCached, that should be somewhat similar to OSMemoryAvailable.
+
+                    free_plus_cached_bytes += bytes;
+                    new_values["OSMemoryFreeWithoutCached"] = bytes;
+                }
+                else if (name == "MemAvailable:")
+                {
+                    new_values["OSMemoryAvailable"] = bytes;
+                }
+                else if (name == "Buffers:")
+                {
+                    new_values["OSMemoryBuffers"] = bytes;
+                }
+                else if (name == "Cached:")
+                {
+                    free_plus_cached_bytes += bytes;
+                    new_values["OSMemoryCached"] = bytes;
+                }
+                else if (name == "SwapCached:")
+                {
+                    new_values["OSMemorySwapCached"] = bytes;
                 }
 
                 skipToNextLineOrEOF(*meminfo);
