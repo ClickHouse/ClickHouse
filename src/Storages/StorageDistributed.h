@@ -177,6 +177,24 @@ private:
     ClusterPtr
     skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
 
+    /// This method returns optimal query processing stage.
+    ///
+    /// Here is the list of stages (from the less optimal to more optimal):
+    /// - WithMergeableState
+    /// - WithMergeableStateAfterAggregation
+    /// - WithMergeableStateAfterAggregationAndLimit
+    /// - Complete
+    ///
+    /// Some simple queries w/o GROUP BY/DISTINCT can use more optimal stage.
+    ///
+    /// Also in case of optimize_distributed_group_by_sharding_key=1 the queries
+    /// with GROUP BY/DISTINCT sharding_key can also use more optimal stage.
+    /// (see also optimize_skip_unused_shards/allow_nondeterministic_optimize_skip_unused_shards)
+    ///
+    /// @return QueryProcessingStage or empty std::optoinal
+    /// (in this case regular WithMergeableState should be used)
+    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
+
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
 
     const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
