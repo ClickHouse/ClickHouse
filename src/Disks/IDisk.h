@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Core/Defines.h>
 #include <common/types.h>
 #include <Common/CurrentMetrics.h>
@@ -12,9 +13,9 @@
 #include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
+#include "Poco/Util/AbstractConfiguration.h"
 #include <Poco/Timestamp.h>
 #include <filesystem>
-#include "Poco/Util/AbstractConfiguration.h"
 
 namespace fs = std::filesystem;
 
@@ -156,7 +157,7 @@ public:
         const String & path,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         size_t estimated_size = 0,
-        size_t aio_threshold = 0,
+        size_t direct_io_threshold = 0,
         size_t mmap_threshold = 0,
         MMappedFileCache * mmap_cache = nullptr) const = 0;
 
@@ -211,19 +212,23 @@ public:
     /// Return disk type - "local", "s3", etc.
     virtual DiskType::Type getType() const = 0;
 
+    /// Whether this disk support zero-copy replication.
+    /// Overrode in remote fs disks.
+    virtual bool supportZeroCopyReplication() const = 0;
+
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
     /// Performs action on disk startup.
     virtual void startup() {}
 
-    /// Return some uniq string for file, overrode for S3
-    /// Required for distinguish different copies of the same part on S3
+    /// Return some uniq string for file, overrode for IDiskRemote
+    /// Required for distinguish different copies of the same part on remote disk
     virtual String getUniqueId(const String & path) const { return path; }
 
     /// Check file exists and ClickHouse has an access to it
-    /// Overrode in DiskS3
-    /// Required for S3 to ensure that replica has access to data written by other node
+    /// Overrode in remote FS disks (s3/hdfs)
+    /// Required for remote disk to ensure that replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
     /// Invoked on partitions freeze query.
@@ -233,13 +238,18 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
     /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr) {}
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) { }
 
 protected:
     friend class DiskDecorator;
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
+
+    /// Base implementation of the function copy().
+    /// It just opens two files, reads data by portions from the first file, and writes it to the second one.
+    /// A derived class may override copy() to provide a faster implementation.
+    void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path);
 
 private:
     std::unique_ptr<Executor> executor;

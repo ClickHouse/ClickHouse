@@ -39,7 +39,7 @@ public:
     void setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update = false);
 
     /// How much seconds passed since query execution start.
-    UInt64 elapsedSeconds() const { return watch.elapsedSeconds(); }
+    double elapsedSeconds() const { return watch.elapsedSeconds(); }
 
 private:
     /// This flag controls whether to show the progress bar. We start showing it after

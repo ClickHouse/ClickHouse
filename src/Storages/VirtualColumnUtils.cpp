@@ -150,12 +150,6 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     if (!select.where() && !select.prewhere())
         return unmodified;
 
-    ASTPtr condition_ast;
-    if (select.prewhere() && select.where())
-        condition_ast = makeASTFunction("and", select.prewhere()->clone(), select.where()->clone());
-    else
-        condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
-
     // Provide input columns as constant columns to check if an expression is constant.
     std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & node)
     {
