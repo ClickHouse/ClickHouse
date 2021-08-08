@@ -5,7 +5,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <DataStreams/BlockIO.h>
-#include <Processors/Transforms/getSourceFromFromASTInsertQuery.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -22,18 +22,19 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
 }
 
-
-Pipe getSourceFromFromASTInsertQuery(
+Pipe getSourceFromASTInsertQuery(
     const ASTPtr & ast,
-    ReadBuffer * input_buffer_tail_part,
     const Block & header,
+    ReadBuffers read_buffers,
     ContextPtr context,
     const ASTPtr & input_function)
 {
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
-
     if (!ast_insert_query)
-        throw Exception("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: query requires data to insert, but it is not INSERT query");
+
+    if (read_buffers.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Required at least one read buffer to create source from ASTInsertQuery");
 
     String format = ast_insert_query->format;
     if (format.empty())
@@ -43,25 +44,14 @@ Pipe getSourceFromFromASTInsertQuery(
         format = "Values";
     }
 
-    /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
+    auto input_buffer = std::make_unique<ConcatReadBuffer>(std::move(read_buffers));
+    auto source = FormatFactory::instance().getInput(
+        format, *input_buffer, header,
+        context, context->getSettings().max_insert_block_size);
 
-    auto input_buffer_ast_part = std::make_unique<ReadBufferFromMemory>(
-        ast_insert_query->data, ast_insert_query->data ? ast_insert_query->end - ast_insert_query->data : 0);
+    source->addBuffer(std::move(input_buffer));
 
-    auto input_buffer_contacenated = std::make_unique<ConcatReadBuffer>();
-    if (ast_insert_query->data)
-        input_buffer_contacenated->appendBuffer(std::move(input_buffer_ast_part));
-
-    if (input_buffer_tail_part)
-        input_buffer_contacenated->appendBuffer(wrapReadBufferReference(*input_buffer_tail_part));
-
-    /** NOTE: Must not read from 'input_buffer_tail_part' before read all between 'ast_insert_query.data' and 'ast_insert_query.end'.
-        * - because 'query.data' could refer to memory piece, used as buffer for 'input_buffer_tail_part'.
-        */
-
-    auto source = FormatFactory::instance().getInput(format, *input_buffer_contacenated, header, context, context->getSettings().max_insert_block_size);
     Pipe pipe(source);
-
     if (context->getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
     {
         StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
@@ -76,10 +66,29 @@ Pipe getSourceFromFromASTInsertQuery(
         }
     }
 
-    source->addBuffer(std::move(input_buffer_ast_part));
-    source->addBuffer(std::move(input_buffer_contacenated));
-
     return pipe;
+}
+
+ReadBuffers getReadBuffersFromASTInsertQuery(const ASTPtr & ast)
+{
+    const auto * insert_query = ast->as<ASTInsertQuery>();
+    if (!insert_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: query requires data to insert, but it is not INSERT query");
+
+    ReadBuffers buffers;
+    if (insert_query->data)
+    {
+        /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
+        auto ast_buffer = std::make_unique<ReadBufferFromMemory>(
+            insert_query->data, insert_query->end - insert_query->data);
+
+        buffers.emplace_back(std::move(ast_buffer));
+    }
+
+    if (insert_query->tail)
+        buffers.emplace_back(wrapReadBufferReference(*insert_query->tail));
+
+    return buffers;
 }
 
 }

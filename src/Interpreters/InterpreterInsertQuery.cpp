@@ -4,7 +4,7 @@
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
-#include <Processors/Transforms/getSourceFromFromASTInsertQuery.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
@@ -44,8 +44,18 @@ namespace ErrorCodes
 
 InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_)
+    : InterpreterInsertQuery(query_ptr_, getReadBuffersFromASTInsertQuery(query_ptr_),
+        context_, allow_materialized_, no_squash_, no_destination_)
+{
+}
+
+InterpreterInsertQuery::InterpreterInsertQuery(
+    const ASTPtr & query_ptr_, ReadBuffers read_buffers_,
+    ContextPtr context_, bool allow_materialized_,
+    bool no_squash_, bool no_destination_)
     : WithContext(context_)
     , query_ptr(query_ptr_)
+    , read_buffers(std::move(read_buffers_))
     , allow_materialized(allow_materialized_)
     , no_squash(no_squash_)
     , no_destination(no_destination_)
@@ -353,7 +363,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (!query.expectNativeData())
     {
-        auto pipe = getSourceFromFromASTInsertQuery(query_ptr, nullptr, query_sample_block, getContext(), nullptr);
+        auto pipe = getSourceFromASTInsertQuery(query_ptr, query_sample_block, std::move(read_buffers), getContext());
         res.pipeline.init(std::move(pipe));
         res.pipeline.resize(1);
         res.pipeline.setSinks([&](const Block &, Pipe::StreamType)

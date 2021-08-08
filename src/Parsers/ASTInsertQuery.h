@@ -29,10 +29,7 @@ public:
     /// Data from buffer to insert after inlined one - may be nullptr.
     ReadBuffer * tail = nullptr;
 
-    bool expectNativeData() const
-    {
-        return !data && !tail;
-    }
+    bool expectNativeData() const { return !data && !tail; }
 
     /// Try to find table function input() in SELECT part
     void tryFindInputFunction(ASTPtr & input_function) const;
