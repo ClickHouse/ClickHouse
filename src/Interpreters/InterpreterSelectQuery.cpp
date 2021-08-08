@@ -141,7 +141,7 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot);
     actions = analyzer.simpleSelectActions();
 
-    auto column_name = expr_list->children.at(0)->getColumnName(context->getSettingsRef());
+    auto column_name = expr_list->children.at(0)->getColumnName();
     actions->removeUnusedActions(NameSet{column_name});
     actions->projectInput(false);
 
@@ -781,7 +781,7 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
     order_descr.reserve(query.orderBy()->children.size());
     for (const auto & elem : query.orderBy()->children)
     {
-        String name = elem->children.front()->getColumnName(context->getSettingsRef());
+        String name = elem->children.front()->getColumnName();
         const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
         std::shared_ptr<Collator> collator;
@@ -800,14 +800,14 @@ static SortDescription getSortDescription(const ASTSelectQuery & query, ContextP
     return order_descr;
 }
 
-static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query, ContextPtr context)
+static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & query)
 {
     SortDescription order_descr;
     order_descr.reserve(query.groupBy()->children.size());
 
     for (const auto & elem : query.groupBy()->children)
     {
-        String name = elem->getColumnName(context->getSettingsRef());
+        String name = elem->getColumnName();
         order_descr.emplace_back(name, 1, 1);
     }
 
@@ -1919,13 +1919,13 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 {
                     query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
                         query_info.projection->group_by_elements_actions,
-                        getSortDescriptionFromGroupBy(query, context),
+                        getSortDescriptionFromGroupBy(query),
                         query_info.syntax_analyzer_result);
                 }
                 else
                 {
                     query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                        analysis_result.group_by_elements_actions, getSortDescriptionFromGroupBy(query, context), query_info.syntax_analyzer_result);
+                        analysis_result.group_by_elements_actions, getSortDescriptionFromGroupBy(query), query_info.syntax_analyzer_result);
                 }
             }
 
@@ -2004,7 +2004,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
 {
     auto where_step = std::make_unique<FilterStep>(
-        query_plan.getCurrentDataStream(), expression, getSelectQuery().where()->getColumnName(context->getSettingsRef()), remove_filter);
+        query_plan.getCurrentDataStream(), expression, getSelectQuery().where()->getColumnName(), remove_filter);
 
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));
@@ -2053,7 +2053,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     SortDescription group_by_sort_description;
 
     if (group_by_info && settings.optimize_aggregation_in_order)
-        group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery(), context);
+        group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
     else
         group_by_info = nullptr;
 
@@ -2101,7 +2101,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
 void InterpreterSelectQuery::executeHaving(QueryPlan & query_plan, const ActionsDAGPtr & expression)
 {
     auto having_step
-        = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(), expression, getSelectQuery().having()->getColumnName(context->getSettingsRef()), false);
+        = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(), expression, getSelectQuery().having()->getColumnName(), false);
 
     having_step->setStepDescription("HAVING");
     query_plan.addStep(std::move(having_step));
@@ -2117,7 +2117,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
         query_plan.getCurrentDataStream(),
         overflow_row,
         expression,
-        has_having ? getSelectQuery().having()->getColumnName(context->getSettingsRef()) : "",
+        has_having ? getSelectQuery().having()->getColumnName() : "",
         settings.totals_mode,
         settings.totals_auto_threshold,
         final);
@@ -2436,7 +2436,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
 
     Names columns;
     for (const auto & elem : query.limitBy()->children)
-        columns.emplace_back(elem->getColumnName(context->getSettingsRef()));
+        columns.emplace_back(elem->getColumnName());
 
     UInt64 length = getLimitUIntValue(query.limitByLength(), context, "LIMIT");
     UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), context, "OFFSET") : 0);
