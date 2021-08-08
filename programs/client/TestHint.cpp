@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iostream>
 #include <Common/Exception.h>
+#include <Common/ErrorCodes.h>
 #include <Parsers/Lexer.h>
 
 namespace DB
@@ -23,10 +24,18 @@ int parseErrorCode(std::stringstream & ss) // STYLE_CHECK_ALLOW_STD_STRING_STREA
     using namespace DB;
 
     int code;
+    String code_name;
+
     ss >> code;
     if (ss.fail())
-        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-            "Expected integer value for test hint, got: '{}'", ss.str());
+    {
+        ss.clear();
+        ss >> code_name;
+        if (ss.fail())
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
+                "Cannot parse test hint '{}'", ss.str());
+        return ErrorCodes::getErrorCodeByName(code_name);
+    }
     return code;
 }
 

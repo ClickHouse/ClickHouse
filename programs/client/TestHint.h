@@ -15,6 +15,10 @@ namespace DB
 ///
 /// - "-- { clientError 20 }" -- in case of you are expecting client error.
 ///
+/// - "-- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }" -- by error name.
+///
+/// - "-- { clientError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }" -- by error name.
+///
 ///   Remember that the client parse the query first (not the server), so for
 ///   example if you are expecting syntax error, then you should use
 ///   clientError not serverError.
