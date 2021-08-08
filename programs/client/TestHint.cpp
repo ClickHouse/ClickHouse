@@ -8,6 +8,33 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_PARSE_TEXT;
+}
+
+}
+
+namespace
+{
+
+int parseErrorCode(std::stringstream & ss) // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+{
+    using namespace DB;
+
+    int code;
+    ss >> code;
+    if (ss.fail())
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
+            "Expected integer value for test hint, got: '{}'", ss.str());
+    return code;
+}
+
+}
+
+namespace DB
+{
+
 TestHint::TestHint(bool enabled_, const String & query_)
     : query(query_)
 {
@@ -63,9 +90,9 @@ void TestHint::parse(const String & hint, bool is_leading_hint)
         if (!is_leading_hint)
         {
             if (item == "serverError")
-                ss >> server_error;
+                server_error = parseErrorCode(ss);
             else if (item == "clientError")
-                ss >> client_error;
+                client_error = parseErrorCode(ss);
         }
 
         if (item == "echo")
