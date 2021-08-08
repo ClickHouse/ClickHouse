@@ -46,7 +46,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 Similar to `greatCircleDistance` but calculates the distance on WGS-84 ellipsoid instead of sphere. This is more precise approximation of the Earth Geoid.
 The performance is the same as for `greatCircleDistance` (no performance drawback). It is recommended to use `geoDistance` to calculate the distances on Earth.
 
-Technical note: for close enough points we calculate the distance using planar approximation with the metric on the tangent plane on the midpoint of the coordinates.
+Technical note: for close enough points we calculate the distance using planar approximation with the metric on the tangent plane at the midpoint of the coordinates.
 
 ## greatCircleAngle {#greatcircleangle}
 
