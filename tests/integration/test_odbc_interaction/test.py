@@ -554,9 +554,7 @@ def test_concurrent_queries(started_cluster):
     busy_pool = Pool(5)
     p = busy_pool.map_async(node_insert, range(5))
     p.wait()
-    result = node1.query("SELECT count() FROM test_pg_table", user='default')
-    logging.debug(result)
-    assert(int(result) == 5 * 5 * 1000)
+    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000))
 
     def node_insert_select(_):
         for i in range(5):
@@ -566,9 +564,7 @@ def test_concurrent_queries(started_cluster):
     busy_pool = Pool(5)
     p = busy_pool.map_async(node_insert_select, range(5))
     p.wait()
-    result = node1.query("SELECT count() FROM test_pg_table", user='default')
-    logging.debug(result)
-    assert(int(result) == 5 * 5 * 1000  * 2)
+    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000*2))
 
     node1.query('DROP TABLE test_pg_table;')
     cursor.execute('DROP TABLE clickhouse.test_pg_table;')
