@@ -12,6 +12,7 @@ SKIP_LIST = [
     # these couple of tests hangs everything
     "00600_replace_running_query",
     "00987_distributed_stack_overflow",
+    "01954_clickhouse_benchmark_multiple_long",
 
     # just fail
     "00133_long_shard_memory_tracker_and_exception_safety",

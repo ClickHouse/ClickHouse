@@ -57,7 +57,9 @@ LIMIT
 1	0
 LIMIT OFFSET
 1	1
-OFFSET
+OFFSET distributed_push_down_limit=0
+1	1
+OFFSET distributed_push_down_limit=1
 1	1
 1	0
 1	1
@@ -65,6 +67,8 @@ WHERE LIMIT OFFSET
 1	1
 LIMIT BY 1
 1	0
+1	0
+1	1
 1	1
 GROUP BY (Distributed-over-Distributed)
 4	0
@@ -115,6 +119,7 @@ GROUP BY WITH TOTALS LIMIT
 2	0
 
 4	0
+GROUP BY (compound)
 GROUP BY sharding_key, ...
 0	0
 1	0
@@ -123,6 +128,15 @@ GROUP BY sharding_key, ...
 GROUP BY ..., sharding_key
 0	0
 1	0
+0	0
+1	0
+sharding_key (compound)
+1	2	3
+1	2	3
+1	2	6
+1	2
+1	2
+2
 window functions
 0	0
 1	0
