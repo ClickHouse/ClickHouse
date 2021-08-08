@@ -43,7 +43,7 @@ ClickHouse не работает и не собирается на 32-битны
     git clone --recursive git@github.com:ClickHouse/ClickHouse.git
     cd ClickHouse
 
-Замените *yandex* на имя вашего аккаунта на GitHub.
+Замените первое вхождение слова `ClickHouse` в команде для git на имя вашего аккаунта на GitHub.
 
 Эта команда создаст директорию ClickHouse, содержащую рабочую копию проекта.
 
