@@ -21,10 +21,9 @@ xfails = {
     RQ_SRS_016_Kerberos("1.0")
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
+def regression(self, local, clickhouse_binary_path, stress=None):
     """ClickHouse Kerberos authentication test regression module.
     """
-    top().terminating = False
     nodes = {
         "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
         "kerberos": ("kerberos", ),
@@ -32,8 +31,6 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
 
     if stress is not None:
         self.context.stress = stress
-    if parallel is not None:
-        self.context.parallel = parallel
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "kerberos_env")) as cluster:
@@ -42,8 +39,6 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
         Feature(run=load("kerberos.tests.generic", "generic"), flags=TE)
         Feature(run=load("kerberos.tests.config", "config"), flags=TE)
         Feature(run=load("kerberos.tests.parallel", "parallel"), flags=TE)
-
-
 
 if main():
     regression()

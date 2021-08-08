@@ -198,12 +198,14 @@ def test_empty_put(started_cluster, auth):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
 
+    drop_empty_table_query = "DROP TABLE IF EXISTS empty_table"
     create_empty_table_query = """
         CREATE TABLE empty_table (
         {}
         ) ENGINE = Null()
     """.format(table_format)
 
+    run_query(instance, drop_empty_table_query)
     run_query(instance, create_empty_table_query)
 
     filename = "empty_put_test.csv"
@@ -305,22 +307,22 @@ def test_put_with_zero_redirect(started_cluster):
 
 def test_put_get_with_globs(started_cluster):
     # type: (ClickHouseCluster) -> None
-
+    unique_prefix = random.randint(1,10000)
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     max_path = ""
     for i in range(10):
         for j in range(10):
-            path = "{}_{}/{}.csv".format(i, random.choice(['a', 'b', 'c', 'd']), j)
+            path = "{}/{}_{}/{}.csv".format(unique_prefix, i, random.choice(['a', 'b', 'c', 'd']), j)
             max_path = max(path, max_path)
             values = "({},{},{})".format(i, j, i + j)
             query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
                 started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, path, table_format, values)
             run_query(instance, query)
 
-    query = "select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from s3('http://{}:{}/{}/*_{{a,b,c,d}}/%3f.csv', 'CSV', '{}')".format(
-        started_cluster.minio_redirect_host, started_cluster.minio_redirect_port, bucket, table_format)
+    query = "select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from s3('http://{}:{}/{}/{}/*_{{a,b,c,d}}/%3f.csv', 'CSV', '{}')".format(
+        started_cluster.minio_redirect_host, started_cluster.minio_redirect_port, bucket, unique_prefix, table_format)
     assert run_query(instance, query).splitlines() == [
         "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(bucket=bucket, max_path=max_path)]
 
@@ -479,6 +481,7 @@ def test_custom_auth_headers(started_cluster):
     result = run_query(instance, get_query)
     assert result == '1\t2\t3\n'
 
+    instance.query("DROP TABLE IF EXISTS test")
     instance.query(
         "CREATE TABLE test ({table_format}) ENGINE = S3('http://resolver:8080/{bucket}/{file}', 'CSV')".format(
             bucket=started_cluster.minio_restricted_bucket,
@@ -494,6 +497,7 @@ def test_custom_auth_headers(started_cluster):
     replace_config("<header>Authorization: Bearer INVALID_TOKEN", "<header>Authorization: Bearer TOKEN")
     instance.query("SYSTEM RELOAD CONFIG")
     assert run_query(instance, "SELECT * FROM test") == '1\t2\t3\n'
+    instance.query("DROP TABLE test")
 
 
 def test_custom_auth_headers_exclusion(started_cluster):
@@ -551,6 +555,8 @@ def test_storage_s3_get_gzip(started_cluster, extension, method):
         "Norman Ortega,33",
         ""
     ]
+    run_query(instance, f"DROP TABLE IF EXISTS {name}")
+
     buf = io.BytesIO()
     compressed = gzip.GzipFile(fileobj=buf, mode="wb")
     compressed.write(("\n".join(data)).encode())
@@ -562,7 +568,8 @@ def test_storage_s3_get_gzip(started_cluster, extension, method):
                                 'CSV',
                                 '{method}')""")
 
-    run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["565"]
+    run_query(instance, f"SELECT sum(id) FROM {name}").splitlines() == ["565"]
+    run_query(instance, f"DROP TABLE {name}")
 
 
 def test_storage_s3_get_unstable(started_cluster):

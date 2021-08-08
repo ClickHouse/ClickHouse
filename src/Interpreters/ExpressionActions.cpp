@@ -812,6 +812,9 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     for (const auto & name : analyzed_join->keyNamesLeft())
         required_names.emplace(name);
 
+    if (ASTPtr extra_condition_column = analyzed_join->joinConditionColumn(JoinTableSide::Left))
+        required_names.emplace(extra_condition_column->getColumnName());
+
     for (const auto & column : required_columns)
     {
         if (required_names.count(column.name) != 0)

@@ -36,7 +36,7 @@ private:
     };
 
     /// Type names for different complex types (e.g. enums, fixed strings) must be unique. We use simple incremental number to give them different names.
-    /*static*/ SchemaWithSerializeFn createSchemaWithSerializeFn(DataTypePtr data_type, size_t & type_name_increment, const String & column_name);
+    SchemaWithSerializeFn createSchemaWithSerializeFn(DataTypePtr data_type, size_t & type_name_increment, const String & column_name);
 
     std::vector<SerializeFn> serialize_fns;
     avro::ValidSchema valid_schema;

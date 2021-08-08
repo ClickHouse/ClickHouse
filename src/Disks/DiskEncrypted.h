@@ -7,12 +7,23 @@
 #if USE_SSL
 #include <Disks/IDisk.h>
 #include <Disks/DiskDecorator.h>
+#include <Common/MultiVersion.h>
 
 
 namespace DB
 {
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
+namespace FileEncryption { enum class Algorithm; }
+
+struct DiskEncryptedSettings
+{
+    DiskPtr wrapped_disk;
+    String disk_path;
+    std::unordered_map<UInt64, String> keys;
+    UInt64 current_key_id;
+    FileEncryption::Algorithm current_algorithm;
+};
 
 /// Encrypted disk ciphers all written files on the fly and writes the encrypted files to an underlying (normal) disk.
 /// And when we read files from an encrypted disk it deciphers them automatically,
@@ -20,7 +31,8 @@ class WriteBufferFromFileBase;
 class DiskEncrypted : public DiskDecorator
 {
 public:
-    DiskEncrypted(const String & name_, DiskPtr disk_, const String & key_, const String & path_);
+    DiskEncrypted(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
+    DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_);
 
     const String & getName() const override { return name; }
     const String & getPath() const override { return disk_absolute_path; }
@@ -208,8 +220,6 @@ public:
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
 private:
-    void initialize();
-
     String wrappedPath(const String & path) const
     {
         // if path starts_with disk_path -> got already wrapped path
@@ -218,10 +228,10 @@ private:
         return disk_path + path;
     }
 
-    String name;
-    String key;
-    String disk_path;
-    String disk_absolute_path;
+    const String name;
+    const String disk_path;
+    const String disk_absolute_path;
+    MultiVersion<DiskEncryptedSettings> current_settings;
 };
 
 }

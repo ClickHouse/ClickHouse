@@ -115,6 +115,8 @@ set(S2_SRCS
 
 add_library(s2 ${S2_SRCS})
 
+set_property(TARGET s2 PROPERTY CXX_STANDARD 11)
+
 if (OPENSSL_FOUND)
     target_link_libraries(s2 PRIVATE ${OPENSSL_LIBRARIES})
 endif()

@@ -100,6 +100,8 @@ public:
 
     UInt64 distributed_depth = 0;
 
+    bool is_replicated_database_internal = false;
+
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
     /** Serialization and deserialization.

@@ -248,6 +248,9 @@
     M(S3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
+    \
+    M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
+    M(SleepFunctionMicroseconds, "Time spent sleeping due to a sleep function call.") \
 
 
 namespace ProfileEvents

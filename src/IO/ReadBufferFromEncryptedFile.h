@@ -20,7 +20,8 @@ public:
         size_t buffer_size_,
         std::unique_ptr<ReadBufferFromFileBase> in_,
         const String & key_,
-        const FileEncryption::InitVector & init_vector_);
+        const FileEncryption::Header & header_,
+        size_t offset_ = 0);
 
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;

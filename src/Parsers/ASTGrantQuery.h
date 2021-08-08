@@ -24,6 +24,8 @@ public:
     AccessRightsElements access_rights_elements;
     std::shared_ptr<ASTRolesOrUsersSet> roles;
     bool admin_option = false;
+    bool replace_access = false;
+    bool replace_granted_roles = false;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
 
     String getID(char) const override;
@@ -32,5 +34,6 @@ public:
     void replaceEmptyDatabase(const String & current_database);
     void replaceCurrentUserTag(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTGrantQuery>(clone()); }
+    const char * getQueryKindString() const override { return is_revoke ? "Revoke" : "Grant"; }
 };
 }
