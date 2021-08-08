@@ -216,7 +216,7 @@ void ExpressionAnalyzer::analyzeAggregation()
         if (join)
         {
             getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
-            auto sample_columns = temp_actions->getResultColumns();
+            auto sample_columns = temp_actions->getNamesAndTypesList();
             analyzedJoin().addJoinedColumnsAndCorrectTypes(sample_columns);
             temp_actions = std::make_shared<ActionsDAG>(sample_columns);
         }
@@ -1206,7 +1206,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
-                                                  ManyExpressionActions & order_by_elements_actions)
+                                                           ManyExpressionActions & order_by_elements_actions)
 {
     const auto * select_query = getSelectQuery();
 
