@@ -49,7 +49,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_AGGREGATION;
 }
 
 
@@ -521,8 +520,8 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     assert(node);
     ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
-    ParserToken parser_openging_bracket(TokenType::OpeningRoundBracket);
-    if (!parser_openging_bracket.ignore(pos, expected))
+    ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
+    if (!parser_opening_bracket.ignore(pos, expected))
     {
         return false;
     }
@@ -534,7 +533,7 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     ParserExpressionList parser_condition(false);
     ASTPtr condition;
-    if (!parser_condition.parse(pos, condition, expected))
+    if (!parser_condition.parse(pos, condition, expected) || condition->children.size() != 1)
     {
         return false;
     }
@@ -543,17 +542,6 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!parser_closing_bracket.ignore(pos, expected))
     {
         return false;
-    }
-
-    if (function.name.find("If") != String::npos)
-    {
-        throw Exception(
-            ErrorCodes::ILLEGAL_AGGREGATION,
-            "Filter clause provided for an aggregating function (" + function.name + ") already containing If suffix");
-    }
-    if (condition->children.empty())
-    {
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Empty condition for WHERE");
     }
 
     function.name += "If";
