@@ -9,8 +9,10 @@ from helpers.cluster import ClickHouseCluster, run_and_check
 cluster = ClickHouseCluster(__file__)
 
 instance = cluster.add_instance('instance',
-        dictionaries=['configs/dictionaries/dict1.xml'], main_configs=['configs/config.d/config.xml'], stay_alive=True)
-
+        dictionaries=['configs/dictionaries/dict1.xml'],
+        main_configs=[
+            'configs/config.d/config.xml',
+            'configs/log_conf.xml'], stay_alive=True)
 
 def create_dict_simple():
     instance.query('DROP DICTIONARY IF EXISTS lib_dict_c')
@@ -25,7 +27,6 @@ def create_dict_simple():
         MAX_STORED_KEYS 1048576))
         LIFETIME(2) ;
     ''')
-
 
 @pytest.fixture(scope="module")
 def ch_cluster():
@@ -100,7 +101,6 @@ def test_load_ids(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    instance.query('DROP DICTIONARY IF EXISTS lib_dict_c')
     instance.query('''
         CREATE DICTIONARY lib_dict_c (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
         PRIMARY KEY key SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'))
@@ -264,7 +264,6 @@ def test_bridge_dies_with_parent(ch_cluster):
     assert clickhouse_pid is None
     assert bridge_pid is None
     instance.start_clickhouse(20)
-    instance.query('DROP DICTIONARY lib_dict_c')
 
 
 if __name__ == '__main__':

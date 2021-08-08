@@ -97,7 +97,6 @@ select 'GROUP BY WITH TOTALS LIMIT';
 select count(), * from dist_01247 group by number with totals limit 1;
 
 -- GROUP BY (compound)
-select 'GROUP BY (compound)';
 drop table if exists dist_01247;
 drop table if exists data_01247;
 create table data_01247 engine=Memory() as select number key, 0 value from numbers(2);
@@ -107,16 +106,9 @@ select * from dist_01247 group by key, value;
 select 'GROUP BY ..., sharding_key';
 select * from dist_01247 group by value, key;
 
--- sharding_key (compound)
-select 'sharding_key (compound)';
-select k1, k2, sum(v) from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v), cityHash64(k1, k2)) group by k1, k2; -- optimization applied
-select k1, any(k2), sum(v) from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v), cityHash64(k1, k2)) group by k1; -- optimization does not applied
-select distinct k1, k2 from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v), cityHash64(k1, k2)); -- optimization applied
-select distinct on (k1) k2 from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v), cityHash64(k1, k2)); -- optimization does not applied
-
 -- window functions
 select 'window functions';
-select key, sum(sum(value)) over (rows unbounded preceding) from dist_01247 group by key;
+select key, sum(sum(value)) over (rows unbounded preceding) from dist_01247 group by key settings allow_experimental_window_functions=1;
 
 drop table dist_01247;
 drop table data_01247;

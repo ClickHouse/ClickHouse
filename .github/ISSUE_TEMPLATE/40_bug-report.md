@@ -7,11 +7,11 @@ assignees: ''
 
 ---
 
-> You have to provide the following information whenever possible.
+You have to provide the following information whenever possible.
 
 **Describe the bug**
 
-> A clear and concise description of what works not as it is supposed to.
+A clear and concise description of what works not as it is supposed to.
 
 **Does it reproduce on recent release?**
 
@@ -19,7 +19,7 @@ assignees: ''
 
 **Enable crash reporting**
 
-> If possible, change "enabled" to true in "send_crash_reports" section in `config.xml`:
+If possible, change "enabled" to true in "send_crash_reports" section in `config.xml`:
 
 ```
 <send_crash_reports>
@@ -39,12 +39,12 @@ assignees: ''
 
 **Expected behavior**
 
-> A clear and concise description of what you expected to happen.
+A clear and concise description of what you expected to happen.
 
 **Error message and/or stacktrace**
 
-> If applicable, add screenshots to help explain your problem.
+If applicable, add screenshots to help explain your problem.
 
 **Additional context**
 
-> Add any other context about the problem here.
+Add any other context about the problem here.
