@@ -51,7 +51,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 ## Implementation Details {#implementation-details}
 
 -   Reads and writes can be parallel.
--   Zero-copy replication is supported, which means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.  
+-   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is supported.  
 -   Not supported:
     -   `ALTER` and `SELECT...SAMPLE` operations.
     -   Indexes.
