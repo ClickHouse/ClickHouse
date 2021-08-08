@@ -25,16 +25,6 @@ namespace ErrorCodes
 
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
-    appendColumnNameImpl(ostr, nullptr);
-}
-
-void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings & settings) const
-{
-    appendColumnNameImpl(ostr, &settings);
-}
-
-void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings * settings) const
-{
     if (name == "view")
         throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
 
@@ -48,10 +38,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings * sett
             if (it != parameters->children.begin())
                 writeCString(", ", ostr);
 
-            if (settings)
-                (*it)->appendColumnName(ostr, *settings);
-            else
-                (*it)->appendColumnName(ostr);
+            (*it)->appendColumnName(ostr);
         }
         writeChar(')', ostr);
     }
@@ -64,10 +51,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings * sett
             if (it != arguments->children.begin())
                 writeCString(", ", ostr);
 
-            if (settings)
-                (*it)->appendColumnName(ostr, *settings);
-            else
-                (*it)->appendColumnName(ostr);
+            (*it)->appendColumnName(ostr);
         }
     }
 
@@ -370,7 +354,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
-                // fuzzer sometimes may inserts tupleElement() created from ASTLiteral:
+                // fuzzer sometimes may insert tupleElement() created from ASTLiteral:
                 //
                 //     Function_tupleElement, 0xx
                 //     -ExpressionList_, 0xx

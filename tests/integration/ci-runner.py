@@ -261,12 +261,31 @@ class ClickhouseIntegrationTestsRunner:
 
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
-        cmd = "cd {}/tests/integration && ./runner --tmpfs {} ' --setup-plan' | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' | grep -v 'SKIPPED' | sort -u  > all_tests.txt".format(repo_path, image_cmd)
+        out_file = "all_tests.txt"
+        out_file_full = "all_tests_full.txt"
+        cmd = "cd {repo_path}/tests/integration && " \
+            "./runner --tmpfs {image_cmd} ' --setup-plan' " \
+            "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' " \
+            "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
+                repo_path=repo_path, image_cmd=image_cmd, out_file=out_file, out_file_full=out_file_full)
+
         logging.info("Getting all tests with cmd '%s'", cmd)
         subprocess.check_call(cmd, shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
 
-        all_tests_file_path = "{}/tests/integration/all_tests.txt".format(repo_path)
+        all_tests_file_path = "{repo_path}/tests/integration/{out_file}".format(repo_path=repo_path, out_file=out_file)
         if not os.path.isfile(all_tests_file_path) or os.path.getsize(all_tests_file_path) == 0:
+            all_tests_full_file_path = "{repo_path}/tests/integration/{out_file}".format(repo_path=repo_path, out_file=out_file_full)
+            if os.path.isfile(all_tests_full_file_path):
+                # log runner output
+                logging.info("runner output:")
+                with open(all_tests_full_file_path, 'r') as all_tests_full_file:
+                    for line in all_tests_full_file:
+                        line = line.rstrip()
+                        if line:
+                            logging.info("runner output: %s", line)
+            else:
+                logging.info("runner output '%s' is empty", all_tests_full_file_path)
+
             raise Exception("There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(all_tests_file_path))
 
         all_tests = []
@@ -376,7 +395,7 @@ class ClickhouseIntegrationTestsRunner:
 
         image_cmd = self._get_runner_image_cmd(repo_path)
         test_group_str = test_group.replace('/', '_').replace('.', '_')
-        
+
         log_paths = []
         test_data_dirs = {}
 

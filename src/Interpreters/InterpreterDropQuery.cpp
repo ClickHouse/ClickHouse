@@ -17,7 +17,7 @@
 #endif
 
 #if USE_MYSQL
-#   include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #endif
 
 #if USE_LIBPQXX
@@ -133,7 +133,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         /// Prevents recursive drop from drop database query. The original query must specify a table.
         bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->table.empty();
         bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
-                                       getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY &&
+                                       !getContext()->getClientInfo().is_replicated_database_internal &&
                                        !is_drop_or_detach_database;
 
         AccessFlags drop_storage;
@@ -315,7 +315,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 throw Exception("DETACH PERMANENTLY is not implemented for databases", ErrorCodes::NOT_IMPLEMENTED);
 
 #if USE_MYSQL
-            if (database->getEngineName() == "MaterializeMySQL")
+            if (database->getEngineName() == "MaterializedMySQL")
                 stopDatabaseSynchronization(database);
 #endif
             if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
@@ -335,7 +335,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
                 /// Flush should not be done if shouldBeEmptyOnDetach() == false,
                 /// since in this case getTablesIterator() may do some additional work,
-                /// see DatabaseMaterializeMySQL<>::getTablesIterator()
+                /// see DatabaseMaterializedMySQL<>::getTablesIterator()
                 for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
                 {
                     iterator->table()->flush();
@@ -426,6 +426,7 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
+            drop_context->getClientInfo().is_replicated_database_internal = true;
             drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
             drop_context->initZooKeeperMetadataTransaction(txn, true);
         }
