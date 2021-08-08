@@ -34,5 +34,6 @@ public:
     void replaceEmptyDatabase(const String & current_database);
     void replaceCurrentUserTag(const String & current_user_name) const;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTGrantQuery>(clone()); }
+    const char * getQueryKindString() const override { return is_revoke ? "Revoke" : "Grant"; }
 };
 }

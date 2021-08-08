@@ -5,7 +5,7 @@ LIBRARY()
 
 ADDINCL(
     contrib/libs/zstd/include
-    contrib/restricted/fast_float
+    contrib/restricted/fast_float/include
 )
 
 PEERDIR(
@@ -43,6 +43,7 @@ SRCS(
     MySQLPacketPayloadReadBuffer.cpp
     MySQLPacketPayloadWriteBuffer.cpp
     NullWriteBuffer.cpp
+    OpenedFile.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
     ReadBufferFromEncryptedFile.cpp

@@ -43,6 +43,13 @@ public:
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
 
+    /// Takes already set connection.
+    RemoteQueryExecutor(
+        std::shared_ptr<Connection> connection,
+        const String & query_, const Block & header_, ContextPtr context_,
+        ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
+
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
@@ -105,6 +112,11 @@ public:
     const Block & getHeader() const { return header; }
 
 private:
+    RemoteQueryExecutor(
+        const String & query_, const Block & header_, ContextPtr context_,
+        const Scalars & scalars_, const Tables & external_tables_,
+        QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_);
+
     Block header;
     Block totals;
     Block extremes;
@@ -123,9 +135,6 @@ private:
     QueryProcessingStage::Enum stage;
     /// Initiator identifier for distributed task processing
     std::shared_ptr<TaskIterator> task_iterator;
-
-    /// Drain connection synchronously when finishing.
-    bool sync_draining = false;
 
     std::function<std::shared_ptr<IConnections>()> create_connections;
     /// Hold a shared reference to the connection pool so that asynchronous connection draining will
@@ -158,10 +167,6 @@ private:
       */
     std::atomic<bool> was_cancelled { false };
     std::mutex was_cancelled_mutex;
-
-    /** Thread-safe connection draining.
-      */
-    std::mutex connection_draining_mutex;
 
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution
