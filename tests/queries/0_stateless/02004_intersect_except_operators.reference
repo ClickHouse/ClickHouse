@@ -1,0 +1,25 @@
+-- { echo }
+select 1 intersect select 1;
+1
+select 2 intersect select 1;
+select 1 except select 1;
+select 2 except select 1;
+2
+select number from numbers(5, 5) intersect select number from numbers(20);
+5
+6
+7
+8
+9
+select number from numbers(10) except select number from numbers(5);
+5
+6
+7
+8
+9
+select number, number+10 from numbers(12) except select number+5, number+15 from numbers(10);
+0	10
+1	11
+2	12
+3	13
+4	14
