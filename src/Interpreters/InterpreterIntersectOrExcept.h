@@ -16,20 +16,22 @@ class InterpreterIntersectOrExcept : public IInterpreter
 public:
     InterpreterIntersectOrExcept(const ASTPtr & query_ptr_, ContextPtr context_);
 
-    /// Builds QueryPlan for current query.
-    virtual void buildQueryPlan(QueryPlan & query_plan);
-
     BlockIO execute() override;
 
 private:
-    ASTPtr query_ptr;
-    ContextPtr context;
-    Block result_header;
-    std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
-    Block getCommonHeader(const Blocks & headers);
+    String getName() const { return is_except ? "EXCEPT" : "INTERSECT"; }
+
+    Block getCommonHeader(const Blocks & headers) const;
 
     std::unique_ptr<IInterpreterUnionOrSelectQuery>
     buildCurrentChildInterpreter(const ASTPtr & ast_ptr_);
+
+    void buildQueryPlan(QueryPlan & query_plan);
+
+    ContextPtr context;
+    bool is_except;
+    Block result_header;
+    std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
 };
 
 }
