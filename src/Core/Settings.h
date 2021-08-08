@@ -499,6 +499,7 @@ class IColumn;
     M(Bool, enable_debug_queries, false, "Obsolete setting, does nothing.", 0) \
     M(Bool, allow_experimental_database_atomic, true, "Obsolete setting, does nothing.", 0) \
     M(Bool, allow_experimental_bigint_types, true, "Obsolete setting, does nothing.", 0) \
+    M(Bool, allow_experimental_window_functions, true, "Obsolete setting, does nothing.", 0) \
     M(HandleKafkaErrorMode, handle_kafka_error_mode, HandleKafkaErrorMode::DEFAULT, "Obsolete setting, does nothing.", 0) \
     M(Bool, database_replicated_ddl_output, true, "Obsolete setting, does nothing.", 0) \
     /** The section above is for obsolete settings. Do not add anything there. */
