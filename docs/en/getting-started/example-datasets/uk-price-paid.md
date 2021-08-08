@@ -48,7 +48,7 @@ CREATE TABLE uk_price_paid
 
 We will use `clickhouse-local` tool for data preprocessing and `clickhouse-client` to upload it.
 
-In this example, we define the structure of source data from the CSV file and specidy a query to preprocess the data with `clickhouse-local`.
+In this example, we define the structure of source data from the CSV file and specify a query to preprocess the data with `clickhouse-local`.
 
 The preprocessing is:
 - splitting the postcode to two different columns `postcode1` and `postcode2` that is better for storage and queries;
