@@ -146,7 +146,7 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
     {
         if (execute_merges_on_single_replica_time_threshold > 0)
         {
-            LOG_WARNING(storage.log, "Can't find current replica in the active replicas list, or too few active replicas to use execute_merges_on_single_replica_time_threshold!");
+            LOG_WARNING(storage.log, "Can't find current replica in the active replicas list, or too few active replicas to use 'execute_merges_on_single_replica_time_threshold'");
             /// we can reset the settings w/o lock (it's atomic)
             execute_merges_on_single_replica_time_threshold = 0;
         }
