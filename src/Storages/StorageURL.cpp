@@ -144,14 +144,15 @@ namespace
     };
 }
 
-StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
-        const String & format,
-        const std::optional<FormatSettings> & format_settings,
-        const Block & sample_block_,
-        ContextPtr context,
-        const ConnectionTimeouts & timeouts,
-        const CompressionMethod compression_method)
-        : sample_block(sample_block_)
+StorageURLSink::StorageURLSink(
+    const Poco::URI & uri,
+    const String & format,
+    const std::optional<FormatSettings> & format_settings,
+    const Block & sample_block,
+    ContextPtr context,
+    const ConnectionTimeouts & timeouts,
+    const CompressionMethod compression_method)
+    : SinkToStorage(sample_block)
 {
     write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
@@ -161,17 +162,18 @@ StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
 }
 
 
-void StorageURLBlockOutputStream::write(const Block & block)
+void StorageURLSink::consume(Chunk chunk)
 {
-    writer->write(block);
+    if (is_first_chunk)
+    {
+        writer->writePrefix();
+        is_first_chunk = false;
+    }
+
+    writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
-void StorageURLBlockOutputStream::writePrefix()
-{
-    writer->writePrefix();
-}
-
-void StorageURLBlockOutputStream::writeSuffix()
+void StorageURLSink::onFinish()
 {
     writer->writeSuffix();
     writer->flush();
@@ -293,9 +295,9 @@ Pipe StorageURLWithFailover::read(
 }
 
 
-BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    return std::make_shared<StorageURLBlockOutputStream>(uri, format_name,
+    return std::make_shared<StorageURLSink>(uri, format_name,
         format_settings, metadata_snapshot->getSampleBlock(), context,
         ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(uri.toString(), compression_method));

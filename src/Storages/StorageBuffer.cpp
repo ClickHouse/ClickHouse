@@ -25,6 +25,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -513,29 +514,29 @@ static void appendBlock(const Block & from, Block & to)
 }
 
 
-class BufferBlockOutputStream : public IBlockOutputStream
+class BufferSink : public SinkToStorage
 {
 public:
-    explicit BufferBlockOutputStream(
+    explicit BufferSink(
         StorageBuffer & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : storage(storage_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-    {}
-
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
-
-    void write(const Block & block) override
     {
-        if (!block)
-            return;
-
         // Check table structure.
-        metadata_snapshot->check(block, true);
+        metadata_snapshot->check(getPort().getHeader(), true);
+    }
 
-        size_t rows = block.rows();
+    String getName() const override { return "BufferSink"; }
+
+    void consume(Chunk chunk) override
+    {
+        size_t rows = chunk.getNumRows();
         if (!rows)
             return;
+
+        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
 
         StoragePtr destination;
         if (storage.destination_id)
@@ -642,9 +643,9 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<BufferBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<BufferSink>(*this, metadata_snapshot);
 }
 
 
