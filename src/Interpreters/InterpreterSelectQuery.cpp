@@ -1346,10 +1346,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             /** If there was more than one stream,
               * then DISTINCT needs to be performed once again after merging all streams.
               */
-            if (query.distinct)
+            if (!from_aggregation_stage && query.distinct)
                 executeDistinct(query_plan, false, expressions.selected_columns, false);
 
-            if (expressions.hasLimitBy())
+            if (!from_aggregation_stage && expressions.hasLimitBy())
             {
                 executeExpression(query_plan, expressions.before_limit_by, "Before LIMIT BY");
                 executeLimitBy(query_plan);
