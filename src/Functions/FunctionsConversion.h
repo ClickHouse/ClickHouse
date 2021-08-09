@@ -1002,7 +1002,7 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
 }
 
 
-enum class ConvertFromStringExceptionMode
+enum class ConvertExceptionMode
 {
     Throw,  /// Throw exception if value cannot be parsed.
     Zero,   /// Fill with zero or default if value cannot be parsed.
@@ -1017,7 +1017,7 @@ enum class ConvertFromStringParsingMode
 };
 
 template <typename FromDataType, typename ToDataType, typename Name,
-    ConvertFromStringExceptionMode exception_mode, ConvertFromStringParsingMode parsing_mode>
+    ConvertExceptionMode exception_mode, ConvertFromStringParsingMode parsing_mode>
 struct ConvertThroughParsing
 {
     static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>
@@ -1107,7 +1107,7 @@ struct ConvertThroughParsing
 
         ColumnUInt8::MutablePtr col_null_map_to;
         ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+        if constexpr (exception_mode == ConvertExceptionMode::Null)
         {
             col_null_map_to = ColumnUInt8::create(size);
             vec_null_map_to = &col_null_map_to->getData();
@@ -1137,7 +1137,7 @@ struct ConvertThroughParsing
 
             ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 
-            if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
+            if constexpr (exception_mode == ConvertExceptionMode::Throw)
             {
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
                 {
@@ -1244,14 +1244,14 @@ struct ConvertThroughParsing
                     }
                 }
 
-                if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+                if constexpr (exception_mode == ConvertExceptionMode::Null)
                     (*vec_null_map_to)[i] = !parsed;
             }
 
             current_offset = next_offset;
         }
 
-        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+        if constexpr (exception_mode == ConvertExceptionMode::Null)
             return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
         else
             return col_to;
@@ -1261,19 +1261,19 @@ struct ConvertThroughParsing
 
 template <typename ToDataType, typename Name>
 struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeString>, DataTypeString>, ToDataType, Name, ConvertDefaultBehaviorTag>
-    : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
+    : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
 
 template <typename ToDataType, typename Name>
 struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedString>, DataTypeFixedString>, ToDataType, Name, ConvertDefaultBehaviorTag>
-    : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
+    : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertExceptionMode::Throw, ConvertFromStringParsingMode::Normal> {};
 
 template <typename ToDataType, typename Name>
 struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeString>, DataTypeString>, ToDataType, Name, ConvertReturnNullOnErrorTag>
-    : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
+    : ConvertThroughParsing<DataTypeString, ToDataType, Name, ConvertExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
 
 template <typename ToDataType, typename Name>
 struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedString>, DataTypeFixedString>, ToDataType, Name, ConvertReturnNullOnErrorTag>
-    : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
+    : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
 
 /// Generic conversion of any type from String. Used for complex types: Array and Tuple.
 struct ConvertImplGenericFromString
@@ -1744,7 +1744,7 @@ private:
         }
         else
         {
-            /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
+            /// We should use ConvertExceptionMode::Null mode when converting from String (or FixedString)
             /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
             if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
                 done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnNullOnErrorTag{});
@@ -1776,9 +1776,9 @@ private:
   * NOTE Also need to implement tryToUnixTimestamp with timezone.
   */
 template <typename ToDataType, typename Name,
-    ConvertFromStringExceptionMode exception_mode,
+    ConvertExceptionMode exception_mode,
     ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Normal>
-class FunctionConvertFromString : public IFunction
+class FunctionConvertWithExceptionMode : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -1790,8 +1790,8 @@ public:
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertFromString>(); }
-    static FunctionPtr create() { return std::make_shared<FunctionConvertFromString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertWithExceptionMode>(); }
+    static FunctionPtr create() { return std::make_shared<FunctionConvertWithExceptionMode>(); }
 
     String getName() const override
     {
@@ -1833,10 +1833,8 @@ public:
                     ", should be 1 or 2. Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            if (!isStringOrFixedString(arguments[0].type) && !(isInteger(arguments[0].type) &&
-                            ((std::is_same_v<ToDataType, DataTypeDate>) ||
-                            (std::is_same_v<ToDataType, DataTypeDate32>) ||
-                            (std::is_same_v<ToDataType, DataTypeDateTime>))))
+            if (!isStringOrFixedString(arguments[0].type) &&
+                !(isInteger(arguments[0].type) && IsDataTypeDateOrDateTime<ToDataType>))
             {
                 if (this->getName().find("OrZero") != std::string::npos ||
                     this->getName().find("OrNull") != std::string::npos)
@@ -1874,10 +1872,6 @@ public:
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
-            else if constexpr (std::is_same_v<ToDataType, DataTypeDate>)
-                res = std::make_shared<DataTypeDate>();
-            else if constexpr (std::is_same_v<ToDataType, DataTypeDate32>)
-                res = std::make_shared<DataTypeDate32>();
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
             else if constexpr (to_decimal)
@@ -1891,7 +1885,7 @@ public:
                 res = std::make_shared<ToDataType>();
         }
 
-        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+        if constexpr (exception_mode == ConvertExceptionMode::Null)
         {
             auto to_type = WhichDataType(res);
             if (!(isInteger(arguments[0].type) && (to_type.isDateOrDate32() || to_type.isDateTime() || to_type.isDateTime64())))
@@ -2316,29 +2310,29 @@ struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero
 struct NameToDecimal256OrZero { static constexpr auto name = "toDecimal256OrZero"; };
 struct NameToUUIDOrZero { static constexpr auto name = "toUUIDOrZero"; };
 
-using FunctionToUInt8OrZero = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToUInt16OrZero = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToUInt32OrZero = FunctionConvertFromString<DataTypeUInt32, NameToUInt32OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToUInt64OrZero = FunctionConvertFromString<DataTypeUInt64, NameToUInt64OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToUInt128OrZero = FunctionConvertFromString<DataTypeUInt128, NameToUInt128OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToUInt256OrZero = FunctionConvertFromString<DataTypeUInt256, NameToUInt256OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToInt8OrZero = FunctionConvertFromString<DataTypeInt8, NameToInt8OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToInt16OrZero = FunctionConvertFromString<DataTypeInt16, NameToInt16OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToInt32OrZero = FunctionConvertFromString<DataTypeInt32, NameToInt32OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToInt64OrZero = FunctionConvertFromString<DataTypeInt64, NameToInt64OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToInt128OrZero = FunctionConvertFromString<DataTypeInt128, NameToInt128OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToInt256OrZero = FunctionConvertFromString<DataTypeInt256, NameToInt256OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToFloat32OrZero = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToFloat64OrZero = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToDateOrZero = FunctionConvertFromString<DataTypeDate, NameToDateOrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToDate32OrZero = FunctionConvertFromString<DataTypeDate32, NameToDate32OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToDateTimeOrZero = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToDateTime64OrZero = FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToDecimal32OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToDecimal64OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToDecimal128OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToDecimal256OrZero = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrZero, ConvertFromStringExceptionMode::Zero>;
-using FunctionToUUIDOrZero = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrZero, ConvertFromStringExceptionMode::Zero>;
+using FunctionToUInt8OrZero = FunctionConvertWithExceptionMode<DataTypeUInt8, NameToUInt8OrZero, ConvertExceptionMode::Zero>;
+using FunctionToUInt16OrZero = FunctionConvertWithExceptionMode<DataTypeUInt16, NameToUInt16OrZero, ConvertExceptionMode::Zero>;
+using FunctionToUInt32OrZero = FunctionConvertWithExceptionMode<DataTypeUInt32, NameToUInt32OrZero, ConvertExceptionMode::Zero>;
+using FunctionToUInt64OrZero = FunctionConvertWithExceptionMode<DataTypeUInt64, NameToUInt64OrZero, ConvertExceptionMode::Zero>;
+using FunctionToUInt128OrZero = FunctionConvertWithExceptionMode<DataTypeUInt128, NameToUInt128OrZero, ConvertExceptionMode::Zero>;
+using FunctionToUInt256OrZero = FunctionConvertWithExceptionMode<DataTypeUInt256, NameToUInt256OrZero, ConvertExceptionMode::Zero>;
+using FunctionToInt8OrZero = FunctionConvertWithExceptionMode<DataTypeInt8, NameToInt8OrZero, ConvertExceptionMode::Zero>;
+using FunctionToInt16OrZero = FunctionConvertWithExceptionMode<DataTypeInt16, NameToInt16OrZero, ConvertExceptionMode::Zero>;
+using FunctionToInt32OrZero = FunctionConvertWithExceptionMode<DataTypeInt32, NameToInt32OrZero, ConvertExceptionMode::Zero>;
+using FunctionToInt64OrZero = FunctionConvertWithExceptionMode<DataTypeInt64, NameToInt64OrZero, ConvertExceptionMode::Zero>;
+using FunctionToInt128OrZero = FunctionConvertWithExceptionMode<DataTypeInt128, NameToInt128OrZero, ConvertExceptionMode::Zero>;
+using FunctionToInt256OrZero = FunctionConvertWithExceptionMode<DataTypeInt256, NameToInt256OrZero, ConvertExceptionMode::Zero>;
+using FunctionToFloat32OrZero = FunctionConvertWithExceptionMode<DataTypeFloat32, NameToFloat32OrZero, ConvertExceptionMode::Zero>;
+using FunctionToFloat64OrZero = FunctionConvertWithExceptionMode<DataTypeFloat64, NameToFloat64OrZero, ConvertExceptionMode::Zero>;
+using FunctionToDateOrZero = FunctionConvertWithExceptionMode<DataTypeDate, NameToDateOrZero, ConvertExceptionMode::Zero>;
+using FunctionToDate32OrZero = FunctionConvertWithExceptionMode<DataTypeDate32, NameToDate32OrZero, ConvertExceptionMode::Zero>;
+using FunctionToDateTimeOrZero = FunctionConvertWithExceptionMode<DataTypeDateTime, NameToDateTimeOrZero, ConvertExceptionMode::Zero>;
+using FunctionToDateTime64OrZero = FunctionConvertWithExceptionMode<DataTypeDateTime64, NameToDateTime64OrZero, ConvertExceptionMode::Zero>;
+using FunctionToDecimal32OrZero = FunctionConvertWithExceptionMode<DataTypeDecimal<Decimal32>, NameToDecimal32OrZero, ConvertExceptionMode::Zero>;
+using FunctionToDecimal64OrZero = FunctionConvertWithExceptionMode<DataTypeDecimal<Decimal64>, NameToDecimal64OrZero, ConvertExceptionMode::Zero>;
+using FunctionToDecimal128OrZero = FunctionConvertWithExceptionMode<DataTypeDecimal<Decimal128>, NameToDecimal128OrZero, ConvertExceptionMode::Zero>;
+using FunctionToDecimal256OrZero = FunctionConvertWithExceptionMode<DataTypeDecimal<Decimal256>, NameToDecimal256OrZero, ConvertExceptionMode::Zero>;
+using FunctionToUUIDOrZero = FunctionConvertWithExceptionMode<DataTypeUUID, NameToUUIDOrZero, ConvertExceptionMode::Zero>;
 
 struct NameToUInt8OrNull { static constexpr auto name = "toUInt8OrNull"; };
 struct NameToUInt16OrNull { static constexpr auto name = "toUInt16OrNull"; };
@@ -2364,29 +2358,29 @@ struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull
 struct NameToDecimal256OrNull { static constexpr auto name = "toDecimal256OrNull"; };
 struct NameToUUIDOrNull { static constexpr auto name = "toUUIDOrNull"; };
 
-using FunctionToUInt8OrNull = FunctionConvertFromString<DataTypeUInt8, NameToUInt8OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToUInt16OrNull = FunctionConvertFromString<DataTypeUInt16, NameToUInt16OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToUInt32OrNull = FunctionConvertFromString<DataTypeUInt32, NameToUInt32OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToUInt64OrNull = FunctionConvertFromString<DataTypeUInt64, NameToUInt64OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToUInt128OrNull = FunctionConvertFromString<DataTypeUInt128, NameToUInt128OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToUInt256OrNull = FunctionConvertFromString<DataTypeUInt256, NameToUInt256OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToInt8OrNull = FunctionConvertFromString<DataTypeInt8, NameToInt8OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToInt16OrNull = FunctionConvertFromString<DataTypeInt16, NameToInt16OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToInt32OrNull = FunctionConvertFromString<DataTypeInt32, NameToInt32OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToInt64OrNull = FunctionConvertFromString<DataTypeInt64, NameToInt64OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToInt128OrNull = FunctionConvertFromString<DataTypeInt128, NameToInt128OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToInt256OrNull = FunctionConvertFromString<DataTypeInt256, NameToInt256OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToFloat32OrNull = FunctionConvertFromString<DataTypeFloat32, NameToFloat32OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToFloat64OrNull = FunctionConvertFromString<DataTypeFloat64, NameToFloat64OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToDateOrNull = FunctionConvertFromString<DataTypeDate, NameToDateOrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToDate32OrNull = FunctionConvertFromString<DataTypeDate32, NameToDate32OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToDateTimeOrNull = FunctionConvertFromString<DataTypeDateTime, NameToDateTimeOrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToDateTime64OrNull = FunctionConvertFromString<DataTypeDateTime64, NameToDateTime64OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToDecimal32OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal32>, NameToDecimal32OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToDecimal64OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal64>, NameToDecimal64OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToDecimal128OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToDecimal256OrNull = FunctionConvertFromString<DataTypeDecimal<Decimal256>, NameToDecimal256OrNull, ConvertFromStringExceptionMode::Null>;
-using FunctionToUUIDOrNull = FunctionConvertFromString<DataTypeUUID, NameToUUIDOrNull, ConvertFromStringExceptionMode::Null>;
+using FunctionToUInt8OrNull = FunctionConvertWithExceptionMode<DataTypeUInt8, NameToUInt8OrNull, ConvertExceptionMode::Null>;
+using FunctionToUInt16OrNull = FunctionConvertWithExceptionMode<DataTypeUInt16, NameToUInt16OrNull, ConvertExceptionMode::Null>;
+using FunctionToUInt32OrNull = FunctionConvertWithExceptionMode<DataTypeUInt32, NameToUInt32OrNull, ConvertExceptionMode::Null>;
+using FunctionToUInt64OrNull = FunctionConvertWithExceptionMode<DataTypeUInt64, NameToUInt64OrNull, ConvertExceptionMode::Null>;
+using FunctionToUInt128OrNull = FunctionConvertWithExceptionMode<DataTypeUInt128, NameToUInt128OrNull, ConvertExceptionMode::Null>;
+using FunctionToUInt256OrNull = FunctionConvertWithExceptionMode<DataTypeUInt256, NameToUInt256OrNull, ConvertExceptionMode::Null>;
+using FunctionToInt8OrNull = FunctionConvertWithExceptionMode<DataTypeInt8, NameToInt8OrNull, ConvertExceptionMode::Null>;
+using FunctionToInt16OrNull = FunctionConvertWithExceptionMode<DataTypeInt16, NameToInt16OrNull, ConvertExceptionMode::Null>;
+using FunctionToInt32OrNull = FunctionConvertWithExceptionMode<DataTypeInt32, NameToInt32OrNull, ConvertExceptionMode::Null>;
+using FunctionToInt64OrNull = FunctionConvertWithExceptionMode<DataTypeInt64, NameToInt64OrNull, ConvertExceptionMode::Null>;
+using FunctionToInt128OrNull = FunctionConvertWithExceptionMode<DataTypeInt128, NameToInt128OrNull, ConvertExceptionMode::Null>;
+using FunctionToInt256OrNull = FunctionConvertWithExceptionMode<DataTypeInt256, NameToInt256OrNull, ConvertExceptionMode::Null>;
+using FunctionToFloat32OrNull = FunctionConvertWithExceptionMode<DataTypeFloat32, NameToFloat32OrNull, ConvertExceptionMode::Null>;
+using FunctionToFloat64OrNull = FunctionConvertWithExceptionMode<DataTypeFloat64, NameToFloat64OrNull, ConvertExceptionMode::Null>;
+using FunctionToDateOrNull = FunctionConvertWithExceptionMode<DataTypeDate, NameToDateOrNull, ConvertExceptionMode::Null>;
+using FunctionToDate32OrNull = FunctionConvertWithExceptionMode<DataTypeDate32, NameToDate32OrNull, ConvertExceptionMode::Null>;
+using FunctionToDateTimeOrNull = FunctionConvertWithExceptionMode<DataTypeDateTime, NameToDateTimeOrNull, ConvertExceptionMode::Null>;
+using FunctionToDateTime64OrNull = FunctionConvertWithExceptionMode<DataTypeDateTime64, NameToDateTime64OrNull, ConvertExceptionMode::Null>;
+using FunctionToDecimal32OrNull = FunctionConvertWithExceptionMode<DataTypeDecimal<Decimal32>, NameToDecimal32OrNull, ConvertExceptionMode::Null>;
+using FunctionToDecimal64OrNull = FunctionConvertWithExceptionMode<DataTypeDecimal<Decimal64>, NameToDecimal64OrNull, ConvertExceptionMode::Null>;
+using FunctionToDecimal128OrNull = FunctionConvertWithExceptionMode<DataTypeDecimal<Decimal128>, NameToDecimal128OrNull, ConvertExceptionMode::Null>;
+using FunctionToDecimal256OrNull = FunctionConvertWithExceptionMode<DataTypeDecimal<Decimal256>, NameToDecimal256OrNull, ConvertExceptionMode::Null>;
+using FunctionToUUIDOrNull = FunctionConvertWithExceptionMode<DataTypeUUID, NameToUUIDOrNull, ConvertExceptionMode::Null>;
 
 struct NameParseDateTimeBestEffort { static constexpr auto name = "parseDateTimeBestEffort"; };
 struct NameParseDateTimeBestEffortOrZero { static constexpr auto name = "parseDateTimeBestEffortOrZero"; };
@@ -2402,33 +2396,33 @@ struct NameParseDateTime64BestEffortOrZero { static constexpr auto name = "parse
 struct NameParseDateTime64BestEffortOrNull { static constexpr auto name = "parseDateTime64BestEffortOrNull"; };
 
 
-using FunctionParseDateTimeBestEffort = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTimeBestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
-using FunctionParseDateTimeBestEffortOrZero = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTimeBestEffortOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
-using FunctionParseDateTimeBestEffortOrNull = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTimeBestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTimeBestEffort = FunctionConvertWithExceptionMode<
+    DataTypeDateTime, NameParseDateTimeBestEffort, ConvertExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTimeBestEffortOrZero = FunctionConvertWithExceptionMode<
+    DataTypeDateTime, NameParseDateTimeBestEffortOrZero, ConvertExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTimeBestEffortOrNull = FunctionConvertWithExceptionMode<
+    DataTypeDateTime, NameParseDateTimeBestEffortOrNull, ConvertExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
 
-using FunctionParseDateTimeBestEffortUS = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTimeBestEffortUS, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffortUS>;
-using FunctionParseDateTimeBestEffortUSOrZero = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTimeBestEffortUSOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffortUS>;
-using FunctionParseDateTimeBestEffortUSOrNull = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTimeBestEffortUSOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>;
+using FunctionParseDateTimeBestEffortUS = FunctionConvertWithExceptionMode<
+    DataTypeDateTime, NameParseDateTimeBestEffortUS, ConvertExceptionMode::Throw, ConvertFromStringParsingMode::BestEffortUS>;
+using FunctionParseDateTimeBestEffortUSOrZero = FunctionConvertWithExceptionMode<
+    DataTypeDateTime, NameParseDateTimeBestEffortUSOrZero, ConvertExceptionMode::Zero, ConvertFromStringParsingMode::BestEffortUS>;
+using FunctionParseDateTimeBestEffortUSOrNull = FunctionConvertWithExceptionMode<
+    DataTypeDateTime, NameParseDateTimeBestEffortUSOrNull, ConvertExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>;
 
-using FunctionParseDateTime32BestEffort = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTime32BestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
-using FunctionParseDateTime32BestEffortOrZero = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTime32BestEffortOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
-using FunctionParseDateTime32BestEffortOrNull = FunctionConvertFromString<
-    DataTypeDateTime, NameParseDateTime32BestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTime32BestEffort = FunctionConvertWithExceptionMode<
+    DataTypeDateTime, NameParseDateTime32BestEffort, ConvertExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTime32BestEffortOrZero = FunctionConvertWithExceptionMode<
+    DataTypeDateTime, NameParseDateTime32BestEffortOrZero, ConvertExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTime32BestEffortOrNull = FunctionConvertWithExceptionMode<
+    DataTypeDateTime, NameParseDateTime32BestEffortOrNull, ConvertExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
 
-using FunctionParseDateTime64BestEffort = FunctionConvertFromString<
-    DataTypeDateTime64, NameParseDateTime64BestEffort, ConvertFromStringExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
-using FunctionParseDateTime64BestEffortOrZero = FunctionConvertFromString<
-    DataTypeDateTime64, NameParseDateTime64BestEffortOrZero, ConvertFromStringExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
-using FunctionParseDateTime64BestEffortOrNull = FunctionConvertFromString<
-    DataTypeDateTime64, NameParseDateTime64BestEffortOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTime64BestEffort = FunctionConvertWithExceptionMode<
+    DataTypeDateTime64, NameParseDateTime64BestEffort, ConvertExceptionMode::Throw, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTime64BestEffortOrZero = FunctionConvertWithExceptionMode<
+    DataTypeDateTime64, NameParseDateTime64BestEffortOrZero, ConvertExceptionMode::Zero, ConvertFromStringParsingMode::BestEffort>;
+using FunctionParseDateTime64BestEffortOrNull = FunctionConvertWithExceptionMode<
+    DataTypeDateTime64, NameParseDateTime64BestEffortOrNull, ConvertExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>;
 
 class ExecutableFunctionCast : public IExecutableFunction
 {
@@ -2593,7 +2587,7 @@ private:
         {
             /// In case when converting to Nullable type, we apply different parsing rule,
             /// that will not throw an exception but return NULL in case of malformed input.
-            FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionName, ConvertFromStringExceptionMode::Null>::create();
+            FunctionPtr function = FunctionConvertWithExceptionMode<ToDataType, FunctionName, ConvertExceptionMode::Null>::create();
             return createFunctionAdaptor(function, from_type);
         }
         else if (!can_apply_accurate_cast)
