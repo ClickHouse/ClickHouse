@@ -299,7 +299,7 @@ function run_tests
         01318_decrypt                           # Depends on OpenSSL
         01663_aes_msan                          # Depends on OpenSSL
         01667_aes_args_check                    # Depends on OpenSSL
-        01683_codec_encrypted                   # Depends on OpenSSL
+        # 01683_codec_encrypted                 # Depends on OpenSSL
         01776_decrypt_aead_size_check           # Depends on OpenSSL
         01811_filter_by_null                    # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
