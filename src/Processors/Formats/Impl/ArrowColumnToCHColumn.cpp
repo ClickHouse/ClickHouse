@@ -16,7 +16,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <common/DateLUTImpl.h>
 #include <common/types.h>
-#include <Core/Block.h>
 #include <Processors/Chunk.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
@@ -60,8 +59,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int CANNOT_CONVERT_TYPE;
-    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int THERE_IS_NO_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_EXCEPTION;
@@ -392,6 +389,9 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             return readColumnWithDate32Data(arrow_column, column_name);
         case arrow::Type::DATE64:
             return readColumnWithDate64Data(arrow_column, column_name);
+        // ClickHouse writes Date as arrow UINT16 and DateTime as arrow UINT32,
+        // so, read UINT16 as Date and UINT32 as DateTime to perform correct conversion
+        // between Date and DateTime further.
         case arrow::Type::UINT16:
             return readColumnWithDateData(arrow_column, column_name);
         case arrow::Type::UINT32:
@@ -510,40 +510,40 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
 // Creating CH header by arrow schema. Will be useful in task about inserting
 // data from file without knowing table structure.
-//
-//static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
-//{
-//    if (!status.ok())
-//        throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
-//}
-//
-//static Block arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name)
-//{
-//    ColumnsWithTypeAndName sample_columns;
-//    for (const auto & field : schema.fields())
-//    {
-//        /// Create empty arrow column by it's type and convert it to ClickHouse column.
-//        arrow::MemoryPool* pool = arrow::default_memory_pool();
-//        std::unique_ptr<arrow::ArrayBuilder> array_builder;
-//        arrow::Status status = MakeBuilder(pool, field->type(), &array_builder);
-//        checkStatus(status, field->name(), format_name);
-//        std::shared_ptr<arrow::Array> arrow_array;
-//        status = array_builder->Finish(&arrow_array);
-//        checkStatus(status, field->name(), format_name);
-//        arrow::ArrayVector array_vector = {arrow_array};
-//        auto arrow_column = std::make_shared<arrow::ChunkedArray>(array_vector);
-//        std::unordered_map<std::string, std::shared_ptr<ColumnWithTypeAndName>> dict_values;
-//        ColumnWithTypeAndName sample_column = readColumnFromArrowColumn(arrow_column, field->name(), format_name, false, dict_values);
-//        sample_columns.emplace_back(std::move(sample_column));
-//    }
-//    return Block(std::move(sample_columns));
-//}
-//
-//ArrowColumnToCHColumn::ArrowColumnToCHColumn(
-//    const arrow::Schema & schema, const std::string & format_name_, bool import_nested_)
-//    : header(arrowSchemaToCHHeader(schema, format_name_)), format_name(format_name_), import_nested(import_nested_)
-//{
-//}
+
+static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
+{
+    if (!status.ok())
+        throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
+}
+
+static Block arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name)
+{
+    ColumnsWithTypeAndName sample_columns;
+    for (const auto & field : schema.fields())
+    {
+        /// Create empty arrow column by it's type and convert it to ClickHouse column.
+        arrow::MemoryPool* pool = arrow::default_memory_pool();
+        std::unique_ptr<arrow::ArrayBuilder> array_builder;
+        arrow::Status status = MakeBuilder(pool, field->type(), &array_builder);
+        checkStatus(status, field->name(), format_name);
+        std::shared_ptr<arrow::Array> arrow_array;
+        status = array_builder->Finish(&arrow_array);
+        checkStatus(status, field->name(), format_name);
+        arrow::ArrayVector array_vector = {arrow_array};
+        auto arrow_column = std::make_shared<arrow::ChunkedArray>(array_vector);
+        std::unordered_map<std::string, std::shared_ptr<ColumnWithTypeAndName>> dict_values;
+        ColumnWithTypeAndName sample_column = readColumnFromArrowColumn(arrow_column, field->name(), format_name, false, dict_values);
+        sample_columns.emplace_back(std::move(sample_column));
+    }
+    return Block(std::move(sample_columns));
+}
+
+ArrowColumnToCHColumn::ArrowColumnToCHColumn(
+    const arrow::Schema & schema, const std::string & format_name_, bool import_nested_)
+    : header(arrowSchemaToCHHeader(schema, format_name_)), format_name(format_name_), import_nested(import_nested_)
+{
+}
 
 ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     const Block & header_, const std::string & format_name_, bool import_nested_)
