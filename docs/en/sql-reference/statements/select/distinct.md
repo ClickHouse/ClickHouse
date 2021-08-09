@@ -6,7 +6,7 @@ toc_title: DISTINCT
 
 If `SELECT DISTINCT` is specified, only unique rows will remain in a query result. Thus only a single row will remain out of all the sets of fully matching rows in the result.
 
-You can narrow the list of columns which must have unique values: `SELECT DISTINCT ON (column1, column2,...)`. If the columns are not specified, all of them are taken into consideration. 
+You can specify the list of columns that must have unique values: `SELECT DISTINCT ON (column1, column2,...)`. If the columns are not specified, all of them are taken into consideration.
 
 Consider the table:
 
@@ -107,4 +107,3 @@ It is possible to obtain the same result by applying [GROUP BY](../../../sql-ref
 -   `DISTINCT` can be applied together with `GROUP BY`.
 -   When [ORDER BY](../../../sql-reference/statements/select/order-by.md) is omitted and [LIMIT](../../../sql-reference/statements/select/limit.md) is defined, the query stops running immediately after the required number of different rows has been read.
 -   Data blocks are output as they are processed, without waiting for the entire query to finish running.
-
