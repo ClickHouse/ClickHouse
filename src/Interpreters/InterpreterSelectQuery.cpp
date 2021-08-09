@@ -1378,7 +1378,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             /// Limit is no longer needed if there is prelimit.
             ///
-            /// NOTE: that LIMIT cannot be applied of OFFSET should not be applied,
+            /// NOTE: that LIMIT cannot be applied if OFFSET should not be applied,
             /// since LIMIT will apply OFFSET too.
             /// This is the case for various optimizations for distributed queries,
             /// and when LIMIT cannot be applied it will be applied on the initiator anyway.
