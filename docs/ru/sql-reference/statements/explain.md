@@ -386,7 +386,7 @@ ExpressionTransform
             NumbersMt × 2 0 → 1
 ```
 
- ### EXPLAIN ESTIMATE {#explain-estimate}
+### EXPLAIN ESTIMATE {#explain-estimate}
 
  Отображает информацию о прочитанных строках, засечках и кусках из таблиц `MergeTree`. 
 
