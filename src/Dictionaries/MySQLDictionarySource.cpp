@@ -104,7 +104,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     , pool(std::move(pool_))
     , sample_block(sample_block_)
     , query_builder(dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks)
-    , load_all_query(configuration.query.empty() ? query_builder.composeLoadAllQuery() : configuration.query)
+    , load_all_query(query_builder.composeLoadAllQuery())
     , settings(settings_)
 {
 }
