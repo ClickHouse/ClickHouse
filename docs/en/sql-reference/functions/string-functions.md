@@ -71,7 +71,7 @@ Type: [String](../data-types/string.md).
 Query:
 
 ``` sql
-SELECT leftPad('abc', 7, '*');
+SELECT leftPad('abc', 7, '*'), leftPad('def', 7);
 ```
 
 Result:
