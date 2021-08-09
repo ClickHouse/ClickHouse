@@ -330,7 +330,10 @@ private:
     ReplicatedMergeTreeQueue queue;
     std::atomic<time_t> last_queue_update_start_time{0};
     std::atomic<time_t> last_queue_update_finish_time{0};
-    MultiVersion<String> last_queue_update_exception;
+
+    mutable std::mutex last_queue_update_exception_lock;
+    String last_queue_update_exception;
+    String getLastQueueUpdateException() const;
 
     DataPartsExchange::Fetcher fetcher;
 
