@@ -42,7 +42,7 @@ If the server restarts incorrectly, the data block on the disk might get lost or
 
 You can use `INSERT` queries to add data to the `Join`-engine tables. If the table was created with the `ANY` strictness, data for duplicate keys are ignored. With the `ALL` strictness, all rows are added.
 
-You cannot perform a `SELECT` query directly from the table. Instead, use one of the following methods:
+Main use-cases for `Join`-engine tables are following:
 
 -   Place the table to the right side in a `JOIN` clause.
 -   Call the [joinGet](../../../sql-reference/functions/other-functions.md#joinget) function, which lets you extract data from the table the same way as from a dictionary.
@@ -64,7 +64,7 @@ When creating a table, the following settings are applied:
 
 The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
 
-The `Join`-engine allows use [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. And [SELECT](../../../sql-reference/statements/select/index.md) query allows use `join_use_nulls` too. If you have different `join_use_nulls` settings, you can get an error joining table. It depends on kind of JOIN. When you use [joinGet](../../../sql-reference/functions/other-functions.md#joinget) function, you have to use the same `join_use_nulls` setting in `CRATE TABLE` and `SELECT` statements.
+The `Join`-engine allows to specify [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](../../../sql-reference/statements/select/index.md) query should have the same `join_use_nulls` value.
 
 ## Usage Examples {#example}
 
