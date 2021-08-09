@@ -1005,7 +1005,7 @@ public:
             }
             case State::NEED_EXECUTE:
             {
-                if (part_merger_writer_task->execute())
+                if (part_merger_writer_task && part_merger_writer_task->execute())
                     return true;
 
                 state = State::NEED_FINALIZE;
