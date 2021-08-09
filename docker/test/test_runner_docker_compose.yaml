@@ -27,8 +27,8 @@ services:
 
     # NOTE: Dev-mode: mount newest versions of the queries and clickhouse-test script into container.
     # volumes:
-    #   - /home/enmk/proj/ClickHouse_master/dbms/tests/queries:/usr/share/clickhouse-test/queries:ro
-    #   - /home/enmk/proj/ClickHouse_master/dbms/tests/clickhouse-test:/usr/bin/clickhouse-test:ro
+    #   - /home/enmk/proj/ClickHouse_master/tests/queries:/usr/share/clickhouse-test/queries:ro
+    #   - /home/enmk/proj/ClickHouse_master/tests/clickhouse-test:/usr/bin/clickhouse-test:ro
 
     # String-form instead of list-form to allow multiple arguments in "${CLICKHOUSE_TEST_ARGS}"
     entrypoint: "clickhouse-test ${CLICKHOUSE_TEST_ARGS}"

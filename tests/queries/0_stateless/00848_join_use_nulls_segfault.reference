@@ -1,0 +1,44 @@
+on
+l	\N	\N	String	Nullable(String)
+	r	\N	String	Nullable(String)
+l	\N	\N	String	Nullable(String)
+\N	r	\N	Nullable(String)	Nullable(String)
+l	\N	\N	String	Nullable(String)
+	r	\N	String	Nullable(String)
+l	\N	\N	String	Nullable(String)
+\N	r	\N	Nullable(String)	Nullable(String)
+\N	\N
+\N	\N
+using
+l	\N	String	Nullable(String)
+	\N	String	Nullable(String)
+l	\N	String	Nullable(String)
+\N	\N	Nullable(String)	Nullable(String)
+l	\N	String	Nullable(String)
+	\N	String	Nullable(String)
+l	\N	String	Nullable(String)
+\N	\N	Nullable(String)	Nullable(String)
+\N	\N
+\N	\N
+on + join_use_nulls
+l	\N	\N	String	Nullable(String)
+l	\N	\N	Nullable(String)	Nullable(String)
+\N	r	\N	Nullable(String)	Nullable(String)
+\N	r	\N	Nullable(String)	Nullable(String)
+l	\N	\N	String	Nullable(String)
+l	\N	\N	Nullable(String)	Nullable(String)
+\N	r	\N	Nullable(String)	Nullable(String)
+\N	r	\N	Nullable(String)	Nullable(String)
+\N	\N
+\N	\N
+using + join_use_nulls
+l	\N	String	Nullable(String)
+l	\N	Nullable(String)	Nullable(String)
+\N	\N	Nullable(String)	Nullable(String)
+\N	\N	Nullable(String)	Nullable(String)
+l	\N	String	Nullable(String)
+l	\N	Nullable(String)	Nullable(String)
+\N	\N	Nullable(String)	Nullable(String)
+\N	\N	Nullable(String)	Nullable(String)
+\N	\N
+\N	\N

@@ -1,0 +1,14 @@
+<test>
+    <substitutions>
+        <substitution>
+           <name>table</name>
+           <values>
+               <value>zeros(1000000000)</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM (SELECT rand()           FROM zeros(1000000000)) </query>
+    <query>SELECT count() FROM (SELECT rand64()         FROM zeros(1000000000)) </query>
+    <query>SELECT count() FROM (SELECT generateUUIDv4() FROM zeros( 100000000)) </query>
+</test>

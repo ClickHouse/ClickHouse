@@ -1,1 +1,0 @@
-../../../en/operations/server_settings/settings.md

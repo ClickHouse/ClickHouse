@@ -1,5 +1,10 @@
-# ODBC-драйвер
+---
+toc_priority: 23
+toc_title: "ODBC-драйвер"
+---
 
-- [Официальный драйвер](https://github.com/ClickHouse/clickhouse-odbc).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/odbc/) <!--hide-->
+# ODBC-драйвер {#odbc-draiver}
+
+-   [Официальный драйвер](https://github.com/ClickHouse/clickhouse-odbc).
+

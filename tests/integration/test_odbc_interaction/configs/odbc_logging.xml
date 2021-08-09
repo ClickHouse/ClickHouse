@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<yandex>
+    <logger>
+        <odbc_bridge_log>/var/log/clickhouse-server/clickhouse-odbc-bridge.log</odbc_bridge_log>
+        <odbc_bridge_errlog>/var/log/clickhouse-server/clickhouse-odbc-bridge.err.log</odbc_bridge_errlog>
+        <odbc_bridge_stdout>/var/log/clickhouse-server/clickhouse-odbc-bridge.stdout</odbc_bridge_stdout>
+        <odbc_bridge_stderr>/var/log/clickhouse-server/clickhouse-odbc-bridge.stderr</odbc_bridge_stderr>
+        <odbc_bridge_level>trace</odbc_bridge_level>
+    </logger>
+</yandex>

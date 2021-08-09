@@ -34,6 +34,7 @@ def main():
     pprint(client.poll(10000))
     client.unsubscribe()
     client.close()
+    return 0
 
 
 if __name__ == "__main__":

@@ -1,14 +1,20 @@
+# Needed when securely connecting to an external server, e.g.
+# clickhouse-client --host ... --secure
 option(ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
 
-if(ENABLE_SSL)
-
-if(NOT ARCH_32)
-    option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
+if(NOT ENABLE_SSL)
+    if (USE_INTERNAL_SSL_LIBRARY)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal ssl library with ENABLE_SSL=OFF")
+    endif()
+    return()
 endif()
 
-if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/ssl/CMakeLists.txt")
+option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
+
+if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boringssl/README.md")
     if(USE_INTERNAL_SSL_LIBRARY)
-        message(WARNING "submodule contrib/ssl is missing. to fix try run: \n git submodule update --init --recursive")
+        message(WARNING "submodule contrib/boringssl is missing. to fix try run: \n git submodule update --init --recursive")
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal ssl library")
     endif()
     set(USE_INTERNAL_SSL_LIBRARY 0)
     set(MISSING_INTERNAL_SSL_LIBRARY 1)
@@ -38,21 +44,25 @@ if (NOT USE_INTERNAL_SSL_LIBRARY)
             set (OPENSSL_FOUND 1)
         endif ()
     endif ()
+
+    if (NOT OPENSSL_FOUND)
+        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system ssl")
+    endif()
 endif ()
 
 if (NOT OPENSSL_FOUND AND NOT MISSING_INTERNAL_SSL_LIBRARY)
     set (USE_INTERNAL_SSL_LIBRARY 1)
-    set (OPENSSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/ssl")
-    set (OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
-    if (NOT USE_STATIC_LIBRARIES AND TARGET crypto-shared AND TARGET ssl-shared)
-        set (OPENSSL_CRYPTO_LIBRARY crypto-shared)
-        set (OPENSSL_SSL_LIBRARY ssl-shared)
-    else ()
-        set (OPENSSL_CRYPTO_LIBRARY crypto)
-        set (OPENSSL_SSL_LIBRARY ssl)
+    set (OPENSSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/boringssl")
+
+    if (ARCH_AMD64)
+        set (OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
+    elseif (ARCH_AARCH64)
+        set (OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
     endif ()
-    set (OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+    set (OPENSSL_CRYPTO_LIBRARY crypto)
+    set (OPENSSL_SSL_LIBRARY ssl)
     set (OPENSSL_FOUND 1)
+    set (OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
 endif ()
 
 if(OPENSSL_FOUND)
@@ -124,8 +134,5 @@ if(OPENSSL_FOUND AND NOT USE_INTERNAL_SSL_LIBRARY)
     endif()
   endif()
 endif()
-
-
-endif ()
 
 message (STATUS "Using ssl=${USE_SSL}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")

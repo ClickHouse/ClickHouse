@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="{{ language or 'en'}}" {{ extra_html_attrs }}>
+<head>
+    {% include "templates/common_meta.html" %}
+    {% block extra_meta %}{% endblock %}
+    {% include "templates/common_css.html" %}
+</head>
+<body dir="{{ direction or 'ltr' }}" {{ extra_body_attrs }}>
+{% block content %}{% endblock %}
+{% include "templates/footer.html" %}
+{% include "templates/common_js.html" %}
+</body>
+</html>

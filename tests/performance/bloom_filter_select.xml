@@ -1,0 +1,11 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS test_bf</create_query>
+    <create_query>CREATE TABLE test_bf_indexOf (`id` int, `ary` Array(LowCardinality(Nullable(String))), INDEX idx_ary ary TYPE bloom_filter(0.01) GRANULARITY 1) ENGINE = MergeTree() ORDER BY id</create_query>
+
+    <fill_query>INSERT INTO test_bf_indexOf SELECT number AS id, [CAST(id, 'String'), CAST(id + 1, 'String'), CAST(id + 2, 'String')] FROM numbers(1000000)</fill_query>
+
+    <query short="1">SELECT count() FROM test_bf_indexOf WHERE indexOf(ary, '1') = 2</query>
+    <query short="1">SELECT count() FROM test_bf_indexOf WHERE indexOf(ary, '1') > 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_bf_indexOf</drop_query>
+</test>

@@ -1,11 +1,12 @@
 FROM ubuntu:18.04
 
-ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=19.17.1.*
+ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
+ARG version=21.9.1.*
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
         apt-transport-https \
+        ca-certificates \
         dirmngr \
         gnupg \
     && mkdir -p /etc/apt/sources.list.d \

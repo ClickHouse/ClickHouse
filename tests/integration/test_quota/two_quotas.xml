@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<yandex>
+   <quotas>
+        <myQuota>
+            <interval>
+                <duration>31556952</duration>
+                <queries>1000</queries>
+                <read_rows>1000</read_rows>
+            </interval>
+        </myQuota>
+
+        <myQuota2>
+            <keyed/>
+            <interval>
+                <randomize>true</randomize>
+                <duration>3600</duration>
+                <read_rows>4000</read_rows>
+                <result_rows>4000</result_rows>
+                <read_bytes>400000</read_bytes>
+                <result_bytes>400000</result_bytes>
+                <execution_time>60</execution_time>
+            </interval>
+            <interval2>
+                <duration>2629746</duration>
+                <execution_time>1800</execution_time>
+            </interval2>
+        </myQuota2>
+    </quotas>
+</yandex>

@@ -1,0 +1,34 @@
+<test>
+    <tags>
+        <tag>comparison</tag>
+    </tags>
+
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+
+
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < '']]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz']]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < 'http://some_url']]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE SearchPhrase < '' SETTINGS max_threads = 2]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE SearchPhrase < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' SETTINGS max_threads = 2]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE SearchPhrase < 'поисковая фраза' SETTINGS max_threads = 2]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE notEmpty(SearchPhrase) AND SearchPhrase < '' SETTINGS max_threads = 2]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE notEmpty(SearchPhrase) AND SearchPhrase < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' SETTINGS max_threads = 2]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE notEmpty(SearchPhrase) AND SearchPhrase < 'поисковая фраза' SETTINGS max_threads = 2]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE MobilePhoneModel < '' SETTINGS max_threads = 1]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE MobilePhoneModel < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' SETTINGS max_threads = 1]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE MobilePhoneModel < 'model' SETTINGS max_threads = 1]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE notEmpty(MobilePhoneModel) AND MobilePhoneModel < '' SETTINGS max_threads = 1]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE notEmpty(MobilePhoneModel) AND MobilePhoneModel < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' SETTINGS max_threads = 1]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE notEmpty(MobilePhoneModel) AND MobilePhoneModel < 'model' SETTINGS max_threads = 1]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE PageCharset < '' SETTINGS max_threads = 2]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE PageCharset < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz' SETTINGS max_threads = 2]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE PageCharset < 'utf-8' SETTINGS max_threads = 2]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE Title < '']]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE Title < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz']]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE Title < 'Какой-то заголовок']]></query>
+
+</test>

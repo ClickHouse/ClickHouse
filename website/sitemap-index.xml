@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+   <sitemap>
+      <loc>https://clickhouse.tech/docs/en/sitemap.xml</loc>
+   </sitemap>
+   <sitemap>
+      <loc>https://clickhouse.tech/docs/zh/sitemap.xml</loc>
+   </sitemap>
+   <sitemap>
+      <loc>https://clickhouse.tech/docs/ru/sitemap.xml</loc>
+   </sitemap>
+   <sitemap>
+      <loc>https://clickhouse.tech/docs/ja/sitemap.xml</loc>
+   </sitemap>
+   <sitemap>
+      <loc>https://clickhouse.tech/blog/en/sitemap.xml</loc>
+   </sitemap>
+   <sitemap>
+      <loc>https://clickhouse.tech/blog/ru/sitemap.xml</loc>
+   </sitemap>
+   <sitemap>
+      <loc>https://clickhouse.tech/sitemap-static.xml</loc>
+   </sitemap>
+</sitemapindex>
