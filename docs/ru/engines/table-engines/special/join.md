@@ -39,7 +39,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Для добавления данных в таблицы с движком `Join` используйте запрос `INSERT`. Если таблица создавалась со строгостью `ANY`, то данные с повторяющимися ключами игнорируются. Если задавалась строгость `ALL`, то добавляются все строки.
 
-Из таблиц нельзя выбрать данные с помощью запроса `SELECT`. Вместо этого, используйте один из следующих методов:
+Основные применения `Join` таблиц:
 
 -   Используйте таблицу как правую в секции `JOIN`.
 -   Используйте функцию [joinGet](../../../engines/table-engines/special/join.md#joinget), которая позволяет извлекать данные из таблицы таким же образом как из словаря.
@@ -61,7 +61,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Таблицы с движком `Join` нельзя использовать в операциях `GLOBAL JOIN`.
 
-Движок `Join` позволяет использовать параметр [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) в запросе `CREATE TABLE`, который также можно использовать в запросе [SELECT](../../../engines/table-engines/special/join.md). Если у вас разные настройки `join_use_nulls`, вы можете получить сообщение об ошибке при объединении таблиц. Это зависит от типа соединения. Когда вы используете функцию [joinGet](../../../engines/table-engines/special/join.md#joinget), вам необходимо использовать один и тот же параметр `join_use_nulls` в запросах `CRATE TABLE` и `SELECT`.
+Движок `Join` позволяет использовать настройку [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls) в запросе `CREATE TABLE`. Необходимо использовать одно и то же значение параметра `join_use_nulls` в запросах `CRATE TABLE` и `SELECT`.
 
 ## Примеры использования {#example}
 
