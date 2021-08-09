@@ -25,7 +25,7 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
 ```
 ### RENAME TABLE {#rename-table}
 
-Запросы [RENAME](../../sql-reference/statements/rename.md) выполняются без изменения UUID и перемещения табличных данных. Эти запросы не ожидают завершения использующих таблицу запросов и будут выполнены мгновенно.
+Запросы [RENAME](../../sql-reference/statements/rename.md) выполняются без изменения UUID и перемещения табличных данных. Эти запросы не ожидают завершения использующих таблицу запросов и выполняются мгновенно.
 
 ### DROP/DETACH TABLE {#drop-detach-table}
 
