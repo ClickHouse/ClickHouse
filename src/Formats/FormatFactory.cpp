@@ -212,13 +212,11 @@ BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(
 
     const Settings & settings = context->getSettingsRef();
     bool parallel_formatting = settings.output_format_parallel_formatting;
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
-    if (output_getter && parallel_formatting && getCreators(name).supports_parallel_formatting
-        && !settings.output_format_json_array_of_rows)
+    if (output_getter && parallel_formatting && getCreators(name).supports_parallel_formatting && !settings.output_format_json_array_of_rows
+        && !format_settings.mysql_wire.sequence_id)
     {
-        auto format_settings = _format_settings
-        ? *_format_settings : getFormatSettings(context);
-
         auto formatter_creator = [output_getter, sample, callback, format_settings]
             (WriteBuffer & output) -> OutputFormatPtr
             { return output_getter(output, sample, {std::move(callback)}, format_settings);};
@@ -314,14 +312,10 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
-    /// If we're handling MySQL protocol connection right now then MySQLWire is only allowed output format.
-    if (format_settings.mysql_wire.sequence_id && (name != "MySQLWire"))
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
-
     const Settings & settings = context->getSettingsRef();
 
     if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
-        && !settings.output_format_json_array_of_rows)
+        && !settings.output_format_json_array_of_rows && !format_settings.mysql_wire.sequence_id)
     {
         auto formatter_creator = [output_getter, sample, callback, format_settings]
         (WriteBuffer & output) -> OutputFormatPtr
