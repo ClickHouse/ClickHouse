@@ -1,0 +1,10 @@
+===http===
+{"total spans":"4","unique spans":"4","unique non-zero parent spans":"3"}
+{"initial query spans with proper parent":"1"}
+{"unique non-empty tracestate values":"1"}
+===native===
+{"total spans":"2","unique spans":"2","unique non-zero parent spans":"2"}
+{"initial query spans with proper parent":"1"}
+{"unique non-empty tracestate values":"1"}
+===sampled===
+OK

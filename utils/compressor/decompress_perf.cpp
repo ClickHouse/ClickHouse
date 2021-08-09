@@ -1,8 +1,7 @@
 #include <lz4.h>
 #include <string.h>
 #include <optional>
-#include <common/likely.h>
-#include <common/Types.h>
+#include <common/types.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -120,8 +119,8 @@ protected:
 
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
-    FasterCompressedReadBufferBase(ReadBuffer * in, ssize_t variant)
-        : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE), variant(variant), perf_stat(variant)
+    FasterCompressedReadBufferBase(ReadBuffer * in, ssize_t variant_)
+        : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE), variant(variant_), perf_stat(variant)
     {
     }
 

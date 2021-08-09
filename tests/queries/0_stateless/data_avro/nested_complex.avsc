@@ -1,0 +1,17 @@
+{
+    "type": "record",
+    "name": "main",
+    "fields": [
+        {"name": "a", "type": "long"},
+        {"name": "b", "type": {
+            "type": "record",
+            "name": "sub1",
+            "fields": [
+                {"name": "b1_str", "type": "string"},
+                {"name": "b2_null_str", "type": ["null", "string"]},
+                {"name": "b3_null_str_double", "type": ["null", "string", "double"]},
+                {"name": "b4_null_sub1", "type": ["null", "sub1"]}
+            ]
+        }}
+    ]
+  }

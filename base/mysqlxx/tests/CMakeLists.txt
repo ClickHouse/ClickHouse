@@ -1,0 +1,2 @@
+add_executable (mysqlxx_pool_test mysqlxx_pool_test.cpp)
+target_link_libraries (mysqlxx_pool_test PRIVATE mysqlxx)

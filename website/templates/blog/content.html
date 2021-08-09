@@ -1,0 +1,67 @@
+<div id="content-wrapper" class="col">
+    {% if not page.meta.is_index %}
+    <div id="content">
+        <header class="text-center">
+            {% if page.meta.image %}
+                <img class="img-fluid mb-3" src="{{ page.meta.image }}" alt="{{ title }}" title="{{ title }}" />
+            {% endif %}
+            <h1 class="display-4 mb-3">{{ title }}</h1>
+        </header>
+
+        <div class="row">
+            <article class="col-md-10 offset-1">
+                {{ page.content|adjust_markdown_html }}
+            </article>
+            <section class="d-none d-md-block col-md-1 mh-100">
+                <div class="sticky-top pt-2">
+                    <a class="d-block mb-2" href="https://twitter.com/intent/tweet?url={{ title|urlencode }}+{{ url|urlencode }}"
+                       rel="external nofollow noreferrer" target="_blank">
+                        <img src="/images/index/twitter.svg"
+                             alt="{{ _('Share on') }} Twitter" title="{{ _('Share on') }} Twitter" class="social-icon rounded-circle img-fluid w-100 p-1" />
+                    </a>
+                    <a class="d-block mb-2" href="https://news.ycombinator.com/submitlink?t={{ title|urlencode }}&u={{ url|urlencode }}"
+                       rel="external nofollow noreferrer" target="_blank">
+                        <img src="/images/index/hackernews.svg"
+                             alt="{{ _('Share on') }} HackerNews" title="{{ _('Share on') }} Hacker News" class="rounded-circle img-fluid w-100 p-1" />
+                    </a>
+                    <a class="d-block mb-2" href="http://www.reddit.com/submit?title={{ title|urlencode }}&url={{ url|urlencode }}"
+                       rel="external nofollow noreferrer" target="_blank">
+                        <img src="/images/index/reddit.svg"
+                             alt="{{ _('Share on') }} Reddit" title="{{ _('Share on') }} Reddit" class="invert-dark rounded-circle img-fluid w-100 p-1" />
+                    </a>
+                </div>
+            </section>
+        </div>
+
+        <section class="col-md-10 offset-md-1 my-5">
+            <span title="{{ _('Published date') }}" class="d-inline-block bg-dark text-white p-2 mr-2">{{ page.meta.date }}</span>
+            {% if page.meta.tags %}
+                {% for tag in page.meta.tags %}
+                    <div class="tag d-inline-block bg-light p-2 mr-2">
+                        {{ tag }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        </section>
+
+
+    </div>
+    {% else %}
+        {% for post in config.extra.post_meta.values() %}
+        <a href="{{ post['url'] }}" class="d-block text-reset text-decoration-none mt-3 mb-5">
+            {% set post_image = post.get('image') or '/images/index/intro.svg' %}
+            <div class="row">
+                <div class="col-12 col-md-6">
+                    <img class="img-fluid" data-src="{{ post_image }}" alt="{{ post['title'] }}" title="{{ post['title'] }}" />
+                </div>
+                <div class="col-12 col-md-6">
+                    <h2>{{ post['title'] }}</h2>
+                    <span class="text-muted">{{ post['date'] }}</span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    {% endif %}
+</div>
+
+{% include "templates/blog/footer.html" %}

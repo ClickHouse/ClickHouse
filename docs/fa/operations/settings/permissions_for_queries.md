@@ -1,1 +1,0 @@
-../../../en/operations/settings/permissions_for_queries.md

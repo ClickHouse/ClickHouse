@@ -1,0 +1,53 @@
+<!-- Config set into /etc/clickhouse-client/. It's used if no other configs are found. -->
+<config>
+    <openSSL>
+        <client> <!-- Used for connection to server's secure tcp port -->
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <!-- Use for self-signed: <verificationMode>none</verificationMode> -->
+            <invalidCertificateHandler>
+                <!-- Use for self-signed: <name>AcceptCertificateHandler</name> -->
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+    <!--
+        It's a custom prompt settings for the clickhouse-client
+        Possible macros:
+            {host}
+            {port}
+            {user}
+            {database}
+            {display_name}
+        Terminal colors: https://misc.flogisoft.com/bash/tip_colors_and_formatting
+        See also: https://wiki.hackzine.org/development/misc/readline-color-prompt.html
+    -->
+    <prompt_by_server_display_name>
+        <default>{display_name} :) </default>
+        <test>{display_name} \x01\e[1;32m\x02:)\x01\e[0m\x02 </test> <!-- if it matched to the substring "test" in the server display name - -->
+        <production>{display_name} \x01\e[1;31m\x02:)\x01\e[0m\x02 </production> <!-- if it matched to the substring "production" in the server display name -->
+    </prompt_by_server_display_name>
+
+    <!-- 
+        Settings adjustable via command-line parameters
+        can take their defaults from that config file, see examples:
+
+    <host>127.0.0.1</host>
+    <port>9440</port>
+    <secure>1</secure>
+    <user>dbuser</user>
+    <password>dbpwd123</password>
+    <format>PrettyCompactMonoBlock</format>
+    <multiline>1</multiline>
+    <multiquery>1</multiquery>
+    <stacktrace>1</stacktrace>
+    <database>default2</database>
+    <pager>less -SR</pager>
+    <history_file>/home/user/clickhouse_custom_history.log</history_file>
+    <max_parser_depth>2500</max_parser_depth>
+
+        The same can be done on user-level configuration, just create & adjust: ~/.clickhouse-client/config.xml
+    -->
+</config>

@@ -1,0 +1,12 @@
+CREATE TABLE default.tuple
+(
+    `j` Tuple(a Int8, b String)
+)
+ENGINE = Memory
+j	Tuple(a Int8, b String)					
+CREATE TABLE default.tuple
+(
+    `j` Tuple(a Int8, b String)
+)
+ENGINE = Memory
+j	Tuple(a Int8, b String)					

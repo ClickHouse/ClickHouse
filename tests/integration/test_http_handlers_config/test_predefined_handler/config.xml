@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+
+<yandex>
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/test_predefined_handler_get</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT name, value FROM system.settings WHERE name = {setting_name:String}</query>
+            </handler>
+        </rule>
+        <rule>
+            <url><![CDATA[regex:/query_param_with_url/(?P<setting_name_1>[^/]+)]]></url>
+            <headers>
+                <XXX><![CDATA[regex:(?P<setting_name_2>.+)]]></XXX>
+            </headers>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT name, value FROM system.settings WHERE name = {setting_name_1:String} OR name = {setting_name_2:String}</query>
+            </handler>
+        </rule>
+    </http_handlers>
+</yandex>

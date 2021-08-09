@@ -1,0 +1,4 @@
+CREATE TABLE default.add_table\n(\n    `key` UInt64,\n    `value1` String\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.add_table\n(\n    `key` UInt64,\n    `value1` String\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.add_table\n(\n    `key` UInt64,\n    `value1` String\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.add_table\n(\n    `key` UInt64,\n    `value1` String,\n    `value2` UInt64\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192

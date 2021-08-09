@@ -1,128 +1,131 @@
-# Usage Recommendations
+# 使用建议 {#usage-recommendations}
 
-## CPU
+## CPU频率调节器 {#cpu-scaling-governor}
 
-The SSE 4.2 instruction set must be supported. Modern processors (since 2008) support it.
+始终使用 `performance` 频率调节器。  `on-demand` 频率调节器在持续高需求的情况下，效果更差。
 
-When choosing a processor, prefer a large number of cores and slightly slower clock rate over fewer cores and a higher clock rate.
-For example, 16 cores with 2600 MHz is better than 8 cores with 3600 MHz.
-
-## Hyper-threading
-
-Don't disable hyper-threading. It helps for some queries, but not for others.
-
-## Turbo Boost
-
-Turbo Boost is highly recommended. It significantly improves performance with a typical load.
-You can use `turbostat` to view the CPU's actual clock rate under a load.
-
-## CPU Scaling Governor
-
-Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
-
-```bash
+``` bash
 echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-## CPU Limitations
+## CPU限制 {#cpu-limitations}
 
-Processors can overheat. Use `dmesg` to see if the CPU's clock rate was limited due to overheating.
-The restriction can also be set externally at the datacenter level. You can use `turbostat` to monitor it under a load.
+处理器可能会过热。 使用 `dmesg` 查看CPU的时钟速率是否由于过热而受到限制。
+该限制也可以在数据中心级别外部设置。 您可以使用 `turbostat` 在负载下对其进行监控。
 
-## RAM
+## RAM {#ram}
 
-For small amounts of data (up to \~200 GB compressed), it is best to use as much memory as the volume of data.
-For large amounts of data and when processing interactive (online) queries, you should use a reasonable amount of RAM (128 GB or more) so the hot data subset will fit in the cache of pages.
-Even for data volumes of \~50 TB per server, using 128 GB of RAM significantly improves query performance compared to 64 GB.
+对于少量数据（压缩后约200GB），最好使用与数据量一样多的内存。
+对于大量数据，以及在处理交互式（在线）查询时，应使用合理数量的RAM（128GB或更多），以便热数据子集适合页面缓存。
+即使对于每台服务器约50TB的数据量，与64GB相比，使用128GB的RAM也可以显着提高查询性能。
 
-## Swap File
+不要禁用 overcommit。`cat /proc/sys/vm/overcommit_memory` 的值应该为0或1。运行
 
-Always disable the swap file. The only reason for not doing this is if you are using ClickHouse on your personal laptop.
+``` bash
+$ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
+```
 
-## Huge Pages
+## 大页(Huge Pages) {#huge-pages}
 
-Always disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
+始终禁用透明大页(transparent huge pages)。 它会干扰内存分配器，从而导致显着的性能下降。
 
-```bash
+``` bash
 echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
-Use `perf top` to watch the time spent in the kernel for memory management.
-Permanent huge pages also do not need to be allocated.
+使用 `perf top` 来查看内核在内存管理上花费的时间。
+永久大页(permanent huge pages)也不需要被分配。
 
-## Storage Subsystem
+## 存储子系统 {#storage-subsystem}
 
-If your budget allows you to use SSD, use SSD.
-If not, use HDD. SATA HDDs 7200 RPM will do.
+如果您的预算允许您使用SSD，请使用SSD。
+如果没有，请使用硬盘。 SATA硬盘7200转就行了。
 
-Give preference to a lot of servers with local hard drives over a smaller number of servers with attached disk shelves.
-But for storing archives with rare queries, shelves will work.
+优先选择许多带有本地硬盘驱动器的服务器，而不是少量带有附加磁盘架的服务器。
+但是对于存储极少查询的档案，架子可以使用。
 
-## RAID
+## RAID {#raid}
 
-When using HDD, you can combine their RAID-10, RAID-5, RAID-6 or RAID-50.
-For Linux, software RAID is better (with `mdadm`). We don't recommend using LVM.
-When creating RAID-10, select the `far` layout.
-If your budget allows, choose RAID-10.
+当使用硬盘，你可以结合他们的RAID-10，RAID-5，RAID-6或RAID-50。
+对于Linux，软件RAID更好（使用 `mdadm`). 我们不建议使用LVM。
+当创建RAID-10，选择 `far` 布局。
+如果您的预算允许，请选择RAID-10。
 
-If you have more than 4 disks, use RAID-6 (preferred) or RAID-50, instead of RAID-5.
-When using RAID-5, RAID-6 or RAID-50, always increase stripe_cache_size, since the default value is usually not the best choice.
+如果您有4个以上的磁盘，请使用RAID-6（首选）或RAID-50，而不是RAID-5。
+当使用RAID-5、RAID-6或RAID-50时，始终增加stripe_cache_size，因为默认值通常不是最佳选择。
 
-```bash
+``` bash
 echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 ```
 
-Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
+使用以下公式从设备数量和块大小中计算出确切的数量: `2 * num_devices * chunk_size_in_bytes / 4096`。
 
-A block size of 1025 KB is sufficient for all RAID configurations.
-Never set the block size too small or too large.
+1024KB的块大小足以满足所有RAID配置。
+切勿将块大小设置得太小或太大。
 
-You can use RAID-0 on SSD.
-Regardless of RAID use, always use replication for data security.
+您可以在SSD上使用RAID-0。
+无论使用哪种RAID，始终使用复制来保证数据安全。
 
-Enable NCQ with a long queue. For HDD, choose the CFQ scheduler, and for SSD, choose noop. Don't reduce the 'readahead' setting.
-For HDD, enable the write cache.
+启用有长队列的NCQ。 对于HDD，选择CFQ调度程序，对于SSD，选择noop。 不要减少 ‘readahead’ 设置。
+对于HDD，启用写入缓存。
 
-## File System
+## 文件系统 {#file-system}
 
-Ext4 is the most reliable option. Set the mount options `noatime, nobarrier`.
-XFS is also suitable, but it hasn't been as thoroughly tested with ClickHouse.
-Most other file systems should also work fine. File systems with delayed allocation work better.
+Ext4是最可靠的选择。 设置挂载选项 `noatime, nobarrier`.
+XFS也是合适的，但它还没有经过ClickHouse的全面测试。
+大多数其他文件系统也应该可以正常工作。 具有延迟分配的文件系统工作得更好。
 
-## Linux Kernel
+## Linux内核 {#linux-kernel}
 
-Don't use an outdated Linux kernel.
+不要使用过时的Linux内核。
 
-## Network
+## 网络 {#network}
 
-If you are using IPv6, increase the size of the route cache.
-The Linux kernel prior to 3.2 had a multitude of problems with IPv6 implementation.
+如果使用的是IPv6，请增加路由缓存的大小。
+3.2之前的Linux内核在IPv6实现方面存在许多问题。
 
-Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be much worse for patching replicas with tens of terabytes of data, or for processing distributed queries with a large amount of intermediate data.
+如果可能的话，至少使用10GB的网络。1GB也可以工作，但对于使用数十TB的数据修补副本或处理具有大量中间数据的分布式查询，情况会更糟。
 
-## ZooKeeper
+## 虚拟机监视器(Hypervisor)配置
 
-You are probably already using ZooKeeper for other purposes. You can use the same installation of ZooKeeper, if it isn't already overloaded.
+如果您使用的是OpenStack，请在nova.conf中设置
+```
+cpu_mode=host-passthrough
+```
+。
 
-It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+如果您使用的是libvirt，请在XML配置中设置
+```
+<cpu mode='host-passthrough'/>
+```
+。
 
-You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the "zkcopy" utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
+这对于ClickHouse能够通过 `cpuid` 指令获取正确的信息非常重要。
+否则，当在旧的CPU型号上运行虚拟机监视器时，可能会导致 `Illegal instruction` 崩溃。
 
-If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
+## Zookeeper {#zookeeper}
 
-Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
+您可能已经将ZooKeeper用于其他目的。 如果它还没有超载，您可以使用相同的zookeeper。
 
-With the default settings, ZooKeeper is a time bomb:
+最好使用新版本的Zookeeper – 3.4.9 或更高的版本. 稳定的Liunx发行版中的Zookeeper版本可能已过时。
 
-> The ZooKeeper server won't delete files from old snapshots and logs when using the default configuration (see autopurge), and this is the responsibility of the operator.
+你永远不要使用手动编写的脚本在不同的Zookeeper集群之间传输数据, 这可能会导致序列节点的数据不正确。出于相同的原因，永远不要使用 zkcopy 工具: https://github.com/ksprojects/zkcopy/issues/15
 
-This bomb must be defused.
+如果要将现有的ZooKeeper集群分为两个，正确的方法是增加其副本的数量，然后将其重新配置为两个独立的集群。
 
-The ZooKeeper (3.5.1) configuration below is used in the Yandex.Metrica production environment as of May 20, 2017:
+不要在ClickHouse所在的服务器上运行ZooKeeper。 因为ZooKeeper对延迟非常敏感，而ClickHouse可能会占用所有可用的系统资源。
+
+默认设置下，ZooKeeper 就像是一个定时炸弹:
+
+当使用默认配置时，ZooKeeper服务器不会从旧的快照和日志中删除文件（请参阅autopurge），这是操作员的责任。
+
+必须拆除炸弹。
+
+下面的ZooKeeper（3.5.1）配置在 Yandex.Metrica 的生产环境中使用截至2017年5月20日:
 
 zoo.cfg:
 
-```bash
+``` bash
 # http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html
 
 # The number of milliseconds of each tick
@@ -138,9 +141,9 @@ maxClientCnxns=2000
 
 maxSessionTimeout=60000000
 # the directory where the snapshot is stored.
-dataDir=/opt/zookeeper/{{ cluster['name'] }}/data
+dataDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '}}' }}/data
 # Place the dataLogDir to a separate physical disc for better performance
-dataLogDir=/opt/zookeeper/{{ cluster['name'] }}/logs
+dataLogDir=/opt/zookeeper/{{ '{{' }} cluster['name'] {{ '}}' }}/logs
 
 autopurge.snapRetainCount=10
 autopurge.purgeInterval=1
@@ -173,20 +176,18 @@ snapCount=3000000
 leaderServes=yes
 
 standaloneEnabled=false
-dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
+dynamicConfigFile=/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/zoo.cfg.dynamic
 ```
 
-Java version:
+Java版本:
 
-```
-Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
-Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
-```
+    Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
+    Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 
-JVM parameters:
+JVM参数:
 
-```bash
-NAME=zookeeper-{{ cluster['name'] }}
+``` bash
+NAME=zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}
 ZOOCFGDIR=/etc/$NAME/conf
 
 # TODO this is really ugly
@@ -205,8 +206,8 @@ JAVA=/usr/bin/java
 ZOOMAIN="org.apache.zookeeper.server.quorum.QuorumPeerMain"
 ZOO_LOG4J_PROP="INFO,ROLLINGFILE"
 JMXLOCALONLY=false
-JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
-    -Xmx{{ cluster.get('xmx','1G') }} \
+JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
+    -Xmx{{ '{{' }} cluster.get('xmx','1G') {{ '}}' }} \
     -Xloggc:/var/log/$NAME/zookeeper-gc.log \
     -XX:+UseGCLogFileRotation \
     -XX:NumberOfGCLogFiles=16 \
@@ -224,36 +225,33 @@ JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
 -XX:+CMSParallelRemarkEnabled"
 ```
 
-Salt init:
+初始化:
 
-```
-description "zookeeper-{{ cluster['name'] }} centralized coordination service"
+    description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
 
-start on runlevel [2345]
-stop on runlevel [!2345]
+    start on runlevel [2345]
+    stop on runlevel [!2345]
 
-respawn
+    respawn
 
-limit nofile 8192 8192
+    limit nofile 8192 8192
 
-pre-start script
-    [ -r "/etc/zookeeper-{{ cluster['name'] }}/conf/environment" ] || exit 0
-    . /etc/zookeeper-{{ cluster['name'] }}/conf/environment
-    [ -d $ZOO_LOG_DIR ] || mkdir -p $ZOO_LOG_DIR
-    chown $USER:$GROUP $ZOO_LOG_DIR
-end script
+    pre-start script
+        [ -r "/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment" ] || exit 0
+        . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment
+        [ -d $ZOO_LOG_DIR ] || mkdir -p $ZOO_LOG_DIR
+        chown $USER:$GROUP $ZOO_LOG_DIR
+    end script
 
-script
-    . /etc/zookeeper-{{ cluster['name'] }}/conf/environment
-    [ -r /etc/default/zookeeper ] && . /etc/default/zookeeper
-    if [ -z "$JMXDISABLE" ]; then
-        JAVA_OPTS="$JAVA_OPTS -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=$JMXLOCALONLY"
-    fi
-    exec start-stop-daemon --start -c $USER --exec $JAVA --name zookeeper-{{ cluster['name'] }} \
-        -- -cp $CLASSPATH $JAVA_OPTS -Dzookeeper.log.dir=${ZOO_LOG_DIR} \
-        -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
-end script
-```
+    script
+        . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment
+        [ -r /etc/default/zookeeper ] && . /etc/default/zookeeper
+        if [ -z "$JMXDISABLE" ]; then
+            JAVA_OPTS="$JAVA_OPTS -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=$JMXLOCALONLY"
+        fi
+        exec start-stop-daemon --start -c $USER --exec $JAVA --name zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} \
+            -- -cp $CLASSPATH $JAVA_OPTS -Dzookeeper.log.dir=${ZOO_LOG_DIR} \
+            -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
+    end script
 
-
-[Original article](https://clickhouse.yandex/docs/en/operations/tips/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/tips/) <!--hide-->
