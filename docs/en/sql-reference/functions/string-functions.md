@@ -50,7 +50,7 @@ Pads the current string from the left with a specified string (multiple times, i
 **Syntax**
 
 ``` sql
-leftPad('string','length', 'pad_string')
+leftPad('string', 'length'[, 'pad_string'])
 ```
 
 **Arguments**
