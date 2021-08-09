@@ -835,7 +835,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     return columns;
 }
 
-static void checkCombindeFiltersSize(size_t bytes_in_first_filter, size_t second_filter_size)
+static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second_filter_size)
 {
     if (bytes_in_first_filter != second_filter_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -845,24 +845,24 @@ static void checkCombindeFiltersSize(size_t bytes_in_first_filter, size_t second
 
 static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
 {
-    ConstantFilterDescription firsrt_const_descr(*first);
+    ConstantFilterDescription first_const_descr(*first);
 
-    if (firsrt_const_descr.always_true)
+    if (first_const_descr.always_true)
     {
-        checkCombindeFiltersSize(first->size(), second->size());
+        checkCombinedFiltersSize(first->size(), second->size());
         return second;
     }
 
-    if (firsrt_const_descr.always_false)
+    if (first_const_descr.always_false)
     {
-        checkCombindeFiltersSize(0, second->size());
+        checkCombinedFiltersSize(0, second->size());
         return first;
     }
 
-    FilterDescription firsrt_descr(*first);
+    FilterDescription first_descr(*first);
 
-    size_t bytes_in_first_filter = countBytesInFilter(*firsrt_descr.data);
-    checkCombindeFiltersSize(bytes_in_first_filter, second->size());
+    size_t bytes_in_first_filter = countBytesInFilter(*first_descr.data);
+    checkCombinedFiltersSize(bytes_in_first_filter, second->size());
 
     ConstantFilterDescription second_const_descr(*second);
 
@@ -875,8 +875,8 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     FilterDescription second_descr(*second);
 
     MutableColumnPtr mut_first;
-    if (firsrt_descr.data_holder)
-        mut_first = IColumn::mutate(std::move(firsrt_descr.data_holder));
+    if (first_descr.data_holder)
+        mut_first = IColumn::mutate(std::move(first_descr.data_holder));
     else
         mut_first = IColumn::mutate(std::move(first));
 
