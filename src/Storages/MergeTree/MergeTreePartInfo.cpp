@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_DATA_PART_NAME;
+    extern const int INVALID_PARTITION_VALUE;
 }
 
 
@@ -21,38 +22,25 @@ MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, Merg
 }
 
 
-bool MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
+void MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
 {
     if (partition_id.empty())
-        return false;
-
-    ReadBufferFromString in(partition_id);
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id is empty");
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        UInt32 min_yyyymmdd = 0;
-        UInt32 max_yyyymmdd = 0;
-        if (!tryReadIntText(min_yyyymmdd, in)
-            || !checkChar('_', in)
-            || !tryReadIntText(max_yyyymmdd, in)
-            || !checkChar('_', in))
-        {
-            return false;
-        }
+        if (partition_id.size() != 6 || !std::all_of(partition_id.begin(), partition_id.end(), isNumericASCII))
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                "Invalid partition format: {}. Partition should consist of 6 digits: YYYYMM",
+                partition_id);
     }
     else
     {
-        while (!in.eof())
-        {
-            char c;
-            readChar(c, in);
-
-            if (c == '_')
-                break;
-        }
+        auto is_valid_char = [](char c) { return c == '-' || isAlphaNumericASCII(c); };
+        if (!std::all_of(partition_id.begin(), partition_id.end(), is_valid_char))
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Invalid partition format: {}", partition_id);
     }
 
-    return in.eof();
 }
 
 bool MergeTreePartInfo::tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version)
