@@ -10,7 +10,7 @@ toc_title: EXPLAIN
 Синтаксис:
 
 ```sql
-EXPLAIN [AST | SYNTAX | PLAN | PIPELINE] [setting = value, ...] SELECT ... [FORMAT ...]
+EXPLAIN [AST | SYNTAX | PLAN | PIPELINE | ESTIMATE] [setting = value, ...] SELECT ... [FORMAT ...]
 ```
 
 Пример:
@@ -44,6 +44,7 @@ Union
 -  `SYNTAX` — текст запроса после оптимизации на уровне AST.
 -  `PLAN` — план выполнения запроса.
 -  `PIPELINE` — конвейер выполнения запроса.
+-  `ESTIMATE` — информация о прочитанных строках, засечках и кусках.
 
 ### EXPLAIN AST {#explain-ast}
 
@@ -383,6 +384,37 @@ ExpressionTransform
           (SettingQuotaAndLimits)
             (ReadFromStorage)
             NumbersMt × 2 0 → 1
+```
+
+ ### EXPLAIN ESTIMATE {#explain-estimate}
+
+ Отображает информацию о прочитанных строках, засечках и кусках из таблиц `MergeTree`. 
+
+Пример:
+
+```sql
+EXPLAIN ESTIMATES
+SELECT
+    toYear(LO_ORDERDATE) AS year,
+    S_CITY,
+    P_BRAND,
+    sum(LO_REVENUE - LO_SUPPLYCOST) AS profit
+FROM lineorder_flat
+WHERE (S_NATION = 'UNITED STATES') AND ((year = 1997) OR (year = 1998)) AND (P_CATEGORY = 'MFGR#14')
+GROUP BY
+    year,
+    S_CITY,
+    P_BRAND
+ORDER BY
+    year ASC,
+    S_CITY ASC,
+    P_BRAND ASC;
+```
+
+```text
+┌─database─┬─table──────────┬─parts─┬─────rows─┬─marks─┐
+│ default  │ lineorder_flat │    14 │ 14430068 │  1780 │
+└──────────┴────────────────┴───────┴──────────┴───────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/explain/) <!--hide-->
