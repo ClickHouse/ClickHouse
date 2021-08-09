@@ -12,7 +12,6 @@
 #include <Common/assert_cast.h>
 #include <memory>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -58,14 +57,13 @@ public:
         const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(col);
 
         if (!tuple)
-            throw Exception("First argument for function " + getName() + "must "
+            throw Exception("First argument for function " + getName() + " must "
                             "be a tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        
         const auto& elementTypes = tuple->getElements();
-        
+
         if (elementTypes.empty())
-            throw Exception("The argument tuple for function " + getName() + "must "
+            throw Exception("The argument tuple for function " + getName() + " must "
                             "not be empty.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         const auto& firstElementType = elementTypes[0];
@@ -73,13 +71,16 @@ public:
         auto it = std::find_if(
                            elementTypes.begin() + 1,
                            elementTypes.end(),
-                           [&](const auto &other) {
+                           [&](const auto &other)
+                           {
                                return !firstElementType->equals(*other);
                            });
-        
+
         if (it != elementTypes.end())
         {
-            throw Exception("TODO: FIX", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("The argument tuple for function " + getName() + " must "
+                            "contain just one type",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         DataTypePtr tupleNameType = std::make_shared<DataTypeString>();
@@ -87,7 +88,7 @@ public:
                                   firstElementType};
 
         auto itemDataType = std::make_shared<DataTypeTuple>(itemDataTypes);
-        
+
         return std::make_shared<DataTypeArray>(itemDataType);
     }
 
