@@ -43,7 +43,6 @@ ReadBufferFromS3::ReadBufferFromS3(
 
 bool ReadBufferFromS3::nextImpl()
 {
-    Stopwatch watch;
     bool next_result = false;
 
     if (impl)
@@ -62,18 +61,26 @@ bool ReadBufferFromS3::nextImpl()
     auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
     for (size_t attempt = 0; (attempt < max_single_read_retries) && !next_result; ++attempt)
     {
+        Stopwatch watch;
         try
         {
             /// Try to read a next portion of data.
             next_result = impl->next();
+            watch.stop();
+            ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
             break;
         }
         catch (const Exception & e)
         {
+            watch.stop();
+            ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
             ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
 
             LOG_INFO(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Attempt: {}, Message: {}",
                     bucket, key, getPosition(), attempt, e.message());
+
+            if (attempt + 1 == max_single_read_retries)
+                throw;
 
             /// Pause before next attempt.
             std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);
@@ -86,9 +93,6 @@ bool ReadBufferFromS3::nextImpl()
             next_result = impl->hasPendingData();
         }
     }
-
-    watch.stop();
-    ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
 
     if (!next_result)
         return false;
