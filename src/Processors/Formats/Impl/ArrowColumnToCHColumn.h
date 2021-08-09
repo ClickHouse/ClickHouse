@@ -8,6 +8,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/Block.h>
 #include <arrow/table.h>
 
 
@@ -24,12 +25,12 @@ public:
 
     /// Constructor that create header by arrow schema. It will be useful for inserting
     /// data from file without knowing table structure.
-    /// ArrowColumnToCHColumn(const arrow::Schema & schema, const std::string & format_name, bool import_nested_);
+    ArrowColumnToCHColumn(const arrow::Schema & schema, const std::string & format_name, bool import_nested_);
 
     void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
 
 private:
-    const Block & header;
+    const Block header;
     const std::string format_name;
     bool import_nested;
 
