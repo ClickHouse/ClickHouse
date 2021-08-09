@@ -59,7 +59,7 @@ leftPad('string', 'length'[, 'pad_string'])
 -   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
-**Returned value(s)**
+**Returned value**
 
 -   The resulting string of the given length.
 
@@ -93,14 +93,13 @@ leftPadUTF8('string','length'[, 'pad_string'])
 
 **Arguments**
 
--   `string` — Input UTF-8 string, that needs to be padded. [String](../data-types/string.md).
+-   `string` — Input string, that needs to be padded. [String](../data-types/string.md).
 -   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
+**Returned value**
 
-**Returned value(s)**
-
--   The resulting UTF-8 string of the given length.
+-   The resulting string of the given length.
 
 Type: [String](../data-types/string.md).
 
@@ -118,7 +117,6 @@ Result:
 ┌─leftPadUTF8('абвг', 7, '*')─┬─leftPadUTF8('дежз', 7)─┐
 │ ***абвг                     │    дежз                │
 └─────────────────────────────┴────────────────────────┘
-
 ```
 
 ## rightPad {#rightpad}
@@ -137,7 +135,7 @@ rightPad('string', 'length'[, 'pad_string'])
 -   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
-**Returned value(s)**
+**Returned value**
 
 -   The resulting string of the given length.
 
@@ -161,7 +159,7 @@ Result:
 
 ## rightPadUTF8 {#rightpadutf8}
 
-Pads the current UTF-8 string from the right with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `RPAD` function. While in the [rightPad](#rightpad) function the length is measured in bytes, here in the `rightPadUTF8` function it is measured in code points.
+Pads the current string from the right with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `RPAD` function. While in the [rightPad](#rightpad) function the length is measured in bytes, here in the `rightPadUTF8` function it is measured in code points.
 
 **Syntax**
 
@@ -171,13 +169,13 @@ rightPadUTF8('string','length'[, 'pad_string'])
 
 **Arguments**
 
--   `string` — Input UTF-8 string, that needs to be padded. [String](../data-types/string.md).
+-   `string` — Input string, that needs to be padded. [String](../data-types/string.md).
 -   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
-**Returned value(s)**
+**Returned value**
 
--   The resulting UTF-8 string of the given length.
+-   The resulting string of the given length.
 
 Type: [String](../data-types/string.md).
 
