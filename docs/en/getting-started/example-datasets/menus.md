@@ -280,6 +280,8 @@ ORDER BY d ASC
 └──────┴─────────┴──────────────────────┴─────────────────────────────┘
 ```
 
+To get vodka we have to write `ILIKE '%vodka%'` and this definitely makes a statement.
+
 ### Caviar:
 
 Let's print caviar prices. Also let's print a name of any dish with caviar.
