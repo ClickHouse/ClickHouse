@@ -84,7 +84,7 @@ Result:
 
 ## leftPadUTF8 {#leftpadutf8}
 
-Pads the current string from the left with a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `LPAD` function.
+Pads the current string from the left with a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `LPAD` function. While in the [leftPad](#leftpad) function the length is measured in bytes, here in the `leftPadUTF8` function it is measured in code points.
 
 **Syntax**
 
