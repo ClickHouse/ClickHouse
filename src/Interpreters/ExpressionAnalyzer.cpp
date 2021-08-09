@@ -238,13 +238,37 @@ void ExpressionAnalyzer::analyzeAggregation()
             {
                 NameSet unique_keys;
                 ASTs & group_asts = select_query->groupBy()->children;
+                const auto & columns = syntax->source_columns;
+
                 for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
                 {
                     ssize_t size = group_asts.size();
                     getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
+                    if (getContext()->getSettingsRef().enable_positional_arguments)
+                    {
+                        /// Case when GROUP BY element is position.
+                        /// Do not consider case when GROUP BY element is expression, even if all values are contants.
+                        /// (because does it worth it to first check that exactly all elements in expression are positions
+                        /// and then traverse once again to make replacement?)
+                        if (const auto * ast_literal = typeid_cast<const ASTLiteral *>(group_asts[i].get()))
+                        {
+                            auto which = ast_literal->value.getType();
+                            if (which == Field::Types::UInt64)
+                            {
+                                auto pos = ast_literal->value.get<UInt64>();
+                                if ((0 < pos) && (pos <= columns.size()))
+                                {
+                                    const auto & column_name = std::next(columns.begin(), pos - 1)->name;
+                                    group_asts[i] = std::make_shared<ASTIdentifier>(column_name);
+                                }
+                            }
+                        }
+                    }
+
                     const auto & column_name = group_asts[i]->getColumnName();
                     const auto * node = temp_actions->tryFindInIndex(column_name);
+
                     if (!node)
                         throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
@@ -1228,7 +1252,24 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
         const auto * ast = child->as<ASTOrderByElement>();
         if (!ast || ast->children.empty())
             throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+
         ASTPtr order_expression = ast->children.at(0);
+        const auto & columns = syntax->source_columns;
+
+        if (auto * ast_literal = typeid_cast<const ASTLiteral *>(order_expression.get()))
+        {
+            auto which = ast_literal->value.getType();
+            if (which == Field::Types::UInt64)
+            {
+                auto pos = ast_literal->value.get<UInt64>();
+                if ((0 < pos) && (pos <= columns.size()))
+                {
+                    const auto & column_name = std::next(columns.begin(), pos - 1)->name;
+                    child->children[0] = std::make_shared<ASTIdentifier>(column_name);
+                }
+            }
+        }
+
         step.addRequiredOutput(order_expression->getColumnName());
 
         if (ast->with_fill)
@@ -1277,9 +1318,25 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
         aggregated_names.insert(column.name);
     }
 
-    for (const auto & child : select_query->limitBy()->children)
+    auto & children = select_query->limitBy()->children;
+    for (size_t i = 0; i < children.size(); ++i)
     {
-        auto child_name = child->getColumnName();
+        const auto & columns = syntax->source_columns;
+        if (auto * ast_literal = typeid_cast<const ASTLiteral *>(children[i].get()))
+        {
+            auto which = ast_literal->value.getType();
+            if (which == Field::Types::UInt64)
+            {
+                auto pos = ast_literal->value.get<UInt64>();
+                if ((0 < pos) && (pos <= columns.size()))
+                {
+                    const auto & column_name = std::next(columns.begin(), pos - 1)->name;
+                    children[i] = std::make_shared<ASTIdentifier>(column_name);
+                }
+            }
+        }
+
+        auto child_name = children[i]->getColumnName();
         if (!aggregated_names.count(child_name))
             step.addRequiredOutput(std::move(child_name));
     }
