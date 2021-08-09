@@ -17,7 +17,11 @@ static size_t __find_auxv(unsigned long type)
     return (size_t) -1;
 }
 
-__attribute__((constructor)) static void __auxv_init()
+/// __auxv_init should happen BEFORE the first use of getauxval.
+/// but getauxval can be used in other init sections (namely in musl/clock_gettime.c::cgt_init), 
+/// so constructor(0) is needed to prioritize that constructor
+/// see also: https://stackoverflow.com/questions/11106875/attribute-constructor-call-order-confusion/11198936
+__attribute__((constructor(0))) static void __auxv_init()
 {
     size_t i;
     for (i = 0; __environ[i]; i++);
