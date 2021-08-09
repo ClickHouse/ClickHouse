@@ -324,12 +324,12 @@ The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhou
 
 ## Let's speed up queries using projections
 
-[Projections](https://../../sql-reference/statements/alter/projection/) allows to improve queries speed by storing pre-aggregated data 
+[Projections](https://../../sql-reference/statements/alter/projection/) allow to improve queries speed by storing pre-aggregated data.
 
-### Bultd a projection 
+### Build a projection 
 
 ```
--- create an aggregating projection by dimensions (toYear(date), district, town)
+-- create an aggregate projection by dimensions (toYear(date), district, town)
 
 ALTER TABLE uk_price_paid
     ADD PROJECTION projection_by_year_district_town
@@ -355,7 +355,7 @@ ALTER TABLE uk_price_paid
 SETTINGS mutations_sync = 1;
 ```
 
-## Test performarnce
+## Test performance
 
 Let's run the same 3 queries.
 
