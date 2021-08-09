@@ -1,10 +1,12 @@
 
 ---
 toc_priority: 29
-toc_title: MaterializedMySQL
+toc_title: "[экспериментальный] MaterializedMySQL"
 ---
 
-# MaterializedMySQL {#materialized-mysql}
+# [экспериментальный] MaterializedMySQL {#materialized-mysql}
+
+**Это экспериментальная функция, которую не следует использовать в продуктивной среде.**
 
 Создает базу данных ClickHouse со всеми таблицами, существующими в MySQL, и всеми данными в этих таблицах.
 
