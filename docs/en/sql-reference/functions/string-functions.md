@@ -89,7 +89,7 @@ Pads the current string from the left with a specified string (multiple times, i
 **Syntax**
 
 ``` sql
-leftPadUTF8('string','length', 'pad_string')
+leftPadUTF8('string','length'[, 'pad_string'])
 ```
 
 **Arguments**
