@@ -1,2 +1,0 @@
-Code: 241. DB::Exception: Memory limit (total) exceeded: would use 11.19 MiB (attempt to allocate chunk of 6462982 bytes), maximum: 1.00 B: while receiving packet from localhost:9000. (MEMORY_LIMIT_EXCEEDED)
-60000
