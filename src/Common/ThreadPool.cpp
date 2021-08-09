@@ -192,6 +192,9 @@ template <typename Thread>
 ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 {
     finalize();
+    /// wait() hadn't been called, log exception at least.
+    if (first_exception)
+        DB::tryLogException(first_exception, __PRETTY_FUNCTION__);
 }
 
 template <typename Thread>
@@ -270,11 +273,21 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             }
             catch (...)
             {
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+
                 /// job should be reset before decrementing scheduled_jobs to
                 /// ensure that the Job destroyed before wait() returns.
                 job = {};
 
                 {
+                    /// In case thread pool will not be terminated on exception
+                    /// (this is the case for GlobalThreadPool),
+                    /// than first_exception may be overwritten and got lost,
+                    /// and this usually is an error, since this will finish the thread,
+                    /// and for this the caller may not be ready.
+                    if (!shutdown_on_exception)
+                        DB::tryLogException(std::current_exception(), __PRETTY_FUNCTION__);
+
                     std::unique_lock lock(mutex);
                     if (!first_exception)
                         first_exception = std::current_exception(); // NOLINT
