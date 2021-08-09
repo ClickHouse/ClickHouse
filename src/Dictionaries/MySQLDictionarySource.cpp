@@ -11,6 +11,7 @@
 #include "registerDictionaries.h"
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Processors/Pipe.h>
 
 namespace DB
 {
@@ -131,13 +132,13 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-BlockInputStreamPtr MySQLDictionarySource::loadFromQuery(const String & query)
+Pipe MySQLDictionarySource::loadFromQuery(const String & query)
 {
-    return std::make_shared<MySQLWithFailoverBlockInputStream>(
-            pool, query, sample_block, settings);
+    return Pipe(std::make_shared<MySQLWithFailoverSource>(
+            pool, query, sample_block, settings));
 }
 
-BlockInputStreamPtr MySQLDictionarySource::loadAll()
+Pipe MySQLDictionarySource::loadAll()
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
@@ -146,7 +147,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadAll()
     return loadFromQuery(load_all_query);
 }
 
-BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
+Pipe MySQLDictionarySource::loadUpdatedAll()
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
@@ -156,14 +157,14 @@ BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
     return loadFromQuery(load_update_query);
 }
 
-BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
     return loadFromQuery(query);
 }
 
-BlockInputStreamPtr MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
@@ -284,8 +285,7 @@ std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    MySQLBlockInputStream block_input_stream(pool->get(), request, invalidate_sample_block, settings);
-    return readInvalidateQuery(block_input_stream);
+    return readInvalidateQuery(Pipe(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings)));
 }
 
 }
