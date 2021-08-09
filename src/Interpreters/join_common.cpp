@@ -492,11 +492,12 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 
 }
 
-NotJoined::NotJoined(const Block & saved_block_sample_,
+NotJoinedInputStream::NotJoinedInputStream(std::unique_ptr<RightColumnsFiller> filler_,
                      const Block & result_sample_block_,
                      size_t left_columns_count,
                      const LeftToRightKeyRemap & left_to_right_key_remap)
-    : saved_block_sample(saved_block_sample_)
+    : filler(std::move(filler_))
+    , saved_block_sample(filler->getEmptyBlock())
     , result_sample_block(materializeBlock(result_sample_block_))
 {
     for (size_t left_pos = 0; left_pos < left_columns_count; ++left_pos)
@@ -536,7 +537,7 @@ NotJoined::NotJoined(const Block & saved_block_sample_,
                         ErrorCodes::LOGICAL_ERROR);
 }
 
-void NotJoined::setRightIndex(size_t right_pos, size_t result_position)
+void NotJoinedInputStream::setRightIndex(size_t right_pos, size_t result_position)
 {
     if (!column_indices_right.contains(right_pos))
     {
@@ -547,7 +548,7 @@ void NotJoined::setRightIndex(size_t right_pos, size_t result_position)
         same_result_keys[result_position] = column_indices_right[right_pos];
 }
 
-void NotJoined::extractColumnChanges(size_t right_pos, size_t result_pos)
+void NotJoinedInputStream::extractColumnChanges(size_t right_pos, size_t result_pos)
 {
     auto src_props = getLowcardAndNullability(saved_block_sample.getByPosition(right_pos).column);
     auto dst_props = getLowcardAndNullability(result_sample_block.getByPosition(result_pos).column);
@@ -559,7 +560,7 @@ void NotJoined::extractColumnChanges(size_t right_pos, size_t result_pos)
         right_lowcard_changes.push_back({result_pos, dst_props.is_lowcard});
 }
 
-void NotJoined::correctLowcardAndNullability(Block & block)
+void NotJoinedInputStream::correctLowcardAndNullability(Block & block)
 {
     for (auto & [pos, added] : right_nullability_changes)
     {
@@ -587,7 +588,7 @@ void NotJoined::correctLowcardAndNullability(Block & block)
     }
 }
 
-void NotJoined::addLeftColumns(Block & block, size_t rows_added) const
+void NotJoinedInputStream::addLeftColumns(Block & block, size_t rows_added) const
 {
     for (size_t pos : column_indices_left)
     {
@@ -599,7 +600,7 @@ void NotJoined::addLeftColumns(Block & block, size_t rows_added) const
     }
 }
 
-void NotJoined::addRightColumns(Block & block, MutableColumns & columns_right) const
+void NotJoinedInputStream::addRightColumns(Block & block, MutableColumns & columns_right) const
 {
     for (const auto & pr : column_indices_right)
     {
@@ -609,7 +610,7 @@ void NotJoined::addRightColumns(Block & block, MutableColumns & columns_right) c
     }
 }
 
-void NotJoined::copySameKeys(Block & block) const
+void NotJoinedInputStream::copySameKeys(Block & block) const
 {
     for (const auto & pr : same_result_keys)
     {
@@ -617,6 +618,26 @@ void NotJoined::copySameKeys(Block & block) const
         auto & dst_column = block.getByPosition(pr.first).column;
         JoinCommon::changeColumnRepresentation(src_column, dst_column);
     }
+}
+
+Block NotJoinedInputStream::readImpl()
+
+{
+    Block right_block = filler->getEmptyBlock();
+    MutableColumns columns_right = right_block.cloneEmptyColumns();
+    size_t rows_added = filler->fillColumns(columns_right);
+    if (rows_added == 0)
+        return {};
+
+    addLeftColumns(right_block, rows_added);
+    addRightColumns(right_block, columns_right);
+    copySameKeys(right_block);
+    correctLowcardAndNullability(right_block);
+
+#ifndef NDEBUG
+    assertBlocksHaveEqualStructure(right_block, result_sample_block, getName());
+#endif
+    return right_block;
 }
 
 }

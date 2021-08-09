@@ -629,7 +629,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    /// If RIGHT or FULL save blocks with nulls for NonJoinedBlockInputStream
+    /// If RIGHT or FULL save blocks with nulls for NotJoinedInputStream
     UInt8 save_nullmap = 0;
     if (isRightOrFull(kind) && null_map)
     {
@@ -1468,21 +1468,15 @@ struct AdderNonJoined
 
 
 /// Stream from not joined earlier rows of the right table.
-class NonJoinedBlockInputStream final : public NotJoined
+class NotJoinedHash final : public NotJoinedInputStream::RightColumnsFiller
 {
 public:
-    NonJoinedBlockInputStream(
-        const HashJoin & parent_,
-        const Block & result_sample_block_,
-        size_t left_columns_count,
-        UInt64 max_block_size_)
-        : NotJoined(parent_.savedBlockSample(), result_sample_block_,
-                    left_columns_count, parent_.table_join->leftToRightKeyRemap())
-        , parent(parent_)
-        , max_block_size(max_block_size_)
+    NotJoinedHash(const HashJoin & parent_, UInt64 max_block_size_)
+        : parent(parent_), max_block_size(max_block_size_)
     {}
 
-protected:
+    Block getEmptyBlock() override { return parent.savedBlockSample().cloneEmpty(); }
+
     size_t fillColumns(MutableColumns & columns_right) override
     {
         size_t rows_added = 0;
@@ -1594,7 +1588,8 @@ BlockInputStreamPtr HashJoin::createStreamWithNonJoinedRows(const Block & result
     }
 
     size_t left_columns_count = result_sample_block.columns() - required_right_keys.columns() - sample_block_with_columns_to_add.columns();
-    return std::make_shared<NonJoinedBlockInputStream>(*this, result_sample_block, left_columns_count, max_block_size);
+    auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size);
+    return std::make_shared<NotJoinedInputStream>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
 }
 
 void HashJoin::reuseJoinedData(const HashJoin & join)
