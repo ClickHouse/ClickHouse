@@ -193,6 +193,7 @@ private:
     /// UTC offset at the beginning of the first supported year.
     Time offset_at_start_of_lut;
     bool offset_is_whole_number_of_hours_during_epoch;
+    bool offset_is_whole_number_of_minutes_during_epoch;
 
     /// Time zone name.
     std::string time_zone;
@@ -464,7 +465,7 @@ public:
 
     inline unsigned toSecond(Time t) const
     {
-        if (offset_is_whole_number_of_hours_during_epoch)
+        if (likely(offset_is_whole_number_of_minutes_during_epoch))
         {
             Time res = t % 60;
             if (likely(res >= 0))
@@ -478,15 +479,12 @@ public:
         if (time >= lut[index].time_at_offset_change())
             time += lut[index].amount_of_offset_change();
 
-        Time res = time % 60;
-        if (likely(res >= 0))
-            return res;
-        return res + 60;
+        return time % 60;
     }
 
     inline unsigned toMinute(Time t) const
     {
-        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
+        if (likely(t >= 0 && offset_is_whole_number_of_hours_during_epoch))
             return (t / 60) % 60;
 
         /// To consider the DST changing situation within this day
