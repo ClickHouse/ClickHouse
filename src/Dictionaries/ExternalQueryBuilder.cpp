@@ -65,10 +65,17 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
 
 std::string ExternalQueryBuilder::composeLoadAllQuery() const
 {
-    WriteBufferFromOwnString out;
-    composeLoadAllQuery(out);
-    writeChar(';', out);
-    return out.str();
+    if (query.empty())
+    {
+        WriteBufferFromOwnString out;
+        composeLoadAllQuery(out);
+        writeChar(';', out);
+        return out.str();
+    }
+    else
+    {
+        return query;
+    }
 }
 
 void ExternalQueryBuilder::composeLoadAllQuery(WriteBuffer & out) const

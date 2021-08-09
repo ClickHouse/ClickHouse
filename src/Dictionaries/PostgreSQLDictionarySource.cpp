@@ -198,7 +198,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             .db = config.getString(fmt::format("{}.db", settings_config_prefix), ""),
             .schema = config.getString(fmt::format("{}.schema", settings_config_prefix), ""),
             .table = config.getString(fmt::format("{}.table", settings_config_prefix), ""),
-            .query = config.getString(fmt::format("{}.where", settings_config_prefix), ""),
+            .query = config.getString(fmt::format("{}.query", settings_config_prefix), ""),
             .where = config.getString(fmt::format("{}.where", settings_config_prefix), ""),
             .invalidate_query = config.getString(fmt::format("{}.invalidate_query", settings_config_prefix), ""),
             .update_field = config.getString(fmt::format("{}.update_field", settings_config_prefix), ""),
