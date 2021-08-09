@@ -36,7 +36,7 @@ namespace DB
         EVP_AEAD_CTX_zero(&ctx);
         const int ok = EVP_AEAD_CTX_init(&ctx, EVP_aead_aes_128_gcm(),
                                          reinterpret_cast<const uint8_t*>(keygen_key.data()), keygen_key.size(),
-                                         16 /* tag size */, nullptr);я
+                                         16 /* tag size */, nullptr);
         if (!ok)
             throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
     }
