@@ -300,6 +300,13 @@ void ThreadStatus::finalizePerformanceCounters()
     }
 }
 
+void ThreadStatus::resetPerformanceCountersLastUsage()
+{
+    *last_rusage = RUsageCounters::current();
+    if (taskstats)
+        taskstats->reset();
+}
+
 void ThreadStatus::initQueryProfiler()
 {
     if (!query_profiled_enabled)
@@ -482,7 +489,7 @@ static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
     return res;
 }
 
-void ThreadStatus::logToQueryViewsLog(const ViewInfo & vinfo)
+void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
 {
     auto query_context_ptr = query_context.lock();
     if (!query_context_ptr)
