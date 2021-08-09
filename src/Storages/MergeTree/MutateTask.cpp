@@ -691,7 +691,7 @@ class PartMergerWriter
 {
 public:
 
-    PartMergerWriter(MutationContextPtr ctx_) : ctx(ctx_), projections(ctx->metadata_snapshot->projections)
+    explicit PartMergerWriter(MutationContextPtr ctx_) : ctx(ctx_), projections(ctx->metadata_snapshot->projections)
     {
 
     }
@@ -728,6 +728,7 @@ public:
                 return false;
             }
         }
+        return false;
     }
 
 private:
@@ -912,6 +913,7 @@ public:
                 return false;
             }
         }
+        return false;
     }
 
 private:
@@ -1021,6 +1023,7 @@ public:
                 return false;
             }
         }
+        return false;
     }
 
 private:
@@ -1072,7 +1075,7 @@ private:
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
 
-        auto compression_codec = ctx->source_part->default_codec;
+        ctx->compression_codec = ctx->source_part->default_codec;
 
         if (ctx->mutating_stream)
         {
@@ -1091,7 +1094,7 @@ private:
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
                 mutation_header,
-                compression_codec,
+                ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 nullptr,
                 ctx->source_part->index_granularity,
@@ -1216,6 +1219,7 @@ bool MutateTask::execute()
             return false;
         }
     }
+    return false;
 }
 
 
