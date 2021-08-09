@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Core/ExternalResultDescription.h>
 
 
@@ -22,24 +22,22 @@ void authenticate(Poco::MongoDB::Connection & connection, const std::string & da
 std::unique_ptr<Poco::MongoDB::Cursor> createCursor(const std::string & database, const std::string & collection, const Block & sample_block_to_select);
 
 /// Converts MongoDB Cursor to a stream of Blocks
-class MongoDBBlockInputStream final : public IBlockInputStream
+class MongoDBSource final : public SourceWithProgress
 {
 public:
-    MongoDBBlockInputStream(
+    MongoDBSource(
         std::shared_ptr<Poco::MongoDB::Connection> & connection_,
         std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
         const Block & sample_block,
         UInt64 max_block_size_,
         bool strict_check_names_ = false);
 
-    ~MongoDBBlockInputStream() override;
+    ~MongoDBSource() override;
 
     String getName() const override { return "MongoDB"; }
 
-    Block getHeader() const override { return description.sample_block.cloneEmpty(); }
-
 private:
-    Block readImpl() override;
+    Chunk generate() override;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
     std::unique_ptr<Poco::MongoDB::Cursor> cursor;
