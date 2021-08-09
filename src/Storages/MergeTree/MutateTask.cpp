@@ -1104,8 +1104,7 @@ private:
             ctx->mutating_stream->readPrefix();
             ctx->out->writePrefix();
 
-            /// FIXME
-            std::vector<MergeTreeProjectionPtr> projections_to_build(ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end());
+            ctx->projections_to_build = std::vector<MergeTreeProjectionPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
             part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
         }
