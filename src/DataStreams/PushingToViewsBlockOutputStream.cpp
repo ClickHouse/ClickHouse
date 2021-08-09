@@ -200,6 +200,7 @@ Block PushingToViewsBlockOutputStream::getHeader() const
         return metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals());
 }
 
+/// Auxiliary function to do the setup and teardown to run a view individually and collect its metrics inside the view ThreadStatus
 void inline runViewStage(ViewRuntimeData & view, const std::string & action, std::function<void()> stage)
 {
     Stopwatch watch;
@@ -262,7 +263,9 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     if (!settings.deduplicate_blocks_in_dependent_materialized_views && replicated_output && replicated_output->lastBlockIsDuplicate())
         return;
 
-    const size_t max_threads = std::min(views.size(), (settings.parallel_view_processing ? static_cast<size_t>(settings.max_threads) : 1));
+    size_t max_threads = 1;
+    if (settings.parallel_view_processing)
+        max_threads = settings.max_threads ? std::min(static_cast<size_t>(settings.max_threads), views.size()) : views.size();
     if (max_threads > 1)
     {
         ThreadPool pool(max_threads);
@@ -318,7 +321,9 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     /// In could have been done in PushingToViewsBlockOutputStream::process, however
     /// it is not good if insert into main table fail but into view succeed.
     const Settings & settings = getContext()->getSettingsRef();
-    const size_t max_threads = std::min(views.size(), (settings.parallel_view_processing ? static_cast<size_t>(settings.max_threads) : 1));
+    size_t max_threads = 1;
+    if (settings.parallel_view_processing)
+        max_threads = settings.max_threads ? std::min(static_cast<size_t>(settings.max_threads), views.size()) : views.size();
     bool exception_happened = false;
     if (max_threads > 1)
     {
@@ -343,7 +348,8 @@ void PushingToViewsBlockOutputStream::writeSuffix()
                 {
                     LOG_TRACE(
                         log,
-                        "Pushing from {} to {} took {} ms.",
+                        "Pushing (parallel {}) from {} to {} took {} ms.",
+                        max_threads,
                         storage->getStorageID().getNameForLogs(),
                         view.table_id.getNameForLogs(),
                         view.runtime_stats.elapsed_ms);
@@ -364,7 +370,18 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             }
             runViewStage(view, stageStep, [&] { processSuffix(view); });
             if (view.exception)
+            {
                 exception_happened = true;
+            }
+            else
+            {
+                LOG_TRACE(
+                    log,
+                    "Pushing (sequentially) from {} to {} took {} ms.",
+                    storage->getStorageID().getNameForLogs(),
+                    view.table_id.getNameForLogs(),
+                    view.runtime_stats.elapsed_ms);
+            }
         }
     }
     if (exception_happened)
