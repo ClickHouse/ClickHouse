@@ -5,7 +5,7 @@
 #include <variant>
 #include <optional>
 
-#include <sparsehash/sparse_hash_map>
+#include <Common/SparseHashMap.h>
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -124,14 +124,6 @@ private:
         dictionary_key_type == DictionaryKeyType::simple,
         HashMap<UInt64, Value>,
         HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
-
-#if !defined(ARCADIA_BUILD)
-    template <typename Key, typename Value>
-    using SparseHashMap = google::sparse_hash_map<Key, Value, DefaultHash<Key>>;
-#else
-        template <typename Key, typename Value>
-        using SparseHashMap = google::sparsehash::sparse_hash_map<Key, Value, DefaultHash<Key>>;
-#endif
 
     template <typename Value>
     using CollectionTypeSparse = std::conditional_t<
