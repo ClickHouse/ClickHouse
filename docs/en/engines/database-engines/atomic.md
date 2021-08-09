@@ -29,7 +29,7 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
 
 ### DROP/DETACH TABLE {#drop-detach-table}
 
-On `DROP TABLE` no data is removed, database `Atomic` just marks table as dropped by moving metadata to `/clickhouse_path/metadata_dropped/` and notifies background thread. Delay before final table data deletion is specify by [database_atomic_delay_before_drop_table_sec](../../operations/server-configuration-parameters/settings.md#database_atomic_delay_before_drop_table_sec) setting.
+On `DROP TABLE` no data is removed, database `Atomic` just marks table as dropped by moving metadata to `/clickhouse_path/metadata_dropped/` and notifies background thread. Delay before final table data deletion is specified by the [database_atomic_delay_before_drop_table_sec](../../operations/server-configuration-parameters/settings.md#database_atomic_delay_before_drop_table_sec) setting.
 You can specify synchronous mode using `SYNC` modifier. Use the [database_atomic_wait_for_drop_and_detach_synchronously](../../operations/settings/settings.md#database_atomic_wait_for_drop_and_detach_synchronously) setting to do this. In this case `DROP` waits for running `SELECT`, `INSERT` and other queries which are using the table to finish. Table will be actually removed when it's not in use.
 
 ### EXCHANGE TABLES/DICTIONARIES {#exchange-tables}
