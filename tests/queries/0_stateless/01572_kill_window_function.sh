@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e -o pipefail
 
 # Run a test query that takes very long to run.
-query_id="01572_kill_window_function"
+query_id="01572_kill_window_function-$CLICKHOUSE_DATABASE"
 $CLICKHOUSE_CLIENT --query_id="$query_id" --query "SELECT count(1048575) OVER (PARTITION BY intDiv(NULL, number) ORDER BY number DESC NULLS FIRST ROWS BETWEEN CURRENT ROW AND 1048575 FOLLOWING) FROM numbers(255, 1048575)" >/dev/null 2>&1 &
 client_pid=$!
 echo Started
