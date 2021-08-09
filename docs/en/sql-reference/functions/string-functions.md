@@ -77,9 +77,9 @@ SELECT leftPad('abc', 7, '*'), leftPad('def', 7);
 Result:
 
 ``` text
-┌─leftPad('abc', 7, '*')─┐
-│ ****abc                │
-└────────────────────────┘
+┌─leftPad('abc', 7, '*')─┬─leftPad('def', 7)─┐
+│ ****abc                │     def           │
+└────────────────────────┴───────────────────┘
 ```
 
 ## leftPadUTF8 {#leftpadutf8}
