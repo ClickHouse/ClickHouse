@@ -102,7 +102,7 @@ leftPadUTF8('string','length'[, 'pad_string'])
 
 **Returned value(s)**
 
--   The resulting UTF-8 string reaches the given length.
+-   The resulting UTF-8 string of the given length.
 
 Type: [String](../data-types/string.md).
 
