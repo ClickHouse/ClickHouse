@@ -543,6 +543,7 @@ include (cmake/find/nuraft.cmake)
 include (cmake/find/yaml-cpp.cmake)
 include (cmake/find/s2geometry.cmake)
 include (cmake/find/nlp.cmake)
+include (cmake/find/bzip2.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
