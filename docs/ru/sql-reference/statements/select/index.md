@@ -11,7 +11,7 @@ toc_title: "Обзор"
 
 ``` sql
 [WITH expr_list|(subquery)]
-SELECT [DISTINCT] expr_list
+SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
 [SAMPLE sample_coeff]
 [ARRAY JOIN ...]
@@ -34,6 +34,8 @@ SELECT [DISTINCT] expr_list
 Особенности каждой необязательной секции рассматриваются в отдельных разделах, которые перечислены в том же порядке, в каком они выполняются:
 
 -   [Секция WITH](with.md)
+-   [Секция SELECT](#select-clause)
+-   [Секция DISTINCT](distinct.md)
 -   [Секция FROM](from.md)
 -   [Секция SAMPLE](sample.md)
 -   [Секция JOIN](join.md)
@@ -42,8 +44,6 @@ SELECT [DISTINCT] expr_list
 -   [Секция GROUP BY](group-by.md)
 -   [Секция LIMIT BY](limit-by.md)
 -   [Секция HAVING](having.md)
--   [Секция SELECT](#select-clause)
--   [Секция DISTINCT](distinct.md)
 -   [Секция LIMIT](limit.md)
     [Секция OFFSET](offset.md)
 -   [Секция UNION ALL](union.md)

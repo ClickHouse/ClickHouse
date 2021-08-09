@@ -13,7 +13,7 @@ toc_title: Overview
 
 ``` sql
 [WITH expr_list|(subquery)]
-SELECT [DISTINCT] expr_list
+SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
 [SAMPLE sample_coeff]
 [ARRAY JOIN ...]
@@ -36,6 +36,8 @@ All clauses are optional, except for the required list of expressions immediatel
 Specifics of each optional clause are covered in separate sections, which are listed in the same order as they are executed:
 
 -   [WITH clause](../../../sql-reference/statements/select/with.md)
+-   [SELECT clause](#select-clause)
+-   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
 -   [FROM clause](../../../sql-reference/statements/select/from.md)
 -   [SAMPLE clause](../../../sql-reference/statements/select/sample.md)
 -   [JOIN clause](../../../sql-reference/statements/select/join.md)
@@ -44,8 +46,6 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
 -   [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 -   [HAVING clause](../../../sql-reference/statements/select/having.md)
--   [SELECT clause](#select-clause)
--   [DISTINCT clause](../../../sql-reference/statements/select/distinct.md)
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
 -   [OFFSET clause](../../../sql-reference/statements/select/offset.md)
 -   [UNION clause](../../../sql-reference/statements/select/union.md)
