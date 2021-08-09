@@ -2085,6 +2085,11 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
 {
     data = join.data;
     from_storage_join = true;
+
+    bool multiple_disjuncts = key_names_left.size() > 1;
+    if (multiple_disjuncts)
+        throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
     for (auto & map : data->maps)
     {
         joinDispatch(kind, strictness, map, [this](auto kind_, auto strictness_, auto & map_)
