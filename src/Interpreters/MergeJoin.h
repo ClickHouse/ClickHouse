@@ -38,7 +38,7 @@ public:
     BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
 
 private:
-    friend class NonMergeJoinedBlockInputStream;
+    friend class NotJoinedMerge;
 
     struct NotProcessed : public ExtraBlock
     {

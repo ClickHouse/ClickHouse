@@ -65,12 +65,24 @@ void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.
-class NotJoined : public IBlockInputStream
+class NotJoinedInputStream : public IBlockInputStream
 {
 public:
     using LeftToRightKeyRemap = std::unordered_map<String, String>;
 
-    NotJoined(const Block & saved_block_sample_,
+    /// Returns non joined columns from right part of join
+    class RightColumnsFiller
+    {
+    public:
+        /// Create empty block for right part
+        virtual Block getEmptyBlock() = 0;
+        /// Fill columns from right part of join with not joined rows
+        virtual size_t fillColumns(MutableColumns & columns_right) = 0;
+
+        virtual ~RightColumnsFiller() = default;
+    };
+
+    NotJoinedInputStream(std::unique_ptr<RightColumnsFiller> filler_,
               const Block & result_sample_block_,
               size_t left_columns_count,
               const LeftToRightKeyRemap & left_to_right_key_remap);
@@ -79,28 +91,7 @@ public:
     Block getHeader() const override { return result_sample_block; }
 
 protected:
-    Block readImpl() override final
-    {
-        Block result = saved_block_sample.cloneEmpty();
-        MutableColumns columns_right = result.mutateColumns();
-
-        size_t rows_added = fillColumns(columns_right);
-        if (rows_added == 0)
-            return {};
-
-        Block res = result_sample_block.cloneEmpty();
-        addLeftColumns(res, rows_added);
-        addRightColumns(res, columns_right);
-        copySameKeys(res);
-        correctLowcardAndNullability(res);
-
-#ifndef NDEBUG
-        assertBlocksHaveEqualStructure(res, result_sample_block, getName());
-#endif
-        return res;
-    }
-
-    virtual size_t fillColumns(MutableColumns & columns_right) = 0;
+    Block readImpl() override final;
 
 private:
     void extractColumnChanges(size_t right_pos, size_t result_pos);
@@ -108,6 +99,8 @@ private:
     void addLeftColumns(Block & block, size_t rows_added) const;
     void addRightColumns(Block & block, MutableColumns & columns_right) const;
     void copySameKeys(Block & block) const;
+
+    std::unique_ptr<RightColumnsFiller> filler;
 
     /// Right block saved in Join
     Block saved_block_sample;

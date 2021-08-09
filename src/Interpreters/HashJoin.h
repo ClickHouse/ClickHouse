@@ -337,7 +337,7 @@ public:
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
 
 private:
-    friend class NonJoinedBlockInputStream;
+    friend class NotJoinedHash;
     friend class JoinSource;
 
     std::shared_ptr<TableJoin> table_join;

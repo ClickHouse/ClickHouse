@@ -1028,24 +1028,15 @@ void MergeJoin::initRightTableWriter()
 }
 
 /// Stream from not joined earlier rows of the right table.
-class NonMergeJoinedBlockInputStream final : public NotJoined
+class NotJoinedMerge final : public NotJoinedInputStream::RightColumnsFiller
 {
 public:
-    NonMergeJoinedBlockInputStream(const MergeJoin & parent_,
-                                   const Block & result_sample_block,
-                                   size_t left_columns_count,
-                                   UInt64 max_block_size_)
-        : NotJoined(parent_.modifyRightBlock(parent_.right_sample_block),
-                    result_sample_block,
-                    left_columns_count,
-                    parent_.table_join->leftToRightKeyRemap())
-        , parent(parent_)
-        , max_block_size(max_block_size_)
+    NotJoinedMerge(const MergeJoin & parent_, UInt64 max_block_size_)
+        : parent(parent_), max_block_size(max_block_size_)
     {}
 
-    String getName() const override { return "NonMergeJoined"; }
+    Block getEmptyBlock() override { return parent.modifyRightBlock(parent.right_sample_block).cloneEmpty(); }
 
-protected:
     size_t fillColumns(MutableColumns & columns_right) override
     {
         const RowBitmaps & bitmaps = *parent.used_rows_bitmap;
@@ -1100,9 +1091,12 @@ private:
 
 BlockInputStreamPtr MergeJoin::createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const
 {
-    size_t left_columns_count = result_sample_block.columns() - right_columns_to_add.columns();
     if (table_join->strictness() == ASTTableJoin::Strictness::All && (is_right || is_full))
-        return std::make_shared<NonMergeJoinedBlockInputStream>(*this, result_sample_block, left_columns_count, max_block_size);
+    {
+        size_t left_columns_count = result_sample_block.columns() - right_columns_to_add.columns();
+        auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
+        return std::make_shared<NotJoinedInputStream>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
+    }
     return {};
 }
 
