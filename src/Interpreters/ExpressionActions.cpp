@@ -344,7 +344,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
             if (action.node->column)
             {
-                /// Do not execut function if it's result is already known.
+                /// Do not execute function if it's result is already known.
                 res_column.column = action.node->column->cloneResized(num_rows);
                 break;
             }
