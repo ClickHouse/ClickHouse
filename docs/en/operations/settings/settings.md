@@ -768,6 +768,26 @@ Possible value:
 
 Default value: 2013265920.
 
+## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
+
+The interval in seconds for ClickHouse to execute the cleanup old temporary directories.
+
+Possible value:
+
+-   Any positive integer.
+
+Default value: 60.
+
+## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
+
+The interval in seconds for ClickHouse to execute the cleanup old parts, WALs, and mutations.
+
+Possible value:
+
+-   Any positive integer.
+
+Default value: 1.
+
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 The minimum data volume required for using direct I/O access to the storage disk.
