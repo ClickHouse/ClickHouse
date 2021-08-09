@@ -415,22 +415,17 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ClusterPtr cluster = getCluster();
     query_info.cluster = cluster;
 
-    size_t nodes = getClusterQueriedNodes(settings, cluster);
-
     /// Always calculate optimized cluster here, to avoid conditions during read()
     /// (Anyway it will be calculated in the read())
-    if (nodes > 1 && settings.optimize_skip_unused_shards)
+    if (getClusterQueriedNodes(settings, cluster) > 1 && settings.optimize_skip_unused_shards)
     {
         ClusterPtr optimized_cluster = getOptimizedCluster(local_context, metadata_snapshot, query_info.query);
         if (optimized_cluster)
         {
             LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
                     makeFormattedListOfShards(optimized_cluster));
-
             cluster = optimized_cluster;
             query_info.optimized_cluster = cluster;
-
-            nodes = getClusterQueriedNodes(settings, cluster);
         }
         else
         {
@@ -465,7 +460,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     /// If there is only one node, the query can be fully processed by the
     /// shard, initiator will work as a proxy only.
-    if (nodes == 1)
+    if (getClusterQueriedNodes(settings, cluster) == 1)
     {
         /// In case the query was processed to
         /// WithMergeableStateAfterAggregation/WithMergeableStateAfterAggregationAndLimit
@@ -473,13 +468,6 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         /// we cannot return Complete (will break aliases and similar),
         /// relevant for Distributed over Distributed
         return std::max(to_stage, QueryProcessingStage::Complete);
-    }
-    else if (nodes == 0)
-    {
-        /// In case of 0 shards, the query should be processed fully on the initiator,
-        /// since we need to apply aggregations.
-        /// That's why we need to return FetchColumns.
-        return QueryProcessingStage::FetchColumns;
     }
 
     auto optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
