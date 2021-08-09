@@ -41,8 +41,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Основные применения `Join` таблиц:
 
--   Используйте таблицу как правую в секции `JOIN`.
--   Используйте функцию [joinGet](../../../engines/table-engines/special/join.md#joinget), которая позволяет извлекать данные из таблицы таким же образом как из словаря.
+-   Использование в правой части секции `JOIN`.
+-   Извлечение данных из таблицы таким же образом как из словаря с помощью функции [joinGet](../../../engines/table-engines/special/join.md#joinget).
 
 ### Удаление данных {#deleting-data}
 
