@@ -1,6 +1,7 @@
 #pragma once
 
 #if defined(ARCADIA_BUILD)
+#undef HASH_FUN_H
 #define HASH_FUN_H <unordered_map>
 #endif
 
