@@ -16,7 +16,7 @@ namespace DB
 
 class ReplicatedMergeTreeSink;
 
-struct ViewInfo
+struct ViewRuntimeData
 {
     const ASTPtr query;
     StorageID table_id;
@@ -61,13 +61,11 @@ private:
     ASTPtr query_ptr;
     Stopwatch main_watch;
 
-    std::vector<ViewInfo> views;
+    std::vector<ViewRuntimeData> views;
     ContextMutablePtr select_context;
     ContextMutablePtr insert_context;
 
-    void process(const Block & block, ViewInfo & view);
-    static void processPrefix(ViewInfo & view);
-    void processSuffix(ViewInfo & view);
+    void process(const Block & block, ViewRuntimeData & view);
     void checkExceptionsInViews();
     void logQueryViews();
 };

@@ -37,7 +37,7 @@ struct RUsageCounters;
 struct PerfEventsCounters;
 class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
-struct ViewInfo;
+struct ViewRuntimeData;
 class QueryViewsLog;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
@@ -216,6 +216,9 @@ public:
     /// Update ProfileEvents and dumps info to system.query_thread_log
     void finalizePerformanceCounters();
 
+    /// Set the counters last usage to now
+    void resetPerformanceCountersLastUsage();
+
     /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
@@ -231,7 +234,7 @@ protected:
 
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
 
-    void logToQueryViewsLog(const ViewInfo & vinfo);
+    void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 
