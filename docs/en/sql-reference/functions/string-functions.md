@@ -62,7 +62,7 @@ leftPad('string', 'length'[, 'pad_string'])
 
 **Returned value(s)**
 
--   The resulting string reaches the given length.
+-   The resulting string of the given length.
 
 Type: [String](../data-types/string.md).
 
