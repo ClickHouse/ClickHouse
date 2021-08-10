@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
 
 #include <DataStreams/materializeBlock.h>
 
@@ -111,6 +112,8 @@ void convertColumnToNullable(ColumnWithTypeAndName & column)
 
     if (!column.column)
         return;
+
+    column.column = column.column->convertToFullColumnIfConst();
 
     if (column.column->lowCardinality())
     {
