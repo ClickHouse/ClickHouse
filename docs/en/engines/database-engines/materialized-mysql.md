@@ -44,7 +44,7 @@ For the correct work of `MaterializeMySQL`, there are a few mandatory `MySQL`-si
 
 **Example**
 
-```
+```sql
 CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***')
      SETTINGS
         allows_query_when_mysql_lost=true,
