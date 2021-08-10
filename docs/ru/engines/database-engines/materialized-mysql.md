@@ -41,7 +41,7 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 
 **Пример**
 
-```
+```sql
 CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***')
      SETTINGS
         allows_query_when_mysql_lost=true,
@@ -182,4 +182,3 @@ SELECT * FROM mysql.test;
 │ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```
-
