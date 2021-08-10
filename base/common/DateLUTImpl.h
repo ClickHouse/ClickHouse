@@ -257,7 +257,7 @@ private:
         static_assert(std::is_integral_v<T> && std::is_integral_v<Divisor>);
         assert(divisor > 0);
 
-        if (likely(offset_is_whole_number_of_hours_during_epoch || (offset_is_whole_number_of_minutes_during_epoch && (divisor % 60 == 0))))
+        if (likely(offset_is_whole_number_of_hours_during_epoch))
         {
             if (likely(x >= 0))
                 return x / divisor * divisor;
@@ -500,10 +500,10 @@ public:
     }
 
     /// NOTE: Assuming timezone offset is a multiple of 15 minutes.
-    inline Time toStartOfMinute(Time t) const { return roundDown(t, 60); }
-    inline Time toStartOfFiveMinute(Time t) const { return roundDown(t, 300); }
-    inline Time toStartOfFifteenMinutes(Time t) const { return roundDown(t, 900); }
-    inline Time toStartOfTenMinutes(Time t) const { return roundDown(t, 600); }
+    inline Time toStartOfMinute(Time t) const { return toStartOfMinuteInterval(t, 1); }
+    inline Time toStartOfFiveMinute(Time t) const { return toStartOfMinuteInterval(t, 5); }
+    inline Time toStartOfFifteenMinutes(Time t) const { return toStartOfMinuteInterval(t, 15); }
+    inline Time toStartOfTenMinutes(Time t) const { return toStartOfMinuteInterval(t, 10); }
     inline Time toStartOfHour(Time t) const { return roundDown(t, 3600); }
 
     /** Number of calendar day since the beginning of UNIX epoch (1970-01-01 is zero)
@@ -902,25 +902,24 @@ public:
 
     inline Time toStartOfMinuteInterval(Time t, UInt64 minutes) const
     {
-        if (minutes == 1)
-            return toStartOfMinute(t);
+        UInt64 divisor = 60 * minutes;
+        if (likely(offset_is_whole_number_of_minutes_during_epoch))
+        {
+            if (likely(t >= 0))
+                return t / divisor * divisor;
+            return (t + 1 - divisor) / divisor * divisor;
+        }
 
-        /** In contrast to "toStartOfHourInterval" function above,
-          * the minute intervals are not aligned to the midnight.
-          * You will get unexpected results if for example, you round down to 60 minute interval
-          * and there was a time shift to 30 minutes.
-          *
-          * But this is not specified in docs and can be changed in future.
-          */
-
-        UInt64 seconds = 60 * minutes;
-        return roundDown(t, seconds);
+        Time date = find(t).date;
+        return date + (t - date) / divisor * divisor;
     }
 
     inline Time toStartOfSecondInterval(Time t, UInt64 seconds) const
     {
         if (seconds == 1)
             return t;
+        if (seconds % 60 == 0)
+            return toStartOfMinuteInterval(t, seconds / 60);
 
         return roundDown(t, seconds);
     }
