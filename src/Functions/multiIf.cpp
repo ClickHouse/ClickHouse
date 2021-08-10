@@ -283,7 +283,7 @@ private:
 
         IColumn::Filter mask(arguments[0].column->size(), 1);
         MaskInfo mask_info = {.has_ones = true, .has_zeros = false};
-        IColumn::Filter condition_mask(arguments[0].column->size(), 1);
+        IColumn::Filter condition_mask(arguments[0].column->size());
         MaskInfo condition_mask_info = {.has_ones = true, .has_zeros = false};
 
         int i = 1;
@@ -298,7 +298,8 @@ private:
             }
             else
             {
-                condition_mask_info = extractMask(mask, cond_column, condition_mask);
+                copyMask(mask, condition_mask);
+                condition_mask_info = extractMask(condition_mask, cond_column);
                 maskedExecute(arguments[i], condition_mask, condition_mask_info);
             }
 
@@ -312,7 +313,7 @@ private:
 
             /// Extract mask only if it make sense.
             if (condition_mask_info.has_ones)
-                mask_info = extractMask<true>(mask, cond_column, mask);
+                mask_info = extractInvertedMask(mask, cond_column);
 
             /// mask is a inverted disjunction of previous conditions and if it doesn't have once, we don't need to execute the rest arguments.
             if (!mask_info.has_ones)

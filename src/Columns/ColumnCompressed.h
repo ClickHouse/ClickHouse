@@ -89,7 +89,7 @@ public:
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
     void updateWeakHash32(WeakHash32 &) const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }
-    ColumnPtr filter(const Filter &, ssize_t, bool) const override { throwMustBeDecompressed(); }
+    ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeDecompressed(); }
     void expand(const Filter &, bool) override { throwMustBeDecompressed(); }
     ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeDecompressed(); }
     ColumnPtr index(const IColumn &, size_t) const override { throwMustBeDecompressed(); }

@@ -322,7 +322,7 @@ static bool isCompilableConstant(const ActionsDAG::Node & node)
     return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
 }
 
-static bool isCompilableFunction(const ActionsDAG::Node & node)
+static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return false;
@@ -334,7 +334,7 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
     {
         for (const auto & child : node.children)
         {
-            if (child->lazy_execution == ActionsDAG::LazyExecution::ENABLED)
+            if (lazy_executed_nodes.contains(child))
                 return false;
         }
     }
@@ -376,7 +376,7 @@ static CompileDAG getCompilableDAG(
         const auto * node = frame.node;
 
         bool is_compilable_constant = isCompilableConstant(*node);
-        bool is_compilable_function = isCompilableFunction(*node);
+        bool is_compilable_function = isCompilableFunction(*node, {});
 
         if (!is_compilable_function || is_compilable_constant)
         {
@@ -439,7 +439,7 @@ static CompileDAG getCompilableDAG(
     return dag;
 }
 
-void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
+void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     struct Data
     {
@@ -455,7 +455,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
     for (const auto & node : nodes)
     {
-        bool node_is_compilable_in_isolation = isCompilableFunction(node) && !isCompilableConstant(node);
+        bool node_is_compilable_in_isolation = isCompilableFunction(node, lazy_executed_nodes) && !isCompilableConstant(node);
         node_to_data[&node].is_compilable_in_isolation = node_is_compilable_in_isolation;
     }
 

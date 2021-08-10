@@ -53,15 +53,13 @@ ColumnPtr ColumnConst::removeLowCardinality() const
     return ColumnConst::create(data->convertToFullColumnIfLowCardinality(), s);
 }
 
-ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/, bool inverted) const
+ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/) const
 {
     if (s != filt.size())
         throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column (" + toString(s) + ")",
             ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     size_t new_size = countBytesInFilter(filt);
-    if (inverted)
-        new_size = filt.size() - new_size;
     return ColumnConst::create(data, new_size);
 }
 

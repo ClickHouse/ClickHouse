@@ -235,7 +235,7 @@ public:
       * If inverted is true, inverted filter will be used.
       */
     using Filter = PaddedPODArray<UInt8>;
-    virtual Ptr filter(const Filter & filt, ssize_t result_size_hint, bool inverted = false) const = 0;
+    virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /** Expand column by mask inplace. After expanding column will
       * satisfy the following: if we filter it by given mask, we will

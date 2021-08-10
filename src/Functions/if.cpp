@@ -53,15 +53,28 @@ static inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, co
     bool a_is_short = a.size() < size;
     bool b_is_short = b.size() < size;
 
-    size_t a_index = 0;
-    size_t b_index = 0;
-
-    for (size_t i = 0; i < size; ++i)
+    if (a_is_short && b_is_short)
     {
-        if (cond[i])
-            res[i] = a_is_short ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(a[i]);
-        else
-            res[i] = b_is_short ? static_cast<ResultType>(b[b_index++]) : static_cast<ResultType>(b[i]);
+        size_t a_index = 0, b_index = 0;
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[b_index++]);
+    }
+    else if (a_is_short)
+    {
+        size_t a_index = 0;
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[i]);
+    }
+    else if (b_is_short)
+    {
+        size_t b_index = 0;
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index++]);
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
     }
 }
 
@@ -70,9 +83,17 @@ static inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, 
 {
     size_t size = cond.size();
     bool a_is_short = a.size() < size;
-    size_t a_index = 0;
-    for (size_t i = 0; i < size; ++i)
-        res[i] = !cond[i] ? static_cast<ResultType>(b) : a_is_short ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(a[i]);
+    if (a_is_short)
+    {
+        size_t a_index = 0;
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b);
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
+    }
 }
 
 template <typename ArrayCond, typename A, typename ArrayB, typename ArrayResult, typename ResultType>
@@ -80,9 +101,17 @@ static inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB 
 {
     size_t size = cond.size();
     bool b_is_short = b.size() < size;
-    size_t b_index = 0;
-    for (size_t i = 0; i < size; ++i)
-        res[i] = cond[i] ? static_cast<ResultType>(a) : b_is_short ? static_cast<ResultType>(b[b_index++]) : static_cast<ResultType>(b[i]);
+    if (b_is_short)
+    {
+        size_t b_index = 0;
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index++]);
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
+    }
 }
 
 template <typename A, typename B, typename ResultType>
@@ -956,9 +985,10 @@ private:
         }
 
         IColumn::Filter mask(arguments[0].column->size(), 1);
-        auto mask_info = extractMaskInplace(mask, arguments[0].column);
+        auto mask_info = extractMask(mask, arguments[0].column);
         maskedExecute(arguments[1], mask, mask_info);
-        maskedExecute(arguments[2], mask, mask_info, /*inverted=*/true);
+        inverseMask(mask, mask_info);
+        maskedExecute(arguments[2], mask, mask_info);
     }
 
 public:

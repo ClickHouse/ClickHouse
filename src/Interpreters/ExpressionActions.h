@@ -50,11 +50,22 @@ public:
 
     using Arguments = std::vector<Argument>;
 
+    /// States for lazy function execution in short-circuit function arguments.
+    enum class LazyExecution
+    {
+        DISABLED,
+        ENABLED,
+    };
+
     struct Action
     {
         const Node * node;
         Arguments arguments;
         size_t result_position;
+
+        /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
+        /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
+        LazyExecution lazy_execution = LazyExecution::DISABLED;
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
@@ -119,29 +130,9 @@ public:
     ExpressionActionsPtr clone() const;
 
 private:
-    struct Data
-    {
-        const Node * node = nullptr;
-        size_t num_created_children = 0;
-        std::vector<const Node *> parents;
-
-        ssize_t position = -1;
-        size_t num_created_parents = 0;
-        bool used_in_result = false;
-    };
-
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
-    void linearizeActions();
-
-    /// Enable lazy execution for short-circuit function arguments.
-    bool rewriteShortCircuitArguments(
-        const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & used_only_in_short_circuit_functions, bool force_enable_lazy_execution);
-
-    /// Find short-circuit functions in actions and enable lazy execution for actions that are used in their arguments.
-    void rewriteArgumentsForShortCircuitFunctions();
-
-    std::pair<std::vector<Data>, std::unordered_map<const Node *, size_t>> getDataAndReverseIndex();
+    void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
 };
 
 

@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/FieldVisitors.h>
-#include <Common/typeid_cast.h>
 
 #include <algorithm>
 
@@ -574,20 +573,20 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     for (size_t i = 1; i <= arguments.size(); ++i)
     {
         if (inverted)
-            mask_info = extractMaskInplaceWithNulls<true>(mask, arguments[i - 1].column, nulls.get(), null_value);
+            mask_info = extractInvertedMask(mask, arguments[i - 1].column, nulls.get(), null_value);
         else
-            mask_info = extractMaskInplaceWithNulls<false>(mask, arguments[i - 1].column, nulls.get(), null_value);
+            mask_info = extractMask(mask, arguments[i - 1].column, nulls.get(), null_value);
 
         /// If mask doesn't have ones, we don't need to execute the rest arguments,
         /// because the result won't change.
         if (!mask_info.has_ones || i == arguments.size())
             break;
 
-        maskedExecute(arguments[i], mask, mask_info, false);
+        maskedExecute(arguments[i], mask, mask_info);
     }
     /// For OR function we need to inverse mask to get the resulting column.
     if (inverted)
-        inverseMask(mask);
+        inverseMask(mask, mask_info);
 
     if (nulls)
         applyTernaryLogic<Name>(mask, *nulls);

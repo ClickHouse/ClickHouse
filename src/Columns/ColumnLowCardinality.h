@@ -105,9 +105,9 @@ public:
 
     void updateHashFast(SipHash &) const override;
 
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool inverted) const override
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint, inverted));
+        return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
     }
 
     void expand(const Filter & mask, bool inverted) override

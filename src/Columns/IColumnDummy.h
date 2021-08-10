@@ -98,11 +98,9 @@ public:
         s += length;
     }
 
-    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/, bool inverted = false) const override
+    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
     {
         size_t bytes = countBytesInFilter(filt);
-        if (inverted)
-            bytes = filt.size() - bytes;
         return cloneDummy(bytes);
     }
 
