@@ -113,8 +113,6 @@ void convertColumnToNullable(ColumnWithTypeAndName & column)
     if (!column.column)
         return;
 
-    column.column = column.column->convertToFullColumnIfConst();
-
     if (column.column->lowCardinality())
     {
         /// Convert nested to nullable, not LowCardinality itself
@@ -124,7 +122,7 @@ void convertColumnToNullable(ColumnWithTypeAndName & column)
             col_as_lc->nestedToNullable();
         column.column = std::move(mut_col);
     }
-    else if (column.column->canBeInsideNullable())
+    else if (column.column->canBeInsideNullable() || isColumnConst(*column.column))
     {
         column.column = makeNullable(column.column);
     }
