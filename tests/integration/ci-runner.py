@@ -264,7 +264,7 @@ class ClickhouseIntegrationTestsRunner:
         out_file = "all_tests.txt"
         out_file_full = "all_tests_full.txt"
         cmd = "cd {repo_path}/tests/integration && " \
-            "./runner --tmpfs {image_cmd} ' --setup-plan' " \
+            "timeout 1h ./runner --tmpfs {image_cmd} ' --setup-plan' " \
             "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' " \
             "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
                 repo_path=repo_path, image_cmd=image_cmd, out_file=out_file, out_file_full=out_file_full)
