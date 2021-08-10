@@ -2,7 +2,7 @@
 
 #include <string>
 #include <Core/Block.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <mysqlxx/PoolWithFailover.h>
 #include <mysqlxx/Query.h>
 #include <Core/ExternalResultDescription.h>
@@ -25,10 +25,10 @@ struct StreamSettings
 };
 
 /// Allows processing results of a MySQL query as a sequence of Blocks, simplifies chaining
-class MySQLBlockInputStream : public IBlockInputStream
+class MySQLSource : public SourceWithProgress
 {
 public:
-    MySQLBlockInputStream(
+    MySQLSource(
         const mysqlxx::PoolWithFailover::Entry & entry,
         const std::string & query_str,
         const Block & sample_block,
@@ -36,11 +36,9 @@ public:
 
     String getName() const override { return "MySQL"; }
 
-    Block getHeader() const override { return description.sample_block.cloneEmpty(); }
-
 protected:
-    MySQLBlockInputStream(const Block & sample_block_, const StreamSettings & settings);
-    Block readImpl() override;
+    MySQLSource(const Block & sample_block_, const StreamSettings & settings);
+    Chunk generate() override;
     void initPositionMappingFromQueryResultStructure();
 
     struct Connection
@@ -63,21 +61,24 @@ protected:
 /// Like MySQLBlockInputStream, but allocates connection only when reading is starting.
 /// It allows to create a lot of stream objects without occupation of all connection pool.
 /// Also makes attempts to reconnect in case of connection failures.
-class MySQLWithFailoverBlockInputStream final : public MySQLBlockInputStream
+class MySQLWithFailoverSource final : public MySQLSource
 {
 public:
 
-    MySQLWithFailoverBlockInputStream(
+    MySQLWithFailoverSource(
         mysqlxx::PoolWithFailoverPtr pool_,
         const std::string & query_str_,
         const Block & sample_block_,
         const StreamSettings & settings_);
 
+    Chunk generate() override;
+
 private:
-    void readPrefix() override;
+    void onStart();
 
     mysqlxx::PoolWithFailoverPtr pool;
     std::string query_str;
+    bool is_initialized = false;
 };
 
 }
