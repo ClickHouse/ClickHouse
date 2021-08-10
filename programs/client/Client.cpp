@@ -537,17 +537,14 @@ private:
 
         MainThreadStatus::getInstance();
 
-        if (config().has("max_memory_usage_in_client"))
-        {
         /// Limit on total memory usage
-        size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client");
+        size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
 
-            if (max_client_memory_usage != 0)
-            {
-                total_memory_tracker.setHardLimit(max_client_memory_usage);
-                total_memory_tracker.setDescription("(total)");
-                total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-            }
+        if (max_client_memory_usage != 0)
+        {
+            total_memory_tracker.setHardLimit(max_client_memory_usage);
+            total_memory_tracker.setDescription("(total)");
+            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
         }
 
         registerFormats();
