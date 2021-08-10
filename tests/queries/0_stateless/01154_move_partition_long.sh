@@ -117,9 +117,8 @@ timeout $TIMEOUT bash -c drop_part_thread &
 wait
 
 for ((i=0; i<16; i++)) do
-    # The size of log is big, so increase timeout.
-    $CLICKHOUSE_CLIENT --receive_timeout 600 -q "SYSTEM SYNC REPLICA dst_$i" &
-    $CLICKHOUSE_CLIENT --receive_timeout 600 -q "SYSTEM SYNC REPLICA src_$i" 2>/dev/null &
+    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA dst_$i" &
+    $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA src_$i" 2>/dev/null &
 done
 wait
 echo "Replication did not hang"

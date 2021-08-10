@@ -196,17 +196,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
     UInt16 default_port = getContext()->getTCPPort();
     bool secure = db_settings.cluster_secure_connection;
 
-    bool treat_local_as_remote = false;
-    bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-    return std::make_shared<Cluster>(
-        getContext()->getSettingsRef(),
-        shards,
-        username,
-        password,
-        default_port,
-        treat_local_as_remote,
-        treat_local_port_as_remote,
-        secure);
+    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, username, password, default_port, false, secure);
 }
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
@@ -525,7 +515,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->getClientInfo().is_replicated_database_internal = true;
         query_context->setCurrentDatabase(database_name);
         query_context->setCurrentQueryId("");
-        auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
+        auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false);
         query_context->initZooKeeperMetadataTransaction(txn);
         return query_context;
     };

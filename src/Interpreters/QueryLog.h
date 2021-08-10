@@ -51,7 +51,6 @@ struct QueryLogElement
 
     String current_database;
     String query;
-    String formatted_query;
     UInt64 normalized_query_hash{};
 
     String query_kind;

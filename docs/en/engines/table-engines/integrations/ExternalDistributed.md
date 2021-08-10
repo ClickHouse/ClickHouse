@@ -35,7 +35,7 @@ The table structure can differ from the original table structure:
 -   `password` — User password.
 
 ## Implementation Details {#implementation-details}
-
+	
 Supports multiple replicas that must be listed by `|` and shards must be listed by `,`. For example:
 
 ```sql

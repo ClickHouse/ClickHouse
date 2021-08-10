@@ -1,4 +1,5 @@
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -14,7 +15,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
-#include <Storages/RabbitMQ/RabbitMQSink.h>
+#include <Storages/RabbitMQ/RabbitMQBlockOutputStream.h>
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/StorageFactory.h>
@@ -644,9 +645,9 @@ Pipe StorageRabbitMQ::read(
 }
 
 
-SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    return std::make_shared<RabbitMQSink>(*this, metadata_snapshot, local_context);
+    return std::make_shared<RabbitMQBlockOutputStream>(*this, metadata_snapshot, local_context);
 }
 
 

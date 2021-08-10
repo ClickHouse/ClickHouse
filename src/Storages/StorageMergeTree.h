@@ -61,7 +61,7 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     /** Perform the next step in combining the parts.
       */
@@ -239,7 +239,7 @@ private:
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     friend class MergeTreeProjectionBlockOutputStream;
-    friend class MergeTreeSink;
+    friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
 
 

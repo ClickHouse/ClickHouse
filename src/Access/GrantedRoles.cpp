@@ -3,6 +3,7 @@
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
 
+
 namespace DB
 {
 void GrantedRoles::grant(const UUID & role_)

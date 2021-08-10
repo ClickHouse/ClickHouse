@@ -57,7 +57,6 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
 
         {"current_database", std::make_shared<DataTypeString>()},
         {"query", std::make_shared<DataTypeString>()},
-        {"formatted_query", std::make_shared<DataTypeString>()},
         {"normalized_query_hash", std::make_shared<DataTypeUInt64>()},
         {"query_kind", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"databases", std::make_shared<DataTypeArray>(
@@ -152,7 +151,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insertData(current_database.data(), current_database.size());
     columns[i++]->insertData(query.data(), query.size());
-    columns[i++]->insertData(formatted_query.data(), formatted_query.size());
     columns[i++]->insert(normalized_query_hash);
     columns[i++]->insertData(query_kind.data(), query_kind.size());
 

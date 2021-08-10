@@ -479,7 +479,7 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
                             "Publication {} already exists and tables list is empty. Assuming publication is correct.",
                             publication_name);
 
-                result_tables = fetchPostgreSQLTablesList(tx, postgres_schema);
+                result_tables = fetchPostgreSQLTablesList(tx);
             }
             /// Check tables list from publication is the same as expected tables list.
             /// If not - drop publication and return expected tables list.
@@ -521,7 +521,7 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
             /// Fetch all tables list from database. Publication does not exist yet, which means
             /// that no replication took place. Publication will be created in
             /// startSynchronization method.
-            result_tables = fetchPostgreSQLTablesList(tx, postgres_schema);
+            result_tables = fetchPostgreSQLTablesList(tx);
         }
     }
 

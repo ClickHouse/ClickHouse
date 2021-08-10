@@ -17,7 +17,7 @@
 #endif
 
 #if USE_MYSQL
-#   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
+#   include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #endif
 
 #if USE_LIBPQXX
@@ -315,7 +315,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 throw Exception("DETACH PERMANENTLY is not implemented for databases", ErrorCodes::NOT_IMPLEMENTED);
 
 #if USE_MYSQL
-            if (database->getEngineName() == "MaterializedMySQL")
+            if (database->getEngineName() == "MaterializeMySQL")
                 stopDatabaseSynchronization(database);
 #endif
             if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
@@ -335,7 +335,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
                 /// Flush should not be done if shouldBeEmptyOnDetach() == false,
                 /// since in this case getTablesIterator() may do some additional work,
-                /// see DatabaseMaterializedMySQL<>::getTablesIterator()
+                /// see DatabaseMaterializeMySQL<>::getTablesIterator()
                 for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
                 {
                     iterator->table()->flush();

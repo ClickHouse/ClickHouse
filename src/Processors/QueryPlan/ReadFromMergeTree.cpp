@@ -13,9 +13,9 @@
 #include <Processors/Merges/ReplacingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
-#include <Storages/MergeTree/MergeTreeInOrderSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -47,9 +47,6 @@ struct ReadFromMergeTree::AnalysisResult
     IndexStats index_stats;
     Names column_names_to_read;
     ReadFromMergeTree::ReadType read_type = ReadFromMergeTree::ReadType::Default;
-    UInt64 selected_rows = 0;
-    UInt64 selected_marks = 0;
-    UInt64 selected_parts = 0;
 };
 
 static MergeTreeReaderSettings getMergeTreeReaderSettings(const ContextPtr & context)
@@ -157,7 +154,7 @@ Pipe ReadFromMergeTree::readFromPool(
 
     for (size_t i = 0; i < max_streams; ++i)
     {
-        auto source = std::make_shared<MergeTreeThreadSelectProcessor>(
+        auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
             i, pool, min_marks_for_concurrent_read, max_block_size,
             settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
             data, metadata_snapshot, use_uncompressed_cache,
@@ -179,32 +176,26 @@ template<typename TSource>
 ProcessorPtr ReadFromMergeTree::createSource(
     const RangesInDataPart & part,
     const Names & required_columns,
-    bool use_uncompressed_cache,
-    bool has_limit_below_one_block)
+    bool use_uncompressed_cache)
 {
     return std::make_shared<TSource>(
             data, metadata_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
-            preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache, prewhere_info,
-            actions_settings, true, reader_settings, virt_column_names, part.part_index_in_query, has_limit_below_one_block);
+            preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache,
+            prewhere_info, actions_settings, true, reader_settings, virt_column_names, part.part_index_in_query);
 }
 
 Pipe ReadFromMergeTree::readInOrder(
     RangesInDataParts parts_with_range,
     Names required_columns,
     ReadType read_type,
-    bool use_uncompressed_cache,
-    UInt64 limit)
+    bool use_uncompressed_cache)
 {
     Pipes pipes;
-    /// For reading in order it makes sense to read only
-    /// one range per task to reduce number of read rows.
-    bool has_limit_below_one_block = read_type != ReadType::Default && limit && limit < max_block_size;
-
     for (const auto & part : parts_with_range)
     {
         auto source = read_type == ReadType::InReverseOrder
-                    ? createSource<MergeTreeReverseSelectProcessor>(part, required_columns, use_uncompressed_cache, has_limit_below_one_block)
-                    : createSource<MergeTreeInOrderSelectProcessor>(part, required_columns, use_uncompressed_cache, has_limit_below_one_block);
+                    ? createSource<MergeTreeReverseSelectProcessor>(part, required_columns, use_uncompressed_cache)
+                    : createSource<MergeTreeSelectProcessor>(part, required_columns, use_uncompressed_cache);
 
         pipes.emplace_back(std::move(source));
     }
@@ -230,7 +221,7 @@ Pipe ReadFromMergeTree::read(
         return readFromPool(parts_with_range, required_columns, max_streams,
                             min_marks_for_concurrent_read, use_uncompressed_cache);
 
-    auto pipe = readInOrder(parts_with_range, required_columns, read_type, use_uncompressed_cache, 0);
+    auto pipe = readInOrder(parts_with_range, required_columns, read_type, use_uncompressed_cache);
 
     /// Use ConcatProcessor to concat sources together.
     /// It is needed to read in parts order (and so in PK order) if single thread is used.
@@ -409,6 +400,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         {
             RangesInDataPart part = parts_with_ranges.back();
             parts_with_ranges.pop_back();
+
             size_t & marks_in_part = info.sum_marks_in_parts.back();
 
             /// We will not take too few rows from a part.
@@ -423,13 +415,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
             MarkRanges ranges_to_get_from_part;
 
-            /// We take full part if it contains enough marks or
-            /// if we know limit and part contains less than 'limit' rows.
-            bool take_full_part = marks_in_part <= need_marks
-                || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
-
             /// We take the whole part if it is small enough.
-            if (take_full_part)
+            if (marks_in_part <= need_marks)
             {
                 ranges_to_get_from_part = part.ranges;
 
@@ -459,7 +446,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 }
                 parts_with_ranges.emplace_back(part);
             }
-
             ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
             new_parts.emplace_back(part.data_part, part.part_index_in_query, std::move(ranges_to_get_from_part));
         }
@@ -468,8 +454,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                        ? ReadFromMergeTree::ReadType::InOrder
                        : ReadFromMergeTree::ReadType::InReverseOrder;
 
-        pipes.emplace_back(readInOrder(std::move(new_parts), column_names, read_type,
-                                        info.use_uncompressed_cache, input_order_info->limit));
+        pipes.emplace_back(read(std::move(new_parts), column_names, read_type,
+                           requested_num_streams, info.min_marks_for_concurrent_read, info.use_uncompressed_cache));
     }
 
     if (need_preliminary_merge)
@@ -497,8 +483,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                         pipe.getHeader(),
                         pipe.numOutputPorts(),
                         sort_description,
-                        max_block_size,
-                        0, true);
+                        max_block_size);
 
                 pipe.addTransform(std::move(transform));
             }
@@ -674,7 +659,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
             /// with level > 0 then we won't postprocess this part and if num_streams > 1 we
             /// can use parallel select on such parts. We save such parts in one vector and then use
-            /// MergeTreeReadPool and MergeTreeThreadSelectProcessor for parallel select.
+            /// MergeTreeReadPool and MergeTreeThreadSelectBlockInputProcessor for parallel select.
             if (num_streams > 1 && settings.do_not_merge_across_partitions_select_final &&
                 std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
                 parts_to_merge_ranges[range_index]->data_part->info.level > 0)
@@ -844,8 +829,7 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
         log,
         requested_num_streams,
         result.index_stats,
-        true /* use_skip_indexes */,
-        true /* check_limits */);
+        true);
 
     size_t sum_marks_pk = total_marks_pk;
     for (const auto & stat : result.index_stats)
@@ -854,17 +838,13 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 
     size_t sum_marks = 0;
     size_t sum_ranges = 0;
-    size_t sum_rows = 0;
 
     for (const auto & part : result.parts_with_ranges)
     {
         sum_ranges += part.ranges.size();
         sum_marks += part.getMarksCount();
-        sum_rows += part.getRowsCount();
     }
-    result.selected_parts = result.parts_with_ranges.size();
-    result.selected_marks = sum_marks;
-    result.selected_rows  = sum_rows;
+
     LOG_DEBUG(
         log,
         "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
@@ -902,9 +882,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
         return;
     }
 
-    selected_marks = result.selected_marks;
-    selected_rows = result.selected_rows;
-    selected_parts = result.selected_parts;
     /// Projection, that needed to drop columns, which have appeared by execution
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.

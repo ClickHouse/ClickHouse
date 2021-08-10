@@ -37,7 +37,7 @@ public:
 
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
-    virtual bool alwaysReturnsEmptySet() const = 0;
+    virtual bool alwaysReturnsEmptySet() const { return false; }
 
     /// StorageJoin/Dictionary is already filled. No need to call addJoinedBlock.
     /// Different query plan is used for such joins.
