@@ -35,7 +35,7 @@ private:
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
-    ColumnsDescription getActualBaseQueryTableStructure(ASTPtr base_query, ContextPtr context) const;
+    static ColumnsDescription getActualBaseQueryTableStructure(ASTPtr base_query, ContextPtr context);
 
     RenameColumnsData rename_columns_data{{}, {}};
     RenameFunctionAliasesData rename_aliases_data{{}, {}};
