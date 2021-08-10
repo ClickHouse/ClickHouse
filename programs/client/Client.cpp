@@ -1452,7 +1452,12 @@ private:
                         "Error while reconnecting to the server: {}\n",
                         getCurrentExceptionMessage(true));
 
-                    assert(!connection->isConnected());
+                    // The reconnection might fail, but we'll still be connected
+                    // in the sense of `connection->isConnected() = true`,
+                    // in case when the requested database doesn't exist.
+                    // Disconnect manually now, so that the following code doesn't
+                    // have any doubts, and the connection state is predictable.
+                    connection->disconnect();
                 }
             }
 
