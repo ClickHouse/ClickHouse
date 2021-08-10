@@ -162,6 +162,25 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     analyzeAggregation();
 }
 
+static ASTPtr checkPositionalArgument(ASTPtr argument, const NamesAndTypesList & columns)
+{
+    /// Case when GROUP BY element is position.
+    /// Do not consider case when GROUP BY element is not a literal, but expression, even if all values are contants.
+    if (auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get()))
+    {
+        auto which = ast_literal->value.getType();
+        if (which == Field::Types::UInt64)
+        {
+            auto pos = ast_literal->value.get<UInt64>();
+            if ((0 < pos) && (pos <= columns.size()))
+            {
+                const auto & column_name = std::next(columns.begin(), pos - 1)->name;
+                return std::make_shared<ASTIdentifier>(column_name);
+            }
+        }
+    }
+    return nullptr;
+}
 
 void ExpressionAnalyzer::analyzeAggregation()
 {
@@ -247,23 +266,9 @@ void ExpressionAnalyzer::analyzeAggregation()
 
                     if (getContext()->getSettingsRef().enable_positional_arguments)
                     {
-                        /// Case when GROUP BY element is position.
-                        /// Do not consider case when GROUP BY element is expression, even if all values are contants.
-                        /// (because does it worth it to first check that exactly all elements in expression are positions
-                        /// and then traverse once again to make replacement?)
-                        if (const auto * ast_literal = typeid_cast<const ASTLiteral *>(group_asts[i].get()))
-                        {
-                            auto which = ast_literal->value.getType();
-                            if (which == Field::Types::UInt64)
-                            {
-                                auto pos = ast_literal->value.get<UInt64>();
-                                if ((0 < pos) && (pos <= columns.size()))
-                                {
-                                    const auto & column_name = std::next(columns.begin(), pos - 1)->name;
-                                    group_asts[i] = std::make_shared<ASTIdentifier>(column_name);
-                                }
-                            }
-                        }
+                        auto new_argument = checkPositionalArgument(group_asts[i], columns);
+                        if (new_argument)
+                            group_asts[i] = new_argument;
                     }
 
                     const auto & column_name = group_asts[i]->getColumnName();
@@ -1247,29 +1252,22 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
     bool with_fill = false;
     NameSet order_by_keys;
+    const auto & columns = syntax->source_columns;
+
     for (auto & child : select_query->orderBy()->children)
     {
-        const auto * ast = child->as<ASTOrderByElement>();
+        auto * ast = child->as<ASTOrderByElement>();
         if (!ast || ast->children.empty())
             throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
 
-        ASTPtr order_expression = ast->children.at(0);
-        const auto & columns = syntax->source_columns;
-
-        if (auto * ast_literal = typeid_cast<const ASTLiteral *>(order_expression.get()))
+        if (getContext()->getSettingsRef().enable_positional_arguments)
         {
-            auto which = ast_literal->value.getType();
-            if (which == Field::Types::UInt64)
-            {
-                auto pos = ast_literal->value.get<UInt64>();
-                if ((0 < pos) && (pos <= columns.size()))
-                {
-                    const auto & column_name = std::next(columns.begin(), pos - 1)->name;
-                    child->children[0] = std::make_shared<ASTIdentifier>(column_name);
-                }
-            }
+            auto new_argument = checkPositionalArgument(ast->children.at(0), columns);
+            if (new_argument)
+                ast->children[0] = new_argument;
         }
 
+        ASTPtr order_expression = ast->children.at(0);
         step.addRequiredOutput(order_expression->getColumnName());
 
         if (ast->with_fill)
@@ -1319,21 +1317,15 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     }
 
     auto & children = select_query->limitBy()->children;
+    const auto & columns = syntax->source_columns;
+
     for (size_t i = 0; i < children.size(); ++i)
     {
-        const auto & columns = syntax->source_columns;
-        if (auto * ast_literal = typeid_cast<const ASTLiteral *>(children[i].get()))
+        if (getContext()->getSettingsRef().enable_positional_arguments)
         {
-            auto which = ast_literal->value.getType();
-            if (which == Field::Types::UInt64)
-            {
-                auto pos = ast_literal->value.get<UInt64>();
-                if ((0 < pos) && (pos <= columns.size()))
-                {
-                    const auto & column_name = std::next(columns.begin(), pos - 1)->name;
-                    children[i] = std::make_shared<ASTIdentifier>(column_name);
-                }
-            }
+            auto new_argument = checkPositionalArgument(children[i], columns);
+            if (new_argument)
+                children[i] = new_argument;
         }
 
         auto child_name = children[i]->getColumnName();
