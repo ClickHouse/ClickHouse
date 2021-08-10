@@ -257,7 +257,7 @@ private:
         static_assert(std::is_integral_v<T> && std::is_integral_v<Divisor>);
         assert(divisor > 0);
 
-        if (likely(offset_is_whole_number_of_hours_during_epoch))
+        if (likely(offset_is_whole_number_of_hours_during_epoch || (offset_is_whole_number_of_minutes_during_epoch && (divisor % 60 == 0))))
         {
             if (likely(x >= 0))
                 return x / divisor * divisor;
@@ -484,22 +484,19 @@ public:
 
     inline unsigned toMinute(Time t) const
     {
-        if (likely(t >= 0 && offset_is_whole_number_of_hours_during_epoch))
+        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return (t / 60) % 60;
 
         /// To consider the DST changing situation within this day
         /// also make the special timezones with no whole hour offset such as 'Australia/Lord_Howe' been taken into account.
 
         LUTIndex index = findIndex(t);
-        Time time = t - lut[index].date;
+        UInt32 time = t - lut[index].date;
 
         if (time >= lut[index].time_at_offset_change())
             time += lut[index].amount_of_offset_change();
 
-        Time res = time / 60 % 60;
-        if (likely(res >= 0))
-            return res;
-        return res + 60;
+        return time / 60 % 60;
     }
 
     /// NOTE: Assuming timezone offset is a multiple of 15 minutes.
