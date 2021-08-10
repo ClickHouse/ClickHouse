@@ -311,11 +311,11 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     if (views.empty())
         return;
 
-    auto processSuffix = [](ViewRuntimeData & view) {
+    auto process_suffix = [](ViewRuntimeData & view) {
         view.out->writeSuffix();
         view.runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
     };
-    static std::string stageStep = "while writing suffix to view";
+    static std::string stage_step = "while writing suffix to view";
 
     /// Run writeSuffix() for views in separate thread pool.
     /// In could have been done in PushingToViewsBlockOutputStream::process, however
@@ -339,7 +339,7 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             pool.scheduleOrThrowOnError([&] {
                 setThreadName("PushingToViews");
 
-                runViewStage(view, stageStep, [&] { processSuffix(view); });
+                runViewStage(view, stage_step, [&] { process_suffix(view); });
                 if (view.exception)
                 {
                     exception_count.fetch_add(1, std::memory_order_relaxed);
@@ -368,7 +368,7 @@ void PushingToViewsBlockOutputStream::writeSuffix()
                 exception_happened = true;
                 continue;
             }
-            runViewStage(view, stageStep, [&] { processSuffix(view); });
+            runViewStage(view, stage_step, [&] { process_suffix(view); });
             if (view.exception)
             {
                 exception_happened = true;
