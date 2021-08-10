@@ -283,6 +283,9 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
     table_push.first = config.getString(table_prefix + "database_push");
     table_push.second = config.getString(table_prefix + "table_push");
 
+    /// In some cases the number of columns in primary key is too big to calculate a hash from them
+    primary_key_comma_separated = config.getString(table_prefix + "columns_for_split", "");
+
     /// Used as node name in ZooKeeper
     table_id = escapeForFileName(cluster_push_name)
                + "." + escapeForFileName(table_push.first)
@@ -294,7 +297,10 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
         ParserStorage parser_storage;
         engine_push_ast = parseQuery(parser_storage, engine_push_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         engine_push_partition_key_ast = extractPartitionKey(engine_push_ast);
-        primary_key_comma_separated = boost::algorithm::join(extractPrimaryKeyColumnNames(engine_push_ast), ", ");
+
+        if (primary_key_comma_separated.empty())
+            primary_key_comma_separated = boost::algorithm::join(extractPrimaryKeyColumnNames(engine_push_ast), ", ");
+
         is_replicated_table = isReplicatedTableEngine(engine_push_ast);
     }
 
