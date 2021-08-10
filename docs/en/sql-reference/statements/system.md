@@ -313,8 +313,8 @@ One may execute query after:
 Replica attaches locally found parts and sends info about them to Zookeeper.
 Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
 
-!!! warning "Caveat"
-    Parts in all states are moved to `detached/` folder. Parts active before data loss (Committed) are attached.
+!!! warning "Warning"
+    Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
 
 **Syntax**
 
@@ -330,7 +330,7 @@ SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_fami
 
 **Example**
 
-Creating table on multiple servers. After the replica's root directory is lost, the table will will attach as readonly as metadata is missing. The last query need to execute on every replica.
+Creating a table on multiple servers. After the replica's root directory is lost, the table will attach as read-only as metadata is missing. The last query needs to execute on every replica.
 
 ```sql
 CREATE TABLE test(n UInt32)
