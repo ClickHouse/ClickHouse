@@ -20,9 +20,11 @@ empty(x)
 
 A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte. The UUID is empty if it contains all zeros (zero UUID).
 
+The function also works for [arrays](array-functions.md#function-empty) or [UUID](uuid-functions.md#empty).
+
 **Arguments**
 
--   `x` — Input value. [Array](../data-types/array.md), [String](../data-types/string.md), [UUID](../data-types/uuid.md).
+-   `x` — Input value. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -46,21 +48,23 @@ Result:
 └───────────┘
 ```
 
-## notempty {#notempty}
+## notEmpty {#notempty}
 
-Checks whether the input string is not empty.
+Checks whether the input string is non-empty.
 
 **Syntax**
 
 ``` sql
-notempty(x)
+notEmpty(x)
 ```
 
 A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte. The UUID is empty if it contains all zeros (zero UUID).
 
+The function also works for [arrays](array-functions.md#function-notempty) or [UUID](uuid-functions.md#notempty).
+
 **Arguments**
 
--   `x` — Input value. [Array](../data-types/array.md), [String](../data-types/string.md), [UUID](../data-types/uuid.md).
+-   `x` — Input value. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -73,15 +77,15 @@ Type: [UInt8](../data-types/int-uint.md).
 Query:
 
 ```sql
-SELECT notempty('text');
+SELECT notEmpty('text');
 ```
 
 Result:
 
 ```text
-┌─empty('')─┐
-│         1 │
-└───────────┘
+┌─notEmpty('text')─┐
+│                1 │
+└──────────────────┘
 ```
 
 ## length {#length}
