@@ -26,13 +26,13 @@ namespace
 /** Extract element of tuple by constant index or name. The operation is essentially free.
   * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
   */
-class FunctionNamedTupleItems : public IFunction
+class FunctionTupleToNameValuePairs : public IFunction
 {
 public:
-    static constexpr auto name = "namedTupleItems";
+    static constexpr auto name = "tupleToNameValuePairs";
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionNamedTupleItems>();
+        return std::make_shared<FunctionTupleToNameValuePairs>();
     }
 
     String getName() const override
@@ -122,9 +122,9 @@ public:
 
 }
 
-void registerFunctionNamedTupleItems(FunctionFactory & factory)
+void registerFunctionTupleToNameValuePairs(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionNamedTupleItems>();
+    factory.registerFunction<FunctionTupleToNameValuePairs>();
 }
 
 }
