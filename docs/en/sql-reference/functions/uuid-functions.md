@@ -63,7 +63,7 @@ Type: [UInt8](../data-types/int-uint.md).
 
 **Example**
 
-To generate the UUID value, ClickHouse provides the [generateUUIDv4](uuid-function-generate) function.
+To generate the UUID value, ClickHouse provides the [generateUUIDv4](#uuid-function-generate) function.
 
 Query:
 
@@ -105,7 +105,7 @@ Type: [UInt8](../data-types/int-uint.md).
 
 **Example**
 
-To generate the UUID value, ClickHouse provides the [generateUUIDv4](uuid-function-generate) function.
+To generate the UUID value, ClickHouse provides the [generateUUIDv4](#uuid-function-generate) function.
 
 Query:
 
