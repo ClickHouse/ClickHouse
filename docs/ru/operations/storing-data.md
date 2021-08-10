@@ -12,3 +12,44 @@ toc_title: "Хранение данных на внешних дисках"
 ## Репликация без копирования данных {#zero-copy}
 
 Для дисков `s3` и `HDFS` в ClickHouse поддерживается репликация без копирования данных (zero-copy): если данные хранятся на нескольких репликах, то при синхронизации пересылаются только метаданные (пути к кускам данных), а сами данные не копируются.
+
+## Использование сервиса HDFS для хранения данных {#table_engine-mergetree-hdfs}
+
+[HDFS](https://hadoop.apache.org/docs/r1.2.1/hdfs_design.html) — это распределенная файловая система для удаленного хранения данных.
+
+Таблицы семейства [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) могут хранить данные в сервисе HDFS при использовании диска типа `HDFS`.
+
+Пример конфигурации:
+``` xml
+<yandex>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+            </hdfs>
+        </disks>
+        <policies>
+            <hdfs>
+                <volumes>
+                    <main>
+                        <disk>hdfs</disk>
+                    </main>
+                </volumes>
+            </hdfs>
+        </policies>
+    </storage_configuration>
+
+    <merge_tree>
+        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+    </merge_tree>
+</yandex>
+```
+
+Обязательные параметры:
+
+-   `endpoint` — URL точки приема запроса на стороне HDFS в формате `path`. URL точки должен содержать путь к корневой директории на сервере, где хранятся данные.
+
+Необязательные параметры:
+
+-   `min_bytes_for_seek` — минимальное количество байтов, которые используются для операций поиска вместо последовательного чтения. Значение по умолчанию: 1 МБайт.
