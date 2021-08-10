@@ -31,11 +31,6 @@ SRCS(
     Formats/IOutputFormat.cpp
     Formats/IRowInputFormat.cpp
     Formats/IRowOutputFormat.cpp
-    Formats/Impl/ArrowBlockInputFormat.cpp
-    Formats/Impl/ArrowBlockOutputFormat.cpp
-    Formats/Impl/ArrowBufferedStreams.cpp
-    Formats/Impl/ArrowColumnToCHColumn.cpp
-    Formats/Impl/CHColumnToArrowColumn.cpp
     Formats/Impl/BinaryRowInputFormat.cpp
     Formats/Impl/BinaryRowOutputFormat.cpp
     Formats/Impl/CSVRowInputFormat.cpp
