@@ -14,17 +14,20 @@ namespace DB
 Block IntersectOrExceptStep::checkHeaders(const DataStreams & input_streams_) const
 {
     if (input_streams_.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot perform {} on empty set of query plan steps", getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot perform intersect/except on empty set of query plan steps");
 
     Block res = input_streams_.front().header;
     for (const auto & stream : input_streams_)
-        assertBlocksHaveEqualStructure(stream.header, res, "IntersectOrExceptStep");
+        assertBlocksHaveEqualStructure(stream.header, res, "IntersectExceptStep");
 
     return res;
 }
 
-IntersectOrExceptStep::IntersectOrExceptStep(DataStreams input_streams_, const Modes & modes_, size_t max_threads_)
-    : header(checkHeaders(input_streams_)), modes(modes_), max_threads(max_threads_)
+IntersectOrExceptStep::IntersectOrExceptStep(
+    DataStreams input_streams_ , const Operators & operators_ , size_t max_threads_)
+    : header(checkHeaders(input_streams_))
+    , operators(operators_)
+    , max_threads(max_threads_)
 {
     input_streams = std::move(input_streams_);
     if (input_streams.size() == 1)
@@ -63,9 +66,8 @@ QueryPipelinePtr IntersectOrExceptStep::updatePipeline(QueryPipelines pipelines,
         }
     }
 
-    std::cerr << "size: " << input_streams.size() << std::endl;
     *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), max_threads);
-    pipeline->addTransform(std::make_shared<IntersectOrExceptTransform>(header, modes));
+    pipeline->addTransform(std::make_shared<IntersectOrExceptTransform>(header, operators));
 
     processors = collector.detachProcessors();
     return pipeline;

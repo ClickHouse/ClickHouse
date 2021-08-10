@@ -21,7 +21,7 @@ public:
     BlockIO execute() override;
 
 private:
-    String getName() const { return "IntersectExcept"; }
+    String getName() const { return "IntersectOrExcept"; }
 
     Block getCommonHeader(const Blocks & headers) const;
 
@@ -33,7 +33,7 @@ private:
     ContextPtr context;
     Block result_header;
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
-    ASTIntersectOrExcept::Modes modes;
+    ASTIntersectOrExcept::Operators operators;
 };
 
 }

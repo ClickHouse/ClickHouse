@@ -4,7 +4,7 @@
 
 namespace DB
 {
-class ParserIntersectOrExcept : public IParserBase
+class ParserIntersectOrExceptQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "INTERSECT or EXCEPT"; }

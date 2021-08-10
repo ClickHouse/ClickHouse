@@ -8,13 +8,13 @@ namespace DB
 
 class IntersectOrExceptStep : public IQueryPlanStep
 {
-using Modes = ASTIntersectOrExcept::Modes;
+using Operators = ASTIntersectOrExcept::Operators;
 
 public:
     /// max_threads is used to limit the number of threads for result pipeline.
-    IntersectOrExceptStep(DataStreams input_streams_, const Modes & modes_, size_t max_threads_ = 0);
+    IntersectOrExceptStep(DataStreams input_streams_, const Operators & operators_, size_t max_threads_ = 0);
 
-    String getName() const override { return "IntersectExcept"; }
+    String getName() const override { return "IntersectOrExcept"; }
 
     QueryPipelinePtr updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings) override;
 
@@ -24,7 +24,7 @@ private:
     Block checkHeaders(const DataStreams & input_streams_) const;
 
     Block header;
-    Modes modes;
+    Operators operators;
     size_t max_threads;
     Processors processors;
 };
