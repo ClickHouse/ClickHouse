@@ -33,7 +33,7 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 -   `max_bytes_in_buffers` — The maximum number of bytes allowed to be cached in memory for the whole database. When this number is exceeded, the data is materialized. Default: `1048576`.
 -   `max_flush_data_time` — The maximum number of seconds that data is allowed to be in cache for the whole database. When this number is exceeded, the data is materialized. Default: `1000`.
 -   `max_wait_time_when_mysql_unavailable` — A retry interval in milliseconds if MySQL is not available. A negative value disables retries. Default: `1000`.
--   `allows_query_when_mysql_lost` — Whether to query materialized table if MySQL is not available. Default: `0` (`false`).
+-   `allows_query_when_mysql_lost` — Indicates whether to query a materialized table if MySQL is not available. Default value: `0` (`false`).
 
 **Settings on MySQL-server side**
 
