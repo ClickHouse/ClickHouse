@@ -19,7 +19,7 @@ INSERT INTO test02007 VALUES (tuple(3.3, 5.5, 6.6));
 SELECT untuple(arrayJoin(tupleToNameValuePairs(col))) from test02007;
 
 DROP TABLE IF EXISTS test02007;
-SELECT tupleToNameValuePairs(tuple(1, 1.3)); -- { serverError 43; } should it?
+SELECT tupleToNameValuePairs(tuple(1, 1.3)); -- { serverError 43; }
 SELECT tupleToNameValuePairs(tuple(1, [1,2])); -- { serverError 43; }
 SELECT tupleToNameValuePairs(tuple(1, 'a')); -- { serverError 43; }
 SELECT tupleToNameValuePairs(33); -- { serverError 43; }
