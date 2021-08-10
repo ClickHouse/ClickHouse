@@ -534,22 +534,22 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
 }
 
 
-ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint, bool inverted) const
+ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (typeid_cast<const ColumnUInt8 *>(data.get()))      return filterNumber<UInt8>(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnUInt16 *>(data.get()))     return filterNumber<UInt16>(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnUInt32 *>(data.get()))     return filterNumber<UInt32>(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnUInt64 *>(data.get()))     return filterNumber<UInt64>(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnInt8 *>(data.get()))       return filterNumber<Int8>(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnInt16 *>(data.get()))      return filterNumber<Int16>(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnInt32 *>(data.get()))      return filterNumber<Int32>(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnInt64 *>(data.get()))      return filterNumber<Int64>(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnFloat32 *>(data.get()))    return filterNumber<Float32>(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnFloat64 *>(data.get()))    return filterNumber<Float64>(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnString *>(data.get()))     return filterString(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnTuple *>(data.get()))      return filterTuple(filt, result_size_hint, inverted);
-    if (typeid_cast<const ColumnNullable *>(data.get()))   return filterNullable(filt, result_size_hint, inverted);
-    return filterGeneric(filt, result_size_hint, inverted);
+    if (typeid_cast<const ColumnUInt8 *>(data.get()))      return filterNumber<UInt8>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt16 *>(data.get()))     return filterNumber<UInt16>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt32 *>(data.get()))     return filterNumber<UInt32>(filt, result_size_hint);
+    if (typeid_cast<const ColumnUInt64 *>(data.get()))     return filterNumber<UInt64>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt8 *>(data.get()))       return filterNumber<Int8>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt16 *>(data.get()))      return filterNumber<Int16>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt32 *>(data.get()))      return filterNumber<Int32>(filt, result_size_hint);
+    if (typeid_cast<const ColumnInt64 *>(data.get()))      return filterNumber<Int64>(filt, result_size_hint);
+    if (typeid_cast<const ColumnFloat32 *>(data.get()))    return filterNumber<Float32>(filt, result_size_hint);
+    if (typeid_cast<const ColumnFloat64 *>(data.get()))    return filterNumber<Float64>(filt, result_size_hint);
+    if (typeid_cast<const ColumnString *>(data.get()))     return filterString(filt, result_size_hint);
+    if (typeid_cast<const ColumnTuple *>(data.get()))      return filterTuple(filt, result_size_hint);
+    if (typeid_cast<const ColumnNullable *>(data.get()))   return filterNullable(filt, result_size_hint);
+    return filterGeneric(filt, result_size_hint);
 }
 
 void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
@@ -581,7 +581,7 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
         throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);}
 
 template <typename T>
-ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint, bool inverted) const
+ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().empty())
         return ColumnArray::create(data);
@@ -591,11 +591,11 @@ ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hin
     auto & res_elems = assert_cast<ColumnVector<T> &>(res->getData()).getData();
     Offsets & res_offsets = res->getOffsets();
 
-    filterArraysImpl<T>(assert_cast<const ColumnVector<T> &>(*data).getData(), getOffsets(), res_elems, res_offsets, filt, result_size_hint, inverted);
+    filterArraysImpl<T>(assert_cast<const ColumnVector<T> &>(*data).getData(), getOffsets(), res_elems, res_offsets, filt, result_size_hint);
     return res;
 }
 
-ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hint, bool inverted) const
+ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hint) const
 {
     size_t col_size = getOffsets().size();
     if (col_size != filt.size())
@@ -633,7 +633,7 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
         /// Number of rows in the array.
         size_t array_size = src_offsets[i] - prev_src_offset;
 
-        if (inverted ^ filt[i])
+        if (filt[i])
         {
             /// If the array is not empty - copy content.
             if (array_size)
@@ -663,7 +663,7 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
     return res;
 }
 
-ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hint, bool inverted) const
+ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = getOffsets().size();
     if (size != filt.size())
@@ -675,7 +675,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
     Filter nested_filt(getOffsets().back());
     for (size_t i = 0; i < size; ++i)
     {
-        if (inverted ^ filt[i])
+        if (filt[i])
             memset(&nested_filt[offsetAt(i)], 1, sizeAt(i));
         else
             memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
@@ -698,7 +698,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
     size_t current_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
-        if (inverted ^ filt[i])
+        if (filt[i])
         {
             current_offset += sizeAt(i);
             res_offsets.push_back(current_offset);
@@ -708,7 +708,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
     return res;
 }
 
-ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint, bool inverted) const
+ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().empty())
         return ColumnArray::create(data);
@@ -716,13 +716,13 @@ ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_h
     const ColumnNullable & nullable_elems = assert_cast<const ColumnNullable &>(*data);
 
     auto array_of_nested = ColumnArray::create(nullable_elems.getNestedColumnPtr(), offsets);
-    auto filtered_array_of_nested_owner = array_of_nested->filter(filt, result_size_hint, inverted);
+    auto filtered_array_of_nested_owner = array_of_nested->filter(filt, result_size_hint);
     const auto & filtered_array_of_nested = assert_cast<const ColumnArray &>(*filtered_array_of_nested_owner);
     const auto & filtered_offsets = filtered_array_of_nested.getOffsetsPtr();
 
     auto res_null_map = ColumnUInt8::create();
 
-    filterArraysImplOnlyData(nullable_elems.getNullMapData(), getOffsets(), res_null_map->getData(), filt, result_size_hint, inverted);
+    filterArraysImplOnlyData(nullable_elems.getNullMapData(), getOffsets(), res_null_map->getData(), filt, result_size_hint);
 
     return ColumnArray::create(
         ColumnNullable::create(
@@ -731,7 +731,7 @@ ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_h
         filtered_offsets);
 }
 
-ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint, bool inverted) const
+ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint) const
 {
     if (getOffsets().empty())
         return ColumnArray::create(data);
@@ -748,7 +748,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
         temporary_arrays[i] = ColumnArray(tuple.getColumns()[i]->assumeMutable(), getOffsetsPtr()->assumeMutable())
-                .filter(filt, result_size_hint, inverted);
+                .filter(filt, result_size_hint);
 
     Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)

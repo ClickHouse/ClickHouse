@@ -32,14 +32,14 @@ template <typename T>
 void filterArraysImpl(
     const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
     PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
-    const IColumn::Filter & filt, ssize_t result_size_hint, bool inverted);
+    const IColumn::Filter & filt, ssize_t result_size_hint);
 
 /// Same as above, but not fills res_offsets.
 template <typename T>
 void filterArraysImplOnlyData(
     const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
     PaddedPODArray<T> & res_elems,
-    const IColumn::Filter & filt, ssize_t result_size_hint, bool inverted = false);
+    const IColumn::Filter & filt, ssize_t result_size_hint);
 
 namespace detail
 {

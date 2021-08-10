@@ -76,9 +76,8 @@ INSTANTIATE(UUID)
 
 template <bool inverted, bool column_is_short, typename Container>
 size_t extractMaskNumericImpl(
-    const PaddedPODArray<UInt8> & mask,
+    PaddedPODArray<UInt8> & mask,
     const Container & data,
-    PaddedPODArray<UInt8> & result,
     UInt8 null_value,
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls)
@@ -87,43 +86,47 @@ size_t extractMaskNumericImpl(
     size_t data_index = 0;
     for (size_t i = 0; i != mask.size(); ++i)
     {
-        UInt8 value = 0;
-        if (mask[i])
-        {
-            size_t index;
-            if constexpr (column_is_short)
-            {
-                index = data_index;
-                ++data_index;
-            }
-            else
-                index = i;
-            if (null_bytemap && (*null_bytemap)[index])
-            {
-                value = null_value;
-                if (nulls)
-                    (*nulls)[i] = 1;
-            }
-            else
-                value = !!data[index];
+        // Change mask only where value is 1.
+        if (!mask[i])
+            continue;
 
-            if constexpr (inverted)
-                value = !value;
+        UInt8 value;
+        size_t index;
+        if constexpr (column_is_short)
+        {
+            if (data_index >= data.size())
+                throw Exception("Amount of ones in the mask doesn't equal short column size", ErrorCodes::LOGICAL_ERROR);
+
+            index = data_index;
+            ++data_index;
         }
+        else
+            index = i;
+
+        if (null_bytemap && (*null_bytemap)[index])
+        {
+            value = null_value;
+            if (nulls)
+                (*nulls)[i] = 1;
+        }
+        else
+            value = !!data[index];
+
+        if constexpr (inverted)
+            value = !value;
 
         if (value)
             ++ones_count;
 
-        result[i] = value;
+        mask[i] = value;
     }
     return ones_count;
 }
 
 template <bool inverted, typename NumericType>
 bool extractMaskNumeric(
-    const PaddedPODArray<UInt8> & mask,
+    PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
-    PaddedPODArray<UInt8> & result,
     UInt8 null_value,
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls,
@@ -136,9 +139,9 @@ bool extractMaskNumeric(
     const auto & data = numeric_column->getData();
     size_t ones_count;
     if (column->size() < mask.size())
-        ones_count = extractMaskNumericImpl<inverted, true>(mask, data, result, null_value, null_bytemap, nulls);
+        ones_count = extractMaskNumericImpl<inverted, true>(mask, data, null_value, null_bytemap, nulls);
     else
-        ones_count = extractMaskNumericImpl<inverted, false>(mask, data, result, null_value, null_bytemap, nulls);
+        ones_count = extractMaskNumericImpl<inverted, false>(mask, data, null_value, null_bytemap, nulls);
 
     mask_info.has_ones = ones_count > 0;
     mask_info.has_zeros = ones_count != mask.size();
@@ -147,9 +150,8 @@ bool extractMaskNumeric(
 
 template <bool inverted>
 MaskInfo extractMaskFromConstOrNull(
-    const PaddedPODArray<UInt8> & mask,
+    PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
-    PaddedPODArray<UInt8> & result,
     UInt8 null_value,
     PaddedPODArray<UInt8> * nulls = nullptr)
 {
@@ -168,105 +170,91 @@ MaskInfo extractMaskFromConstOrNull(
 
     size_t ones_count = 0;
     if (value)
-    {
-        /// Copy mask to result only if they are not the same.
-        if (result != mask)
-        {
-            for (size_t i = 0; i != mask.size(); ++i)
-            {
-                result[i] = mask[i];
-                if (result[i])
-                    ++ones_count;
-            }
-        }
-        else
-            ones_count = countBytesInFilter(mask);
-    }
+        ones_count = countBytesInFilter(mask);
     else
-        std::fill(result.begin(), result.end(), 0);
+        std::fill(mask.begin(), mask.end(), 0);
 
     return {.has_ones = ones_count > 0, .has_zeros = ones_count != mask.size()};
 }
 
 template <bool inverted>
 MaskInfo extractMaskImpl(
-    const PaddedPODArray<UInt8> & mask,
+    PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
-    PaddedPODArray<UInt8> & result,
     UInt8 null_value,
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls = nullptr)
 {
     /// Special implementation for Null and Const columns.
     if (column->onlyNull() || checkAndGetColumn<ColumnConst>(*column))
-        return extractMaskFromConstOrNull<inverted>(mask, column, result, null_value, nulls);
+        return extractMaskFromConstOrNull<inverted>(mask, column, null_value, nulls);
 
     if (const auto * col = checkAndGetColumn<ColumnNullable>(*column))
     {
         const PaddedPODArray<UInt8> & null_map = col->getNullMapData();
-        return extractMaskImpl<inverted>(mask, col->getNestedColumnPtr(), result, null_value, &null_map, nulls);
+        return extractMaskImpl<inverted>(mask, col->getNestedColumnPtr(), null_value, &null_map, nulls);
     }
 
     MaskInfo mask_info;
 
-    if (!(extractMaskNumeric<inverted, UInt8>(mask, column, result, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, UInt16>(mask, column, result, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, UInt32>(mask, column, result, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, UInt64>(mask, column, result, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int8>(mask, column, result, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int16>(mask, column, result, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int32>(mask, column, result, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Int64>(mask, column, result, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Float32>(mask, column, result, null_value, null_bytemap, nulls, mask_info)
-          || extractMaskNumeric<inverted, Float64>(mask, column, result, null_value, null_bytemap, nulls, mask_info)))
+    if (!(extractMaskNumeric<inverted, UInt8>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, UInt16>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, UInt32>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, UInt64>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, Int8>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, Int16>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, Int32>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, Int64>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, Float32>(mask, column, null_value, null_bytemap, nulls, mask_info)
+          || extractMaskNumeric<inverted, Float64>(mask, column, null_value, null_bytemap, nulls, mask_info)))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot convert column {} to mask.", column->getName());
 
     return mask_info;
 }
 
-template <bool inverted>
 MaskInfo extractMask(
-    const PaddedPODArray<UInt8> & mask,
-    const ColumnPtr & column,
-    PaddedPODArray<UInt8> & result,
-    UInt8 null_value)
-{
-    return extractMaskImpl<inverted>(mask, column, result, null_value, nullptr);
-}
-
-template <bool inverted>
-MaskInfo extractMaskInplace(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
     UInt8 null_value)
 {
-    return extractMaskImpl<inverted>(mask, column, mask, null_value, nullptr);
+    return extractMaskImpl<false>(mask, column, null_value, nullptr);
 }
 
-template <bool inverted>
-MaskInfo extractMaskInplaceWithNulls(
+MaskInfo extractInvertedMask(
+    PaddedPODArray<UInt8> & mask,
+    const ColumnPtr & column,
+    UInt8 null_value)
+{
+    return extractMaskImpl<true>(mask, column, null_value, nullptr);
+}
+
+MaskInfo extractMask(
     PaddedPODArray<UInt8> & mask,
     const ColumnPtr & column,
     PaddedPODArray<UInt8> * nulls,
     UInt8 null_value)
 {
-    return extractMaskImpl<inverted>(mask, column, mask, null_value, nullptr, nulls);
+    return extractMaskImpl<false>(mask, column, null_value, nullptr, nulls);
 }
 
-template MaskInfo extractMask<true>(const PaddedPODArray<UInt8> & mask, const ColumnPtr & column, PaddedPODArray<UInt8> & result, UInt8 null_value);
-template MaskInfo extractMask<false>(const PaddedPODArray<UInt8> & mask, const ColumnPtr & column, PaddedPODArray<UInt8> & result, UInt8 null_value);
-template MaskInfo extractMaskInplace<true>(PaddedPODArray<UInt8> & mask, const ColumnPtr & column, UInt8 null_value);
-template MaskInfo extractMaskInplace<false>(PaddedPODArray<UInt8> & mask, const ColumnPtr & column, UInt8 null_value);
-template MaskInfo extractMaskInplaceWithNulls<true>(PaddedPODArray<UInt8> & mask, const ColumnPtr & column, PaddedPODArray<UInt8> * nulls, UInt8 null_value);
-template MaskInfo extractMaskInplaceWithNulls<false>(PaddedPODArray<UInt8> & mask, const ColumnPtr & column, PaddedPODArray<UInt8> * nulls, UInt8 null_value);
-
-
-void inverseMask(PaddedPODArray<UInt8> & mask)
+MaskInfo extractInvertedMask(
+    PaddedPODArray<UInt8> & mask,
+    const ColumnPtr & column,
+    PaddedPODArray<UInt8> * nulls,
+    UInt8 null_value)
 {
-    std::transform(mask.begin(), mask.end(), mask.begin(), [](UInt8 val){ return !val; });
+    return extractMaskImpl<true>(mask, column, null_value, nullptr, nulls);
 }
 
-void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info, bool inverted)
+
+void inverseMask(PaddedPODArray<UInt8> & mask, MaskInfo & mask_info)
+{
+    for (size_t i = 0; i != mask.size(); ++i)
+        mask[i] = !mask[i];
+    std::swap(mask_info.has_ones, mask_info.has_zeros);
+}
+
+void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
     if (!column_function)
@@ -275,16 +263,16 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
     ColumnWithTypeAndName result;
     /// If mask contains only zeros, we can just create
     /// an empty column with the execution result type.
-    if ((!inverted && !mask_info.has_ones) || (inverted && !mask_info.has_zeros))
+    if (!mask_info.has_ones)
     {
         auto result_type = column_function->getResultType();
         auto empty_column = result_type->createColumn();
         result = {std::move(empty_column), result_type, ""};
     }
     /// Filter column only if mask contains zeros.
-    else if ((!inverted && mask_info.has_zeros) || (inverted && mask_info.has_ones))
+    else if (mask_info.has_zeros)
     {
-        auto filtered = column_function->filter(mask, -1, inverted);
+        auto filtered = column_function->filter(mask, -1);
         result = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
     }
     else
@@ -315,6 +303,17 @@ int checkShirtCircuitArguments(const ColumnsWithTypeAndName & arguments)
     }
 
     return last_short_circuit_argument_index;
+}
+
+void copyMask(const PaddedPODArray<UInt8> & from, PaddedPODArray<UInt8> & to)
+{
+    if (from.size() != to.size())
+        throw Exception("Cannot copy mask, because source and destination have different size", ErrorCodes::LOGICAL_ERROR);
+
+    if (from.empty())
+        return;
+
+    memcpy(to.data(), from.data(), from.size() * sizeof(*from.data()));
 }
 
 }

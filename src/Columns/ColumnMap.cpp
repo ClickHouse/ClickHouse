@@ -143,9 +143,9 @@ void ColumnMap::insertRangeFrom(const IColumn & src, size_t start, size_t length
         start, length);
 }
 
-ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint, bool inverted) const
+ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    auto filtered = nested->filter(filt, result_size_hint, inverted);
+    auto filtered = nested->filter(filt, result_size_hint);
     return ColumnMap::create(filtered);
 }
 

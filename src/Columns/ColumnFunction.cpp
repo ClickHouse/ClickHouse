@@ -59,7 +59,7 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     return ColumnFunction::create(length, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
-ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, bool inverted) const
+ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (size_ != filt.size())
         throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column ("
@@ -67,14 +67,12 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, 
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
-        column.column = column.column->filter(filt, result_size_hint, inverted);
+        column.column = column.column->filter(filt, result_size_hint);
 
     size_t filtered_size = 0;
     if (capture.empty())
     {
         filtered_size = countBytesInFilter(filt);
-        if (inverted)
-            filtered_size = filt.size() - filtered_size;
     }
     else
         filtered_size = capture.front().column->size();

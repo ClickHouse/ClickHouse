@@ -67,13 +67,6 @@ public:
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;
 
-    /// States for lazy function execution in short-circuit function arguments.
-    enum class LazyExecution
-    {
-        DISABLED,
-        ENABLED,
-    };
-
     struct Node
     {
         NodeRawConstPtrs children;
@@ -96,10 +89,6 @@ public:
 
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
-
-        /// Determine if this action should be executed lazily. If it should and the action type is FUNCTION, then the function
-        /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
-        LazyExecution lazy_execution = LazyExecution::DISABLED;
 
         void toTree(JSONBuilder::JSONMap & map) const;
     };
@@ -192,7 +181,7 @@ public:
     void assertDeterministic() const; /// Throw if not isDeterministic.
 
 #if USE_EMBEDDED_COMPILER
-    void compileExpressions(size_t min_count_to_compile_expression);
+    void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
     ActionsDAGPtr clone() const;
@@ -287,7 +276,7 @@ private:
     void removeUnusedActions(bool allow_remove_inputs = true);
 
 #if USE_EMBEDDED_COMPILER
-    void compileFunctions(size_t min_count_to_compile_expression);
+    void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);

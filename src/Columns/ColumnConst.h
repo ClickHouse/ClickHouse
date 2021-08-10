@@ -180,7 +180,7 @@ public:
         data->updateHashFast(hash);
     }
 
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool inverted) const override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr replicate(const Offsets & offsets) const override;

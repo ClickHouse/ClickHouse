@@ -383,11 +383,9 @@ bool IFunction::isCompilable(const DataTypes & arguments) const
         if (auto denulled = removeNullables(arguments))
         {
             bool res = isCompilableImpl(*denulled);
-            LOG_DEBUG(&Poco::Logger::get("IFunction"), "Function {}, isCompilable: {}", getName(), res);
             return res;
         }
     bool res = isCompilableImpl(arguments);
-    LOG_DEBUG(&Poco::Logger::get("IFunction"), "Function {}, isCompilable: {}", getName(), res);
     return res;
 }
 
