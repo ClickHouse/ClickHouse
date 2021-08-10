@@ -79,8 +79,8 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     /// (For example, if param is {1:Int64} we will have in ast left argument of CAST Literal_Int64_1, but if it was an ordinary query
     /// without parameter it would be Literal_UInt64_1 and CAST to Int64 + some query analysis will result in a value with type Int8 instead
     /// of UInt8 and it might mislead analyzer to think it was affected by a non-constant (but actually it wasn't and so wasn't part with aggregation)
-    /// if there is also an aggregation and comparison with the same value but Literal_UInt8_1 (i.e. in query constant 1 is actually the same value, 
-    /// but parsed into different ASTs becuase of query parameter and misleads analyzer).
+    /// if there is also an aggregation and comparison with the same value but Literal_UInt8_1 (i.e. in query constant 1 is actually the same value,
+    /// but parsed into different ASTs because of query parameter and misleads analyzer).
     /// This case cannot happen without query parameter, because single literal 1 is always parsed the same way and the problem arises from this.
     auto cast = serializeAST(*ast);
     ParserFunction parser;
