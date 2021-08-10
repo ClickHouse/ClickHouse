@@ -100,7 +100,7 @@ public:
         const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
         auto * tuple_col_concrete = assert_cast<const ColumnTuple*>(tuple_col);
 
-        MutableColumnPtr keys = ColumnString::create();
+        auto keys = ColumnString::create();
         MutableColumnPtr values = tuple_col_concrete->getColumn(0).cloneEmpty();
         auto offsets = ColumnVector<UInt64>::create();
         for (size_t row = 0; row < tuple_col_concrete->size(); ++row)
