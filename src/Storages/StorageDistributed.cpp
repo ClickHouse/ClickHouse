@@ -284,86 +284,6 @@ void replaceConstantExpressions(
     visitor.visit(node);
 }
 
-/// This is the implementation of optimize_distributed_group_by_sharding_key.
-/// It returns up to which stage the query can be processed on a shard, which
-/// is one of the following:
-/// - QueryProcessingStage::Complete
-/// - QueryProcessingStage::WithMergeableStateAfterAggregation
-/// - QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit
-/// - none (in this case regular WithMergeableState should be used)
-std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, bool extremes, const Names & sharding_key_columns)
-{
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-
-    auto sharding_block_has = [&](const auto & exprs) -> bool
-    {
-        std::unordered_set<std::string> expr_columns;
-        for (auto & expr : exprs)
-        {
-            auto id = expr->template as<ASTIdentifier>();
-            if (!id)
-                continue;
-            expr_columns.emplace(id->name());
-        }
-
-        for (const auto & column : sharding_key_columns)
-        {
-            if (!expr_columns.contains(column))
-                return false;
-        }
-
-        return true;
-    };
-
-    // GROUP BY qualifiers
-    // - TODO: WITH TOTALS can be implemented
-    // - TODO: WITH ROLLUP can be implemented (I guess)
-    if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
-        return {};
-
-    // Window functions are not supported.
-    if (query_info.has_window)
-        return {};
-
-    // TODO: extremes support can be implemented
-    if (extremes)
-        return {};
-
-    // DISTINCT
-    if (select.distinct)
-    {
-        if (!sharding_block_has(select.select()->children))
-            return {};
-    }
-
-    // GROUP BY
-    const ASTPtr group_by = select.groupBy();
-    if (!group_by)
-    {
-        if (!select.distinct)
-            return {};
-    }
-    else
-    {
-        if (!sharding_block_has(group_by->children))
-            return {};
-    }
-
-    // ORDER BY
-    const ASTPtr order_by = select.orderBy();
-    if (order_by)
-        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-
-    // LIMIT BY
-    // LIMIT
-    // OFFSET
-    if (select.limitBy() || select.limitLength() || select.limitOffset())
-        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-
-    // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
-    return QueryProcessingStage::Complete;
-}
-
 size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & cluster)
 {
     size_t num_local_shards = cluster->getLocalShardCount();
@@ -495,17 +415,22 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ClusterPtr cluster = getCluster();
     query_info.cluster = cluster;
 
+    size_t nodes = getClusterQueriedNodes(settings, cluster);
+
     /// Always calculate optimized cluster here, to avoid conditions during read()
     /// (Anyway it will be calculated in the read())
-    if (getClusterQueriedNodes(settings, cluster) > 1 && settings.optimize_skip_unused_shards)
+    if (nodes > 1 && settings.optimize_skip_unused_shards)
     {
         ClusterPtr optimized_cluster = getOptimizedCluster(local_context, metadata_snapshot, query_info.query);
         if (optimized_cluster)
         {
             LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
                     makeFormattedListOfShards(optimized_cluster));
+
             cluster = optimized_cluster;
             query_info.optimized_cluster = cluster;
+
+            nodes = getClusterQueriedNodes(settings, cluster);
         }
         else
         {
@@ -527,12 +452,11 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         {
             /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
             /// (since in this case queries processed separately and the initiator is just a proxy in this case).
+            if (to_stage != QueryProcessingStage::Complete)
+                throw Exception("Queries with distributed_group_by_no_merge=1 should be processed to Complete stage", ErrorCodes::LOGICAL_ERROR);
             return QueryProcessingStage::Complete;
         }
     }
-
-    if (settings.distributed_push_down_limit)
-        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.
@@ -541,23 +465,113 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     /// If there is only one node, the query can be fully processed by the
     /// shard, initiator will work as a proxy only.
-    if (getClusterQueriedNodes(settings, cluster) == 1)
-        return QueryProcessingStage::Complete;
-
-    if (settings.optimize_skip_unused_shards &&
-        settings.optimize_distributed_group_by_sharding_key &&
-        has_sharding_key &&
-        (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic))
+    if (nodes == 1)
     {
-        auto stage = getOptimizedQueryProcessingStage(query_info, settings.extremes, sharding_key_expr->getRequiredColumns());
-        if (stage)
-        {
-            LOG_DEBUG(log, "Force processing stage to {}", QueryProcessingStage::toString(*stage));
-            return *stage;
-        }
+        /// In case the query was processed to
+        /// WithMergeableStateAfterAggregation/WithMergeableStateAfterAggregationAndLimit
+        /// (which are greater the Complete stage)
+        /// we cannot return Complete (will break aliases and similar),
+        /// relevant for Distributed over Distributed
+        return std::max(to_stage, QueryProcessingStage::Complete);
+    }
+    else if (nodes == 0)
+    {
+        /// In case of 0 shards, the query should be processed fully on the initiator,
+        /// since we need to apply aggregations.
+        /// That's why we need to return FetchColumns.
+        return QueryProcessingStage::FetchColumns;
+    }
+
+    auto optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
+    if (optimized_stage)
+    {
+        if (*optimized_stage == QueryProcessingStage::Complete)
+            return std::min(to_stage, *optimized_stage);
+        return *optimized_stage;
     }
 
     return QueryProcessingStage::WithMergeableState;
+}
+
+std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const
+{
+    bool optimize_sharding_key_aggregation =
+        settings.optimize_skip_unused_shards &&
+        settings.optimize_distributed_group_by_sharding_key &&
+        has_sharding_key &&
+        (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic);
+
+    QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+    if (settings.distributed_push_down_limit)
+        default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+
+    auto expr_contains_sharding_key = [&](const auto & exprs) -> bool
+    {
+        std::unordered_set<std::string> expr_columns;
+        for (auto & expr : exprs)
+        {
+            auto id = expr->template as<ASTIdentifier>();
+            if (!id)
+                continue;
+            expr_columns.emplace(id->name());
+        }
+
+        for (const auto & column : sharding_key_expr->getRequiredColumns())
+        {
+            if (!expr_columns.contains(column))
+                return false;
+        }
+
+        return true;
+    };
+
+    // GROUP BY qualifiers
+    // - TODO: WITH TOTALS can be implemented
+    // - TODO: WITH ROLLUP can be implemented (I guess)
+    if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
+        return {};
+    // Window functions are not supported.
+    if (query_info.has_window)
+        return {};
+    // TODO: extremes support can be implemented
+    if (settings.extremes)
+        return {};
+
+    // DISTINCT
+    if (select.distinct)
+    {
+        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(select.select()->children))
+            return {};
+    }
+
+    // GROUP BY
+    const ASTPtr group_by = select.groupBy();
+    if (!query_info.syntax_analyzer_result->aggregates.empty() || group_by)
+    {
+        if (!optimize_sharding_key_aggregation || !group_by || !expr_contains_sharding_key(group_by->children))
+            return {};
+    }
+
+    // LIMIT BY
+    if (const ASTPtr limit_by = select.limitBy())
+    {
+        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(limit_by->children))
+            return {};
+    }
+
+    // ORDER BY
+    if (const ASTPtr order_by = select.orderBy())
+        return default_stage;
+
+    // LIMIT
+    // OFFSET
+    if (select.limitLength() || select.limitOffset())
+        return default_stage;
+
+    // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
+    return QueryProcessingStage::Complete;
 }
 
 Pipe StorageDistributed::read(

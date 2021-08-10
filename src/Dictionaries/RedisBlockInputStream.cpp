@@ -29,18 +29,19 @@ namespace DB
     }
 
 
-    RedisBlockInputStream::RedisBlockInputStream(
+    RedisSource::RedisSource(
             const std::shared_ptr<Poco::Redis::Client> & client_,
             const RedisArray & keys_,
             const RedisStorageType & storage_type_,
             const DB::Block & sample_block,
             const size_t max_block_size_)
-            : client(client_), keys(keys_), storage_type(storage_type_), max_block_size{max_block_size_}
+            : SourceWithProgress(sample_block)
+            , client(client_), keys(keys_), storage_type(storage_type_), max_block_size{max_block_size_}
     {
         description.init(sample_block);
     }
 
-    RedisBlockInputStream::~RedisBlockInputStream() = default;
+    RedisSource::~RedisSource() = default;
 
 
     namespace
@@ -121,7 +122,7 @@ namespace DB
     }
 
 
-    Block RedisBlockInputStream::readImpl()
+    Chunk RedisSource::generate()
     {
         if (keys.isNull() || description.sample_block.rows() == 0 || cursor >= keys.size())
             all_read = true;
@@ -218,6 +219,7 @@ namespace DB
             cursor += need_values;
         }
 
-        return description.sample_block.cloneWithColumns(std::move(columns));
+        size_t num_rows = columns.at(0)->size();
+        return Chunk(std::move(columns), num_rows);
     }
 }
