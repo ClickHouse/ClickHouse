@@ -363,7 +363,8 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
         settings->client,
         source_bucket,
         source_path + SCHEMA_VERSION_OBJECT,
-        settings->s3_max_single_read_retries);
+        settings->s3_max_single_read_retries,
+        DBMS_DEFAULT_BUFFER_SIZE);
 
     readIntText(version, buffer);
 

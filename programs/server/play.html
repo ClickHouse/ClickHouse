@@ -68,7 +68,7 @@
         html, body
         {
             /* Personal choice. */
-            font-family: Sans-Serif;
+            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
         }
@@ -96,9 +96,14 @@
         .monospace
         {
             /* Prefer fonts that have full hinting info. This is important for non-retina displays.
-               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant).
-            */
+               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant). */
             font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, Monospace;
+        }
+
+        .monospace-table
+        {
+            /* Liberation is worse than DejaVu for block drawing characters. */
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, Monospace;
         }
 
         .shadow
@@ -325,8 +330,8 @@
         <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
     </div>
     <div id="data_div">
-        <table class="monospace shadow" id="data-table"></table>
-        <pre class="monospace shadow" id="data-unparsed"></pre>
+        <table class="monospace-table shadow" id="data-table"></table>
+        <pre class="monospace-table shadow" id="data-unparsed"></pre>
     </div>
     <svg id="graph" fill="none"></svg>
     <p id="error" class="monospace shadow">
@@ -361,23 +366,22 @@
 
     function postImpl(posted_request_num, query)
     {
-        /// TODO: Check if URL already contains query string (append parameters).
+        const user = document.getElementById('user').value;
+        const password = document.getElementById('password').value;
 
-        let user = document.getElementById('user').value;
-        let password = document.getElementById('password').value;
+        const server_address = document.getElementById('url').value;
 
-        let server_address = document.getElementById('url').value;
-
-        let url = server_address +
+        const url = server_address +
+            (server_address.indexOf('?') >= 0 ? '&' : '?') +
             /// Ask server to allow cross-domain requests.
-            '?add_http_cors_header=1' +
+            'add_http_cors_header=1' +
             '&user=' + encodeURIComponent(user) +
             '&password=' + encodeURIComponent(password) +
             '&default_format=JSONCompact' +
             /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
-        let xhr = new XMLHttpRequest;
+        const xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
 
@@ -391,12 +395,12 @@
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
                 if (query != previous_query) {
-                    let state = {
+                    const state = {
                         query: query,
                         status: this.status,
                         response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
                     };
-                    let title = "ClickHouse Query: " + query;
+                    const title = "ClickHouse Query: " + query;
 
                     let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
                     if (server_address != location.origin) {
