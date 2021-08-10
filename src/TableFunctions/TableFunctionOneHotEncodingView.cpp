@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 ColumnsDescription TableFunctionOneHotEncodingView::getActualBaseQueryTableStructure(
     ASTPtr base_query,
-    ContextPtr context) const
+    ContextPtr context)
 {
     if (base_query)
     {
