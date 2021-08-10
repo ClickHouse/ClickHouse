@@ -316,7 +316,7 @@ private:
         }
         catch (const Exception & e)
         {
-                bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
+            bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
 
             std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
 
