@@ -23,8 +23,8 @@ Block IntersectOrExceptStep::checkHeaders(const DataStreams & input_streams_) co
     return res;
 }
 
-IntersectOrExceptStep::IntersectOrExceptStep(bool is_except_, DataStreams input_streams_, size_t max_threads_)
-    : is_except(is_except_), header(checkHeaders(input_streams_)), max_threads(max_threads_)
+IntersectOrExceptStep::IntersectOrExceptStep(DataStreams input_streams_, const Modes & modes_, size_t max_threads_)
+    : header(checkHeaders(input_streams_)), modes(modes_), max_threads(max_threads_)
 {
     input_streams = std::move(input_streams_);
     if (input_streams.size() == 1)
@@ -63,8 +63,9 @@ QueryPipelinePtr IntersectOrExceptStep::updatePipeline(QueryPipelines pipelines,
         }
     }
 
+    std::cerr << "size: " << input_streams.size() << std::endl;
     *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), max_threads);
-    pipeline->addTransform(std::make_shared<IntersectOrExceptTransform>(is_except, header));
+    pipeline->addTransform(std::make_shared<IntersectOrExceptTransform>(header, modes));
 
     processors = collector.detachProcessors();
     return pipeline;

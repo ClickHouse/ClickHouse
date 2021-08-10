@@ -4,9 +4,11 @@
 namespace DB
 {
 
-IntersectOrExceptTransform::IntersectOrExceptTransform(bool is_except_, const Block & header_)
-    : IProcessor(InputPorts(2, header_), {header_})
-    , is_except(is_except_)
+IntersectOrExceptTransform::IntersectOrExceptTransform(const Block & header_, const Modes & modes_)
+    : IProcessor(InputPorts(modes_.size() + 1, header_), {header_})
+    , modes(modes_)
+    , first_input(inputs.begin())
+    , second_input(std::next(inputs.begin()))
 {
     const Names & columns = header_.getNames();
     size_t num_columns = columns.empty() ? header_.columns() : columns.size();
@@ -14,8 +16,7 @@ IntersectOrExceptTransform::IntersectOrExceptTransform(bool is_except_, const Bl
     key_columns_pos.reserve(columns.size());
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto pos = columns.empty() ? i
-                                   : header_.getPositionByName(columns[i]);
+        auto pos = columns.empty() ? i : header_.getPositionByName(columns[i]);
         key_columns_pos.emplace_back(pos);
     }
 }
@@ -40,7 +41,7 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
     }
 
     /// Output if has data.
-    if (current_output_chunk)
+    if (current_output_chunk && second_input == inputs.end())
     {
         output.push(std::move(current_output_chunk));
     }
@@ -53,28 +54,50 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
     if (finished_second_input)
     {
-        if (inputs.front().isFinished())
+        if (first_input->isFinished() || (more && !current_input_chunk))
         {
-            output.finish();
-            return Status::Finished;
+            std::advance(second_input, 1);
+
+            if (second_input == inputs.end())
+            {
+                if (current_output_chunk)
+                {
+                    output.push(std::move(current_output_chunk));
+                }
+                output.finish();
+                return Status::Finished;
+            }
+            else
+            {
+                more = true;
+                data.reset();
+                finished_second_input = false;
+                ++current_operator_pos;
+            }
         }
     }
-    else if (inputs.back().isFinished())
+    else if (second_input->isFinished())
     {
         finished_second_input = true;
     }
 
-    InputPort & input = finished_second_input ? inputs.front() : inputs.back();
+    InputPort & input = finished_second_input ? *first_input : *second_input;
 
     /// Check can input.
     if (!has_input)
     {
-        input.setNeeded();
+        if (finished_second_input && more)
+        {
+            current_input_chunk = std::move(current_output_chunk);
+        }
+        else
+        {
+            input.setNeeded();
+            if (!input.hasData())
+                return Status::NeedData;
+            current_input_chunk = input.pull();
+        }
 
-        if (!input.hasData())
-            return Status::NeedData;
-
-        current_input_chunk = input.pull();
         has_input = true;
     }
 
@@ -84,6 +107,9 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
 void IntersectOrExceptTransform::work()
 {
+    if (!data)
+        data.emplace();
+
     if (!finished_second_input)
     {
         accumulate(std::move(current_input_chunk));
@@ -118,7 +144,7 @@ size_t IntersectOrExceptTransform::buildFilter(
     for (size_t i = 0; i < rows; ++i)
     {
         auto find_result = state.findKey(method.data, i, variants.string_pool);
-        filter[i] = is_except ? !find_result.isFound() : find_result.isFound();
+        filter[i] = modes[current_operator_pos] == ASTIntersectOrExcept::Mode::EXCEPT ? !find_result.isFound() : find_result.isFound();
         if (filter[i])
             ++new_rows_num;
     }
@@ -137,16 +163,17 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
 
-    if (data.empty())
-        data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
+    if (data->empty())
+        data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
-    switch (data.type)
+    auto & data_set = *data;
+    switch (data->type)
     {
         case SetVariants::Type::EMPTY:
             break;
 #define M(NAME) \
     case SetVariants::Type::NAME: \
-        addToSet(*data.NAME, column_ptrs, num_rows, data); \
+        addToSet(*data_set.NAME, column_ptrs, num_rows, data_set); \
         break;
             APPLY_FOR_SET_VARIANTS(M)
 #undef M
@@ -165,19 +192,20 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
 
-    if (data.empty())
-        data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
+    if (data->empty())
+        data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
     IColumn::Filter filter(num_rows);
 
     size_t new_rows_num = 0;
-    switch (data.type)
+    auto & data_set = *data;
+    switch (data->type)
     {
         case SetVariants::Type::EMPTY:
             break;
 #define M(NAME) \
     case SetVariants::Type::NAME: \
-        new_rows_num = buildFilter(*data.NAME, column_ptrs, filter, num_rows, data); \
+        new_rows_num = buildFilter(*data_set.NAME, column_ptrs, filter, num_rows, data_set); \
         break;
             APPLY_FOR_SET_VARIANTS(M)
 #undef M

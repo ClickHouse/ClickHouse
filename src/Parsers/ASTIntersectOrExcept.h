@@ -9,10 +9,22 @@ namespace DB
 class ASTIntersectOrExcept : public ASTQueryWithOutput
 {
 public:
-    String getID(char) const override { return is_except ? "Except" : "Intersect"; }
+    String getID(char) const override { return "IntersectExceptQuery"; }
+
     ASTPtr clone() const override;
+
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    bool is_except;
+
+    enum class Mode
+    {
+        INTERSECT,
+        EXCEPT
+    };
+
+    using Modes = std::vector<Mode>;
+
+    ASTPtr list_of_selects;
+    Modes list_of_modes;
 };
 
 }
