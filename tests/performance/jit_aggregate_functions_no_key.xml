@@ -105,7 +105,7 @@
                 if (number % 2 == 0, 1, 0)
             FROM
                 system.numbers_mt
-            LIMIT 10000000
+            LIMIT 50000000
     </fill_query>
 
     <query>
