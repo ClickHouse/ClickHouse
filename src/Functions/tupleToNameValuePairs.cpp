@@ -23,8 +23,9 @@ namespace ErrorCodes
 namespace
 {
 
-/** Extract element of tuple by constant index or name. The operation is essentially free.
-  * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
+/** Transform a named tuple into an array of pairs, where the first element
+  * of the pair corresponds to the tuple field name and the second one to the
+  * tuple value.
   */
 class FunctionTupleToNameValuePairs : public IFunction
 {
@@ -57,30 +58,31 @@ public:
         const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(col);
 
         if (!tuple)
-            throw Exception("First argument for function " + getName() + " must "
-                            "be a tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be a tuple.",
+                            getName());
 
-        const auto& elementTypes = tuple->getElements();
+        const auto & elementTypes = tuple->getElements();
 
         if (elementTypes.empty())
-            throw Exception("The argument tuple for function " + getName() + " must "
-                            "not be empty.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "The argument tuple for function {} must not be empty.",
+                            getName());
 
-        const auto& firstElementType = elementTypes[0];
+        const auto & firstElementType = elementTypes[0];
 
-        auto it = std::find_if(
-                           elementTypes.begin() + 1,
-                           elementTypes.end(),
-                           [&](const auto &other)
-                           {
-                               return !firstElementType->equals(*other);
-                           });
+        bool allValueTypesEqual = std::all_of(elementTypes.begin() + 1,
+                                              elementTypes.end(),
+                                              [&](const auto &other)
+                                              {
+                                                  return firstElementType->equals(*other);
+                                              });
 
-        if (it != elementTypes.end())
+        if (!allValueTypesEqual)
         {
-            throw Exception("The argument tuple for function " + getName() + " must "
-                            "contain just one type",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "The argument tuple for function {} must contain just one type.",
+                            getName());
         }
 
         DataTypePtr tupleNameType = std::make_shared<DataTypeString>();
@@ -94,9 +96,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const IColumn *tuple_col = arguments[0].column.get();
+        const IColumn * tuple_col = arguments[0].column.get();
         const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
-        auto *tuple_col_concrete = assert_cast<const ColumnTuple*>(tuple_col);
+        auto * tuple_col_concrete = assert_cast<const ColumnTuple*>(tuple_col);
 
         MutableColumnPtr keys = ColumnString::create();
         MutableColumnPtr values = tuple_col_concrete->getColumn(0).cloneEmpty();
@@ -105,8 +107,8 @@ public:
         {
             for (size_t col = 0; col < tuple_col_concrete->tupleSize(); ++col)
             {
-                const std::string& key = tuple->getElementNames()[col];
-                const IColumn& valueColumn = tuple_col_concrete->getColumn(col);
+                const std::string & key = tuple->getElementNames()[col];
+                const IColumn & valueColumn = tuple_col_concrete->getColumn(col);
 
                 values->insertFrom(valueColumn, row);
                 keys->insertData(key.data(), key.size());
