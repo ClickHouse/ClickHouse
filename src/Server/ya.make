@@ -22,6 +22,8 @@ SRCS(
     HTTPHandler.cpp
     HTTPHandlerFactory.cpp
     HTTPInterfaceConfig.cpp
+    HTTPProxyConfig.cpp
+    HTTPProxyProtocolHandler.cpp
     IndirectTCPServerConnection.cpp
     InterfaceConfig.cpp
     InterfaceConfigUtil.cpp

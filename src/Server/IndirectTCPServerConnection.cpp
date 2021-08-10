@@ -83,26 +83,26 @@ IndirectTCPServerConnection::IndirectTCPServerConnection(
     }
 }
 
-void IndirectTCPServerConnection::handleProxyProtocol(const Poco::Net::StreamSocket & socket)
+void IndirectTCPServerConnection::handleProxyProtocol(Poco::Net::StreamSocket & socket)
 {
-    if (auto * tcp_proxy_handler = dynamic_cast<TCPProxyProtocolHandler *>(proxy_handler.get()))
-        tcp_proxy_handler->handle(socket);
+    if (auto * stream_proxy_handler = dynamic_cast<StreamSocketAwareProxyProtocolHandler *>(proxy_handler.get()))
+        stream_proxy_handler->handle(socket);
 }
 
 void IndirectTCPServerConnection::handleProxyProtocol(const HTTPServerRequest & request)
 {
-    if (auto * http_proxy_handler = dynamic_cast<HTTPProxyProtocolHandler *>(proxy_handler.get()))
+    if (auto * http_proxy_handler = dynamic_cast<HTTPServerRequestAwareProxyProtocolHandler *>(proxy_handler.get()))
         http_proxy_handler->handle(request);
 }
 
 bool IndirectTCPServerConnection::isIndirect() const
 {
-    return (proxy_handler && proxy_handler->hasInitiatorPeerAddress());
+    return (proxy_handler && !proxy_handler->peerAddressChain().empty());
 }
 
 const Poco::Net::IPAddress & IndirectTCPServerConnection::initiatorPeerAddress() const
 {
-    return (isIndirect() ? proxy_handler->initiatorPeerAddress() : immediatePeerAddress());
+    return (isIndirect() ? proxy_handler->peerAddressChain().front() : immediatePeerAddress());
 }
 
 const Poco::Net::IPAddress & IndirectTCPServerConnection::immediatePeerAddress() const

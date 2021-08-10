@@ -3,14 +3,9 @@
 namespace DB
 {
 
-bool ProxyProtocolHandler::hasInitiatorPeerAddress() const
+const std::vector<Poco::Net::IPAddress> & ProxyProtocolHandler::peerAddressChain() const
 {
-    return initiatorPeer.has_value();
-}
-
-const Poco::Net::IPAddress & ProxyProtocolHandler::initiatorPeerAddress() const
-{
-    return initiatorPeer.value();
+    return addressChain;
 }
 
 }

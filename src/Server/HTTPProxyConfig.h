@@ -5,20 +5,15 @@
 namespace DB
 {
 
-/// Config class for PROXY v1/v2 protocols.
-class PROXYProxyConfig final : public ProxyConfig
+/// Config class for HTTP v1/v2 protocols.
+class HTTPProxyConfig final : public ProxyConfig
 {
 public:
-    explicit PROXYProxyConfig(const std::string & name_);
+    explicit HTTPProxyConfig(const std::string & name_);
 
     virtual std::unique_ptr<ProxyConfig> clone() const override;
     virtual void updateConfig(const Poco::Util::AbstractConfiguration & config) override;
     virtual std::unique_ptr<ProxyProtocolHandler> createProxyProtocolHandler() const override;
-
-public:
-    enum class Version { any, v1, v2 };
-
-    Version version = Version::any;
 };
 
 }

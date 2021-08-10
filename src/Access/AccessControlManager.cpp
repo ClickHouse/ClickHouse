@@ -427,15 +427,13 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
     params.address = client_info.current_address.host();
     params.quota_key = client_info.quota_key;
 
-    /// Extract the last entry from comma separated list of X-Forwarded-For addresses.
-    /// Only the last proxy can be trusted (if any).
+    /// Extract the first entry from the comma separated list of peer addresses (client, proxy1, proxy2, ..., proxyN-1).
     Strings forwarded_addresses;
     boost::split(forwarded_addresses, client_info.forwarded_for, boost::is_any_of(","));
     if (!forwarded_addresses.empty())
     {
-        String & last_forwarded_address = forwarded_addresses.back();
-        boost::trim(last_forwarded_address);
-        params.forwarded_address = last_forwarded_address;
+        params.forwarded_address = forwarded_addresses.front();
+        boost::trim(params.forwarded_address);
     }
 
     return getContextAccess(params);

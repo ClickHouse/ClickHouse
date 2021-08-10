@@ -30,7 +30,7 @@ public:
         const std::set<std::string> & supported_proxy_protocols
     );
 
-    void handleProxyProtocol(const Poco::Net::StreamSocket & socket);
+    void handleProxyProtocol(Poco::Net::StreamSocket & socket);
     void handleProxyProtocol(const HTTPServerRequest & request);
 
     bool isIndirect() const;
@@ -42,7 +42,6 @@ private:
     Poco::Logger * log;
     const Poco::Net::IPAddress immediatePeer;
     std::unique_ptr<ProxyProtocolHandler> proxy_handler;
-    std::optional<Poco::Net::IPAddress> initiator;
 };
 
 }

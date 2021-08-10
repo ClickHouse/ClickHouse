@@ -89,10 +89,9 @@ public:
     /// For mysql
     UInt64 connection_id = 0;
 
-    /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
-    /// It's expected that proxy appends the forwarded address to the end of the list.
-    /// The element can be trusted only if you trust the corresponding proxy.
-    /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
+    /// Comma separated list of forwarded IP addresses (from X-Forwarded-For HTTP header, PROXY v1/v2 etc.)
+    /// The first element is the connection initiator (the original client), the last element is the proxy closest to us (but not the current connection peer).
+    /// The element can be trusted only if you trust all proxies in the chain.
     String forwarded_for;
 
     /// Common

@@ -2,7 +2,7 @@
 
 #include "Poco/Net/IPAddress.h"
 
-#include <optional>
+#include <vector>
 
 namespace Poco { namespace Net { class StreamSocket; } }
 
@@ -16,21 +16,19 @@ class ProxyProtocolHandler
 public:
     virtual ~ProxyProtocolHandler() = default;
 
-    bool hasInitiatorPeerAddress() const;
-
-    const Poco::Net::IPAddress & initiatorPeerAddress() const;
+    const std::vector<Poco::Net::IPAddress> & peerAddressChain() const;
 
 protected:
-    std::optional<Poco::Net::IPAddress> initiatorPeer;
+    std::vector<Poco::Net::IPAddress> addressChain;
 };
 
-class TCPProxyProtocolHandler : virtual public ProxyProtocolHandler
+class StreamSocketAwareProxyProtocolHandler : virtual public ProxyProtocolHandler
 {
 public:
-    virtual void handle(const Poco::Net::StreamSocket & socket) = 0;
+    virtual void handle(Poco::Net::StreamSocket & socket) = 0;
 };
 
-class HTTPProxyProtocolHandler : virtual public ProxyProtocolHandler
+class HTTPServerRequestAwareProxyProtocolHandler : virtual public ProxyProtocolHandler
 {
 public:
     virtual void handle(const HTTPServerRequest & request) = 0;

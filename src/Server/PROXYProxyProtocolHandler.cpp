@@ -1,10 +1,13 @@
 #include <Server/PROXYProxyProtocolHandler.h>
-#include <Server/HTTP/HTTPServerRequest.h>
 #include <Common/Exception.h>
 
 #include "Poco/Net/StreamSocket.h"
 
 #include <boost/algorithm/string.hpp>
+
+#include <algorithm>
+#include <string>
+#include <vector>
 
 namespace DB
 {
@@ -12,6 +15,26 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int IP_ADDRESS_NOT_ALLOWED;
+    extern const int PROXY_PROTOCOL_HEADER_ERROR;
+}
+
+namespace
+{
+
+struct PROXYHeader
+{
+    Poco::Net::IPAddress initiator;
+};
+
+std::optional<PROXYHeader> tryReadPROXYHeader(Poco::Net::StreamSocket & socket, bool expect_v1, bool expect_v2)
+{
+    (void)socket;
+    (void)expect_v1;
+    (void)expect_v2;
+
+    return {};
+}
+
 }
 
 PROXYProxyProtocolHandler::PROXYProxyProtocolHandler(const PROXYProxyConfig & config_)
@@ -19,62 +42,16 @@ PROXYProxyProtocolHandler::PROXYProxyProtocolHandler(const PROXYProxyConfig & co
 {
 }
 
-void PROXYProxyProtocolHandler::handle(const Poco::Net::StreamSocket & socket)
+void PROXYProxyProtocolHandler::handle(Poco::Net::StreamSocket & socket)
 {
-    switch (config.version)
-    {
-        case PROXYProxyConfig::Version::v1:
-        {
-            prevStreamParsedPeer = consumePROXYv1Header(socket);
-            break;
-        }
-        case PROXYProxyConfig::Version::v2:
-        {
-            prevStreamParsedPeer = consumePROXYv2Header(socket);
-            break;
-        }
-    }
+    addressChain.clear();
 
-    initiatorPeer = prevStreamParsedPeer;
-}
+    const auto expect_v1 = (config.version != PROXYProxyConfig::Version::v2);
+    const auto expect_v2 = (config.version != PROXYProxyConfig::Version::v1);
+    const auto header = tryReadPROXYHeader(socket, expect_v1, expect_v2);
 
-void PROXYProxyProtocolHandler::handle(const HTTPServerRequest & request)
-{
-    if (!request.has("X-Forwarded-For"))
-    {
-        initiatorPeer = prevStreamParsedPeer;
-        return;
-    }
-
-    auto address_str = request.get("X-Forwarded-For");
-    const auto comma_pos = address_str.find(',');
-    address_str = address_str.substr(0, comma_pos);
-    boost::algorithm::trim(address_str);
-
-    if (address_str.empty())
-    {
-        initiatorPeer = prevStreamParsedPeer;
-        return;
-    }
-
-    const Poco::Net::IPAddress address(address_str);
-
-    if (prevStreamParsedPeer.has_value() && prevStreamParsedPeer != address)
-        throw Exception("Inconsistent TCP stream header vs. X-Forwarded-For values", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
-
-    initiatorPeer = address;
-}
-
-std::optional<Poco::Net::IPAddress> PROXYProxyProtocolHandler::consumePROXYv1Header(const Poco::Net::StreamSocket & socket)
-{
-    (void)socket;
-    return {};
-}
-
-std::optional<Poco::Net::IPAddress> PROXYProxyProtocolHandler::consumePROXYv2Header(const Poco::Net::StreamSocket & socket)
-{
-    (void)socket;
-    return {};
+    if (header.has_value())
+        addressChain.emplace_back(header.value().initiator);
 }
 
 }

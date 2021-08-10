@@ -38,9 +38,6 @@ void PROXYProxyConfig::updateConfig(const Poco::Util::AbstractConfiguration & co
                 throw Exception("Bad PROXY protocol version " + std::to_string(version_num), ErrorCodes::INVALID_CONFIG_PARAMETER);
         }
     }
-
-    if (config.has("allow_http_x_forwarded_for"))
-        allow_http_x_forwarded_for = config.getBool("allow_http_x_forwarded_for");
 }
 
 std::unique_ptr<ProxyProtocolHandler> PROXYProxyConfig::createProxyProtocolHandler() const
