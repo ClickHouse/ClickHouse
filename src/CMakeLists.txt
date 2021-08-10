@@ -158,6 +158,8 @@ else()
     target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
 endif()
 
+target_link_libraries (clickhouse_common_io PRIVATE jemalloc)
+
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
 
@@ -472,6 +474,17 @@ if (USE_DATASKETCHES)
 endif ()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
+
+if (USE_NLP)
+    dbms_target_link_libraries (PUBLIC stemmer)
+    dbms_target_link_libraries (PUBLIC wnb)
+    dbms_target_link_libraries (PUBLIC lemmagen)
+endif()
+
+if (USE_BZIP2)
+    target_link_libraries (clickhouse_common_io PRIVATE ${BZIP2_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BZIP2_INCLUDE_DIR})
+endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
