@@ -35,8 +35,8 @@ ExternalQueryBuilder::ExternalQueryBuilder(
     if (table.empty() && query.empty())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Setting `table` or `query` must be non empty");
 
-    if (!query.empty() && !where.empty())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Setting `where` is not supported with `query` parameter");
+    if (!query.empty() && (!table.empty() || !where.empty()))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Setting `table` or `where` cannot be used with `query` parameter");
 }
 
 
