@@ -2,7 +2,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ParserIntersectOrExcept.h>
+#include <Parsers/ParserIntersectOrExceptQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTExpressionList.h>
@@ -11,13 +11,13 @@
 namespace DB
 {
 
-bool ParserIntersectOrExcept::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserIntersectOrExceptQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword intersect_keyword("INTERSECT");
     ParserKeyword except_keyword("EXCEPT");
 
     ASTs elements;
-    ASTIntersectOrExcept::Modes modes;
+    ASTIntersectOrExcept::Operators operators;
 
     auto parse_element = [&]() -> bool
     {
@@ -36,18 +36,21 @@ bool ParserIntersectOrExcept::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
             if (!except_keyword.ignore(pos))
                 return false;
 
-            modes.emplace_back(ASTIntersectOrExcept::Mode::EXCEPT);
+            operators.emplace_back(ASTIntersectOrExcept::Operator::EXCEPT);
             return true;
         }
 
-        modes.emplace_back(ASTIntersectOrExcept::Mode::INTERSECT);
+        operators.emplace_back(ASTIntersectOrExcept::Operator::INTERSECT);
         return true;
     };
 
     if (!ParserUnionList::parseUtil(pos, parse_element, parse_separator))
         return false;
 
-    if (modes.empty())
+    if (operators.empty() || elements.empty())
+        return false;
+
+    if (operators.size() + 1 != elements.size())
         return false;
 
     auto list_node = std::make_shared<ASTExpressionList>();
@@ -58,7 +61,7 @@ bool ParserIntersectOrExcept::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     node = intersect_or_except_ast;
     intersect_or_except_ast->list_of_selects = list_node;
     intersect_or_except_ast->children.push_back(intersect_or_except_ast->list_of_selects);
-    intersect_or_except_ast->list_of_modes = modes;
+    intersect_or_except_ast->list_of_operators = operators;
 
     return true;
 }

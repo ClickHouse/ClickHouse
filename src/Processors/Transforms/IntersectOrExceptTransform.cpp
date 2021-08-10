@@ -4,9 +4,13 @@
 namespace DB
 {
 
-IntersectOrExceptTransform::IntersectOrExceptTransform(const Block & header_, const Modes & modes_)
-    : IProcessor(InputPorts(modes_.size() + 1, header_), {header_})
-    , modes(modes_)
+/*
+ * There are always at least two inputs. Number of operators is always number of inputs minus 1.
+ * input1 {operator1} input2 {operator2} input3 ...
+**/
+IntersectOrExceptTransform::IntersectOrExceptTransform(const Block & header_, const Operators & operators_)
+    : IProcessor(InputPorts(operators_.size() + 1, header_), {header_})
+    , operators(operators_)
     , first_input(inputs.begin())
     , second_input(std::next(inputs.begin()))
 {
@@ -30,6 +34,7 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
     {
         for (auto & in : inputs)
             in.close();
+
         return Status::Finished;
     }
 
@@ -37,24 +42,13 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
     {
         for (auto & input : inputs)
             input.setNotNeeded();
+
         return Status::PortFull;
-    }
-
-    /// Output if has data.
-    if (current_output_chunk && second_input == inputs.end())
-    {
-        output.push(std::move(current_output_chunk));
-    }
-
-    if (push_empty_chunk)
-    {
-        output.push(std::move(empty_chunk));
-        push_empty_chunk = false;
     }
 
     if (finished_second_input)
     {
-        if (first_input->isFinished() || (more && !current_input_chunk))
+        if (first_input->isFinished() || (use_accumulated_input && !current_input_chunk))
         {
             std::advance(second_input, 1);
 
@@ -64,12 +58,13 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
                 {
                     output.push(std::move(current_output_chunk));
                 }
+
                 output.finish();
                 return Status::Finished;
             }
             else
             {
-                more = true;
+                use_accumulated_input = true;
                 data.reset();
                 finished_second_input = false;
                 ++current_operator_pos;
@@ -81,20 +76,20 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
         finished_second_input = true;
     }
 
-    InputPort & input = finished_second_input ? *first_input : *second_input;
-
-    /// Check can input.
     if (!has_input)
     {
-        if (finished_second_input && more)
+        if (finished_second_input && use_accumulated_input)
         {
             current_input_chunk = std::move(current_output_chunk);
         }
         else
         {
+            InputPort & input = finished_second_input ? *first_input : *second_input;
+
             input.setNeeded();
             if (!input.hasData())
                 return Status::NeedData;
+
             current_input_chunk = input.pull();
         }
 
@@ -107,9 +102,6 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
 void IntersectOrExceptTransform::work()
 {
-    if (!data)
-        data.emplace();
-
     if (!finished_second_input)
     {
         accumulate(std::move(current_input_chunk));
@@ -144,7 +136,7 @@ size_t IntersectOrExceptTransform::buildFilter(
     for (size_t i = 0; i < rows; ++i)
     {
         auto find_result = state.findKey(method.data, i, variants.string_pool);
-        filter[i] = modes[current_operator_pos] == ASTIntersectOrExcept::Mode::EXCEPT ? !find_result.isFound() : find_result.isFound();
+        filter[i] = operators[current_operator_pos] == ASTIntersectOrExcept::Operator::EXCEPT ? !find_result.isFound() : find_result.isFound();
         if (filter[i])
             ++new_rows_num;
     }
@@ -162,6 +154,9 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
 
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
+
+    if (!data)
+        data.emplace();
 
     if (data->empty())
         data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
@@ -191,6 +186,9 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
 
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
+
+    if (!data)
+        data.emplace();
 
     if (data->empty())
         data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));

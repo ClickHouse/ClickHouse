@@ -23,15 +23,10 @@ InterpreterIntersectOrExcept::InterpreterIntersectOrExcept(const ASTPtr & query_
     : context(Context::createCopy(context_))
 {
     ASTIntersectOrExcept * ast = query_ptr->as<ASTIntersectOrExcept>();
+    operators = ast->list_of_operators;
+
     auto children = ast->list_of_selects->children;
-    modes = ast->list_of_modes;
-    if (modes.size() + 1 != children.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of modes and number of children are not consistent");
-
     size_t num_children = children.size();
-    if (!num_children)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No children in ASTIntersectOrExceptQuery");
-
     nested_interpreters.resize(num_children);
 
     for (size_t i = 0; i < num_children; ++i)
@@ -106,7 +101,7 @@ void InterpreterIntersectOrExcept::buildQueryPlan(QueryPlan & query_plan)
     }
 
     auto max_threads = context->getSettingsRef().max_threads;
-    auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), modes, max_threads);
+    auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), operators, max_threads);
     query_plan.unitePlans(std::move(step), std::move(plans));
 }
 

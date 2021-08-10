@@ -13,7 +13,7 @@ ASTPtr ASTIntersectOrExcept::clone() const
 
     res->list_of_selects = list_of_selects->clone();
     res->children.push_back(res->list_of_selects);
-    res->list_of_modes = list_of_modes;
+    res->list_of_operators = list_of_operators;
 
     cloneOutputOptions(*res);
     return res;
@@ -23,9 +23,9 @@ void ASTIntersectOrExcept::formatQueryImpl(const FormatSettings & settings, Form
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    auto mode_to_str = [&](auto mode)
+    auto operator_to_str = [&](auto current_operator)
     {
-        if (mode == Mode::INTERSECT)
+        if (current_operator == Operator::INTERSECT)
             return "INTERSECT";
         else
             return "EXCEPT";
@@ -36,7 +36,7 @@ void ASTIntersectOrExcept::formatQueryImpl(const FormatSettings & settings, Form
         if (it != list_of_selects->children.begin())
         {
             settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
-                          << mode_to_str(list_of_modes[it - list_of_selects->children.begin() - 1])
+                          << operator_to_str(list_of_operators[it - list_of_selects->children.begin() - 1])
                           << (settings.hilite ? hilite_none : "");
         }
 

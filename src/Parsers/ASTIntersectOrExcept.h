@@ -15,16 +15,16 @@ public:
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    enum class Mode
+    enum class Operator
     {
         INTERSECT,
         EXCEPT
     };
 
-    using Modes = std::vector<Mode>;
+    using Operators = std::vector<Operator>;
 
     ASTPtr list_of_selects;
-    Modes list_of_modes;
+    Operators list_of_operators;
 };
 
 }
