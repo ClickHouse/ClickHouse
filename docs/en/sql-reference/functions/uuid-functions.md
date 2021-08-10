@@ -9,7 +9,7 @@ The functions for working with UUID are listed below.
 
 ## generateUUIDv4 {#uuid-function-generate}
 
-Generates the [UUID](../../sql-reference/data-types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
+Generates the [UUID](../data-types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
 
 ``` sql
 generateUUIDv4()
