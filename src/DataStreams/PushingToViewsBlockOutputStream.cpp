@@ -311,7 +311,8 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     if (views.empty())
         return;
 
-    auto process_suffix = [](ViewRuntimeData & view) {
+    auto process_suffix = [](ViewRuntimeData & view)
+    {
         view.out->writeSuffix();
         view.runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
     };
@@ -443,7 +444,8 @@ void PushingToViewsBlockOutputStream::process(const Block & block, ViewRuntimeDa
     else
         in = std::make_shared<OneBlockInputStream>(block);
 
-    in->setProgressCallback([this](const Progress & progress) {
+    in->setProgressCallback([this](const Progress & progress)
+    {
         CurrentThread::updateProgressIn(progress);
         this->onProgress(progress);
     });
