@@ -53,7 +53,7 @@ The function also works for [arrays](array-functions.md#function-empty) or [stri
 
 **Arguments**
 
--   `x` — Input UUID. [UUID](../data-types/UUID.md).
+-   `x` — Input UUID. [UUID](../data-types/uuid.md).
 
 **Returned value**
 
@@ -95,7 +95,7 @@ The function also works for [arrays](array-functions.md#function-notempty) or [s
 
 **Arguments**
 
--   `x` — Input UUID. [UUID](../data-types/UUID.md).
+-   `x` — Input UUID. [UUID](../data-types/uuid.md).
 
 **Returned value**
 
