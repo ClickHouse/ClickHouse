@@ -123,6 +123,17 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
             data.addColumnAliasIfAny(*node);
     }
 
+    if (auto & with = select.with())
+    {
+        for (auto & node : with->children)
+        {
+            if (const auto * identifier = node->as<ASTIdentifier>())
+                data.addColumnIdentifier(*identifier);
+            else
+                data.addColumnAliasIfAny(*node);
+        }
+    }
+
     std::vector<ASTPtr *> out;
     for (const auto & node : select.children)
     {
@@ -134,6 +145,8 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
 
     /// revisit select_expression_list (with children) when all the aliases are set
     Visitor(data).visit(select.select());
+    if (auto with = select.with())
+        Visitor(data).visit(with);
 }
 
 void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPtr &, Data & data)
