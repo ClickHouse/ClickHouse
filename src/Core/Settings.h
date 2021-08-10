@@ -575,7 +575,7 @@ class IColumn;
     \
     M(String, format_regexp, "", "Regular expression (for Regexp format)", 0) \
     M(String, format_regexp_escaping_rule, "Raw", "Field escaping rule (for Regexp format)", 0) \
-    M(Bool, format_regexp_skip_unmatched, false, "Skip lines unmatched by regular expression (for Regexp format", 0) \
+    M(Bool, format_regexp_skip_unmatched, false, "Skip lines unmatched by regular expression (for Regexp format)", 0) \
     \
     M(Bool, output_format_enable_streaming, false, "Enable streaming in output formats that support it.", 0) \
     M(Bool, output_format_write_statistics, true, "Write statistics about read rows, bytes, time elapsed in suitable output formats.", 0) \

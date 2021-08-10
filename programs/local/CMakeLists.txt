@@ -17,3 +17,16 @@ clickhouse_program_add(local)
 if(NOT CLICKHOUSE_ONE_SHARED)
     target_link_libraries(clickhouse-local-lib PRIVATE clickhouse-server-lib)
 endif()
+
+if (ENABLE_FUZZING)
+    add_compile_definitions(FUZZING_MODE=1)
+    add_executable(fuzz-clickhouse-local LocalServer.cpp ${SRCS})
+    target_link_libraries(fuzz-clickhouse-local PRIVATE
+            dbms
+            ${LIB_FUZZING_ENGINE}
+            loggers
+            clickhouse_functions
+            clickhouse_aggregate_functions
+            clickhouse_storages_system
+            clickhouse_table_functions)
+endif ()

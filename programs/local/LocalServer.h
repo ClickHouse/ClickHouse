@@ -38,7 +38,6 @@ private:
     void tryInitPath();
     void applyCmdOptions(ContextMutablePtr context);
     void applyCmdSettings(ContextMutablePtr context);
-    void processQueries();
     void setupUsers();
     void cleanup();
 
@@ -60,3 +59,5 @@ protected:
 };
 
 }
+
+int mainEntryClickHouseLocal(int argc, char ** argv);
