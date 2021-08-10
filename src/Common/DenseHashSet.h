@@ -5,7 +5,14 @@
 #define HASH_FUN_H <unordered_map>
 #endif
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmacro-redefined"
+#endif
 #include <sparsehash/dense_hash_set>
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 #if !defined(ARCADIA_BUILD)
     template <class Value, class HashFcn = std::hash<Value>,
