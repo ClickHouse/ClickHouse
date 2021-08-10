@@ -106,12 +106,29 @@ DataTypePtr convertTypeToNullable(const DataTypePtr & type)
     return type;
 }
 
+static bool canBecomeNullable(const ColumnPtr & col)
+{
+    if (const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(*col))
+        return col_const->getDataColumnPtr()->isNullable() || col_const->getDataColumnPtr()->canBeInsideNullable();
+
+    if (const ColumnLowCardinality * col_lc = checkAndGetColumn<ColumnLowCardinality>(*col))
+        return col_lc->nestedIsNullable() || col_lc->nestedCanBeInsideNullable();
+
+    return isColumnNullable(*col) || col->canBeInsideNullable();
+}
+
 void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
-    column.type = convertTypeToNullable(column.type);
-
     if (!column.column)
+    {
+        column.type = convertTypeToNullable(column.type);
         return;
+    }
+
+    if (!canBecomeNullable(column.column))
+        return;
+
+    column.type = convertTypeToNullable(column.type);
 
     if (column.column->lowCardinality())
     {
@@ -122,7 +139,7 @@ void convertColumnToNullable(ColumnWithTypeAndName & column)
             col_as_lc->nestedToNullable();
         column.column = std::move(mut_col);
     }
-    else if (column.column->canBeInsideNullable() || isColumnConst(*column.column))
+    else
     {
         column.column = makeNullable(column.column);
     }
