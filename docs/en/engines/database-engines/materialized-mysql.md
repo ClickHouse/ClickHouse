@@ -4,11 +4,7 @@ toc_priority: 29
 
 # [experimental] MaterializedMySQL {#materialized-mysql}
 
-<<<<<<< HEAD
-!!!warning "Warning"
-=======
 !!! warning "Warning"
->>>>>>> c9fa892230ba4442c250eefd48378eede2681071
     This is an experimental feature that should not be used in production.
 
 Creates ClickHouse database with all the tables existing in MySQL, and all the data in those tables.
@@ -41,11 +37,7 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 
 **Settings on MySQL-server side**
 
-<<<<<<< HEAD
-For the correct work of `MaterializeMySQL`, there are a few mandatory `MySQL`-side configuration settings that should be set:
-=======
-For the correct work of `MaterializedMySQL`, there are few mandatory `MySQL`-side configuration settings that should be set:
->>>>>>> c9fa892230ba4442c250eefd48378eede2681071
+For the correct work of `MaterializedMySQL`, there are a few mandatory `MySQL`-side configuration settings that should be set:
 
 - `default_authentication_plugin = mysql_native_password` since `MaterializedMySQL` can only authorize with this method.
 - `gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializedMySQL` replication. Pay attention that while turning this mode `On` you should also specify `enforce_gtid_consistency = on`.

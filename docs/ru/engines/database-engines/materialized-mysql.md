@@ -2,11 +2,7 @@
 toc_priority: 29
 ---
 
-<<<<<<< HEAD
-# [experimental] MaterializedMySQL {#materialized-mysql}
-=======
 # [экспериментальный] MaterializedMySQL {#materialized-mysql}
->>>>>>> c9fa892230ba4442c250eefd48378eede2681071
 
 Создает базу данных ClickHouse со всеми таблицами, существующими в MySQL, и всеми данными в этих таблицах.
 
