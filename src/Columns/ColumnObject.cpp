@@ -12,9 +12,6 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string.hpp>
-
 
 namespace DB
 {
@@ -281,9 +278,41 @@ void ColumnObject::Subcolumn::insert(Field && field)
         data.back()->insert(std::move(field));
 }
 
+void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t start, size_t length)
+{
+    assert(src.isFinalized());
+
+    const auto & src_column = src.data.back();
+    const auto & src_type = src.least_common_type;
+
+    if (data.empty())
+    {
+        least_common_type = src_type;
+        data.push_back(src_type->createColumn());
+        data.back()->insertRangeFrom(*src_column, start, length);
+    }
+    else if (least_common_type->equals(*src_type))
+    {
+        data.back()->insertRangeFrom(*src_column, start, length);
+    }
+    else
+    {
+        auto new_least_common_type = getLeastSupertype(DataTypes{least_common_type, src_type});
+        auto casted_column = castColumn({src_column, src_type, ""}, new_least_common_type);
+
+        if (!least_common_type->equals(*new_least_common_type))
+        {
+            least_common_type = new_least_common_type;
+            data.push_back(least_common_type->createColumn());
+        }
+
+        data.back()->insertRangeFrom(*casted_column, start, length);
+    }
+}
+
 void ColumnObject::Subcolumn::finalize()
 {
-    if (isFinalized())
+    if (isFinalized() || data.empty())
         return;
 
     const auto & to_type = least_common_type;
@@ -329,6 +358,14 @@ void ColumnObject::Subcolumn::insertDefault()
         ++num_of_defaults_in_prefix;
     else
         data.back()->insertDefault();
+}
+
+void ColumnObject::Subcolumn::insertManyDefaults(size_t length)
+{
+    if (data.empty())
+        num_of_defaults_in_prefix += length;
+    else
+        data.back()->insertManyDefaults(length);
 }
 
 IColumn & ColumnObject::Subcolumn::getFinalizedColumn()
@@ -417,6 +454,21 @@ void ColumnObject::forEachSubcolumn(ColumnCallback)
     //     callback(column.data);
 }
 
+void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+{
+    const auto & src_object = assert_cast<const ColumnObject &>(src);
+
+    for (auto & [name, subcolumn] : subcolumns)
+    {
+        if (src_object.hasSubcolumn(name))
+            subcolumn.insertRangeFrom(src_object.getSubcolumn(name), start, length);
+        else
+            subcolumn.insertManyDefaults(length);
+    }
+
+    finalize();
+}
+
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const String & key) const
 {
     auto it = subcolumns.find(key);
@@ -466,15 +518,13 @@ void ColumnObject::addSubcolumn(const String & key, Subcolumn && subcolumn, bool
     subcolumns[key] = std::move(subcolumn);
 }
 
-static bool isPrefix(const Strings & prefix, const Strings & strings)
+Strings ColumnObject::getKeys() const
 {
-    if (prefix.size() > strings.size())
-        return false;
-
-    for (size_t i = 0; i < prefix.size(); ++i)
-        if (prefix[i] != strings[i])
-            return false;
-    return true;
+    Strings keys;
+    keys.reserve(subcolumns.size());
+    for (const auto & [key, _] : subcolumns)
+        keys.emplace_back(key);
+    return keys;
 }
 
 bool ColumnObject::isFinalized() const
@@ -493,21 +543,6 @@ void ColumnObject::finalize()
         if (isNothing(getBaseTypeOfArray(least_common_type)))
             continue;
 
-        Strings name_parts;
-        boost::split(name_parts, name, boost::is_any_of("."));
-
-        for (const auto & [other_name, _] : subcolumns)
-        {
-            if (other_name.size() > name.size())
-            {
-                Strings other_name_parts;
-                boost::split(other_name_parts, other_name, boost::is_any_of("."));
-
-                if (isPrefix(name_parts, other_name_parts))
-                    throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Data in Object has ambiguous paths: '{}' and '{}", name, other_name);
-            }
-        }
-
         subcolumn.finalize();
         new_subcolumns[name] = std::move(subcolumn);
     }
@@ -516,6 +551,7 @@ void ColumnObject::finalize()
         new_subcolumns[COLUMN_NAME_DUMMY] = Subcolumn{ColumnUInt8::create(old_size)};
 
     std::swap(subcolumns, new_subcolumns);
+    checkObjectHasNoAmbiguosPaths(getKeys());
 }
 
 }

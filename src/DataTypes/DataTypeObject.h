@@ -39,6 +39,8 @@ public:
     bool isParametric() const override { return true; }
 
     SerializationPtr doGetDefaultSerialization() const override;
+
+    bool hasNullableSubcolumns() const { return is_nullable; }
 };
 
 }

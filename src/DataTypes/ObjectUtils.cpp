@@ -20,6 +20,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string.hpp>
+
 namespace DB
 {
 
@@ -27,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int LOGICAL_ERROR;
+    extern const int DUPLICATE_COLUMN;
 }
 
 static const IDataType * getTypeObject(const DataTypePtr & type)
@@ -148,6 +152,38 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
     }
 }
 
+static bool isPrefix(const Strings & prefix, const Strings & strings)
+{
+    if (prefix.size() > strings.size())
+        return false;
+
+    for (size_t i = 0; i < prefix.size(); ++i)
+        if (prefix[i] != strings[i])
+            return false;
+    return true;
+}
+
+void checkObjectHasNoAmbiguosPaths(const Strings & key_names)
+{
+    for (const auto & name : key_names)
+    {
+        Strings name_parts;
+        boost::split(name_parts, name, boost::is_any_of("."));
+
+        for (const auto & other_name : key_names)
+        {
+            if (other_name.size() > name.size())
+            {
+                Strings other_name_parts;
+                boost::split(other_name_parts, other_name, boost::is_any_of("."));
+
+                if (isPrefix(name_parts, other_name_parts))
+                    throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Data in Object has ambiguous paths: '{}' and '{}", name, other_name);
+            }
+        }
+    }
+}
+
 DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
 {
     std::unordered_map<String, DataTypes> subcolumns_types;
@@ -191,6 +227,8 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
 
     auto tuple_names = extractVector<0>(tuple_elements);
     auto tuple_types = extractVector<1>(tuple_elements);
+
+    checkObjectHasNoAmbiguosPaths(tuple_names);
 
     return std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
 }
