@@ -3,16 +3,20 @@
 #include <Processors/IProcessor.h>
 #include <Interpreters/SetVariants.h>
 #include <Core/ColumnNumbers.h>
+#include <Parsers/ASTIntersectOrExcept.h>
+
 
 namespace DB
 {
 
 class IntersectOrExceptTransform : public IProcessor
 {
-public:
-    IntersectOrExceptTransform(bool is_except_, const Block & header_);
+using Modes = ASTIntersectOrExcept::Modes;
 
-    String getName() const override { return is_except ? "Except" : "Intersect"; }
+public:
+    IntersectOrExceptTransform(const Block & header_, const Modes & modes);
+
+    String getName() const override { return "IntersectExcept"; }
 
 protected:
     Status prepare() override;
@@ -20,15 +24,22 @@ protected:
     void work() override;
 
 private:
-    bool is_except;
+    Modes modes;
+    InputPorts::iterator first_input;
+    InputPorts::iterator second_input;
+    size_t current_operator_pos = 0;
 
     bool push_empty_chunk = false;
     Chunk empty_chunk;
+
     ColumnNumbers key_columns_pos;
-    SetVariants data;
+    std::optional<SetVariants> data;
     Sizes key_sizes;
+
     Chunk current_input_chunk;
     Chunk current_output_chunk;
+    bool more = false;
+
     bool finished_second_input = false;
     bool has_input = false;
 

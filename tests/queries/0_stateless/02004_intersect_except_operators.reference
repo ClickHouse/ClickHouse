@@ -23,3 +23,33 @@ select number, number+10 from numbers(12) except select number+5, number+15 from
 2	12
 3	13
 4	14
+select 1 except select 2 intersect select 1;
+1
+select 1 except select 2 intersect select 2;
+select 1 intersect select 1 except select 2;
+1
+select 1 intersect select 1 except select 1;
+select 1 intersect select 1 except select 2 intersect select 1 except select 3 intersect select 1;
+1
+select 1 intersect select 1 except select 2 intersect select 1 except select 3 intersect select 2;
+select number from numbers(100) intersect select number from numbers(20, 60) except select number from numbers(30, 20) except select number from numbers(60, 20);
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59

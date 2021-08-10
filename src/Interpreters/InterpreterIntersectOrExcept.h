@@ -3,6 +3,8 @@
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Parsers/ASTIntersectOrExcept.h>
+
 
 namespace DB
 {
@@ -19,7 +21,7 @@ public:
     BlockIO execute() override;
 
 private:
-    String getName() const { return is_except ? "EXCEPT" : "INTERSECT"; }
+    String getName() const { return "IntersectExcept"; }
 
     Block getCommonHeader(const Blocks & headers) const;
 
@@ -29,9 +31,9 @@ private:
     void buildQueryPlan(QueryPlan & query_plan);
 
     ContextPtr context;
-    bool is_except;
     Block result_header;
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
+    ASTIntersectOrExcept::Modes modes;
 };
 
 }
