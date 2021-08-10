@@ -38,6 +38,9 @@ public:
 
         void insert(Field && field);
         void insertDefault();
+        void insertManyDefaults(size_t length);
+        void insertRangeFrom(const Subcolumn & src, size_t start, size_t length);
+
         void finalize();
 
         IColumn & getFinalizedColumn();
@@ -75,6 +78,7 @@ public:
 
     const SubcolumnsMap & getSubcolumns() const { return subcolumns; }
     SubcolumnsMap & getSubcolumns() { return subcolumns; }
+    Strings getKeys() const;
 
     bool isFinalized() const;
     void finalize();
@@ -88,6 +92,7 @@ public:
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     /// All other methods throw exception.
 
@@ -98,7 +103,6 @@ public:
     StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
     bool isDefaultAt(size_t) const override { throwMustBeConcrete(); }
     void insert(const Field &) override { throwMustBeConcrete(); }
-    void insertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeConcrete(); }
     void insertData(const char *, size_t) override { throwMustBeConcrete(); }
     void insertDefault() override { throwMustBeConcrete(); }
     void popBack(size_t) override { throwMustBeConcrete(); }
