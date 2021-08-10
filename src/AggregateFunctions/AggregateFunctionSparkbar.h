@@ -20,7 +20,7 @@ struct AggregateFunctionSparkbarData
     Points points;
 
     Y min_y = std::numeric_limits<Y>::max();
-    Y max_y = std::numeric_limits<Y>::min();
+    Y max_y = std::numeric_limits<Y>::lowest();
 
     void add(X x, Y y)
     {
@@ -141,11 +141,20 @@ private:
             Y min_y = data.min_y;
             Y max_y = data.max_y;
             Float64 diff_y = max_y - min_y;
-            for (size_t i = 0; i <= diff_x; ++i)
+
+            if (diff_y)
             {
-                auto it = data.points.find(local_min_x + i);
-                bool found = it != data.points.end();
-                value += getBar(found ? std::round(((it->second - min_y) / diff_y) * 7) + 1 : 0);
+                for (size_t i = 0; i <= diff_x; ++i)
+                {
+                    auto it = data.points.find(local_min_x + i);
+                    bool found = it != data.points.end();
+                    value += getBar(found ? std::round(((it->second - min_y) / diff_y) * 7) + 1 : 0);
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i <= diff_x; ++i)
+                    value += getBar(data.points.count(local_min_x + i) ? 1 : 0);
             }
         }
         else
