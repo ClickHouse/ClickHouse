@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# shellcheck source=./mergetree_mutations.lib
+. "$CURDIR"/mergetree_mutations.lib
+
+function try_sync_replicas
+{
+    readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} --query="SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$1%' AND engine like '%Replicated%'")
+    for t in "${tables_arr[@]}"
+    do
+        # The size of log may be big, so increase timeout.
+        $CLICKHOUSE_CLIENT --receive_timeout 300 -q "SYSTEM SYNC REPLICA $t" &
+    done
+    wait
+    echo "Replication did not hang: synced all replicas of $1"
+}
+
+function check_replication_consistency()
+{
+    try_sync_replicas "$1"
+
+    # SYNC REPLICA is not enough if some MUTATE_PARTs are not assigned yet
+    # TODO maybe just kill all mutations?
+    wait_for_all_mutations "$1%"
+
+    $CLICKHOUSE_CLIENT -q \
+    "SELECT
+        throwIf((countDistinct(data) AS c) != 1, 'Replicas have diverged'), c
+    FROM
+    (
+        SELECT _table, ($2) AS data
+        FROM merge(currentDatabase(), '$1') GROUP BY _table
+    )" || $CLICKHOUSE_CLIENT -q \
+    "select _table, $2, arraySort(groupArrayDistinct(_part)) from merge(currentDatabase(), '$1') group by _table" | tee /dev/stderr
+}
+
