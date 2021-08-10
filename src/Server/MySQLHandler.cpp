@@ -25,7 +25,6 @@
 #include <Access/User.h>
 #include <Access/AccessControlManager.h>
 #include <Common/setThreadName.h>
-#include <Server/ProxyConfig.h>
 #include <Server/ProxyProtocolHandler.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -37,7 +36,6 @@
 #    include <Poco/Crypto/RSAKey.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
-
 #endif
 
 namespace DB

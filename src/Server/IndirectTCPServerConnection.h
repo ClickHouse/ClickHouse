@@ -16,6 +16,7 @@ namespace DB
 
 class HTTPServerRequest;
 class ProxyProtocolHandler;
+
 class ProxyConfig;
 using ProxyConfigs = std::map<std::string, std::unique_ptr<ProxyConfig>>;
 

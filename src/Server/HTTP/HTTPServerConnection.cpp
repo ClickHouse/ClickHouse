@@ -1,5 +1,4 @@
 #include <Server/HTTP/HTTPServerConnection.h>
-#include <Server/ProxyConfig.h>
 #include <Server/ProxyProtocolHandler.h>
 
 #include <Poco/Net/NetException.h>

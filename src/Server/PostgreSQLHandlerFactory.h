@@ -4,7 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <Server/IServer.h>
-#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/PostgreSQLInterfaceConfig.h>
 #include <Core/PostgreSQLProtocol.h>
 
 namespace DB

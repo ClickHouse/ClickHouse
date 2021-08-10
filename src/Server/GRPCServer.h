@@ -5,7 +5,6 @@
 #endif
 
 #if USE_GRPC
-#include <Server/ProtocolInterfaceConfig.h>
 #include <Poco/Net/SocketAddress.h>
 #include "clickhouse_grpc.grpc.pb.h"
 
@@ -20,6 +19,7 @@ class ServerCompletionQueue;
 namespace DB
 {
 class IServer;
+class NativeGRPCInterfaceConfig;
 
 class GRPCServer
 {

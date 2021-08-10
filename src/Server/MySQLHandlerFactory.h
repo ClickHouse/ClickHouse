@@ -4,7 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <Server/IServer.h>
-#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/MySQLInterfaceConfig.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>

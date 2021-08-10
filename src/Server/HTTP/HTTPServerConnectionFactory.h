@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
-#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/HTTPInterfaceConfig.h>
 
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>

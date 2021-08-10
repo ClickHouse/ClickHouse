@@ -16,7 +16,6 @@
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
-#include <Server/ProxyConfig.h>
 #include <Server/ProxyProtocolHandler.h>
 #include <queue>
 #include <mutex>

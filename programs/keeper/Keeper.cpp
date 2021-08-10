@@ -4,8 +4,9 @@
 #include <pwd.h>
 #include <Common/ClickHouseRevision.h>
 #include <Server/ProtocolServerAdapter.h>
-#include <Server/ProtocolInterfaceConfig.h>
-#include <Server/ProxyConfig.h>
+#include <Server/InterfaceConfig.h>
+#include <Server/InterfaceConfigUtil.h>
+#include <Server/ProxyConfigUtil.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Poco/Net/NetException.h>
@@ -25,11 +26,6 @@
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
 #   include "Common/config_version.h"
-#endif
-
-#if USE_SSL
-#   include <Poco/Net/Context.h>
-#   include <Poco/Net/SecureServerSocket.h>
 #endif
 
 #include <Server/KeeperTCPHandlerFactory.h>

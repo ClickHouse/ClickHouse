@@ -3,7 +3,7 @@
 #include <Poco/Net/TCPServerConnection.h>
 #include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
-#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/MySQLInterfaceConfig.h>
 #include <Server/IndirectTCPServerConnection.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsGeneric.h>

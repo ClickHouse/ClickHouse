@@ -5,7 +5,7 @@
 #include <Poco/Net/NetException.h>
 #include <common/logger_useful.h>
 #include <Server/IServer.h>
-#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/InterfaceConfig.h>
 #include <string>
 
 namespace DB

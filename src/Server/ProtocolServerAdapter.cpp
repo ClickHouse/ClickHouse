@@ -1,5 +1,5 @@
 #include <Server/ProtocolServerAdapter.h>
-#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/InterfaceConfig.h>
 #include <Server/IServer.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/TCPServer.h>
@@ -105,7 +105,7 @@ namespace Util
 
 std::vector<ProtocolServerAdapter> createServers(
     const std::vector<std::string> & protocols,
-    const ProtocolInterfaceConfigs & interfaces,
+    const InterfaceConfigs & interfaces,
     IServer & server,
     Poco::ThreadPool & pool,
     AsynchronousMetrics * async_metrics

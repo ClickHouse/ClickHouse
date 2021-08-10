@@ -26,6 +26,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Formats/FormatFactory.h>
 #include <Server/IServer.h>
+#include <Server/NativeGRPCInterfaceConfig.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>

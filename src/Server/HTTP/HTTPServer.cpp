@@ -1,6 +1,6 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
-#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/InterfaceConfig.h>
 
 namespace DB
 {

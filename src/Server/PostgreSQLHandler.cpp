@@ -6,7 +6,6 @@
 #include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
 #include <Common/setThreadName.h>
-#include <Server/ProxyConfig.h>
 #include <Server/ProxyProtocolHandler.h>
 #include <random>
 

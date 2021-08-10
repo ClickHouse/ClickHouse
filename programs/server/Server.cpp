@@ -71,8 +71,10 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
 #include <Server/ProtocolServerAdapter.h>
-#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/InterfaceConfig.h>
+#include <Server/InterfaceConfigUtil.h>
 #include <Server/ProxyConfig.h>
+#include <Server/ProxyConfigUtil.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)

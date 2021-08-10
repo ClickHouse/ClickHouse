@@ -2,7 +2,6 @@
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <memory>
 #include <Server/PostgreSQLHandler.h>
-#include <Server/ProxyConfig.h>
 
 namespace DB
 {

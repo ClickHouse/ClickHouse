@@ -21,23 +21,37 @@ SRCS(
     HTTP/WriteBufferFromHTTPServerResponse.cpp
     HTTPHandler.cpp
     HTTPHandlerFactory.cpp
+    HTTPInterfaceConfig.cpp
     IndirectTCPServerConnection.cpp
+    InterfaceConfig.cpp
+    InterfaceConfigUtil.cpp
+    InterserverHTTPInterfaceConfig.cpp
     InterserverIOHTTPHandler.cpp
     KeeperTCPHandler.cpp
+    KeeperTCPInterfaceConfig.cpp
     MySQLHandler.cpp
     MySQLHandlerFactory.cpp
+    MySQLInterfaceConfig.cpp
+    NativeGRPCInterfaceConfig.cpp
+    NativeHTTPInterfaceConfig.cpp
+    NativeTCPInterfaceConfig.cpp
     NotFoundHandler.cpp
     PostgreSQLHandler.cpp
     PostgreSQLHandlerFactory.cpp
+    PostgreSQLInterfaceConfig.cpp
+    PrometheusInterfaceConfig.cpp
     PrometheusMetricsWriter.cpp
     PrometheusRequestHandler.cpp
-    ProtocolInterfaceConfig.cpp
     ProtocolServerAdapter.cpp
     ProxyConfig.cpp
+    ProxyConfigUtil.cpp
     ProxyProtocolHandler.cpp
+    PROXYProxyConfig.cpp
+    PROXYProxyProtocolHandler.cpp
     ReplicasStatusHandler.cpp
     StaticRequestHandler.cpp
     TCPHandler.cpp
+    TCPInterfaceConfig.cpp
     WebUIRequestHandler.cpp
 )
 

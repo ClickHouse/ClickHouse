@@ -1,12 +1,5 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config.h>
-#   include "config_core.h"
-#endif
-
-#include <common/types.h>
-
 #include <boost/asio/ip/network_v4.hpp>
 #include <boost/asio/ip/network_v6.hpp>
 
@@ -22,6 +15,9 @@ namespace DB
 {
 
 class ProxyProtocolHandler;
+
+class ProxyConfig;
+using ProxyConfigs = std::map<std::string, std::unique_ptr<ProxyConfig>>;
 
 /// Interface class for configs for different proxy protocols.
 class ProxyConfig {
@@ -41,32 +37,5 @@ public:
     const std::string protocol;
     Networks trusted_networks;
 };
-
-/// Config class for PROXY v1/v2 protocols.
-class PROXYConfig final : public ProxyConfig
-{
-public:
-    explicit PROXYConfig(const std::string & name_);
-
-    virtual std::unique_ptr<ProxyConfig> clone() const override;
-    virtual void updateConfig(const Poco::Util::AbstractConfiguration & config) override;
-    virtual std::unique_ptr<ProxyProtocolHandler> createProxyProtocolHandler() const override;
-
-public:
-    enum class Version { v1, v2 };
-
-    Version version = Version::v1;
-    bool allow_http_x_forwarded_for = false;
-};
-
-using ProxyConfigs = std::map<std::string, std::unique_ptr<ProxyConfig>>;
-
-namespace Util
-{
-
-ProxyConfigs parseProxies(const Poco::Util::AbstractConfiguration & config);
-ProxyConfigs clone(const ProxyConfigs & proxies);
-
-}
 
 }

@@ -24,7 +24,6 @@
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Server/ProxyConfig.h>
 #include <Server/ProxyProtocolHandler.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>

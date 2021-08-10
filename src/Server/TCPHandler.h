@@ -11,7 +11,7 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context.h>
-#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/TCPInterfaceConfig.h>
 #include <Server/IndirectTCPServerConnection.h>
 
 #include "IServer.h"

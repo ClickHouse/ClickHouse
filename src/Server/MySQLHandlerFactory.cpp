@@ -5,7 +5,7 @@
 #include <common/logger_useful.h>
 #include <common/scope_guard.h>
 #include <Server/MySQLHandler.h>
-#include <Server/ProxyConfig.h>
+#include <Server/MySQLInterfaceConfig.h>
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>

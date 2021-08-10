@@ -6,6 +6,7 @@
 #include <common/logger_useful.h>
 #include <Server/IServer.h>
 #include <Server/TCPHandler.h>
+#include <Server/NativeTCPInterfaceConfig.h>
 
 namespace Poco { class Logger; }
 

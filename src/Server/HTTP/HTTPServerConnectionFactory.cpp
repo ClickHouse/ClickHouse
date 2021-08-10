@@ -1,6 +1,5 @@
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/HTTP/HTTPServerConnection.h>
-#include <Server/ProxyConfig.h>
 
 namespace DB
 {

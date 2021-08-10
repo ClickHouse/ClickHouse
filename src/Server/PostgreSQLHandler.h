@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
-#include <Server/ProtocolInterfaceConfig.h>
+#include <Server/PostgreSQLInterfaceConfig.h>
 #include <Server/IndirectTCPServerConnection.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>

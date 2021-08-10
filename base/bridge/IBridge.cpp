@@ -12,8 +12,7 @@
 #include <common/errnoToString.h>
 #include <IO/ReadHelpers.h>
 #include <Formats/registerFormats.h>
-#include <Server/ProtocolInterfaceConfig.h>
-#include <Server/ProxyConfig.h>
+#include <Server/NativeHTTPInterfaceConfig.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
