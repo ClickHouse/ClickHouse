@@ -211,6 +211,11 @@ try
         throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
     }
 
+    // Non-fuzzer mode: main function runs only one time,
+    // so first_time clauses does not affect anything
+    static bool first_time = true;
+    if (first_time)
+    {
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
@@ -299,15 +304,119 @@ try
     {
         attachSystemTables(global_context);
     }
+    status.reset();
+    }
 
-    processQueries();
+    /// processing queries
 
+    static String initial_create_query = getInitialCreateTableQuery();
+    static String queries_str = initial_create_query;
+
+    if (first_time)
+    {
+    if (config().has("query"))
+        queries_str += config().getRawString("query");
+    else
+    {
+        String queries_from_file;
+        ReadBufferFromFile in(config().getString("queries-file"));
+        readStringUntilEOF(queries_from_file, in);
+        queries_str += queries_from_file;
+    }
+    }
+
+    static const auto & settings = global_context->getSettingsRef();
+
+    static std::vector<String> queries;
+    static auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
+
+    if (!parse_res.second)
+        throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
+
+    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
+    /// so we can't reuse it safely as a query context and need a copy here
+    auto context = Context::createCopy(global_context);
+
+    context->makeSessionContext();
+    context->makeQueryContext();
+
+    context->setUser("default", "", Poco::Net::SocketAddress{});
+    context->setCurrentQueryId("");
+    applyCmdSettings(context);
+
+    /// Use the same query_id (and thread group) for all queries
+    CurrentThread::QueryScope query_scope_holder(context);
+
+    /// Set progress show
+    need_render_progress = config().getBool("progress", false);
+
+    std::function<void()> finalize_progress;
+    if (need_render_progress)
+    {
+        /// Set progress callback, which can be run from multiple threads.
+        context->setProgressCallback([&](const Progress & value)
+        {
+            /// Write progress only if progress was updated
+            if (progress_indication.updateProgress(value))
+                progress_indication.writeProgress();
+        });
+
+        /// Set finalizing callback for progress, which is called right before finalizing query output.
+        finalize_progress = [&]()
+            {
+            progress_indication.clearProgressOutput();
+            };
+
+        /// Set callback for file processing progress.
+        progress_indication.setFileProgressCallback(context);
+    }
+
+    bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
+
+    std::exception_ptr exception;
+    first_time = false;
+
+    for (const auto & query : queries)
+    {
+        written_first_block = false;
+        progress_indication.resetProgress();
+
+        ReadBufferFromString read_buf(query);
+        WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
+        if (echo_queries)
+        {
+            writeString(query, write_buf);
+            writeChar('\n', write_buf);
+            write_buf.next();
+        }
+
+        try
+        {
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {}, {}, finalize_progress);
+        }
+        catch (...)
+        {
+            if (!config().hasOption("ignore-error"))
+            {
+                throw;
+            }
+
+            if (!exception)
+                exception = std::current_exception();
+
+            std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
+        }
+    }
+
+    if (exception)
+        std::rethrow_exception(exception);
+
+#ifndef FUZZING_MODE
     global_context->shutdown();
     global_context.reset();
 
-    status.reset();
     cleanup();
-
+#endif
     return Application::EXIT_OK;
 }
 catch (const Exception & e)
@@ -348,107 +457,6 @@ std::string LocalServer::getInitialCreateTableQuery()
     "ENGINE = "
         "File(" + data_format + ", " + table_file + ")"
     "; ";
-}
-
-
-void LocalServer::processQueries()
-{
-    String initial_create_query = getInitialCreateTableQuery();
-    String queries_str = initial_create_query;
-
-    if (config().has("query"))
-        queries_str += config().getRawString("query");
-    else
-    {
-        String queries_from_file;
-        ReadBufferFromFile in(config().getString("queries-file"));
-        readStringUntilEOF(queries_from_file, in);
-        queries_str += queries_from_file;
-    }
-
-    const auto & settings = global_context->getSettingsRef();
-
-    std::vector<String> queries;
-    auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
-
-    if (!parse_res.second)
-        throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
-
-    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
-    /// so we can't reuse it safely as a query context and need a copy here
-    auto context = Context::createCopy(global_context);
-
-    context->makeSessionContext();
-    context->makeQueryContext();
-
-    context->setUser("default", "", Poco::Net::SocketAddress{});
-    context->setCurrentQueryId("");
-    applyCmdSettings(context);
-
-    /// Use the same query_id (and thread group) for all queries
-    CurrentThread::QueryScope query_scope_holder(context);
-
-    /// Set progress show
-    need_render_progress = config().getBool("progress", false);
-
-    std::function<void()> finalize_progress;
-    if (need_render_progress)
-    {
-        /// Set progress callback, which can be run from multiple threads.
-        context->setProgressCallback([&](const Progress & value)
-        {
-            /// Write progress only if progress was updated
-            if (progress_indication.updateProgress(value))
-                progress_indication.writeProgress();
-        });
-
-        /// Set finalizing callback for progress, which is called right before finalizing query output.
-        finalize_progress = [&]()
-        {
-            progress_indication.clearProgressOutput();
-        };
-
-        /// Set callback for file processing progress.
-        progress_indication.setFileProgressCallback(context);
-    }
-
-    bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
-
-    std::exception_ptr exception;
-
-    for (const auto & query : queries)
-    {
-        written_first_block = false;
-        progress_indication.resetProgress();
-
-        ReadBufferFromString read_buf(query);
-        WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
-
-        if (echo_queries)
-        {
-            writeString(query, write_buf);
-            writeChar('\n', write_buf);
-            write_buf.next();
-        }
-
-        try
-        {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {}, {}, finalize_progress);
-        }
-        catch (...)
-        {
-            if (!config().hasOption("ignore-error"))
-                throw;
-
-            if (!exception)
-                exception = std::current_exception();
-
-            std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
-        }
-    }
-
-    if (exception)
-        std::rethrow_exception(exception);
 }
 
 static const char * minimal_default_user_xml =
@@ -661,9 +669,80 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 
-int mainEntryClickHouseLocal(int argc, char ** argv)
+#ifdef FUZZING_MODE
+#include <Functions/getFuzzerData.cpp>
+
+class FuzzApp
 {
     DB::LocalServer app;
+
+public:
+    inline void init(int argc, char ** argv)
+    {
+        app.init(argc, argv);
+    }
+
+    inline int run()
+    {
+        return app.run();
+    }
+} fuzz_app;
+
+extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
+{
+    int & argc = *pargc;
+    char ** argv = *pargv;
+
+    // position of delimiter "--" that separates arguments
+    // of clickhouse-local and fuzzer
+    int pos_delim = argc;
+    for (int i = 0; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--") == 0)
+        {
+            pos_delim = i;
+            break;
+        }
+    }
+
+    fuzz_app.init(pos_delim, argv);
+    for (int i = pos_delim + 1; i < argc; ++i)
+        std::swap(argv[i], argv[i - pos_delim]);
+    argc -= pos_delim;
+    if (argc == 0)  // no delimiter provided
+        ++argc;
+    return 0;
+}
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
+{
+    try
+    {
+        // inappropriate symbol for fuzzing at the end
+        if (size)
+            --size;
+        auto cur_str = String(reinterpret_cast<const char *>(data), size);
+        // to clearly see the beginning and the end
+        std::cerr << '>' << cur_str << '<' << std::endl;
+        DB::FunctionGetFuzzerData::update(cur_str);
+        fuzz_app.run();
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
+        return 1;
+    }
+    return 0;
+}
+#endif
+
+int mainEntryClickHouseLocal(int argc, char ** argv)
+{
+#ifdef FUZZING_MODE
+    FuzzApp & app = fuzz_app;
+#else
+    DB::LocalServer app;
+#endif
     try
     {
         app.init(argc, argv);
