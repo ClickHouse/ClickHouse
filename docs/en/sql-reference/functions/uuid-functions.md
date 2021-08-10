@@ -37,6 +37,90 @@ SELECT * FROM t_uuid
 └──────────────────────────────────────┘
 ```
 
+## empty {#empty}
+
+Checks whether the input UUID is empty.
+
+**Syntax**
+
+```sql
+empty(UUID)
+```
+
+The UUID is considered empty if it contains all zeros (zero UUID).
+
+The function also works for [arrays](array-functions.md#function-empty) or [strings](string-functions.md#empty).
+
+**Arguments**
+
+-   `x` — Input UUID. [UUID](../data-types/UUID.md).
+
+**Returned value**
+
+-   Returns `1` for an empty UUID or `0` for a non-empty UUID. 
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+To generate the UUID value, ClickHouse provides the [generateUUIDv4](uuid-function-generate) function.
+
+Query:
+
+```sql
+SELECT empty(generateUUIDv4());
+```
+
+Result:
+
+```text
+┌─empty(generateUUIDv4())─┐
+│                       0 │
+└─────────────────────────┘
+```
+
+## notEmpty {#notempty}
+
+Checks whether the input UUID is non-empty.
+
+**Syntax**
+
+```sql
+notEmpty(UUID)
+```
+
+The UUID is considered empty if it contains all zeros (zero UUID).
+
+The function also works for [arrays](array-functions.md#function-notempty) or [strings](string-functions.md#notempty).
+
+**Arguments**
+
+-   `x` — Input UUID. [UUID](../data-types/UUID.md).
+
+**Returned value**
+
+-   Returns `1` for a non-empty UUID or `0` for an empty UUID. 
+
+Type: [UInt8](../data-types/int-uint.md).
+
+**Example**
+
+To generate the UUID value, ClickHouse provides the [generateUUIDv4](uuid-function-generate) function.
+
+Query:
+
+```sql
+SELECT notEmpty(generateUUIDv4());
+```
+
+Result:
+
+```text
+┌─notEmpty(generateUUIDv4())─┐
+│                          1 │
+└────────────────────────────┘
+```
+
 ## toUUID (x) {#touuid-x}
 
 Converts String type value to UUID type.
