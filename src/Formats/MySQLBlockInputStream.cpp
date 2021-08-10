@@ -40,7 +40,7 @@ StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool
 {
 }
 
-MySQLBlockInputStream::Connection::Connection(
+MySQLSource::Connection::Connection(
     const mysqlxx::PoolWithFailover::Entry & entry_,
     const std::string & query_str)
     : entry(entry_)
@@ -50,12 +50,13 @@ MySQLBlockInputStream::Connection::Connection(
 }
 
 /// Used in MaterializedMySQL and in doInvalidateQuery for dictionary source.
-MySQLBlockInputStream::MySQLBlockInputStream(
+MySQLSource::MySQLSource(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
     const Block & sample_block,
     const StreamSettings & settings_)
-    : log(&Poco::Logger::get("MySQLBlockInputStream"))
+    : SourceWithProgress(sample_block.cloneEmpty())
+    , log(&Poco::Logger::get("MySQLBlockInputStream"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
 {
@@ -64,26 +65,27 @@ MySQLBlockInputStream::MySQLBlockInputStream(
 }
 
 /// For descendant MySQLWithFailoverBlockInputStream
-    MySQLBlockInputStream::MySQLBlockInputStream(const Block &sample_block_, const StreamSettings & settings_)
-    : log(&Poco::Logger::get("MySQLBlockInputStream"))
+MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
+    : SourceWithProgress(sample_block_.cloneEmpty())
+    , log(&Poco::Logger::get("MySQLBlockInputStream"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
     description.init(sample_block_);
 }
 
 /// Used by MySQL storage / table function and dictionary source.
-MySQLWithFailoverBlockInputStream::MySQLWithFailoverBlockInputStream(
+MySQLWithFailoverSource::MySQLWithFailoverSource(
     mysqlxx::PoolWithFailoverPtr pool_,
     const std::string & query_str_,
     const Block & sample_block_,
     const StreamSettings & settings_)
-: MySQLBlockInputStream(sample_block_, settings_)
-, pool(pool_)
-, query_str(query_str_)
+    : MySQLSource(sample_block_, settings_)
+    , pool(pool_)
+    , query_str(query_str_)
 {
 }
 
-void MySQLWithFailoverBlockInputStream::readPrefix()
+void MySQLWithFailoverSource::onStart()
 {
     size_t count_connect_attempts = 0;
 
@@ -109,6 +111,18 @@ void MySQLWithFailoverBlockInputStream::readPrefix()
 
     initPositionMappingFromQueryResultStructure();
 }
+
+Chunk MySQLWithFailoverSource::generate()
+{
+    if (!is_initialized)
+    {
+        onStart();
+        is_initialized = true;
+    }
+
+    return MySQLSource::generate();
+}
+
 
 namespace
 {
@@ -213,7 +227,7 @@ namespace
 }
 
 
-Block MySQLBlockInputStream::readImpl()
+Chunk MySQLSource::generate()
 {
     auto row = connection->result.fetch();
     if (!row)
@@ -272,10 +286,10 @@ Block MySQLBlockInputStream::readImpl()
 
         row = connection->result.fetch();
     }
-    return description.sample_block.cloneWithColumns(std::move(columns));
+    return Chunk(std::move(columns), num_rows);
 }
 
-void MySQLBlockInputStream::initPositionMappingFromQueryResultStructure()
+void MySQLSource::initPositionMappingFromQueryResultStructure()
 {
     position_mapping.resize(description.sample_block.columns());
 

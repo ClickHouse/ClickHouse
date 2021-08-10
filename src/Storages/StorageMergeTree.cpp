@@ -109,7 +109,8 @@ void StorageMergeTree::startup()
     clearOldTemporaryDirectories(0);
 
     /// NOTE background task will also do the above cleanups periodically.
-    time_after_previous_cleanup.restart();
+    time_after_previous_cleanup_parts.restart();
+    time_after_previous_cleanup_temporary_directories.restart();
 
     try
     {
@@ -1061,22 +1062,32 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
         }, PoolType::MERGE_MUTATE});
         return true;
     }
-    else if (auto cmp_lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
+    bool executed = false;
+    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
+    {
+        executor.execute({[this, share_lock] ()
+        {
+            clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
+            return true;
+        }, PoolType::MERGE_MUTATE});
+        executed = true;
+    }
+    if (time_after_previous_cleanup_parts.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
     {
         executor.execute({[this, share_lock] ()
         {
             /// All use relative_data_path which changes during rename
             /// so execute under share lock.
             clearOldPartsFromFilesystem();
-            clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
             clearOldWriteAheadLogs();
             clearOldMutations();
             clearEmptyParts();
             return true;
         }, PoolType::MERGE_MUTATE});
-        return true;
-    }
-    return false;
+        executed = true;
+     }
+
+    return executed;
 }
 
 Int64 StorageMergeTree::getCurrentMutationVersion(

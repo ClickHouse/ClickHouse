@@ -243,3 +243,6 @@
 [submodule "contrib/s2geometry"]
 	path = contrib/s2geometry
 	url = https://github.com/ClickHouse-Extras/s2geometry.git
+[submodule "contrib/bzip2"]
+	path = contrib/bzip2
+	url = https://github.com/ClickHouse-Extras/bzip2.git
