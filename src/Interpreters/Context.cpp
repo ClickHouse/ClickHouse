@@ -1737,7 +1737,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     if (!shared->message_broker_schedule_pool)
         shared->message_broker_schedule_pool.emplace(
             settings.background_message_broker_schedule_pool_size,
-            CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             "BgMBSchPool");
     return *shared->message_broker_schedule_pool;
 }
@@ -2808,6 +2808,13 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
 {
     assert(!metadata_transaction || hasQueryContext());
     return metadata_transaction;
+}
+
+void Context::resetZooKeeperMetadataTransaction()
+{
+    assert(metadata_transaction);
+    assert(hasQueryContext());
+    metadata_transaction = nullptr;
 }
 
 PartUUIDsPtr Context::getPartUUIDs() const

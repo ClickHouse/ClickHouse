@@ -55,4 +55,8 @@ BlockIO executeQuery(
     bool allow_processors /// If can use processors pipeline
 );
 
+/// Executes BlockIO returned from executeQuery(...)
+/// if built pipeline does not require any input and does not produce any output.
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context);
+
 }

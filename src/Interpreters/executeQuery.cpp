@@ -74,6 +74,7 @@ namespace ErrorCodes
 {
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -264,7 +265,11 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
 
     // Try log query_kind if ast is valid
     if (ast)
+    {
         elem.query_kind = ast->getQueryKindString();
+        if (settings.log_formatted_queries)
+            elem.formatted_query = queryToString(ast);
+    }
 
     // We don't calculate databases, tables and columns when the query isn't able to start
 
@@ -640,6 +645,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.current_database = context->getCurrentDatabase();
             elem.query = query_for_logging;
+            if (settings.log_formatted_queries)
+                elem.formatted_query = queryToString(ast);
             elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
             elem.client_info = client_info;
@@ -1133,6 +1140,34 @@ void executeQuery(
                 executor->execute(pipeline.getNumThreads());
             }
         }
+    }
+    catch (...)
+    {
+        streams.onException();
+        throw;
+    }
+
+    streams.onFinish();
+}
+
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
+{
+    try
+    {
+        if (streams.out)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires input, but no input buffer provided, it's a bug");
+        if (streams.in)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires output, but no output buffer provided, it's a bug");
+
+        if (!streams.pipeline.initialized())
+            return;
+
+        if (!streams.pipeline.isCompleted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query pipeline requires output, but no output buffer provided, it's a bug");
+
+        streams.pipeline.setProgressCallback(context->getProgressCallback());
+        auto executor = streams.pipeline.execute();
+        executor->execute(streams.pipeline.getNumThreads());
     }
     catch (...)
     {
