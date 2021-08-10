@@ -2,13 +2,15 @@
 toc_priority: 29
 ---
 
+<<<<<<< HEAD
 # [experimental] MaterializedMySQL {#materialized-mysql}
+=======
+# [экспериментальный] MaterializedMySQL {#materialized-mysql}
+>>>>>>> c9fa892230ba4442c250eefd48378eede2681071
 
 Создает базу данных ClickHouse со всеми таблицами, существующими в MySQL, и всеми данными в этих таблицах.
 
 Сервер ClickHouse работает как реплика MySQL. Он читает файл binlog и выполняет DDL and DML-запросы.
-
-`MaterializedMySQL` — экспериментальный движок баз данных.
 
 ## Создание базы данных {#creating-a-database}
 
