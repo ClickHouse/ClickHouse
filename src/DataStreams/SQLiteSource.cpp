@@ -1,4 +1,4 @@
-#include "SQLiteBlockInputStream.h"
+#include "SQLiteSource.h"
 
 #if USE_SQLITE
 #include <common/range.h>
@@ -22,37 +22,33 @@ namespace ErrorCodes
     extern const int SQLITE_ENGINE_ERROR;
 }
 
-SQLiteBlockInputStream::SQLiteBlockInputStream(
+SQLiteSource::SQLiteSource(
             SQLitePtr sqlite_db_,
             const String & query_str_,
             const Block & sample_block,
             const UInt64 max_block_size_)
-    : query_str(query_str_)
+    : SourceWithProgress(sample_block.cloneEmpty())
+    , query_str(query_str_)
     , max_block_size(max_block_size_)
     , sqlite_db(std::move(sqlite_db_))
 {
     description.init(sample_block);
 }
 
-
-void SQLiteBlockInputStream::readPrefix()
-{
-    sqlite3_stmt * compiled_stmt = nullptr;
-    int status = sqlite3_prepare_v2(sqlite_db.get(), query_str.c_str(), query_str.size() + 1, &compiled_stmt, nullptr);
-
-    if (status != SQLITE_OK)
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Cannot prepate sqlite statement. Status: {}. Message: {}",
-                        status, sqlite3_errstr(status));
-
-    compiled_statement = std::unique_ptr<sqlite3_stmt, StatementDeleter>(compiled_stmt, StatementDeleter());
-}
-
-
-Block SQLiteBlockInputStream::readImpl()
+Chunk SQLiteSource::generate()
 {
     if (!compiled_statement)
-        return Block();
+    {
+        sqlite3_stmt * compiled_stmt = nullptr;
+        int status = sqlite3_prepare_v2(sqlite_db.get(), query_str.c_str(), query_str.size() + 1, &compiled_stmt, nullptr);
+
+        if (status != SQLITE_OK)
+            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                            "Cannot prepate sqlite statement. Status: {}. Message: {}",
+                            status, sqlite3_errstr(status));
+
+        compiled_statement = std::unique_ptr<sqlite3_stmt, StatementDeleter>(compiled_stmt, StatementDeleter());
+    }
 
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
@@ -104,18 +100,10 @@ Block SQLiteBlockInputStream::readImpl()
             break;
     }
 
-    return description.sample_block.cloneWithColumns(std::move(columns));
+    return Chunk(std::move(columns), num_rows);
 }
 
-
-void SQLiteBlockInputStream::readSuffix()
-{
-    if (compiled_statement)
-        compiled_statement.reset();
-}
-
-
-void SQLiteBlockInputStream::insertValue(IColumn & column, const ExternalResultDescription::ValueType type, size_t idx)
+void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::ValueType type, size_t idx)
 {
     switch (type)
     {

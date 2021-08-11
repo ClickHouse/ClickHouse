@@ -19,7 +19,7 @@
 #include <Common/assert_cast.h>
 #include <common/range.h>
 #include <common/logger_useful.h>
-#include "MySQLBlockInputStream.h"
+#include "MySQLSource.h"
 
 
 namespace DB

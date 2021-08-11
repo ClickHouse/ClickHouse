@@ -7,7 +7,7 @@
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/PostgreSQLBlockInputStream.h>
+#include <DataStreams/PostgreSQLSource.h>
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
 #endif
