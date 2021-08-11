@@ -18,7 +18,6 @@
 #include <stack>
 #include <Common/JSONBuilder.h>
 
-#include <common/logger_useful.h>
 
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
