@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Common/hex.h>
 
@@ -9,19 +9,21 @@
 namespace DB
 {
 
-class LiveViewBlockOutputStream : public IBlockOutputStream
+class LiveViewSink : public SinkToStorage
 {
 public:
-    explicit LiveViewBlockOutputStream(StorageLiveView & storage_) : storage(storage_) {}
+    explicit LiveViewSink(StorageLiveView & storage_) : SinkToStorage(storage_.getHeader()), storage(storage_) {}
 
-    void writePrefix() override
+    String getName() const override { return "LiveViewSink"; }
+
+    void onStart() override
     {
         new_blocks = std::make_shared<Blocks>();
         new_blocks_metadata = std::make_shared<BlocksMetadata>();
         new_hash = std::make_shared<SipHash>();
     }
 
-    void writeSuffix() override
+    void onFinish() override
     {
         UInt128 key;
         String key_str;
@@ -65,13 +67,12 @@ public:
         new_hash.reset();
     }
 
-    void write(const Block & block) override
+    void consume(Chunk chunk) override
     {
-        new_blocks->push_back(block);
+        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
         block.updateHash(*new_hash);
+        new_blocks->push_back(std::move(block));
     }
-
-    Block getHeader() const override { return storage.getHeader(); }
 
 private:
     using SipHashPtr = std::shared_ptr<SipHash>;

@@ -71,10 +71,9 @@ BlockIO InterpreterWatchQuery::execute()
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
     /// Watch storage
-    streams = storage->watch(required_columns, query_info, getContext(), from_stage, max_block_size, max_streams);
+    auto pipe = storage->watch(required_columns, query_info, getContext(), from_stage, max_block_size, max_streams);
 
     /// Constraints on the result, the quota on the result, and also callback for progress.
-    if (IBlockInputStream * stream = dynamic_cast<IBlockInputStream *>(streams[0].get()))
     {
         StreamLocalLimits limits;
         limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
@@ -82,11 +81,11 @@ BlockIO InterpreterWatchQuery::execute()
         limits.size_limits.max_bytes = settings.max_result_bytes;
         limits.size_limits.overflow_mode = settings.result_overflow_mode;
 
-        stream->setLimits(limits);
-        stream->setQuota(getContext()->getQuota());
+        pipe.setLimits(limits);
+        pipe.setQuota(getContext()->getQuota());
     }
 
-    res.in = streams[0];
+    res.pipeline.init(std::move(pipe));
 
     return res;
 }
