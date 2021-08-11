@@ -7,31 +7,24 @@
 #include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <common/logger_useful.h>
-#include "DictionaryBlockInputStreamBase.h"
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/DictionarySourceBase.h>
 
 
 namespace DB
 {
 
-/// TODO: Remove this class
-/* BlockInputStream implementation for external dictionaries
- * read() returns blocks consisting of the in-memory contents of the dictionaries
- */
-class DictionaryBlockInputStream : public DictionaryBlockInputStreamBase
+class DictionarySourceData
 {
 public:
-    DictionaryBlockInputStream(
+    DictionarySourceData(
         std::shared_ptr<const IDictionary> dictionary,
-        UInt64 max_block_size,
         PaddedPODArray<UInt64> && ids,
         const Names & column_names);
 
-    DictionaryBlockInputStream(
+    DictionarySourceData(
         std::shared_ptr<const IDictionary> dictionary,
-        UInt64 max_block_size,
         const PaddedPODArray<StringRef> & keys,
         const Names & column_names);
 
@@ -41,18 +34,15 @@ public:
     // Calls get_key_columns_function to get key column for dictionary get function call
     // and get_view_columns_function to get key representation.
     // Now used in trie dictionary, where columns are stored as ip and mask, and are showed as string
-    DictionaryBlockInputStream(
+    DictionarySourceData(
         std::shared_ptr<const IDictionary> dictionary,
-        UInt64 max_block_size,
         const Columns & data_columns,
         const Names & column_names,
         GetColumnsFunction && get_key_columns_function,
         GetColumnsFunction && get_view_columns_function);
 
-    String getName() const override { return "Dictionary"; }
-
-protected:
-    Block getBlock(size_t start, size_t length) const override;
+    Block getBlock(size_t start, size_t length) const;
+    size_t getNumRows() const { return num_rows; }
 
 private:
     Block fillBlock(
@@ -61,8 +51,6 @@ private:
         const DataTypes & types,
         ColumnsWithTypeAndName && view) const;
 
-    static ColumnPtr getColumnFromIds(const PaddedPODArray<UInt64> & ids_to_fill);
-
     static void fillKeyColumns(
         const PaddedPODArray<StringRef> & keys,
         size_t start,
@@ -70,8 +58,9 @@ private:
         const DictionaryStructure & dictionary_structure,
         ColumnsWithTypeAndName & result);
 
+    const size_t num_rows;
     std::shared_ptr<const IDictionary> dictionary;
-    Names column_names;
+    std::unordered_set<std::string> column_names;
     PaddedPODArray<UInt64> ids;
     ColumnsWithTypeAndName key_columns;
 
@@ -87,6 +76,20 @@ private:
     };
 
     DictionaryInputStreamKeyType key_type;
+};
+
+class DictionarySource final : public DictionarySourceBase
+{
+public:
+    DictionarySource(DictionarySourceData data_, UInt64 max_block_size)
+        : DictionarySourceBase(data_.getBlock(0, 0), data_.getNumRows(), max_block_size)
+        , data(std::move(data_))
+    {}
+
+    String getName() const override { return "DictionarySource"; }
+    Block getBlock(size_t start, size_t length) const override { return data.getBlock(start, length); }
+
+    DictionarySourceData data;
 };
 
 }

@@ -158,6 +158,8 @@ else()
     target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
 endif()
 
+target_link_libraries (clickhouse_common_io PRIVATE jemalloc)
+
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
 
