@@ -19,7 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int PROXY_PROTOCOL_ERROR;
 }
 

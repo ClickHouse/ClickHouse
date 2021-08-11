@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INVALID_CONFIG_PARAMETER;
-}
-
 HTTPProxyConfig::HTTPProxyConfig(const std::string & name_)
     : ProxyConfig(name_, "HTTP")
 {

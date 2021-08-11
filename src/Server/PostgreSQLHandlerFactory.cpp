@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(IServer & server_, const PostgreSQLInterfaceConfig & config_)
     : server(server_)
     , log(&Poco::Logger::get("PostgreSQLHandlerFactory"))

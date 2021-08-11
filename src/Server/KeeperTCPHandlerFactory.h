@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class KeeperTCPHandlerFactory : public Poco::Net::TCPServerConnectionFactory
 {
 private:

@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 HTTPInterfaceConfigBase::HTTPInterfaceConfigBase(const std::string & name_, const std::string & protocol_)
     : TCPInterfaceConfigBase(name_, protocol_)
 {

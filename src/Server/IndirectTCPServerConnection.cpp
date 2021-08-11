@@ -34,9 +34,13 @@ bool addrInNet(const boost::asio::ip::address_v6 & address, const boost::asio::i
 
 bool addrInNet(const boost::asio::ip::address & address, const ProxyConfig::Network & network)
 {
-    return std::visit([&] (const auto & net) {
-        return (address.is_v4() ? addrInNet(address.to_v4(), net) : addrInNet(address.to_v6(), net));
-    }, network);
+    return std::visit(
+        [&] (const auto & net)
+        {
+            return (address.is_v4() ? addrInNet(address.to_v4(), net) : addrInNet(address.to_v6(), net));
+        },
+        network
+    );
 }
 
 bool addrInNet(const boost::asio::ip::address & address, const ProxyConfig::Networks & networks)

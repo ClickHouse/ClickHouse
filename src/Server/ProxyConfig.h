@@ -20,7 +20,8 @@ class ProxyConfig;
 using ProxyConfigs = std::map<std::string, std::unique_ptr<ProxyConfig>>;
 
 /// Interface class for configs for different proxy protocols.
-class ProxyConfig {
+class ProxyConfig
+{
 public:
     explicit ProxyConfig(const std::string & name_, const std::string & protocol_);
     virtual ~ProxyConfig() = default;
