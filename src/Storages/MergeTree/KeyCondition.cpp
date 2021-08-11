@@ -10,6 +10,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
