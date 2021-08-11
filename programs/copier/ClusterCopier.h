@@ -123,8 +123,8 @@ protected:
     bool tryDropPartitionPiece(ShardPartition & task_partition, size_t current_piece_number,
             const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);
 
-    static constexpr UInt64 max_table_tries = 3;
-    static constexpr UInt64 max_shard_partition_tries = 3;
+    static constexpr UInt64 max_table_tries = 10;
+    static constexpr UInt64 max_shard_partition_tries = 10;
     static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 10;
 
     bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
