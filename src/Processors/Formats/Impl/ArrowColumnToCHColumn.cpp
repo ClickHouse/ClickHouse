@@ -31,6 +31,7 @@
 #include <arrow/array.h>
 
 
+/// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
         M(arrow::Type::UINT8, DB::UInt8) \
         M(arrow::Type::INT8, DB::Int8) \
@@ -152,30 +153,6 @@ static ColumnWithTypeAndName readColumnWithBooleanData(std::shared_ptr<arrow::Ch
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-static ColumnWithTypeAndName readColumnWithDateData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
-{
-    auto internal_type = std::make_shared<DataTypeDate>();
-    auto internal_column = internal_type->createColumn();
-    PaddedPODArray<UInt16> & column_data = assert_cast<ColumnVector<UInt16> &>(*internal_column).getData();
-    column_data.reserve(arrow_column->length());
-
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
-    {
-        arrow::UInt16Array & chunk = dynamic_cast<arrow::UInt16Array &>(*(arrow_column->chunk(chunk_i)));
-
-        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
-        {
-            UInt16 days_num = static_cast<UInt16>(chunk.Value(value_i));
-            if (days_num > DATE_LUT_MAX_DAY_NUM)
-                throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                                "Input value {} of a column \"{}\" is greater than max allowed Date value, which is {}", days_num, column_name, DATE_LUT_MAX_DAY_NUM};
-
-            column_data.emplace_back(days_num);
-        }
-    }
-    return {std::move(internal_column), std::move(internal_type), column_name};
-}
-
 static ColumnWithTypeAndName readColumnWithDate32Data(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     auto internal_type = std::make_shared<DataTypeDate32>();
@@ -216,22 +193,6 @@ static ColumnWithTypeAndName readColumnWithDate64Data(std::shared_ptr<arrow::Chu
             auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // Always? in ms
             column_data.emplace_back(timestamp);
         }
-    }
-    return {std::move(internal_column), std::move(internal_type), column_name};
-}
-
-static ColumnWithTypeAndName readColumnWithDateTimeData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
-{
-    auto internal_type = std::make_shared<DataTypeDateTime>();
-    auto internal_column = internal_type->createColumn();
-    auto & column_data = assert_cast<ColumnVector<UInt32> &>(*internal_column).getData();
-    column_data.reserve(arrow_column->length());
-
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
-    {
-        auto & chunk = dynamic_cast<arrow::UInt32Array &>(*(arrow_column->chunk(chunk_i)));
-        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
-            column_data.emplace_back(chunk.Value(value_i));
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
@@ -393,9 +354,17 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         // so, read UINT16 as Date and UINT32 as DateTime to perform correct conversion
         // between Date and DateTime further.
         case arrow::Type::UINT16:
-            return readColumnWithDateData(arrow_column, column_name);
+        {
+            auto column = readColumnWithNumericData<UInt16>(arrow_column, column_name);
+            column.type = std::make_shared<DataTypeDate>();
+            return column;
+        }
         case arrow::Type::UINT32:
-            return readColumnWithDateTimeData(arrow_column, column_name);
+        {
+            auto column = readColumnWithNumericData<UInt32>(arrow_column, column_name);
+            column.type = std::make_shared<DataTypeDateTime>();
+            return column;
+        }
         case arrow::Type::TIMESTAMP:
             return readColumnWithTimestampData(arrow_column, column_name);
 #if defined(ARCADIA_BUILD)
