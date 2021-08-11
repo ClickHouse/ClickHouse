@@ -67,6 +67,13 @@ insert into funnel_test_strict_order values (1, 7, 'a') (2, 7, 'c') (3, 7, 'b');
 select user, windowFunnel(10, 'strict_order')(dt, event = 'a', event = 'b', event = 'c') as s from funnel_test_strict_order where user = 7 group by user format JSONCompactEachRow;
 drop table funnel_test_strict_order;
 
+--https://github.com/ClickHouse/ClickHouse/issues/27469
+drop table if exists strict_BiteTheDDDD;
+create table strict_BiteTheDDDD (ts UInt64, event String) engine = Log();
+insert into strict_BiteTheDDDD values (1,'a') (2,'b') (3,'c') (4,'b') (5,'d');
+select 3 = windowFunnel(86400, 'strict')(ts, event='a', event='b', event='c', event='d') from strict_BiteTheDDDD format JSONCompactEachRow;
+drop table strict_BiteTheDDDD;
+
 drop table if exists funnel_test_non_null;
 create table funnel_test_non_null (`dt` DateTime, `u` int, `a` Nullable(String), `b` Nullable(String)) engine = MergeTree() partition by dt order by u;
 insert into funnel_test_non_null values (1, 1, 'a1', 'b1') (2, 1, 'a2', 'b2');
