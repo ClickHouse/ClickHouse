@@ -525,6 +525,6 @@
         "01532_execute_merges_on_single_replica", /// static zk path
         "01530_drop_database_atomic_sync", /// creates database
         "02001_add_default_database_to_system_users", ///create user
-        "02002_row_level_filter_bug", ///create user
+        "02002_row_level_filter_bug" ///create user
     ]
 }
