@@ -7,19 +7,14 @@
 #include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <common/logger_useful.h>
-#include "DictionaryBlockInputStreamBase.h"
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/DictionarySourceBase.h>
 
 
 namespace DB
 {
 
-/// TODO: Remove this class
-/* BlockInputStream implementation for external dictionaries
- * read() returns blocks consisting of the in-memory contents of the dictionaries
- */
 class DictionarySourceData
 {
 public:
@@ -56,8 +51,6 @@ private:
         const DataTypes & types,
         ColumnsWithTypeAndName && view) const;
 
-    static ColumnPtr getColumnFromIds(const PaddedPODArray<UInt64> & ids_to_fill);
-
     static void fillKeyColumns(
         const PaddedPODArray<StringRef> & keys,
         size_t start,
@@ -67,7 +60,7 @@ private:
 
     const size_t num_rows;
     std::shared_ptr<const IDictionary> dictionary;
-    Names column_names;
+    std::unordered_set<std::string> column_names;
     PaddedPODArray<UInt64> ids;
     ColumnsWithTypeAndName key_columns;
 
