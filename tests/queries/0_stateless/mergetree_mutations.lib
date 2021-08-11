@@ -35,7 +35,7 @@ function wait_for_all_mutations()
         fi
 
         if [[ $i -eq 200 ]]; then
-            echo "Timed out while waiting for mutation to execute!" | tee >(cat >&2)
+            echo "Timed out while waiting for mutation to execute!"
         fi
 
     done
