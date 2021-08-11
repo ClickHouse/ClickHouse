@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTask.h>
+#include <Storages/MergeTree/MergeMutateExecutor.h>
 #include <Common/ThreadPool.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <pcg_random.hpp>
@@ -79,6 +80,8 @@ private:
 
     /// Pools where we execute background jobs
     std::unordered_map<PoolType, ThreadPool> pools;
+
+    MergeTreeBackgroundExecutor merge_mutate_executor;
 
     /// Configs for background pools
     std::unordered_map<PoolType, PoolConfig> pools_configs;

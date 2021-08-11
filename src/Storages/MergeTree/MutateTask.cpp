@@ -1198,9 +1198,6 @@ MutateTask::MutateTask(
     ctx->metadata_snapshot = metadata_snapshot_;
     ctx->space_reservation = space_reservation_;
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
-
-
-    std::cout << "is cancelled " << (*ctx->mutate_entry)->is_cancelled << std::endl;
 }
 
 

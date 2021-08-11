@@ -22,6 +22,11 @@ IBackgroundJobExecutor::IBackgroundJobExecutor(
     : WithContext(global_context_)
     , sleep_settings(sleep_settings_)
     , rng(randomSeed())
+    , merge_mutate_executor(
+        [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
+        [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
+        [] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask]; }
+    )
 {
     for (const auto & pool_config : pools_configs_)
     {
@@ -65,24 +70,6 @@ void IBackgroundJobExecutor::scheduleTask(bool with_backoff)
     scheduling_task->scheduleAfter(next_time_to_execute, false);
 }
 
-namespace
-{
-
-/// Tricky function: we have separate thread pool with max_threads in each background executor for each table
-/// But we want total background threads to be less than max_threads value. So we use global atomic counter (BackgroundMetric)
-/// to limit total number of background threads.
-bool incrementMetricIfLessThanMax(std::atomic<Int64> & atomic_value, Int64 max_value)
-{
-    auto value = atomic_value.load(std::memory_order_relaxed);
-    while (value < max_value)
-    {
-        if (atomic_value.compare_exchange_weak(value, value + 1, std::memory_order_release, std::memory_order_relaxed))
-            return true;
-    }
-    return false;
-}
-
-}
 
 void IBackgroundJobExecutor::executeImpl(auto job, PoolType pool_type)
 try
@@ -127,39 +114,16 @@ catch (...) /// Exception while we looking for a task, reschedule
 }
 
 
-void IBackgroundJobExecutor::executeMergeJob(BackgroundTaskPtr merge_task)
+void IBackgroundJobExecutor::executeMergeJob(BackgroundTaskPtr)
 {
-    auto & pool_for_merges = pools[PoolType::MERGE_MUTATE];
 
-    const auto priority = merge_task->getPriority();
-    pool_for_merges.scheduleContinuation([this, merge_task]()
-    {
-        auto pool_config = pools_configs[PoolType::MERGE_MUTATE];
-        try
-        {
-            if (merge_task->execute())
-            {
-                executeMergeJob(merge_task);
-            }
-            else
-            {
-                CurrentMetrics::values[pool_config.tasks_metric]--;
-                runTaskWithoutDelay();
-            }
-        }
-        catch (...)
-        {
-            CurrentMetrics::values[pool_config.tasks_metric]--;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            scheduleTask(/* with_backoff = */ true);
-        }
-    }, priority);
 }
 
 
 void IBackgroundJobExecutor::executeMergeMutateTask(BackgroundTaskPtr merge_task)
 {
-    executeImpl([this, merge_task]() { executeMergeJob(merge_task); }, PoolType::MERGE_MUTATE);
+    if (!merge_mutate_executor.trySchedule(merge_task))
+        scheduleTask(/* with_backoff = */ true);
 }
 
 
@@ -220,6 +184,8 @@ void IBackgroundJobExecutor::finish()
         scheduling_task->deactivate();
         for (auto & [pool_type, pool] : pools)
             pool.wait();
+
+        merge_mutate_executor.wait();
     }
 }
 
