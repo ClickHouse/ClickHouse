@@ -3,7 +3,7 @@
 #if defined(ARCADIA_BUILD)
 #define HASH_FUN_H <unordered_map>
 template <typename T>
-struct THash : public std::hash<T> {};
+struct THash;
 #endif
 
 #include <sparsehash/sparse_hash_map>
