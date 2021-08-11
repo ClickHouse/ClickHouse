@@ -137,7 +137,7 @@ range([start, ] end [, step])
 **Implementation details**
 
 -   All arguments must be positive values: `start`, `end`, `step` are `UInt` data types, as well as elements of the returned array.
--   An exception is thrown if query results in arrays with a total length of more than 100,000,000 elements.
+-   An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
 
 
 **Examples**

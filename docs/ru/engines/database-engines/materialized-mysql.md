@@ -3,15 +3,13 @@ toc_priority: 29
 toc_title: "[experimental] MaterializedMySQL"
 ---
 
-# [experimental] MaterializedMySQL {#materialized-mysql}
+# [экспериментальный] MaterializedMySQL {#materialized-mysql}
 
 **Это экспериментальная функция, которую не следует использовать в продуктивной среде.**
 
 Создает базу данных ClickHouse со всеми таблицами, существующими в MySQL, и всеми данными в этих таблицах.
 
 Сервер ClickHouse работает как реплика MySQL. Он читает файл binlog и выполняет DDL and DML-запросы.
-
-`MaterializedMySQL` — экспериментальный движок баз данных.
 
 ## Создание базы данных {#creating-a-database}
 
