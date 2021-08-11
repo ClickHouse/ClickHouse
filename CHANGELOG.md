@@ -1,9 +1,5 @@
 ### ClickHouse release v21.8, 2021-08-11
 
-#### Backward Incompatible Changes
-
-* Use `Map` data type for system logs tables (`system.query_log`, `system.query_thread_log`, `system.processes`, `system.OpenTelemetrySpanLog`). These tables will be auto-created with new data types; old queries may be incompatible. [#23934](https://github.com/ClickHouse/ClickHouse/pull/23934) ([hexiaoting](https://github.com/hexiaoting)).
-
 #### New Features
 
 * Collect common system metrics (in `system.asynchronous_metrics` and `system.asynchronous_metric_log`) on CPU usage, disk usage, memory usage, IO, network, files, load average, CPU frequencies, thermal sensors, EDAC counters, system uptime; also added metrics about the scheduling jitter and the time spent collecting the metrics. It works similar to `atop` in ClickHouse and allows access to monitoring data even if you have no additional tools installed. Close [#9430](https://github.com/ClickHouse/ClickHouse/issues/9430). [#24416](https://github.com/ClickHouse/ClickHouse/pull/24416) ([Yegor Levankov](https://github.com/elevankoff)).
@@ -25,6 +21,7 @@
 
 #### Improvements
 
+* Use `Map` data type for system logs tables (`system.query_log`, `system.query_thread_log`, `system.processes`, `system.opentelemetry_span_log`). These tables will be auto-created with new data types. Virtual columns are created to support old queries. Closes [#18698](https://github.com/ClickHouse/ClickHouse/issues/18698). [#23934](https://github.com/ClickHouse/ClickHouse/pull/23934), [#25773](https://github.com/ClickHouse/ClickHouse/pull/25773) ([hexiaoting](https://github.com/hexiaoting), [sundy-li](https://github.com/sundy-li)).
 * For a dictionary with a complex key containing only one attribute, allow not wrapping the key expression in tuple for functions `dictGet`, `dictHas`. [#26130](https://github.com/ClickHouse/ClickHouse/pull/26130) ([Maksim Kita](https://github.com/kitaisreal)).
 * Implement function `bin`/`hex` from `AggregateFunction` states. [#26094](https://github.com/ClickHouse/ClickHouse/pull/26094) ([zhaoyu](https://github.com/zxc111)).
 * Support arguments of `UUID` type for `empty` and `notEmpty` functions. `UUID` is empty if it is all zeros (nil UUID). Closes [#3446](https://github.com/ClickHouse/ClickHouse/issues/3446). [#25974](https://github.com/ClickHouse/ClickHouse/pull/25974) ([zhaoyu](https://github.com/zxc111)).
@@ -46,7 +43,6 @@
 * Fix "No available columns" error for `Merge` storage. [#25801](https://github.com/ClickHouse/ClickHouse/pull/25801) ([Azat Khuzhin](https://github.com/azat)).
 * MySQL Engine now supports the exchange of column comments between MySQL and ClickHouse. [#25795](https://github.com/ClickHouse/ClickHouse/pull/25795) ([Storozhuk Kostiantyn](https://github.com/sand6255)).
 * Fix inconsistent behaviour of `GROUP BY` constant on empty set. Closes [#6842](https://github.com/ClickHouse/ClickHouse/issues/6842). [#25786](https://github.com/ClickHouse/ClickHouse/pull/25786) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Use `Map` data type for key-value dictionaries in system logs tables (`system.query_log`, `system.query_thread_log`, `system.processes`, `system.opentelemetry_span_log`). Virtual columns are created to support old queries. Closes [#18698](https://github.com/ClickHouse/ClickHouse/issues/18698). Authors @hexiaoting, @sundy-li. [#25773](https://github.com/ClickHouse/ClickHouse/pull/25773) ([Maksim Kita](https://github.com/kitaisreal)).
 * Cancel already running merges in partition on `DROP PARTITION` and `TRUNCATE` for `ReplicatedMergeTree`. Resolves [#17151](https://github.com/ClickHouse/ClickHouse/issues/17151). [#25684](https://github.com/ClickHouse/ClickHouse/pull/25684) ([tavplubix](https://github.com/tavplubix)).
 * Support ENUM` data type for MaterializeMySQL. [#25676](https://github.com/ClickHouse/ClickHouse/pull/25676) ([Storozhuk Kostiantyn](https://github.com/sand6255)).
 * Support materialized and aliased columns in JOIN, close [#13274](https://github.com/ClickHouse/ClickHouse/issues/13274). [#25634](https://github.com/ClickHouse/ClickHouse/pull/25634) ([Vladimir C](https://github.com/vdimir)).
