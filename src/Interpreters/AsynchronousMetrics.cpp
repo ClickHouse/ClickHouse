@@ -967,6 +967,8 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
         /// Try to reopen block devices in case of error
         /// (i.e. ENOENT means that some disk had been replaced, and it may apperas with a new name)
         try
@@ -977,7 +979,6 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     if (net_dev)
