@@ -40,7 +40,6 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 #include <Common/SipHash.h>
 #include "CassandraBlockInputStream.h"
 #include <common/logger_useful.h>
-#include <DataStreams/UnionBlockInputStream.h>
 
 namespace DB
 {
@@ -132,12 +131,12 @@ void CassandraDictionarySource::maybeAllowFiltering(String & query) const
     query += " ALLOW FILTERING;";
 }
 
-BlockInputStreamPtr CassandraDictionarySource::loadAll()
+Pipe CassandraDictionarySource::loadAll()
 {
     String query = query_builder.composeLoadAllQuery();
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading all using query: {}", query);
-    return std::make_shared<CassandraBlockInputStream>(getSession(), query, sample_block, max_block_size);
+    return Pipe(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
 }
 
 std::string CassandraDictionarySource::toString() const
@@ -145,15 +144,15 @@ std::string CassandraDictionarySource::toString() const
     return "Cassandra: " + settings.db + '.' + settings.table;
 }
 
-BlockInputStreamPtr CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     String query = query_builder.composeLoadIdsQuery(ids);
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading ids using query: {}", query);
-    return std::make_shared<CassandraBlockInputStream>(getSession(), query, sample_block, max_block_size);
+    return Pipe(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
 }
 
-BlockInputStreamPtr CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (requested_rows.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No rows requested");
@@ -168,22 +167,19 @@ BlockInputStreamPtr CassandraDictionarySource::loadKeys(const Columns & key_colu
         partitions[partition_key.get64()].push_back(row);
     }
 
-    BlockInputStreams streams;
+    Pipes pipes;
     for (const auto & partition : partitions)
     {
         String query = query_builder.composeLoadKeysQuery(key_columns, partition.second, ExternalQueryBuilder::CASSANDRA_SEPARATE_PARTITION_KEY, settings.partition_key_prefix);
         maybeAllowFiltering(query);
         LOG_INFO(log, "Loading keys for partition hash {} using query: {}", partition.first, query);
-        streams.push_back(std::make_shared<CassandraBlockInputStream>(getSession(), query, sample_block, max_block_size));
+        pipes.push_back(Pipe(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size)));
     }
 
-    if (streams.size() == 1)
-        return streams.front();
-
-    return std::make_shared<UnionBlockInputStream>(streams, nullptr, settings.max_threads);
+    return Pipe::unitePipes(std::move(pipes));
 }
 
-BlockInputStreamPtr CassandraDictionarySource::loadUpdatedAll()
+Pipe CassandraDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for CassandraDictionarySource");
 }

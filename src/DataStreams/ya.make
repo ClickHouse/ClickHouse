@@ -49,6 +49,7 @@ SRCS(
     TTLUpdateInfoAlgorithm.cpp
     copyData.cpp
     finalizeBlock.cpp
+    formatBlock.cpp
     materializeBlock.cpp
     narrowBlockInputStreams.cpp
 
