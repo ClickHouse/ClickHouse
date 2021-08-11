@@ -1,7 +1,7 @@
 #pragma once
 
 #if defined(ARCADIA_BUILD)
-#define HASH_FUN_H <unordered_map>;
+#define HASH_FUN_H <unordered_map>
 template <typename T>
 struct THash : public std::hash<T> {};
 #endif
