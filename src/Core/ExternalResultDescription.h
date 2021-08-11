@@ -6,7 +6,7 @@
 
 namespace DB
 {
-/** Common part for implementation of MySQLBlockInputStream, MongoDBBlockInputStream and others.
+/** Common part for implementation of MySQLSource, MongoDBSource and others.
   */
 struct ExternalResultDescription
 {

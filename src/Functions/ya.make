@@ -312,6 +312,7 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
+    hyperscanRegexpChecker.cpp
     hypot.cpp
     identity.cpp
     if.cpp

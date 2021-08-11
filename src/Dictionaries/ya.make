@@ -22,9 +22,9 @@ NO_COMPILER_WARNINGS()
 SRCS(
     CacheDictionary.cpp
     CacheDictionaryUpdateQueue.cpp
-    CassandraBlockInputStream.cpp
     CassandraDictionarySource.cpp
     CassandraHelpers.cpp
+    CassandraSource.cpp
     ClickHouseDictionarySource.cpp
     DictionaryBlockInputStream.cpp
     DictionaryBlockInputStreamBase.cpp
