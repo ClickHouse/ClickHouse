@@ -21,6 +21,7 @@ SRCS(
     ASTCreateRowPolicyQuery.cpp
     ASTCreateSettingsProfileQuery.cpp
     ASTCreateUserQuery.cpp
+    ASTDatabaseOrNone.cpp
     ASTDictionary.cpp
     ASTDictionaryAttributeDeclaration.cpp
     ASTDropAccessEntityQuery.cpp
@@ -95,6 +96,7 @@ SRCS(
     ParserCreateSettingsProfileQuery.cpp
     ParserCreateUserQuery.cpp
     ParserDataType.cpp
+    ParserDatabaseOrNone.cpp
     ParserDescribeTableQuery.cpp
     ParserDictionary.cpp
     ParserDictionaryAttributeDeclaration.cpp
