@@ -52,9 +52,9 @@ using Pipes = std::vector<Pipe>;
 class StorageLiveView final : public shared_ptr_helper<StorageLiveView>, public IStorage, WithContext
 {
 friend struct shared_ptr_helper<StorageLiveView>;
-friend class LiveViewBlockInputStream;
-friend class LiveViewEventsBlockInputStream;
-friend class LiveViewBlockOutputStream;
+friend class LiveViewSource;
+friend class LiveViewEventsSource;
+friend class LiveViewSink;
 
 public:
     ~StorageLiveView() override;
