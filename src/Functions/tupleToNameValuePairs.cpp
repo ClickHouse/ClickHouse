@@ -61,36 +61,36 @@ public:
                             "First argument for function {} must be a tuple.",
                             getName());
 
-        const auto & elementTypes = tuple->getElements();
+        const auto & element_types = tuple->getElements();
 
-        if (elementTypes.empty())
+        if (element_types.empty())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "The argument tuple for function {} must not be empty.",
                             getName());
 
-        const auto & firstElementType = elementTypes[0];
+        const auto & first_element_type = element_types[0];
 
-        bool allValueTypesEqual = std::all_of(elementTypes.begin() + 1,
-                                              elementTypes.end(),
-                                              [&](const auto &other)
-                                              {
-                                                  return firstElementType->equals(*other);
-                                              });
+        bool all_value_types_equal = std::all_of(element_types.begin() + 1,
+                                                 element_types.end(),
+                                                 [&](const auto &other)
+                                                 {
+                                                     return first_element_type->equals(*other);
+                                                 });
 
-        if (!allValueTypesEqual)
+        if (!all_value_types_equal)
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "The argument tuple for function {} must contain just one type.",
                             getName());
         }
 
-        DataTypePtr tupleNameType = std::make_shared<DataTypeString>();
-        DataTypes itemDataTypes ={tupleNameType,
-                                  firstElementType};
+        DataTypePtr tuple_name_type = std::make_shared<DataTypeString>();
+        DataTypes item_data_types = {tuple_name_type,
+                                     first_element_type};
 
-        auto itemDataType = std::make_shared<DataTypeTuple>(itemDataTypes);
+        auto item_data_type = std::make_shared<DataTypeTuple>(item_data_types);
 
-        return std::make_shared<DataTypeArray>(itemDataType);
+        return std::make_shared<DataTypeArray>(item_data_type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -107,17 +107,17 @@ public:
             for (size_t col = 0; col < tuple_col_concrete->tupleSize(); ++col)
             {
                 const std::string & key = tuple->getElementNames()[col];
-                const IColumn & valueColumn = tuple_col_concrete->getColumn(col);
+                const IColumn & value_column = tuple_col_concrete->getColumn(col);
 
-                values->insertFrom(valueColumn, row);
+                values->insertFrom(value_column, row);
                 keys->insertData(key.data(), key.size());
             }
             offsets->insertValue(tuple_col_concrete->tupleSize() * (row + 1));
         }
 
-        std::vector<ColumnPtr> tupleColumns = { std::move(keys), std::move(values) };
-        auto tupleColumn = ColumnTuple::create(std::move(tupleColumns));
-        return ColumnArray::create(std::move(tupleColumn), std::move(offsets));
+        std::vector<ColumnPtr> tuple_columns = { std::move(keys), std::move(values) };
+        auto tuple_column = ColumnTuple::create(std::move(tuple_columns));
+        return ColumnArray::create(std::move(tuple_column), std::move(offsets));
     }
 };
 
