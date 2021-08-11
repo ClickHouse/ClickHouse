@@ -16,10 +16,10 @@ def regression(self, local, clickhouse_binary_path, stress=None):
 
     self.context.stress = stress
 
-    with Pool(8) as pool:
+    with Pool(4) as pool:
         try:
             Feature(test=load("example.regression", "regression"), parallel=True, executor=pool)(**args)
-            #Feature(test=load("ldap.regression", "regression"), parallel=True, executor=pool)(**args)
+            Feature(test=load("ldap.regression", "regression"), parallel=True, executor=pool)(**args)
             Feature(test=load("rbac.regression", "regression"), parallel=True, executor=pool)(**args)
             Feature(test=load("aes_encryption.regression", "regression"), parallel=True, executor=pool)(**args)
             Feature(test=load("map_type.regression", "regression"), parallel=True, executor=pool)(**args)
@@ -27,6 +27,7 @@ def regression(self, local, clickhouse_binary_path, stress=None):
             Feature(test=load("datetime64_extended_range.regression", "regression"), parallel=True, executor=pool)(**args)
             Feature(test=load("kerberos.regression", "regression"), parallel=True, executor=pool)(**args)
             Feature(test=load("extended_precision_data_types.regression", "regression"), parallel=True, executor=pool)(**args)
+            Feature(test=load("ssl_server.regression", "regression"), parallel=True, executor=pool)(**args)
         finally:
             join()
 

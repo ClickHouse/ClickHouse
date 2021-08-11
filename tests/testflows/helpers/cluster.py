@@ -12,21 +12,6 @@ from testflows.connect import Shell as ShellBase
 from testflows.uexpect import ExpectTimeoutError
 from testflows._core.testtype import TestSubType
 
-MESSAGES_TO_RETRY = [
-    "DB::Exception: ZooKeeper session has been expired",
-    "DB::Exception: Connection loss",
-    "Coordination::Exception: Session expired",
-    "Coordination::Exception: Connection loss",
-    "Coordination::Exception: Operation timeout",
-    "DB::Exception: Operation timeout",
-    "Operation timed out",
-    "ConnectionPoolWithFailover: Connection failed at try",
-    "DB::Exception: New table appeared in database being dropped or detached. Try again",
-    "is already started to be removing by another replica right now",
-    "Shutdown is called for table", # happens in SYSTEM SYNC REPLICA query if session with ZooKeeper is being reinitialized.
-    "is executing longer than distributed_ddl_task_timeout" # distributed TTL timeout message
-]
-
 class Shell(ShellBase):
     def __exit__(self, type, value, traceback):
         # send exit and Ctrl-D repeatedly
@@ -139,7 +124,6 @@ class Node(object):
         return r
 
 
-
 class ClickHouseNode(Node):
     """Node with ClickHouse server.
     """
@@ -245,7 +229,7 @@ class ClickHouseNode(Node):
                     echo -e \"{sql[:100]}...\" > {query.name}
                     {command}
                 """
-                with Step("executing command", description=description, format_description=False) if steps else NullStep():
+                with step("executing command", description=description, format_description=False) if steps else NullStep():
                     try:
                         r = self.cluster.bash(None)(command, *args, **kwargs)
                     except ExpectTimeoutError:
@@ -255,7 +239,7 @@ class ClickHouseNode(Node):
             for setting in query_settings:
                 name, value = setting
                 command += f" --{name} \"{value}\""
-            with Step("executing command", description=command, format_description=False) if steps else NullStep():
+            with step("executing command", description=command, format_description=False) if steps else NullStep():
                 try:
                     r = self.cluster.bash(self.name)(command, *args, **kwargs)
                 except ExpectTimeoutError:
@@ -349,7 +333,9 @@ class Cluster(object):
                 shell.timeout = 30
                 shell("echo 1")
                 break
-            except:
+            except IOError:
+                raise
+            except Exception as exc:
                 shell.__exit__(None, None, None)
                 if time.time() - time_start > timeout:
                     raise RuntimeError(f"failed to open control shell")
@@ -391,7 +377,9 @@ class Cluster(object):
                 shell.timeout = 30
                 shell("echo 1")
                 break
-            except:
+            except IOError:
+                raise
+            except Exception as exc:
                 shell.__exit__(None, None, None)
                 if time.time() - time_start > timeout:
                     raise RuntimeError(f"failed to open bash to node {node}")
@@ -426,7 +414,9 @@ class Cluster(object):
                         self._bash[id].timeout = 30
                         self._bash[id]("echo 1")
                         break
-                    except:
+                    except IOError:
+                        raise
+                    except Exception as exc:
                         self._bash[id].__exit__(None, None, None)
                         if time.time() - time_start > timeout:
                             raise RuntimeError(f"failed to open bash to node {node}")
@@ -504,6 +494,19 @@ class Cluster(object):
                     self._control_shell.__exit__(None, None, None)
                     self._control_shell = None
             return cmd
+
+    def temp_path(self):
+        """Return temporary folder path.
+        """
+        p = f"{self.environ['CLICKHOUSE_TESTS_DIR']}/_temp"
+        if not os.path.exists(p):
+            os.mkdir(p)
+        return p
+
+    def temp_file(self, name):
+        """Return absolute temporary file path.
+        """
+        return f"{os.path.join(self.temp_path(), name)}"
 
     def up(self, timeout=30*60):
         if self.local:

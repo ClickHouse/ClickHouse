@@ -7,3 +7,4 @@
 # these folders into containers.
 #
 find . -type d -name _instances | sudo xargs rm -rf
+find . -type d -name _temp | sudo xargs rm -rf
