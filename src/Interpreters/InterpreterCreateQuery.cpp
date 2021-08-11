@@ -764,7 +764,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
 
-    if (database->getEngineName() == "Replicated" && getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+    if (database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal
         && !internal)
     {
         if (create.uuid == UUIDHelpers::Nil)
