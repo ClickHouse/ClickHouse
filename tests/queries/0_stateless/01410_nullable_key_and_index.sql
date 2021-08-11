@@ -49,15 +49,11 @@ SET force_primary_key = 0;
 SELECT * FROM nullable_minmax_index ORDER BY k;
 SET max_rows_to_read = 6;
 SELECT * FROM nullable_minmax_index WHERE v IS NULL;
--- NOTE: granuals with Null values cannot be filtred in data skipping indexes,
--- due to backward compatibility
-SET max_rows_to_read = 0;
+SET max_rows_to_read = 8;
 SELECT * FROM nullable_minmax_index WHERE v IS NOT NULL;
 SET max_rows_to_read = 6;
 SELECT * FROM nullable_minmax_index WHERE v > 2;
--- NOTE: granuals with Null values cannot be filtred in data skipping indexes,
--- due to backward compatibility
-SET max_rows_to_read = 0;
+SET max_rows_to_read = 4;
 SELECT * FROM nullable_minmax_index WHERE v <= 2;
 
 DROP TABLE nullable_key;
