@@ -853,7 +853,7 @@ if (ThreadFuzzer::instance().isEffective())
 
     auto servers_to_start_before_tables = std::make_shared<std::vector<ProtocolServerAdapter>>();
     *servers_to_start_before_tables = Util::createServers(
-        {"keeper"},
+        {"keeper_tcp"},
         interfaces, *this, server_pool, /*async_metrics = */ nullptr
     );
 
@@ -1045,7 +1045,7 @@ if (ThreadFuzzer::instance().isEffective())
         attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         *servers = Util::createServers(
-            {"interserver", "native", "http", "mysql", "postgres", "gprs", "prometheus"},
+            {"interserver_http", "native_tcp", "native_http", "native_gprs", "mysql", "postgres", "prometheus"},
             interfaces, *this, server_pool, &async_metrics
         );
 

@@ -273,7 +273,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     auto servers = std::make_shared<std::vector<DB::ProtocolServerAdapter>>();
     *servers = Util::createServers(
-        {"keeper"},
+        {"keeper_tcp"},
         interfaces, *this, server_pool, /*async_metrics = */ nullptr
     );
 

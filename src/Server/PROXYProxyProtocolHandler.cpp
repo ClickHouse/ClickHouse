@@ -182,6 +182,8 @@ PROXYHeader tryReadPROXYv2Header(Poco::Net::StreamSocket & socket, std::vector<c
     const std::uint8_t fam_addr = buffer[offset + 1];
     const std::uint16_t addr_len = ntohs(*reinterpret_cast<std::uint16_t *>(&buffer[offset + 2]));
 
+    offset = 16; // start of the address
+
     switch (ver_cmd)
     {
         case '\x20': // v2 LOCAL
@@ -208,7 +210,7 @@ PROXYHeader tryReadPROXYv2Header(Poco::Net::StreamSocket & socket, std::vector<c
                 case '\x11': // TCP over IPv4
                 {
                     // Peek the entire header as we know its length here.
-                    peek(socket, buffer, 16 + addr_len);
+                    peek(socket, buffer, offset + addr_len);
 
                     struct Addr
                     {
@@ -218,38 +220,38 @@ PROXYHeader tryReadPROXYv2Header(Poco::Net::StreamSocket & socket, std::vector<c
                         std::uint16_t dst_port;
                     };
 
-                    Addr & addr = *reinterpret_cast<Addr *>(&buffer[16]);
+                    Addr & addr = *reinterpret_cast<Addr *>(&buffer[offset]);
 
                     header.source_address = boost::asio::ip::make_address_v4(reinterpret_cast<char *>(&addr.src_addr));
                     header.source_port = ntohs(addr.src_port);
                     header.destination_address = boost::asio::ip::make_address_v4(reinterpret_cast<char *>(&addr.dst_addr));
                     header.destination_port = ntohs(addr.dst_port);
 
-                    read(socket, buffer, 16 + addr_len);
+                    read(socket, buffer, offset + addr_len);
                     return header;
                 }
 
                 case '\x21': // TCP over IPv6
                 {
                     // Peek the entire header as we know its length here.
-                    peek(socket, buffer, 16 + addr_len);
+                    peek(socket, buffer, offset + addr_len);
 
                     struct Addr
                     {
-                        uint8_t  src_addr[16];
-                        uint8_t  dst_addr[16];
-                        uint16_t src_port;
-                        uint16_t dst_port;
+                        std::uint8_t src_addr[16];
+                        std::uint8_t dst_addr[16];
+                        std::uint16_t src_port;
+                        std::uint16_t dst_port;
                     };
 
-                    Addr & addr = *reinterpret_cast<Addr *>(&buffer[16]);
+                    Addr & addr = *reinterpret_cast<Addr *>(&buffer[offset]);
 
                     header.source_address = boost::asio::ip::make_address_v6(reinterpret_cast<char *>(addr.src_addr));
                     header.source_port = ntohs(addr.src_port);
                     header.destination_address = boost::asio::ip::make_address_v6(reinterpret_cast<char *>(addr.src_addr));
                     header.destination_port = ntohs(addr.dst_port);
 
-                    read(socket, buffer, 16 + addr_len);
+                    read(socket, buffer, offset + addr_len);
                     return header;
                 }
             }
