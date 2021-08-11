@@ -478,6 +478,11 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
         /// Simple literal
         out_value = lit->value;
         out_type = block_with_constants.getByName(column_name).type;
+
+        /// If constant is not Null, we can assume it's type is not Nullable as well.
+        if (!out_value.isNull())
+            out_type = removeNullable(out_type);
+
         return true;
     }
     else if (block_with_constants.has(column_name) && isColumnConst(*block_with_constants.getByName(column_name).column))
@@ -486,6 +491,10 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
         const auto & expr_info = block_with_constants.getByName(column_name);
         out_value = (*expr_info.column)[0];
         out_type = expr_info.type;
+
+        if (!out_value.isNull())
+            out_type = removeNullable(out_type);
+
         return true;
     }
     else
