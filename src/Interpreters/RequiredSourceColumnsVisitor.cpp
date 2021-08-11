@@ -145,8 +145,6 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
 
     /// revisit select_expression_list (with children) when all the aliases are set
     Visitor(data).visit(select.select());
-    if (auto with = select.with())
-        Visitor(data).visit(with);
 }
 
 void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPtr &, Data & data)
