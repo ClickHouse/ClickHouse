@@ -88,6 +88,20 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/uptime", uptime);
     openFileIfExists("/proc/net/dev", net_dev);
 
+    openSensors();
+    openBlockDevices();
+    openEDAC();
+    openSensorsChips();
+#endif
+}
+
+#if defined(OS_LINUX)
+void AsynchronousMetrics::openSensors()
+{
+    LOG_TRACE(log, "Scanning /sys/class/thermal");
+
+    thermal.clear();
+
     for (size_t thermal_device_index = 0;; ++thermal_device_index)
     {
         std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(fmt::format("/sys/class/thermal/thermal_zone{}/temp", thermal_device_index));
@@ -101,14 +115,8 @@ AsynchronousMetrics::AsynchronousMetrics(
         }
         thermal.emplace_back(std::move(file));
     }
-
-    openBlockDevices();
-    openSensorsChips();
-    openEDAC();
-#endif
 }
 
-#if defined(OS_LINUX)
 void AsynchronousMetrics::openBlockDevices()
 {
     LOG_TRACE(log, "Scanning /sys/block");
@@ -1083,9 +1091,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
-    for (size_t i = 0, size = thermal.size(); i < size; ++i)
+    try
     {
-        try
+        for (size_t i = 0, size = thermal.size(); i < size; ++i)
         {
             ReadBufferFromFilePRead & in = *thermal[i];
 
@@ -1093,6 +1101,16 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             Int64 temperature = 0;
             readText(temperature, in);
             new_values[fmt::format("Temperature{}", i)] = temperature * 0.001;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        /// Files maybe re-created on module load/unload
+        try
+        {
+            openSensors();
         }
         catch (...)
         {
