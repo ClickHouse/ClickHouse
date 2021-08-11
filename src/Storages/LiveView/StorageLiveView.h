@@ -153,7 +153,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockInputStreams watch(
+    Pipe watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -167,7 +167,7 @@ public:
     /// Collect mergeable blocks and their sample. Must be called holding mutex
     MergeableBlocksPtr collectMergeableBlocks(ContextPtr context);
     /// Complete query using input streams from mergeable blocks
-    BlockInputStreamPtr completeQuery(Pipes pipes);
+    QueryPipeline completeQuery(Pipes pipes);
 
     void setMergeableBlocks(MergeableBlocksPtr blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
