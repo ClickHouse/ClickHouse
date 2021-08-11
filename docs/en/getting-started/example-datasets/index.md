@@ -17,6 +17,7 @@ The list of documented datasets:
 -   [OpenSky](../../getting-started/example-datasets/opensky.md)
 -   [New York Taxi Data](../../getting-started/example-datasets/nyc-taxi.md)
 -   [UK Property Price Paid](../../getting-started/example-datasets/uk-price-paid.md)
+-   [What's on the Menu?](../../getting-started/example-datasets/menus.md)
 -   [Star Schema Benchmark](../../getting-started/example-datasets/star-schema.md)
 -   [WikiStat](../../getting-started/example-datasets/wikistat.md)
 -   [Terabyte of Click Logs from Criteo](../../getting-started/example-datasets/criteo.md)
