@@ -18,6 +18,7 @@
 #include <stack>
 #include <Common/JSONBuilder.h>
 
+#include <common/logger_useful.h>
 
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
@@ -54,7 +55,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
 {
     actions_dag = actions_dag_->clone();
 
-    /// It's important to rewrite short-circuit arguments before compiling expressions.
+    /// It's important to determine lazy executed nodes before compiling expressions.
     std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes;
     if (settings.use_short_circuit_function_evaluation)
         lazy_executed_nodes = processShortCircuitFunctions(*actions_dag);
@@ -129,25 +130,118 @@ static DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDA
     return types;
 }
 
+namespace
+{
+    /// Information about the node that helps to determine if it can be executed lazily.
+    struct LazyExecutionInfo
+    {
+        bool can_be_lazy_executed;
+        /// For each node we need to know all it's ancestors that are short-circuit functions.
+        /// Also we need to know which arguments of this short-circuit functions are ancestors for the node
+        /// (we will store the set of indexes of arguments), because for some short-circuit function we shouldn't
+        /// enable lazy execution for nodes that are common descendants of different function arguments.
+        /// Example: if(cond, expr1(..., expr, ...), expr2(..., expr, ...))).
+        std::unordered_map<const ActionsDAG::Node *, std::unordered_set<size_t>> short_circuit_ancestors_info;
+    };
+}
+
+/// Create lazy execution info for node.
+static void setLazyExecutionInfo(
+    const ActionsDAG::Node * node,
+    const ActionsDAGReverseInfo & reverse_info,
+    const std::unordered_map<const ActionsDAG::Node *, IFunctionBase::ShortCircuitSettings> & short_circuit_nodes,
+    std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> & lazy_execution_infos)
+{
+    /// If we already created info about this node, just do nothing.
+    if (lazy_execution_infos.contains(node))
+        return;
+
+    LazyExecutionInfo & lazy_execution_info = lazy_execution_infos[node];
+    lazy_execution_info.can_be_lazy_executed = true;
+
+    ActionsDAGReverseInfo::NodeInfo node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
+
+    /// If node is used in result, we can't enable lazy execution.
+    if (node_info.used_in_result)
+        lazy_execution_info.can_be_lazy_executed = false;
+
+    /// To fill lazy execution info for current node we need to create it for all it's parents.
+    for (const auto & parent : node_info.parents)
+    {
+        setLazyExecutionInfo(parent, reverse_info, short_circuit_nodes, lazy_execution_infos);
+        /// Update current node info according to parent info.
+        if (short_circuit_nodes.contains(parent))
+        {
+            /// Use set, because one node can be more than one argument.
+            /// Example: expr1 AND expr2 AND expr1.
+            std::set<size_t> indexes;
+            for (size_t i = 0; i != parent->children.size(); ++i)
+            {
+                if (node == parent->children[i])
+                    indexes.insert(i);
+            }
+
+            if (!short_circuit_nodes.at(parent).enable_lazy_execution_for_first_argument && node == parent->children[0])
+            {
+                /// We shouldn't add 0 index in node info in this case.
+                indexes.erase(0);
+                /// Disable lazy execution for current node only if it's disabled for short-circuit node,
+                /// because we can have nested short-circuit nodes.
+                if (!lazy_execution_infos[parent].can_be_lazy_executed)
+                    lazy_execution_info.can_be_lazy_executed = false;
+            }
+
+            lazy_execution_info.short_circuit_ancestors_info[parent].insert(indexes.begin(), indexes.end());
+        }
+        else
+            /// If lazy execution is disabled for one of parents, we should disable it for current node.
+            lazy_execution_info.can_be_lazy_executed &= lazy_execution_infos[parent].can_be_lazy_executed;
+
+        /// Update info about short-circuit ancestors according to parent info.
+        for (const auto & [short_circuit_node, indexes] : lazy_execution_infos[parent].short_circuit_ancestors_info)
+            lazy_execution_info.short_circuit_ancestors_info[short_circuit_node].insert(indexes.begin(), indexes.end());
+    }
+
+    if (!lazy_execution_info.can_be_lazy_executed)
+        return;
+
+    /// Check if current node is common descendant of different function arguments of
+    /// short-circuit function that disables lazy execution on this case.
+    for (const auto & [short_circuit_node, indexes] : lazy_execution_info.short_circuit_ancestors_info)
+    {
+        /// If lazy execution is enabled for this short-circuit node,
+        /// we shouldn't disable it for current node.
+        if (lazy_execution_infos[short_circuit_node].can_be_lazy_executed)
+            continue;
+
+        if (!short_circuit_nodes.at(short_circuit_node).enable_lazy_execution_for_common_descendants_of_arguments && indexes.size() > 1)
+        {
+            lazy_execution_info.can_be_lazy_executed = false;
+            return;
+        }
+    }
+}
+
+
 /// Enable lazy execution for short-circuit function arguments.
 static bool findLazyExecutedNodes(
     const ActionsDAG::NodeRawConstPtrs & children,
-    const std::unordered_map<const ActionsDAG::Node *, bool> & used_only_in_short_circuit_functions,
+    std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos,
     bool force_enable_lazy_execution,
     std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes_out)
 {
     bool has_lazy_node = false;
     for (const auto * child : children)
     {
-        /// Skip action that have already been rewritten.
+        /// Skip node that have already been found as lazy executed.
         if (lazy_executed_nodes_out.contains(child))
         {
             has_lazy_node = true;
             continue;
         }
 
-        /// Skip actions that are needed outside shirt-circuit functions.
-        if (!used_only_in_short_circuit_functions.contains(child) || !used_only_in_short_circuit_functions.at(child))
+        /// Skip nodes that cannot be lazy executed.
+        if (!lazy_execution_infos[child].can_be_lazy_executed)
             continue;
 
         /// We cannot propagate lazy execution through arrayJoin, because when we execute
@@ -162,7 +256,7 @@ static bool findLazyExecutedNodes(
             case ActionsDAG::ActionType::FUNCTION:
             {
                 /// Propagate lazy execution through function arguments.
-                bool has_lazy_child = findLazyExecutedNodes(child->children, used_only_in_short_circuit_functions, force_enable_lazy_execution, lazy_executed_nodes_out);
+                bool has_lazy_child = findLazyExecutedNodes(child->children, lazy_execution_infos, force_enable_lazy_execution, lazy_executed_nodes_out);
 
                 /// Use lazy execution when:
                 ///  - It's force enabled.
@@ -177,7 +271,7 @@ static bool findLazyExecutedNodes(
             }
             case ActionsDAG::ActionType::ALIAS:
                 /// Propagate lazy execution through alias.
-                has_lazy_node |= findLazyExecutedNodes(child->children, used_only_in_short_circuit_functions, force_enable_lazy_execution, lazy_executed_nodes_out);
+                has_lazy_node |= findLazyExecutedNodes(child->children, lazy_execution_infos, force_enable_lazy_execution, lazy_executed_nodes_out);
                 break;
             default:
                 break;
@@ -186,128 +280,34 @@ static bool findLazyExecutedNodes(
     return has_lazy_node;
 }
 
-/// Find short-circuit functions in nodes and return the set of nodes that should be lazy executed.
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag)
 {
     const auto & nodes = actions_dag.getNodes();
-    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getIndex());
 
+    /// Firstly, find all short-circuit functions and get their settings.
+    std::unordered_map<const ActionsDAG::Node *, IFunctionBase::ShortCircuitSettings> short_circuit_nodes;
     IFunctionBase::ShortCircuitSettings short_circuit_settings;
-
-    /// We should enable lazy execution for all nodes that are used only in arguments of
-    /// short-circuit functions. To determine if a node is used somewhere else we will use
-    /// BFS, started from node with short-circuit function. If a node has parent that we didn't
-    /// visited earlier, it means that this node is used somewhere else. After BFS we will
-    /// have map used_only_in_short_circuit_functions: node -> is this node used only in short circuit functions.
-    std::unordered_map<const ActionsDAG::Node *, bool> used_only_in_short_circuit_functions;
-
-    /// The set of nodes to skip in BFS. It's used in two cases:
-    /// 1) To skip first argument if enable_lazy_execution_for_first_argument is false and it's used in the other arguments.
-    /// Examples: and(expr, expr), and(expr, expr1(..., expr, ...)).
-    /// 2) To skip repeated arguments if enable_lazy_execution_for_common_descendants_of_arguments is false.
-    /// Example: if(cond, expr, expr).
-    /// We store map short-circuit node -> skip list.
-    std::unordered_map<const ActionsDAG::Node *, std::unordered_set<const ActionsDAG::Node *>> skip_nodes;
-
-    /// The set of nodes that are short-circuit functions.
-    std::unordered_set<const ActionsDAG::Node *> short_circuit_nodes;
-
     for (const auto & node : nodes)
     {
         if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(short_circuit_settings, node.children.size()) && !node.children.empty())
-        {
-            short_circuit_nodes.insert(&node);
-            std::deque<const ActionsDAG::Node *> queue;
-
-            /// For some short-circuit function we shouldn't enable lazy execution for nodes that are common
-            /// descendants of different function arguments. Example: if(cond, expr1(..., expr, ...), expr2(..., expr, ...))).
-            /// For each node we will store the index of argument that is it's ancestor. If node has two
-            /// parents with different argument ancestor, this node is common descendants of two different function arguments.
-            std::unordered_map<const ActionsDAG::Node *, int> argument_ancestor;
-
-            size_t i = 0;
-            if (!short_circuit_settings.enable_lazy_execution_for_first_argument)
-            {
-                ++i;
-                skip_nodes[&node].insert(node.children[0]);
-            }
-
-            for (; i < node.children.size(); ++i)
-            {
-                queue.push_back(node.children[i]);
-                if (!short_circuit_settings.enable_lazy_execution_for_common_descendants_of_arguments)
-                {
-                    /// Check repeated argument.
-                    if (argument_ancestor.contains(node.children[i]))
-                        skip_nodes[&node].insert(node.children[i]);
-                    else
-                        argument_ancestor[node.children[i]] = i;
-                }
-            }
-
-            while (!queue.empty())
-            {
-                const ActionsDAG::Node * cur = queue.front();
-                queue.pop_front();
-
-                if (skip_nodes[&node].contains(cur))
-                    continue;
-
-                bool is_used_only_in_short_circuit_functions = true;
-                /// If node is used in result, we can't enable lazy execution.
-                if (reverse_info.nodes_info[reverse_info.reverse_index.at(cur)].used_in_result)
-                    is_used_only_in_short_circuit_functions = false;
-                else
-                {
-                    for (const auto * parent : reverse_info.nodes_info[reverse_info.reverse_index.at(cur)].parents)
-                    {
-                        /// Mark this node as needed outside shirt-circuit functions if (it's parent is not
-                        /// short-circuit or node in it's skip list) AND parent is marked as needed outside.
-                        if ((!short_circuit_nodes.contains(parent) || skip_nodes[parent].contains(cur)) && (!used_only_in_short_circuit_functions.contains(parent) || !used_only_in_short_circuit_functions[parent]))
-                        {
-                            is_used_only_in_short_circuit_functions = false;
-                            break;
-                        }
-
-                        if (!short_circuit_settings.enable_lazy_execution_for_common_descendants_of_arguments && argument_ancestor.contains(parent))
-                        {
-                            /// If this node already has argument ancestor index and it doesn't match the index
-                            /// of the parent argument ancestor, mark this node as needed outside shirt-circuit functions.
-                            if (argument_ancestor.contains(cur) && argument_ancestor[cur] != argument_ancestor[parent])
-                            {
-                                is_used_only_in_short_circuit_functions = false;
-                                break;
-                            }
-                            argument_ancestor[cur] = argument_ancestor[parent];
-                        }
-                    }
-                }
-
-                used_only_in_short_circuit_functions[cur] = is_used_only_in_short_circuit_functions;
-
-                /// If this node is needed outside shirt-circuit functions, all it's descendants are also needed outside
-                /// and we don't have to add them in queue (if action is not in is_used_only_in_short_circuit_functions we
-                /// treat it as it's needed outside).
-                if (is_used_only_in_short_circuit_functions)
-                {
-                    for (const auto * child : cur->children)
-                        queue.push_back(child);
-                }
-            }
-        }
+            short_circuit_nodes[&node] = short_circuit_settings;
     }
+
+    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getIndex());
+
+    /// For each node we fill LazyExecutionInfo.
+    std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos;
+    for (const auto & node : nodes)
+        setLazyExecutionInfo(&node, reverse_info, short_circuit_nodes, lazy_execution_infos);
 
     std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes;
-    for (const auto & node : nodes)
+    for (const auto & [short_circuit_node, short_circuit_settings] : short_circuit_nodes)
     {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(short_circuit_settings, node.children.size()))
-        {
-            /// Recursively find nodes that should be lazy executed (nodes that
-            /// aren't needed outside short-circuit function arguments).
-            findLazyExecutedNodes(node.children, used_only_in_short_circuit_functions, short_circuit_settings.force_enable_lazy_execution, lazy_executed_nodes);
-        }
+        /// Recursively find nodes that should be lazy executed.
+        findLazyExecutedNodes(short_circuit_node->children, lazy_execution_infos, short_circuit_settings.force_enable_lazy_execution, lazy_executed_nodes);
     }
     return lazy_executed_nodes;
+
 }
 
 void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
