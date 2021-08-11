@@ -49,7 +49,7 @@ public:
             const String & config_prefix,
             Block & sample_block);
 
-    BlockInputStreamPtr loadAll() override;
+    Pipe loadAll() override;
 
     bool supportsSelectiveLoad() const override { return true; }
 
@@ -62,11 +62,11 @@ public:
         return std::make_unique<CassandraDictionarySource>(dict_struct, settings, sample_block);
     }
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    BlockInputStreamPtr loadUpdatedAll() override;
+    Pipe loadUpdatedAll() override;
 
     String toString() const override;
 
