@@ -1,14 +1,14 @@
 #pragma once
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <common/range.h>
-#include "DictionaryBlockInputStreamBase.h"
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "RangeHashedDictionary.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/DictionarySourceBase.h>
+#include <Dictionaries/DictionaryHelpers.h>
+#include <Dictionaries/RangeHashedDictionary.h>
 
 
 namespace DB
@@ -31,8 +31,6 @@ public:
     size_t getNumRows() const { return ids.size(); }
 
 private:
-    template <typename T>
-    ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array) const;
 
     Block fillBlock(
         const PaddedPODArray<Key> & ids_to_fill,
@@ -84,17 +82,6 @@ Block RangeDictionarySourceData<RangeType>::getBlock(size_t start, size_t length
     }
 
     return fillBlock(block_ids, block_start_dates, block_end_dates);
-}
-
-template <typename RangeType>
-template <typename T>
-ColumnPtr RangeDictionarySourceData<RangeType>::getColumnFromPODArray(const PaddedPODArray<T> & array) const
-{
-    auto column_vector = ColumnVector<T>::create();
-    column_vector->getData().reserve(array.size());
-    column_vector->getData().insert(array.begin(), array.end());
-
-    return column_vector;
 }
 
 template <typename RangeType>
