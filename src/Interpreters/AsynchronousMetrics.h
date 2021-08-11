@@ -184,6 +184,7 @@ private:
     Stopwatch block_devices_rescan_delay;
 
     void openBlockDevices();
+    void openSensorsChips();
 #endif
 
     std::unique_ptr<ThreadFromGlobalPool> thread;
