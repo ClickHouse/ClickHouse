@@ -2,6 +2,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsCommon.h>
 #include <common/range.h>
+#include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
 
 #ifdef __SSE2__
@@ -1043,9 +1044,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     /// Filter in WHERE instead
     else
     {
-        result.columns[prewhere_column_pos] = result.getFilterHolder()->convertToFullColumnIfConst();
-        if (getSampleBlock().getByName(prewhere_info->prewhere_column_name).type->isNullable())
-            result.columns[prewhere_column_pos] = makeNullable(std::move(result.columns[prewhere_column_pos]));
+        auto type = getSampleBlock().getByName(prewhere_info->prewhere_column_name).type;
+        ColumnWithTypeAndName col(result.getFilterHolder()->convertToFullColumnIfConst(), std::make_shared<DataTypeUInt8>(), "");
+        result.columns[prewhere_column_pos] = castColumn(col, type);
         result.clearFilter(); // Acting as a flag to not filter in PREWHERE
     }
 }
