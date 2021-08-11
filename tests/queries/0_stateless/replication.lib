@@ -2,7 +2,7 @@
 # shellcheck source=./mergetree_mutations.lib
 . "$CURDIR"/mergetree_mutations.lib
 
-function try_sync_replicas
+function try_sync_replicas()
 {
     readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} --query="SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$1%' AND engine like '%Replicated%'")
     for t in "${tables_arr[@]}"
@@ -16,11 +16,13 @@ function try_sync_replicas
 
 function check_replication_consistency()
 {
-    try_sync_replicas "$1"
+    # Forcefully cancel mutations to avoid waiting for them to finish
+    ${CLICKHOUSE_CLIENT} --query="KILL MUTATION WHERE database=currentDatabase() AND table like '$1%'" > /dev/null
 
     # SYNC REPLICA is not enough if some MUTATE_PARTs are not assigned yet
-    # TODO maybe just kill all mutations?
     wait_for_all_mutations "$1%"
+
+    try_sync_replicas "$1"
 
     $CLICKHOUSE_CLIENT -q \
     "SELECT
@@ -29,7 +31,15 @@ function check_replication_consistency()
     (
         SELECT _table, ($2) AS data
         FROM merge(currentDatabase(), '$1') GROUP BY _table
-    )" || $CLICKHOUSE_CLIENT -q \
-    "select _table, $2, arraySort(groupArrayDistinct(_part)) from merge(currentDatabase(), '$1') group by _table" | tee /dev/stderr
+    )"
+    res=$?
+    if ! [ $res -eq 0 ]; then
+        echo "Replicas have diverged" | tee /dev/stderr
+        $CLICKHOUSE_CLIENT -q "select _table, $2, arraySort(groupArrayDistinct(_part)) from merge(currentDatabase(), '$1') group by _table" | tee /dev/stderr
+        $CLICKHOUSE_CLIENT -q "select * from system.replication_queue where database=currentDatabase() and table like '$1%'" | tee /dev/stderr
+        $CLICKHOUSE_CLIENT -q "select * from system.mutations where database=currentDatabase() and table like '$1%'" | tee /dev/stderr
+        $CLICKHOUSE_CLIENT -q "select * from system.parts where database=currentDatabase() and table like '$1%'" | tee /dev/stderr
+    fi
+
 }
 

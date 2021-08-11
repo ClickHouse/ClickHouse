@@ -60,7 +60,9 @@ timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
 timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
 
 wait
-
+for i in $(seq 1 $NUM_REPLICAS); do
+    $CLICKHOUSE_CLIENT --query "SYSTEM STOP TTL MERGES ttl_table$i" &
+done
 check_replication_consistency "ttl_table" "count(), sum(toUInt64(key))"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM system.replication_queue where table like 'ttl_table%' and database = '${CLICKHOUSE_DATABASE}' and type='MERGE_PARTS' and last_exception != '' FORMAT Vertical"
