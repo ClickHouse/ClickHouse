@@ -1086,7 +1086,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (has_mutations)
     {
         /// Notify in case of errors if no mutation was successfully selected.
-        /// Otherwise, notification will occur after any of mutations completes.
+        /// Otherwise, notification will occur after any of mutations complete.
         std::lock_guard lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();
     }
