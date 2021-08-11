@@ -182,7 +182,7 @@ static MergeTreeProjections getProjectionsForNewDataPart(
 
 /// Return set of indices which should be recalculated during mutation also
 /// wraps input stream into additional expression stream
-std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
+static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     BlockInputStreamPtr & input_stream,
     const NameSet & updated_columns,
     const StorageMetadataPtr & metadata_snapshot,
@@ -200,8 +200,11 @@ std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
     {
         const auto & index = indices[i];
 
+        bool has_index =
+            source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") ||
+            source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx2");
         // If we ask to materialize and it already exists
-        if (!source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") && materialized_indices.count(index.name))
+        if (!has_index && materialized_indices.count(index.name))
         {
             if (indices_to_recalc.insert(index_factory.get(index)).second)
             {
@@ -351,7 +354,12 @@ static NameToNameVector collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
+            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx2"))
+            {
+                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + ".idx2", "");
+                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+            }
+            else if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
             {
                 rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
                 rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
