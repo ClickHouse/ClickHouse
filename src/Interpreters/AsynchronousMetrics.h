@@ -185,6 +185,7 @@ private:
 
     void openBlockDevices();
     void openSensorsChips();
+    void openEDAC();
 #endif
 
     std::unique_ptr<ThreadFromGlobalPool> thread;
