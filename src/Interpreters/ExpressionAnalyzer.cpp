@@ -165,7 +165,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 static ASTPtr checkPositionalArgument(ASTPtr argument, const NamesAndTypesList & columns)
 {
     /// Case when GROUP BY element is position.
-    /// Do not consider case when GROUP BY element is not a literal, but expression, even if all values are contants.
+    /// Do not consider case when GROUP BY element is not a literal, but expression, even if all values are constants.
     if (auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get()))
     {
         auto which = ast_literal->value.getType();
