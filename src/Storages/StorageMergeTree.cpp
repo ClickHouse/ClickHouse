@@ -1059,9 +1059,10 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, lock);
         if (!merge_entry)
+        {
             mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
-
-        has_mutations = !current_mutations_by_version.empty();
+            has_mutations = !current_mutations_by_version.empty();
+        }
     }
 
     if (merge_entry)
@@ -1084,7 +1085,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
     if (has_mutations)
     {
-        /// Notify in case of errors if no successful mutation was selected.
+        /// Notify in case of errors if no mutation was successfully selected.
         /// Otherwise, notification will occur after any of mutations completes.
         std::lock_guard lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();
