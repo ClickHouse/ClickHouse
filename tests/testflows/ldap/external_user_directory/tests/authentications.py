@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import random
 
-from helpers.common import Pool, join
 from testflows.core import *
 from testflows.asserts import error
 
@@ -102,13 +101,14 @@ def parallel_login(self, server, user_count=10, timeout=300):
                     * with valid username and invalid password
                     """):
                     for i in range(10):
-                        tasks.append(pool.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                        tasks.append(pool.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                        tasks.append(pool.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_invalid_username_and_valid_password, (users, i, 50,)))
     
             finally:
                 with Then("it should work"):
-                    join(tasks, timeout)
+                    for task in tasks:
+                        task.result(timeout=timeout)
     
 @TestScenario
 @Requirements(
@@ -135,12 +135,13 @@ def parallel_login_with_the_same_user(self, server, timeout=300):
                     * with valid username and invalid password
                     """):
                     for i in range(10):
-                        tasks.append(pool.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                        tasks.append(pool.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                        tasks.append(pool.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_invalid_username_and_valid_password, (users, i, 50,)))
             finally:
                 with Then("it should work"):
-                    join(tasks, timeout)
+                    for task in tasks:
+                        task.result(timeout=timeout)
 
 @TestScenario
 @Tags("custom config")
@@ -192,12 +193,13 @@ def parallel_login_with_the_same_user_multiple_servers(self, server, timeout=300
                             * with valid username and invalid password
                             """):
                             for i in range(10):
-                                tasks.append(pool.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                                tasks.append(pool.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                                tasks.append(pool.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+                                tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                                tasks.append(pool.submit(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                                tasks.append(pool.submit(login_with_invalid_username_and_valid_password, (users, i, 50,)))
                     finally:
                         with Then("it should work"):
-                            join(tasks, timeout)
+                            for task in tasks:
+                                task.result(timeout=timeout)
 
 @TestScenario
 @Tags("custom config")
@@ -245,10 +247,11 @@ def parallel_login_with_multiple_servers(self, server, user_count=10, timeout=30
                             for i in range(10):
                                 for users in user_groups.values():
                                     for check in checks:
-                                        tasks.append(pool.apply_async(check, (users, i, 50,)))
+                                        tasks.append(pool.submit(check, (users, i, 50,)))
                     finally:
                         with Then("it should work"):
-                            join(tasks, timeout)
+                            for task in tasks:
+                                task.result(timeout=timeout)
 
 @TestScenario
 @Tags("custom config")
@@ -299,10 +302,11 @@ def parallel_login_with_rbac_and_multiple_servers(self, server, user_count=10, t
                                 for i in range(10):
                                     for users in user_groups.values():
                                         for check in checks:
-                                            tasks.append(pool.apply_async(check, (users, i, 50,)))
+                                            tasks.append(pool.submit(check, (users, i, 50,)))
                         finally:
                             with Then("it should work"):
-                                join(tasks, timeout)
+                                for task in tasks:
+                                    task.result(timeout=timeout)
 
 @TestScenario
 @Requirements(
@@ -323,12 +327,13 @@ def parallel_login_with_rbac_users(self, server, user_count=10, timeout=300):
             try:
                 with When("I login in parallel"):
                     for i in range(10):
-                        tasks.append(pool.apply_async(login_with_valid_username_and_password, (users, i, 50,)))
-                        tasks.append(pool.apply_async(login_with_valid_username_and_invalid_password, (users, i, 50,)))
-                        tasks.append(pool.apply_async(login_with_invalid_username_and_valid_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_valid_username_and_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_valid_username_and_invalid_password, (users, i, 50,)))
+                        tasks.append(pool.submit(login_with_invalid_username_and_valid_password, (users, i, 50,)))
             finally:
                 with Then("it should work"):
-                    join(tasks, timeout)
+                    for task in tasks:
+                        task.result(timeout=timeout)
 
 @TestScenario
 @Requirements(
