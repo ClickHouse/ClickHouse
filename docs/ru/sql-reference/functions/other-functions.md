@@ -2137,3 +2137,51 @@ defaultProfiles()
 -   Список профилей по умолчанию.
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## currentRoles {#current-roles}
+
+Возвращает список текущих ролей для текущего пользователя. Список ролей пользователя можно изменить с помощью выражения [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement). Если выражение `SET ROLE` не использовалось, данная функция возвращает тот же результат, что и функция [defaultRoles](#default-roles).
+
+**Синтаксис**
+
+``` sql
+currentRoles()
+```
+
+**Возвращаемое значение**
+
+-   Список текущих ролей для текущего пользователя. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## enabledRoles {#enabled-roles}
+
+Возвращает имена текущих ролей, а также ролей, которые разрешено использовать текущему пользователю путем назначения привилегий.
+
+**Синтаксис**
+
+``` sql
+enabledRoles()
+```
+
+**Возвращаемое значение**
+
+-   Список доступных ролей для текущего пользователя. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## defaultRoles {#default-roles}
+
+Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant/#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement). 
+
+**Синтаксис**
+
+``` sql
+defaultRoles()
+```
+
+**Возвращаемое значение**
+
+-   Список ролей по умолчанию. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).

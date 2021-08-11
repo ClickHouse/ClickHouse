@@ -2,11 +2,11 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/TypeList.h>
-#include <common/range.h>
-#include "DictionaryFactory.h"
-#include "RangeDictionaryBlockInputStream.h"
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/RangeDictionarySource.h>
+
 
 namespace
 {
@@ -298,10 +298,12 @@ void RangeHashedDictionary::createAttributes()
 
 void RangeHashedDictionary::loadData()
 {
-    auto stream = source_ptr->loadAll();
-    stream->readPrefix();
+    QueryPipeline pipeline;
+    pipeline.init(source_ptr->loadAll());
 
-    while (const auto block = stream->read())
+    PullingPipelineExecutor executor(pipeline);
+    Block block;
+    while (executor.pull(block))
     {
         const auto & id_column = *block.safeGetByPosition(0).column;
 
@@ -338,8 +340,6 @@ void RangeHashedDictionary::loadData()
             }
         }
     }
-
-    stream->readSuffix();
 
     if (require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
@@ -594,29 +594,30 @@ void RangeHashedDictionary::getIdsAndDates(
 
 
 template <typename RangeType>
-BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const
+Pipe RangeHashedDictionary::readImpl(const Names & column_names, size_t max_block_size) const
 {
     PaddedPODArray<UInt64> ids;
     PaddedPODArray<RangeType> start_dates;
     PaddedPODArray<RangeType> end_dates;
     getIdsAndDates(ids, start_dates, end_dates);
 
-    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeType>;
+    using RangeDictionarySourceType = RangeDictionarySource<RangeType>;
 
-    auto stream = std::make_shared<BlockInputStreamType>(
-        shared_from_this(),
-        max_block_size,
-        column_names,
-        std::move(ids),
-        std::move(start_dates),
-        std::move(end_dates));
+    auto source = std::make_shared<RangeDictionarySourceType>(
+        RangeDictionarySourceData<RangeType>(
+            shared_from_this(),
+            column_names,
+            std::move(ids),
+            std::move(start_dates),
+            std::move(end_dates)),
+        max_block_size);
 
-    return stream;
+    return Pipe(source);
 }
 
-struct RangeHashedDictionaryCallGetBlockInputStreamImpl
+struct RangeHashedDictionaryCallGetSourceImpl
 {
-    BlockInputStreamPtr stream;
+    Pipe pipe;
     const RangeHashedDictionary * dict;
     const Names * column_names;
     size_t max_block_size;
@@ -625,28 +626,28 @@ struct RangeHashedDictionaryCallGetBlockInputStreamImpl
     void operator()()
     {
         const auto & type = dict->dict_struct.range_min->type;
-        if (!stream && dynamic_cast<const DataTypeNumberBase<RangeType> *>(type.get()))
-            stream = dict->getBlockInputStreamImpl<RangeType>(*column_names, max_block_size);
+        if (pipe.empty() && dynamic_cast<const DataTypeNumberBase<RangeType> *>(type.get()))
+            pipe = dict->readImpl<RangeType>(*column_names, max_block_size);
     }
 };
 
-BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+Pipe RangeHashedDictionary::read(const Names & column_names, size_t max_block_size) const
 {
     using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Int128, Float32, Float64>;
 
-    RangeHashedDictionaryCallGetBlockInputStreamImpl callable;
+    RangeHashedDictionaryCallGetSourceImpl callable;
     callable.dict = this;
     callable.column_names = &column_names;
     callable.max_block_size = max_block_size;
 
     ListType::forEach(callable);
 
-    if (!callable.stream)
+    if (callable.pipe.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Unexpected range type for RangeHashed dictionary: {}",
             dict_struct.range_min->type->getName());
 
-    return callable.stream;
+    return std::move(callable.pipe);
 }
 
 

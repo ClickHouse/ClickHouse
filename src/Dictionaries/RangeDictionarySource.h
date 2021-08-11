@@ -1,44 +1,36 @@
 #pragma once
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <common/range.h>
-#include "DictionaryBlockInputStreamBase.h"
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "RangeHashedDictionary.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/DictionarySourceBase.h>
+#include <Dictionaries/DictionaryHelpers.h>
+#include <Dictionaries/RangeHashedDictionary.h>
 
 
 namespace DB
 {
-/*
- * BlockInputStream implementation for external dictionaries
- * read() returns single block consisting of the in-memory contents of the dictionaries
- */
+
 template <typename RangeType>
-class RangeDictionaryBlockInputStream : public DictionaryBlockInputStreamBase
+class RangeDictionarySourceData
 {
 public:
     using Key = UInt64;
 
-    RangeDictionaryBlockInputStream(
+    RangeDictionarySourceData(
         std::shared_ptr<const IDictionary> dictionary,
-        size_t max_block_size,
         const Names & column_names,
         PaddedPODArray<Key> && ids_to_fill,
         PaddedPODArray<RangeType> && start_dates,
         PaddedPODArray<RangeType> && end_dates);
 
-    String getName() const override { return "RangeDictionary"; }
-
-protected:
-    Block getBlock(size_t start, size_t length) const override;
+    Block getBlock(size_t start, size_t length) const;
+    size_t getNumRows() const { return ids.size(); }
 
 private:
-    template <typename T>
-    ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array) const;
 
     Block fillBlock(
         const PaddedPODArray<Key> & ids_to_fill,
@@ -58,15 +50,13 @@ private:
 
 
 template <typename RangeType>
-RangeDictionaryBlockInputStream<RangeType>::RangeDictionaryBlockInputStream(
+RangeDictionarySourceData<RangeType>::RangeDictionarySourceData(
     std::shared_ptr<const IDictionary> dictionary_,
-    size_t max_block_size_,
     const Names & column_names_,
     PaddedPODArray<Key> && ids_,
     PaddedPODArray<RangeType> && block_start_dates,
     PaddedPODArray<RangeType> && block_end_dates)
-    : DictionaryBlockInputStreamBase(ids_.size(), max_block_size_)
-    , dictionary(dictionary_)
+    : dictionary(dictionary_)
     , column_names(column_names_.begin(), column_names_.end())
     , ids(std::move(ids_))
     , start_dates(std::move(block_start_dates))
@@ -75,7 +65,7 @@ RangeDictionaryBlockInputStream<RangeType>::RangeDictionaryBlockInputStream(
 }
 
 template <typename RangeType>
-Block RangeDictionaryBlockInputStream<RangeType>::getBlock(size_t start, size_t length) const
+Block RangeDictionarySourceData<RangeType>::getBlock(size_t start, size_t length) const
 {
     PaddedPODArray<Key> block_ids;
     PaddedPODArray<RangeType> block_start_dates;
@@ -95,18 +85,7 @@ Block RangeDictionaryBlockInputStream<RangeType>::getBlock(size_t start, size_t 
 }
 
 template <typename RangeType>
-template <typename T>
-ColumnPtr RangeDictionaryBlockInputStream<RangeType>::getColumnFromPODArray(const PaddedPODArray<T> & array) const
-{
-    auto column_vector = ColumnVector<T>::create();
-    column_vector->getData().reserve(array.size());
-    column_vector->getData().insert(array.begin(), array.end());
-
-    return column_vector;
-}
-
-template <typename RangeType>
-PaddedPODArray<Int64> RangeDictionaryBlockInputStream<RangeType>::makeDateKey(
+PaddedPODArray<Int64> RangeDictionarySourceData<RangeType>::makeDateKey(
     const PaddedPODArray<RangeType> & block_start_dates, const PaddedPODArray<RangeType> & block_end_dates) const
 {
     PaddedPODArray<Int64> key(block_start_dates.size());
@@ -123,7 +102,7 @@ PaddedPODArray<Int64> RangeDictionaryBlockInputStream<RangeType>::makeDateKey(
 
 
 template <typename RangeType>
-Block RangeDictionaryBlockInputStream<RangeType>::fillBlock(
+Block RangeDictionarySourceData<RangeType>::fillBlock(
     const PaddedPODArray<Key> & ids_to_fill,
     const PaddedPODArray<RangeType> & block_start_dates,
     const PaddedPODArray<RangeType> & block_end_dates) const
@@ -168,6 +147,39 @@ Block RangeDictionaryBlockInputStream<RangeType>::fillBlock(
         }
     }
     return Block(columns);
+}
+
+/*
+ * BlockInputStream implementation for external dictionaries
+ * read() returns single block consisting of the in-memory contents of the dictionaries
+ */
+template <typename RangeType>
+class RangeDictionarySource : public DictionarySourceBase
+{
+public:
+    using Key = UInt64;
+
+    RangeDictionarySource(RangeDictionarySourceData<RangeType> data_, size_t max_block_size);
+
+    String getName() const override { return "RangeDictionarySource"; }
+
+protected:
+    Block getBlock(size_t start, size_t length) const override;
+
+    RangeDictionarySourceData<RangeType> data;
+};
+
+template <typename RangeType>
+RangeDictionarySource<RangeType>::RangeDictionarySource(RangeDictionarySourceData<RangeType> data_, size_t max_block_size)
+    : DictionarySourceBase(data_.getBlock(0, 0), data_.getNumRows(), max_block_size)
+    , data(std::move(data_))
+{
+}
+
+template <typename RangeType>
+Block RangeDictionarySource<RangeType>::getBlock(size_t start, size_t length) const
+{
+    return data.getBlock(start, length);
 }
 
 }
