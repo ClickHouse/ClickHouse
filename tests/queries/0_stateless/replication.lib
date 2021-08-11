@@ -33,12 +33,12 @@ function check_replication_consistency()
         FROM merge(currentDatabase(), '$1') GROUP BY _table
     )"
     res=$?
-    if ! [ $res -eq 0 ]; then
-        echo "Replicas have diverged" | tee >(cat >&2)
-        $CLICKHOUSE_CLIENT -q "select _table, $2, arraySort(groupArrayDistinct(_part)) from merge(currentDatabase(), '$1') group by _table" | tee >(cat >&2)
-        $CLICKHOUSE_CLIENT -q "select * from system.replication_queue where database=currentDatabase() and table like '$1%'" | tee >(cat >&2)
-        $CLICKHOUSE_CLIENT -q "select * from system.mutations where database=currentDatabase() and table like '$1%'" | tee >(cat >&2)
-        $CLICKHOUSE_CLIENT -q "select * from system.parts where database=currentDatabase() and table like '$1%'" | tee >(cat >&2)
+    if [ $res -ne 0 ]; then
+        echo "Replicas have diverged"
+        $CLICKHOUSE_CLIENT -q "select _table, $2, arraySort(groupArrayDistinct(_part)) from merge(currentDatabase(), '$1') group by _table"
+        $CLICKHOUSE_CLIENT -q "select * from system.replication_queue where database=currentDatabase() and table like '$1%'"
+        $CLICKHOUSE_CLIENT -q "select * from system.mutations where database=currentDatabase() and table like '$1%'"
+        $CLICKHOUSE_CLIENT -q "select * from system.parts where database=currentDatabase() and table like '$1%'"
     fi
 
 }
