@@ -388,13 +388,6 @@ Pipe StorageMerge::createSources(
         return pipe;
     }
 
-    if (!modified_select.final() && storage->needRewriteQueryWithFinal(real_column_names))
-    {
-        /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
-        /// However, it's needed for MaterializeMySQL and it's unlikely that someone will use it with Merge tables.
-        modified_select.setFinal();
-    }
-
     auto storage_stage
         = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, metadata_snapshot, modified_query_info);
     if (processed_stage <= storage_stage)
@@ -683,15 +676,13 @@ void StorageMerge::convertingSourceStream(
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(pipe.getHeader().getColumnsWithTypeAndName(),
                                                                      header.getColumnsWithTypeAndName(),
                                                                      ActionsDAG::MatchColumnsMode::Name);
-        auto actions = std::make_shared<ExpressionActions>(
-            convert_actions_dag,
-            ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
-
+        auto actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
         });
     }
+
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
 

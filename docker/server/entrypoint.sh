@@ -72,10 +72,7 @@ do
 
     if [ "$DO_CHOWN" = "1" ]; then
         # ensure proper directories permissions
-        # but skip it for if directory already has proper premissions, cause recursive chown may be slow
-        if [ "$(stat -c %u "$dir")" != "$USER" ] || [ "$(stat -c %g "$dir")" != "$GROUP" ]; then
-            chown -R "$USER:$GROUP" "$dir"
-        fi
+        chown -R "$USER:$GROUP" "$dir"
     elif ! $gosu test -d "$dir" -a -w "$dir" -a -r "$dir"; then
         echo "Necessary directory '$dir' isn't accessible by user with id '$USER'"
         exit 1

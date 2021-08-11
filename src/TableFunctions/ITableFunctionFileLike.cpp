@@ -10,12 +10,10 @@
 
 #include <Storages/StorageFile.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-
-#include <DataStreams/IBlockInputStream.h>
-
 
 namespace DB
 {

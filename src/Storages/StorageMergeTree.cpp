@@ -1068,7 +1068,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
             /// All use relative_data_path which changes during rename
             /// so execute under share lock.
             clearOldPartsFromFilesystem();
-            clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
+            clearOldTemporaryDirectories();
             clearOldWriteAheadLogs();
             clearOldMutations();
             clearEmptyParts();

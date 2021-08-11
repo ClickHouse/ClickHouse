@@ -1,5 +1,6 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Interpreters/Set.h>
@@ -8,7 +9,6 @@
 
 #include <iomanip>
 #include <DataStreams/materializeBlock.h>
-
 
 namespace DB
 {
