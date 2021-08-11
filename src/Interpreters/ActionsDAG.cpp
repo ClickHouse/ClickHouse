@@ -7,6 +7,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/materialize.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/cast_overload_fwd.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
