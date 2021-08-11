@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
+#include <Functions/cast_overload_fwd.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
