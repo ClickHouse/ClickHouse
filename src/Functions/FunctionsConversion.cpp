@@ -7,6 +7,8 @@ namespace DB
 
 void registerFunctionFixedString(FunctionFactory & factory);
 
+void registerCastOverloadResolvers(FunctionFactory & factory);
+
 void registerFunctionsConversion(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToUInt8>();
@@ -43,12 +45,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
 
     factory.registerFunction<FunctionToUnixTimestamp>();
 
-    factory.registerFunction<CastInternalOverloadResolver<CastType::nonAccurate>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<CastInternalOverloadResolver<CastType::accurate>>();
-    factory.registerFunction<CastInternalOverloadResolver<CastType::accurateOrNull>>();
-    factory.registerFunction<CastOverloadResolver<CastType::nonAccurate>>(FunctionFactory::CaseInsensitive);
-    factory.registerFunction<CastOverloadResolver<CastType::accurate>>();
-    factory.registerFunction<CastOverloadResolver<CastType::accurateOrNull>>();
+    registerCastOverloadResolvers(factory);
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();

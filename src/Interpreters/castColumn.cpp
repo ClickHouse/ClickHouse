@@ -1,6 +1,7 @@
 #include <Interpreters/castColumn.h>
 
 #include <Functions/FunctionsConversion.h>
+#include <Functions/CastOverloadResolver.h>
 
 namespace DB
 {
