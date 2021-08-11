@@ -8,9 +8,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-DictionaryBlockInputStream::DictionaryBlockInputStream(
-    std::shared_ptr<const IDictionary> dictionary_, UInt64 max_block_size_, PaddedPODArray<UInt64> && ids_, const Names & column_names_)
-    : DictionaryBlockInputStreamBase(ids_.size(), max_block_size_)
+DictionarySourceData::DictionarySourceData(
+    std::shared_ptr<const IDictionary> dictionary_, PaddedPODArray<UInt64> && ids_, const Names & column_names_)
+    : num_rows(ids_.size())
     , dictionary(dictionary_)
     , column_names(column_names_)
     , ids(std::move(ids_))
@@ -18,12 +18,11 @@ DictionaryBlockInputStream::DictionaryBlockInputStream(
 {
 }
 
-DictionaryBlockInputStream::DictionaryBlockInputStream(
+DictionarySourceData::DictionarySourceData(
     std::shared_ptr<const IDictionary> dictionary_,
-    UInt64 max_block_size_,
     const PaddedPODArray<StringRef> & keys,
     const Names & column_names_)
-    : DictionaryBlockInputStreamBase(keys.size(), max_block_size_)
+    : num_rows(keys.size())
     , dictionary(dictionary_)
     , column_names(column_names_)
     , key_type(DictionaryInputStreamKeyType::ComplexKey)
@@ -32,14 +31,13 @@ DictionaryBlockInputStream::DictionaryBlockInputStream(
     fillKeyColumns(keys, 0, keys.size(), dictionary_structure, key_columns);
 }
 
-DictionaryBlockInputStream::DictionaryBlockInputStream(
+DictionarySourceData::DictionarySourceData(
     std::shared_ptr<const IDictionary> dictionary_,
-    UInt64 max_block_size_,
     const Columns & data_columns_,
     const Names & column_names_,
     GetColumnsFunction && get_key_columns_function_,
     GetColumnsFunction && get_view_columns_function_)
-    : DictionaryBlockInputStreamBase(data_columns_.front()->size(), max_block_size_)
+    : num_rows(data_columns_.front()->size())
     , dictionary(dictionary_)
     , column_names(column_names_)
     , data_columns(data_columns_)
@@ -49,7 +47,7 @@ DictionaryBlockInputStream::DictionaryBlockInputStream(
 {
 }
 
-Block DictionaryBlockInputStream::getBlock(size_t start, size_t length) const
+Block DictionarySourceData::getBlock(size_t start, size_t length) const
 {
     /// TODO: Rewrite
     switch (key_type)
@@ -98,7 +96,7 @@ Block DictionaryBlockInputStream::getBlock(size_t start, size_t length) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected DictionaryInputStreamKeyType.");
 }
 
-Block DictionaryBlockInputStream::fillBlock(
+Block DictionarySourceData::fillBlock(
     const PaddedPODArray<UInt64> & ids_to_fill,
     const Columns & keys,
     const DataTypes & types,
@@ -161,14 +159,14 @@ Block DictionaryBlockInputStream::fillBlock(
     return Block(block_columns);
 }
 
-ColumnPtr DictionaryBlockInputStream::getColumnFromIds(const PaddedPODArray<UInt64> & ids_to_fill)
+ColumnPtr DictionarySourceData::getColumnFromIds(const PaddedPODArray<UInt64> & ids_to_fill)
 {
     auto column_vector = ColumnVector<UInt64>::create();
     column_vector->getData().assign(ids_to_fill);
     return column_vector;
 }
 
-void DictionaryBlockInputStream::fillKeyColumns(
+void DictionarySourceData::fillKeyColumns(
     const PaddedPODArray<StringRef> & keys,
     size_t start,
     size_t size,
