@@ -13,7 +13,7 @@
 #include <common/itoa.h>
 #include <common/map.h>
 #include <common/range.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
 

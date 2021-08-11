@@ -7,6 +7,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+if [[ -z $S3_ACCESS_KEY_ID ]]; then
+    echo "@@SKIP@@: Missing \$S3_ACCESS_KEY_ID"
+    exit 0
+fi
+
+if [[ -z $S3_SECRET_ACCESS ]]; then
+    echo "@@SKIP@@: Missing \$S3_SECRET_ACCESS"
+    exit 0
+fi
 
 ${CLICKHOUSE_CLIENT_BINARY} --send_logs_level="none" -q "SELECT *  FROM s3('https://s3.mds.yandex.net/clickhouse-test-reports/*/*/functional_stateless_tests_(ubsan)/test_results.tsv',  '$S3_ACCESS_KEY_ID', '$S3_SECRET_ACCESS', 'LineAsString', 'line String') limit 100 FORMAT Null;"
 ${CLICKHOUSE_CLIENT_BINARY} --send_logs_level="none" -q "SELECT *  FROM s3Cluster('test_cluster_two_shards', 'https://s3.mds.yandex.net/clickhouse-test-reports/*/*/functional_stateless_tests_(ubsan)/test_results.tsv',  '$S3_ACCESS_KEY_ID', '$S3_SECRET_ACCESS', 'LineAsString', 'line String') limit 100 FORMAT Null;"
