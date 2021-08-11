@@ -271,12 +271,6 @@ endif()
 
 include(cmake/cpu_features.cmake)
 
-option(ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated.")
-
-if (ARCH_NATIVE)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
-endif ()
-
 # Asynchronous unwind tables are needed for Query Profiler.
 # They are already by default on some platforms but possibly not on all platforms.
 # Enable it explicitly.
@@ -543,6 +537,7 @@ include (cmake/find/nuraft.cmake)
 include (cmake/find/yaml-cpp.cmake)
 include (cmake/find/s2geometry.cmake)
 include (cmake/find/nlp.cmake)
+include (cmake/find/bzip2.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
