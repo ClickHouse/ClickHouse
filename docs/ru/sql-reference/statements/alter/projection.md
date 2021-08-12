@@ -17,7 +17,7 @@ toc_title: PROJECTION
 
 Комманды ADD, DROP и CLEAR — легковесны, поскольку они только меняют метаданные или удаляют файлы.
 
-Также комманды реплицируется, синхронизируя описание проекций в метаданных с помощью ZooKeeper.
+Также команды реплицируются, синхронизируя описания проекций в метаданных с помощью ZooKeeper.
 
 !!! note "Note"
     Манипуляции с проекциями поддерживаются только для таблиц с движком [`*MergeTree`](../../../engines/table-engines/mergetree-family/mergetree.md) (включая [replicated](../../../engines/table-engines/mergetree-family/replication.md) варианты).
