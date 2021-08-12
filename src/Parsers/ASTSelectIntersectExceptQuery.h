@@ -6,17 +6,20 @@
 namespace DB
 {
 
-class ASTIntersectOrExcept : public ASTQueryWithOutput
+class ASTSelectIntersectExceptQuery : public ASTQueryWithOutput
 {
 public:
-    String getID(char) const override { return "IntersectExceptQuery"; }
+    String getID(char) const override { return "SelectIntersectExceptQuery"; }
 
     ASTPtr clone() const override;
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
+    const char * getQueryKindString() const override { return "SelectIntersectExcept"; }
+
     enum class Operator
     {
+        UNKNOWN,
         INTERSECT,
         EXCEPT
     };
@@ -25,6 +28,9 @@ public:
 
     ASTPtr list_of_selects;
     Operators list_of_operators;
+
+    /// Final operator after applying visitor.
+    Operator final_operator = Operator::UNKNOWN;
 };
 
 }

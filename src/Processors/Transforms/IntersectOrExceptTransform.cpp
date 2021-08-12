@@ -4,15 +4,14 @@
 namespace DB
 {
 
-/*
- * There are always at least two inputs. Number of operators is always number of inputs minus 1.
- * input1 {operator1} input2 {operator2} input3 ...
-**/
-IntersectOrExceptTransform::IntersectOrExceptTransform(const Block & header_, const Operators & operators_)
-    : IProcessor(InputPorts(operators_.size() + 1, header_), {header_})
-    , operators(operators_)
-    , first_input(inputs.begin())
-    , second_input(std::next(inputs.begin()))
+namespace ErrorCodes
+{
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
+}
+
+IntersectOrExceptTransform::IntersectOrExceptTransform(const Block & header_, Operator operator_)
+    : IProcessor(InputPorts(2, header_), {header_})
+    , current_operator(operator_)
 {
     const Names & columns = header_.getNames();
     size_t num_columns = columns.empty() ? header_.columns() : columns.size();
@@ -46,53 +45,33 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
         return Status::PortFull;
     }
 
+    if (current_output_chunk)
+    {
+        output.push(std::move(current_output_chunk));
+    }
+
     if (finished_second_input)
     {
-        if (first_input->isFinished() || (use_accumulated_input && !current_input_chunk))
+        if (inputs.front().isFinished())
         {
-            std::advance(second_input, 1);
-
-            if (second_input == inputs.end())
-            {
-                if (current_output_chunk)
-                {
-                    output.push(std::move(current_output_chunk));
-                }
-
-                output.finish();
-                return Status::Finished;
-            }
-            else
-            {
-                use_accumulated_input = true;
-                data.reset();
-                finished_second_input = false;
-                ++current_operator_pos;
-            }
+            output.finish();
+            return Status::Finished;
         }
     }
-    else if (second_input->isFinished())
+    else if (inputs.back().isFinished())
     {
         finished_second_input = true;
     }
 
     if (!has_input)
     {
-        if (finished_second_input && use_accumulated_input)
-        {
-            current_input_chunk = std::move(current_output_chunk);
-        }
-        else
-        {
-            InputPort & input = finished_second_input ? *first_input : *second_input;
+        InputPort & input = finished_second_input ? inputs.front() : inputs.back();
 
-            input.setNeeded();
-            if (!input.hasData())
-                return Status::NeedData;
+        input.setNeeded();
+        if (!input.hasData())
+            return Status::NeedData;
 
-            current_input_chunk = input.pull();
-        }
-
+        current_input_chunk = input.pull();
         has_input = true;
     }
 
@@ -136,7 +115,7 @@ size_t IntersectOrExceptTransform::buildFilter(
     for (size_t i = 0; i < rows; ++i)
     {
         auto find_result = state.findKey(method.data, i, variants.string_pool);
-        filter[i] = operators[current_operator_pos] == ASTIntersectOrExcept::Operator::EXCEPT ? !find_result.isFound() : find_result.isFound();
+        filter[i] = current_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT ? !find_result.isFound() : find_result.isFound();
         if (filter[i])
             ++new_rows_num;
     }
@@ -193,10 +172,11 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
     if (data->empty())
         data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
-    IColumn::Filter filter(num_rows);
-
     size_t new_rows_num = 0;
+
+    IColumn::Filter filter(num_rows);
     auto & data_set = *data;
+
     switch (data->type)
     {
         case SetVariants::Type::EMPTY:
@@ -208,6 +188,9 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
             APPLY_FOR_SET_VARIANTS(M)
 #undef M
     }
+
+    if (!new_rows_num)
+        return;
 
     for (auto & column : columns)
         column = column->filter(filter, -1);

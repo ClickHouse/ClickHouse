@@ -1,7 +1,8 @@
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPipeline.h>
-#include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
@@ -11,22 +12,22 @@
 namespace DB
 {
 
-Block IntersectOrExceptStep::checkHeaders(const DataStreams & input_streams_) const
+static Block checkHeaders(const DataStreams & input_streams_)
 {
     if (input_streams_.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot perform intersect/except on empty set of query plan steps");
 
     Block res = input_streams_.front().header;
     for (const auto & stream : input_streams_)
-        assertBlocksHaveEqualStructure(stream.header, res, "IntersectExceptStep");
+        assertBlocksHaveEqualStructure(stream.header, res, "IntersectOrExceptStep");
 
     return res;
 }
 
 IntersectOrExceptStep::IntersectOrExceptStep(
-    DataStreams input_streams_ , const Operators & operators_ , size_t max_threads_)
+    DataStreams input_streams_ , Operator operator_ , size_t max_threads_)
     : header(checkHeaders(input_streams_))
-    , operators(operators_)
+    , current_operator(operator_)
     , max_threads(max_threads_)
 {
     input_streams = std::move(input_streams_);
@@ -67,7 +68,7 @@ QueryPipelinePtr IntersectOrExceptStep::updatePipeline(QueryPipelines pipelines,
     }
 
     *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), max_threads);
-    pipeline->addTransform(std::make_shared<IntersectOrExceptTransform>(header, operators));
+    pipeline->addTransform(std::make_shared<IntersectOrExceptTransform>(header, current_operator));
 
     processors = collector.detachProcessors();
     return pipeline;

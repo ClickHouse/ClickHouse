@@ -7,7 +7,7 @@
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserExplainQuery.h>
-#include <Parsers/ParserIntersectOrExceptQuery.h>
+#include <Parsers/ParserSelectIntersectExceptQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
@@ -31,7 +31,6 @@ namespace DB
 bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserShowTablesQuery show_tables_p;
-    ParserIntersectOrExceptQuery intersect_except_p;
     ParserSelectWithUnionQuery select_p;
     ParserTablePropertiesQuery table_p;
     ParserDescribeTableQuery describe_table_p;
@@ -55,7 +54,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     bool parsed =
            explain_p.parse(pos, query, expected)
-        || intersect_except_p.parse(pos, query, expected)
         || select_p.parse(pos, query, expected)
         || show_create_access_entity_p.parse(pos, query, expected) /// should be before `show_tables_p`
         || show_tables_p.parse(pos, query, expected)

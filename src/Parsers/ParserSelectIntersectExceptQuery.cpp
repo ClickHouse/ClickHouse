@@ -1,9 +1,9 @@
-#include <Parsers/ASTIntersectOrExcept.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ParserIntersectOrExceptQuery.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ParserSelectIntersectExceptQuery.h>
+#include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTExpressionList.h>
 
@@ -11,18 +11,18 @@
 namespace DB
 {
 
-bool ParserIntersectOrExceptQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserSelectIntersectExceptQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword intersect_keyword("INTERSECT");
     ParserKeyword except_keyword("EXCEPT");
 
     ASTs elements;
-    ASTIntersectOrExcept::Operators operators;
+    ASTSelectIntersectExceptQuery::Operators operators;
 
     auto parse_element = [&]() -> bool
     {
         ASTPtr element;
-        if (!ParserSelectWithUnionQuery().parse(pos, element, expected) && !ParserSubquery().parse(pos, element, expected))
+        if (!ParserSelectQuery().parse(pos, element, expected) && !ParserSubquery().parse(pos, element, expected))
             return false;
 
         elements.push_back(element);
@@ -36,11 +36,11 @@ bool ParserIntersectOrExceptQuery::parseImpl(Pos & pos, ASTPtr & node, Expected 
             if (!except_keyword.ignore(pos))
                 return false;
 
-            operators.emplace_back(ASTIntersectOrExcept::Operator::EXCEPT);
+            operators.emplace_back(ASTSelectIntersectExceptQuery::Operator::EXCEPT);
             return true;
         }
 
-        operators.emplace_back(ASTIntersectOrExcept::Operator::INTERSECT);
+        operators.emplace_back(ASTSelectIntersectExceptQuery::Operator::INTERSECT);
         return true;
     };
 
@@ -56,7 +56,7 @@ bool ParserIntersectOrExceptQuery::parseImpl(Pos & pos, ASTPtr & node, Expected 
     auto list_node = std::make_shared<ASTExpressionList>();
     list_node->children = std::move(elements);
 
-    auto intersect_or_except_ast = std::make_shared<ASTIntersectOrExcept>();
+    auto intersect_or_except_ast = std::make_shared<ASTSelectIntersectExceptQuery>();
 
     node = intersect_or_except_ast;
     intersect_or_except_ast->list_of_selects = list_node;
