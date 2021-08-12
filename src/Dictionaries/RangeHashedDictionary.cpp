@@ -2,11 +2,11 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/TypeList.h>
-#include <common/range.h>
-#include "DictionaryFactory.h"
-#include "RangeDictionaryBlockInputStream.h"
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/RangeDictionarySource.h>
+
 
 namespace
 {
