@@ -299,10 +299,10 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
         setLazyExecutionInfo(&node, reverse_info, short_circuit_nodes, lazy_execution_infos);
 
     std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes;
-    for (const auto & [short_circuit_node, short_circuit_settings] : short_circuit_nodes)
+    for (const auto & [node, settings] : short_circuit_nodes)
     {
         /// Recursively find nodes that should be lazy executed.
-        findLazyExecutedNodes(short_circuit_node->children, lazy_execution_infos, short_circuit_settings.force_enable_lazy_execution, lazy_executed_nodes);
+        findLazyExecutedNodes(node->children, lazy_execution_infos, settings.force_enable_lazy_execution, lazy_executed_nodes);
     }
     return lazy_executed_nodes;
 
@@ -401,7 +401,7 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
             //required_columns.push_back({node->result_name, node->result_type});
         }
 
-        actions.push_back({node, arguments, free_position});
+        actions.push_back({node, arguments, free_position, lazy_executed_nodes.contains(node)});
 
         for (const auto & parent : cur_info.parents)
         {
@@ -438,12 +438,6 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         actions[cur.position].arguments.front().pos = pos;
         required_columns.push_back({input->result_name, input->result_type});
         input_positions[input->result_name].emplace_back(pos);
-    }
-
-    for (auto & action : actions)
-    {
-        if (lazy_executed_nodes.contains(action.node))
-            action.lazy_execution = LazyExecution::ENABLED;
     }
 }
 
@@ -585,7 +579,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     arguments[i] = columns[action.arguments[i].pos];
             }
 
-            if (action.lazy_execution == ExpressionActions::LazyExecution::ENABLED)
+            if (action.is_lazy_executed)
                 res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
             else
             {

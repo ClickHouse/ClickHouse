@@ -50,13 +50,6 @@ public:
 
     using Arguments = std::vector<Argument>;
 
-    /// States for lazy function execution in short-circuit function arguments.
-    enum class LazyExecution
-    {
-        DISABLED,
-        ENABLED,
-    };
-
     struct Action
     {
         const Node * node;
@@ -65,7 +58,7 @@ public:
 
         /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
         /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
-        LazyExecution lazy_execution = LazyExecution::DISABLED;
+        bool is_lazy_executed;
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
