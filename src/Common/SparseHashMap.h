@@ -1,5 +1,7 @@
 #pragma once
 
+/// SparseHashMap is a wrapper for google::sparse_hash_map.
+/// See comment in DenseHashMap.h
 #if defined(ARCADIA_BUILD)
 #define HASH_FUN_H <unordered_map>
 template <typename T>

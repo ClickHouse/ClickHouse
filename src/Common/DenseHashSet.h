@@ -1,5 +1,7 @@
 #pragma once
 
+/// DenseHashSet is a wrapper for google::dense_hash_set.
+/// See comment in DenseHashMap.h
 #if defined(ARCADIA_BUILD)
 #define HASH_FUN_H <unordered_map>
 template <typename T>
