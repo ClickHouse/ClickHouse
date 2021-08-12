@@ -13,7 +13,7 @@ To work with data stored on `Amazon s3` disks use [s3](../engines/table-engines/
 
 ClickHouse supports zero-copy replication for `s3` and `HDFS` disks, which means that if the data is stored remotely on several machines and needs to be synchronized, then only the metadata is replicated (paths to the data parts), but not the data itself.
 
-## Using HDFS for Data Storage {#table_engine-mergetree-hdfs}
+## Configuring HDFS {#configuring-hdfs}
 
 [HDFS](https://hadoop.apache.org/docs/r1.2.1/hdfs_design.html) is a distributed file system for remote data storage.
 
