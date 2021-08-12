@@ -101,14 +101,17 @@ MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(
 void MergeTreeIndexGranuleFullText::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception("Attempt to write empty fulltext index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty fulltext index {}.", backQuote(index_name));
 
     for (const auto & bloom_filter : bloom_filters)
         ostr.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), params.filter_size);
 }
 
-void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr)
+void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
+    if (version != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+
     for (auto & bloom_filter : bloom_filters)
     {
         istr.read(reinterpret_cast<char *>(
