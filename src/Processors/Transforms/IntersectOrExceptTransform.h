@@ -3,7 +3,7 @@
 #include <Processors/IProcessor.h>
 #include <Interpreters/SetVariants.h>
 #include <Core/ColumnNumbers.h>
-#include <Parsers/ASTIntersectOrExcept.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 
 
 namespace DB
@@ -11,10 +11,10 @@ namespace DB
 
 class IntersectOrExceptTransform : public IProcessor
 {
-using Operators = ASTIntersectOrExcept::Operators;
+using Operator = ASTSelectIntersectExceptQuery::Operator;
 
 public:
-    IntersectOrExceptTransform(const Block & header_, const Operators & operators);
+    IntersectOrExceptTransform(const Block & header_, Operator operators);
 
     String getName() const override { return "IntersectOrExcept"; }
 
@@ -24,10 +24,7 @@ protected:
     void work() override;
 
 private:
-    Operators operators;
-    InputPorts::iterator first_input;
-    InputPorts::iterator second_input;
-    size_t current_operator_pos = 0;
+    Operator current_operator;
 
     ColumnNumbers key_columns_pos;
     std::optional<SetVariants> data;
@@ -36,7 +33,6 @@ private:
     Chunk current_input_chunk;
     Chunk current_output_chunk;
 
-    bool use_accumulated_input = false;
     bool finished_second_input = false;
     bool has_input = false;
 

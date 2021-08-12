@@ -32,6 +32,16 @@ select 1 intersect select 1 except select 1;
 select 1 intersect select 1 except select 2 intersect select 1 except select 3 intersect select 1;
 1
 select 1 intersect select 1 except select 2 intersect select 1 except select 3 intersect select 2;
+select number from numbers(10) except select 5;
+0
+1
+2
+3
+4
+6
+7
+8
+9
 select number from numbers(100) intersect select number from numbers(20, 60) except select number from numbers(30, 20) except select number from numbers(60, 20);
 20
 21
@@ -53,3 +63,18 @@ select number from numbers(100) intersect select number from numbers(20, 60) exc
 57
 58
 59
+with (select number from numbers(10) intersect select 5) as a select a * 10;
+50
+select count() from (select number from numbers(10) except select 5);
+9
+select count() from (select number from numbers(1000000) intersect select number from numbers(200000, 600000));
+600000
+select count() from (select number from numbers(100) intersect select number from numbers(20, 60) except select number from numbers(30, 20) except select number from numbers(60, 20));
+20
+select count() from (select number from numbers(1000000) intersect select number from numbers(200000, 600000) except select number from numbers(300000, 200000) except select number from numbers(600000, 200000));
+200000
+select 1 union all select 1 intersect select 1;
+1
+1
+select 1 union all select 1 intersect select 2;
+1

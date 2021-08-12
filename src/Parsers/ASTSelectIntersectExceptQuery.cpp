@@ -1,4 +1,4 @@
-#include <Parsers/ASTIntersectOrExcept.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
@@ -6,20 +6,25 @@
 namespace DB
 {
 
-ASTPtr ASTIntersectOrExcept::clone() const
+ASTPtr ASTSelectIntersectExceptQuery::clone() const
 {
-    auto res = std::make_shared<ASTIntersectOrExcept>(*this);
-    res->children.clear();
+    auto res = std::make_shared<ASTSelectIntersectExceptQuery>(*this);
 
-    res->list_of_selects = list_of_selects->clone();
-    res->children.push_back(res->list_of_selects);
+    res->children.clear();
+    for (const auto & child : children)
+        res->children.push_back(child->clone());
+
+    if (res->list_of_selects)
+        res->list_of_selects = list_of_selects->clone();
+
     res->list_of_operators = list_of_operators;
+    res->final_operator = final_operator;
 
     cloneOutputOptions(*res);
     return res;
 }
 
-void ASTIntersectOrExcept::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSelectIntersectExceptQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 

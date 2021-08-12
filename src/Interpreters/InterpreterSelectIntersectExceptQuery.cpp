@@ -1,8 +1,8 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterIntersectOrExcept.h>
+#include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Parsers/ASTIntersectOrExcept.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
@@ -19,27 +19,7 @@ namespace ErrorCodes
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
 }
 
-InterpreterIntersectOrExcept::InterpreterIntersectOrExcept(const ASTPtr & query_ptr, ContextPtr context_)
-    : context(Context::createCopy(context_))
-{
-    ASTIntersectOrExcept * ast = query_ptr->as<ASTIntersectOrExcept>();
-    operators = ast->list_of_operators;
-
-    auto children = ast->list_of_selects->children;
-    size_t num_children = children.size();
-    nested_interpreters.resize(num_children);
-
-    for (size_t i = 0; i < num_children; ++i)
-        nested_interpreters[i] = buildCurrentChildInterpreter(children.at(i));
-
-    Blocks headers(num_children);
-    for (size_t query_num = 0; query_num < num_children; ++query_num)
-        headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
-
-    result_header = getCommonHeader(headers);
-}
-
-Block InterpreterIntersectOrExcept::getCommonHeader(const Blocks & headers) const
+static Block getCommonHeader(const Blocks & headers)
 {
     size_t num_selects = headers.size();
     Block common_header = headers.front();
@@ -49,8 +29,8 @@ Block InterpreterIntersectOrExcept::getCommonHeader(const Blocks & headers) cons
     {
         if (headers[query_num].columns() != num_columns)
             throw Exception(ErrorCodes::INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH,
-                            "Different number of columns in {} elements:\n {} \nand\n {}",
-                            getName(), common_header.dumpNames(), headers[query_num].dumpNames());
+                            "Different number of columns in IntersectExceptQuery elements:\n {} \nand\n {}",
+                            common_header.dumpNames(), headers[query_num].dumpNames());
     }
 
     std::vector<const ColumnWithTypeAndName *> columns(num_selects);
@@ -66,16 +46,53 @@ Block InterpreterIntersectOrExcept::getCommonHeader(const Blocks & headers) cons
     return common_header;
 }
 
+InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
+    const ASTPtr & query_ptr_,
+    ContextPtr context_,
+    const SelectQueryOptions & options_)
+    : IInterpreterUnionOrSelectQuery(query_ptr_->clone(), context_, options_)
+{
+    ASTSelectIntersectExceptQuery * ast = query_ptr->as<ASTSelectIntersectExceptQuery>();
+    final_operator = ast->final_operator;
+
+    const auto & children = ast->children[0]->children;
+    size_t num_children = children.size();
+
+    /// AST must have been changed by the visitor.
+    if (final_operator == Operator::UNKNOWN || num_children != 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "SelectIntersectExceptyQuery has not been normalized (number of children: {})",
+                        num_children);
+
+    nested_interpreters.resize(num_children);
+
+    for (size_t i = 0; i < num_children; ++i)
+        nested_interpreters[i] = buildCurrentChildInterpreter(children.at(i));
+
+    Blocks headers(num_children);
+    for (size_t query_num = 0; query_num < num_children; ++query_num)
+        headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
+
+    result_header = getCommonHeader(headers);
+}
+
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
-InterpreterIntersectOrExcept::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_)
+InterpreterSelectIntersectExceptQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, SelectQueryOptions());
-    else
+
+    if (ast_ptr_->as<ASTSelectQuery>())
         return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, SelectQueryOptions());
+
+    if (ast_ptr_->as<ASTSelectIntersectExceptQuery>())
+        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, SelectQueryOptions());
+
+    // if (ast_ptr_->as<ASTSubquery>())
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query: {}", ast_ptr_->getID());
 }
 
-void InterpreterIntersectOrExcept::buildQueryPlan(QueryPlan & query_plan)
+void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     size_t num_plans = nested_interpreters.size();
     std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
@@ -101,11 +118,11 @@ void InterpreterIntersectOrExcept::buildQueryPlan(QueryPlan & query_plan)
     }
 
     auto max_threads = context->getSettingsRef().max_threads;
-    auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), operators, max_threads);
+    auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), final_operator, max_threads);
     query_plan.unitePlans(std::move(step), std::move(plans));
 }
 
-BlockIO InterpreterIntersectOrExcept::execute()
+BlockIO InterpreterSelectIntersectExceptQuery::execute()
 {
     BlockIO res;
 
