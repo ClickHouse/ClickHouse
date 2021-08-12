@@ -404,7 +404,7 @@ Projections are stored inside the part directory. It's similar to an index but c
 #### Query Analysis {#projection-query-analysis}
 1. Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.
 2. Select the best feasible match, which contains the least granules to read.
-3. The query pipeline which uses projections will be different from the one that uses the original parts. if the projection is absent in some parts, we can add the pipeline to "project" it on the fly.
+3. The query pipeline which uses projections will be different from the one that uses the original parts. If the projection is absent in some parts, we can add the pipeline to "project" it on the fly.
 
 ## Concurrent Data Access {#concurrent-data-access}
 
