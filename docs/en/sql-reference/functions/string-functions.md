@@ -93,7 +93,7 @@ leftPadUTF8('string','length'[, 'pad_string'])
 
 **Arguments**
 
--   `string` — Input string, that needs to be padded. [String](../data-types/string.md).
+-   `string` — Input string that needs to be padded. [String](../data-types/string.md).
 -   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
 -   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
 
