@@ -24,12 +24,13 @@ namespace DB
 
 
 template<typename T>
-PostgreSQLBlockInputStream<T>::PostgreSQLBlockInputStream(
+PostgreSQLSource<T>::PostgreSQLSource(
     postgres::ConnectionHolderPtr connection_holder_,
     const std::string & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_)
-    : query_str(query_str_)
+    : SourceWithProgress(sample_block.cloneEmpty())
+    , query_str(query_str_)
     , max_block_size(max_block_size_)
     , connection_holder(std::move(connection_holder_))
 {
@@ -38,13 +39,14 @@ PostgreSQLBlockInputStream<T>::PostgreSQLBlockInputStream(
 
 
 template<typename T>
-PostgreSQLBlockInputStream<T>::PostgreSQLBlockInputStream(
+PostgreSQLSource<T>::PostgreSQLSource(
     std::shared_ptr<T> tx_,
     const std::string & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_,
     bool auto_commit_)
-    : query_str(query_str_)
+    : SourceWithProgress(sample_block.cloneEmpty())
+    , query_str(query_str_)
     , tx(std::move(tx_))
     , max_block_size(max_block_size_)
     , auto_commit(auto_commit_)
@@ -54,7 +56,7 @@ PostgreSQLBlockInputStream<T>::PostgreSQLBlockInputStream(
 
 
 template<typename T>
-void PostgreSQLBlockInputStream<T>::init(const Block & sample_block)
+void PostgreSQLSource<T>::init(const Block & sample_block)
 {
     description.init(sample_block);
 
@@ -69,19 +71,36 @@ void PostgreSQLBlockInputStream<T>::init(const Block & sample_block)
 
 
 template<typename T>
-void PostgreSQLBlockInputStream<T>::readPrefix()
+void PostgreSQLSource<T>::onStart()
 {
-    tx = std::make_shared<T>(connection_holder->get());
+    if (!tx)
+        tx = std::make_shared<T>(connection_holder->get());
+
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
 }
 
+template<typename T>
+IProcessor::Status PostgreSQLSource<T>::prepare()
+{
+    if (!started)
+    {
+        onStart();
+        started = true;
+    }
+
+    auto status = SourceWithProgress::prepare();
+    if (status == Status::Finished)
+        onFinish();
+
+    return status;
+}
 
 template<typename T>
-Block PostgreSQLBlockInputStream<T>::readImpl()
+Chunk PostgreSQLSource<T>::generate()
 {
     /// Check if pqxx::stream_from is finished
     if (!stream || !(*stream))
-        return Block();
+        return {};
 
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
@@ -129,12 +148,12 @@ Block PostgreSQLBlockInputStream<T>::readImpl()
             break;
     }
 
-    return description.sample_block.cloneWithColumns(std::move(columns));
+    return Chunk(std::move(columns), num_rows);
 }
 
 
 template<typename T>
-void PostgreSQLBlockInputStream<T>::readSuffix()
+void PostgreSQLSource<T>::onFinish()
 {
     if (stream)
     {
@@ -146,10 +165,10 @@ void PostgreSQLBlockInputStream<T>::readSuffix()
 }
 
 template
-class PostgreSQLBlockInputStream<pqxx::ReplicationTransaction>;
+class PostgreSQLSource<pqxx::ReplicationTransaction>;
 
 template
-class PostgreSQLBlockInputStream<pqxx::ReadTransaction>;
+class PostgreSQLSource<pqxx::ReadTransaction>;
 
 }
 
