@@ -250,12 +250,23 @@ public:
         }
         else
         {
-            if (!WhichDataType(key_column_type).isUInt64())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Second argument of function {} must be UInt64 when dictionary is range. Actual type {}.",
-                    getName(),
-                    key_column_with_type.type->getName());
+            /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
+            ColumnPtr key_column = key_column_with_type.column->convertToFullColumnIfConst();
+            DataTypePtr key_column_type = key_column_with_type.type;
+
+            Columns key_columns;
+            DataTypes key_types;
+
+            if (isTuple(key_column_type))
+            {
+                key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
+                key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
+            }
+            else
+            {
+                key_columns = {key_column, range_col};
+                key_types = {std::make_shared<DataTypeUInt64>(), range_col_type};
+            }
 
             return dictionary->hasKeys({key_column, range_col}, {std::make_shared<DataTypeUInt64>(), range_col_type});
         }
@@ -487,18 +498,29 @@ public:
         }
         else if (dictionary_key_type == DictionaryKeyType::range)
         {
-            if (!WhichDataType(key_col_with_type.type).isUInt64())
-                 throw Exception(
-                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                     "Third argument of function {} must be UInt64 when dictionary is range. Actual type {}.",
-                     getName(),
-                     key_col_with_type.type->getName());
+            /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
+            ColumnPtr key_column = key_col_with_type.column->convertToFullColumnIfConst();
+            DataTypePtr key_column_type = key_col_with_type.type;
+
+            Columns key_columns;
+            DataTypes key_types;
+
+            if (isTuple(key_column_type))
+            {
+                key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
+                key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
+            }
+            else
+            {
+                key_columns = {key_column, range_col};
+                key_types = {std::make_shared<DataTypeUInt64>(), range_col_type};
+            }
 
             result = executeDictionaryRequest(
                 dictionary,
                 attribute_names,
-                {key_column, range_col},
-                {std::make_shared<DataTypeUInt64>(), range_col_type},
+                key_columns,
+                key_types,
                 result_type,
                 default_cols);
         }
