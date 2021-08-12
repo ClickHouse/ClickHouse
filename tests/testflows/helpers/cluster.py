@@ -363,18 +363,33 @@ class Cluster(object):
         self._control_shell = shell
         return self._control_shell
 
+    def close_control_shell(self):
+        """Must be called with self.lock.acquired.
+        """
+        if self._control_shell is None:
+            return
+        shell = self._control_shell
+        self._control_shell = None
+        shell.__exit__(None, None, None)
+
     def node_container_id(self, node, timeout=300):
         """Must be called with self.lock acquired.
         """
         container_id = None
         time_start = time.time()
         while True:
-            c = self.control_shell(f"{self.docker_compose} ps -q {node}")
-            container_id = c.output.strip()
-            if c.exitcode == 0 and len(container_id) > 1:
-                break
-            if time.time() - time_start > timeout:
-                raise RuntimeError(f"failed to get docker container id for the {node} service")
+            try:
+                c = self.control_shell(f"{self.docker_compose} ps -q {node}", timeout=timeout)
+                container_id = c.output.strip()
+                if c.exitcode == 0 and len(container_id) > 1:
+                    break
+            except IOError:
+                raise
+            except ExpectTimeoutError:
+                self.close_control_shell()
+                timeout = timeout - (time.time() - time_start)
+                if timeout <= 0:
+                    raise RuntimeError(f"failed to get docker container id for the {node} service")
         return container_id
 
     def shell(self, node, timeout=300):
