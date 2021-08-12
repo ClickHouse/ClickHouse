@@ -55,7 +55,7 @@ Optional parameters:
 
 -   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
 
-## Using Virtual File System for Encrypt Data {#encrypted-virtual-file-system}
+## Using Virtual File System for Data Encryption {#encrypted-virtual-file-system}
 
 You can encrypt the data and save it on [S3](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-s3) or [HDFS](#table_engine-mergetree-hdfs) external disks or a local disk. To do this, in the configuration file, you need to specify the disk with the type `encrypted` and the type of disk on which the data will be saved. An `encrypted` disk ciphers all written files on the fly, and when you read files from an `encrypted` disk it deciphers them automatically. So you can work with an `encrypted` disk like with a normal one.
 
