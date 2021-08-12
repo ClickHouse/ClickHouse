@@ -129,4 +129,4 @@ Example of disk configuration:
 
 For example, when ClickHouse writes data from some table to a file `store/all_1_1_0/data.bin` to `disk1`, then in fact this file will be written to the physical disk along the path `/path1/store/all_1_1_0/data.bin`.
 
-When writing the same file to disk2, it will actually be written to the physical disk at the path `/path1/path2/store/all_1_1_0/data.bin` in encrypted form.
+When writing the same file to `disk2`, it will actually be written to the physical disk at the path `/path1/path2/store/all_1_1_0/data.bin` in encrypted mode.
