@@ -18,7 +18,7 @@ empty([x])
 An array is considered empty if it contains all empty elements.
 
 !!! note "Note"
-    Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM table;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+    Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array. The query `SELECT empty(arr) FROM table;` transforms to `SELECT arr.size0 = 0 FROM table;`.
 
 The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
 
