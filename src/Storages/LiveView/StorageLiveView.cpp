@@ -19,6 +19,7 @@ limitations under the License. */
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <DataStreams/copyData.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -116,6 +117,8 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
         return std::make_shared<MaterializingTransform>(cur_header);
     });
 
+    new_mergeable_blocks->sample_block = io.pipeline.getHeader();
+
     PullingPipelineExecutor executor(io.pipeline);
     Block this_block;
 
@@ -125,7 +128,6 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
     new_blocks->push_back(base_blocks);
 
     new_mergeable_blocks->blocks = new_blocks;
-    new_mergeable_blocks->sample_block = io.pipeline.getHeader();
 
     return new_mergeable_blocks;
 }
@@ -154,7 +156,6 @@ QueryPipeline StorageLiveView::completeQuery(Pipes pipes)
             std::move(pipes), QueryProcessingStage::WithMergeableState);
     };
     block_context->addExternalTable(getBlocksTableName(), TemporaryTableHolder(getContext(), creator));
-
     InterpreterSelectQuery select(getInnerBlocksQuery(), block_context, StoragePtr(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete));
     auto io = select.execute();
     io.pipeline.addSimpleTransform([&](const Block & cur_header)

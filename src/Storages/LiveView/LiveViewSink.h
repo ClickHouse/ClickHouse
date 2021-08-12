@@ -11,8 +11,15 @@ namespace DB
 
 class LiveViewSink : public SinkToStorage
 {
+    /// _version column is added manually in sink.
+    static Block updateHeader(Block block)
+    {
+        block.erase("_version");
+        return block;
+    }
+
 public:
-    explicit LiveViewSink(StorageLiveView & storage_) : SinkToStorage(storage_.getHeader()), storage(storage_) {}
+    explicit LiveViewSink(StorageLiveView & storage_) : SinkToStorage(updateHeader(storage_.getHeader())), storage(storage_) {}
 
     String getName() const override { return "LiveViewSink"; }
 
