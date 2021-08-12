@@ -88,6 +88,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
+    format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
@@ -114,6 +115,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
+    format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
+    format_settings.orc.import_nested = settings.input_format_orc_import_nested;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
