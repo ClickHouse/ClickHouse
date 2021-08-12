@@ -131,6 +131,7 @@ SRCS(
     QueryNormalizer.cpp
     QueryParameterVisitor.cpp
     QueryThreadLog.cpp
+    QueryViewsLog.cpp
     RemoveInjectiveFunctionsVisitor.cpp
     RenameColumnVisitor.cpp
     ReplaceQueryParameterVisitor.cpp
