@@ -200,13 +200,14 @@ bool isStorageTouchedByMutations(
         else
             all_commands_can_be_skipped = false;
 
-        if (command.type == MutationCommand::MATERIALIZE_COLUMN && !command.materialize_column_final)
+        if (command.type == MutationCommand::MATERIALIZE_COLUMN)
         {
             if (!storage_from_merge_tree_data_part)
                 throw Exception("ALTER MATERIALIZE COLUMN is not supported for non-MergeTree tables", ErrorCodes::NOT_IMPLEMENTED);
 
-            if (storage_from_merge_tree_data_part->isColumnEmpty(command.column_name))
+            if (!storage_from_merge_tree_data_part->isColumnEmpty(command.column_name) || command.materialize_column_final)
                 all_commands_can_be_skipped = false;
+            /// FIXME this is very bad place to check final :(((
         }
     }
 
