@@ -12,7 +12,7 @@ expect_after {
 
 set basedir [file dirname $argv0]
 spawn bash -c "source $basedir/../shell_config.sh ; \$MYSQL_CLIENT_BINARY \$MYSQL_CLIENT_OPT"
-expect "mysql> "
+expect -nocase -re "mysql.*> "
 
 send -- "USE system;\r"
 expect "Database changed"
@@ -41,8 +41,7 @@ expect "+---------------+-------------+"
 expect "|            10 |          45 |"
 expect "+---------------+-------------+"
 expect "1 row in set"
-expect "Read 10 rows, 80.00 B"
-expect "mysql> "
+expect -nocase -re "mysql.*> "
 
 send -- "quit;\r"
 expect eof

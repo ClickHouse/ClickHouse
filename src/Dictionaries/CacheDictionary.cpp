@@ -10,26 +10,29 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ProfilingScopedRWLock.h>
 
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Dictionaries//DictionarySource.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
+
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPipeline.h>
 
 namespace ProfileEvents
 {
-extern const Event DictCacheKeysRequested;
-extern const Event DictCacheKeysRequestedMiss;
-extern const Event DictCacheKeysRequestedFound;
-extern const Event DictCacheKeysExpired;
-extern const Event DictCacheKeysNotFound;
-extern const Event DictCacheKeysHit;
-extern const Event DictCacheRequestTimeNs;
-extern const Event DictCacheRequests;
-extern const Event DictCacheLockWriteNs;
-extern const Event DictCacheLockReadNs;
+    extern const Event DictCacheKeysRequested;
+    extern const Event DictCacheKeysRequestedMiss;
+    extern const Event DictCacheKeysRequestedFound;
+    extern const Event DictCacheKeysExpired;
+    extern const Event DictCacheKeysNotFound;
+    extern const Event DictCacheKeysHit;
+    extern const Event DictCacheRequestTimeNs;
+    extern const Event DictCacheRequests;
+    extern const Event DictCacheLockWriteNs;
+    extern const Event DictCacheLockReadNs;
 }
 
 namespace CurrentMetrics
 {
-extern const Metric DictCacheRequests;
+    extern const Metric DictCacheRequests;
 }
 
 namespace DB
@@ -481,24 +484,24 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-BlockInputStreamPtr CacheDictionary<dictionary_key_type>::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size) const
 {
-    std::shared_ptr<DictionaryBlockInputStream> stream;
-
+    Pipe pipe;
+    std::optional<DictionarySourceData> data;
     {
         /// Write lock on storage
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
 
         if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-            stream = std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, cache_storage_ptr->getCachedSimpleKeys(), column_names);
+            data.emplace(shared_from_this(), cache_storage_ptr->getCachedSimpleKeys(), column_names);
         else
         {
             auto keys = cache_storage_ptr->getCachedComplexKeys();
-            stream = std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, keys, column_names);
+            data.emplace(shared_from_this(), keys, column_names);
         }
     }
 
-    return stream;
+    return Pipe(std::make_shared<DictionarySource>(std::move(*data), max_block_size));
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -567,21 +570,21 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             auto current_source_ptr = getSourceAndUpdateIfNeeded();
 
             Stopwatch watch;
-            BlockInputStreamPtr stream;
+            QueryPipeline pipeline;
 
             if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-                stream = current_source_ptr->loadIds(requested_keys_vector);
+                pipeline.init(current_source_ptr->loadIds(requested_keys_vector));
             else
-                stream = current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows);
-
-            stream->readPrefix();
+                pipeline.init(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
 
             size_t skip_keys_size_offset = dict_struct.getKeysSize();
             PaddedPODArray<KeyType> found_keys_in_source;
 
             Columns fetched_columns_during_update = fetch_request.makeAttributesResultColumnsNonMutable();
 
-            while (Block block = stream->read())
+            PullingPipelineExecutor executor(pipeline);
+            Block block;
+            while (executor.pull(block))
             {
                 Columns key_columns;
                 key_columns.reserve(skip_keys_size_offset);
@@ -624,8 +627,6 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             auto & update_unit_ptr_mutable_columns = update_unit_ptr->fetched_columns_during_update;
             for (const auto & fetched_column : fetched_columns_during_update)
                 update_unit_ptr_mutable_columns.emplace_back(fetched_column->assumeMutable());
-
-            stream->readSuffix();
 
             {
                 /// Lock for cache modification

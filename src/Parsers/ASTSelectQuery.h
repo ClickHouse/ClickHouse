@@ -69,6 +69,8 @@ public:
     const ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
     const ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
 
+    bool hasFiltration() const { return where() || prewhere() || having(); }
+
     /// Set/Reset/Remove expression.
     void setExpression(Expression expr, ASTPtr && ast);
 
