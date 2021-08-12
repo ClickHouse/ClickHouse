@@ -123,7 +123,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
             data.addColumnAliasIfAny(*node);
     }
 
-    if (auto & with = select.with())
+    if (const auto & with = select.with())
     {
         for (auto & node : with->children)
         {
