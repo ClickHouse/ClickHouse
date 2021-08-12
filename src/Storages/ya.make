@@ -123,6 +123,7 @@ SRCS(
     ReadInOrderOptimizer.cpp
     SelectQueryDescription.cpp
     SetSettings.cpp
+    StorageAggregatingMemory.cpp
     StorageBuffer.cpp
     StorageDictionary.cpp
     StorageDistributed.cpp
