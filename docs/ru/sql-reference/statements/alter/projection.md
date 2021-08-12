@@ -9,7 +9,7 @@ toc_title: PROJECTION
 
 -   `ALTER TABLE [db].name ADD PROJECTION name AS SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]` — добавляет описание проекции в метаданные.
 
--   `ALTER TABLE [db].name DROP PROJECTION name` - удаляет описание проекции из метаданных и удаляет файлы проекции с диска.
+-   `ALTER TABLE [db].name DROP PROJECTION name` — удаляет описание проекции из метаданных и удаляет файлы проекции с диска.
 
 -   `ALTER TABLE [db.]table MATERIALIZE PROJECTION name IN PARTITION partition_name` - перестраивает проекцию в указанной партиции. Реализовано как [мутация](../../../sql-reference/statements/alter/index.md#mutations).
 
