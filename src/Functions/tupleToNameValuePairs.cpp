@@ -97,7 +97,7 @@ public:
     {
         const IColumn * tuple_col = arguments[0].column.get();
         const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
-        auto * tuple_col_concrete = assert_cast<const ColumnTuple*>(tuple_col);
+        const auto * tuple_col_concrete = assert_cast<const ColumnTuple*>(tuple_col);
 
         auto keys = ColumnString::create();
         MutableColumnPtr values = tuple_col_concrete->getColumn(0).cloneEmpty();
