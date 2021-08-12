@@ -47,7 +47,7 @@ empty(UUID)
 
 UUID считается пустым, если он содержит все нули (нулевой UUID).
 
-Функция также поддерживает работу с типами [Array](array-functions.md#empty) и [String](string-functions.md#empty).
+Функция также поддерживает работу с типами [Array](array-functions.md#function-empty) и [String](string-functions.md#empty).
 
 **Параметры**
 
@@ -89,7 +89,7 @@ notEmpty(UUID)
 
 UUID считается пустым, если он содержит все нули (нулевой UUID).
 
-Функция также поддерживает работу с типами [Array](array-functions.md#notempty) и [String](string-functions.md#notempty).
+Функция также поддерживает работу с типами [Array](array-functions.md#function-notempty) и [String](string-functions.md#function-notempty).
 
 **Параметры**
 
