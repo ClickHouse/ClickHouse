@@ -1965,12 +1965,14 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         if (context->hasQueryContext() && !options.is_internal)
         {
+            const String view_name{};
             auto local_storage_id = storage->getStorageID();
             context->getQueryContext()->addQueryAccessInfo(
                 backQuoteIfNeed(local_storage_id.getDatabaseName()),
                 local_storage_id.getFullTableName(),
                 required_columns,
-                query_info.projection ? query_info.projection->desc->name : "");
+                query_info.projection ? query_info.projection->desc->name : "",
+                view_name);
         }
 
         /// Create step which reads from empty source if storage has no data.
