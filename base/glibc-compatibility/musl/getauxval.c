@@ -41,7 +41,7 @@ static unsigned long  __auxv_init(unsigned long type)
     if (!__environ)
     {
         // __environ is not initialized yet so we can't initialize __auxv right now.
-        // This is normally occurred when getauxval() is called from some sanitizer's internal code.
+        // That's normally occurred only when getauxval() is called from some sanitizer's internal code.
         errno = ENOENT;
         return 0;
     }
