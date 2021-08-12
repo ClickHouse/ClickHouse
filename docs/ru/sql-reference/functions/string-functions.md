@@ -70,7 +70,7 @@ empty(x)
 Запрос:
 
 ```sql
-SELECT empty('');
+SELECT notEmpty('text');
 ```
 
 Результат:
