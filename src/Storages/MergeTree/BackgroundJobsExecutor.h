@@ -52,21 +52,14 @@ struct JobAndPool
 /// Consists of two important parts:
 /// 1) Task in background scheduling pool which receives new jobs from storages and put them into required pool.
 /// 2) One or more ThreadPool objects, which execute background jobs.
-class IBackgroundJobExecutor : protected WithContext
+class BackgroundJobExecutor : protected WithContext
 {
-protected:
-    /// Configuration for single background ThreadPool
-    struct PoolConfig
-    {
-        /// This pool type
-        PoolType pool_type;
-        /// Max pool size in threads
-        const std::function<size_t()> get_max_pool_size;
-        /// Metric that we have to increment when we execute task in this pool
-        CurrentMetrics::Metric tasks_metric;
-    };
 
 private:
+    UInt64 counter{0};
+
+    MergeTreeData & data;
+
     /// Name for task in background scheduling pool
     String task_name;
     /// Settings for execution control of background scheduling task
@@ -78,13 +71,9 @@ private:
     /// no new jobs.
     std::atomic<size_t> no_work_done_count{0};
 
-    /// Pools where we execute background jobs
-    std::unordered_map<PoolType, ThreadPool> pools;
-
     MergeTreeBackgroundExecutor merge_mutate_executor;
-
-    /// Configs for background pools
-    std::unordered_map<PoolType, PoolConfig> pools_configs;
+    MergeTreeBackgroundExecutor fetch_executor;
+    MergeTreeBackgroundExecutor moves_executor;
 
     /// Scheduling task which assign jobs in background pool
     BackgroundSchedulePool::TaskHolder scheduling_task;
@@ -104,32 +93,20 @@ public:
     /// Finish execution: deactivate background task and wait already scheduled jobs
     void finish();
 
-    /// Execute mergetask
     void executeMergeMutateTask(BackgroundTaskPtr merge_task);
-
-    /// Executes job in a nested pool
-    void execute(JobAndPool job_and_pool);
+    void executeFetchTask(BackgroundTaskPtr fetch_task);
+    void executeMoveTask(BackgroundTaskPtr move_task);
 
     /// Just call finish
-    virtual ~IBackgroundJobExecutor();
+    virtual ~BackgroundJobExecutor();
 
-protected:
-    IBackgroundJobExecutor(
-        ContextPtr global_context_,
-        const BackgroundTaskSchedulingSettings & sleep_settings_,
-        const std::vector<PoolConfig> & pools_configs_);
-
-    /// Name for task in background schedule pool
-    virtual String getBackgroundTaskName() const = 0;
-
-    /// Schedules a job in a nested pool in this class.
-    virtual bool scheduleJob() = 0;
+    BackgroundJobExecutor(
+        MergeTreeData & data_,
+        ContextPtr global_context_);
 
 private:
 
-    void executeImpl(auto job, PoolType pool_type);
-
-    void executeMergeJob(BackgroundTaskPtr merge_task);
+    bool selectTaskAndExecute();
 
     /// Function that executes in background scheduling pool
     void backgroundTaskFunction();
@@ -141,35 +118,7 @@ private:
     double getSleepRandomAdd();
 };
 
-/// Main jobs executor: merges, mutations, fetches and so on
-class BackgroundJobsExecutor final : public IBackgroundJobExecutor
-{
-private:
-    MergeTreeData & data;
-public:
-    BackgroundJobsExecutor(
-        MergeTreeData & data_,
-        ContextPtr global_context_);
 
-protected:
-    String getBackgroundTaskName() const override;
-    bool scheduleJob() override;
-};
 
-/// Move jobs executor, move parts between disks in the background
-/// Does nothing in case of default configuration
-class BackgroundMovesExecutor final : public IBackgroundJobExecutor
-{
-private:
-    MergeTreeData & data;
-public:
-    BackgroundMovesExecutor(
-        MergeTreeData & data_,
-        ContextPtr global_context_);
-
-protected:
-    String getBackgroundTaskName() const override;
-    bool scheduleJob() override;
-};
 
 }

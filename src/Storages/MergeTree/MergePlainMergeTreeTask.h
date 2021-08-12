@@ -20,7 +20,7 @@ public:
         Names deduplicate_by_columns_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder table_lock_holder_)
-        : BackgroundTask(0) // FIXME: equal priority
+        : BackgroundTask()
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , deduplicate(deduplicate_)

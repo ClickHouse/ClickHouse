@@ -57,7 +57,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
-class IBackgroundJobExecutor;
+class BackgroundJobExecutor;
 
 namespace ErrorCodes
 {
@@ -810,9 +810,9 @@ public:
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
     /// Schedules background job to like merge/mutate/fetch an executor
-    virtual bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) = 0;
+    virtual bool scheduleDataProcessingJob(BackgroundJobExecutor & executor) = 0;
     /// Schedules job to move parts between disks/volumes and so on.
-    bool scheduleDataMovingJob(IBackgroundJobExecutor & executor);
+    bool scheduleDataMovingJob(BackgroundJobExecutor & executor);
     bool areBackgroundMovesNeeded() const;
 
     /// Lock part in zookeeper for shared data in several nodes

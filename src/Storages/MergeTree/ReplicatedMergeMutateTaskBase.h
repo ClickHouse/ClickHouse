@@ -16,9 +16,8 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeMutateTaskBase : public BackgroundTask
 {
 public:
-    /// We will modify the priority later in prepare() method
     ReplicatedMergeMutateTaskBase(Poco::Logger * log_, StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeQueue::SelectedEntryPtr & selected_entry_)
-        : BackgroundTask(-1)
+        : BackgroundTask()
         , selected_entry(selected_entry_)
         , entry(*selected_entry->log_entry)
         , log(log_)

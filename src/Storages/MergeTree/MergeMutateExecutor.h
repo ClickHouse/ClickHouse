@@ -6,6 +6,7 @@
 #include <mutex>
 #include <condition_variable>
 
+#include <common/shared_ptr_helper.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/BackgroundTask.h>
 
@@ -29,6 +30,24 @@ inline bool incrementMetricIfLessThanMax(std::atomic<Int64> & atomic_value, Int6
 }
 
 
+class LambdaAdapter : public shared_ptr_helper<LambdaAdapter>, public BackgroundTask
+{
+public:
+
+    template <typename T>
+    explicit LambdaAdapter(T && inner_) : inner(inner_) {}
+
+    bool execute() override
+    {
+        inner();
+        return false;
+    }
+
+private:
+    std::function<void()> inner;
+};
+
+
 
 class MergeTreeBackgroundExecutor
 {
@@ -36,14 +55,18 @@ public:
 
     using CountGetter = std::function<size_t()>;
     using GlobalMetricGetter = std::function<std::atomic<Int64> &()>;
+    using Callback = std::function<void()>;
+
 
     MergeTreeBackgroundExecutor(
         CountGetter threads_count_getter_,
         CountGetter max_task_count_getter_,
-        GlobalMetricGetter current_tasks_count_getter_)
+        GlobalMetricGetter current_tasks_count_getter_,
+        Callback on_task_finish_)
         : threads_count_getter(threads_count_getter_)
         , max_task_count_getter(max_task_count_getter_)
         , current_tasks_count_getter(current_tasks_count_getter_)
+        , on_task_finish(on_task_finish_)
     {
         updatePoolConfiguration();
         scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
@@ -142,6 +165,7 @@ private:
                         }
 
                         // current.reset();
+                        on_task_finish();
                         decrementTasksCount();
                     }
                     catch(...)
@@ -163,6 +187,7 @@ private:
     CountGetter threads_count_getter;
     CountGetter max_task_count_getter;
     GlobalMetricGetter current_tasks_count_getter;
+    Callback on_task_finish;
 
     using TasksQueue = std::deque<BackgroundTaskPtr>;
     TasksQueue tasks;

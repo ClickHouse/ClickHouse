@@ -294,7 +294,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_fetches_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_fetches_network_bandwidth, getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_sends_network_bandwidth, getContext()->getReplicatedSendsThrottler()))
     , background_executor(*this, getContext())
-    , background_moves_executor(*this, getContext())
 {
     queue_updating_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
@@ -2821,7 +2820,7 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
     });
 }
 
-bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & executor)
+bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor & executor)
 {
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
@@ -2838,10 +2837,10 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecuto
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
     if (job_type == LogEntry::GET_PART)
     {
-        executor.execute({[this, selected_entry] () mutable
+        executor.executeFetchTask(LambdaAdapter::create([this, selected_entry] () mutable
         {
             return processQueueEntry(selected_entry);
-        }, PoolType::FETCH});
+        }));
         return true;
     }
     else if (job_type == LogEntry::MERGE_PARTS)
@@ -2858,10 +2857,10 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecuto
     }
     else
     {
-        executor.execute({[this, selected_entry] () mutable
+        executor.executeFetchTask(LambdaAdapter::create([this, selected_entry] () mutable
         {
             return processQueueEntry(selected_entry);
-        }, PoolType::MERGE_MUTATE});
+        }));
         return true;
     }
 }
@@ -4010,7 +4009,6 @@ void StorageReplicatedMergeTree::shutdown()
         /// MUTATE, etc. query.
         queue.pull_log_blocker.cancelForever();
     }
-    background_moves_executor.finish();
 
     auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
     if (data_parts_exchange_ptr)
@@ -6597,10 +6595,8 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
 {
     if (action_type == ActionLocks::PartsMerge || action_type == ActionLocks::PartsTTLMerge
         || action_type == ActionLocks::PartsFetch || action_type == ActionLocks::PartsSend
-        || action_type == ActionLocks::ReplicationQueue)
+        || action_type == ActionLocks::ReplicationQueue || action_type == ActionLocks::PartsMove)
         background_executor.triggerTask();
-    else if (action_type == ActionLocks::PartsMove)
-        background_moves_executor.triggerTask();
 }
 
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
@@ -6846,8 +6842,8 @@ MutationCommands StorageReplicatedMergeTree::getFirstAlterMutationCommandsForPar
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
-    if (areBackgroundMovesNeeded())
-        background_moves_executor.start();
+    // if (areBackgroundMovesNeeded())
+    //     background_moves_executor.start();
 }
 
 std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSettings() const

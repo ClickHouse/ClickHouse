@@ -26,9 +26,6 @@ namespace CurrentMetrics
 }
 
 
-static thread_local ThreadPool * current_pool;
-
-
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl()
     : ThreadPoolImpl(getNumberOfPhysicalCPUCores())
@@ -121,8 +118,29 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         /// We must not to allocate any memory after we emplaced a job in a queue.
         /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
 
-        if (auto reason = addThreadAssumeLocked())
-            return on_error(*reason);
+        /// Check if there are enough threads to process job.
+        if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
+        {
+            try
+            {
+                threads.emplace_front();
+            }
+            catch (...)
+            {
+                /// Most likely this is a std::bad_alloc exception
+                return on_error("cannot allocate thread slot");
+            }
+
+            try
+            {
+                threads.front() = Thread([this, it = threads.begin()] { worker(it); });
+            }
+            catch (...)
+            {
+                threads.pop_front();
+                return on_error("cannot allocate thread");
+            }
+        }
 
         jobs.emplace(std::move(job), priority);
         ++scheduled_jobs;
@@ -130,53 +148,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
     }
 
     return ReturnType(true);
-}
-
-template <typename Thread>
-std::optional<std::string> ThreadPoolImpl<Thread>::addThreadAssumeLocked()
-{
-    /// Check if there are enough threads to process job.
-    if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
-    {
-        try
-        {
-            threads.emplace_front();
-        }
-        catch (...)
-        {
-            /// Most likely this is a std::bad_alloc exception
-            return "cannot allocate thread slot";
-        }
-
-        try
-        {
-            threads.front() = Thread([this, it = threads.begin()] { worker(it); });
-        }
-        catch (...)
-        {
-            threads.pop_front();
-            return "cannot allocate thread";
-        }
-    }
-
-    return std::nullopt;
-}
-
-
-template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleContinuation(Job job, int priority)
-{
-    std::lock_guard lock(mutex);
-
-    /// Maybe there are no free threads to execute job
-    if (auto reason = addThreadAssumeLocked())
-        throw DB::Exception(DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
-            "Cannot schedule a task: {} (threads={}, jobs={})", *reason,
-            threads.size(), scheduled_jobs);
-
-    jobs.emplace(std::move(job), priority);
-    ++scheduled_jobs;
-    new_job_or_shutdown.notify_one();
 }
 
 template <typename Thread>
@@ -206,9 +177,6 @@ void ThreadPoolImpl<Thread>::wait()
         /// If threads are waiting on condition variables, but there are some jobs in the queue
         /// then it will prevent us from deadlock.
         new_job_or_shutdown.notify_all();
-        /// This is needed if some thread tries to schedule a task but been blocked
-        job_finished.notify_all();
-
         job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
 
         if (first_exception)
@@ -228,16 +196,6 @@ ThreadPoolImpl<Thread>::~ThreadPoolImpl()
     if (first_exception)
         DB::tryLogException(first_exception, __PRETTY_FUNCTION__);
 }
-
-template <typename Thread>
-ThreadPoolImpl<Thread> * current()
-{
-    if constexpr (std::is_same_v<Thread, std::thread>)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Can't use current() method with GlobalPool object");
-    else
-        return current_pool;
-}
-
 
 template <typename Thread>
 void ThreadPoolImpl<Thread>::finalize()
@@ -275,9 +233,6 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
     DENY_ALLOCATIONS_IN_SCOPE;
     CurrentMetrics::Increment metric_all_threads(
         std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThread : CurrentMetrics::LocalThread);
-
-    if constexpr (std::is_same_v<Thread, ThreadFromGlobalPool>)
-        current_pool = this;
 
     while (true)
     {

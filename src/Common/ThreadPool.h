@@ -13,8 +13,6 @@
 #include <Common/ThreadStatus.h>
 #include <common/scope_guard.h>
 
-class ThreadFromGlobalPool;
-
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
   * - catches exceptions and rethrows on wait.
@@ -56,10 +54,6 @@ public:
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
     void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0);
 
-    /// Use this method only for submitting a task from inside a current pool.
-    /// Otherwise, it may cause deadlock, because other method could block thread in order not grow the queue.
-    void scheduleContinuation(Job job, int priority);
-
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
     /// If any thread was throw an exception, first exception will be rethrown from this method,
@@ -81,8 +75,6 @@ public:
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
     size_t getMaxThreads() const;
-
-    static ThreadPoolImpl<Thread> * current();
 
 private:
     mutable std::mutex mutex;
@@ -115,8 +107,6 @@ private:
     std::list<Thread> threads;
     std::exception_ptr first_exception;
 
-    /// Returns fail reason if any
-    std::optional<std::string> addThreadAssumeLocked();
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
@@ -166,7 +156,7 @@ public:
 class ThreadFromGlobalPool
 {
 public:
-    ThreadFromGlobalPool() = default;
+    ThreadFromGlobalPool() {}
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
@@ -241,8 +231,3 @@ private:
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
-
-inline ThreadPool * current()
-{
-    return ThreadPool::current();
-}

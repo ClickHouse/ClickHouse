@@ -56,9 +56,6 @@ void MergePlainMergeTreeTask::prepare()
 
     merge_list_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_part);
 
-    /// Adjust priority of the whole merge
-    setPriority((*merge_list_entry)->total_size_bytes_compressed);
-
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
         storage.writePartLog(

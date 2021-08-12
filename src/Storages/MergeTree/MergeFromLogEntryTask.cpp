@@ -200,9 +200,6 @@ bool MergeFromLogEntryTask::prepare()
     /// Add merge to list
     merge_mutate_entry = storage.getContext()->getMergeList().insert(storage.getStorageID(), future_merged_part);
 
-    /// Adjust priority of the whole merge
-    setPriority((*merge_mutate_entry)->total_size_bytes_compressed);
-
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage);
     stopwatch_ptr = std::make_unique<Stopwatch>();
 

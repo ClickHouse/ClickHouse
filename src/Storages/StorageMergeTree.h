@@ -97,7 +97,7 @@ public:
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
-    bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
+    bool scheduleDataProcessingJob(BackgroundJobExecutor & executor) override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 private:
@@ -135,11 +135,8 @@ private:
 
     std::atomic<bool> shutdown_called {false};
 
-
-
     /// Must be last fields to be destroyed first.
-    BackgroundJobsExecutor background_executor;
-    BackgroundMovesExecutor background_moves_executor;
+    BackgroundJobExecutor background_executor;
 
 
 private:

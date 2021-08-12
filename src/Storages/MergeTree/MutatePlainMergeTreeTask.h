@@ -27,7 +27,7 @@ public:
         StorageMetadataPtr metadata_snapshot_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder & table_lock_holder_)
-        : BackgroundTask(-1)
+        : BackgroundTask()
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , merge_mutate_entry(merge_mutate_entry_)

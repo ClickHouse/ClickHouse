@@ -15,41 +15,71 @@ namespace CurrentMetrics
 namespace DB
 {
 
-IBackgroundJobExecutor::IBackgroundJobExecutor(
-        ContextPtr global_context_,
-        const BackgroundTaskSchedulingSettings & sleep_settings_,
-        const std::vector<PoolConfig> & pools_configs_)
-    : WithContext(global_context_)
-    , sleep_settings(sleep_settings_)
-    , rng(randomSeed())
-    , merge_mutate_executor(
-        [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
-        [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
-        [] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask]; }
-    )
+
+
+namespace ExecutorBuilder
 {
-    for (const auto & pool_config : pools_configs_)
-    {
-        const auto max_pool_size = pool_config.get_max_pool_size();
-        pools.try_emplace(pool_config.pool_type, max_pool_size, 0, 2 * max_pool_size, false);
-        pools_configs.emplace(pool_config.pool_type, pool_config);
-    }
+
+static MergeTreeBackgroundExecutor buildMergeMutateExecutor(ContextPtr context, BackgroundJobExecutor * parent)
+{
+    return MergeTreeBackgroundExecutor(
+        [context] () { return context->getSettingsRef().background_pool_size; },
+        [context] () { return context->getSettingsRef().background_pool_size; },
+        [] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask]; },
+        [parent] () { parent->triggerTask(); }
+    );
 }
 
-double IBackgroundJobExecutor::getSleepRandomAdd()
+static MergeTreeBackgroundExecutor buildFetchExecutor(ContextPtr context, BackgroundJobExecutor * parent)
+{
+    return MergeTreeBackgroundExecutor(
+        [context] () { return context->getSettingsRef().background_fetches_pool_size; },
+        [context] () { return context->getSettingsRef().background_fetches_pool_size; },
+        [] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask]; },
+        [parent] () { parent->triggerTask(); }
+    );
+}
+
+
+static MergeTreeBackgroundExecutor buildMovesExecutor(ContextPtr context, BackgroundJobExecutor * parent)
+{
+    return MergeTreeBackgroundExecutor(
+        [context] () { return context->getSettingsRef().background_move_pool_size; },
+        [context] () { return context->getSettingsRef().background_move_pool_size; },
+        [] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundMovePoolTask]; },
+        [parent] () { parent->triggerTask(); }
+    );
+}
+
+}
+
+
+BackgroundJobExecutor::BackgroundJobExecutor(MergeTreeData & data_, ContextPtr global_context_)
+    : WithContext(global_context_)
+    , data(data_)
+    , sleep_settings(global_context_->getBackgroundMoveTaskSchedulingSettings())
+    , rng(randomSeed())
+    , merge_mutate_executor(ExecutorBuilder::buildMergeMutateExecutor(global_context_, this))
+    , fetch_executor(ExecutorBuilder::buildFetchExecutor(global_context_, this))
+    , moves_executor(ExecutorBuilder::buildMovesExecutor(global_context_, this))
+{
+
+}
+
+double BackgroundJobExecutor::getSleepRandomAdd()
 {
     std::lock_guard random_lock(random_mutex);
     return std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 }
 
-void IBackgroundJobExecutor::runTaskWithoutDelay()
+void BackgroundJobExecutor::runTaskWithoutDelay()
 {
     no_work_done_count = 0;
     /// We have background jobs, schedule task as soon as possible
     scheduling_task->schedule();
 }
 
-void IBackgroundJobExecutor::scheduleTask(bool with_backoff)
+void BackgroundJobExecutor::scheduleTask(bool with_backoff)
 {
     size_t next_time_to_execute;
     if (with_backoff)
@@ -70,137 +100,64 @@ void IBackgroundJobExecutor::scheduleTask(bool with_backoff)
     scheduling_task->scheduleAfter(next_time_to_execute, false);
 }
 
-
-void IBackgroundJobExecutor::executeImpl(auto job, PoolType pool_type)
-try
-{
-    auto & pool_config = pools_configs[pool_type];
-    const auto max_pool_size = pool_config.get_max_pool_size();
-
-    /// If corresponding pool is not full increment metric and assign new job
-    if (incrementMetricIfLessThanMax(CurrentMetrics::values[pool_config.tasks_metric], max_pool_size))
-    {
-        try /// this try required because we have to manually decrement metric
-        {
-            /// Synchronize pool size, because config could be reloaded
-            pools[pool_type].setMaxThreads(max_pool_size);
-            pools[pool_type].setQueueSize(max_pool_size);
-
-            job();
-            /// We've scheduled task in the background pool and when it will finish we will be triggered again. But this task can be
-            /// extremely long and we may have a lot of other small tasks to do, so we schedule ourselves here.
-            runTaskWithoutDelay();
-        }
-        catch (...)
-        {
-            /// With our Pool settings scheduleOrThrowOnError shouldn't throw exceptions, but for safety catch added here
-            CurrentMetrics::values[pool_config.tasks_metric]--;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            scheduleTask(/* with_backoff = */ true);
-        }
-    }
-    else /// Pool is full and we have some work to do
-    {
-        scheduleTask(/* with_backoff = */ false);
-    }
-}
-catch (...) /// Exception while we looking for a task, reschedule
-{
-    tryLogCurrentException(__PRETTY_FUNCTION__);
-
-    /// Why do we scheduleTask again?
-    /// To retry on exception, since it may be some temporary exception.
-    scheduleTask(/* with_backoff = */ true);
-}
-
-
-void IBackgroundJobExecutor::executeMergeJob(BackgroundTaskPtr)
-{
-
-}
-
-
-void IBackgroundJobExecutor::executeMergeMutateTask(BackgroundTaskPtr merge_task)
+void BackgroundJobExecutor::executeMergeMutateTask(BackgroundTaskPtr merge_task)
 {
     bool result = merge_mutate_executor.trySchedule(merge_task);
     scheduleTask(/* with_backoff = */ !result);
-
 }
 
 
-void IBackgroundJobExecutor::execute(JobAndPool job_and_pool)
+void BackgroundJobExecutor::executeFetchTask(BackgroundTaskPtr fetch_task)
 {
-    executeImpl([this, job_and_pool]()
-    {
-        auto pool_config = pools_configs[job_and_pool.pool_type];
-        pools[job_and_pool.pool_type].scheduleOrThrowOnError([this, pool_config, job = std::move(job_and_pool.job)] ()
-        {
-            try /// We don't want exceptions in background pool
-            {
-                bool job_success = job();
-                /// Job done, decrement metric and reset no_work counter
-                CurrentMetrics::values[pool_config.tasks_metric]--;
-
-                if (job_success)
-                {
-                    /// Job done, new empty space in pool, schedule background task
-                    runTaskWithoutDelay();
-                }
-                else
-                {
-                    /// Job done, but failed, schedule with backoff
-                    scheduleTask(/* with_backoff = */ true);
-                }
-
-            }
-            catch (...)
-            {
-                CurrentMetrics::values[pool_config.tasks_metric]--;
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                scheduleTask(/* with_backoff = */ true);
-            }
-        });
-    }, job_and_pool.pool_type);
+    bool result = fetch_executor.trySchedule(fetch_task);
+    scheduleTask(!result);
 }
 
 
+void BackgroundJobExecutor::executeMoveTask(BackgroundTaskPtr move_task)
+{
+    bool result = fetch_executor.trySchedule(move_task);
+    scheduleTask(!result);
+}
 
-void IBackgroundJobExecutor::start()
+void BackgroundJobExecutor::start()
 {
     std::lock_guard lock(scheduling_task_mutex);
     if (!scheduling_task)
     {
         scheduling_task = getContext()->getSchedulePool().createTask(
-            getBackgroundTaskName(), [this]{ backgroundTaskFunction(); });
+            "BackgroundJobExecutor", [this]{ backgroundTaskFunction(); });
     }
 
     scheduling_task->activateAndSchedule();
 }
 
-void IBackgroundJobExecutor::finish()
+void BackgroundJobExecutor::finish()
 {
     std::lock_guard lock(scheduling_task_mutex);
     if (scheduling_task)
     {
         scheduling_task->deactivate();
-        for (auto & [pool_type, pool] : pools)
-            pool.wait();
+        // for (auto & [pool_type, pool] : pools)
+        //     pool.wait();
 
         merge_mutate_executor.wait();
+        fetch_executor.wait();
+        moves_executor.wait();
     }
 }
 
-void IBackgroundJobExecutor::triggerTask()
+void BackgroundJobExecutor::triggerTask()
 {
     std::lock_guard lock(scheduling_task_mutex);
     if (scheduling_task)
         runTaskWithoutDelay();
 }
 
-void IBackgroundJobExecutor::backgroundTaskFunction()
+void BackgroundJobExecutor::backgroundTaskFunction()
 try
 {
-    if (!scheduleJob())
+    if (!selectTaskAndExecute())
         scheduleTask(/* with_backoff = */ true);
 }
 catch (...) /// Catch any exception to avoid thread termination.
@@ -209,70 +166,19 @@ catch (...) /// Catch any exception to avoid thread termination.
     scheduleTask(/* with_backoff = */ true);
 }
 
-IBackgroundJobExecutor::~IBackgroundJobExecutor()
+BackgroundJobExecutor::~BackgroundJobExecutor()
 {
     finish();
 }
 
-BackgroundJobsExecutor::BackgroundJobsExecutor(
-       MergeTreeData & data_,
-       ContextPtr global_context_)
-    : IBackgroundJobExecutor(
-        global_context_,
-        global_context_->getBackgroundProcessingTaskSchedulingSettings(),
-        {PoolConfig
-            {
-                .pool_type = PoolType::MERGE_MUTATE,
-                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_pool_size; },
-                // .get_max_pool_size = [global_context_] () { return 2; },
-                .tasks_metric = CurrentMetrics::BackgroundPoolTask
-            },
-        PoolConfig
-            {
-                .pool_type = PoolType::FETCH,
-                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_fetches_pool_size; },
-                .tasks_metric = CurrentMetrics::BackgroundFetchesPoolTask
-            }
-        })
-    , data(data_)
+
+bool BackgroundJobExecutor::selectTaskAndExecute()
 {
+    if (counter % 2 == 0)
+        return data.scheduleDataProcessingJob(*this);
+    else
+        return data.scheduleDataMovingJob(*this);
 }
 
-String BackgroundJobsExecutor::getBackgroundTaskName() const
-{
-    return data.getStorageID().getFullTableName() + " (dataProcessingTask)";
-}
-
-bool BackgroundJobsExecutor::scheduleJob()
-{
-    return data.scheduleDataProcessingJob(*this);
-}
-
-BackgroundMovesExecutor::BackgroundMovesExecutor(
-       MergeTreeData & data_,
-       ContextPtr global_context_)
-    : IBackgroundJobExecutor(
-        global_context_,
-        global_context_->getBackgroundMoveTaskSchedulingSettings(),
-        {PoolConfig
-            {
-                .pool_type = PoolType::MOVE,
-                .get_max_pool_size = [global_context_] () { return global_context_->getSettingsRef().background_move_pool_size; },
-                .tasks_metric = CurrentMetrics::BackgroundMovePoolTask
-            }
-        })
-    , data(data_)
-{
-}
-
-String BackgroundMovesExecutor::getBackgroundTaskName() const
-{
-    return data.getStorageID().getFullTableName() + " (dataMovingTask)";
-}
-
-bool BackgroundMovesExecutor::scheduleJob()
-{
-    return data.scheduleDataMovingJob(*this);
-}
 
 }
