@@ -1,4 +1,5 @@
 #include <sys/auxv.h>
+#include "atomic.h"
 #include <unistd.h> // __environ
 #include <errno.h>
 
@@ -17,22 +18,7 @@ static size_t __find_auxv(unsigned long type)
     return (size_t) -1;
 }
 
-/// __auxv_init should happen BEFORE the first use of getauxval.
-/// but getauxval can be used in other init sections (namely in musl/clock_gettime.c::cgt_init), 
-/// so constructor(0) is needed to prioritize that constructor
-/// see also: https://stackoverflow.com/questions/11106875/attribute-constructor-call-order-confusion/11198936
-__attribute__((constructor(0))) static void __auxv_init()
-{
-    size_t i;
-    for (i = 0; __environ[i]; i++);
-    __auxv = (unsigned long *) (__environ + i + 1);
-
-    size_t secure_idx = __find_auxv(AT_SECURE);
-    if (secure_idx != ((size_t) -1))
-        __auxv_secure = __auxv[secure_idx];
-}
-
-unsigned long getauxval(unsigned long type)
+unsigned long __getauxval(unsigned long type)
 {
     if (type == AT_SECURE)
         return __auxv_secure;
@@ -46,4 +32,30 @@ unsigned long getauxval(unsigned long type)
 
     errno = ENOENT;
     return 0;
+}
+
+static void * volatile getauxval_func;
+
+static unsigned long  __auxv_init(unsigned long type)
+{
+    if (!__environ)
+        return 0;
+
+    size_t i;
+    for (i = 0; __environ[i]; i++);
+    __auxv = (unsigned long *) (__environ + i + 1);
+
+    size_t secure_idx = __find_auxv(AT_SECURE);
+    if (secure_idx != ((size_t) -1))
+        __auxv_secure = __auxv[secure_idx];
+
+    a_cas_p(&getauxval_func, (void *)__auxv_init, (void *)__getauxval);
+    return __getauxval(type);
+}
+
+static void * volatile getauxval_func = (void *)__auxv_init;
+
+unsigned long getauxval(unsigned long type)
+{
+    return ((unsigned long (*)(unsigned long))getauxval_func)(type);
 }
