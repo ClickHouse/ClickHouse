@@ -328,11 +328,33 @@ try
     static const auto & settings = global_context->getSettingsRef();
 
     static std::vector<String> queries;
-    static auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
+    if (first_time)
+    {
+    std::pair<const char *, bool> parse_res;
+#ifdef FUZZING_MODE
+    try
+    {
+#endif
+    parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
+#ifdef FUZZING_MODE
+    }
+    catch (const Exception &)
+    {
+        // will be caught at the end of the main
+        throw;
+    }
+    catch (...)
+    {
+        std::cerr << "Undefined error while parsing" << std::endl;
+        exit(1);
+    }
+#endif
 
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
+    }
 
+    first_time = false;
     /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
     /// so we can't reuse it safely as a query context and need a copy here
     auto context = Context::createCopy(global_context);
@@ -349,7 +371,6 @@ try
 
     /// Set progress show
     need_render_progress = config().getBool("progress", false);
-
     std::function<void()> finalize_progress;
     if (need_render_progress)
     {
@@ -374,7 +395,6 @@ try
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
 
     std::exception_ptr exception;
-    first_time = false;
 
     for (const auto & query : queries)
     {
@@ -565,7 +585,7 @@ void LocalServer::init(int argc, char ** argv)
         ("help", "produce help message")
         ("config-file,c", po::value<std::string>(), "config-file path")
         ("query,q", po::value<std::string>(), "query")
-        ("queries-file, qf", po::value<std::string>(), "file path with queries to execute")
+        ("queries-file,Q", po::value<std::string>(), "file path with queries to execute")
         ("database,d", po::value<std::string>(), "database")
 
         ("table,N", po::value<std::string>(), "name of the initial table")
@@ -730,7 +750,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     catch (...)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
-        return 1;
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
     }
     return 0;
 }
