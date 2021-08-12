@@ -1488,6 +1488,9 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     /// to allow recovering from a mutation that cannot be executed. This way you can delete the mutation entry
     /// from /mutations in ZK and the replicas will simply skip the mutation.
 
+    /// NOTE: However, it's quite dangerous to skip MUTATE_PART. Replicas may diverge if one of them have executed part mutation,
+    /// and then mutation was killed before execution of MUTATE_PART on remaining replicas.
+
     if (part->info.getDataVersion() > desired_mutation_version)
     {
         LOG_WARNING(log, "Data version of part {} is already greater than desired mutation version {}", part->name, desired_mutation_version);

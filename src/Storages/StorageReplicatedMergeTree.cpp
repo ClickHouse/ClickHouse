@@ -141,6 +141,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_DATA_PART;
     extern const int BAD_ARGUMENTS;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
+    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 namespace ActionLocks
@@ -1314,32 +1315,35 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         }
 
         ReplicatedMergeTreePartHeader replica_part_header;
-        if (!part_zk_str.empty())
-            replica_part_header = ReplicatedMergeTreePartHeader::fromString(part_zk_str);
-        else
+        if (part_zk_str.empty())
         {
-            Coordination::Stat columns_stat_before, columns_stat_after;
             String columns_str;
             String checksums_str;
-            /// Let's check that the node's version with the columns did not change while we were reading the checksums.
-            /// This ensures that the columns and the checksum refer to the same
-            if (!zookeeper->tryGet(fs::path(current_part_path) / "columns", columns_str, &columns_stat_before) ||
-                !zookeeper->tryGet(fs::path(current_part_path) / "checksums", checksums_str) ||
-                !zookeeper->exists(fs::path(current_part_path) / "columns", &columns_stat_after) ||
-                columns_stat_before.version != columns_stat_after.version)
+            if (zookeeper->tryGet(fs::path(current_part_path) / "columns", columns_str) &&
+                zookeeper->tryGet(fs::path(current_part_path) / "checksums", checksums_str))
             {
-                LOG_INFO(log, "Not checking checksums of part {} with replica {} because part changed while we were reading its checksums", part_name, replica);
+                replica_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(columns_str, checksums_str);
+            }
+            else
+            {
+                if (zookeeper->exists(current_part_path))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has empty header and does not have columns and checksums. "
+                                                               "Looks like a bug.", current_part_path);
+                LOG_INFO(log, "Not checking checksums of part {} with replica {} because part was removed from ZooKeeper", part_name, replica);
                 continue;
             }
-
-            replica_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(
-                columns_str, checksums_str);
+        }
+        else
+        {
+            replica_part_header = ReplicatedMergeTreePartHeader::fromString(part_zk_str);
         }
 
         if (replica_part_header.getColumnsHash() != local_part_header.getColumnsHash())
         {
-            LOG_INFO(log, "Not checking checksums of part {} with replica {} because columns are different", part_name, replica);
-            continue;
+            /// Either it's a bug or ZooKeeper contains broken data.
+            /// TODO Fix KILL MUTATION and replace CHECKSUM_DOESNT_MATCH with LOGICAL_ERROR
+            /// (some replicas may skip killed mutation even if it was executed on other replicas)
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Part {} from {} has different columns hash", part_name, replica);
         }
 
         replica_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
@@ -6058,7 +6062,7 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
 
-    LOG_TRACE(log, "Killing mutation {}", mutation_id);
+    LOG_INFO(log, "Killing mutation {}", mutation_id);
 
     auto mutation_entry = queue.removeMutation(zookeeper, mutation_id);
     if (!mutation_entry)

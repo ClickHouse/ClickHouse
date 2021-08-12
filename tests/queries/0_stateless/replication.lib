@@ -27,7 +27,7 @@ function check_replication_consistency()
 
     res=$($CLICKHOUSE_CLIENT -q \
     "SELECT
-        countDistinct(data)
+        if((countDistinct(data) as c) == 0, 1, c)
     FROM
     (
         SELECT _table, ($2) AS data
