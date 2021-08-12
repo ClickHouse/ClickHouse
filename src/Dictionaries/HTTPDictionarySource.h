@@ -28,7 +28,7 @@ public:
         const std::string & config_prefix,
         Block & sample_block_,
         ContextPtr context_,
-        bool check_config);
+        bool created_from_ddl);
 
     HTTPDictionarySource(const HTTPDictionarySource & other);
     HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
