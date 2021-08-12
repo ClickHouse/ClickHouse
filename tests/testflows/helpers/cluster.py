@@ -12,6 +12,21 @@ from testflows.connect import Shell as ShellBase
 from testflows.uexpect import ExpectTimeoutError
 from testflows._core.testtype import TestSubType
 
+MESSAGES_TO_RETRY = [
+    "DB::Exception: ZooKeeper session has been expired",
+    "DB::Exception: Connection loss",
+    "Coordination::Exception: Session expired",
+    "Coordination::Exception: Connection loss",
+    "Coordination::Exception: Operation timeout",
+    "DB::Exception: Operation timeout",
+    "Operation timed out",
+    "ConnectionPoolWithFailover: Connection failed at try",
+    "DB::Exception: New table appeared in database being dropped or detached. Try again",
+    "is already started to be removing by another replica right now",
+    "Shutdown is called for table", # happens in SYSTEM SYNC REPLICA query if session with ZooKeeper is being reinitialized.
+    "is executing longer than distributed_ddl_task_timeout" # distributed TTL timeout message
+]
+
 class Shell(ShellBase):
     def __exit__(self, type, value, traceback):
         # send exit and Ctrl-D repeatedly
@@ -134,7 +149,7 @@ class ClickHouseNode(Node):
                 if self.query("select 1", no_checks=1, timeout=300, steps=False).exitcode == 0:
                     break
                 if time.time() - start_time < timeout:
-                    time.sleep(2)
+                    time.sleep(10)
                     continue
                 assert False, "container is not healthy"
 
