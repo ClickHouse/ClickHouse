@@ -177,7 +177,7 @@ Type: [String](../data-types/string.md).
 
 **Пример**
 
-Результат:
+Запрос:
 
 ``` sql
 SELECT rightPadUTF8('абвг', 7, '*'), rightPadUTF8('абвг', 7);
