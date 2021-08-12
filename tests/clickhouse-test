@@ -632,6 +632,7 @@ def run_tests_array(all_tests_with_params):
                                 open(stdout_file).read().split('\n')[:100])
                             status += '\n'
 
+                        status += "\nstdout:\n{}\n".format(stdout)
                         status += 'Database: ' + testcase_args.testcase_database
 
                     elif stderr:
