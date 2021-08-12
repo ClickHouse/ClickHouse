@@ -13,8 +13,10 @@
 
 namespace DB
 {
+
 class SQLiteSource : public SourceWithProgress
 {
+
 using SQLitePtr = std::shared_ptr<sqlite3>;
 
 public:
@@ -26,10 +28,6 @@ public:
     String getName() const override { return "SQLite"; }
 
 private:
-    static void insertDefaultSQLiteValue(IColumn & column, const IColumn & sample_column)
-    {
-        column.insertFrom(sample_column, 0);
-    }
 
     using ValueType = ExternalResultDescription::ValueType;
 
@@ -46,7 +44,6 @@ private:
     UInt64 max_block_size;
 
     ExternalResultDescription description;
-
     SQLitePtr sqlite_db;
     std::unique_ptr<sqlite3_stmt, StatementDeleter> compiled_statement;
 };
