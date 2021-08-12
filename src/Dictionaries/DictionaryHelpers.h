@@ -497,6 +497,20 @@ private:
     Arena * complex_key_arena;
 };
 
+/// Deserialize columns from keys array using dictionary structure
+MutableColumns deserializeColumnsFromKeys(
+    const DictionaryStructure & dictionary_structure,
+    const PaddedPODArray<StringRef> & keys,
+    size_t start,
+    size_t end);
+
+/// Deserialize columns with type and name from keys array using dictionary structure
+ColumnsWithTypeAndName deserializeColumnsWithTypeAndNameFromKeys(
+    const DictionaryStructure & dictionary_structure,
+    const PaddedPODArray<StringRef> & keys,
+    size_t start,
+    size_t end);
+
 /** Merge block with blocks from stream. If there are duplicate keys in block they are filtered out.
   * In result block_to_update will be merged with blocks from stream.
   * Note: readPrefix readImpl readSuffix will be called on stream object during function execution.
