@@ -12,7 +12,6 @@
 #include <common/types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
-#include <Common/Stopwatch.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
