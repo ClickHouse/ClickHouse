@@ -1,5 +1,6 @@
 #include <string>
 #include <Common/config.h>
+#include "IO/VarInt.h"
 #include <Compression/CompressionFactory.h>
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 
@@ -10,9 +11,14 @@
 #include <openssl/err.h>
 #include <openssl/hkdf.h>
 #include <string_view>
+#include <boost/algorithm/hex.hpp>
+
 
 namespace DB
 {
+    std::unordered_map<UInt64, String> CompressionCodecEncrypted::keys_storage;
+    UInt64 CompressionCodecEncrypted::current_key_id;
+
     namespace ErrorCodes
     {
         extern const int ILLEGAL_CODEC_PARAMETER;
@@ -28,14 +34,11 @@ namespace DB
 
     CompressionCodecEncrypted::KeyHolder::KeyHolder(const std::string_view & master_key)
     {
-        // Derive a key from it.
-        keygen_key = deriveKey(master_key);
-
         // EVP_AEAD_CTX is not stateful so we can create an
         // instance now.
         EVP_AEAD_CTX_zero(&ctx);
-        const int ok = EVP_AEAD_CTX_init(&ctx, EVP_aead_aes_128_gcm(),
-                                         reinterpret_cast<const uint8_t*>(keygen_key.data()), keygen_key.size(),
+        const int ok = EVP_AEAD_CTX_init(&ctx, EVP_aead_aes_128_gcm_siv(),
+                                         reinterpret_cast<const uint8_t*>(master_key.data()), master_key.size(),
                                          16 /* tag size */, nullptr);
         if (!ok)
             throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
@@ -75,7 +78,7 @@ namespace DB
         // The GCM mode is a stream cipher. No paddings are
         // involved. There will be a tag at the end of ciphertext (16
         // octets).
-        return uncompressed_size + 16;
+        return uncompressed_size + 24;
     }
 
     UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -89,18 +92,21 @@ namespace DB
         const std::string_view plaintext = std::string_view(source, source_size);
 
         encrypt(plaintext, dest);
-        return source_size + 16;
+        return source_size + 24;
     }
 
     void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size [[maybe_unused]]) const
     {
+        UInt64 encrypted_text_key_id;
+        source = readVarUInt(encrypted_text_key_id, source, 8);
+        source_size -= 8; 
         // Extract the IV from the encrypted data block. Decrypt the
         // block with the extracted IV, and compare the tag. Throw an
         // exception if tags don't match.
         const std::string_view ciphertext_and_tag = std::string_view(source, source_size);
         assert(ciphertext_and_tag.size() == uncompressed_size + 16);
 
-        decrypt(ciphertext_and_tag, dest);
+        decrypt(ciphertext_and_tag, dest, encrypted_text_key_id);
     }
 
     std::string CompressionCodecEncrypted::lastErrorString()
@@ -110,32 +116,18 @@ namespace DB
         return std::string(buffer.data());
     }
 
-    std::string CompressionCodecEncrypted::deriveKey(const std::string_view & master_key)
-    {
-        std::string_view salt; // No salt: derive keys in a deterministic manner.
-        std::string_view info("Codec 'AES_128_GCM_SIV' key generation key");
-        std::array<char, 32> result;
-
-        const int ok = HKDF(reinterpret_cast<uint8_t *>(result.data()), result.size(),
-                            EVP_sha256(),
-                            reinterpret_cast<const uint8_t *>(master_key.data()), master_key.size(),
-                            reinterpret_cast<const uint8_t *>(salt.data()), salt.size(),
-                            reinterpret_cast<const uint8_t *>(info.data()), info.size());
-        if (!ok)
-            throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
-
-        return std::string(result.data(), 16);
-    }
-
     void CompressionCodecEncrypted::encrypt(const std::string_view & plaintext, char * ciphertext_and_tag)
     {
-        // randomly generated nonce. Split 12 bytes, because it is too big value and cannot be converted
-        std::string random_nonce = std::to_string(0x3a3bcb9d) + std::to_string(0x7b434799) + std::to_string(0x8c424f27);
+        // randomly generated nonce. Split 12 bytes, because it is too big value and cannot be converted. 
+        // Some values are to large for char, so static_cast resolves this problem
+        std::string random_nonce {static_cast<char>(0x3a), 0x3b, static_cast<char>(0xcb), static_cast<char>(0x9d),
+         static_cast<char>(0x7b), 0x43, 0x47, static_cast<char>(0x99), static_cast<char>(0x8c), 0x42, 0x4f, 0x27};
         std::string_view nonce(random_nonce);
+        char * start_of_encrypted = writeVarUInt(current_key_id, ciphertext_and_tag);
 
         size_t out_len;
         const int ok = EVP_AEAD_CTX_seal(&getKeys().ctx,
-                                         reinterpret_cast<uint8_t *>(ciphertext_and_tag),
+                                         reinterpret_cast<uint8_t *>(start_of_encrypted),
                                          &out_len, plaintext.size() + 16,
                                          reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size(),
                                          reinterpret_cast<const uint8_t *>(plaintext.data()), plaintext.size(),
@@ -146,22 +138,97 @@ namespace DB
         assert(out_len == plaintext.size() + 16);
     }
 
-    void CompressionCodecEncrypted::decrypt(const std::string_view & ciphertext, char * plaintext)
+    void CompressionCodecEncrypted::decrypt(const std::string_view & ciphertext, char * plaintext, UInt64 key_id)
     {
-        std::string random_nonce = std::to_string(0x3a3bcb9d) + std::to_string(0x7b434799) + std::to_string(0x8c424f27);
+        std::string random_nonce {static_cast<char>(0x3a), 0x3b, static_cast<char>(0xcb), static_cast<char>(0x9d),
+         static_cast<char>(0x7b), 0x43, 0x47, static_cast<char>(0x99), static_cast<char>(0x8c), 0x42, 0x4f, 0x27};
         std::string_view nonce(random_nonce);
 
         size_t out_len;
-        const int ok = EVP_AEAD_CTX_open(&getKeys().ctx,
-                                         reinterpret_cast<uint8_t *>(plaintext),
-                                         &out_len, ciphertext.size(),
-                                         reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size(),
-                                         reinterpret_cast<const uint8_t *>(ciphertext.data()), ciphertext.size(),
-                                         nullptr, 0);
-        if (!ok)
-            throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        if (key_id == current_key_id)
+        {
+            const int ok = EVP_AEAD_CTX_open(&getKeys().ctx,
+                                            reinterpret_cast<uint8_t *>(plaintext),
+                                            &out_len, ciphertext.size(),
+                                            reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size(),
+                                            reinterpret_cast<const uint8_t *>(ciphertext.data()), ciphertext.size(),
+                                            nullptr, 0);
+            if (!ok)
+                throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        } else
+        {
+            KeyHolder decrypt_key(keys_storage[key_id]);
 
+            const int ok = EVP_AEAD_CTX_open(&decrypt_key.ctx,
+                                            reinterpret_cast<uint8_t *>(plaintext),
+                                            &out_len, ciphertext.size(),
+                                            reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size(),
+                                            reinterpret_cast<const uint8_t *>(ciphertext.data()), ciphertext.size(),
+                                            nullptr, 0);
+            if (!ok)
+                throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+        }
+        
         assert(out_len == ciphertext.size() - 16);
+    }
+    
+    String unhexKey(const String & hex)
+    {
+        try
+        {
+            return boost::algorithm::unhex(hex);
+        }
+        catch (const std::exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex, check for valid characters [0-9a-fA-F] and length");
+        }
+    }
+
+    void CompressionCodecEncrypted::loadEncryptionKey(const Poco::Util::LayeredConfiguration & config, const String &config_prefix)
+    {
+        try
+        {
+            Strings config_keys;
+            config.keys(config_prefix, config_keys);
+            for (const std::string & config_key : config_keys)
+            {
+                String key;
+                UInt64 key_id;
+
+                if ((config_key == "key") || config_key.starts_with("key["))
+                {
+                    key = config.getString(config_prefix + "." + config_key, "");
+                    key_id = config.getUInt64(config_prefix + "." + config_key + "[@id]", 0);
+                }
+                else if ((config_key == "key_hex") || config_key.starts_with("key_hex["))
+                {
+                    key = unhexKey(config.getString(config_prefix + "." + config_key, ""));
+                    key_id = config.getUInt64(config_prefix + "." + config_key + "[@id]", 0);
+                }
+                else
+                    continue;
+
+                if (keys_storage.contains(key_id))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple keys have the same ID {}", key_id);
+                keys_storage[key_id] = key;
+            }
+
+            if (keys_storage.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No keys, an encrypted disk needs keys to work");
+
+            current_key_id = config.getUInt64(config_prefix + ".current_key_id", 0);
+            if (!keys_storage.contains(current_key_id))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", current_key_id);
+            if (keys_storage[current_key_id].size() != 16)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Got an encryption key with unexpected size {}, the size should be 16", keys_storage[current_key_id].size());
+            setMasterKey(keys_storage[current_key_id]);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("Exeption in loadEncryptedKey.");
+            throw;
+        }
     }
 
     void registerCodecEncrypted(CompressionCodecFactory & factory)

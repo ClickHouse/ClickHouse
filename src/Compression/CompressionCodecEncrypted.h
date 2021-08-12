@@ -6,6 +6,7 @@
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 
 #include <Compression/ICompressionCodec.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <boost/noncopyable.hpp>
 #include <openssl/aead.h>
 #include <optional>
@@ -20,7 +21,7 @@ namespace DB
       * you want to apply both compression and encryption to your
       * columns, you need to put this codec at the end of the chain
       * like "column Int32 Codec(Delta, LZ4,
-      * Encrypted('AES_128_GCM_SIV'))".
+      * AES_128_GCM_SIV)".
       *
       * The key is obtained by executing a command specified in the
       * configuration file at startup, and if it doesn't specify a
@@ -72,6 +73,8 @@ namespace DB
             return true;
         }
 
+        static void loadEncryptionKey(const Poco::Util::LayeredConfiguration & config, const String & config_prefix);
+
     protected:
         UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
@@ -80,12 +83,12 @@ namespace DB
 
     private:
         static std::string lastErrorString();
-        static std::string deriveKey(const std::string_view & master_key);
         static void encrypt(const std::string_view & plaintext, char * ciphertext_and_tag);
-        static void decrypt(const std::string_view & ciphertext_and_tag, char * plaintext);
+        static void decrypt(const std::string_view & ciphertext_and_tag, char * plaintext, UInt64 key_id=current_key_id);
 
         
-        std::unordered_map<UInt64, String> keys_storage;
+        static std::unordered_map<UInt64, String> keys_storage;
+        static UInt64 current_key_id;
 
         /** A private class that holds keys derived from the master
           * key.

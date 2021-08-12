@@ -69,29 +69,48 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
-<!---
 ## encryption {#server-settings-encryption}
 
-Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). The command, or a shell script, is expected to write a Base64-encoded key of any length to the stdout.
+Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in enviroment variables or be set in configuration file.
+
+Keys can be hex or string. Their length must be equal to 16.
+
+!!! note "NOTE"
+    Storing keys in configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
 
 **Example**
 
-For Linux with systemd:
+Load key from envirament variable:
 
 ```xml
 <encryption>
-    <key_command>/usr/bin/systemd-ask-password --id="clickhouse-server" --timeout=0 "Enter the ClickHouse encryption passphrase:" | base64</key_command>
+    <key_hex from_env="KEY"></key_hex>
 </encryption>
 ```
 
-For other systems:
+Where `KEY` is an enviroment variable.
+
+Load from config:
 
 ```xml
 <encryption>
-    <key_command><![CDATA[IFS=; echo -n >/dev/tty "Enter the ClickHouse encryption passphrase: "; stty=`stty -F /dev/tty -g`; stty -F /dev/tty -echo; read k </dev/tty; stty -F /dev/tty "$stty"; echo -n $k | base64]]></key_command>
+    <key_hex>...</key_hex>
 </encryption>
 ```
---->
+
+All this methods can be applied for multiple keys:
+
+```xml
+<encryption>
+    <key_hex id="0">...</key_hex>
+    <key_hex id="1" from_env=".."></key_hex>
+    <key_hex id="2">...</key_hex>
+    <current_key_id>2</current_key_id>
+</encryption>
+```
+
+Where `current_key_id` shows current key for encryption.
+
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
 List of prefixes for [custom settings](../../operations/settings/index.md#custom_settings). The prefixes must be separated with commas.
