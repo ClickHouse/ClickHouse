@@ -27,9 +27,9 @@ limitations under the License. */
 #include <Common/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
-#include <Storages/LiveView/LiveViewBlockInputStream.h>
-#include <Storages/LiveView/LiveViewBlockOutputStream.h>
-#include <Storages/LiveView/LiveViewEventsBlockInputStream.h>
+#include <Storages/LiveView/LiveViewSource.h>
+#include <Storages/LiveView/LiveViewSink.h>
+#include <Storages/LiveView/LiveViewEventsSource.h>
 #include <Storages/LiveView/StorageBlocks.h>
 #include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 
