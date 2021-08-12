@@ -143,8 +143,6 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
      * }
      */
 
-    ProfileEvents::increment(ProfileEvents::CompileFunction);
-
     const auto & arg_types = function.getArgumentTypes();
 
     llvm::IRBuilder<> b(module.getContext());
