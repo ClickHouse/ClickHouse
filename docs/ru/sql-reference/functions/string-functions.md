@@ -17,6 +17,8 @@ empty(x)
 
 Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт. 
 
+Функция также поддерживает работу с типами [Array](array-functions.md#function-empty) и [UUID](uuid-functions.md#empty).
+
 **Параметры**
 
 -   `x` — Входная строка. [String](../data-types/string.md).
@@ -54,6 +56,8 @@ notEmpty(x)
 ```
 
 Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт. 
+
+Функция также поддерживает работу с типами [Array](array-functions.md#function-notempty) и [UUID](uuid-functions.md#notempty).
 
 **Параметры**
 
