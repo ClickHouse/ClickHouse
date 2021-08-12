@@ -207,7 +207,8 @@ class ClickHouseNode(Node):
 
     def query(self, sql, message=None, exitcode=None, steps=True, no_checks=False,
               raise_on_exception=False, step=By, settings=None,
-              retries=5, messages_to_retry=None, retry_delay=5, *args, **kwargs):
+              retries=5, messages_to_retry=None, retry_delay=5, secure=False,
+              *args, **kwargs):
         """Execute and check query.
         :param sql: sql query
         :param message: expected message that should be in the output, default: None
@@ -220,6 +221,7 @@ class ClickHouseNode(Node):
         :param messages_to_retry: list of messages in the query output for
                which retry should be triggered, default: MESSAGES_TO_RETRY
         :param retry_delay: number of seconds to sleep before retry, default: 5
+        :param secure: use secure connection, default: False
         """
         retries = max(0, int(retries))
         retry_delay = max(0, float(retry_delay))
@@ -232,11 +234,15 @@ class ClickHouseNode(Node):
         if hasattr(current().context, "default_query_settings"):
             query_settings += current().context.default_query_settings
 
+        client = "clickhouse client -n"
+        if secure:
+            client += " -s"
+
         if len(sql) > 1024:
             with tempfile.NamedTemporaryFile("w", encoding="utf-8") as query:
                 query.write(sql)
                 query.flush()
-                command = f"cat \"{query.name}\" | {self.cluster.docker_compose} exec -T {self.name} clickhouse client -n"
+                command = f"cat \"{query.name}\" | {self.cluster.docker_compose} exec -T {self.name} {client}"
                 for setting in query_settings:
                     name, value = setting
                     command += f" --{name} \"{value}\""
@@ -250,7 +256,7 @@ class ClickHouseNode(Node):
                     except ExpectTimeoutError:
                         self.cluster.close_bash(None)
         else:
-            command = f"echo -e \"{sql}\" | clickhouse client -n"
+            command = f"echo -e \"{sql}\" | {client}"
             for setting in query_settings:
                 name, value = setting
                 command += f" --{name} \"{value}\""
