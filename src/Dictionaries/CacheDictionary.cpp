@@ -10,7 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ProfilingScopedRWLock.h>
 
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Dictionaries//DictionarySource.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -18,21 +18,21 @@
 
 namespace ProfileEvents
 {
-extern const Event DictCacheKeysRequested;
-extern const Event DictCacheKeysRequestedMiss;
-extern const Event DictCacheKeysRequestedFound;
-extern const Event DictCacheKeysExpired;
-extern const Event DictCacheKeysNotFound;
-extern const Event DictCacheKeysHit;
-extern const Event DictCacheRequestTimeNs;
-extern const Event DictCacheRequests;
-extern const Event DictCacheLockWriteNs;
-extern const Event DictCacheLockReadNs;
+    extern const Event DictCacheKeysRequested;
+    extern const Event DictCacheKeysRequestedMiss;
+    extern const Event DictCacheKeysRequestedFound;
+    extern const Event DictCacheKeysExpired;
+    extern const Event DictCacheKeysNotFound;
+    extern const Event DictCacheKeysHit;
+    extern const Event DictCacheRequestTimeNs;
+    extern const Event DictCacheRequests;
+    extern const Event DictCacheLockWriteNs;
+    extern const Event DictCacheLockReadNs;
 }
 
 namespace CurrentMetrics
 {
-extern const Metric DictCacheRequests;
+    extern const Metric DictCacheRequests;
 }
 
 namespace DB
