@@ -79,10 +79,11 @@ public:
             has_tasks.notify_all();
         }
 
+        pool.wait();
+
         if (scheduler.joinable())
             scheduler.join();
 
-        pool.wait();
 
         if (last_exception)
             std::rethrow_exception(last_exception);

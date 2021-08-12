@@ -122,8 +122,9 @@ void IBackgroundJobExecutor::executeMergeJob(BackgroundTaskPtr)
 
 void IBackgroundJobExecutor::executeMergeMutateTask(BackgroundTaskPtr merge_task)
 {
-    if (!merge_mutate_executor.trySchedule(merge_task))
-        scheduleTask(/* with_backoff = */ true);
+    bool result = merge_mutate_executor.trySchedule(merge_task);
+    scheduleTask(/* with_backoff = */ !result);
+
 }
 
 
