@@ -13,7 +13,7 @@ toc_title: PROJECTION
 
 -   `ALTER TABLE [db.]table MATERIALIZE PROJECTION name IN PARTITION partition_name` — перестраивает проекцию в указанной партиции. Реализовано как [мутация](../../../sql-reference/statements/alter/index.md#mutations).
 
--   `ALTER TABLE [db.]table CLEAR PROJECTION name IN PARTITION partition_name` - удаляет файлы проекции с диска без удаления описания.
+-   `ALTER TABLE [db.]table CLEAR PROJECTION name IN PARTITION partition_name` — удаляет файлы проекции с диска без удаления описания.
 
 Комманды ADD, DROP и CLEAR - легковесны потому что они только меняют метаданные или удаляют файлы.
 
