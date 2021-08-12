@@ -49,10 +49,13 @@ static unsigned long  __auxv_init(unsigned long type)
     if (secure_idx != ((size_t) -1))
         __auxv_secure = __auxv[secure_idx];
 
+    // Now we've initialized __auxv, next time getauxval() will only call __get_auxval().
     a_cas_p(&getauxval_func, (void *)__auxv_init, (void *)__getauxval);
+
     return __getauxval(type);
 }
 
+// First time getauxval() will call __auxv_init().
 static void * volatile getauxval_func = (void *)__auxv_init;
 
 unsigned long getauxval(unsigned long type)
