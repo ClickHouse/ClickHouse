@@ -145,13 +145,12 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
 
 void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out)
 {
-    if (const auto * func = ast->as<ASTFunction>())
-    {
-        if (func->name == "arrayJoin")
-            throw Exception("Not allowed function in JOIN ON. Unexpected '" + queryToString(ast) + "'",
-                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
-    }
-    else if (const auto * ident = ast->as<ASTIdentifier>())
+    if (const auto * func = ast->as<ASTFunction>(); func && func->name == "arrayJoin")
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                        "Not allowed function in JOIN ON. Unexpected '{}'",
+                        queryToString(ast));
+
+    if (const auto * ident = ast->as<ASTIdentifier>())
     {
         if (IdentifierSemantic::getColumnName(*ident))
             out.push_back(ident);
@@ -222,9 +221,8 @@ JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr 
             else if (*opt == 1)
                 membership = JoinIdentifierPos::Right;
             else
-                throw DB::Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME,
-                                    "Position of identifier {} can't be deteminated.",
-                                    identifier->name());
+                throw DB::Exception(
+                    ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Position of identifier {} can't be determined.", identifier->name());
         }
 
         if (membership == JoinIdentifierPos::Unknown)
@@ -244,7 +242,10 @@ JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr 
                     in_left_table = !in_right_table;
                 }
                 else
-                    throw Exception("Column '" + name + "' is ambiguous", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+                {
+                    throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Column '{}{}' is ambiguous",
+                                    name, identifier->alias.empty() ? "" : "(AS " + identifier->alias + ")");
+                }
             }
 
             if (in_left_table)

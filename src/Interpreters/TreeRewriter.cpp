@@ -532,10 +532,10 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-        if (analyzed_join.keyNamesLeft().empty())
+        if (analyzed_join.keyNamesLeft().empty() || analyzed_join.keyNamesRight().empty())
         {
-            throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
-                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot get JOIN keys from JOIN ON section: '{}'",
+                            queryToString(table_join.on_expression));
         }
 
         if (is_asof)
