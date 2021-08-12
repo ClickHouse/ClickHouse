@@ -18,7 +18,7 @@ Checks whether the input string is empty.
 empty(x)
 ```
 
-A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte. The UUID is empty if it contains all zeros (zero UUID).
+A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
 
 The function also works for [arrays](array-functions.md#function-empty) or [UUID](uuid-functions.md#empty).
 
@@ -58,7 +58,7 @@ Checks whether the input string is non-empty.
 notEmpty(x)
 ```
 
-A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte. The UUID is empty if it contains all zeros (zero UUID).
+A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
 
 The function also works for [arrays](array-functions.md#function-notempty) or [UUID](uuid-functions.md#notempty).
 
