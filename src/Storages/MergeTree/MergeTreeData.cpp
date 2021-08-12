@@ -2215,6 +2215,35 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             return {};
         }
 
+        bool is_drop_part = !drop_range.isFakeDropRangePart() && drop_range.min_block;
+
+        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block))
+        {
+            /// Why we check only min and max blocks here without checking merge
+            /// level? It's a tricky situation which can happen on a stale
+            /// replica. For example, we have parts all_1_1_0, all_2_2_0 and
+            /// all_3_3_0. Fast replica assign some merges (OPTIMIZE FINAL or
+            /// TTL) all_2_2_0 -> all_2_2_1 -> all_2_2_2. So it has set of parts
+            /// all_1_1_0, all_2_2_2 and all_3_3_0. After that it decides to
+            /// drop part all_2_2_2. Now set of parts is all_1_1_0 and
+            /// all_3_3_0. Now fast replica assign merge all_1_1_0 + all_3_3_0
+            /// to all_1_3_1 and finishes it. Slow replica pulls the queue and
+            /// have two contradictory tasks -- drop all_2_2_2 and merge/fetch
+            /// all_1_3_1. If this replica will fetch all_1_3_1 first and then tries
+            /// to drop all_2_2_2 after that it will receive the LOGICAL ERROR.
+            /// So here we just check that all_1_3_1 covers blocks from drop
+            /// all_2_2_2.
+            ///
+            /// NOTE: this helps only to avoid logical error during drop part.
+            /// We still get intersecting "parts" in queue.
+            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block;
+            if (is_covered_by_min_max_block)
+            {
+                LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartName(), part->name);
+                return {};
+            }
+        }
+
         if (part->info.min_block < drop_range.min_block)
         {
             if (drop_range.min_block <= part->info.max_block)
@@ -2984,7 +3013,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     const auto & partition_ast = ast->as<ASTPartition &>();
 
     if (!partition_ast.value)
+    {
+        MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
         return partition_ast.id;
+    }
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -2993,10 +3025,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         if (partition_lit && partition_lit->value.getType() == Field::Types::String)
         {
             String partition_id = partition_lit->value.get<String>();
-            if (partition_id.size() != 6 || !std::all_of(partition_id.begin(), partition_id.end(), isNumericASCII))
-                throw Exception(
-                    "Invalid partition format: " + partition_id + ". Partition should consist of 6 digits: YYYYMM",
-                    ErrorCodes::INVALID_PARTITION_VALUE);
+            MergeTreePartInfo::validatePartitionID(partition_id, format_version);
             return partition_id;
         }
     }
