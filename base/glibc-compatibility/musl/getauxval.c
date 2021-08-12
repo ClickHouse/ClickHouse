@@ -39,8 +39,14 @@ static void * volatile getauxval_func;
 static unsigned long  __auxv_init(unsigned long type)
 {
     if (!__environ)
+    {
+        // __environ is not initialized yet so we can't initialize __auxv right now.
+        // This is normally occurred when getauxval() is called from some sanitizer's internal code.
+        errno = ENOENT;
         return 0;
+    }
 
+    // Initialize __auxv and __auxv_secure.
     size_t i;
     for (i = 0; __environ[i]; i++);
     __auxv = (unsigned long *) (__environ + i + 1);
