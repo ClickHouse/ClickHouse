@@ -25,7 +25,8 @@ bool ColumnAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 
     return !(node->as<ASTTableExpression>()
             || node->as<ASTSubquery>()
-            || node->as<ASTArrayJoin>());
+            || node->as<ASTArrayJoin>()
+            || node->as<ASTTableJoin>());
 }
 
 void ColumnAliasesMatcher::visit(ASTPtr & ast, Data & data)

@@ -962,11 +962,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (const auto * join_ast = select_query->join(); join_ast && tables_with_columns.size() >= 2)
     {
         auto & table_join_ast = join_ast->table_join->as<ASTTableJoin &>();
-        if (table_join_ast.using_expression_list && result.metadata_snapshot)
-            replaceAliasColumnsInQuery(table_join_ast.using_expression_list, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
-        if (table_join_ast.on_expression && result.metadata_snapshot)
-            replaceAliasColumnsInQuery(table_join_ast.on_expression, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
-
         collectJoinedColumns(*result.analyzed_join, table_join_ast, tables_with_columns, result.aliases);
     }
 
