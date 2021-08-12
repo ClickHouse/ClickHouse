@@ -183,9 +183,6 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
     std::bernoulli_distribution fault(fault_probability);
     if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
     {
-        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
-        amount.fetch_sub(size, std::memory_order_relaxed);
-
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock(VariableContext::Global);
 

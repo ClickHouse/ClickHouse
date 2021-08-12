@@ -299,10 +299,11 @@ target_link_libraries(clickhouse_common_io
             ${ZLIB_LIBRARIES}
             pcg_random
             Poco::Foundation
-            roaring
 )
 
-
+# Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
+# That way we we can redirect malloc/free functions avoiding circular dependencies
+dbms_target_link_libraries(PUBLIC roaring)
 
 if (USE_RDKAFKA)
     dbms_target_link_libraries(PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
