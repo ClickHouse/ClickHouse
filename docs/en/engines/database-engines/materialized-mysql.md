@@ -47,7 +47,7 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
 
 For the correct work of `MaterializedMySQL`, there are few mandatory `MySQL`-side configuration settings that must be set:
 
-- `default_authentication_plugin = mysql_native_password` since `MaterializeMySQL` can only authorize with this method.
+- `default_authentication_plugin = mysql_native_password` since `MaterializedMySQL` can only authorize with this method.
 - `gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializeMySQL` replication.
 
 !!! attention "Attention"
