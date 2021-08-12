@@ -67,7 +67,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , configuration{configuration_}
-    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.where, IdentifierQuotingStyle::Backticks}
+    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks}
     , sample_block{sample_block_}
     , context(Context::createCopy(context_))
     , pool{createPool(configuration)}
@@ -83,7 +83,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
     , dict_struct{other.dict_struct}
     , configuration{other.configuration}
     , invalidate_query_response{other.invalidate_query_response}
-    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.where, IdentifierQuotingStyle::Backticks}
+    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks}
     , sample_block{other.sample_block}
     , context(Context::createCopy(other.context))
     , pool{createPool(configuration)}
@@ -241,7 +241,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             .user = config.getString(settings_config_prefix + ".user", "default"),
             .password = config.getString(settings_config_prefix + ".password", ""),
             .db = config.getString(settings_config_prefix + ".db", default_database),
-            .table = config.getString(settings_config_prefix + ".table"),
+            .table = config.getString(settings_config_prefix + ".table", ""),
+            .query = config.getString(settings_config_prefix + ".query", ""),
             .where = config.getString(settings_config_prefix + ".where", ""),
             .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
