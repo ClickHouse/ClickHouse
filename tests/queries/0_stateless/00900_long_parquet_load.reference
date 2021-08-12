@@ -315,15 +315,15 @@ Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: IOError: Not y
 1593604801	abc	42.125
 1593604801	def	7.7
 === Try load data from nonnullable.impala.parquet
-8	[-1]	[[-1,-2],[]]	{'k1':-1}	[{},{'k1':1},{},{}]	(-1,[-1],([[(-1)]]),{})
+8	[-1]	[[-1,-2],[]]	{'k1':-1}	[{},{'k1':1},{},{}]	(-1,[-1],([[(-1,'nonnullable')]]),{})
 === Try load data from nullable.impala.parquet
-1	[1,2,3]	[[1,2],[3,4]]	{'k1':1,'k2':100}	[{'k1':1}]	(1,[1],([[(10),(-10)],[(11)]]),{'foo':(([1.1]))})
-2	[NULL,1,2,NULL,3,NULL]	[[NULL,1,2,NULL],[3,NULL,4],[],[]]	{'k1':2,'k2':NULL}	[{'k3':NULL,'k1':1},{},{}]	(NULL,[NULL],([[(NULL),(10),(NULL),(-10),(NULL)],[(11),(NULL)],[],[]]),{'g1':(([2.2,NULL])),'g2':(([])),'g3':(([])),'g4':(([])),'g5':(([]))})
+1	[1,2,3]	[[1,2],[3,4]]	{'k1':1,'k2':100}	[{'k1':1}]	(1,[1],([[(10,'aaa'),(-10,'bbb')],[(11,'c')]]),{'foo':(([1.1]))})
+2	[NULL,1,2,NULL,3,NULL]	[[NULL,1,2,NULL],[3,NULL,4],[],[]]	{'k1':2,'k2':NULL}	[{'k3':NULL,'k1':1},{},{}]	(NULL,[NULL],([[(NULL,NULL),(10,'aaa'),(NULL,NULL),(-10,'bbb'),(NULL,NULL)],[(11,'c'),(NULL,NULL)],[],[]]),{'g1':(([2.2,NULL])),'g2':(([])),'g3':(([])),'g4':(([])),'g5':(([]))})
 3	[]	[[]]	{}	[{},{}]	(NULL,[],([]),{})
 4	[]	[]	{}	[]	(NULL,[],([]),{})
 5	[]	[]	{}	[]	(NULL,[],([]),{'foo':(([2.2,3.3]))})
 6	[]	[]	{}	[]	(NULL,[],([]),{})
-7	[]	[[],[5,6]]	{'k1':NULL,'k3':NULL}	[]	(7,[2,3,NULL],([[],[(NULL)],[]]),{})
+7	[]	[[],[5,6]]	{'k1':NULL,'k3':NULL}	[]	(7,[2,3,NULL],([[],[(NULL,NULL)],[]]),{})
 === Try load data from nullable_list.parquet
 [1,NULL,2]	[NULL,'Some string',NULL]	[0.00,NULL,42.42]
 [NULL]	[NULL]	[NULL]

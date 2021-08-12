@@ -74,6 +74,7 @@ namespace ErrorCodes
 {
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -264,7 +265,11 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
 
     // Try log query_kind if ast is valid
     if (ast)
+    {
         elem.query_kind = ast->getQueryKindString();
+        if (settings.log_formatted_queries)
+            elem.formatted_query = queryToString(ast);
+    }
 
     // We don't calculate databases, tables and columns when the query isn't able to start
 
@@ -640,6 +645,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.current_database = context->getCurrentDatabase();
             elem.query = query_for_logging;
+            if (settings.log_formatted_queries)
+                elem.formatted_query = queryToString(ast);
             elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
             elem.client_info = client_info;
@@ -656,6 +663,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_tables = info.tables;
                     elem.query_columns = info.columns;
                     elem.query_projections = info.projections;
+                    elem.query_views = info.views;
                 }
 
                 interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
@@ -700,6 +708,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 element.thread_ids = std::move(info.thread_ids);
                 element.profile_counters = std::move(info.profile_counters);
+
+                /// We need to refresh the access info since dependent views might have added extra information, either during
+                /// creation of the view (PushingToViewsBlockOutputStream) or while executing its internal SELECT
+                const auto & access_info = context_ptr->getQueryAccessInfo();
+                element.query_databases.insert(access_info.databases.begin(), access_info.databases.end());
+                element.query_tables.insert(access_info.tables.begin(), access_info.tables.end());
+                element.query_columns.insert(access_info.columns.begin(), access_info.columns.end());
+                element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
+                element.query_views.insert(access_info.views.begin(), access_info.views.end());
 
                 const auto & factories_info = context_ptr->getQueryFactoriesInfo();
                 element.used_aggregate_functions = factories_info.aggregate_functions;
@@ -1123,6 +1140,34 @@ void executeQuery(
                 executor->execute(pipeline.getNumThreads());
             }
         }
+    }
+    catch (...)
+    {
+        streams.onException();
+        throw;
+    }
+
+    streams.onFinish();
+}
+
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
+{
+    try
+    {
+        if (streams.out)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires input, but no input buffer provided, it's a bug");
+        if (streams.in)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires output, but no output buffer provided, it's a bug");
+
+        if (!streams.pipeline.initialized())
+            return;
+
+        if (!streams.pipeline.isCompleted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query pipeline requires output, but no output buffer provided, it's a bug");
+
+        streams.pipeline.setProgressCallback(context->getProgressCallback());
+        auto executor = streams.pipeline.execute();
+        executor->execute(streams.pipeline.getNumThreads());
     }
     catch (...)
     {

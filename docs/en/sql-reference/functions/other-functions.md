@@ -2138,3 +2138,101 @@ Result:
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
+## currentProfiles {#current-profiles}
+
+Returns a list of the current [settings profiles](../../operations/access-rights.md#settings-profiles-management) for the current user. 
+
+The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
+
+**Syntax**
+
+``` sql
+currentProfiles()
+```
+
+**Returned value**
+
+-   List of the current user settings profiles. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## enabledProfiles {#enabled-profiles}
+
+ Returns settings profiles, assigned to the current user both explicitly and implicitly. Explicitly assigned profiles are the same as returned by the [currentProfiles](#current-profiles) function. Implicitly assigned profiles include parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the `default_profile` section in the main server configuration file).
+
+**Syntax**
+
+``` sql
+enabledProfiles()
+```
+
+**Returned value**
+
+-   List of the enabled settings profiles. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## defaultProfiles {#default-profiles}
+
+Returns all the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement).
+
+**Syntax**
+
+``` sql
+defaultProfiles()
+```
+
+**Returned value**
+
+-   List of the default settings profiles. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## currentRoles {#current-roles}
+
+Returns the names of the roles which are current for the current user. The current roles can be changed by the [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement) statement. If the `SET ROLE` statement was not used, the function `currentRoles` returns the same as `defaultRoles`.
+
+**Syntax**
+
+``` sql
+currentRoles()
+```
+
+**Returned value**
+
+-   List of the current roles for the current user. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## enabledRoles {#enabled-roles}
+
+Returns the names of the current roles and the roles, granted to some of the current roles.
+
+**Syntax**
+
+``` sql
+enabledRoles()
+```
+
+**Returned value**
+
+-   List of the enabled roles for the current user. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## defaultRoles {#default-roles}
+
+Returns the names of the roles which are enabled by default for the current user when he logins. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant/#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement. 
+
+**Syntax**
+
+``` sql
+defaultRoles()
+```
+
+**Returned value**
+
+-   List of the default roles for the current user. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+

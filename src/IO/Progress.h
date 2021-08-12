@@ -6,8 +6,6 @@
 #include <common/types.h>
 
 #include <Core/Defines.h>
-#include <Common/Stopwatch.h>
-
 
 namespace DB
 {
