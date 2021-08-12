@@ -706,7 +706,9 @@ public:
     {
         return app.run();
     }
-} fuzz_app;
+};
+
+std::optional<FuzzApp> fuzz_app;
 
 extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
 {
@@ -725,7 +727,8 @@ extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
         }
     }
 
-    fuzz_app.init(pos_delim, argv);
+    fuzz_app.emplace();
+    fuzz_app->init(pos_delim, argv);
     for (int i = pos_delim + 1; i < argc; ++i)
         std::swap(argv[i], argv[i - pos_delim]);
     argc -= pos_delim;
@@ -745,7 +748,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         // to clearly see the beginning and the end
         std::cerr << '>' << cur_str << '<' << std::endl;
         DB::FunctionGetFuzzerData::update(cur_str);
-        fuzz_app.run();
+        fuzz_app->run();
     }
     catch (...)
     {
@@ -759,11 +762,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
-#ifdef FUZZING_MODE
-    FuzzApp & app = fuzz_app;
-#else
     DB::LocalServer app;
-#endif
     try
     {
         app.init(argc, argv);
