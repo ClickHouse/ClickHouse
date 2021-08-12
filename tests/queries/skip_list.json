@@ -394,7 +394,12 @@
         "01674_clickhouse_client_query_param_cte",
         "01666_merge_tree_max_query_limit",
         "01889_postgresql_protocol_null_fields",
-        "01802_test_postgresql_protocol_with_row_policy" /// It cannot parse DROP ROW POLICY
+        "01802_test_postgresql_protocol_with_row_policy", /// It cannot parse DROP ROW POLICY
+        "01666_merge_tree_max_query_limit",
+        "01053_ssd_dictionary",
+        "01280_ssd_complex_key_dictionary",
+        "01684_ssd_cache_dictionary_simple_key",
+        "01685_ssd_cache_dictionary_complex_key"
     ],
     "parallel":
     [
