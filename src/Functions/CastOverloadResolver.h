@@ -1,9 +1,13 @@
 #pragma once
 #include <Functions/FunctionsConversion.h>
 
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 /*
  * CastInternal does not preserve nullability of the data type,
