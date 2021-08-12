@@ -253,7 +253,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int INCORRECT_DATA;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int SYSTEM_ERROR;
     extern const int FAILED_TO_GETPWUID;
@@ -855,6 +854,7 @@ if (ThreadFuzzer::instance().isEffective())
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
+            CompressionCodecEncrypted::updateEncryptionKeys(*config, "encryption_codecs");
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -928,8 +928,7 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
     /// Set up encryption.
-    if (config().has("encryption_codecs.key_hex") || config().has("encryption_codecs.key"))
-        CompressionCodecEncrypted::loadEncryptionKey(config(), "encryption_codecs");
+    DB::CompressionCodecEncrypted::updateEncryptionKeys(config(), "encryption_codecs");
 
     Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 

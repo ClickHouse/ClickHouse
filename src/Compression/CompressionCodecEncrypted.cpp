@@ -2,6 +2,7 @@
 #include <Common/config.h>
 #include "IO/VarInt.h"
 #include <Compression/CompressionFactory.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 
 #include <Compression/CompressionCodecEncrypted.h>
@@ -21,10 +22,10 @@ namespace DB
 
     namespace ErrorCodes
     {
-        extern const int ILLEGAL_CODEC_PARAMETER;
         extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
         extern const int NO_ELEMENTS_IN_CONFIG;
         extern const int OPENSSL_ERROR;
+        extern const int BAD_ARGUMENTS;
     }
 
     void CompressionCodecEncrypted::setMasterKey(const std::string_view & master_key)
@@ -99,7 +100,7 @@ namespace DB
     {
         UInt64 encrypted_text_key_id;
         source = readVarUInt(encrypted_text_key_id, source, 8);
-        source_size -= 8; 
+        source_size -= 8;
         // Extract the IV from the encrypted data block. Decrypt the
         // block with the extracted IV, and compare the tag. Throw an
         // exception if tags don't match.
@@ -118,7 +119,7 @@ namespace DB
 
     void CompressionCodecEncrypted::encrypt(const std::string_view & plaintext, char * ciphertext_and_tag)
     {
-        // randomly generated nonce. Split 12 bytes, because it is too big value and cannot be converted. 
+        // randomly generated nonce. Split 12 bytes, because it is too big value and cannot be converted.
         // Some values are to large for char, so static_cast resolves this problem
         std::string random_nonce {static_cast<char>(0x3a), 0x3b, static_cast<char>(0xcb), static_cast<char>(0x9d),
          static_cast<char>(0x7b), 0x43, 0x47, static_cast<char>(0x99), static_cast<char>(0x8c), 0x42, 0x4f, 0x27};
@@ -168,10 +169,10 @@ namespace DB
             if (!ok)
                 throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
         }
-        
+
         assert(out_len == ciphertext.size() - 16);
     }
-    
+
     String unhexKey(const String & hex)
     {
         try
@@ -184,7 +185,7 @@ namespace DB
         }
     }
 
-    void CompressionCodecEncrypted::loadEncryptionKey(const Poco::Util::LayeredConfiguration & config, const String &config_prefix)
+    void CompressionCodecEncrypted::loadEncryptionKey(const Poco::Util::AbstractConfiguration & config, const String &config_prefix)
     {
         try
         {
@@ -226,9 +227,17 @@ namespace DB
         }
         catch (Exception & e)
         {
-            e.addMessage("Exeption in loadEncryptedKey.");
+            e.addMessage("Exception in loadEncryptedKey.");
             throw;
         }
+    }
+
+    // Updates encryption keys from config.
+    void CompressionCodecEncrypted::updateEncryptionKeys(const Poco::Util::AbstractConfiguration & config, const String &config_prefix)
+    {
+        keys_storage.clear();
+        if (config.has("encryption_codecs.key_hex") || config.has("encryption_codecs.key"))
+            loadEncryptionKey(config, config_prefix);
     }
 
     void registerCodecEncrypted(CompressionCodecFactory & factory)

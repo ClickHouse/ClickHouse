@@ -73,7 +73,9 @@ namespace DB
             return true;
         }
 
-        static void loadEncryptionKey(const Poco::Util::LayeredConfiguration & config, const String & config_prefix);
+        static void loadEncryptionKey(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+        static void updateEncryptionKeys(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
     protected:
         UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
@@ -86,7 +88,7 @@ namespace DB
         static void encrypt(const std::string_view & plaintext, char * ciphertext_and_tag);
         static void decrypt(const std::string_view & ciphertext_and_tag, char * plaintext, UInt64 key_id=current_key_id);
 
-        
+
         static std::unordered_map<UInt64, String> keys_storage;
         static UInt64 current_key_id;
 
