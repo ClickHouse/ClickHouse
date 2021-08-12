@@ -262,7 +262,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     for (const auto & interface : interfaces)
     {
-        if (boost::iequals(interface.second->protocol, "keeper"))
+        if (boost::iequals(interface.second->protocol, "keeper_tcp"))
         {
             context()->initializeKeeperStorageDispatcher();
             break;

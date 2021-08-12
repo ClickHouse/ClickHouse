@@ -842,7 +842,7 @@ if (ThreadFuzzer::instance().isEffective())
 
     for (const auto & interface : interfaces)
     {
-        if (boost::iequals(interface.second->protocol, "keeper"))
+        if (boost::iequals(interface.second->protocol, "keeper_tcp"))
         {
             context()->initializeKeeperStorageDispatcher();
             break;
