@@ -18,10 +18,6 @@
 
 #include <IO/ReadHelpers.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
 namespace DB
 {
 
@@ -31,7 +27,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
