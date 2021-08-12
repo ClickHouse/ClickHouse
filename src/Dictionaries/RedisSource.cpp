@@ -1,4 +1,4 @@
-#include "RedisBlockInputStream.h"
+#include "RedisSource.h"
 
 #include <string>
 #include <vector>

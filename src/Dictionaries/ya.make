@@ -26,9 +26,9 @@ SRCS(
     CassandraHelpers.cpp
     CassandraSource.cpp
     ClickHouseDictionarySource.cpp
-    DictionaryBlockInputStream.cpp
-    DictionaryBlockInputStreamBase.cpp
     DictionaryFactory.cpp
+    DictionarySource.cpp
+    DictionarySourceBase.cpp
     DictionarySourceFactory.cpp
     DictionarySourceHelpers.cpp
     DictionaryStructure.cpp
@@ -57,8 +57,8 @@ SRCS(
     PolygonDictionaryImplementations.cpp
     PolygonDictionaryUtils.cpp
     RangeHashedDictionary.cpp
-    RedisBlockInputStream.cpp
     RedisDictionarySource.cpp
+    RedisSource.cpp
     XDBCDictionarySource.cpp
     getDictionaryConfigurationFromAST.cpp
     readInvalidateQuery.cpp
