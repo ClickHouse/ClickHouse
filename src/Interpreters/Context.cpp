@@ -1088,7 +1088,11 @@ bool Context::hasScalar(const String & name) const
 
 
 void Context::addQueryAccessInfo(
-    const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names, const String & projection_name)
+    const String & quoted_database_name,
+    const String & full_quoted_table_name,
+    const Names & column_names,
+    const String & projection_name,
+    const String & view_name)
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
@@ -1098,6 +1102,8 @@ void Context::addQueryAccessInfo(
         query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
     if (!projection_name.empty())
         query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
+    if (!view_name.empty())
+        query_access_info.views.emplace(view_name);
 }
 
 
@@ -2118,7 +2124,6 @@ std::shared_ptr<QueryLog> Context::getQueryLog() const
     return shared->system_logs->query_log;
 }
 
-
 std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 {
     auto lock = getLock();
@@ -2129,6 +2134,15 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
     return shared->system_logs->query_thread_log;
 }
 
+std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->query_views_log;
+}
 
 std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
 {

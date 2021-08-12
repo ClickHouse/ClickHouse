@@ -890,13 +890,26 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Queries’ threads runned by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
+Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
 
 Example:
 
 ``` text
 log_query_threads=1
 ```
+
+## log_query_views {#settings-log-query-views}
+
+Setting up query views logging.
+
+When a query run by ClickHouse with this setup on has associated views (materialized or live views), they are logged in the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) server configuration parameter.
+
+Example:
+
+``` text
+log_query_views=1
+```
+
 
 ## log_comment {#settings-log-comment}
 
