@@ -19,7 +19,7 @@ namespace JoinCommon
 {
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
-void convertColumnToNullable(ColumnWithTypeAndName & column, bool remove_low_card = false);
+void convertColumnToNullable(ColumnWithTypeAndName & column);
 void convertColumnsToNullable(Block & block, size_t starting_pos = 0);
 void removeColumnNullability(ColumnWithTypeAndName & column);
 void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_column);
@@ -70,7 +70,7 @@ public:
     NotJoined(const TableJoin & table_join, const Block & saved_block_sample_, const Block & right_sample_block,
               const Block & result_sample_block_, const Names & key_names_left_ = {}, const Names & key_names_right_ = {});
 
-    void correctLowcardAndNullability(MutableColumns & columns_right);
+    void correctLowcardAndNullability(Block & block);
     void addLeftColumns(Block & block, size_t rows_added) const;
     void addRightColumns(Block & block, MutableColumns & columns_right) const;
     void copySameKeys(Block & block) const;
@@ -92,10 +92,9 @@ private:
     ///
     std::unordered_map<size_t, size_t> same_result_keys;
     /// Which right columns (saved in parent) need nullability change before placing them in result block
-    std::vector<size_t> right_nullability_adds;
-    std::vector<size_t> right_nullability_removes;
+    std::vector<std::pair<size_t, bool>> right_nullability_changes;
     /// Which right columns (saved in parent) need LowCardinality change before placing them in result block
-    std::vector<std::pair<size_t, ColumnPtr>> right_lowcard_changes;
+    std::vector<std::pair<size_t, bool>> right_lowcard_changes;
 
     void setRightIndex(size_t right_pos, size_t result_position);
     void extractColumnChanges(size_t right_pos, size_t result_pos);
