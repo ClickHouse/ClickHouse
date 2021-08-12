@@ -134,7 +134,8 @@ void BackgroundJobExecutor::start()
 
 void BackgroundJobExecutor::finish()
 {
-    std::lock_guard lock(scheduling_task_mutex);
+    // FIXME ?
+    // std::lock_guard lock(scheduling_task_mutex);
     if (scheduling_task)
     {
         scheduling_task->deactivate();
