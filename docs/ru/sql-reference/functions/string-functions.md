@@ -76,9 +76,9 @@ SELECT empty('');
 Результат:
 
 ```text
-┌─empty('')─┐
-│         1 │
-└───────────┘
+┌─notEmpty('text')─┐
+│                1 │
+└──────────────────┘
 ```
 
 ## length {#length}
