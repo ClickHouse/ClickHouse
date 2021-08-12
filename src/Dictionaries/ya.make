@@ -26,9 +26,9 @@ SRCS(
     CassandraDictionarySource.cpp
     CassandraHelpers.cpp
     ClickHouseDictionarySource.cpp
-    DictionaryBlockInputStream.cpp
-    DictionaryBlockInputStreamBase.cpp
     DictionaryFactory.cpp
+    DictionarySource.cpp
+    DictionarySourceBase.cpp
     DictionarySourceFactory.cpp
     DictionarySourceHelpers.cpp
     DictionaryStructure.cpp
