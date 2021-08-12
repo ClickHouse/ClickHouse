@@ -57,7 +57,7 @@ empty(x)
 
 **Параметры**
 
--   `x` — Входная строка. [Array](../data-types/array.md), [String](../data-types/string.md), [UUID](../data-types/uuid.md).
+-   `x` — Входная строка. [String](../data-types/string.md).
 
 **Возвращаемое значение**
 
