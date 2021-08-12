@@ -1310,6 +1310,9 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
 {
     /// Do not allow underscores in the prefix because they are used as separators.
     assert(prefix.find_first_of('_') == String::npos);
+    assert(prefix.empty() || std::find(DetachedPartInfo::DETACH_REASONS.begin(),
+                                       DetachedPartInfo::DETACH_REASONS.end(),
+                                       prefix) != DetachedPartInfo::DETACH_REASONS.end());
     return "detached/" + getRelativePathForPrefix(prefix);
 }
 

@@ -342,6 +342,13 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             res_column.type = action.node->result_type;
             res_column.name = action.node->result_name;
 
+            if (action.node->column)
+            {
+                /// Do not execute function if it's result is already known.
+                res_column.column = action.node->column->cloneResized(num_rows);
+                break;
+            }
+
             ColumnsWithTypeAndName arguments(action.arguments.size());
             for (size_t i = 0; i < arguments.size(); ++i)
             {

@@ -146,6 +146,9 @@ try
 catch (...) /// Exception while we looking for a task, reschedule
 {
     tryLogCurrentException(__PRETTY_FUNCTION__);
+    
+    /// Why do we scheduleTask again?
+    /// To retry on exception, since it may be some temporary exception.
     scheduleTask(/* with_backoff = */ true);
 }
 
@@ -180,9 +183,15 @@ void IBackgroundJobExecutor::triggerTask()
 }
 
 void IBackgroundJobExecutor::backgroundTaskFunction()
+try
 {
     if (!scheduleJob())
         scheduleTask(/* with_backoff = */ true);
+}
+catch (...) /// Catch any exception to avoid thread termination.
+{
+    tryLogCurrentException(__PRETTY_FUNCTION__);
+    scheduleTask(/* with_backoff = */ true);
 }
 
 IBackgroundJobExecutor::~IBackgroundJobExecutor()
