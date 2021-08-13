@@ -1,4 +1,4 @@
-### ClickHouse release v21.8, 2021-08-11
+### ClickHouse release v21.8, 2021-08-12
 
 #### New Features
 

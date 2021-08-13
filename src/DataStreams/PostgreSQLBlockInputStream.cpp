@@ -73,7 +73,7 @@ void PostgreSQLSource<T>::init(const Block & sample_block)
 template<typename T>
 void PostgreSQLSource<T>::onStart()
 {
-    if (connection_holder)
+    if (!tx)
         tx = std::make_shared<T>(connection_holder->get());
 
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));

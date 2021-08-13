@@ -165,6 +165,7 @@ SRCS(
     Transforms/ReverseTransform.cpp
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
+    Transforms/SquashingChunksTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     Transforms/WindowTransform.cpp
     Transforms/getSourceFromFromASTInsertQuery.cpp
