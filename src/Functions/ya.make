@@ -565,6 +565,7 @@ SRCS(
     tuple.cpp
     tupleElement.cpp
     tupleHammingDistance.cpp
+    tupleToNameValuePairs.cpp
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
