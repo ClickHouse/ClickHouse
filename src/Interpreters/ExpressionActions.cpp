@@ -47,7 +47,7 @@ namespace ErrorCodes
 
 ExpressionActions::~ExpressionActions() = default;
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag);
+static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, bool optimize_short_circuit_function_evaluation);
 
 ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
     : settings(settings_)
@@ -57,7 +57,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     /// It's important to determine lazy executed nodes before compiling expressions.
     std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes;
     if (settings.use_short_circuit_function_evaluation)
-        lazy_executed_nodes = processShortCircuitFunctions(*actions_dag);
+        lazy_executed_nodes = processShortCircuitFunctions(*actions_dag, settings.optimize_short_circuit_function_evaluation);
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
@@ -278,7 +278,7 @@ static bool findLazyExecutedNodes(
     return has_lazy_node;
 }
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag)
+static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, bool optimize_short_circuit_function_evaluation)
 {
     const auto & nodes = actions_dag.getNodes();
 
@@ -302,10 +302,13 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     for (const auto & [node, settings] : short_circuit_nodes)
     {
         /// Recursively find nodes that should be lazy executed.
-        findLazyExecutedNodes(node->children, lazy_execution_infos, settings.force_enable_lazy_execution, lazy_executed_nodes);
+        findLazyExecutedNodes(
+            node->children,
+            lazy_execution_infos,
+            settings.force_enable_lazy_execution || !optimize_short_circuit_function_evaluation,
+            lazy_executed_nodes);
     }
     return lazy_executed_nodes;
-
 }
 
 void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
