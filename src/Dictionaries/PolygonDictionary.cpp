@@ -3,14 +3,14 @@
 #include <numeric>
 #include <cmath>
 
-#include "DictionaryBlockInputStream.h"
-#include "DictionaryFactory.h"
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySource.h>
+
 
 namespace DB
 {

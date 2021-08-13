@@ -1,6 +1,6 @@
 #include "PostgreSQLReplicationHandler.h"
 
-#include <DataStreams/PostgreSQLBlockInputStream.h>
+#include <DataStreams/PostgreSQLSource.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
