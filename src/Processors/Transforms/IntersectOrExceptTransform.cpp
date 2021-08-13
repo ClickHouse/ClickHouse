@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SET_SIZE_LIMIT_EXCEEDED;
-}
-
 IntersectOrExceptTransform::IntersectOrExceptTransform(const Block & header_, Operator operator_)
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)

@@ -36,9 +36,6 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
     ASTs selects;
     auto & select_list = ast.list_of_selects->children;
 
-    if (select_list.size() < 2)
-        return;
-
     int i;
     for (i = union_modes.size() - 1; i >= 0; --i)
     {
