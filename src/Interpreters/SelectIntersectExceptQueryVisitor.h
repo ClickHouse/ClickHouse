@@ -38,7 +38,7 @@ public:
 
     static void visit(ASTPtr & ast, Data &);
     static void visit(ASTSelectIntersectExceptQuery &, Data &);
-    //  static void visit(ASTSelectWithUnionQuery &, Data &);
+    static void visit(ASTSelectWithUnionQuery &, Data &);
 };
 
 /// Visit children first.
