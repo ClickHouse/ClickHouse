@@ -32,12 +32,15 @@ std::unique_ptr<ProxyProtocolHandlerInterface> makeProxyHandler(
         if (Util::addrInNet(peer_address, proxy_config.trusted_networks))
         {
             auto tmp_proxy_handler = proxy_config.createProxyProtocolHandler();
-            if (auto * tmp_specific_proxy_handler = dynamic_cast<ProxyProtocolHandlerInterface *>(tmp_proxy_handler.get))
+            if (auto * tmp_specific_proxy_handler = dynamic_cast<ProxyProtocolHandlerInterface *>(tmp_proxy_handler.get()))
             {
                 if (proxy_handler)
                     LOG_WARNING(log, "More than one compatible proxy is configured to match the peer IP, using the first one...");
                 else
-                    proxy_handler = std::move(tmp_proxy_handler);
+                {
+                    tmp_proxy_handler.release();
+                    proxy_handler.reset(tmp_specific_proxy_handler);
+                }
             }
         }
     }

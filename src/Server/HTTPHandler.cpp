@@ -25,6 +25,7 @@
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Server/IndirectServerConnection.h>
+#include <Server/ProxyProtocolHandler.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
