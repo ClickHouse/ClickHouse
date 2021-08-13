@@ -854,7 +854,10 @@ if (ThreadFuzzer::instance().isEffective())
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
+
+#if USE_SSL && USE_INTERNAL_SSL_LIBRARY
             CompressionCodecEncrypted::updateEncryptionKeys(*config, "encryption_codecs");
+#endif
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -927,8 +930,12 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
+
+// using if for unbundled build
+#if USE_SSL && USE_INTERNAL_SSL_LIBRARY
     /// Set up encryption.
-    DB::CompressionCodecEncrypted::updateEncryptionKeys(config(), "encryption_codecs");
+    CompressionCodecEncrypted::updateEncryptionKeys(config(), "encryption_codecs");
+#endif
 
     Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
