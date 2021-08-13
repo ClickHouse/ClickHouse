@@ -1,4 +1,4 @@
-#include "SQLiteBlockInputStream.h"
+#include "SQLiteSource.h"
 
 #if USE_SQLITE
 #include <common/range.h>
@@ -22,21 +22,18 @@ namespace ErrorCodes
     extern const int SQLITE_ENGINE_ERROR;
 }
 
-SQLiteBlockInputStream::SQLiteBlockInputStream(
-            SQLitePtr sqlite_db_,
-            const String & query_str_,
-            const Block & sample_block,
-            const UInt64 max_block_size_)
-    : query_str(query_str_)
+SQLiteSource::SQLiteSource(
+    SQLitePtr sqlite_db_,
+    const String & query_str_,
+    const Block & sample_block,
+    const UInt64 max_block_size_)
+    : SourceWithProgress(sample_block.cloneEmpty())
+    , query_str(query_str_)
     , max_block_size(max_block_size_)
     , sqlite_db(std::move(sqlite_db_))
 {
     description.init(sample_block);
-}
 
-
-void SQLiteBlockInputStream::readPrefix()
-{
     sqlite3_stmt * compiled_stmt = nullptr;
     int status = sqlite3_prepare_v2(sqlite_db.get(), query_str.c_str(), query_str.size() + 1, &compiled_stmt, nullptr);
 
@@ -48,11 +45,10 @@ void SQLiteBlockInputStream::readPrefix()
     compiled_statement = std::unique_ptr<sqlite3_stmt, StatementDeleter>(compiled_stmt, StatementDeleter());
 }
 
-
-Block SQLiteBlockInputStream::readImpl()
+Chunk SQLiteSource::generate()
 {
     if (!compiled_statement)
-        return Block();
+        return {};
 
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
@@ -73,30 +69,30 @@ Block SQLiteBlockInputStream::readImpl()
         else if (status != SQLITE_ROW)
         {
             throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                            "Expected SQLITE_ROW status, but got status {}. Error: {}, Message: {}",
-                            status, sqlite3_errstr(status), sqlite3_errmsg(sqlite_db.get()));
+                "Expected SQLITE_ROW status, but got status {}. Error: {}, Message: {}",
+                status, sqlite3_errstr(status), sqlite3_errmsg(sqlite_db.get()));
         }
 
         int column_count = sqlite3_column_count(compiled_statement.get());
-        for (const auto idx : collections::range(0, column_count))
-        {
-            const auto & sample = description.sample_block.getByPosition(idx);
 
-            if (sqlite3_column_type(compiled_statement.get(), idx) == SQLITE_NULL)
+        for (int column_index = 0; column_index < column_count; ++column_index)
+        {
+            if (sqlite3_column_type(compiled_statement.get(), column_index) == SQLITE_NULL)
             {
-                insertDefaultSQLiteValue(*columns[idx], *sample.column);
+                columns[column_index]->insertDefault();
                 continue;
             }
 
-            if (description.types[idx].second)
+            auto & [type, is_nullable] = description.types[column_index];
+            if (is_nullable)
             {
-                ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
-                insertValue(column_nullable.getNestedColumn(), description.types[idx].first, idx);
+                ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[column_index]);
+                insertValue(column_nullable.getNestedColumn(), type, column_index);
                 column_nullable.getNullMapData().emplace_back(0);
             }
             else
             {
-                insertValue(*columns[idx], description.types[idx].first, idx);
+                insertValue(*columns[column_index], type, column_index);
             }
         }
 
@@ -104,18 +100,16 @@ Block SQLiteBlockInputStream::readImpl()
             break;
     }
 
-    return description.sample_block.cloneWithColumns(std::move(columns));
-}
-
-
-void SQLiteBlockInputStream::readSuffix()
-{
-    if (compiled_statement)
+    if (num_rows == 0)
+    {
         compiled_statement.reset();
+        return {};
+    }
+
+    return Chunk(std::move(columns), num_rows);
 }
 
-
-void SQLiteBlockInputStream::insertValue(IColumn & column, const ExternalResultDescription::ValueType type, size_t idx)
+void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::ValueType type, size_t idx)
 {
     switch (type)
     {

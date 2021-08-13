@@ -1,4 +1,4 @@
-#include "PostgreSQLBlockInputStream.h"
+#include "PostgreSQLSource.h"
 
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
