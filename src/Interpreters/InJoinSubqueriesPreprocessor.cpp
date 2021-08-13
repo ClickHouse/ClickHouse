@@ -70,24 +70,13 @@ private:
         if (!storage || !checker.hasAtLeastTwoShards(*storage))
             return;
 
-        if (distributed_product_mode == DistributedProductMode::LOCAL)
+        if (distributed_product_mode == DistributedProductMode::DENY)
         {
-            /// Convert distributed table to corresponding remote table.
-
-            std::string database;
-            std::string table;
-            std::tie(database, table) = checker.getRemoteDatabaseAndTableName(*storage);
-
-            String alias = database_and_table->tryGetAlias();
-            if (alias.empty())
-                throw Exception("Distributed table should have an alias when distributed_product_mode set to local",
-                                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
-
-            auto & identifier = database_and_table->as<ASTTableIdentifier &>();
-            renamed_tables.emplace_back(identifier.clone());
-            identifier.resetTable(database, table);
+            throw Exception("Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny')."
+                " You may rewrite query to use local tables in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.",
+                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
         }
-        else if (getContext()->getSettingsRef().prefer_global_in_and_join || distributed_product_mode == DistributedProductMode::GLOBAL)
+        else if (distributed_product_mode == DistributedProductMode::GLOBAL)
         {
             if (function)
             {
@@ -109,11 +98,22 @@ private:
             else
                 throw Exception("Logical error: unexpected AST node", ErrorCodes::LOGICAL_ERROR);
         }
-        else if (distributed_product_mode == DistributedProductMode::DENY)
+        else if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
-            throw Exception("Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny')."
-                " You may rewrite query to use local tables in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.",
-                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
+            /// Convert distributed table to corresponding remote table.
+
+            std::string database;
+            std::string table;
+            std::tie(database, table) = checker.getRemoteDatabaseAndTableName(*storage);
+
+            String alias = database_and_table->tryGetAlias();
+            if (alias.empty())
+                throw Exception("Distributed table should have an alias when distributed_product_mode set to local",
+                                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
+
+            auto & identifier = database_and_table->as<ASTIdentifier &>();
+            renamed_tables.emplace_back(identifier.clone());
+            identifier.resetTable(database, table);
         }
         else
             throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting",

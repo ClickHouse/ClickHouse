@@ -6,10 +6,14 @@
 #include <optional>
 
 #include <sparsehash/sparse_hash_map>
+#include <ext/range.h>
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Core/Block.h>
+
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -52,7 +56,7 @@ public:
         else if constexpr (dictionary_key_type == DictionaryKeyType::simple && !sparse)
             return "Hashed";
         else if constexpr (dictionary_key_type == DictionaryKeyType::complex && sparse)
-            return "ComplexKeySparseHashed";
+            return "ComplexKeySpareseHashed";
         else
             return "ComplexKeyHashed";
     }
@@ -150,6 +154,29 @@ private:
         std::optional<NullableSet> is_nullable_set;
 
         std::variant<
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            UInt128,
+            UInt256,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Int128,
+            Int256,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Decimal256,
+            Float32,
+            Float64,
+            UUID,
+            StringRef>
+            null_values;
+
+        std::variant<
             CollectionType<UInt8>,
             CollectionType<UInt16>,
             CollectionType<UInt32>,
@@ -169,8 +196,7 @@ private:
             CollectionType<Float32>,
             CollectionType<Float64>,
             CollectionType<UUID>,
-            CollectionType<StringRef>,
-            CollectionType<Array>>
+            CollectionType<StringRef>>
             container;
 
         std::unique_ptr<Arena> string_arena;
@@ -186,11 +212,12 @@ private:
 
     void calculateBytesAllocated();
 
-    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename ValueSetter, typename NullableValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
         ValueSetter && set_value,
+        NullableValueSetter && set_nullable_value,
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename GetContainerFunc>

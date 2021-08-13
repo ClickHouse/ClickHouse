@@ -34,7 +34,7 @@ fi
 CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
 
 if ! $gosu test -f "$CLICKHOUSE_CONFIG" -a -r "$CLICKHOUSE_CONFIG"; then
-    echo "Configuration file '$CLICKHOUSE_CONFIG' isn't readable by user with id '$USER'"
+    echo "Configuration file '$dir' isn't readable by user with id '$USER'"
     exit 1
 fi
 
@@ -164,10 +164,6 @@ fi
 
 # if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
-    # Watchdog is launched by default, but does not send SIGINT to the main process,
-    # so the container can't be finished by ctrl+c
-    CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
-    export CLICKHOUSE_WATCHDOG_ENABLE
     exec $gosu /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 

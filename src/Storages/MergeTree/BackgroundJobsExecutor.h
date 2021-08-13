@@ -59,7 +59,7 @@ protected:
         /// This pool type
         PoolType pool_type;
         /// Max pool size in threads
-        const std::function<size_t()> get_max_pool_size;
+        size_t max_pool_size;
         /// Metric that we have to increment when we execute task in this pool
         CurrentMetrics::Metric tasks_metric;
     };
@@ -99,9 +99,6 @@ public:
     /// Finish execution: deactivate background task and wait already scheduled jobs
     void finish();
 
-    /// Executes job in a nested pool
-    void execute(JobAndPool job_and_pool);
-
     /// Just call finish
     virtual ~IBackgroundJobExecutor();
 
@@ -113,13 +110,12 @@ protected:
 
     /// Name for task in background schedule pool
     virtual String getBackgroundTaskName() const = 0;
-
-    /// Schedules a job in a nested pool in this class.
-    virtual bool scheduleJob() = 0;
+    /// Get job for background execution
+    virtual std::optional<JobAndPool> getBackgroundJob() = 0;
 
 private:
     /// Function that executes in background scheduling pool
-    void backgroundTaskFunction();
+    void jobExecutingTask();
     /// Recalculate timeouts when we have to check for a new job
     void scheduleTask(bool with_backoff);
     /// Run background task as fast as possible and reset errors counter
@@ -140,7 +136,7 @@ public:
 
 protected:
     String getBackgroundTaskName() const override;
-    bool scheduleJob() override;
+    std::optional<JobAndPool> getBackgroundJob() override;
 };
 
 /// Move jobs executor, move parts between disks in the background
@@ -156,7 +152,7 @@ public:
 
 protected:
     String getBackgroundTaskName() const override;
-    bool scheduleJob() override;
+    std::optional<JobAndPool> getBackgroundJob() override;
 };
 
 }

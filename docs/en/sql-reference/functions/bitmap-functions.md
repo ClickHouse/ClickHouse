@@ -140,7 +140,7 @@ bitmapContains(haystack, needle)
 
 **Returned values**
 
--   0 — If `haystack` does not contain `needle`.
+-   0 — If `haystack` doesn’t contain `needle`.
 -   1 — If `haystack` contains `needle`.
 
 Type: `UInt8`.

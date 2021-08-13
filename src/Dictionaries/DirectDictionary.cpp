@@ -2,12 +2,12 @@
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
-
 
 namespace DB
 {

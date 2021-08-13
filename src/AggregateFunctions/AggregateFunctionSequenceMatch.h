@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <Common/PODArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -15,7 +15,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -155,7 +154,7 @@ public:
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
 
         typename Data::Events events;
-        for (const auto i : collections::range(1, arg_count))
+        for (const auto i : ext::range(1, arg_count))
         {
             const auto event = assert_cast<const ColumnUInt8 *>(columns[i])->getData()[row_num];
             events.set(i - 1, event);
@@ -179,11 +178,6 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
-    {
-        return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
-    }
-
 private:
     enum class PatternActionType
     {
@@ -193,8 +187,7 @@ private:
         TimeLessOrEqual,
         TimeLess,
         TimeGreaterOrEqual,
-        TimeGreater,
-        TimeEqual
+        TimeGreater
     };
 
     struct PatternAction final
@@ -256,8 +249,6 @@ private:
                         type = PatternActionType::TimeGreaterOrEqual;
                     else if (match(">"))
                         type = PatternActionType::TimeGreater;
-                    else if (match("=="))
-                        type = PatternActionType::TimeEqual;
                     else
                         throw_exception("Unknown time condition");
 
@@ -474,17 +465,6 @@ protected:
             else if (action_it->type == PatternActionType::TimeGreater)
             {
                 if (events_it->first > base_it->first + action_it->extra)
-                {
-                    back_stack.emplace(action_it, events_it, base_it);
-                    base_it = events_it;
-                    ++action_it;
-                }
-                else if (++events_it == events_end && !do_backtrack())
-                    break;
-            }
-            else if (action_it->type == PatternActionType::TimeEqual)
-            {
-                if (events_it->first == base_it->first + action_it->extra)
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;

@@ -5,7 +5,7 @@ toc_title: ATTACH
 
 # ATTACH Statement {#attach}
 
-Attaches the table, for example, when moving a database to another server.
+Attaches the table, for example, when moving a database to another server. 
 
 The query does not create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table to the server. After executing an `ATTACH` query, the server will know about the existence of the table.
 

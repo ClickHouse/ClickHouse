@@ -500,7 +500,7 @@ SELECT trimBoth('     Hello, world!     ');
 normalizeQuery(x)
 ```
 
-**Аргументы**
+**Аргументы** 
 
 -   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
 
@@ -530,13 +530,13 @@ SELECT normalizeQuery('[1, 2, 3, x]') AS query;
 
 Возвращает идентичные 64-битные хэш - суммы без значений литералов для аналогичных запросов. Это помогает анализировать журнал запросов.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 normalizedQueryHash(x)
 ```
 
-**Аргументы**
+**Аргументы** 
 
 -   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
 
@@ -568,13 +568,13 @@ SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1
 
 Экранируются символы, которые в формате XML являются зарезервированными (служебными): `<`, `&`, `>`, `"`, `'`.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 encodeXMLComponent(x)
 ```
 
-**Аргументы**
+**Аргументы** 
 
 -   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
 
@@ -637,7 +637,7 @@ SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
 Результат:
 
 ``` text
-'foo'
+'foo' 
 < Σ >
 ```
 
@@ -679,7 +679,7 @@ extractTextFromHTML(x)
 
 **Аргументы**
 
--   `x` — текст для обработки. [String](../../sql-reference/data-types/string.md).
+-   `x` — текст для обработки. [String](../../sql-reference/data-types/string.md). 
 
 **Возвращаемое значение**
 

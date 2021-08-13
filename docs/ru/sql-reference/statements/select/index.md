@@ -20,7 +20,7 @@ SELECT [DISTINCT] expr_list
 [WHERE expr]
 [GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
 [HAVING expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] 
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
@@ -147,7 +147,7 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 ## Детали реализации {#implementation-details}
 
 Если в запросе отсутствуют секции `DISTINCT`, `GROUP BY`, `ORDER BY`, подзапросы в `IN` и `JOIN`, то запрос будет обработан полностью потоково, с использованием O(1) количества оперативки.
-Иначе запрос может съесть много оперативки, если не указаны подходящие ограничения:
+Иначе запрос может съесть много оперативки, если не указаны подходящие ограничения: 
 
 -   `max_memory_usage`
 -   `max_rows_to_group_by`
@@ -169,7 +169,7 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 ### APPLY {#apply-modifier}
 
-Вызывает указанную функцию для каждой строки, возвращаемой внешним табличным выражением запроса.
+Вызывает указанную функцию для каждой строки, возвращаемой внешним табличным выражением запроса. 
 
 **Синтаксис:**
 
@@ -177,7 +177,7 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 SELECT <expr> APPLY( <func> ) FROM [db.]table_name
 ```
 
-**Пример:**
+**Пример:** 
 
 ``` sql
 CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
@@ -271,9 +271,9 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 ## SETTINGS в запросе SELECT {#settings-in-select}
 
-Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT` в секции `SETTINGS`. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию.
+Вы можете задать значения необходимых настроек непосредственно в запросе `SELECT` в секции `SETTINGS`. Эти настройки действуют только в рамках данного запроса, а после его выполнения сбрасываются до предыдущего значения или значения по умолчанию. 
 
-Другие способы задания настроек описаны [здесь](../../../operations/settings/index.md).
+Другие способы задания настроек описаны [здесь](../../../operations/settings/index.md). 
 
 **Пример**
 
