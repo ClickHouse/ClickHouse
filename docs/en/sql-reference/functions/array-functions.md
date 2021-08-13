@@ -15,7 +15,7 @@ Checks whether the input array is empty.
 empty([x])
 ```
 
-An array is considered empty if it contains all empty elements.
+An array is considered empty if it does not contain any elements.
 
 !!! note "Note"
     Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
