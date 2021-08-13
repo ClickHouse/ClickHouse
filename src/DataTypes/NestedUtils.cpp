@@ -208,6 +208,18 @@ void validateArraySizes(const Block & block)
     }
 }
 
+std::unordered_set<String> getAllTableNames(const Block & block)
+{
+    std::unordered_set<String> nested_table_names;
+    for (auto & name : block.getNames())
+    {
+        auto nested_table_name = Nested::extractTableName(name);
+        if (!nested_table_name.empty())
+            nested_table_names.insert(nested_table_name);
+    }
+    return nested_table_names;
+}
+
 }
 
 }

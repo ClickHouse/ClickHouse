@@ -1,6 +1,10 @@
+
 #include <string>
 #include <Common/config.h>
 #include "IO/VarInt.h"
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 #include <Compression/CompressionFactory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
@@ -8,9 +12,9 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTLiteral.h>
 #include <cassert>
-#include <openssl/digest.h>
+#include <openssl/digest.h> // Y_IGNORE
 #include <openssl/err.h>
-#include <openssl/hkdf.h>
+#include <openssl/hkdf.h> // Y_IGNORE
 #include <string_view>
 #include <boost/algorithm/hex.hpp>
 
