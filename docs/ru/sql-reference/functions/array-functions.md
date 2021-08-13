@@ -58,7 +58,7 @@ SELECT empty([]);
 notEmpty([x])
 ```
 
-Массив считается непустым, если он содержит хотя бы один непустой элемент.
+Массив считается непустым, если он содержит хотя бы один элемент.
 
 !!! note "Примечание"
     Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
