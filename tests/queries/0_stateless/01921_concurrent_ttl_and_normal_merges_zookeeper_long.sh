@@ -61,7 +61,8 @@ timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
 
 wait
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT --query "SYSTEM STOP TTL MERGES ttl_table$i" &
+    # disable ttl merges before checking consistency
+    $CLICKHOUSE_CLIENT --query "ALTER TABLE ttl_table$i MODIFY SETTING max_replicated_merges_with_ttl_in_queue=0"
 done
 check_replication_consistency "ttl_table" "count(), sum(toUInt64(key))"
 
