@@ -11,7 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
-#include <libstemmer.h>
+#include <libstemmer.h> // Y_IGNORE
 
 
 namespace DB
