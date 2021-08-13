@@ -28,6 +28,7 @@ struct AlterCommand
         DROP_COLUMN,
         MODIFY_COLUMN,
         COMMENT_COLUMN,
+        MODIFY_PRIMARY_KEY,
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
         ADD_INDEX,
@@ -87,7 +88,10 @@ struct AlterCommand
     /// For ADD_COLUMN
     bool if_not_exists = false;
 
-    /// For MODIFY_ORDER_BY
+    /// For MODIFY_PRIMARY_KEY
+    ASTPtr primary_key_ast = nullptr;
+
+    /// For MODIFY_ORDER_BY and MODIFY_PRIMARY_KEY
     ASTPtr order_by = nullptr;
 
     /// For MODIFY_SAMPLE_BY

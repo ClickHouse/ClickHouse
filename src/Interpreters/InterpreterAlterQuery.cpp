@@ -203,6 +203,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_COMMENT_COLUMN, database, table, column_name());
             break;
         }
+        case ASTAlterCommand::MODIFY_PRIMARY_KEY:
+        {
+            required_access.emplace_back(AccessType::ALTER_PRIMARY_KEY, database, table);
+            break;
+        }
         case ASTAlterCommand::MODIFY_ORDER_BY:
         {
             required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);

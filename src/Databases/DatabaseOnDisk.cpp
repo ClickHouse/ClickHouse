@@ -173,6 +173,12 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.sorting_key.definition_ast)
                 storage_ast.set(storage_ast.order_by, metadata.sorting_key.definition_ast);
 
+            if (metadata.original_sorting_key.definition_ast)
+                storage_ast.set(storage_ast.original_order_by, metadata.original_sorting_key.definition_ast);
+
+            if (metadata.original_primary_key.definition_ast)
+                storage_ast.set(storage_ast.original_primary_key, metadata.original_primary_key.definition_ast);
+
             if (metadata.primary_key.definition_ast)
                 storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
 

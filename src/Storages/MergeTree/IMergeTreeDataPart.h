@@ -173,6 +173,12 @@ public:
     /// processed by multiple shards.
     UUID uuid = UUIDHelpers::Nil;
 
+    /// Primary key expr string;
+    String primary_key_ast_str;
+    String sorting_key_ast_str;
+    /// Serialized format of primary key names and types
+    String primary_key_str;
+
     VolumePtr volume;
 
     /// A directory path (relative to storage's path) where part data is actually stored
@@ -386,6 +392,8 @@ public:
 
     static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
 
+    static inline constexpr auto PRIMARY_KEY_FILE_NAME = "primary.txt";
+
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
@@ -438,6 +446,9 @@ private:
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
+
+    /// Reads part primary key (if exists) from primary.txt
+    void loadPrimaryKey();
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);

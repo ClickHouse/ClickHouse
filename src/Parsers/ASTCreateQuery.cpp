@@ -24,6 +24,10 @@ ASTPtr ASTStorage::clone() const
         res->set(res->primary_key, primary_key->clone());
     if (order_by)
         res->set(res->order_by, order_by->clone());
+    if (original_order_by)
+        res->set(res->original_order_by, original_order_by->clone());
+    if (original_primary_key)
+        res->set(res->original_primary_key, original_primary_key->clone());
     if (sample_by)
         res->set(res->sample_by, sample_by->clone());
     if (ttl_table)
@@ -59,6 +63,16 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ORDER BY " << (s.hilite ? hilite_none : "");
         order_by->formatImpl(s, state, frame);
+    }
+    if (original_primary_key)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ORIGINAL PRIMARY KEY " << (s.hilite ? hilite_none : "");
+        original_primary_key->formatImpl(s, state, frame);
+    }
+    if (original_order_by)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ORIGINAL ORDER BY " << (s.hilite ? hilite_none : "");
+        original_order_by->formatImpl(s, state, frame);
     }
     if (sample_by)
     {

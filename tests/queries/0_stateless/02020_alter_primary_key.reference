@@ -1,0 +1,44 @@
+CREATE TABLE default.r\n(\n    `t` Int32,\n    `a` Int32,\n    `b` Int32,\n    `c` Int32,\n    `d` Int32\n)\nENGINE = MergeTree\nPRIMARY KEY b\nORDER BY b\nORIGINAL ORDER BY a\nSETTINGS index_granularity = 8192
+CREATE TABLE default.r\n(\n    `t` Int32,\n    `a` Int32,\n    `b` Int32,\n    `c` Int32,\n    `d` Int32\n)\nENGINE = MergeTree\nPRIMARY KEY b\nORDER BY (b, c)\nORIGINAL ORDER BY a\nSETTINGS index_granularity = 8192
+0	1	2	3	4
+1	1	2	3	4
+2	1	2	3	4
+3	1	2	3	4
+4	1	2	3	4
+0	1	2	3	4
+1	1	2	3	4
+2	1	2	3	4
+3	1	2	3	4
+4	1	2	3	4
+0	1	2	3	4
+1	1	2	3	4
+2	1	2	3	4
+3	1	2	3	4
+4	1	2	3	4
+0	1	2	3	4
+1	1	2	3	4
+2	1	2	3	4
+3	1	2	3	4
+4	1	2	3	4
+CREATE TABLE default.r1\n(\n    `t` Int32,\n    `a` Int32,\n    `b` Int32,\n    `c` Int32,\n    `d` Int32\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/default/test_02020\', \'r1\')\nPRIMARY KEY b\nORDER BY b\nORIGINAL ORDER BY a\nSETTINGS index_granularity = 8192
+CREATE TABLE default.r2\n(\n    `t` Int32,\n    `a` Int32,\n    `b` Int32,\n    `c` Int32,\n    `d` Int32\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/default/test_02020\', \'r2\')\nPRIMARY KEY b\nORDER BY (b, c)\nORIGINAL ORDER BY a\nSETTINGS index_granularity = 8192
+0	1	2	3	4
+1	1	2	3	4
+2	1	2	3	4
+3	1	2	3	4
+4	1	2	3	4
+0	1	2	3	4
+1	1	2	3	4
+2	1	2	3	4
+3	1	2	3	4
+4	1	2	3	4
+0	1	2	3	4
+1	1	2	3	4
+2	1	2	3	4
+3	1	2	3	4
+4	1	2	3	4
+0	1	2	3	4
+1	1	2	3	4
+2	1	2	3	4
+3	1	2	3	4
+4	1	2	3	4

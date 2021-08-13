@@ -113,6 +113,9 @@ private:
     MergeTreeData::MutableDataPartPtr downloadPartToMemory(
             const String & part_name,
             const UUID & part_uuid,
+            const String & primary_key_ast_str,
+            const String & sorting_key_ast_str,
+            const String & primary_key_str,
             const StorageMetadataPtr & metadata_snapshot,
             ContextPtr context,
             DiskPtr disk,

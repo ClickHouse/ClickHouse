@@ -686,8 +686,18 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Replace monotonous functions with its argument
     if (settings.optimize_monotonous_functions_in_order_by)
-        optimizeMonotonousFunctionsInOrderBy(select_query, context, tables_with_columns,
-            result.metadata_snapshot ? result.metadata_snapshot->getSortingKeyColumns() : Names{});
+    {
+        optimizeMonotonousFunctionsInOrderBy(
+            select_query,
+            context,
+            tables_with_columns,
+            result.metadata_snapshot && !result.metadata_snapshot->isOriginalSortingKeyDefined() ? result.metadata_snapshot->getSortingKeyColumns()
+                                                                                                 : Names{});
+
+        /// TODO(ab): We don't have part set snapshot together with metadata snapshot. What if after
+        /// this point we modify the primary key and insert some new parts with different sorting
+        /// order? Let's disable this optimization for the moment.
+    }
 
     /// Remove duplicate items from ORDER BY.
     /// Execute it after all order by optimizations,

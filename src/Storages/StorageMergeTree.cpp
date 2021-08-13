@@ -707,7 +707,8 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
         if (!left)
             return !currently_merging_mutating_parts.count(right);
         return !currently_merging_mutating_parts.count(left) && !currently_merging_mutating_parts.count(right)
-            && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock) && partsContainSameProjections(left, right);
+            && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock) && partsContainSameProjections(left, right)
+            && partsContainSamePrimaryKey(left, right);
     };
 
     SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
@@ -991,6 +992,9 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
             future_part.part_info = new_part_info;
             future_part.name = part->getNewName(new_part_info);
             future_part.type = part->getType();
+            future_part.primary_key_ast_str = part->primary_key_ast_str;
+            future_part.sorting_key_ast_str = part->sorting_key_ast_str;
+            future_part.primary_key_str = part->primary_key_str;
 
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);

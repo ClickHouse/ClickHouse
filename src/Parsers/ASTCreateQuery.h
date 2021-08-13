@@ -21,6 +21,8 @@ public:
     IAST * partition_by = nullptr;
     IAST * primary_key = nullptr;
     IAST * order_by = nullptr;
+    IAST * original_order_by = nullptr;
+    IAST * original_primary_key = nullptr;
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
     IAST * comment = nullptr;

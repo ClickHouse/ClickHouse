@@ -77,6 +77,9 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
     auto new_data_part = storage.createPart(name, new_type, info, volume, new_relative_path);
 
     new_data_part->uuid = uuid;
+    new_data_part->primary_key_ast_str = primary_key_ast_str;
+    new_data_part->sorting_key_ast_str = sorting_key_ast_str;
+    new_data_part->primary_key_str = primary_key_str;
     new_data_part->setColumns(columns);
     new_data_part->partition.value = partition.value;
     new_data_part->minmax_idx = minmax_idx;

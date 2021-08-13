@@ -655,6 +655,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
+        /// So as ORIGINAL PRIMARY KEY
+        if (!args.storage_def->original_order_by && args.storage_def->original_primary_key)
+            args.storage_def->set(args.storage_def->original_order_by, args.storage_def->original_primary_key->clone());
+
         if (!args.storage_def->order_by)
             throw Exception(
                 "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
@@ -668,6 +672,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// column if sorting key will be changed.
         metadata.sorting_key = KeyDescription::getSortingKeyFromAST(
             args.storage_def->order_by->ptr(), metadata.columns, args.getContext(), merging_param_key_arg);
+
+        if (args.storage_def->original_order_by)
+        {
+            metadata.original_sorting_key
+                = KeyDescription::getKeyFromAST(args.storage_def->original_order_by->ptr(), metadata.columns, args.getContext());
+        }
+
+        if (args.storage_def->original_primary_key)
+        {
+            metadata.original_primary_key
+                = KeyDescription::getKeyFromAST(args.storage_def->original_primary_key->ptr(), metadata.columns, args.getContext());
+        }
 
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
@@ -782,6 +798,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (arg_num != arg_cnt)
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
+
+    if (metadata.isOriginalSortingKeyDefined() && metadata.hasSamplingKey())
+        throw Exception(
+            "Sampling key cannot be used in table with mixed primary key. This is most likely due to manual editing of metadata file",
+            ErrorCodes::BAD_ARGUMENTS);
 
     if (replicated)
         return StorageReplicatedMergeTree::create(

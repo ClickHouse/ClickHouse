@@ -290,6 +290,7 @@ static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPt
     for (const String & col : metadata_snapshot->getColumnsRequiredForPartitionKey())
         key_columns.insert(col);
 
+    /// TODO(ab) What if there are other primary keys
     for (const String & col : metadata_snapshot->getColumnsRequiredForSortingKey())
         key_columns.insert(col);
     /// We don't process sample_by_ast separately because it must be among the primary key columns.
@@ -967,6 +968,7 @@ size_t MutationsInterpreter::evaluateCommandsSize()
 
 std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIfPossible(const Block & header) const
 {
+    /// TODO(ab) what's the correct way of checking multiple sorting keys?
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();

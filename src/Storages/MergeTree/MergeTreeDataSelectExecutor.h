@@ -172,7 +172,7 @@ public:
         StorageMetadataPtr metadata_snapshot,
         const SelectQueryInfo & query_info,
         const ContextPtr & context,
-        const KeyCondition & key_condition,
+        const std::map<String, KeyCondition> & key_condition_map,
         const MergeTreeReaderSettings & reader_settings,
         Poco::Logger * log,
         size_t num_streams,

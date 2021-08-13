@@ -25,6 +25,7 @@
 #include <Disks/StoragePolicy.h>
 #include <Interpreters/Aggregator.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/PartitionCommands.h>
 
 #include <boost/multi_index_container.hpp>
@@ -374,6 +375,10 @@ public:
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
 
     static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right);
+
+    static bool partsContainSamePrimaryKey(const DataPartPtr & left, const DataPartPtr & right);
+
+    static ASTPtr parseKeyExpr(const String & key_expr);
 
     StoragePolicyPtr getStoragePolicy() const override;
 
@@ -826,6 +831,9 @@ public:
     bool scheduleDataMovingJob(IBackgroundJobExecutor & executor);
     bool areBackgroundMovesNeeded() const;
 
+    const String & getOriginalPrimaryKeyAST() const { return original_primary_key_ast; }
+    std::shared_ptr<const std::map<String, KeyDescription>> getPrimaryKeyMap() const;
+
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
     virtual void lockSharedData(const IMergeTreeDataPart &) const {}
@@ -1102,6 +1110,11 @@ private:
 
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
+
+    /// Store the original primary key AST when ALTER PRIMARY KEY happens.
+    String original_primary_key_ast;
+    /// Store all existing primary keys and initialize their descriptions.
+    MultiVersion<std::map<String, KeyDescription>> primary_key_map{std::make_unique<std::map<String, KeyDescription>>()};
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

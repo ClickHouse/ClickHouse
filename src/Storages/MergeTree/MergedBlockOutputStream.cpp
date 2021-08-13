@@ -132,6 +132,22 @@ void MergedBlockOutputStream::finalizePartOnDisk(
                 out->sync();
         }
 
+        if (!new_part->primary_key_str.empty())
+        {
+            auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::PRIMARY_KEY_FILE_NAME, 4096);
+            HashingWriteBuffer out_hashing(*out);
+            writeText(new_part->primary_key_ast_str, out_hashing);
+            writeChar('\n', out_hashing);
+            writeText(new_part->sorting_key_ast_str, out_hashing);
+            writeChar('\n', out_hashing);
+            writeText(new_part->primary_key_str, out_hashing);
+            checksums.files[IMergeTreeDataPart::PRIMARY_KEY_FILE_NAME].file_size = out_hashing.count();
+            checksums.files[IMergeTreeDataPart::PRIMARY_KEY_FILE_NAME].file_hash = out_hashing.getHash();
+            out->finalize();
+            if (sync)
+                out->sync();
+        }
+
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
         {
             new_part->partition.store(storage, volume->getDisk(), part_path, checksums);

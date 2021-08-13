@@ -125,6 +125,7 @@ protected:
                 columns = metadata_snapshot->getColumns();
 
                 cols_required_for_partition_key = metadata_snapshot->getColumnsRequiredForPartitionKey();
+                /// Will only show the current PRIMARY KEY
                 cols_required_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
                 cols_required_for_primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
                 cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();

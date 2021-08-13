@@ -304,6 +304,15 @@ MergeTreeData::MergeTreeData(
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
         LOG_WARNING(log, "{} Settings 'min_rows_for_wide_part', 'min_bytes_for_wide_part', "
             "'min_rows_for_compact_part' and 'min_bytes_for_compact_part' will be ignored.", reason);
+
+    if (metadata_.original_primary_key.definition_ast)
+        original_primary_key_ast = queryToString(metadata_.original_primary_key.definition_ast);
+    else if (metadata_.original_sorting_key.definition_ast)
+        original_primary_key_ast = queryToString(metadata_.original_sorting_key.definition_ast);
+    else if (metadata_.primary_key.definition_ast)
+        original_primary_key_ast = queryToString(metadata_.primary_key.definition_ast);
+    else
+        original_primary_key_ast = queryToString(metadata_.sorting_key.definition_ast);
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
@@ -343,8 +352,8 @@ void MergeTreeData::checkProperties(
     if (!new_metadata.sorting_key.definition_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
-    KeyDescription new_sorting_key = new_metadata.sorting_key;
-    KeyDescription new_primary_key = new_metadata.primary_key;
+    const KeyDescription & new_sorting_key = new_metadata.sorting_key;
+    const KeyDescription & new_primary_key = new_metadata.primary_key;
 
     size_t sorting_key_size = new_sorting_key.column_names.size();
     size_t primary_key_size = new_primary_key.column_names.size();
@@ -375,8 +384,16 @@ void MergeTreeData::checkProperties(
 
     auto all_columns = new_metadata.columns.getAllPhysical();
 
+    /// We have done MODIFY PRIMARY KEY before which means we have local metadata about PRIMARY KEY
+    /// and ORDER BY information. So we can change ORDER BY more freely.
+    /// We don't support SAMPLING in this case.
+    if (new_metadata.isOriginalSortingKeyDefined())
+    {
+        if (old_metadata.hasSamplingKey() || new_metadata.hasSamplingKey())
+            throw Exception("Sampling key is not supported when PRIMARY KEY is changed", ErrorCodes::NOT_IMPLEMENTED);
+    }
     /// Order by check AST
-    if (old_metadata.hasSortingKey())
+    else if (old_metadata.hasSortingKey())
     {
         /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
         /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
@@ -591,6 +608,7 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
                 columns_ttl_forbidden.insert(col);
 
         if (old_metadata.hasSortingKey())
+            /// TODO(ab) What if there are other primary keys
             for (const auto & col : old_metadata.getColumnsRequiredForSortingKey())
                 columns_ttl_forbidden.insert(col);
 
@@ -1107,6 +1125,19 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     calculateColumnSizesImpl();
 
+    /// Prepare possible primary key descriptions
+    std::map<String, KeyDescription> new_primary_key_map;
+    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
+    {
+        if (!part->primary_key_ast_str.empty())
+        {
+            for (const auto & ast : {part->primary_key_ast_str, part->sorting_key_ast_str})
+                if (new_primary_key_map.find(ast) == new_primary_key_map.end())
+                    new_primary_key_map.emplace(
+                        ast, KeyDescription::getSortingKeyFromAST(parseKeyExpr(ast), part->getColumns(), getContext(), {}));
+        }
+    }
+    primary_key_map.set(std::make_unique<std::map<String, KeyDescription>>(std::move(new_primary_key_map)));
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
 }
@@ -1699,6 +1730,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             }
         }
 
+        if (command.type == AlterCommand::MODIFY_PRIMARY_KEY && !is_custom_partitioned)
+        {
+            throw Exception(
+                "ALTER MODIFY PRIMARY KEY is not supported for default-partitioned tables created with the old syntax",
+                ErrorCodes::BAD_ARGUMENTS);
+        }
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
         {
             throw Exception(
@@ -2297,6 +2334,28 @@ bool MergeTreeData::renameTempPartAndReplace(
         modifyPartState(part_it, DataPartState::Committed);
         addPartContributionToColumnSizes(part);
         addPartContributionToDataVolume(part);
+
+        if (!part->primary_key_ast_str.empty())
+        {
+            auto primary_key_map_snapshot = primary_key_map.get();
+            auto primary_key_map_ptr = primary_key_map_snapshot.get();
+            std::map<String, KeyDescription> new_primary_key_map;
+            for (const auto & ast : {part->primary_key_ast_str, part->sorting_key_ast_str})
+            {
+                if (primary_key_map_ptr->find(ast) == primary_key_map_ptr->end())
+                {
+                    if (primary_key_map_ptr != &new_primary_key_map)
+                    {
+                        new_primary_key_map = *primary_key_map_ptr;
+                        primary_key_map_ptr = &new_primary_key_map;
+                    }
+                    new_primary_key_map.emplace(
+                        ast, KeyDescription::getSortingKeyFromAST(parseKeyExpr(ast), part->getColumns(), getContext(), {}));
+                }
+            }
+            if (primary_key_map_ptr == &new_primary_key_map)
+                primary_key_map.set(std::make_unique<std::map<String, KeyDescription>>(std::move(new_primary_key_map)));
+        }
     }
 
     auto part_in_memory = asInMemoryPart(part);
@@ -3929,6 +3988,28 @@ void MergeTreeData::Transaction::rollback()
     clear();
 }
 
+ASTPtr MergeTreeData::parseKeyExpr(const String & key_expr)
+{
+    ParserNotEmptyExpressionList parser(false);
+    auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+    ASTPtr order_by_ast;
+    if (new_sorting_key_expr_list->children.size() == 1)
+        order_by_ast = new_sorting_key_expr_list->children[0];
+    else
+    {
+        auto tuple = makeASTFunction("tuple");
+        tuple->arguments->children = new_sorting_key_expr_list->children;
+        order_by_ast = tuple;
+    }
+    return order_by_ast;
+};
+
+std::shared_ptr<const std::map<String, KeyDescription>> MergeTreeData::getPrimaryKeyMap() const
+{
+    return primary_key_map.get();
+}
+
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData::DataPartsLock * acquired_parts_lock)
 {
     DataPartsVector total_covered_parts;
@@ -3948,6 +4029,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
         size_t reduce_rows = 0;
         size_t reduce_parts = 0;
 
+        auto primary_key_map_snapshot = data.primary_key_map.get().get();
+        std::map<String, KeyDescription> new_primary_key_map;
+        bool primary_key_map_changed = false;
         for (const DataPartPtr & part : precommitted_parts)
         {
             DataPartPtr covering_part;
@@ -3981,9 +4065,29 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 data.modifyPartState(part, DataPartState::Committed);
                 data.addPartContributionToColumnSizes(part);
             }
+            if (!part->primary_key_ast_str.empty())
+            {
+                for (const auto & ast : {part->primary_key_ast_str, part->sorting_key_ast_str})
+                {
+                    if (primary_key_map_snapshot->find(ast) == primary_key_map_snapshot->end())
+                    {
+                        if (!primary_key_map_changed)
+                        {
+                            new_primary_key_map = *primary_key_map_snapshot;
+                            primary_key_map_snapshot = &new_primary_key_map;
+                            primary_key_map_changed = true;
+                        }
+
+                        new_primary_key_map.emplace(
+                            ast, KeyDescription::getSortingKeyFromAST(parseKeyExpr(ast), part->getColumns(), data.getContext(), {}));
+                    }
+                }
+            }
         }
         data.decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
         data.increaseDataVolume(add_bytes, add_rows, add_parts);
+        if (primary_key_map_changed)
+            data.primary_key_map.set(std::make_unique<std::map<String, KeyDescription>>(std::move(new_primary_key_map)));
     }
 
     clear();
@@ -4991,6 +5095,11 @@ bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const 
             return false;
     }
     return true;
+}
+
+bool MergeTreeData::partsContainSamePrimaryKey(const DataPartPtr & left, const DataPartPtr & right)
+{
+    return left->primary_key_ast_str == right->primary_key_ast_str;
 }
 
 bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const

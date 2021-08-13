@@ -35,6 +35,9 @@ struct FutureMergedMutatedPart
 {
     String name;
     UUID uuid = UUIDHelpers::Nil;
+    String primary_key_ast_str;
+    String sorting_key_ast_str;
+    String primary_key_str;
     String path;
     MergeTreeDataPartType type;
     MergeTreePartInfo part_info;

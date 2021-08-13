@@ -48,6 +48,12 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     if (metadata_snapshot->isPrimaryKeyDefined())
         sorting_key = formattedAST(metadata_snapshot->getSortingKey().expression_list_ast);
 
+    if (metadata_snapshot->isOriginalSortingKeyDefined())
+        original_sorting_key = formattedAST(metadata_snapshot->getOriginalSortingKey().expression_list_ast);
+
+    if (metadata_snapshot->isOriginalPrimaryKeyDefined())
+        original_primary_key = formattedAST(metadata_snapshot->getOriginalPrimaryKey().expression_list_ast);
+
     data_format_version = data.format_version;
 
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -85,6 +91,12 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!sorting_key.empty())
         out << "sorting key: " << sorting_key << "\n";
+
+    if (!original_sorting_key.empty())
+        out << "original sorting key: " << original_sorting_key << "\n";
+
+    if (!original_primary_key.empty())
+        out << "original primary key: " << original_primary_key << "\n";
 
     if (!ttl_table.empty())
         out << "ttl: " << ttl_table << "\n";
@@ -129,6 +141,12 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
 
     if (checkString("sorting key: ", in))
         in >> sorting_key >> "\n";
+
+    if (checkString("original sorting key: ", in))
+        in >> original_sorting_key >> "\n";
+
+    if (checkString("original primary key: ", in))
+        in >> original_primary_key >> "\n";
 
     if (checkString("ttl: ", in))
         in >> ttl_table >> "\n";
@@ -195,9 +213,21 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
 
     /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
     ///    in formatAST code.
-    if (primary_key != from_zk.primary_key)
+    if (primary_key != from_zk.primary_key && from_zk.original_sorting_key.empty())
         throw Exception("Existing table metadata in ZooKeeper differs in primary key."
             " Stored in ZooKeeper: " + from_zk.primary_key + ", local: " + primary_key,
+            ErrorCodes::METADATA_MISMATCH);
+
+    /// original_sorting_key can only be changed once.
+    if (original_sorting_key != from_zk.original_sorting_key && !original_sorting_key.empty())
+        throw Exception("Existing table metadata in ZooKeeper differs in original sorting key."
+            " Stored in ZooKeeper: " + from_zk.original_sorting_key + ", local: " + original_sorting_key,
+            ErrorCodes::METADATA_MISMATCH);
+
+    /// original_primary_key can only be changed once.
+    if (original_primary_key != from_zk.original_primary_key && !original_primary_key.empty())
+        throw Exception("Existing table metadata in ZooKeeper differs in original primary key."
+            " Stored in ZooKeeper: " + from_zk.original_primary_key + ", local: " + original_primary_key,
             ErrorCodes::METADATA_MISMATCH);
 
     if (data_format_version != from_zk.data_format_version)
@@ -224,11 +254,32 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
             " Stored in ZooKeeper: " + from_zk.sampling_expression + ", local: " + sampling_expression,
             ErrorCodes::METADATA_MISMATCH);
 
+    if (primary_key != from_zk.primary_key)
+        throw Exception("Existing table metadata in ZooKeeper differs in primary key."
+            " Stored in ZooKeeper: " + from_zk.primary_key + ", local: " + primary_key,
+            ErrorCodes::METADATA_MISMATCH);
+
     if (sorting_key != from_zk.sorting_key)
     {
         throw Exception(
             "Existing table metadata in ZooKeeper differs in sorting key expression."
             " Stored in ZooKeeper: " + from_zk.sorting_key + ", local: " + sorting_key,
+            ErrorCodes::METADATA_MISMATCH);
+    }
+
+    if (original_sorting_key != from_zk.original_sorting_key)
+    {
+        throw Exception(
+            "Existing table metadata in ZooKeeper differs in original sorting key expression."
+            " Stored in ZooKeeper: " + from_zk.original_sorting_key + ", local: " + original_sorting_key,
+            ErrorCodes::METADATA_MISMATCH);
+    }
+
+    if (original_primary_key != from_zk.original_primary_key)
+    {
+        throw Exception(
+            "Existing table metadata in ZooKeeper differs in original primary key expression."
+            " Stored in ZooKeeper: " + from_zk.original_primary_key + ", local: " + original_primary_key,
             ErrorCodes::METADATA_MISMATCH);
     }
 
@@ -289,10 +340,28 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
 
     Diff diff;
 
+    if (primary_key != from_zk.primary_key)
+    {
+        diff.primary_key_changed = true;
+        diff.new_primary_key = from_zk.primary_key;
+    }
+
     if (sorting_key != from_zk.sorting_key)
     {
         diff.sorting_key_changed = true;
         diff.new_sorting_key = from_zk.sorting_key;
+    }
+
+    if (original_sorting_key != from_zk.original_sorting_key)
+    {
+        diff.original_sorting_key_changed = true;
+        diff.new_original_sorting_key = from_zk.original_sorting_key;
+    }
+
+    if (original_primary_key != from_zk.original_primary_key)
+    {
+        diff.original_primary_key_changed = true;
+        diff.new_original_primary_key = from_zk.original_primary_key;
     }
 
     if (sampling_expression != from_zk.sampling_expression)

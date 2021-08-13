@@ -28,6 +28,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_column("MODIFY COLUMN");
     ParserKeyword s_rename_column("RENAME COLUMN");
     ParserKeyword s_comment_column("COMMENT COLUMN");
+    ParserKeyword s_modify_primary_key("MODIFY PRIMARY KEY");
+    ParserKeyword s_order_by("ORDER BY");
     ParserKeyword s_modify_order_by("MODIFY ORDER BY");
     ParserKeyword s_modify_sample_by("MODIFY SAMPLE BY");
     ParserKeyword s_modify_ttl("MODIFY TTL");
@@ -621,6 +623,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             command->type = ASTAlterCommand::MODIFY_COLUMN;
         }
+        else if (s_modify_primary_key.ignore(pos, expected))
+        {
+            if (!parser_exp_elem.parse(pos, command->primary_key, expected))
+                return false;
+
+            if (s_order_by.ignore(pos, expected))
+            {
+                if (!parser_exp_elem.parse(pos, command->order_by, expected))
+                    return false;
+            }
+
+            command->type = ASTAlterCommand::MODIFY_PRIMARY_KEY;
+        }
         else if (s_modify_order_by.ignore(pos, expected))
         {
             if (!parser_exp_elem.parse(pos, command->order_by, expected))
@@ -731,6 +746,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->column);
     if (command->partition)
         command->children.push_back(command->partition);
+    if (command->primary_key)
+        command->children.push_back(command->primary_key);
     if (command->order_by)
         command->children.push_back(command->order_by);
     if (command->sample_by)

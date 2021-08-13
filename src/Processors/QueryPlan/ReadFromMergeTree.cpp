@@ -37,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INDEX_NOT_USED;
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -693,6 +694,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 out_projection = createProjection(pipe.getHeader());
         }
 
+        /// TODO(ab) We don't support FINAL with mixed primary key yet. So this is safe for now.
         auto sorting_expr = std::make_shared<ExpressionActions>(
             metadata_snapshot->getSortingKey().expression->getActionsDAG().clone());
 
@@ -818,20 +820,56 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     metadata_snapshot->check(result.column_names_to_read, data.getVirtuals(), data.getStorageID());
 
-    // Build and check if primary key is used when necessary
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    Names primary_key_columns = primary_key.column_names;
-    KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
-
-    if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
+    // Build and check if any primary key is used when necessary
+    std::map<String, KeyCondition> key_condition_map;
+    bool valid_primary_key = false;
+    auto primary_key_map = data.getPrimaryKeyMap();
+    for (const auto & part : parts)
     {
-        return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{
-            .result = std::make_exception_ptr(Exception(
-                ErrorCodes::INDEX_NOT_USED,
-                "Primary key ({}) is not used and setting 'force_primary_key' is set.",
-                fmt::join(primary_key_columns, ", ")))});
+        auto key_it = key_condition_map.find(part->primary_key_ast_str);
+        if (key_it != key_condition_map.end())
+            continue;
+
+        const auto & primary_key = [&]()
+        {
+            if (part->primary_key_ast_str.empty())
+            {
+                if (metadata_snapshot->isOriginalPrimaryKeyDefined())
+                    return metadata_snapshot->getOriginalPrimaryKey();
+                else if (metadata_snapshot->isOriginalSortingKeyDefined())
+                    return metadata_snapshot->getOriginalSortingKey();
+                else
+                    return metadata_snapshot->getPrimaryKey();
+            }
+            else
+            {
+                auto it = primary_key_map->find(part->primary_key_ast_str);
+                if (it == primary_key_map->end())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Cannot find primary key condition for key {}. It is a bug",
+                        part->primary_key_ast_str);
+                return it->second;
+            }
+        }();
+        Names primary_key_columns = primary_key.column_names;
+        key_it = key_condition_map
+                     .emplace(
+                         std::piecewise_construct,
+                         std::forward_as_tuple(part->primary_key_ast_str),
+                         std::forward_as_tuple(query_info, context, primary_key_columns, primary_key.expression))
+                     .first;
+        if (!key_it->second.alwaysUnknownOrTrue())
+            valid_primary_key = true;
     }
-    LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
+
+    if (settings.force_primary_key && !valid_primary_key)
+    {
+        throw Exception(ErrorCodes::INDEX_NOT_USED, "No primary key is used and setting 'force_primary_key' is set.");
+    }
+
+    for (const auto & [pk, key_condition] : key_condition_map)
+        LOG_DEBUG(log, "Key condition for primary key {}: {}", pk.empty() ? data.getOriginalPrimaryKeyAST() : pk, key_condition.toString());
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
@@ -850,16 +888,20 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             log,
             result.index_stats);
 
-        result.sampling = MergeTreeDataSelectExecutor::getSampling(
-            select,
-            metadata_snapshot->getColumns().getAllPhysical(),
-            parts,
-            key_condition,
-            data,
-            metadata_snapshot,
-            context,
-            sample_factor_column_queried,
-            log);
+        /// We don't support changing primary key when there is a sampling key. And we don't support
+        /// modify sampling key when we have changed primary key. So it's safe to just use the first
+        /// primary key condition here.
+        if (!key_condition_map.empty())
+            result.sampling = MergeTreeDataSelectExecutor::getSampling(
+                select,
+                metadata_snapshot->getColumns().getAllPhysical(),
+                parts,
+                key_condition_map.begin()->second,
+                data,
+                metadata_snapshot,
+                context,
+                sample_factor_column_queried,
+                log);
 
         if (result.sampling.read_nothing)
             return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
@@ -874,7 +916,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             metadata_snapshot,
             query_info,
             context,
-            key_condition,
+            key_condition_map,
             reader_settings,
             log,
             num_streams,
@@ -988,6 +1030,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
 
     if (select.final())
     {
+        if (metadata_snapshot->isOriginalSortingKeyDefined())
+            throw Exception("Cannot use FINAL when there may be different primary keys in parts", ErrorCodes::NOT_IMPLEMENTED);
+
         /// Add columns needed to calculate the sorting expression and the sign.
         std::vector<String> add_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
@@ -1007,6 +1052,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
     }
     else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && input_order_info)
     {
+        if (metadata_snapshot->isOriginalSortingKeyDefined())
+            throw Exception(
+                "Cannot use IN ORDER OPTIMIZATION when there may be different primary keys in parts", ErrorCodes::NOT_IMPLEMENTED);
+
         size_t prefix_size = input_order_info->order_key_prefix_descr.size();
         auto order_key_prefix_ast = metadata_snapshot->getSortingKey().expression_list_ast->clone();
         order_key_prefix_ast->children.resize(prefix_size);
@@ -1036,6 +1085,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
 
     if (result.sampling.use_sampling)
     {
+        if (metadata_snapshot->isOriginalSortingKeyDefined())
+            throw Exception(
+                "Cannot use SAMPLING when there may be different primary keys in parts", ErrorCodes::NOT_IMPLEMENTED);
+
         auto sampling_actions = std::make_shared<ExpressionActions>(result.sampling.filter_expression);
         pipe.addSimpleTransform([&](const Block & header)
         {

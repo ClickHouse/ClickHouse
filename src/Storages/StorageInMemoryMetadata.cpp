@@ -31,6 +31,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , partition_key(other.partition_key)
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
+    , original_primary_key(other.original_primary_key)
+    , original_sorting_key(other.original_sorting_key)
     , sampling_key(other.sampling_key)
     , column_ttls_by_name(other.column_ttls_by_name)
     , table_ttl(other.table_ttl)
@@ -52,6 +54,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     partition_key = other.partition_key;
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;
+    original_primary_key = other.original_primary_key;
+    original_sorting_key = other.original_sorting_key;
     sampling_key = other.sampling_key;
     column_ttls_by_name = other.column_ttls_by_name;
     table_ttl = other.table_ttl;
@@ -378,9 +382,29 @@ const KeyDescription & StorageInMemoryMetadata::getSortingKey() const
     return sorting_key;
 }
 
+const KeyDescription & StorageInMemoryMetadata::getOriginalSortingKey() const
+{
+    return original_sorting_key;
+}
+
+const KeyDescription & StorageInMemoryMetadata::getOriginalPrimaryKey() const
+{
+    return original_primary_key;
+}
+
 bool StorageInMemoryMetadata::isSortingKeyDefined() const
 {
     return sorting_key.definition_ast != nullptr;
+}
+
+bool StorageInMemoryMetadata::isOriginalSortingKeyDefined() const
+{
+    return original_sorting_key.definition_ast != nullptr;
+}
+
+bool StorageInMemoryMetadata::isOriginalPrimaryKeyDefined() const
+{
+    return original_primary_key.definition_ast != nullptr;
 }
 
 bool StorageInMemoryMetadata::hasSortingKey() const

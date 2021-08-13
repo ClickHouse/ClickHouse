@@ -26,6 +26,8 @@ struct ReplicatedMergeTreeTableMetadata
     MergeTreeDataFormatVersion data_format_version;
     String partition_key;
     String sorting_key;
+    String original_primary_key;
+    String original_sorting_key;
     String skip_indices;
     String projections;
     String constraints;
@@ -43,8 +45,17 @@ struct ReplicatedMergeTreeTableMetadata
 
     struct Diff
     {
+        bool primary_key_changed = false;
+        String new_primary_key;
+
         bool sorting_key_changed = false;
         String new_sorting_key;
+
+        bool original_sorting_key_changed = false;
+        String new_original_sorting_key;
+
+        bool original_primary_key_changed = false;
+        String new_original_primary_key;
 
         bool sampling_expression_changed = false;
         String new_sampling_expression;
@@ -63,8 +74,9 @@ struct ReplicatedMergeTreeTableMetadata
 
         bool empty() const
         {
-            return !sorting_key_changed && !sampling_expression_changed && !skip_indices_changed && !projections_changed
-                && !ttl_table_changed && !constraints_changed;
+            return !primary_key_changed && !sorting_key_changed && !original_sorting_key_changed && !original_primary_key_changed
+                && !sampling_expression_changed && !skip_indices_changed && !projections_changed && !ttl_table_changed
+                && !constraints_changed;
         }
     };
 

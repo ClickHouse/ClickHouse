@@ -38,7 +38,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
 InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, UInt64 limit) const
 {
     Names sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
-    if (!metadata_snapshot->hasSortingKey())
+    if (metadata_snapshot->isOriginalSortingKeyDefined() || !metadata_snapshot->hasSortingKey())
         return {};
 
     SortDescription order_key_prefix_descr;

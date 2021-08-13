@@ -31,6 +31,7 @@ public:
         MODIFY_COLUMN,
         COMMENT_COLUMN,
         RENAME_COLUMN,
+        MODIFY_PRIMARY_KEY,
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
@@ -84,7 +85,11 @@ public:
      */
     ASTPtr column;
 
-    /** For MODIFY ORDER BY
+    /** For MODIFY PRIMARY KEY
+     */
+    ASTPtr primary_key;
+
+    /** For MODIFY ORDER BY and MODIFY PRIMARY KEY
      */
     ASTPtr order_by;
 

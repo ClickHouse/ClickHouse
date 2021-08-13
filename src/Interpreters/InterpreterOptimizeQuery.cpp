@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -37,6 +38,9 @@ BlockIO InterpreterOptimizeQuery::execute()
     Names column_names;
     if (ast.deduplicate_by_columns)
     {
+        if (metadata_snapshot->isOriginalSortingKeyDefined())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE BY expression is not supported in tables with multiple primary keys");
+
         // User requested custom set of columns for deduplication, possibly with Column Transformer expression.
         {
             // Expand asterisk, column transformers, etc into list of column names.

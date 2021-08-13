@@ -35,6 +35,9 @@ struct StorageInMemoryMetadata
     /// ORDER BY expression. Required field for all MergeTree tables
     /// even in old syntax MergeTree(partition_key, order_by, ...)
     KeyDescription sorting_key;
+    /// It's to support changing sorting key and primary key arbitrarily together.
+    KeyDescription original_primary_key;
+    KeyDescription original_sorting_key;
     /// SAMPLE BY expression. Supported for MergeTree only.
     KeyDescription sampling_key;
     /// Separate ttl expressions for columns
@@ -176,10 +179,17 @@ struct StorageInMemoryMetadata
 
     /// Returns structure with sorting key.
     const KeyDescription & getSortingKey() const;
+    /// Returns structure with sorting key.
+    const KeyDescription & getOriginalSortingKey() const;
+    const KeyDescription & getOriginalPrimaryKey() const;
     /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
     ASTPtr getSortingKeyAST() const { return sorting_key.definition_ast; }
     /// Storage has user-defined (in CREATE query) sorting key.
     bool isSortingKeyDefined() const;
+
+    bool isOriginalSortingKeyDefined() const;
+    bool isOriginalPrimaryKeyDefined() const;
+
     /// Storage has sorting key. It means, that it contains at least one column.
     bool hasSortingKey() const;
     /// Returns column names that need to be read to calculate sorting key.

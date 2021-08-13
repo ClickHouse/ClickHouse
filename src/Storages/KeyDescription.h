@@ -50,6 +50,12 @@ struct KeyDescription
         ContextPtr context,
         const std::optional<String> & additional_column);
 
+    static KeyDescription getSortingKeyFromAST(
+        const ASTPtr & definition_ast,
+        const NamesAndTypesList & columns,
+        ContextPtr context,
+        const std::optional<String> & additional_column);
+
     /// Recalculate all expressions and fields for key with new columns without
     /// changes in constant fields. Just wrapper for static methods.
     void recalculateWithNewColumns(

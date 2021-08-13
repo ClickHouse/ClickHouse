@@ -117,6 +117,15 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
     ContextPtr context,
     const std::optional<String> & additional_column)
 {
+    return getSortingKeyFromAST(definition_ast, columns.getAllPhysical(), context, additional_column);
+}
+
+KeyDescription KeyDescription::getSortingKeyFromAST(
+    const ASTPtr & definition_ast,
+    const NamesAndTypesList & columns,
+    ContextPtr context,
+    const std::optional<String> & additional_column)
+{
     KeyDescription result;
     result.definition_ast = definition_ast;
     result.expression_list_ast = extractKeyExpressionList(definition_ast);
@@ -134,7 +143,7 @@ KeyDescription KeyDescription::getSortingKeyFromAST(
 
     {
         auto expr = result.expression_list_ast->clone();
-        auto syntax_result = TreeRewriter(context).analyze(expr, columns.getAllPhysical());
+        auto syntax_result = TreeRewriter(context).analyze(expr, columns);
         /// In expression we also need to store source columns
         result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
         /// In sample block we use just key columns

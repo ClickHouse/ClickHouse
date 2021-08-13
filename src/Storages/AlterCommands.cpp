@@ -180,6 +180,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.if_exists = command_ast->if_exists;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_PRIMARY_KEY)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_PRIMARY_KEY;
+        command.primary_key_ast = command_ast->primary_key;
+        command.order_by = command_ast->order_by;
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
         AlterCommand command;
@@ -427,6 +436,24 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         });
 
     }
+    else if (type == MODIFY_PRIMARY_KEY)
+    {
+        auto & original_sorting_key = metadata.original_sorting_key;
+        auto & original_primary_key = metadata.original_primary_key;
+        auto & sorting_key = metadata.sorting_key;
+        auto & primary_key = metadata.primary_key;
+        /// We need to record the initial PRIMARY KEY and ORDER BY.
+        if (original_sorting_key.definition_ast == nullptr)
+        {
+            original_sorting_key = sorting_key;
+            original_primary_key = primary_key;
+        }
+        primary_key.recalculateWithNewAST(primary_key_ast, metadata.columns, context);
+        if (order_by)
+            sorting_key.recalculateWithNewAST(order_by, metadata.columns, context);
+        else
+            sorting_key.recalculateWithNewAST(primary_key_ast, metadata.columns, context);
+    }
     else if (type == MODIFY_ORDER_BY)
     {
         auto & sorting_key = metadata.sorting_key;
@@ -628,8 +655,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         if (metadata.isSortingKeyDefined())
             rename_visitor.visit(metadata.sorting_key.definition_ast);
 
+        if (metadata.isOriginalSortingKeyDefined())
+            rename_visitor.visit(metadata.original_sorting_key.definition_ast);
+
         if (metadata.isPrimaryKeyDefined())
             rename_visitor.visit(metadata.primary_key.definition_ast);
+
+        if (metadata.isOriginalPrimaryKeyDefined())
+            rename_visitor.visit(metadata.original_primary_key.definition_ast);
 
         if (metadata.isSamplingKeyDefined())
             rename_visitor.visit(metadata.sampling_key.definition_ast);
@@ -867,6 +900,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "DROP PROJECTION";
     case AlterCommand::Type::MODIFY_COLUMN:
         return "MODIFY COLUMN";
+    case AlterCommand::Type::MODIFY_PRIMARY_KEY:
+        return "MODIFY PRIMARY KEY";
     case AlterCommand::Type::MODIFY_ORDER_BY:
         return "MODIFY ORDER BY";
     case AlterCommand::Type::MODIFY_SAMPLE_BY:
@@ -902,6 +937,15 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+
+    if (metadata_copy.original_sorting_key.definition_ast != nullptr)
+        metadata_copy.original_sorting_key.recalculateWithNewAST(
+            metadata_copy.original_sorting_key.definition_ast, metadata_copy.columns, context);
+
+    if (metadata_copy.original_primary_key.definition_ast != nullptr)
+        metadata_copy.original_primary_key.recalculateWithNewAST(
+            metadata_copy.original_primary_key.definition_ast, metadata_copy.columns, context);
+
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
         metadata_copy.primary_key.recalculateWithNewAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, context);

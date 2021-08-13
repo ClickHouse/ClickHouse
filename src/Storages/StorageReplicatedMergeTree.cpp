@@ -976,26 +976,34 @@ void StorageReplicatedMergeTree::setTableStructure(
 
     if (!metadata_diff.empty())
     {
-        auto parse_key_expr = [] (const String & key_expr)
+        if (metadata_diff.primary_key_changed)
         {
-            ParserNotEmptyExpressionList parser(false);
-            auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-
-            ASTPtr order_by_ast;
-            if (new_sorting_key_expr_list->children.size() == 1)
-                order_by_ast = new_sorting_key_expr_list->children[0];
-            else
+            auto & original_sorting_key = new_metadata.original_sorting_key;
+            auto & original_primary_key = new_metadata.original_primary_key;
+            auto & sorting_key = new_metadata.sorting_key;
+            auto & primary_key = new_metadata.primary_key;
+            /// We need to record the initial PRIMARY KEY and ORDER BY.
+            if (original_sorting_key.definition_ast == nullptr)
             {
-                auto tuple = makeASTFunction("tuple");
-                tuple->arguments->children = new_sorting_key_expr_list->children;
-                order_by_ast = tuple;
+                original_sorting_key = sorting_key;
+                original_primary_key = primary_key;
             }
-            return order_by_ast;
-        };
 
-        if (metadata_diff.sorting_key_changed)
+            auto primary_key_ast = parseKeyExpr(metadata_diff.new_primary_key);
+            primary_key.recalculateWithNewAST(primary_key_ast, new_metadata.columns, getContext());
+
+            // If we change both PRIMARY KEY and ORDER BY
+            if (metadata_diff.sorting_key_changed)
+            {
+                auto sorting_key_ast = parseKeyExpr(metadata_diff.new_sorting_key);
+                sorting_key.recalculateWithNewAST(sorting_key_ast, new_metadata.columns, getContext());
+            }
+            else
+                sorting_key.recalculateWithNewAST(primary_key_ast, new_metadata.columns, getContext());
+        }
+        else if (metadata_diff.sorting_key_changed)
         {
-            auto order_by_ast = parse_key_expr(metadata_diff.new_sorting_key);
+            auto order_by_ast = parseKeyExpr(metadata_diff.new_sorting_key);
             auto & sorting_key = new_metadata.sorting_key;
             auto & primary_key = new_metadata.primary_key;
 
@@ -1013,7 +1021,7 @@ void StorageReplicatedMergeTree::setTableStructure(
 
         if (metadata_diff.sampling_expression_changed)
         {
-            auto sample_by_ast = parse_key_expr(metadata_diff.new_sampling_expression);
+            auto sample_by_ast = parseKeyExpr(metadata_diff.new_sampling_expression);
             new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, getContext());
         }
 
@@ -1053,18 +1061,21 @@ void StorageReplicatedMergeTree::setTableStructure(
     if (new_metadata.partition_key.definition_ast != nullptr)
         new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, getContext());
 
-    if (!metadata_diff.sorting_key_changed) /// otherwise already updated
+    if (!metadata_diff.sorting_key_changed && !metadata_diff.primary_key_changed) /// otherwise already updated
         new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, getContext());
 
-    /// Primary key is special, it exists even if not defined
-    if (new_metadata.primary_key.definition_ast != nullptr)
+    if (!metadata_diff.primary_key_changed) /// otherwise already updated
     {
-        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, getContext());
-    }
-    else
-    {
-        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, getContext());
-        new_metadata.primary_key.definition_ast = nullptr;
+        /// Primary key is special, it exists even if not defined
+        if (new_metadata.primary_key.definition_ast != nullptr)
+        {
+            new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, getContext());
+        }
+        else
+        {
+            new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, getContext());
+            new_metadata.primary_key.definition_ast = nullptr;
+        }
     }
 
     if (!metadata_diff.sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
@@ -4895,6 +4906,19 @@ void StorageReplicatedMergeTree::alter(
             /// So the best compatible way is just to convert definition_ast to list and serialize it. In all other places key.expression_list_ast should be used.
             future_metadata_in_zk.sorting_key = serializeAST(*extractKeyExpressionList(future_metadata.sorting_key.definition_ast));
         }
+
+        if (ast_to_str(future_metadata.primary_key.definition_ast) != ast_to_str(current_metadata->primary_key.definition_ast))
+            future_metadata_in_zk.primary_key = serializeAST(*extractKeyExpressionList(future_metadata.primary_key.definition_ast));
+
+        if (ast_to_str(future_metadata.original_sorting_key.definition_ast)
+            != ast_to_str(current_metadata->original_sorting_key.definition_ast))
+            future_metadata_in_zk.original_sorting_key
+                = serializeAST(*extractKeyExpressionList(future_metadata.original_sorting_key.definition_ast));
+
+        if (ast_to_str(future_metadata.original_primary_key.definition_ast)
+            != ast_to_str(current_metadata->original_primary_key.definition_ast))
+            future_metadata_in_zk.original_primary_key
+                = serializeAST(*extractKeyExpressionList(future_metadata.original_primary_key.definition_ast));
 
         if (ast_to_str(future_metadata.sampling_key.definition_ast) != ast_to_str(current_metadata->sampling_key.definition_ast))
             future_metadata_in_zk.sampling_expression = serializeAST(*extractKeyExpressionList(future_metadata.sampling_key.definition_ast));

@@ -99,6 +99,10 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
     if (parts_.empty())
         return;
 
+    primary_key_ast_str = parts_.front()->primary_key_ast_str;
+    sorting_key_ast_str = parts_.front()->sorting_key_ast_str;
+    primary_key_str = parts_.front()->primary_key_str;
+
     for (const MergeTreeData::DataPartPtr & part : parts_)
     {
         const MergeTreeData::DataPartPtr & first_part = parts_.front();
@@ -736,6 +740,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         parent_part);
 
     new_data_part->uuid = future_part.uuid;
+    new_data_part->primary_key_ast_str = future_part.primary_key_ast_str;
+    new_data_part->sorting_key_ast_str = future_part.sorting_key_ast_str;
+    new_data_part->primary_key_str = future_part.primary_key_str;
     new_data_part->setColumns(storage_columns);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->is_temp = parent_part == nullptr;
@@ -841,6 +848,29 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergeStageProgress horizontal_stage_progress(
         column_sizes ? column_sizes->keyColumnsWeight() : 1.0);
 
+    auto primary_key_map = data.getPrimaryKeyMap();
+    const auto & sorting_key = [&]()
+    {
+        // TODO(ab): Is the sorting_key in parts.front() appropriate to use?
+        if (parts.front()->sorting_key_ast_str.empty())
+        {
+            if (metadata_snapshot->isOriginalSortingKeyDefined())
+                return metadata_snapshot->getOriginalSortingKey();
+            else
+                return metadata_snapshot->getSortingKey();
+        }
+        else
+        {
+            auto it = primary_key_map->find(parts.front()->sorting_key_ast_str);
+            if (it == primary_key_map->end())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot find sorting key condition for key {}. It is a bug",
+                    parts.front()->sorting_key_ast_str);
+            return it->second;
+        }
+    }();
+
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeSequentialSource>(
@@ -851,18 +881,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         Pipe pipe(std::move(input));
 
-        if (metadata_snapshot->hasSortingKey())
+        if (!sorting_key.column_names.empty())
         {
-            pipe.addSimpleTransform([&metadata_snapshot](const Block & header)
+            pipe.addSimpleTransform([&sorting_key](const Block & header)
             {
-                return std::make_shared<ExpressionTransform>(header, metadata_snapshot->getSortingKey().expression);
+                return std::make_shared<ExpressionTransform>(header, sorting_key.expression);
             });
         }
 
         pipes.emplace_back(std::move(pipe));
     }
 
-    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    Names sort_columns = sorting_key.column_names;
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -1261,6 +1291,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         future_part.name, future_part.type, future_part.part_info, single_disk_volume, "tmp_mut_" + future_part.name);
 
     new_data_part->uuid = future_part.uuid;
+    new_data_part->primary_key_ast_str = future_part.primary_key_ast_str;
+    new_data_part->sorting_key_ast_str = future_part.sorting_key_ast_str;
+    new_data_part->primary_key_str = future_part.primary_key_str;
     new_data_part->is_temp = true;
     new_data_part->ttl_infos = source_part->ttl_infos;
 
@@ -2290,6 +2323,19 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
         writeUUIDText(new_data_part->uuid, out_hashing);
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
+    }
+
+    if (!new_data_part->primary_key_str.empty())
+    {
+        auto out = disk->writeFile(new_data_part->getFullRelativePath() + IMergeTreeDataPart::PRIMARY_KEY_FILE_NAME, 4096);
+        HashingWriteBuffer out_hashing(*out);
+        writeText(new_data_part->primary_key_ast_str, out_hashing);
+        writeChar('\n', out_hashing);
+        writeText(new_data_part->sorting_key_ast_str, out_hashing);
+        writeChar('\n', out_hashing);
+        writeText(new_data_part->primary_key_str, out_hashing);
+        new_data_part->checksums.files[IMergeTreeDataPart::PRIMARY_KEY_FILE_NAME].file_size = out_hashing.count();
+        new_data_part->checksums.files[IMergeTreeDataPart::PRIMARY_KEY_FILE_NAME].file_hash = out_hashing.getHash();
     }
 
     if (execute_ttl_type != ExecuteTTLType::NONE)

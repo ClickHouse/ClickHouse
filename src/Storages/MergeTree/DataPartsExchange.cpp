@@ -57,6 +57,7 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION = 4;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID = 5;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY = 6;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION = 7;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PRIMARY_KEY = 8;
 
 
 std::string getEndpointId(const std::string & node_id)
@@ -170,6 +171,13 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
         if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
             writeUUIDText(part->uuid, out);
+
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PRIMARY_KEY)
+        {
+            writeStringBinary(part->primary_key_ast_str, out);
+            writeStringBinary(part->sorting_key_ast_str, out);
+            writeStringBinary(part->primary_key_str, out);
+        }
 
         String remote_fs_metadata = parse<String>(params.get("remote_fs_metadata", ""));
         std::regex re("\\s*,\\s*");
@@ -522,6 +530,16 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
         readUUIDText(part_uuid, in);
 
+    String primary_key_ast_str;
+    String sorting_key_ast_str;
+    String primary_key_str;
+    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PRIMARY_KEY)
+    {
+        readStringBinary(primary_key_ast_str, in);
+        readStringBinary(sorting_key_ast_str, in);
+        readStringBinary(primary_key_str, in);
+    }
+
     String remote_fs_metadata = parse<String>(in.getResponseCookie("remote_fs_metadata", ""));
     if (!remote_fs_metadata.empty())
     {
@@ -564,13 +582,27 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     MergeTreeData::DataPart::Checksums checksums;
     return part_type == "InMemory"
-        ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, context, disk, in, projections, throttler)
+        ? downloadPartToMemory(
+            part_name,
+            part_uuid,
+            primary_key_ast_str,
+            sorting_key_ast_str,
+            primary_key_str,
+            metadata_snapshot,
+            context,
+            disk,
+            in,
+            projections,
+            throttler)
         : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, disk, in, projections, checksums, throttler);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     const String & part_name,
     const UUID & part_uuid,
+    const String & primary_key_ast_str,
+    const String & sorting_key_ast_str,
+    const String & primary_key_str,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
     DiskPtr disk,
@@ -627,6 +659,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     throttler->add(block.bytes());
 
     new_data_part->uuid = part_uuid;
+    new_data_part->primary_key_ast_str = primary_key_ast_str;
+    new_data_part->sorting_key_ast_str = sorting_key_ast_str;
+    new_data_part->primary_key_str = primary_key_str;
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
     new_data_part->minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));

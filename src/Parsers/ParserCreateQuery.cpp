@@ -311,6 +311,8 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_partition_by("PARTITION BY");
     ParserKeyword s_primary_key("PRIMARY KEY");
     ParserKeyword s_order_by("ORDER BY");
+    ParserKeyword s_original_order_by("ORIGINAL ORDER BY");
+    ParserKeyword s_original_primary_key("ORIGINAL PRIMARY KEY");
     ParserKeyword s_sample_by("SAMPLE BY");
     ParserKeyword s_ttl("TTL");
     ParserKeyword s_settings("SETTINGS");
@@ -326,6 +328,8 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr partition_by;
     ASTPtr primary_key;
     ASTPtr order_by;
+    ASTPtr original_order_by;
+    ASTPtr original_primary_key;
     ASTPtr sample_by;
     ASTPtr ttl_table;
     ASTPtr settings;
@@ -360,6 +364,22 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!order_by && s_order_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, order_by, expected))
+                continue;
+            else
+                return false;
+        }
+
+        if (!original_order_by && s_original_order_by.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, original_order_by, expected))
+                continue;
+            else
+                return false;
+        }
+
+        if (!original_primary_key && s_original_primary_key.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, original_primary_key, expected))
                 continue;
             else
                 return false;
@@ -402,6 +422,8 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->partition_by, partition_by);
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
+    storage->set(storage->original_order_by, original_order_by);
+    storage->set(storage->original_primary_key, original_primary_key);
     storage->set(storage->sample_by, sample_by);
     storage->set(storage->ttl_table, ttl_table);
 

@@ -599,6 +599,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
     loadUUID();
     loadColumns(require_columns_checksums);
+    loadPrimaryKey();
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
     calculateColumnsSizesOnDisk();
@@ -646,8 +647,29 @@ void IMergeTreeDataPart::loadIndex()
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    size_t key_size = primary_key.column_names.size();
+
+    const auto & [column_names, data_types] = [&]()
+    {
+        // If we don't have part-level primary_key, check original primary key first, then sorting key.
+        if (primary_key_str.empty())
+        {
+            if (metadata_snapshot->isOriginalPrimaryKeyDefined())
+                return std::make_pair(
+                    metadata_snapshot->getOriginalPrimaryKey().column_names, metadata_snapshot->getOriginalPrimaryKey().data_types);
+            else if (metadata_snapshot->isOriginalSortingKeyDefined())
+                return std::make_pair(
+                    metadata_snapshot->getOriginalSortingKey().column_names, metadata_snapshot->getOriginalSortingKey().data_types);
+            else
+                return std::make_pair(metadata_snapshot->getPrimaryKey().column_names, metadata_snapshot->getPrimaryKey().data_types);
+        }
+        else
+        {
+            NamesAndTypesList primary_key_list = NamesAndTypesList::parse(primary_key_str);
+            return std::make_pair(primary_key_list.getNames(), primary_key_list.getTypes());
+        }
+    }();
+
+    size_t key_size = column_names.size();
 
     if (key_size)
     {
@@ -656,7 +678,7 @@ void IMergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < key_size; ++i)
         {
-            loaded_index[i] = primary_key.data_types[i]->createColumn();
+            loaded_index[i] = data_types[i]->createColumn();
             loaded_index[i]->reserve(index_granularity.getMarksCount());
         }
 
@@ -667,7 +689,7 @@ void IMergeTreeDataPart::loadIndex()
 
         Serializations serializations(key_size);
         for (size_t j = 0; j < key_size; ++j)
-            serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
+            serializations[j] = data_types[j]->getDefaultSerialization();
 
         for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
@@ -1050,6 +1072,23 @@ void IMergeTreeDataPart::loadColumns(bool require)
     }
 
     setColumns(loaded_columns);
+}
+
+void IMergeTreeDataPart::loadPrimaryKey()
+{
+    String path = getFullRelativePath() + PRIMARY_KEY_FILE_NAME;
+
+    if (volume->getDisk()->exists(path))
+    {
+        auto in = openForReading(volume->getDisk(), path);
+        readEscapedStringUntilEOL(primary_key_ast_str, *in);
+        assertChar('\n', *in);
+        readEscapedStringUntilEOL(sorting_key_ast_str, *in);
+        assertChar('\n', *in);
+        readStringUntilEOF(primary_key_str, *in);
+        if (primary_key_str.empty())
+            throw Exception("Unexpected EOF of " + String(PRIMARY_KEY_FILE_NAME) + " in part: " + name, ErrorCodes::LOGICAL_ERROR);
+    }
 }
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const

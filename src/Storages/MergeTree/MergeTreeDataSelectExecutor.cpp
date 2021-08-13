@@ -748,7 +748,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     StorageMetadataPtr metadata_snapshot,
     const SelectQueryInfo & query_info,
     const ContextPtr & context,
-    const KeyCondition & key_condition,
+    const std::map<String, KeyCondition> & key_condition_map,
     const MergeTreeReaderSettings & reader_settings,
     Poco::Logger * log,
     size_t num_streams,
@@ -819,8 +819,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         }
     }
 
-    std::atomic<size_t> sum_marks_pk = 0;
-    std::atomic<size_t> sum_parts_pk = 0;
+    struct LocalIndexStat
+    {
+        std::atomic<size_t> sum_marks_pk = 0;
+        std::atomic<size_t> sum_parts_pk = 0;
+    };
+
+    std::map<String, LocalIndexStat> local_index_stat_map;
+    for (const auto & [key, _] : key_condition_map)
+        local_index_stat_map.emplace(std::piecewise_construct, std::forward_as_tuple(key), std::forward_as_tuple());
 
     /// Let's find what range to read from each part.
     {
@@ -838,17 +845,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         {
             auto & part = parts[part_index];
 
+            auto it = local_index_stat_map.find(part->primary_key_ast_str);
+            auto & sum_marks_pk = it->second.sum_marks_pk;
+            auto & sum_parts_pk = it->second.sum_parts_pk;
+
             RangesInDataPart ranges(part, part_index);
-
-            size_t total_marks_count = part->index_granularity.getMarksCountWithoutFinal();
-
-            if (metadata_snapshot->hasPrimaryKey())
-                ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
-            else if (total_marks_count)
-                ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
+            ranges.ranges
+                = markRangesFromPKRange(part, metadata_snapshot, key_condition_map.find(part->primary_key_ast_str)->second, settings, log);
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
-
             if (!ranges.ranges.empty())
                 sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
 
@@ -938,16 +943,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         parts_with_ranges.resize(next_part);
     }
 
-    if (metadata_snapshot->hasPrimaryKey())
+    for (const auto & [key, key_condition] : key_condition_map)
     {
+        const auto & stat = local_index_stat_map.find(key)->second;
         auto description = key_condition.getDescription();
 
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::PrimaryKey,
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
-            .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
-            .num_granules_after = sum_marks_pk.load(std::memory_order_relaxed)});
+            .num_parts_after = stat.sum_parts_pk.load(std::memory_order_relaxed),
+            .num_granules_after = stat.sum_marks_pk.load(std::memory_order_relaxed)});
     }
 
     for (const auto & index_and_condition : useful_indices)
