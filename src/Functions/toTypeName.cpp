@@ -1,7 +1,7 @@
-#include <Core/Field.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeString.h>
 
 
 namespace DB

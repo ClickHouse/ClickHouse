@@ -38,11 +38,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-extern const int TOO_MANY_TEMPORARY_COLUMNS;
-extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
-extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int TOO_MANY_TEMPORARY_COLUMNS;
+    extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
+    extern const int TYPE_MISMATCH;
 }
 
 ExpressionActions::~ExpressionActions() = default;
@@ -157,7 +157,7 @@ static void setLazyExecutionInfo(
     LazyExecutionInfo & lazy_execution_info = lazy_execution_infos[node];
     lazy_execution_info.can_be_lazy_executed = true;
 
-    ActionsDAGReverseInfo::NodeInfo node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
+    const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
 
     /// If node is used in result, we can't enable lazy execution.
     if (node_info.used_in_result)
@@ -310,6 +310,9 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
 
 void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
+    /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
+    /// Algorithm traverses DAG starting from nodes without children.
+    /// For every node we support the number of created children, and if all children are created, put node into queue.
     struct Data
     {
         const Node * node = nullptr;
@@ -317,10 +320,6 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         ssize_t position = -1;
         size_t num_created_parents = 0;
     };
-
-    /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
-    /// Algorithm traverses DAG starting from nodes without children.
-    /// For every node we support the number of created children, and if all children are created, put node into queue.
 
     const auto & nodes = getNodes();
     const auto & index = actions_dag->getIndex();
@@ -527,8 +526,8 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
                     list_of_non_const_columns << "\n" << column.name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-                            + ". Maximum: " + std::to_string(settings.max_temporary_non_const_columns),
-                            ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
+                + ". Maximum: " + std::to_string(settings.max_temporary_non_const_columns),
+                ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
         }
     }
 }
@@ -681,10 +680,10 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) const
 {
     ExecutionContext execution_context
-        {
-            .inputs = block.data,
-            .num_rows = num_rows,
-        };
+    {
+        .inputs = block.data,
+        .num_rows = num_rows,
+    };
 
     execution_context.inputs_pos.assign(required_columns.size(), -1);
 
