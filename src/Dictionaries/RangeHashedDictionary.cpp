@@ -350,6 +350,8 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
                 setAttributeValue(attribute, key, Range{lower_bound, upper_bound}, attribute_column[key_index]);
                 keys_extractor.rollbackCurrentKey();
             }
+
+            keys_extractor.reset();
         }
     }
 
@@ -609,14 +611,13 @@ Pipe RangeHashedDictionary<dictionary_key_type>::readImpl(const Names & column_n
     static constexpr RangeDictionaryType range_dictionary_type = (dictionary_key_type == DictionaryKeyType::simple) ? RangeDictionaryType::simple : RangeDictionaryType::complex;
     using RangeDictionarySourceType = RangeDictionarySource<range_dictionary_type, RangeType>;
 
-    auto source = std::make_shared<RangeDictionarySourceType>(
-        RangeDictionarySourceData<range_dictionary_type, RangeType>(
-            shared_from_this(),
-            column_names,
-            std::move(keys),
-            std::move(start_dates),
-            std::move(end_dates)),
-        max_block_size);
+    auto source_data = RangeDictionarySourceData<range_dictionary_type, RangeType>(
+        shared_from_this(),
+        column_names,
+        std::move(keys),
+        std::move(start_dates),
+        std::move(end_dates));
+    auto source = std::make_shared<RangeDictionarySourceType>(std::move(source_data), max_block_size);
 
     return Pipe(source);
 }
