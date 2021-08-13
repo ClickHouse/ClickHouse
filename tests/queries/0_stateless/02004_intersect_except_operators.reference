@@ -66,6 +66,8 @@ select number from numbers(100) intersect select number from numbers(20, 60) exc
 57
 58
 59
+select * from (select 1 intersect select 1);
+1
 with (select number from numbers(10) intersect select 5) as a select a * 10;
 50
 select count() from (select number from numbers(10) except select 5);
@@ -90,6 +92,10 @@ select * from (select 1 union all select 2 union all select 3 union all select 4
 5
 select * from (select 1 union all select 2 union all select 3 union all select 4 intersect select 3 union all select 5) order by 1;
 1
+2
+3
+5
+select * from (select 1 union all select 2 union all select 3 union all select 4 intersect select 3 union all select 5 except select 1) order by 1;
 2
 3
 5

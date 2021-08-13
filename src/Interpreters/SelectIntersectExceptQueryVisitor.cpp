@@ -162,7 +162,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
         children.emplace_back(std::move(right));
     }
 
-    ast.union_mode = ASTSelectWithUnionQuery::Mode::ALL;
+    ast.union_mode = ASTSelectWithUnionQuery::Mode::Unspecified;
     ast.list_of_selects->children = std::move(children);
     ast.list_of_modes = std::move(modes);
 }

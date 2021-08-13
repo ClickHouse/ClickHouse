@@ -32,9 +32,6 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
 
 void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (!list_of_selects || list_of_selects->children.size() != list_of_modes.size() + 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect ASTSelectWithUnionQuery");
-
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
     auto mode_to_str = [&](auto mode)

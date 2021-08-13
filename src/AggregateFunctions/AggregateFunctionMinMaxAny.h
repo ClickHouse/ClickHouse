@@ -1032,17 +1032,7 @@ struct AggregateFunctionSingleValueOrNullData : Data
 
 #if USE_EMBEDDED_COMPILER
 
-    static constexpr bool is_compilable = Data::is_compilable;
-
-    static void compileChangeIfBetter(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
-    {
-        Data::compileChangeFirstTime(builder, aggregate_data_ptr, value_to_check);
-    }
-
-    static void compileChangeIfBetterMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
-    {
-        Data::compileChangeFirstTimeMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
-    }
+    static constexpr bool is_compilable = false;
 
 #endif
 };

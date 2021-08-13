@@ -186,13 +186,13 @@ enum class SubqueryFunctionType
     ALL
 };
 
-static bool modifyAST(String operator_name, std::shared_ptr<ASTFunction> & function, SubqueryFunctionType type)
+static bool modifyAST(const String & operator_name, ASTPtr function, SubqueryFunctionType type)
 {
     // = ANY --> IN, != ALL --> NOT IN
-    if ((operator_name == "equals" && type == SubqueryFunctionType::ANY)
-        || (operator_name == "notEquals" && type == SubqueryFunctionType::ALL))
+    if ((type == SubqueryFunctionType::ANY && operator_name == "equals")
+        || (type == SubqueryFunctionType::ALL && operator_name == "notEquals"))
     {
-        function->name = "in";
+        assert_cast<ASTFunction *>(function.get())->name = "in";
         if (operator_name == "notEquals")
         {
             auto function_not = std::make_shared<ASTFunction>();
@@ -257,7 +257,7 @@ static bool modifyAST(String operator_name, std::shared_ptr<ASTFunction> & funct
     if (operator_name == "equals" || operator_name == "notEquals")
     {
         aggregate_function->name = "singleValueOrNull";
-        function->name = "in";
+        assert_cast<ASTFunction *>(function.get())->name = "in";
         if (operator_name == "notEquals")
         {
             auto function_not = std::make_shared<ASTFunction>();

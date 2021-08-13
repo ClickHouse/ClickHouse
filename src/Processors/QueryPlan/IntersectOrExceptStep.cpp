@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static Block checkHeaders(const DataStreams & input_streams_)
 {
     if (input_streams_.empty())

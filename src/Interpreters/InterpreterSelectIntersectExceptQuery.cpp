@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 static Block getCommonHeader(const Blocks & headers)
