@@ -381,12 +381,8 @@ bool IFunction::isCompilable(const DataTypes & arguments) const
 
     if (useDefaultImplementationForNulls())
         if (auto denulled = removeNullables(arguments))
-        {
-            bool res = isCompilableImpl(*denulled);
-            return res;
-        }
-    bool res = isCompilableImpl(arguments);
-    return res;
+            return isCompilableImpl(*denulled);
+    return isCompilableImpl(arguments);
 }
 
 llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, Values values) const

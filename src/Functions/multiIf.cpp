@@ -1,14 +1,14 @@
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/MaskOperations.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/MaskOperations.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -90,7 +90,7 @@ public:
                 if (arg->onlyNull())
                     return;
 
-                const DataTypeNullable & nullable_type = typeid_cast<const DataTypeNullable &>(*arg);
+                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
                 nested_type = nullable_type.getNestedType().get();
             }
             else
