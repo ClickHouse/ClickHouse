@@ -387,33 +387,30 @@ ExpressionTransform
 
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
- Отображает информацию о прочитанных строках, засечках и кусках из таблиц `MergeTree`. 
+ Отображает информацию о прочитанных строках, засечках и кусках из таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree). 
 
 Пример:
 
+Создадим таблицу:
+
 ```sql
-EXPLAIN ESTIMATE 
-SELECT
-    toYear(LO_ORDERDATE) AS year,
-    S_CITY,
-    P_BRAND,
-    sum(LO_REVENUE - LO_SUPPLYCOST) AS profit
-FROM lineorder_flat
-WHERE (S_NATION = 'UNITED STATES') AND ((year = 1997) OR (year = 1998)) AND (P_CATEGORY = 'MFGR#14')
-GROUP BY
-    year,
-    S_CITY,
-    P_BRAND
-ORDER BY
-    year ASC,
-    S_CITY ASC,
-    P_BRAND ASC;
+CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
+INSERT INTO ttt SELECT number FROM numbers(128);
+OPTIMIZE TABLE ttt;
 ```
 
+Запрос:
+
+```sql
+EXPLAIN ESTIMATE SELECT * FROM ttt;
+```
+
+Результат:
+
 ```text
-┌─database─┬─table──────────┬─parts─┬─────rows─┬─marks─┐
-│ default  │ lineorder_flat │    14 │ 14430068 │  1780 │
-└──────────┴────────────────┴───────┴──────────┴───────┘
+┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
+│ default  │ ttt   │     1 │  128 │     8 │
+└──────────┴───────┴───────┴──────┴───────┘
 ```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/explain/) <!--hide-->
