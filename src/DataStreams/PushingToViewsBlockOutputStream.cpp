@@ -30,17 +30,13 @@
 namespace DB
 {
 
-PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
-    const StoragePtr & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
-    ContextPtr context_,
-    const ASTPtr & query_ptr_,
-    bool no_destination)
-    : WithContext(context_)
-    , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
-    , log(&Poco::Logger::get("PushingToViewsBlockOutputStream"))
-    , query_ptr(query_ptr_)
+Drain buildPushingToViewsDrainImpl(
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
+    const ASTPtr & query_ptr,
+    bool no_destination,
+    std::vector<TableLockHolder> & locks)
 {
     checkStackSize();
 
@@ -48,19 +44,20 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    addTableLock(
-        storage->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout));
+    locks.emplace_back(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
 
     /// If the "root" table deduplicates blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
     bool disable_deduplication_for_children = false;
-    if (!getContext()->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
+    if (!context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
         disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
     auto table_id = storage->getStorageID();
     Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
 
     /// We need special context for materialized views insertions
+    ContextMutablePtr select_context;
+    ContextMutablePtr insert_context;
     if (!dependencies.empty())
     {
         select_context = Context::createCopy(context);
@@ -79,21 +76,22 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
     }
 
+    std::vector<ViewRuntimeData> views;
+
     for (const auto & database_table : dependencies)
     {
-        auto dependent_table = DatabaseCatalog::instance().getTable(database_table, getContext());
+        auto dependent_table = DatabaseCatalog::instance().getTable(database_table, context);
         auto dependent_metadata_snapshot = dependent_table->getInMemoryMetadataPtr();
 
         ASTPtr query;
-        BlockOutputStreamPtr out;
+        Drain out;
         QueryViewsLogElement::ViewType type = QueryViewsLogElement::ViewType::DEFAULT;
         String target_name = database_table.getFullTableName();
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
             type = QueryViewsLogElement::ViewType::MATERIALIZED;
-            addTableLock(
-                materialized_view->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout));
+            locks.emplace_back(materialized_view->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
@@ -129,12 +127,12 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         {
             type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
-            out = std::make_shared<PushingToViewsBlockOutputStream>(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true);
+            out = buildPushingToViewsDrainImpl(
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, locks);
         }
         else
-            out = std::make_shared<PushingToViewsBlockOutputStream>(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr());
+            out = buildPushingToViewsDrainImpl(
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, locks);
 
         /// If the materialized view is executed outside of a query, for example as a result of SYSTEM FLUSH LOGS or
         /// SYSTEM FLUSH DISTRIBUTED ..., we can't attach to any thread group and we won't log, so there is no point on collecting metrics
@@ -142,7 +140,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
         ThreadGroupStatusPtr running_group = current_thread && current_thread->getThreadGroup()
             ? current_thread->getThreadGroup()
-            : MainThreadStatus::getInstance().thread_group;
+            : MainThreadStatus::getInstance().getThreadGroup();
         if (running_group)
         {
             /// We are creating a ThreadStatus per view to store its metrics individually
@@ -156,8 +154,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             /// Disable query profiler for this ThreadStatus since the running (main query) thread should already have one
             /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
             /// N times more interruptions
-            thread_status->query_profiled_enabled = false;
-            thread_status->setupState(running_group);
+            thread_status->disableProfiling();
+            thread_status->attachQuery(running_group);
         }
 
         QueryViewsLogElement::ViewRuntimeStats runtime_stats{
@@ -173,7 +171,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         /// Add the view to the query access info so it can appear in system.query_log
         if (!no_destination)
         {
-            getContext()->getQueryContext()->addQueryAccessInfo(
+            context->getQueryContext()->addQueryAccessInfo(
                 backQuoteIfNeed(database_table.getDatabaseName()), target_name, {}, "", database_table.getFullTableName());
         }
     }
