@@ -55,7 +55,6 @@ void PostgreSQLHandler::run()
     connection_context->makeSessionContext();
     connection_context->getClientInfo().interface = ClientInfo::Interface::POSTGRESQL;
     connection_context->setDefaultFormat("PostgreSQLWire");
-    connection_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
 
     try
     {

@@ -13,7 +13,7 @@ class Logger;
 namespace DB
 {
 
-class ReplicatedMergeTreeSink;
+class ReplicatedMergeTreeBlockOutputStream;
 
 /** Writes data to the specified table and to all dependent materialized views.
   */
@@ -38,7 +38,7 @@ private:
     StoragePtr storage;
     StorageMetadataPtr metadata_snapshot;
     BlockOutputStreamPtr output;
-    ReplicatedMergeTreeSink * replicated_output = nullptr;
+    ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
     Poco::Logger * log;
 
     ASTPtr query_ptr;

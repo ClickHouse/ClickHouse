@@ -11,7 +11,8 @@
 #include <Core/Block.h>
 #include <common/LocalDateTime.h>
 #include <common/logger_useful.h>
-#include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Storages/PostgreSQL/PoolWithFailover.h>
+#include <pqxx/pqxx>
 
 
 namespace DB

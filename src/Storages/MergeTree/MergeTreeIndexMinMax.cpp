@@ -5,7 +5,6 @@
 #include <Interpreters/TreeRewriter.h>
 
 #include <Poco/Logger.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
 
 namespace DB
 {
@@ -47,9 +46,6 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
         }
         else
         {
-            /// NOTE: that this serialization differs from
-            /// IMergeTreeDataPart::MinMaxIndex::store() due to preserve
-            /// backward compatibility.
             bool is_null = hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull(); // one is enough
             writeBinary(is_null, ostr);
             if (!is_null)
@@ -67,6 +63,7 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
     Field min_val;
     Field max_val;
 
+
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
@@ -79,9 +76,6 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
         }
         else
         {
-            /// NOTE: that this serialization differs from
-            /// IMergeTreeDataPart::MinMaxIndex::load() due to preserve
-            /// backward compatibility.
             bool is_null;
             readBinary(is_null, istr);
             if (!is_null)
@@ -123,11 +117,8 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         auto index_column_name = index_sample_block.getByPosition(i).name;
-        const auto & column = block.getByName(index_column_name).column->cut(*pos, rows_read);
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
-            column_nullable->getExtremesNullLast(field_min, field_max);
-        else
-            column->getExtremes(field_min, field_max);
+        const auto & column = block.getByName(index_column_name).column;
+        column->cut(*pos, rows_read)->getExtremes(field_min, field_max);
 
         if (hyperrectangle.size() <= i)
         {
@@ -135,10 +126,8 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
         }
         else
         {
-            hyperrectangle[i].left
-                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].left, field_min) ? hyperrectangle[i].left : field_min;
-            hyperrectangle[i].right
-                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].right, field_max) ? field_max : hyperrectangle[i].right;
+            hyperrectangle[i].left = std::min(hyperrectangle[i].left, field_min);
+            hyperrectangle[i].right = std::max(hyperrectangle[i].right, field_max);
         }
     }
 
@@ -167,6 +156,9 @@ bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr 
     if (!granule)
         throw Exception(
             "Minmax index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+    for (const auto & range : granule->hyperrectangle)
+        if (range.left.isNull() || range.right.isNull())
+            return true;
     return condition.checkInHyperrectangle(granule->hyperrectangle, index_data_types).can_be_true;
 }
 

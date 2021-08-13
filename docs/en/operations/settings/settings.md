@@ -20,29 +20,6 @@ Possible values:
 -   `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
 -   `allow` — Allows the use of these types of subqueries.
 
-## prefer_global_in_and_join {#prefer-global-in-and-join}
-
-Enables the replacement of `IN`/`JOIN` operators with `GLOBAL IN`/`GLOBAL JOIN`.
-
-Possible values:
-
--   0 — Disabled. `IN`/`JOIN` operators are not replaced with `GLOBAL IN`/`GLOBAL JOIN`.
--   1 — Enabled. `IN`/`JOIN` operators are replaced with `GLOBAL IN`/`GLOBAL JOIN`.
-
-Default value: `0`.
-
-**Usage**
-
-Although `SET distributed_product_mode=global` can change the queries behavior for the distributed tables, it's not suitable for local tables or tables from external resources. Here is when the `prefer_global_in_and_join` setting comes into play.
-
-For example, we have query serving nodes that contain local tables, which are not suitable for distribution. We need to scatter their data on the fly during distributed processing with the `GLOBAL` keyword — `GLOBAL IN`/`GLOBAL JOIN`.
-
-Another use case of `prefer_global_in_and_join` is accessing tables created by external engines. This setting helps to reduce the number of calls to external sources while joining such tables: only one call per query.
-
-**See also:**
-
--   [Distributed subqueries](../../sql-reference/operators/in.md#select-distributed-subqueries) for more information on how to use `GLOBAL IN`/`GLOBAL JOIN`
-
 ## enable_optimize_predicate_expression {#enable-optimize-predicate-expression}
 
 Turns on predicate pushdown in `SELECT` queries.
@@ -175,26 +152,6 @@ Possible values:
 -   Positive integer.
 
 Default value: 1048576.
-
-## table_function_remote_max_addresses {#table_function_remote_max_addresses}
-
-Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
-
-Possible values:
-
--   Positive integer.
-
-Default value: `1000`.
-
-##  glob_expansion_max_elements  {#glob_expansion_max_elements }
-
-Sets the maximum number of addresses generated from patterns for external storages and table functions (like [url](../../sql-reference/table-functions/url.md)) except the `remote` function.
-
-Possible values:
-
--   Positive integer.
-
-Default value: `1000`.
 
 ## send_progress_in_http_headers {#settings-send_progress_in_http_headers}
 
@@ -551,23 +508,6 @@ Possible values:
 -   `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
 Default value: `ALL`.
-
-## join_algorithm {#settings-join_algorithm}
-
-Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
-
-Possible values:
-
-- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
-- `partial_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
-- `prefer_partial_merge` — ClickHouse always tries to use `merge` join if possible.
-- `auto` — ClickHouse tries to change `hash` join to `merge` join on the fly to avoid out of memory.
-
-Default value: `hash`.
-
-When using `hash` algorithm the right part of `JOIN` is uploaded into RAM.
-
-When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to the disk. The `merge` algorithm in ClickHouse differs a bit from the classic realization. First ClickHouse sorts the right table by [join key](../../sql-reference/statements/select/join.md#select-join) in blocks and creates min-max index for sorted blocks. Then it sorts parts of left table by `join key` and joins them over right table. The min-max index is also used to skip unneeded right table blocks.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
@@ -1273,15 +1213,7 @@ Default value: `3`.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
-Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
-Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
-
-Possible values:
-
--   0 — Integers are output without quotes.
--   1 — Integers are enclosed in quotes.
-
-Default value: 1.
+If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
 
 ## output_format_json_quote_denormals {#settings-output_format_json_quote_denormals}
 
@@ -1796,28 +1728,6 @@ Possible values:
 
 Default value: 0.
 
-## optimize_functions_to_subcolumns {#optimize-functions-to-subcolumns}
-
-Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read.
-
-These functions can be transformed:
-
--   [length](../../sql-reference/functions/array-functions.md#array_functions-length) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
--   [empty](../../sql-reference/functions/array-functions.md#function-empty) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
--   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) to read the [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
--   [isNull](../../sql-reference/operators/index.md#operator-is-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
--   [isNotNull](../../sql-reference/operators/index.md#is-not-null) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
--   [count](../../sql-reference/aggregate-functions/reference/count.md) to read the [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn.
--   [mapKeys](../../sql-reference/functions/tuple-map-functions.md#mapkeys) to read the [keys](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
--   [mapValues](../../sql-reference/functions/tuple-map-functions.md#mapvalues) to read the [values](../../sql-reference/data-types/map.md#map-subcolumns) subcolumn.
-
-Possible values:
-
--   0 — Optimization disabled.
--   1 — Optimization enabled.
-
-Default value: `0`.
-
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
 -   Type: seconds
@@ -2029,13 +1939,6 @@ Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
 
-## output_format_avro_string_column_pattern {#output_format_avro_string_column_pattern}
-
-Regexp of column names of type String to output as Avro `string` (default is `bytes`).
-RE2 syntax is supported.
-
-Type: string
-
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
 Sets [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format.
@@ -2064,16 +1967,6 @@ Possible values:
 -   Any positive integer.
 
 Default value: 16.
-
-## merge_selecting_sleep_ms {#merge_selecting_sleep_ms}
-
-Sleep time for merge selecting when no part is selected. A lower setting triggers selecting tasks in `background_schedule_pool` frequently, which results in a large number of requests to Zookeeper in large-scale clusters.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `5000`.
 
 ## parallel_distributed_insert_select {#parallel_distributed_insert_select}
 
@@ -2950,7 +2843,7 @@ Result:
 └─────────────┘
 ```
 
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md) behaviour.
+Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
 
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 
@@ -3208,53 +3101,6 @@ SELECT
 FROM fuse_tbl
 ```
 
-## allow_experimental_database_replicated {#allow_experimental_database_replicated}
-
-Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
-
-Possible values:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Default value: `0`.
-
-## database_replicated_initial_query_timeout_sec {#database_replicated_initial_query_timeout_sec}
-
-Sets how long initial DDL query should wait for Replicated database to precess previous DDL queue entries in seconds.
-
-Possible values:
-
--   Positive integer.
--   0 — Unlimited.
-
-Default value: `300`.
-
-## distributed_ddl_task_timeout {#distributed_ddl_task_timeout}
-
-Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite.
-
-Possible values:
-
--   Positive integer.
--   0 — Async mode.
--   Negative integer — infinite timeout.
-
-Default value: `180`.
-
-## distributed_ddl_output_mode {#distributed_ddl_output_mode}
-
-Sets format of distributed DDL query result.
-
-Possible values:
-
--   `throw` — Returns result set with query execution status for all hosts where query is finished. If query has failed on some hosts, then it will rethrow the first exception. If query is not finished yet on some hosts and [distributed_ddl_task_timeout](#distributed_ddl_task_timeout) exceeded, then it throws `TIMEOUT_EXCEEDED` exception.
--   `none` — Is similar to throw, but distributed DDL query returns no result set.
--   `null_status_on_timeout` — Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
--   `never_throw` — Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
-
-Default value: `throw`.
-
 ## flatten_nested {#flatten-nested}
 
 Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns.
@@ -3320,55 +3166,4 @@ SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## external_table_functions_use_nulls {#external-table-functions-use-nulls}
-
-Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md)] table functions use Nullable columns.
-
-Possible values:
-
--   0 — The table function explicitly uses Nullable columns.
--   1 — The table function implicitly uses Nullable columns.
-
-Default value: `1`.
-
-**Usage**
-
-If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
-
-## output_format_arrow_low_cardinality_as_dictionary {#output-format-arrow-low-cardinality-as-dictionary}
-
-Allows to convert the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) type to the `DICTIONARY` type of the [Arrow](../../interfaces/formats.md#data-format-arrow) format for `SELECT` queries.
-
-Possible values:
-
--   0 — The `LowCardinality` type is not converted to the `DICTIONARY` type.
--   1 — The `LowCardinality` type is converted to the `DICTIONARY` type.
-
-Default value: `0`.
-
-## materialized_postgresql_max_block_size {#materialized-postgresql-max-block-size}
-
-Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
-
-Possible values:
-
--   Positive integer.
-
-Default value: `65536`.
-
-## materialized_postgresql_tables_list {#materialized-postgresql-tables-list}
-
-Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
-
-Default value: empty list — means whole PostgreSQL database will be replicated.
-
-## materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
-
-Allow reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
-
-Possible values:
-
--   0 — The table is not automatically updated in the background, when schema changes are detected.
--   1 — The table is automatically updated in the background, when schema changes are detected.
-
-Default value: `0`.
+[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
