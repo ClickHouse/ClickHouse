@@ -857,6 +857,8 @@ if (ThreadFuzzer::instance().isEffective())
 
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
             CompressionCodecEncrypted::updateEncryptionKeys(*config, "encryption_codecs");
+#else
+            LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
 #endif
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
@@ -935,6 +937,8 @@ if (ThreadFuzzer::instance().isEffective())
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
     /// Set up encryption.
     CompressionCodecEncrypted::updateEncryptionKeys(config(), "encryption_codecs");
+#else
+    LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
 #endif
 
     Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
