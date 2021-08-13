@@ -13,7 +13,7 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Dictionaries//DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 

@@ -76,19 +76,6 @@ public:
         const Block & sample_block_,
         const UInt64 max_block_size_)
         : PostgreSQLSource<T>(tx_, query_str_, sample_block_, max_block_size_, false) {}
-
-    Chunk generate() override
-    {
-        if (!is_initialized)
-        {
-            Base::stream = std::make_unique<pqxx::stream_from>(*Base::tx, pqxx::from_query, std::string_view(Base::query_str));
-            is_initialized = true;
-        }
-
-        return Base::generate();
-    }
-
-    bool is_initialized = false;
 };
 
 }
