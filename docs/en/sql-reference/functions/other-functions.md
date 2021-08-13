@@ -696,6 +696,10 @@ Returns the server’s uptime in seconds.
 
 Returns the version of the server as a string.
 
+## timezone() {#timezone}
+
+Returns the timezone of the server.
+
 ## blockNumber {#blocknumber}
 
 Returns the sequence number of the data block where the row is located.
@@ -831,7 +835,7 @@ Returns 0 for the first row and the difference from the previous row for each su
 
 !!! warning "Warning"
     It can reach the previous row only inside the currently processed data block.
-
+    
 The result of the function depends on the affected data blocks and the order of data in the block.
 
 The rows order used during the calculation of `runningDifference` can differ from the order of rows returned to the user.
@@ -908,7 +912,7 @@ Same as for [runningDifference](./other-functions.md#other_functions-runningdiff
 ## runningConcurrency {#runningconcurrency}
 
 Calculates the number of concurrent events.
-Each event has a start time and an end time. The start time is included in the event, while the end time is excluded. Columns with a start time and an end time must be of the same data type.
+Each event has a start time and an end time. The start time is included in the event, while the end time is excluded. Columns with a start time and an end time must be of the same data type. 
 The function calculates the total number of active (concurrent) events for each event start time.
 
 
@@ -1188,109 +1192,6 @@ SELECT defaultValueOfTypeName('Nullable(Int8)')
 └──────────────────────────────────────────┘
 ```
 
-## indexHint {#indexhint}
-The function is intended for debugging and introspection purposes. The function ignores it's argument and always returns 1. Arguments are not even evaluated.
-
-But for the purpose of index analysis, the argument of this function is analyzed as if it was present directly without being wrapped inside `indexHint` function. This allows to select data in index ranges by the corresponding condition but without further filtering by this condition. The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
-
-**Syntax**
-
-```sql
-SELECT * FROM table WHERE indexHint(<expression>)
-```
-
-**Returned value**
-
-1. Type: [Uint8](https://clickhouse.yandex/docs/en/data_types/int_uint/#diapazony-uint).
-
-**Example**
-
-Here is the example of test data from the table [ontime](../../getting-started/example-datasets/ontime.md).
-
-Input table:
-
-```sql
-SELECT count() FROM ontime
-```
-
-```text
-┌─count()─┐
-│ 4276457 │
-└─────────┘
-```
-
-The table has indexes on the fields `(FlightDate, (Year, FlightDate))`.
-
-Create a query, where the index is not used.
-
-Query:
-
-```sql
-SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
-```
-
-ClickHouse processed the entire table (`Processed 4.28 million rows`).
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-01-01 │   13970 │
-│ 2017-01-02 │   15882 │
-........................
-│ 2017-09-28 │   16411 │
-│ 2017-09-29 │   16384 │
-│ 2017-09-30 │   12520 │
-└────────────┴─────────┘
-```
-
-To apply the index, select a specific date.
-
-Query:
-
-```sql
-SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
-```
-
-By using the index, ClickHouse processed a significantly smaller number of rows (`Processed 32.74 thousand rows`).
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-09-15 │   16428 │
-└────────────┴─────────┘
-```
-
-Now wrap the expression `k = '2017-09-15'` into `indexHint` function.
-
-Query:
-
-```sql
-SELECT
-    FlightDate AS k,
-    count()
-FROM ontime
-WHERE indexHint(k = '2017-09-15')
-GROUP BY k
-ORDER BY k ASC
-```
-
-ClickHouse used the index in the same way as the previous time (`Processed 32.74 thousand rows`).
-The expression `k = '2017-09-15'` was not used when generating the result.
-In examle the `indexHint` function allows to see adjacent dates.
-
-Result:
-
-```text
-┌──────────k─┬─count()─┐
-│ 2017-09-14 │    7071 │
-│ 2017-09-15 │   16428 │
-│ 2017-09-16 │    1077 │
-│ 2017-09-30 │    8167 │
-└────────────┴─────────┘
-```
-
 ## replicate {#other-functions-replicate}
 
 Creates an array with a single value.
@@ -1424,83 +1325,11 @@ Result:
 └───────────┴────────┘
 ```
 
-## initializeAggregation {#initializeaggregation}
-
-Calculates result of aggregate function based on single value. It is intended to use this function to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction) or use initialized aggregates as default values.
-
-**Syntax**
-
-``` sql
-initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
-```
-
-**Arguments**
-
--   `aggregate_function` — Name of the aggregation function to initialize. [String](../../sql-reference/data-types/string.md).
--   `arg` — Arguments of aggregate function.
-
-**Returned value(s)**
-
-- Result of aggregation for every row passed to the function.
-
-The return type is the same as the return type of function, that `initializeAgregation` takes as first argument.
-
-**Example**
-
-Query:
-
-```sql
-SELECT uniqMerge(state) FROM (SELECT initializeAggregation('uniqState', number % 3) AS state FROM numbers(10000));
-```
-Result:
-
-```text
-┌─uniqMerge(state)─┐
-│                3 │
-└──────────────────┘
-```
-
-Query:
-
-```sql
-SELECT finalizeAggregation(state), toTypeName(state) FROM (SELECT initializeAggregation('sumState', number % 3) AS state FROM numbers(5));
-```
-Result:
-
-```text
-┌─finalizeAggregation(state)─┬─toTypeName(state)─────────────┐
-│                          0 │ AggregateFunction(sum, UInt8) │
-│                          1 │ AggregateFunction(sum, UInt8) │
-│                          2 │ AggregateFunction(sum, UInt8) │
-│                          0 │ AggregateFunction(sum, UInt8) │
-│                          1 │ AggregateFunction(sum, UInt8) │
-└────────────────────────────┴───────────────────────────────┘
-```
-
-Example with `AggregatingMergeTree` table engine and `AggregateFunction` column:
-
-```sql
-CREATE TABLE metrics
-(
-    key UInt64,
-    value AggregateFunction(sum, UInt64) DEFAULT initializeAggregation('sumState', toUInt64(0))
-)
-ENGINE = AggregatingMergeTree
-ORDER BY key
-```
-
-```sql
-INSERT INTO metrics VALUES (0, initializeAggregation('sumState', toUInt64(42)))
-```
-
-**See Also**
--   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
-
 ## finalizeAggregation {#function-finalizeaggregation}
 
 Takes state of aggregate function. Returns result of aggregation (or finalized state when using[-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 finalizeAggregation(state)
@@ -1514,7 +1343,7 @@ finalizeAggregation(state)
 
 -   Value/values that was aggregated.
 
-Type: Value of any types that was aggregated.
+Type: Value of any types that was aggregated. 
 
 **Examples**
 
@@ -1546,7 +1375,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-Note that `NULL` values are ignored.
+Note that `NULL` values are ignored. 
 
 Query:
 
@@ -1592,9 +1421,10 @@ Result:
 └────────┴─────────────┴────────────────┘
 ```
 
-**See Also**
+**See Also** 
+
 -   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
--   [initializeAggregation](#initializeaggregation)
+-   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
 
 ## runningAccumulate {#runningaccumulate}
 
@@ -1725,7 +1555,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Returns list of values corresponded to list of keys.
 
-If certain does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
+If certain doesn’t exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
 
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
 
@@ -1785,7 +1615,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity {#identity}
 
-Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer does not look inside `identity` functions. Also constant folding is not applied too.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn’t look inside `identity` functions. Also constant folding is not applied too.
 
 **Syntax**
 
@@ -2138,52 +1968,3 @@ Result:
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
-## currentProfiles {#current-profiles}
-
-Returns a list of the current [settings profiles](../../operations/access-rights.md#settings-profiles-management) for the current user. 
-
-The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
-
-**Syntax**
-
-``` sql
-currentProfiles()
-```
-
-**Returned value**
-
--   List of the current user settings profiles. 
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-## enabledProfiles {#enabled-profiles}
-
- Returns settings profiles, assigned to the current user both explicitly and implicitly. Explicitly assigned profiles are the same as returned by the [currentProfiles](#current-profiles) function. Implicitly assigned profiles include parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the `default_profile` section in the main server configuration file).
-
-**Syntax**
-
-``` sql
-enabledProfiles()
-```
-
-**Returned value**
-
--   List of the enabled settings profiles. 
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-## defaultProfiles {#default-profiles}
-
-Returns all the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement).
-
-**Syntax**
-
-``` sql
-defaultProfiles()
-```
-
-**Returned value**
-
--   List of the default settings profiles. 
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).

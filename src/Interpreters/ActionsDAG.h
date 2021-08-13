@@ -27,13 +27,7 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-namespace JSONBuilder
-{
-    class JSONMap;
-
-    class IItem;
-    using ItemPtr = std::unique_ptr<IItem>;
-}
+class CompiledExpressionCache;
 
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
@@ -61,8 +55,6 @@ public:
         FUNCTION,
     };
 
-    static const char * typeToString(ActionType type);
-
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;
@@ -71,7 +63,7 @@ public:
     {
         NodeRawConstPtrs children;
 
-        ActionType type{};
+        ActionType type;
 
         std::string result_name;
         DataTypePtr result_type;
@@ -83,14 +75,12 @@ public:
         ExecutableFunctionPtr function;
         /// If function is a compiled statement.
         bool is_function_compiled = false;
-        /// It is deterministic (See IFunction::isDeterministic).
-        /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
-        bool is_deterministic = true;
 
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
-
-        void toTree(JSONBuilder::JSONMap & map) const;
+        /// Some functions like `ignore()` always return constant but can't be replaced by constant it.
+        /// We calculate such constants in order to avoid unnecessary materialization, but prohibit it's folding.
+        bool allow_constant_folding = true;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -119,7 +109,6 @@ public:
     const NodeRawConstPtrs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
-    Names getRequiredColumnsNames() const;
     ColumnsWithTypeAndName getResultColumns() const;
     NamesAndTypesList getNamesAndTypesList() const;
 
@@ -167,32 +156,15 @@ public:
     void removeUnusedActions(const Names & required_names);
     void removeUnusedActions(const NameSet & required_names);
 
-    NameSet foldActionsByProjection(
-        const NameSet & required_columns,
-        const Block & projection_block_for_keys,
-        const String & predicate_column_name = {},
-        bool add_missing_keys = true);
-    void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
-    void addAggregatesViaProjection(const Block & aggregates);
-
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
-    void assertDeterministic() const; /// Throw if not isDeterministic.
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression);
 #endif
 
     ActionsDAGPtr clone() const;
-
-    /// Execute actions for header. Input block must have empty columns.
-    /// Result should be equal to the execution of ExpressionActions build form this DAG.
-    /// Actions are not changed, no expressions are compiled.
-    ///
-    /// In addition, check that result constants are constants according to DAG.
-    /// In case if function return constant, but arguments are not constant, materialize it.
-    Block updateHeader(Block header) const;
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
@@ -214,7 +186,6 @@ public:
     /// Conversion should be possible with only usage of CAST function and renames.
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
     /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
-    /// @param new_names - Output parameter for new column names when add_casted_columns is used.
     static ActionsDAGPtr makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,

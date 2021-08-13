@@ -4,8 +4,8 @@
 #include <Access/RowPolicy.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
-#include <common/scope_guard.h>
-#include <common/shared_ptr_helper.h>
+#include <ext/scope_guard.h>
+#include <ext/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
 
@@ -23,8 +23,7 @@ class EnabledQuota;
 class EnabledSettings;
 struct QuotaUsage;
 struct Settings;
-struct SettingsProfilesInfo;
-class SettingsChanges;
+class SettingsConstraints;
 class AccessControlManager;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
@@ -85,9 +84,11 @@ public:
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
 
-    /// Returns the default settings, i.e. the settings which should be applied on user's login.
-    SettingsChanges getDefaultSettings() const;
-    std::shared_ptr<const SettingsProfilesInfo> getDefaultProfileInfo() const;
+    /// Returns the default settings, i.e. the settings to apply on user's login.
+    std::shared_ptr<const Settings> getDefaultSettings() const;
+
+    /// Returns the settings' constraints.
+    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
 
     /// Returns the current access rights.
     std::shared_ptr<const AccessRights> getAccessRights() const;
@@ -208,9 +209,9 @@ private:
     mutable Poco::Logger * trace_log = nullptr;
     mutable UserPtr user;
     mutable String user_name;
-    mutable scope_guard subscription_for_user_change;
+    mutable ext::scope_guard subscription_for_user_change;
     mutable std::shared_ptr<const EnabledRoles> enabled_roles;
-    mutable scope_guard subscription_for_roles_changes;
+    mutable ext::scope_guard subscription_for_roles_changes;
     mutable std::shared_ptr<const EnabledRolesInfo> roles_info;
     mutable std::shared_ptr<const AccessRights> access;
     mutable std::shared_ptr<const AccessRights> access_with_implicit;

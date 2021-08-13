@@ -8,7 +8,7 @@
 #include <common/logger_useful.h>
 #include <Common/OpenSSLHelpers.h>
 
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 
 namespace DB
 {
@@ -73,7 +73,7 @@ Native41::Native41(const String & password, const String & auth_plugin_data)
 }
 
 void Native41::authenticate(
-    const String & user_name, std::optional<String> auth_response, ContextMutablePtr context,
+    const String & user_name, std::optional<String> auth_response, ContextPtr context,
     std::shared_ptr<PacketEndpoint> packet_endpoint, bool, const Poco::Net::SocketAddress & address)
 {
     if (!auth_response)
@@ -136,7 +136,7 @@ Sha256Password::Sha256Password(RSA & public_key_, RSA & private_key_, Poco::Logg
 }
 
 void Sha256Password::authenticate(
-    const String & user_name, std::optional<String> auth_response, ContextMutablePtr context,
+    const String & user_name, std::optional<String> auth_response, ContextPtr context,
     std::shared_ptr<PacketEndpoint> packet_endpoint, bool is_secure_connection, const Poco::Net::SocketAddress & address)
 {
     if (!auth_response)

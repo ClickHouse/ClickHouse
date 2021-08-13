@@ -1,8 +1,7 @@
 #pragma once
 
-#include <unordered_map>
 #include <Common/HashTable/HashMap.h>
-#include <Common/NamePrompter.h>
+#include <unordered_map>
 
 namespace DB
 {
@@ -13,7 +12,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-class EnumValues : public IHints<1, EnumValues<T>>
+class EnumValues
 {
 public:
     using Value = std::pair<std::string, T>;
@@ -42,21 +41,9 @@ public:
         return it;
     }
 
-    /// throws exception if value is not valid
     const StringRef & getNameForValue(const T & value) const
     {
         return findByValue(value)->second;
-    }
-
-    /// returns false if value is not valid
-    bool getNameForValue(const T & value, StringRef & result) const
-    {
-        const auto it = value_to_name_map.find(value);
-        if (it == std::end(value_to_name_map))
-            return false;
-
-        result = it->second;
-        return true;
     }
 
     T getValue(StringRef field_name, bool try_treat_as_id = false) const;
@@ -78,8 +65,6 @@ public:
 
         return std::all_of(rhs_values.begin(), rhs_values.end(), check);
     }
-
-    Names getAllRegisteredNames() const override;
 };
 
 }

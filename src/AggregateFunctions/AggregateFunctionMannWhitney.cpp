@@ -11,13 +11,12 @@ extern const int NOT_IMPLEMENTED;
 
 namespace DB
 {
-struct Settings;
 
 namespace
 {
 
 AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertBinary(name, argument_types);
 

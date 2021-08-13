@@ -163,11 +163,6 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
     params.explain(settings.out, settings.offset);
 }
 
-void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    params.explain(map);
-}
-
 void AggregatingStep::describePipeline(FormatSettings & settings) const
 {
     if (!aggregating.empty())

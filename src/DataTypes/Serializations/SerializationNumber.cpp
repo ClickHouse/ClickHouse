@@ -34,10 +34,54 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
 }
 
 template <typename T>
+static inline void writeDenormalNumber(T x, WriteBuffer & ostr)
+{
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        if (std::signbit(x))
+        {
+            if (isNaN(x))
+                writeCString("-nan", ostr);
+            else
+                writeCString("-inf", ostr);
+        }
+        else
+        {
+            if (isNaN(x))
+                writeCString("nan", ostr);
+            else
+                writeCString("inf", ostr);
+        }
+    }
+    else
+    {
+        /// This function is not called for non floating point numbers.
+        (void)x;
+    }
+}
+
+
+template <typename T>
 void SerializationNumber<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto x = assert_cast<const ColumnVector<T> &>(column).getData()[row_num];
-    writeJSONNumber(x, ostr, settings);
+    bool is_finite = isFinite(x);
+
+    const bool need_quote = (is_integer_v<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
+        || (settings.json.quote_denormals && !is_finite);
+
+    if (need_quote)
+        writeChar('"', ostr);
+
+    if (is_finite)
+        writeText(x, ostr);
+    else if (!settings.json.quote_denormals)
+        writeCString("null", ostr);
+    else
+        writeDenormalNumber(x, ostr);
+
+    if (need_quote)
+        writeChar('"', ostr);
 }
 
 template <typename T>
@@ -157,7 +201,7 @@ template class SerializationNumber<UInt8>;
 template class SerializationNumber<UInt16>;
 template class SerializationNumber<UInt32>;
 template class SerializationNumber<UInt64>;
-template class SerializationNumber<UInt128>;
+template class SerializationNumber<UInt128>; // base for UUID
 template class SerializationNumber<UInt256>;
 template class SerializationNumber<Int8>;
 template class SerializationNumber<Int16>;

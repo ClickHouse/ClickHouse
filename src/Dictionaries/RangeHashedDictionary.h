@@ -32,14 +32,6 @@ public:
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
-    double getFoundRate() const override
-    {
-        size_t queries = query_count.load(std::memory_order_relaxed);
-        if (!queries)
-            return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
-    }
-
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
@@ -108,27 +100,40 @@ private:
         bool is_nullable;
 
         std::variant<
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            UInt128,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Decimal256,
+            Float32,
+            Float64,
+            StringRef>
+            null_values;
+        std::variant<
             Ptr<UInt8>,
             Ptr<UInt16>,
             Ptr<UInt32>,
             Ptr<UInt64>,
             Ptr<UInt128>,
-            Ptr<UInt256>,
             Ptr<Int8>,
             Ptr<Int16>,
             Ptr<Int32>,
             Ptr<Int64>,
-            Ptr<Int128>,
-            Ptr<Int256>,
             Ptr<Decimal32>,
             Ptr<Decimal64>,
             Ptr<Decimal128>,
             Ptr<Decimal256>,
             Ptr<Float32>,
             Ptr<Float64>,
-            Ptr<UUID>,
-            Ptr<StringRef>,
-            Ptr<Array>>
+            Ptr<StringRef>>
             maps;
         std::unique_ptr<Arena> string_arena;
     };
@@ -142,9 +147,12 @@ private:
 
     void calculateBytesAllocated();
 
-    static Attribute createAttribute(const DictionaryAttribute & dictionary_attribute);
+    template <typename T>
+    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
+    static Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
+
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
@@ -155,8 +163,7 @@ private:
     ColumnUInt8::Ptr hasKeysImpl(
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & ids,
-        const PaddedPODArray<RangeStorageType> & dates,
-        size_t & keys_found) const;
+        const PaddedPODArray<RangeStorageType> & dates) const;
 
     template <typename T>
     static void setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
@@ -194,7 +201,6 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
-    mutable std::atomic<size_t> found_count{0};
 };
 
 }

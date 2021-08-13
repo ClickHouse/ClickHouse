@@ -7,8 +7,13 @@
 
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Block.h>
+#include <ext/range.h>
+#include <ext/size.h>
 
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
@@ -41,14 +46,6 @@ public:
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
     size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
-
-    double getFoundRate() const override
-    {
-        size_t queries = query_count.load(std::memory_order_relaxed);
-        if (!queries)
-            return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
-    }
 
     double getHitRate() const override { return 1.0; }
 
@@ -101,37 +98,50 @@ public:
 
 private:
     template <typename Value>
-    using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
+    using ContainerType = PaddedPODArray<Value>;
 
     using NullableSet = HashSet<UInt64, DefaultHash<UInt64>>;
 
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::optional<NullableSet> is_nullable_set;
+        std::optional<NullableSet> nullable_set;
 
+        std::variant<
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            UInt128,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Decimal256,
+            Float32,
+            Float64,
+            StringRef>
+            null_values;
         std::variant<
             ContainerType<UInt8>,
             ContainerType<UInt16>,
             ContainerType<UInt32>,
             ContainerType<UInt64>,
             ContainerType<UInt128>,
-            ContainerType<UInt256>,
             ContainerType<Int8>,
             ContainerType<Int16>,
             ContainerType<Int32>,
             ContainerType<Int64>,
-            ContainerType<Int128>,
-            ContainerType<Int256>,
             ContainerType<Decimal32>,
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
             ContainerType<Float32>,
             ContainerType<Float64>,
-            ContainerType<UUID>,
-            ContainerType<StringRef>,
-            ContainerType<Array>>
+            ContainerType<StringRef>>
             container;
 
         std::unique_ptr<Arena> string_arena;
@@ -144,9 +154,9 @@ private:
 
     void calculateBytesAllocated();
 
-    Attribute createAttribute(const DictionaryAttribute & attribute);
+    Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & keys,
@@ -173,7 +183,6 @@ private:
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
-    mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
 };

@@ -1,5 +1,5 @@
 #include <iomanip>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
@@ -19,7 +19,6 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -150,7 +149,7 @@ void TCPHandler::runImpl()
         if (!DatabaseCatalog::instance().isDatabaseExist(default_database))
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-            LOG_ERROR(log, getExceptionMessage(e, true));
+            LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
             sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
             return;
         }
@@ -159,8 +158,6 @@ void TCPHandler::runImpl()
     }
 
     Settings connection_settings = connection_context->getSettings();
-    UInt64 idle_connection_timeout = connection_settings.idle_connection_timeout;
-    UInt64 poll_interval = connection_settings.poll_interval;
 
     sendHello();
 
@@ -171,10 +168,10 @@ void TCPHandler::runImpl()
         /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
         {
             Stopwatch idle_time;
-            UInt64 timeout_ms = std::min(poll_interval, idle_connection_timeout) * 1000000;
-            while (!server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
+            while (!server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(
+                std::min(connection_settings.poll_interval, connection_settings.idle_connection_timeout) * 1000000))
             {
-                if (idle_time.elapsedSeconds() > idle_connection_timeout)
+                if (idle_time.elapsedSeconds() > connection_settings.idle_connection_timeout)
                 {
                     LOG_TRACE(log, "Closing idle connection");
                     return;
@@ -214,15 +211,6 @@ void TCPHandler::runImpl()
              */
             if (!receivePacket())
                 continue;
-
-            /** If Query received, then settings in query_context has been updated
-             *  So, update some other connection settings, for flexibility.
-             */
-            {
-                const Settings & settings = query_context->getSettingsRef();
-                idle_connection_timeout = settings.idle_connection_timeout;
-                poll_interval = settings.poll_interval;
-            }
 
             /** If part_uuids got received in previous packet, trying to read again.
               */
@@ -286,10 +274,10 @@ void TCPHandler::runImpl()
                 if (context != query_context)
                     throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
 
-                size_t poll_interval_ms;
+                size_t poll_interval;
                 int receive_timeout;
-                std::tie(poll_interval_ms, receive_timeout) = getReadTimeouts(connection_settings);
-                if (!readDataNext(poll_interval_ms, receive_timeout))
+                std::tie(poll_interval, receive_timeout) = getReadTimeouts(connection_settings);
+                if (!readDataNext(poll_interval, receive_timeout))
                 {
                     state.block_in.reset();
                     state.maybe_compressed_in.reset();
@@ -423,7 +411,7 @@ void TCPHandler::runImpl()
                 }
 
                 const auto & e = *exception;
-                LOG_ERROR(log, getExceptionMessage(e, true));
+                LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
                 sendException(*exception, send_exception_with_stack_trace);
             }
         }
@@ -568,16 +556,7 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
     /// Send block to the client - table structure.
     sendData(state.io.out->getHeader());
 
-    try
-    {
-        readData(connection_settings);
-    }
-    catch (...)
-    {
-        /// To avoid flushing from the destructor, that may lead to uncaught exception.
-        state.io.out->writeSuffix();
-        throw;
-    }
+    readData(connection_settings);
     state.io.out->writeSuffix();
 }
 
@@ -746,7 +725,7 @@ void TCPHandler::processTablesStatusRequest()
             status.absolute_delay = replicated_table->getAbsoluteDelay();
         }
         else
-            status.is_replicated = false; //-V1048
+            status.is_replicated = false;
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
@@ -1027,17 +1006,7 @@ bool TCPHandler::receivePacket()
             return false;
 
         case Protocol::Client::Cancel:
-        {
-            /// For testing connection collector.
-            const Settings & settings = query_context->getSettingsRef();
-            if (settings.sleep_in_receive_cancel_ms.totalMilliseconds())
-            {
-                std::chrono::milliseconds ms(settings.sleep_in_receive_cancel_ms.totalMilliseconds());
-                std::this_thread::sleep_for(ms);
-            }
-
             return false;
-        }
 
         case Protocol::Client::Hello:
             receiveUnexpectedHello();
@@ -1074,13 +1043,6 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         if (packet_type == Protocol::Client::Cancel)
         {
             state.is_cancelled = true;
-            /// For testing connection collector.
-            const Settings & settings = query_context->getSettingsRef();
-            if (settings.sleep_in_receive_cancel_ms.totalMilliseconds())
-            {
-                std::chrono::milliseconds ms(settings.sleep_in_receive_cancel_ms.totalMilliseconds());
-                std::this_thread::sleep_for(ms);
-            }
             return {};
         }
         else
@@ -1153,9 +1115,8 @@ void TCPHandler::receiveQuery()
 
     /// Per query settings are also passed via TCP.
     /// We need to check them before applying due to they can violate the settings constraints.
-    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS)
-        ? SettingsWriteFormat::STRINGS_WITH_FLAGS
-        : SettingsWriteFormat::BINARY;
+    auto settings_format = (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
+                                                                                                      : SettingsWriteFormat::BINARY;
     Settings passed_settings;
     passed_settings.read(*in, settings_format);
 
@@ -1331,7 +1292,7 @@ bool TCPHandler::receiveData(bool scalar)
             }
             auto metadata_snapshot = storage->getInMemoryMetadataPtr();
             /// The data will be written directly to the table.
-            auto temporary_table_out = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
+            auto temporary_table_out = storage->write(ASTPtr(), metadata_snapshot, query_context);
             temporary_table_out->write(block);
             temporary_table_out->writeSuffix();
 
@@ -1417,7 +1378,7 @@ void TCPHandler::initBlockOutput(const Block & block)
 
             if (state.compression == Protocol::Compression::Enable)
             {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs);
+                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));
@@ -1479,16 +1440,6 @@ bool TCPHandler::isQueryCancelled()
                     throw NetException("Unexpected packet Cancel received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
                 LOG_INFO(log, "Query was cancelled.");
                 state.is_cancelled = true;
-                /// For testing connection collector.
-                {
-                    const Settings & settings = query_context->getSettingsRef();
-                    if (settings.sleep_in_receive_cancel_ms.totalMilliseconds())
-                    {
-                        std::chrono::milliseconds ms(settings.sleep_in_receive_cancel_ms.totalMilliseconds());
-                        std::this_thread::sleep_for(ms);
-                    }
-                }
-
                 return true;
 
             default:

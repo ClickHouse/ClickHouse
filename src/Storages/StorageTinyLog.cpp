@@ -4,7 +4,6 @@
 
 #include <map>
 #include <cassert>
-#include <chrono>
 
 #include <Poco/Util/XMLConfiguration.h>
 
@@ -23,6 +22,9 @@
 
 #include <DataTypes/NestedUtils.h>
 
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
+
 #include <Columns/ColumnArray.h>
 
 #include <Interpreters/Context.h>
@@ -35,7 +37,6 @@
 #include "StorageLogSettings.h"
 
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -191,15 +192,14 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type,
 }
 
 
-class TinyLogSink final : public SinkToStorage
+class TinyLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit TinyLogSink(
+    explicit TinyLogBlockOutputStream(
         StorageTinyLog & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         std::unique_lock<std::shared_timed_mutex> && lock_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_), metadata_snapshot(metadata_snapshot_), lock(std::move(lock_))
+        : storage(storage_), metadata_snapshot(metadata_snapshot_), lock(std::move(lock_))
     {
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
@@ -213,7 +213,7 @@ public:
         }
     }
 
-    ~TinyLogSink() override
+    ~TinyLogBlockOutputStream() override
     {
         try
         {
@@ -231,10 +231,10 @@ public:
         }
     }
 
-    String getName() const override { return "TinyLogSink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override;
-    void onFinish() override;
+    void write(const Block & block) override;
+    void writeSuffix() override;
 
 private:
     StorageTinyLog & storage;
@@ -274,7 +274,7 @@ private:
 };
 
 
-ISerialization::OutputStreamGetter TinyLogSink::createStreamGetter(
+ISerialization::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(
     const NameAndTypePair & column,
     WrittenStreams & written_streams)
 {
@@ -298,7 +298,7 @@ ISerialization::OutputStreamGetter TinyLogSink::createStreamGetter(
 }
 
 
-void TinyLogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & column, WrittenStreams & written_streams)
+void TinyLogBlockOutputStream::writeData(const NameAndTypePair & name_and_type, const IColumn & column, WrittenStreams & written_streams)
 {
     ISerialization::SerializeBinaryBulkSettings settings;
     const auto & [name, type] = name_and_type;
@@ -318,7 +318,7 @@ void TinyLogSink::writeData(const NameAndTypePair & name_and_type, const IColumn
 }
 
 
-void TinyLogSink::onFinish()
+void TinyLogBlockOutputStream::writeSuffix()
 {
     if (done)
         return;
@@ -332,7 +332,7 @@ void TinyLogSink::onFinish()
 
     WrittenStreams written_streams;
     ISerialization::SerializeBinaryBulkSettings settings;
-    for (const auto & column : getPort().getHeader())
+    for (const auto & column : getHeader())
     {
         auto it = serialize_states.find(column.name);
         if (it != serialize_states.end())
@@ -365,9 +365,8 @@ void TinyLogSink::onFinish()
 }
 
 
-void TinyLogSink::consume(Chunk chunk)
+void TinyLogBlockOutputStream::write(const Block & block)
 {
-    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
     metadata_snapshot->check(block, true);
 
     /// The set of written offset columns so that you do not write shared columns for nested structures multiple times
@@ -387,7 +386,6 @@ StorageTinyLog::StorageTinyLog(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     bool attach,
     size_t max_compress_block_size_)
     : IStorage(table_id_)
@@ -400,7 +398,6 @@ StorageTinyLog::StorageTinyLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -509,9 +506,9 @@ Pipe StorageTinyLog::read(
 }
 
 
-SinkToStoragePtr StorageTinyLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+BlockOutputStreamPtr StorageTinyLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    return std::make_shared<TinyLogSink>(*this, metadata_snapshot, std::unique_lock{rwlock, getLockTimeout(context)});
+    return std::make_shared<TinyLogBlockOutputStream>(*this, metadata_snapshot, std::unique_lock{rwlock, getLockTimeout(context)});
 }
 
 
@@ -522,34 +519,6 @@ CheckResults StorageTinyLog::checkData(const ASTPtr & /* query */, ContextPtr co
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     return file_checker.check();
-}
-
-IStorage::ColumnSizeByName StorageTinyLog::getColumnSizes() const
-{
-    std::shared_lock lock(rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC));
-    if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
-
-    ColumnSizeByName column_sizes;
-    FileChecker::Map file_sizes = file_checker.getFileSizes();
-
-    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
-    {
-        ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
-        {
-            String stream_name = ISerialization::getFileNameForStream(column, substream_path);
-            ColumnSize & size = column_sizes[column.name];
-            auto it = files.find(stream_name);
-            if (it != files.end())
-                size.data_compressed += file_sizes[fileName(it->second.data_file_path)];
-        };
-
-        ISerialization::SubstreamPath substream_path;
-        auto serialization = column.type->getDefaultSerialization();
-        serialization->enumerateStreams(stream_callback, substream_path);
-    }
-
-    return column_sizes;
 }
 
 void StorageTinyLog::truncate(
@@ -582,14 +551,8 @@ void registerStorageTinyLog(StorageFactory & factory)
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return StorageTinyLog::create(
-            disk,
-            args.relative_data_path,
-            args.table_id,
-            args.columns,
-            args.constraints,
-            args.comment,
-            args.attach,
-            args.getContext()->getSettings().max_compress_block_size);
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
+            args.attach, args.getContext()->getSettings().max_compress_block_size);
     }, features);
 }
 

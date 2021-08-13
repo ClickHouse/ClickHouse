@@ -36,7 +36,7 @@ option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
 if(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION)
     set(RECONFIGURE_MESSAGE_LEVEL FATAL_ERROR)
 else()
-    set(RECONFIGURE_MESSAGE_LEVEL WARNING)
+    set(RECONFIGURE_MESSAGE_LEVEL STATUS)
 endif()
 
 enable_language(C CXX ASM)
@@ -167,10 +167,9 @@ endif ()
 
 # If turned `ON`, assumes the user has either the system GTest library or the bundled one.
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
-option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
-if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
-    # Only for Linux, x86_64 or aarch64.
+if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
+    # Only for Linux, x86_64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
@@ -183,37 +182,24 @@ endif ()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
-find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+if (OS_LINUX)
+    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+    if (OBJCOPY_PATH)
+        message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
 
-if (NOT OBJCOPY_PATH AND OS_DARWIN)
-    find_program (BREW_PATH NAMES "brew")
-    if (BREW_PATH)
-        execute_process (COMMAND ${BREW_PATH} --prefix llvm ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE LLVM_PREFIX)
-        if (LLVM_PREFIX)
-            find_program (OBJCOPY_PATH NAMES "llvm-objcopy" PATHS "${LLVM_PREFIX}/bin" NO_DEFAULT_PATH)
+        if (ARCH_AMD64)
+            set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
+        elseif (ARCH_AARCH64)
+            set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
         endif ()
-        if (NOT OBJCOPY_PATH)
-            execute_process (COMMAND ${BREW_PATH} --prefix binutils ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE BINUTILS_PREFIX)
-            if (BINUTILS_PREFIX)
-                find_program (OBJCOPY_PATH NAMES "objcopy" PATHS "${BINUTILS_PREFIX}/bin" NO_DEFAULT_PATH)
-            endif ()
-        endif ()
+    else ()
+        message(FATAL_ERROR "Cannot find objcopy.")
     endif ()
 endif ()
 
-if (OBJCOPY_PATH)
-    message (STATUS "Using objcopy: ${OBJCOPY_PATH}")
-else ()
-    message (FATAL_ERROR "Cannot find objcopy.")
-endif ()
-
 if (OS_DARWIN)
-    # The `-all_load` flag forces loading of all symbols from all libraries,
-    # and leads to multiply-defined symbols. This flag allows force loading
-    # from a _specific_ library, which is what we need.
-    set(WHOLE_ARCHIVE -force_load)
-    # The `-noall_load` flag is the default and now obsolete.
-    set(NO_WHOLE_ARCHIVE "")
+    set(WHOLE_ARCHIVE -all_load)
+    set(NO_WHOLE_ARCHIVE -noall_load)
 else ()
     set(WHOLE_ARCHIVE --whole-archive)
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
@@ -271,16 +257,11 @@ endif()
 
 include(cmake/cpu_features.cmake)
 
-option(ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated.")
+option(ARCH_NATIVE "Add -march=native compiler flag")
 
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
-
-# Asynchronous unwind tables are needed for Query Profiler.
-# They are already by default on some platforms but possibly not on all platforms.
-# Enable it explicitly.
-set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
 
 if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
     # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
@@ -513,10 +494,10 @@ include (cmake/find/krb5.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/cyrus-sasl.cmake)
 include (cmake/find/rdkafka.cmake)
-include (cmake/find/libuv.cmake) # for amqpcpp and cassandra
 include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
+include (cmake/find/termcap.cmake) # for external static llvm
 include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
@@ -535,15 +516,11 @@ include (cmake/find/fast_float.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
-include (cmake/find/nanodbc.cmake)
-include (cmake/find/sqlite.cmake)
 include (cmake/find/rocksdb.cmake)
 include (cmake/find/libpqxx.cmake)
+include (cmake/find/nanodbc.cmake)
 include (cmake/find/nuraft.cmake)
-include (cmake/find/yaml-cpp.cmake)
-include (cmake/find/s2geometry.cmake)
-include (cmake/find/nlp.cmake)
-include (cmake/find/bzip2.cmake)
+
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
@@ -608,9 +585,6 @@ include_directories(${ConfigIncludePath})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
-
-# Check if needed compiler flags are supported
-include (cmake/check_flags.cmake)
 
 add_subdirectory (base)
 add_subdirectory (src)

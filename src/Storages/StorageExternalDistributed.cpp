@@ -1,5 +1,6 @@
 #include "StorageExternalDistributed.h"
 
+#if USE_MYSQL || USE_LIBPQXX
 
 #include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -12,9 +13,7 @@
 #include <Processors/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/StoragePostgreSQL.h>
-#include <Storages/StorageURL.h>
 #include <common/logger_useful.h>
 
 
@@ -37,21 +36,17 @@ StorageExternalDistributed::StorageExternalDistributed(
     const String & password,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     ContextPtr context)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
     std::vector<String> shards_descriptions = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
     std::vector<std::pair<std::string, UInt16>> addresses;
-
-#if USE_MYSQL || USE_LIBPQXX
 
     /// For each shard pass replicas description into storage, replicas are managed by storage's PoolWithFailover.
     for (const auto & shard_description : shards_descriptions)
@@ -77,11 +72,8 @@ StorageExternalDistributed::StorageExternalDistributed(
                     remote_table,
                     /* replace_query = */ false,
                     /* on_duplicate_clause = */ "",
-                    columns_,
-                    constraints_,
-                    String{},
-                    context,
-                    MySQLSettings{});
+                    columns_, constraints_,
+                    context);
                 break;
             }
 #endif
@@ -98,76 +90,18 @@ StorageExternalDistributed::StorageExternalDistributed(
                     context->getSettingsRef().postgresql_connection_pool_size,
                     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-                shard = StoragePostgreSQL::create(table_id_, std::move(pool), remote_table, columns_, constraints_, String{}, context);
+                shard = StoragePostgreSQL::create(
+                    table_id_,
+                    std::move(pool),
+                    remote_table,
+                    columns_, constraints_,
+                    context);
                 break;
             }
 #endif
             default:
-            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Unsupported table engine. Supported engines are: MySQL, PostgreSQL, URL");
-            }
-        }
-
-        shards.emplace(std::move(shard));
-    }
-
-#else
-    (void)table_engine;
-    (void)remote_database;
-    (void)remote_table;
-    (void)username;
-    (void)password;
-    (void)shards_descriptions;
-    (void)addresses;
-#endif
-}
-
-
-StorageExternalDistributed::StorageExternalDistributed(
-            const String & addresses_description,
-            const StorageID & table_id,
-            const String & format_name,
-            const std::optional<FormatSettings> & format_settings,
-            const String & compression_method,
-            const ColumnsDescription & columns,
-            const ConstraintsDescription & constraints,
-            ContextPtr context)
-        : IStorage(table_id)
-{
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns);
-    storage_metadata.setConstraints(constraints);
-    setInMemoryMetadata(storage_metadata);
-
-    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-    /// Generate addresses without splitting for failover options
-    std::vector<String> url_descriptions = parseRemoteDescription(addresses_description, 0, addresses_description.size(), ',', max_addresses);
-    std::vector<String> uri_options;
-
-    for (const auto & url_description : url_descriptions)
-    {
-        /// For each uri (which acts like shard) check if it has failover options
-        uri_options = parseRemoteDescription(url_description, 0, url_description.size(), '|', max_addresses);
-        StoragePtr shard;
-
-        if (uri_options.size() > 1)
-        {
-            shard = std::make_shared<StorageURLWithFailover>(
-                uri_options,
-                table_id,
-                format_name,
-                format_settings,
-                columns, constraints, context,
-                compression_method);
-        }
-        else
-        {
-            Poco::URI uri(url_description);
-            shard = std::make_shared<StorageURL>(
-                uri, table_id, format_name, format_settings, columns, constraints, String{}, context, compression_method);
-
-            LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL: {}", url_description);
+                    "Unsupported table engine. Supported engines are: MySQL, PostgreSQL");
         }
 
         shards.emplace(std::move(shard));
@@ -217,63 +151,39 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
         const String & engine_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        const String & addresses_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & cluster_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & remote_database = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & remote_table = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & username = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & password = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
         StorageExternalDistributed::ExternalStorageEngine table_engine;
-        if (engine_name == "URL")
-        {
-            table_engine = StorageExternalDistributed::ExternalStorageEngine::URL;
-
-            const String & format_name = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-            String compression_method = "auto";
-            if (engine_args.size() == 4)
-                compression_method = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-
-            auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
-
-            return StorageExternalDistributed::create(
-                addresses_description,
-                args.table_id,
-                format_name,
-                format_settings,
-                compression_method,
-                args.columns,
-                args.constraints,
-                args.getContext());
-        }
+        if (engine_name == "MySQL")
+            table_engine = StorageExternalDistributed::ExternalStorageEngine::MySQL;
+        else if (engine_name == "PostgreSQL")
+            table_engine = StorageExternalDistributed::ExternalStorageEngine::PostgreSQL;
         else
-        {
-            if (engine_name == "MySQL")
-                table_engine = StorageExternalDistributed::ExternalStorageEngine::MySQL;
-            else if (engine_name == "PostgreSQL")
-                table_engine = StorageExternalDistributed::ExternalStorageEngine::PostgreSQL;
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL, URL",
-                    engine_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL",
+                engine_name);
 
-            const String & remote_database = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-            const String & remote_table = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-            const String & username = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-            const String & password = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
-
-            return StorageExternalDistributed::create(
-                args.table_id,
-                table_engine,
-                addresses_description,
-                remote_database,
-                remote_table,
-                username,
-                password,
-                args.columns,
-                args.constraints,
-                args.comment,
-                args.getContext());
-        }
+        return StorageExternalDistributed::create(
+            args.table_id,
+            table_engine,
+            cluster_description,
+            remote_database,
+            remote_table,
+            username,
+            password,
+            args.columns,
+            args.constraints,
+            args.getContext());
     },
     {
-        .source_access_type = AccessType::SOURCES,
+        .source_access_type = AccessType::MYSQL,
     });
 }
 
 }
+
+#endif

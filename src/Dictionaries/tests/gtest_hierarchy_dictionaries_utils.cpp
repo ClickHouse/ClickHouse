@@ -154,12 +154,10 @@ TEST(HierarchyDictionariesUtils, getDescendants)
         PaddedPODArray<UInt64> keys = {0, 1, 2, 3, 4};
 
         {
-            size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
                 parent_to_child,
-                DB::detail::GetAllDescendantsStrategy(),
-                keys_found);
+                DB::detail::GetAllDescendantsStrategy());
 
             const auto & actual_elements = result.elements;
             const auto & actual_offsets = result.offsets;
@@ -169,15 +167,12 @@ TEST(HierarchyDictionariesUtils, getDescendants)
 
             ASSERT_EQ(actual_elements, expected_elements);
             ASSERT_EQ(actual_offsets, expected_offsets);
-            ASSERT_EQ(keys_found, 3);
         }
         {
-            size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
                 parent_to_child,
-                DB::detail::GetDescendantsAtSpecificLevelStrategy{1},
-                keys_found);
+                DB::detail::GetDescendantsAtSpecificLevelStrategy{1});
 
             const auto & actual_elements = result.elements;
             const auto & actual_offsets = result.offsets;
@@ -187,7 +182,6 @@ TEST(HierarchyDictionariesUtils, getDescendants)
 
             ASSERT_EQ(actual_elements, expected_elements);
             ASSERT_EQ(actual_offsets, expected_offsets);
-            ASSERT_EQ(keys_found, 3);
         }
     }
     {
@@ -198,12 +192,10 @@ TEST(HierarchyDictionariesUtils, getDescendants)
         PaddedPODArray<UInt64> keys = {1, 2, 3};
 
         {
-            size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
                 parent_to_child,
-                DB::detail::GetAllDescendantsStrategy(),
-                keys_found);
+                DB::detail::GetAllDescendantsStrategy());
 
             const auto & actual_elements = result.elements;
             const auto & actual_offsets = result.offsets;
@@ -213,15 +205,12 @@ TEST(HierarchyDictionariesUtils, getDescendants)
 
             ASSERT_EQ(actual_elements, expected_elements);
             ASSERT_EQ(actual_offsets, expected_offsets);
-            ASSERT_EQ(keys_found, 2);
         }
         {
-            size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
                 parent_to_child,
-                DB::detail::GetDescendantsAtSpecificLevelStrategy{1},
-                keys_found);
+                DB::detail::GetDescendantsAtSpecificLevelStrategy{1});
 
             const auto & actual_elements = result.elements;
             const auto & actual_offsets = result.offsets;
@@ -231,7 +220,6 @@ TEST(HierarchyDictionariesUtils, getDescendants)
 
             ASSERT_EQ(actual_elements, expected_elements);
             ASSERT_EQ(actual_offsets, expected_offsets);
-            ASSERT_EQ(keys_found, 2);
         }
     }
 }

@@ -6,7 +6,7 @@ toc_title: RENAME
 # RENAME Statement {#misc_operations-rename}
 
 ## RENAME DATABASE {#misc_operations-rename_database}
-Переименовывает базу данных, поддерживается только для движка базы данных Atomic.
+Переименование базы данных
 
 ```
 RENAME DATABASE atomic_database1 TO atomic_database2 [ON CLUSTER cluster]

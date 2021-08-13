@@ -86,7 +86,7 @@ void buildSets(const ASTPtr & expression, ExpressionAnalyzer & analyzer)
     {
         const IAST & args = *func->arguments;
         const ASTPtr & arg = args.children.at(1);
-        if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
+        if (arg->as<ASTSubquery>() || arg->as<ASTIdentifier>())
         {
             analyzer.tryMakeSetForIndexFromSubquery(arg);
         }
@@ -150,6 +150,12 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     if (!select.where() && !select.prewhere())
         return unmodified;
 
+    ASTPtr condition_ast;
+    if (select.prewhere() && select.where())
+        condition_ast = makeASTFunction("and", select.prewhere()->clone(), select.where()->clone());
+    else
+        condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
+
     // Provide input columns as constant columns to check if an expression is constant.
     std::function<bool(const ASTPtr &)> is_constant = [&block, &context](const ASTPtr & node)
     {
@@ -193,7 +199,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     buildSets(expression_ast, analyzer);
-    ExpressionActionsPtr actions = analyzer.getActions(false /* add alises */, true /* project result */, CompileExpressions::yes);
+    ExpressionActionsPtr actions = analyzer.getActions(false);
 
     Block block_with_filter = block;
     actions->execute(block_with_filter);

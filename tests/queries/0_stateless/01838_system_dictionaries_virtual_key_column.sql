@@ -24,6 +24,3 @@ LAYOUT(COMPLEX_KEY_DIRECT());
 SELECT 'complex key';
 
 SELECT name, key FROM system.dictionaries WHERE name='example_complex_key_dictionary' AND database=currentDatabase();
-
-DROP DICTIONARY example_complex_key_dictionary;
-DROP DICTIONARY example_simple_key_dictionary;

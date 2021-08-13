@@ -31,14 +31,19 @@ public:
         join->joinBlock(block, not_processed);
     }
 
-    const Block & getTotals() const override
+    bool hasTotals() const override
     {
-        return join->getTotals();
+        return join->hasTotals();
     }
 
     void setTotals(const Block & block) override
     {
         join->setTotals(block);
+    }
+
+    void joinTotals(Block & block) const override
+    {
+        join->joinTotals(block);
     }
 
     size_t getTotalRowCount() const override

@@ -6,7 +6,7 @@
 #include <random>
 #include <functional>
 #include <common/types.h>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>
@@ -388,7 +388,7 @@ void PoolWithFailoverBase<TNestedPool>::updateErrorCounts(PoolWithFailoverBase<T
 {
     time_t current_time = time(nullptr);
 
-    if (last_decrease_time) //-V1051
+    if (last_decrease_time)
     {
         time_t delta = current_time - last_decrease_time;
 

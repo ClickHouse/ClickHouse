@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/SizeLimits.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Processors/IAccumulatingTransform.h>
@@ -44,7 +43,7 @@ private:
     Stopwatch watch;
 
     bool done_with_set = true;
-    //bool done_with_join = true;
+    bool done_with_join = true;
     bool done_with_table = true;
 
     SizeLimits network_transfer_limits;

@@ -3,8 +3,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
-#include <common/range.h>
+#include <Functions/IFunctionImpl.h>
+#include <ext/range.h>
 
 
 namespace DB
@@ -85,7 +85,7 @@ private:
             ColumnString::Offset src_offset{};
             ColumnString::Offset dst_offset{};
 
-            for (const auto i : collections::range(0, size))
+            for (const auto i : ext::range(0, size))
             {
                 const auto src_length = src_offsets[i] - src_offset;
                 memcpySmallAllowReadWriteOverflow15(&dst_data[dst_offset], &src_data[src_offset], src_length);

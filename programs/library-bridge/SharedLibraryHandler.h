@@ -23,8 +23,6 @@ public:
 
     SharedLibraryHandler(const SharedLibraryHandler & other);
 
-    SharedLibraryHandler & operator=(const SharedLibraryHandler & other) = delete;
-
     ~SharedLibraryHandler();
 
     BlockInputStreamPtr loadAll();

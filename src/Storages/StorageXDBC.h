@@ -29,11 +29,10 @@ public:
         const std::string & remote_database_name,
         const std::string & remote_table_name,
         const ColumnsDescription & columns_,
-        const String & comment,
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     std::string getName() const override;
 private:

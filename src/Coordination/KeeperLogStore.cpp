@@ -5,12 +5,9 @@ namespace DB
 
 KeeperLogStore::KeeperLogStore(const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_)
     : log(&Poco::Logger::get("KeeperLogStore"))
-    , changelog(changelogs_path, rotate_interval_, force_sync_, log)
+    , changelog(changelogs_path, rotate_interval_, log)
+    , force_sync(force_sync_)
 {
-    if (force_sync_)
-        LOG_INFO(log, "force_sync enabled");
-    else
-        LOG_INFO(log, "force_sync disabled");
 }
 
 uint64_t KeeperLogStore::start_index() const
@@ -41,7 +38,7 @@ uint64_t KeeperLogStore::append(nuraft::ptr<nuraft::log_entry> & entry)
 {
     std::lock_guard lock(changelog_lock);
     uint64_t idx = changelog.getNextEntryIndex();
-    changelog.appendEntry(idx, entry);
+    changelog.appendEntry(idx, entry, force_sync);
     return idx;
 }
 
@@ -49,7 +46,7 @@ uint64_t KeeperLogStore::append(nuraft::ptr<nuraft::log_entry> & entry)
 void KeeperLogStore::write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> & entry)
 {
     std::lock_guard lock(changelog_lock);
-    changelog.writeAt(index, entry);
+    changelog.writeAt(index, entry, force_sync);
 }
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> KeeperLogStore::log_entries(uint64_t start, uint64_t end)
@@ -96,19 +93,13 @@ bool KeeperLogStore::flush()
 void KeeperLogStore::apply_pack(uint64_t index, nuraft::buffer & pack)
 {
     std::lock_guard lock(changelog_lock);
-    changelog.applyEntriesFromBuffer(index, pack);
+    changelog.applyEntriesFromBuffer(index, pack, force_sync);
 }
 
 uint64_t KeeperLogStore::size() const
 {
     std::lock_guard lock(changelog_lock);
     return changelog.size();
-}
-
-void KeeperLogStore::end_of_append_batch(uint64_t /*start_index*/, uint64_t /*count*/)
-{
-    std::lock_guard lock(changelog_lock);
-    changelog.flush();
 }
 
 }

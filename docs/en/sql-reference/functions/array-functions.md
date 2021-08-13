@@ -11,23 +11,17 @@ Returns 1 for an empty array, or 0 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM table` transforms to `SELECT arr.size0 = 0 FROM TABLE`.
-
 ## notEmpty {#function-notempty}
 
 Returns 0 for an empty array, or 1 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
-
 ## length {#array_functions-length}
 
 Returns the number of items in the array.
 The result type is UInt64.
 The function also works for strings.
-
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT length(arr) FROM table` transforms to `SELECT arr.size0 FROM TABLE`.
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
@@ -45,44 +39,13 @@ Accepts zero arguments and returns an empty array of the appropriate type.
 
 Accepts an empty array and returns a one-element array that is equal to the default value.
 
+## range(end), range(start, end \[, step\]) {#rangeend-rangestart-end-step}
 
-## range(end), range(\[start, \] end \[, step\]) {#range}
-
-Returns an array of `UInt` numbers from `start` to `end - 1` by `step`.
-
-**Syntax**
-``` sql
-range([start, ] end [, step])
-```
-
-**Arguments**
-
--   `start` — The first element of the array. Optional, required if `step` is used. Default value: 0. [UInt](../data-types/int-uint.md)
--   `end` — The number before which the array is constructed. Required. [UInt](../data-types/int-uint.md)
--   `step` — Determines the incremental step between each element in the array. Optional. Default value: 1. [UInt](../data-types/int-uint.md)
-
-**Returned value**
-
--   Array of `UInt` numbers from `start` to `end - 1` by `step`.
-
-**Implementation details**
-
--   All arguments must be positive values: `start`, `end`, `step` are `UInt` data types, as well as elements of the returned array.
--   An exception is thrown if query results in arrays with a total length of more than 100,000,000 elements.
-
-
-**Examples**
-
-Query:
-``` sql
-SELECT range(5), range(1, 5), range(1, 5, 2);
-```
-Result:
-```txt
-┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┐
-│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │
-└─────────────┴─────────────┴────────────────┘
-```
+Returns an array of numbers from start to end-1 by step.
+If the argument `start` is not specified, defaults to 0.
+If the argument `step` is not specified, defaults to 1.
+It behaviors almost like pythonic `range`. But the difference is that all the arguments type must be `UInt` numbers.
+Just in case, an exception is thrown if arrays with a total length of more than 100,000,000 elements are created in a data block.
 
 ## array(x1, …), operator \[x1, …\] {#arrayx1-operator-x1}
 
@@ -162,7 +125,7 @@ hasAll(set, subset)
 
 -   An empty array is a subset of any array.
 -   `Null` processed as a value.
--   Order of values in both of arrays does not matter.
+-   Order of values in both of arrays doesn’t matter.
 
 **Examples**
 
@@ -199,7 +162,7 @@ hasAny(array1, array2)
 **Peculiar properties**
 
 -   `Null` processed as a value.
--   Order of values in both of arrays does not matter.
+-   Order of values in both of arrays doesn’t matter.
 
 **Examples**
 
@@ -639,7 +602,7 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\[‘hello’, ‘world’\]), that is, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function does not use `x`, actual values of the source array do not affect the order in the result. So, ‘hello’ will be the second element in the result, and ‘world’ will be the first.
+Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\[‘hello’, ‘world’\]), that is, \[‘hello’ –\> 2, ‘world’ –\> 1\]. Since the lambda function doesn’t use `x`, actual values of the source array don’t affect the order in the result. So, ‘hello’ will be the second element in the result, and ‘world’ will be the first.
 
 Other examples are shown below.
 
@@ -1250,6 +1213,62 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, 
 
 Note that the `arrayFill` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
+## arrayFold(func, arr1, …, init) {#array-fold}
+
+Returns an result of [folding](https://en.wikipedia.org/wiki/Fold_(higher-order_function)) arrays and value `init` using function `func`.
+I.e. result of calculation `func(arr1[n], …, func(arr1[n - 1], …, func(…, func(arr1[2], …,  func(arr1[1], …, init)))))`.
+
+Note that the `arrayMap` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+
+**Arguments**
+
+-   `func` — The lambda function with `n+1` arguments (where `n` is number of input arrays), first `n` arguments are for
+    current elements of input arrays, and last argument is for current value of accumulator.
+-   `arr` — Any number of [arrays](../../sql-reference/data-types/array.md).
+-   `init` - Initial value of accumulator.
+
+**Returned value**
+
+Final value of accumulator.
+
+**Examples**
+
+The following example shows how to acquire product and sum of elements of array:
+
+``` sql
+SELECT arrayMap(x, accum -> (accum.1 * x, accum.2 + x), [1, 2, 3], (0, 1)) as res;
+```
+
+``` text
+┌─res───────┐
+│ (120, 15) │
+└───────────┘
+```
+
+The following example shows how to reverse elements of array:
+
+``` sql
+SELECT arrayFold(x, acc -> arrayPushFront(acc, x), [1,2,3,4,5], emptyArrayUInt64()) as res;
+```
+
+``` text
+┌─res─────────┐
+│ [5,4,3,2,1] │
+└─────────────┘
+```
+
+Folding may be used to access of already passed elements due to function calculation, for example:
+
+``` sql
+SELECT arrayFold(x, acc -> (x, concat(acc.2, toString(acc.1), ',')), [1,2], (0,''))
+```
+
+``` text
+┌─res────────┐
+│ (2,'0,1,') │
+└────────────┘
+```
+
 ## arrayReverseFill(func, arr1, …) {#array-reverse-fill}
 
 Scan through `arr1` from the last element to the first element and replace `arr1[i]` by `arr1[i + 1]` if `func` returns 0. The last element of `arr1` will not be replaced.
@@ -1581,52 +1600,3 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 Note that the `arraySumNonNegative` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-## arrayProduct {#arrayproduct}
-
-Multiplies elements of an [array](../../sql-reference/data-types/array.md).
-
-**Syntax**
-
-``` sql
-arrayProduct(arr)
-```
-
-**Arguments**
-
--   `arr` — [Array](../../sql-reference/data-types/array.md) of numeric values.
-
-**Returned value**
-
--   A product of array's elements.
-
-Type: [Float64](../../sql-reference/data-types/float.md).
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT arrayProduct([1,2,3,4,5,6]) as res;
-```
-
-Result:
-
-``` text
-┌─res───┐
-│ 720   │
-└───────┘
-```
-
-Query:
-
-``` sql
-SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as res, toTypeName(res);
-```
-
-Return value type is always [Float64](../../sql-reference/data-types/float.md). Result:
-
-``` text
-┌─res─┬─toTypeName(arrayProduct(array(toDecimal64(1, 8), toDecimal64(2, 8), toDecimal64(3, 8))))─┐
-│ 6   │ Float64                                                                                  │
-└─────┴──────────────────────────────────────────────────────────────────────────────────────────┘
-```

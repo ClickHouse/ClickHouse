@@ -202,7 +202,7 @@ def check_modify_column_when_privilege_is_granted(table, user, node, column=None
         column = 'modify'
 
     with Given(f"I add the column {column}"):
-        node.query(f"ALTER TABLE {table} ADD COLUMN {column} String DEFAULT '0'")
+        node.query(f"ALTER TABLE {table} ADD COLUMN {column} String")
 
     with When(f"I insert some data into column {column}"):
         node.query(f"INSERT INTO {table} ({column}) VALUES ('3.4')")
@@ -699,7 +699,8 @@ def user_with_privileges_on_cluster(self, permutation, table_type, node=None):
 
 @TestSuite
 def scenario_parallelization(self, table_type, permutation):
-    with Pool(7) as pool:
+    pool = Pool(7)
+    try:
         tasks = []
         try:
             for scenario in loads(current_module(), Scenario):
@@ -707,6 +708,8 @@ def scenario_parallelization(self, table_type, permutation):
                     {"table_type": table_type, "permutation": permutation})
         finally:
             join(tasks)
+    finally:
+        pool.close()
 
 @TestFeature
 @Requirements(
@@ -736,7 +739,8 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
             continue
 
         with Example(str(example)):
-            with Pool(10) as pool:
+            pool = Pool(10)
+            try:
                 tasks = []
                 try:
                     for permutation in permutations(table_type):
@@ -746,3 +750,5 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
                             {"table_type": table_type, "permutation": permutation})
                 finally:
                     join(tasks)
+            finally:
+                pool.close()

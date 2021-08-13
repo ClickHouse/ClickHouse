@@ -9,14 +9,14 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
-#include "IFunction.h"
+#include "IFunctionImpl.h"
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
-#include <common/bit_cast.h>
+#include <ext/bit_cast.h>
 #include <algorithm>
 
 #ifdef __SSE4_1__
@@ -444,7 +444,13 @@ public:
         }
         else
         {
-            memcpy(out.data(), in.data(), in.size() * sizeof(T));
+            if constexpr (!is_big_int_v<NativeType>)
+                memcpy(out.data(), in.data(), in.size() * sizeof(T));
+            else
+            {
+                for (size_t i = 0; i < in.size(); i++)
+                    out[i] = in[i];
+            }
         }
     }
 };
@@ -505,7 +511,7 @@ class Dispatcher
 public:
     static ColumnPtr apply(const IColumn * column, Scale scale_arg)
     {
-        if constexpr (is_arithmetic_v<T>)
+        if constexpr (IsNumber<T>)
             return apply(checkAndGetColumn<ColumnVector<T>>(column), scale_arg);
         else if constexpr (IsDecimalNumber<T>)
             return apply(checkAndGetColumn<ColumnDecimal<T>>(column), scale_arg);

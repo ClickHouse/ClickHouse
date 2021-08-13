@@ -13,8 +13,7 @@
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
-#include <Poco/Environment.h>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 #include <common/defines.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
@@ -26,7 +25,6 @@
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
-#include <Common/ShellCommand.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
@@ -40,7 +38,6 @@
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
 #include <IO/HTTPCommon.h>
-#include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -52,7 +49,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -61,7 +58,6 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
-#include <DataStreams/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
@@ -77,7 +73,6 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
-#include <filesystem>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -97,9 +92,6 @@
 #endif
 
 #if USE_SSL
-#    if USE_INTERNAL_SSL_LIBRARY
-#        include <Compression/CompressionCodecEncrypted.h>
-#    endif
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -112,14 +104,6 @@
 #   include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
-#if USE_BASE64
-#   include <turbob64.h>
-#endif
-
-#if USE_JEMALLOC
-#    include <jemalloc/jemalloc.h>
-#endif
-
 namespace CurrentMetrics
 {
     extern const Metric Revision;
@@ -128,36 +112,10 @@ namespace CurrentMetrics
     extern const Metric MaxDDLEntryID;
 }
 
-namespace fs = std::filesystem;
-
-#if USE_JEMALLOC
-static bool jemallocOptionEnabled(const char *name)
-{
-    bool value;
-    size_t size = sizeof(value);
-
-    if (mallctl(name, reinterpret_cast<void *>(&value), &size, /* newp= */ nullptr, /* newlen= */ 0))
-        throw Poco::SystemException("mallctl() failed");
-
-    return value;
-}
-#else
-static bool jemallocOptionEnabled(const char *) { return 0; }
-#endif
-
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
-
-    if (jemallocOptionEnabled("opt.background_thread"))
-    {
-        LOG_ERROR(&app.logger(),
-            "jemalloc.background_thread was requested, "
-            "however ClickHouse uses percpu_arena and background_thread most likely will not give any benefits, "
-            "and also background_thread is not compatible with ClickHouse watchdog "
-            "(that can be disabled with CLICKHOUSE_WATCHDOG_ENABLE=0)");
-    }
 
     /// Do not fork separate process from watchdog if we attached to terminal.
     /// Otherwise it breaks gdb usage.
@@ -196,19 +154,19 @@ void setupTmpPath(Poco::Logger * log, const std::string & path)
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
-    fs::create_directories(path);
+    Poco::File(path).createDirectories();
 
     /// Clearing old temporary files.
-    fs::directory_iterator dir_end;
-    for (fs::directory_iterator it(path); it != dir_end; ++it)
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
     {
-        if (it->is_regular_file() && startsWith(it->path().filename(), "tmp"))
+        if (it->isFile() && startsWith(it.name(), "tmp"))
         {
-            LOG_DEBUG(log, "Removing old temporary file {}", it->path().string());
-            fs::remove(it->path());
+            LOG_DEBUG(log, "Removing old temporary file {}", it->path());
+            it->remove();
         }
         else
-            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
+            LOG_DEBUG(log, "Skipped file in temporary path {}", it->path());
     }
 }
 
@@ -251,7 +209,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int INCORRECT_DATA;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int SYSTEM_ERROR;
     extern const int FAILED_TO_GETPWUID;
@@ -335,13 +292,6 @@ Poco::Net::SocketAddress Server::socketBindListen(Poco::Net::ServerSocket & sock
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
 #endif
 
-    /// If caller requests any available port from the OS, discover it after binding.
-    if (port == 0)
-    {
-        address = socket.address();
-        LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
-    }
-
     socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
 
     return address;
@@ -407,11 +357,6 @@ void Server::initialize(Poco::Util::Application & self)
 {
     BaseDaemon::initialize(self);
     logger().information("starting up");
-
-    LOG_INFO(&logger(), "OS name: {}, version: {}, architecture: {}",
-        Poco::Environment::osName(),
-        Poco::Environment::osVersion(),
-        Poco::Environment::osArchitecture());
 }
 
 std::string Server::getDefaultCorePath() const
@@ -455,39 +400,6 @@ void checkForUsersNotInMainConfig(
     }
 }
 
-static void loadEncryptionKey(const std::string & key_command [[maybe_unused]], Poco::Logger * log)
-{
-#if USE_BASE64 && USE_SSL && USE_INTERNAL_SSL_LIBRARY
-
-    auto process = ShellCommand::execute(key_command);
-
-    std::string b64_key;
-    readStringUntilEOF(b64_key, process->out);
-    process->wait();
-
-    // turbob64 doesn't like whitespace characters in input. Strip
-    // them before decoding.
-    std::erase_if(b64_key, [](char c)
-    {
-        return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-    });
-
-    std::vector<char> buf(b64_key.size());
-    const size_t key_size = tb64dec(reinterpret_cast<const unsigned char *>(b64_key.data()), b64_key.size(),
-                                    reinterpret_cast<unsigned char *>(buf.data()));
-    if (!key_size)
-        throw Exception("Failed to decode encryption key", ErrorCodes::INCORRECT_DATA);
-    else if (key_size < 16)
-        LOG_WARNING(log, "The encryption key should be at least 16 octets long.");
-
-    const std::string_view key = std::string_view(buf.data(), key_size);
-    CompressionCodecEncrypted::setMasterKey(key);
-
-#else
-    LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
-#endif
-}
-
 
 [[noreturn]] void forceShutdown()
 {
@@ -521,6 +433,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
+    if (ThreadFuzzer::instance().isEffective())
+        LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
+
+#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
+    LOG_WARNING(log, "Server was built in debug mode. It will work slowly.");
+#endif
+
+#if defined(SANITIZER)
+    LOG_WARNING(log, "Server was built with sanitizer. It will work slowly.");
+#endif
+
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
@@ -530,24 +453,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
-#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
-    global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");
-#endif
-
-if (ThreadFuzzer::instance().isEffective())
-    global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
-
-#if defined(SANITIZER)
-    global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
-#endif
-
-
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
-
-    ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
     bool has_zookeeper = config().has("zookeeper");
 
@@ -599,10 +508,8 @@ if (ThreadFuzzer::instance().isEffective())
             if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
             {
                 /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
-                global_context->addWarningMessage(
-                    fmt::format("Server is run under debugger and its binary image is modified (most likely with breakpoints).",
-                    calculated_binary_hash)
-                );
+                LOG_WARNING(log, "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                    calculated_binary_hash);
             }
             else
             {
@@ -685,7 +592,7 @@ if (ThreadFuzzer::instance().isEffective())
         }
         else
         {
-            global_context->addWarningMessage(message);
+            LOG_WARNING(log, message);
         }
     }
 
@@ -737,38 +644,37 @@ if (ThreadFuzzer::instance().isEffective())
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
     {
-        auto flags_path = fs::path(path) / "flags/";
-        fs::create_directories(flags_path);
-        global_context->setFlagsPath(flags_path);
+        Poco::File(path + "flags/").createDirectories();
+        global_context->setFlagsPath(path + "flags/");
     }
 
     /** Directory with user provided files that are usable by 'file' table function.
       */
     {
 
-        std::string user_files_path = config().getString("user_files_path", fs::path(path) / "user_files/");
+        std::string user_files_path = config().getString("user_files_path", path + "user_files/");
         global_context->setUserFilesPath(user_files_path);
-        fs::create_directories(user_files_path);
+        Poco::File(user_files_path).createDirectories();
     }
 
     {
-        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", fs::path(path) / "dictionaries_lib/");
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path + "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
-        fs::create_directories(dictionaries_lib_path);
+        Poco::File(dictionaries_lib_path).createDirectories();
     }
 
     /// top_level_domains_lists
     {
-        const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
-        TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
+        const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/") + "/";
+        TLDListsHolder::getInstance().parseConfig(top_level_domains_path, config());
     }
 
     {
-        fs::create_directories(fs::path(path) / "data/");
-        fs::create_directories(fs::path(path) / "metadata/");
+        Poco::File(path + "data/").createDirectories();
+        Poco::File(path + "metadata/").createDirectories();
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
-        fs::create_directories(fs::path(path) / "metadata_dropped/");
+        Poco::File(path + "metadata_dropped/").createDirectories();
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -945,23 +851,18 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->setMMappedFileCache(mmap_cache_size);
 
 #if USE_EMBEDDED_COMPILER
-    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 1024;
-    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files
-    fs::path format_schema_path(config().getString("format_schema_path", fs::path(path) / "format_schemas/"));
-    global_context->setFormatSchemaPath(format_schema_path);
-    fs::create_directories(format_schema_path);
+    auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
+    global_context->setFormatSchemaPath(format_schema_path.path());
+    format_schema_path.createDirectories();
 
     /// Check sanity of MergeTreeSettings on server startup
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
-
-    /// Set up encryption.
-    if (config().has("encryption.key_command"))
-        loadEncryptionKey(config().getString("encryption.key_command"), log);
 
     Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
@@ -1094,12 +995,9 @@ if (ThreadFuzzer::instance().isEffective())
         loadMetadataSystem(global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
-        global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
-        /// We load temporary database first, because projections need it.
-        database_catalog.initializeAndLoadTemporaryDatabase();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         database_catalog.loadDatabases();
@@ -1213,7 +1111,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(
-            global_context, config().getUInt("asynchronous_metrics_update_period_s", 1), servers_to_start_before_tables, servers);
+            global_context, config().getUInt("asynchronous_metrics_update_period_s", 60), servers_to_start_before_tables, servers);
         attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)
@@ -1450,9 +1348,16 @@ if (ThreadFuzzer::instance().isEffective())
         }
 
         /// try to load dictionaries immediately, throw on error and die
+        ext::scope_guard dictionaries_xmls;
         try
         {
-            global_context->loadDictionaries(config());
+            if (!config().getBool("dictionaries_lazy_load", true))
+            {
+                global_context->tryCreateEmbeddedDictionaries();
+                global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
+            }
+            dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
+                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
         }
         catch (...)
         {

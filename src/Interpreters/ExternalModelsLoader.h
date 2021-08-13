@@ -20,14 +20,9 @@ public:
     /// Models will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     explicit ExternalModelsLoader(ContextPtr context_);
 
-    ModelPtr getModel(const std::string & model_name) const
+    ModelPtr getModel(const std::string & name) const
     {
-        return std::static_pointer_cast<const IModel>(load(model_name));
-    }
-
-    void reloadModel(const std::string & model_name) const
-    {
-        loadOrReload(model_name);
+        return std::static_pointer_cast<const IModel>(load(name));
     }
 
 protected:

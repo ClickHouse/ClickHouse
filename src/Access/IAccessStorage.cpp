@@ -197,16 +197,6 @@ String IAccessStorage::readName(const UUID & id) const
 }
 
 
-Strings IAccessStorage::readNames(const std::vector<UUID> & ids) const
-{
-    Strings res;
-    res.reserve(ids.size());
-    for (const auto & id : ids)
-        res.emplace_back(readName(id));
-    return res;
-}
-
-
 std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
 {
     String name;
@@ -214,19 +204,6 @@ std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
     if (!tryCall(func))
         return {};
     return name;
-}
-
-
-Strings IAccessStorage::tryReadNames(const std::vector<UUID> & ids) const
-{
-    Strings res;
-    res.reserve(ids.size());
-    for (const auto & id : ids)
-    {
-        if (auto name = tryReadName(id))
-            res.emplace_back(std::move(name).value());
-    }
-    return res;
 }
 
 
@@ -400,21 +377,21 @@ std::vector<UUID> IAccessStorage::tryUpdate(const std::vector<UUID> & ids, const
 }
 
 
-scope_guard IAccessStorage::subscribeForChanges(EntityType type, const OnChangedHandler & handler) const
+ext::scope_guard IAccessStorage::subscribeForChanges(EntityType type, const OnChangedHandler & handler) const
 {
     return subscribeForChangesImpl(type, handler);
 }
 
 
-scope_guard IAccessStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const
+ext::scope_guard IAccessStorage::subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const
 {
     return subscribeForChangesImpl(id, handler);
 }
 
 
-scope_guard IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
+ext::scope_guard IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const
 {
-    scope_guard subscriptions;
+    ext::scope_guard subscriptions;
     for (const auto & id : ids)
         subscriptions.join(subscribeForChangesImpl(id, handler));
     return subscriptions;

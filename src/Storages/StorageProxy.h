@@ -32,12 +32,9 @@ public:
     NamesAndTypesList getVirtuals() const override { return getNested()->getVirtuals(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
-        ContextPtr context,
-        QueryProcessingStage::Enum to_stage,
-        const StorageMetadataPtr &,
-        SelectQueryInfo & info) const override
+        ContextPtr context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & ast) const override
     {
-        return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getInMemoryMetadataPtr(), info);
+        return getNested()->getQueryProcessingStage(context, to_stage, ast);
     }
 
     BlockInputStreams watch(
@@ -63,7 +60,7 @@ public:
         return getNested()->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
     {
         return getNested()->write(query, metadata_snapshot, context);
     }
@@ -133,7 +130,6 @@ public:
 
     void startup() override { getNested()->startup(); }
     void shutdown() override { getNested()->shutdown(); }
-    void flush() override { getNested()->flush(); }
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 

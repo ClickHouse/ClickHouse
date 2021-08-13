@@ -22,10 +22,10 @@ struct RowReadExtension
 /// Common parameters for generating blocks.
 struct RowInputFormatParams
 {
-    size_t max_block_size = 0;
+    size_t max_block_size;
 
-    UInt64 allow_errors_num = 0;
-    Float64 allow_errors_ratio = 0;
+    UInt64 allow_errors_num;
+    Float64 allow_errors_ratio;
 
     Poco::Timespan max_execution_time = 0;
     OverflowMode timeout_overflow_mode = OverflowMode::THROW;

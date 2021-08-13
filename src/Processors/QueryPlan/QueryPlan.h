@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
-#include <Columns/IColumn.h>
 
 #include <list>
 #include <memory>
@@ -29,12 +28,6 @@ class Pipe;
 
 struct QueryPlanOptimizationSettings;
 struct BuildQueryPipelineSettings;
-
-namespace JSONBuilder
-{
-    class IItem;
-    using ItemPtr = std::unique_ptr<IItem>;
-}
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -73,8 +66,6 @@ public:
         bool description = true;
         /// Add detailed information about step actions.
         bool actions = false;
-        /// Add information about indexes actions.
-        bool indexes = false;
     };
 
     struct ExplainPipelineOptions
@@ -83,10 +74,8 @@ public:
         bool header = false;
     };
 
-    JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
-    void explainEstimate(MutableColumns & columns);
 
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.

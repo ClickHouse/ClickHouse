@@ -7,14 +7,8 @@ PEERDIR(
     clickhouse/src/Common
     contrib/libs/msgpack
     contrib/libs/protobuf
-    contrib/libs/arrow
 )
 
-ADDINCL(
-    contrib/libs/arrow/src
-)
-
-CFLAGS(-DUSE_ARROW=1)
 
 SRCS(
     Chunk.cpp
@@ -31,11 +25,6 @@ SRCS(
     Formats/IOutputFormat.cpp
     Formats/IRowInputFormat.cpp
     Formats/IRowOutputFormat.cpp
-    Formats/Impl/ArrowBlockInputFormat.cpp
-    Formats/Impl/ArrowBlockOutputFormat.cpp
-    Formats/Impl/ArrowBufferedStreams.cpp
-    Formats/Impl/ArrowColumnToCHColumn.cpp
-    Formats/Impl/CHColumnToArrowColumn.cpp
     Formats/Impl/BinaryRowInputFormat.cpp
     Formats/Impl/BinaryRowOutputFormat.cpp
     Formats/Impl/CSVRowInputFormat.cpp
@@ -118,11 +107,11 @@ SRCS(
     QueryPlan/IQueryPlanStep.cpp
     QueryPlan/ISourceStep.cpp
     QueryPlan/ITransformingStep.cpp
-    QueryPlan/JoinStep.cpp
     QueryPlan/LimitByStep.cpp
     QueryPlan/LimitStep.cpp
     QueryPlan/MergeSortingStep.cpp
     QueryPlan/MergingAggregatedStep.cpp
+    QueryPlan/MergingFinal.cpp
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetStep.cpp
     QueryPlan/Optimizations/QueryPlanOptimizationSettings.cpp
@@ -135,10 +124,9 @@ SRCS(
     QueryPlan/PartialSortingStep.cpp
     QueryPlan/QueryIdHolder.cpp
     QueryPlan/QueryPlan.cpp
-    QueryPlan/ReadFromMergeTree.cpp
     QueryPlan/ReadFromPreparedSource.cpp
-    QueryPlan/ReadFromRemote.cpp
     QueryPlan/ReadNothingStep.cpp
+    QueryPlan/ReverseRowsStep.cpp
     QueryPlan/RollupStep.cpp
     QueryPlan/SettingQuotaAndLimitsStep.cpp
     QueryPlan/TotalsHavingStep.cpp
@@ -150,12 +138,10 @@ SRCS(
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
-    Transforms/AddingDefaultsTransform.cpp
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ArrayJoinTransform.cpp
-    Transforms/CheckSortedTransform.cpp
     Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
@@ -178,7 +164,6 @@ SRCS(
     Transforms/SortingTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     Transforms/WindowTransform.cpp
-    Transforms/getSourceFromFromASTInsertQuery.cpp
     printPipeline.cpp
 
 )

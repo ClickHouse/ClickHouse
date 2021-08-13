@@ -3,7 +3,6 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -142,8 +141,18 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
 {
     for (auto & child : select.children)
     {
-        if (needVisitChild(child))
+        if (child == select.groupBy() || child == select.orderBy() || child == select.having())
+        {
+            bool old_setting = data.settings.prefer_column_name_to_alias;
+            data.settings.prefer_column_name_to_alias = false;
             visit(child, data);
+            data.settings.prefer_column_name_to_alias = old_setting;
+        }
+        else
+        {
+            if (needVisitChild(child))
+                visit(child, data);
+        }
     }
 
     /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
@@ -171,24 +180,6 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
             /// Don't go into query argument.
             return;
         }
-
-        /// For lambda functions we need to avoid replacing lambda parameters with external aliases, for example,
-        /// Select 1 as x, arrayMap(x -> x + 2, [1, 2, 3])
-        /// shouldn't be replaced with Select 1 as x, arrayMap(x -> **(1 as x)** + 2, [1, 2, 3])
-        Aliases extracted_aliases;
-        if (func_node->name == "lambda")
-        {
-            Names lambda_aliases = RequiredSourceColumnsMatcher::extractNamesFromLambda(*func_node);
-            for (const auto & name : lambda_aliases)
-            {
-                auto it = data.aliases.find(name);
-                if (it != data.aliases.end())
-                {
-                    extracted_aliases.insert(data.aliases.extract(it));
-                }
-            }
-        }
-
         /// We skip the first argument. We also assume that the lambda function can not have parameters.
         size_t first_pos = 0;
         if (func_node->name == "lambda")
@@ -210,11 +201,6 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         if (func_node->window_definition)
         {
             visitChildren(func_node->window_definition.get(), data);
-        }
-
-        for (auto & it : extracted_aliases)
-        {
-            data.aliases.insert(it);
         }
     }
     else if (!node->as<ASTSelectQuery>())
@@ -265,8 +251,6 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
 
     current_asts.erase(initial_ast.get());
     current_asts.erase(ast.get());
-    if (data.ignore_alias && !ast->tryGetAlias().empty())
-        ast->setAlias("");
     finished_asts[initial_ast] = ast;
 
     /// @note can not place it in CheckASTDepth dtor cause of exception.

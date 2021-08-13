@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
@@ -24,9 +24,9 @@ namespace DB
 
 /** See the description of the data structure in MergeTreeData.
   */
-class StorageMergeTree final : public shared_ptr_helper<StorageMergeTree>, public MergeTreeData
+class StorageMergeTree final : public ext::shared_ptr_helper<StorageMergeTree>, public MergeTreeData
 {
-    friend struct shared_ptr_helper<StorageMergeTree>;
+    friend struct ext::shared_ptr_helper<StorageMergeTree>;
 public:
     void startup() override;
     void shutdown() override;
@@ -61,7 +61,7 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     /** Perform the next step in combining the parts.
       */
@@ -94,7 +94,7 @@ public:
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
-    bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
+    std::optional<JobAndPool> getDataProcessingJob() override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 private:
@@ -196,7 +196,6 @@ private:
         bool final,
         String * disable_reason,
         TableLockHolder & table_lock_holder,
-        std::unique_lock<std::mutex> & lock,
         bool optimize_skip_merged_partitions = false,
         SelectPartsDecision * select_decision_out = nullptr);
 
@@ -212,10 +211,7 @@ private:
     void clearOldMutations(bool truncate = false);
 
     // Partition helpers
-    void dropPartNoWaitNoThrow(const String & part_name) override;
-    void dropPart(const String & part_name, bool detach, ContextPtr context) override;
-    void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
-    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
+    void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr context, bool throw_if_noop) override;
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
@@ -236,10 +232,7 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
 
-    std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
-
-    friend class MergeTreeProjectionBlockOutputStream;
-    friend class MergeTreeSink;
+    friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
 
 
@@ -256,7 +249,7 @@ protected:
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata,
         bool attach,
-        ContextMutablePtr context_,
+        ContextPtr context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,

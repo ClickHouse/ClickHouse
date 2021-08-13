@@ -32,6 +32,7 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context
     enablePeriodicUpdates(true);
 }
 
+
 ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
         const std::string & key_in_config, const std::string & repository_name) const
@@ -81,12 +82,8 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
 
 std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
 {
-    bool has_dictionary = has(dictionary_name);
-    if (has_dictionary)
-        return dictionary_name;
-
     std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name);
-    has_dictionary = has(resolved_name);
+    bool has_dictionary = has(resolved_name);
 
     if (!has_dictionary)
     {
@@ -120,10 +117,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     std::string maybe_database_name = name.substr(0, pos);
     std::string maybe_table_name = name.substr(pos + 1);
 
-    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
-        {maybe_database_name, maybe_table_name},
-        const_pointer_cast<Context>(getContext()));
-
+    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, getContext());
     if (!db)
         return name;
     assert(table);

@@ -16,14 +16,13 @@ limitations under the License. */
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Processors/Sources/BlocksSource.h>
+#include <DataStreams/BlocksSource.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
-#include <Common/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewBlockInputStream.h>
@@ -49,6 +48,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW;
@@ -81,8 +81,9 @@ static StorageID extractDependentTable(ASTPtr & query, ContextPtr context, const
     {
         auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
         if (!ast_select)
-            throw Exception("LIVE VIEWs are only supported for queries from tables, but there is no table name in select query.",
-                            DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
+            throw Exception("Logical error while creating StorageLiveView."
+                            " Could not retrieve table name from select query.",
+                            DB::ErrorCodes::LOGICAL_ERROR);
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
 
@@ -365,20 +366,20 @@ bool StorageLiveView::getNewBlocks()
         new_blocks->push_back(block);
     }
 
-    hash.get128(key);
+    hash.get128(key.low, key.high);
 
     /// Update blocks only if hash keys do not match
     /// NOTE: hash could be different for the same result
     ///       if blocks are not in the same order
     bool updated = false;
     {
-        if (getBlocksHashKey() != getHexUIntLowercase(key))
+        if (getBlocksHashKey() != key.toHexString())
         {
             if (new_blocks->empty())
             {
                 new_blocks->push_back(getHeader());
             }
-            new_blocks_metadata->hash = getHexUIntLowercase(key);
+            new_blocks_metadata->hash = key.toHexString();
             new_blocks_metadata->version = getBlocksVersion() + 1;
             new_blocks_metadata->time = std::chrono::system_clock::now();
 

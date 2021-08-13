@@ -1,9 +1,8 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <Common/HashTable/Hash.h>
 #include <Common/LRUCache.h>
 #include <Common/SipHash.h>
+#include <Common/UInt128.h>
 #include <Common/ProfileEvents.h>
 #include <IO/MMappedFile.h>
 
@@ -40,7 +39,8 @@ public:
         hash.update(offset);
         hash.update(length);
 
-        hash.get128(key);
+        hash.get128(key.low, key.high);
+
         return key;
     }
 

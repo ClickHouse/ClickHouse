@@ -1,3 +1,5 @@
+from multiprocessing.dummy import Pool
+
 from testflows.core import *
 from testflows.asserts import error
 

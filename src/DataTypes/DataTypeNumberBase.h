@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/UInt128.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 
@@ -15,17 +16,19 @@ class ColumnVector;
 template <typename T>
 class DataTypeNumberBase : public IDataType
 {
-    static_assert(is_arithmetic_v<T>);
+    static_assert(IsNumber<T>);
 
 public:
     static constexpr bool is_parametric = false;
-    static constexpr auto family_name = TypeName<T>;
 
     using FieldType = T;
+    static constexpr auto type_id = TypeId<T>::value;
+    static constexpr auto family_name = TypeName<T>::get();
+
     using ColumnType = ColumnVector<T>;
 
-    const char * getFamilyName() const override { return TypeName<T>; }
-    TypeIndex getTypeId() const override { return TypeId<T>; }
+    const char * getFamilyName() const override { return family_name; }
+    TypeIndex getTypeId() const override { return type_id; }
 
     Field getDefault() const override;
 
@@ -60,7 +63,7 @@ extern template class DataTypeNumberBase<UInt8>;
 extern template class DataTypeNumberBase<UInt16>;
 extern template class DataTypeNumberBase<UInt32>;
 extern template class DataTypeNumberBase<UInt64>;
-extern template class DataTypeNumberBase<UInt128>;
+extern template class DataTypeNumberBase<UInt128>; // base for UUID
 extern template class DataTypeNumberBase<UInt256>;
 extern template class DataTypeNumberBase<Int16>;
 extern template class DataTypeNumberBase<Int8>;
