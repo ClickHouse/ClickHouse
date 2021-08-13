@@ -5,7 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -19,10 +18,6 @@
 
 #include <IO/ReadHelpers.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
 namespace DB
 {
 
@@ -32,7 +27,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
@@ -217,8 +211,8 @@ BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(
     bool parallel_formatting = settings.output_format_parallel_formatting;
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
-    if (output_getter && parallel_formatting && getCreators(name).supports_parallel_formatting && !settings.output_format_json_array_of_rows
-        && !format_settings.mysql_wire.sequence_id)
+    if (output_getter && parallel_formatting && getCreators(name).supports_parallel_formatting
+        && !settings.output_format_json_array_of_rows)
     {
         auto formatter_creator = [output_getter, sample, callback, format_settings]
             (WriteBuffer & output) -> OutputFormatPtr
@@ -318,7 +312,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     const Settings & settings = context->getSettingsRef();
 
     if (settings.output_format_parallel_formatting && getCreators(name).supports_parallel_formatting
-        && !settings.output_format_json_array_of_rows && !format_settings.mysql_wire.sequence_id)
+        && !settings.output_format_json_array_of_rows)
     {
         auto formatter_creator = [output_getter, sample, callback, format_settings]
         (WriteBuffer & output) -> OutputFormatPtr
@@ -355,10 +349,6 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     params.callback = std::move(callback);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-
-    /// If we're handling MySQL protocol connection right now then MySQLWire is only allowed output format.
-    if (format_settings.mysql_wire.sequence_id && (name != "MySQLWire"))
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
