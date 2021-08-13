@@ -5,6 +5,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 #include <Common/Stopwatch.h>
+#include <Processors/Drain.h>
 
 namespace Poco
 {
@@ -20,7 +21,7 @@ struct ViewRuntimeData
 {
     const ASTPtr query;
     StorageID table_id;
-    BlockOutputStreamPtr out;
+    Drain out;
     std::exception_ptr exception;
     QueryViewsLogElement::ViewRuntimeStats runtime_stats;
 

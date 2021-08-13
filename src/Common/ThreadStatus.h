@@ -145,7 +145,6 @@ protected:
     Poco::Logger * log = nullptr;
 
     friend class CurrentThread;
-    friend class PushingToViewsBlockOutputStream;
 
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
@@ -186,6 +185,11 @@ public:
     auto getQueryContext() const
     {
         return query_context.lock();
+    }
+
+    void disableProfiling()
+    {
+        query_profiled_enabled = false;
     }
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
