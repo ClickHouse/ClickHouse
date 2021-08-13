@@ -85,7 +85,7 @@ Block RangeDictionarySourceData<range_dictionary_type, RangeType>::getBlock(size
 
     for (size_t index = start; index < start + length; ++index )
     {
-        block_keys.push_back(block_keys[index]);
+        block_keys.push_back(keys[index]);
         block_start_dates.push_back(start_dates[index]);
         block_end_dates.push_back(end_dates[index]);
     }
@@ -120,6 +120,16 @@ Block RangeDictionarySourceData<range_dictionary_type, RangeType>::fillBlock(
     size_t start,
     size_t end) const
 {
+    std::cerr << "RangeDictionarySourceData::fillBlock keys_to_fill " << keys_to_fill.size() << std::endl;
+
+    if constexpr (range_dictionary_type == RangeDictionaryType::simple)
+    {
+        for (auto & key : keys_to_fill)
+        {
+            std::cerr << key << std::endl;
+        }
+    }
+
     ColumnsWithTypeAndName columns;
     const DictionaryStructure & dictionary_structure = dictionary->getStructure();
 
@@ -160,7 +170,6 @@ Block RangeDictionarySourceData<range_dictionary_type, RangeType>::fillBlock(
 
     auto date_key = makeDateKeys(block_start_dates, block_end_dates);
     auto date_column = getColumnFromPODArray(date_key);
-
     keys_columns.emplace_back(std::move(date_column));
     keys_types.emplace_back(std::make_shared<DataTypeInt64>());
 
@@ -194,6 +203,25 @@ Block RangeDictionarySourceData<range_dictionary_type, RangeType>::fillBlock(
 
         columns.emplace_back(std::move(column), attribute.type, attribute.name);
     }
+
+    auto result = Block(columns);
+
+    Field value;
+    std::cerr << "RangeDictionarySourceData::fillBlock result" << std::endl;
+    for (auto & block_column : result)
+    {
+        std::cerr << "Column name " << block_column.name << " type " << block_column.type->getName() << std::endl;
+
+        auto & column = block_column.column;
+        size_t column_size = column->size();
+
+        for (size_t i = 0; i < column_size; ++i)
+        {
+            column->get(i, value);
+            std::cerr << "Index " << i << " value " << value.dump() << std::endl;
+        }
+    }
+
     return Block(columns);
 }
 
