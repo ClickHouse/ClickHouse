@@ -36,10 +36,10 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 
 #if USE_CASSANDRA
 
-#include <IO/WriteHelpers.h>
-#include <Common/SipHash.h>
-#include "CassandraBlockInputStream.h"
 #include <common/logger_useful.h>
+#include <Common/SipHash.h>
+#include <IO/WriteHelpers.h>
+#include <Dictionaries/CassandraSource.h>
 
 namespace DB
 {
