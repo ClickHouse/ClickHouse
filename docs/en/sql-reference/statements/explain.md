@@ -386,33 +386,30 @@ ExpressionTransform
 ```
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
-Shows information about read rows, marks and parts from `MergeTree` tables. 
+Shows information about read rows, marks and parts from [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables. 
 
 Example:
 
+Creating a table:
+
 ```sql
-EXPLAIN ESTIMATE
-SELECT
-    toYear(LO_ORDERDATE) AS year,
-    S_CITY,
-    P_BRAND,
-    sum(LO_REVENUE - LO_SUPPLYCOST) AS profit
-FROM lineorder_flat
-WHERE (S_NATION = 'UNITED STATES') AND ((year = 1997) OR (year = 1998)) AND (P_CATEGORY = 'MFGR#14')
-GROUP BY
-    year,
-    S_CITY,
-    P_BRAND
-ORDER BY
-    year ASC,
-    S_CITY ASC,
-    P_BRAND ASC;
+CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
+INSERT INTO ttt SELECT number FROM numbers(128);
+OPTIMIZE TABLE ttt;
 ```
 
+Query:
+
+```sql
+EXPLAIN ESTIMATE SELECT * FROM ttt;
+```
+
+Result:
+
 ```text
-┌─database─┬─table──────────┬─parts─┬─────rows─┬─marks─┐
-│ default  │ lineorder_flat │    14 │ 14430068 │  1780 │
-└──────────┴────────────────┴───────┴──────────┴───────┘
+┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
+│ default  │ ttt   │     1 │  128 │     8 │
+└──────────┴───────┴───────┴──────┴───────┘
 ```
 
 [Оriginal article](https://clickhouse.tech/docs/en/sql-reference/statements/explain/) <!--hide-->
