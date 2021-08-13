@@ -58,7 +58,7 @@ Checks whether the input array is non-empty.
 notEmpty([x])
 ```
 
-An array is considered non-empty if it contains at least one non-empty element.
+An array is considered non-empty if it contains at least one element.
 
 !!! note "Note"
     Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
