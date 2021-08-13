@@ -140,7 +140,14 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             // SELECT ... UNION SELECT ...
             else
+            {
                 union_modes.push_back(ASTSelectWithUnionQuery::Mode::Unspecified);
+            }
+            return true;
+        }
+        else if (s_except_parser->check(pos, expected))
+        {
+            union_modes.push_back(ASTSelectWithUnionQuery::Mode::EXCEPT);
             return true;
         }
         return false;
@@ -1024,4 +1031,3 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 }
 
 }
-

@@ -65,6 +65,8 @@ QueryPipelinePtr IntersectOrExceptStep::updatePipeline(QueryPipelines pipelines,
                 return std::make_shared<ExpressionTransform>(cur_header, converting_actions);
             });
         }
+
+        cur_pipeline->addTransform(std::make_shared<ResizeProcessor>(header, cur_pipeline->getNumStreams(), 1));
     }
 
     *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), max_threads);

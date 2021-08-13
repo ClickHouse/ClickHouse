@@ -15,7 +15,8 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         std::make_unique<ParserUnionQueryElement>(),
         std::make_unique<ParserKeyword>("UNION"),
         std::make_unique<ParserKeyword>("ALL"),
-        std::make_unique<ParserKeyword>("DISTINCT"));
+        std::make_unique<ParserKeyword>("DISTINCT"),
+        std::make_unique<ParserKeyword>("EXCEPT"));
 
     if (!parser.parse(pos, list_node, expected))
         return false;

@@ -1,5 +1,6 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -34,6 +35,9 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
     auto & union_modes = ast.list_of_modes;
     ASTs selects;
     auto & select_list = ast.list_of_selects->children;
+
+    if (select_list.size() < 2)
+        return;
 
     int i;
     for (i = union_modes.size() - 1; i >= 0; --i)

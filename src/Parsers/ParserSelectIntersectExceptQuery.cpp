@@ -14,7 +14,6 @@ namespace DB
 bool ParserSelectIntersectExceptQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword intersect_keyword("INTERSECT");
-    ParserKeyword except_keyword("EXCEPT");
 
     ASTs elements;
     ASTSelectIntersectExceptQuery::Operators operators;
@@ -32,13 +31,7 @@ bool ParserSelectIntersectExceptQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     auto parse_separator = [&]() -> bool
     {
         if (!intersect_keyword.ignore(pos))
-        {
-            if (!except_keyword.ignore(pos))
-                return false;
-
-            operators.emplace_back(ASTSelectIntersectExceptQuery::Operator::EXCEPT);
-            return true;
-        }
+            return false;
 
         operators.emplace_back(ASTSelectIntersectExceptQuery::Operator::INTERSECT);
         return true;
