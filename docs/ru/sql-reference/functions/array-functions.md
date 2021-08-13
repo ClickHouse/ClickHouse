@@ -15,7 +15,7 @@ toc_title: "Массивы"
 empty([x])
 ```
 
-Массив считается пустым, если он содержит все пустые элементы.
+Массив считается пустым, если он не содержит ни одного элемента.
 
 !!! note "Примечание"
     Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM TABLE` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
