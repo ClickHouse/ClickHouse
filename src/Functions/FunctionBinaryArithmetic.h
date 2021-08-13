@@ -957,7 +957,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
-        return (IsOperation<Op>::div_int || IsOperation<Op>::modulo) && !arguments[1].is_const;
+        return ((IsOperation<Op>::div_int || IsOperation<Op>::modulo) && !arguments[1].is_const)
+            || (IsOperation<Op>::div_floating && (isDecimal(arguments[0].type) || isDecimal(arguments[1].type)));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
