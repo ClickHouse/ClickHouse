@@ -949,7 +949,7 @@ public:
     inline Time makeDateTime(Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
     {
         size_t index = makeLUTIndex(year, month, day_of_month);
-        UInt32 time_offset = hour * 3600 + minute * 60 + second;
+        Time time_offset = hour * 3600 + minute * 60 + second;
 
         if (time_offset >= lut[index].time_at_offset_change())
             time_offset -= lut[index].amount_of_offset_change();
