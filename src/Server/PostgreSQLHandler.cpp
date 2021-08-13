@@ -34,7 +34,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     Int32 connection_id_,
     std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
     const PostgreSQLInterfaceConfig & config_)
-    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies, {"PROXY"})
+    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies)
     , server(server_)
     , connection_context(Context::createCopy(server.context()))
     , config(config_)
@@ -64,6 +64,8 @@ void PostgreSQLHandler::run()
     handleProxyProtocol(socket());
     if (!config.allow_direct && !isIndirect())
         throw Exception("Direct connections are not allowed on the interface", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+
+    connection_context->getClientInfo().forwarded_for = Util::joinAddresses(getAddressChain());
 
     try
     {

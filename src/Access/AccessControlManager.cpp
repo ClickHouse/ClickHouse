@@ -11,6 +11,7 @@
 #include <Access/QuotaUsage.h>
 #include <Access/SettingsProfilesCache.h>
 #include <Access/ExternalAuthenticators.h>
+#include <Server/ProxyProtocolHandler.h>
 #include <Core/Settings.h>
 #include <common/find_symbols.h>
 #include <Poco/ExpireCache.h>
@@ -427,14 +428,10 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
     params.address = client_info.current_address.host();
     params.quota_key = client_info.quota_key;
 
-    /// Extract the first entry from the comma separated list of peer addresses (client, proxy1, proxy2, ..., proxyN-1).
-    Strings forwarded_addresses;
-    boost::split(forwarded_addresses, client_info.forwarded_for, boost::is_any_of(","));
+    /// Extract the first entry from the comma separated list of relayed addresses (client, proxy1, proxy2, ..., proxyN-1), if any..
+    const auto forwarded_addresses = Util::splitAddresses(client_info.forwarded_for);
     if (!forwarded_addresses.empty())
-    {
         params.forwarded_address = forwarded_addresses.front();
-        boost::trim(params.forwarded_address);
-    }
 
     return getContextAccess(params);
 }
@@ -465,7 +462,7 @@ std::shared_ptr<const EnabledQuota> AccessControlManager::getEnabledQuota(
     const String & user_name,
     const boost::container::flat_set<UUID> & enabled_roles,
     const Poco::Net::IPAddress & address,
-    const String & forwarded_address,
+    const Poco::Net::IPAddress & forwarded_address,
     const String & custom_quota_key) const
 {
     return quota_cache->getEnabledQuota(user_id, user_name, enabled_roles, address, forwarded_address, custom_quota_key);

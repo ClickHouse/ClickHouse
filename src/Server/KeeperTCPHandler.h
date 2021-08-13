@@ -18,7 +18,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Coordination/ThreadSafeQueue.h>
 #include <Server/KeeperTCPInterfaceConfig.h>
-#include <Server/IndirectTCPServerConnection.h>
+#include <Server/IndirectServerConnection.h>
 #include <unordered_map>
 
 namespace DB

@@ -192,7 +192,7 @@ struct SocketInterruptablePollWrapper
 };
 
 KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, const KeeperTCPInterfaceConfig & config_)
-    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies, {"PROXY"})
+    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies)
     , server(server_)
     , log(&Poco::Logger::get("NuKeeperTCPHandler"))
     , global_context(Context::createCopy(server.context()))

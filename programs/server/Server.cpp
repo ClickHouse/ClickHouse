@@ -74,7 +74,6 @@
 #include <Server/InterfaceConfig.h>
 #include <Server/InterfaceConfigUtil.h>
 #include <Server/ProxyConfig.h>
-#include <Server/ProxyConfigUtil.h>
 #include <filesystem>
 
 #if !defined(ARCADIA_BUILD)

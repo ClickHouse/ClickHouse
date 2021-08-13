@@ -42,7 +42,7 @@ struct ContextAccessParams
     ClientInfo::Interface interface = ClientInfo::Interface::TCP;
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
     Poco::Net::IPAddress address;
-    String forwarded_address;
+    Poco::Net::IPAddress forwarded_address;
     String quota_key;
 
     auto toTuple() const

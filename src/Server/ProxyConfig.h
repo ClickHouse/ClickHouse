@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/network_v4.hpp>
 #include <boost/asio/ip/network_v6.hpp>
 
@@ -38,5 +39,24 @@ public:
     const std::string protocol;
     Networks trusted_networks;
 };
+
+namespace Util
+{
+
+ProxyConfigs parseProxies(const Poco::Util::AbstractConfiguration & config);
+ProxyConfigs clone(const ProxyConfigs & proxies);
+
+template <typename Address, typename Network>
+inline bool addrInNet(const Address &, const Network &)
+{
+    return false;
+}
+
+bool addrInNet(const boost::asio::ip::address_v4 & address, const boost::asio::ip::network_v4 & network);
+bool addrInNet(const boost::asio::ip::address_v6 & address, const boost::asio::ip::network_v6 & network);
+bool addrInNet(const boost::asio::ip::address & address, const ProxyConfig::Network & network);
+bool addrInNet(const boost::asio::ip::address & address, const ProxyConfig::Networks & networks);
+
+}
 
 }

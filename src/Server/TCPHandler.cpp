@@ -91,7 +91,7 @@ TCPHandler::TCPHandler(
     std::string server_display_name_,
     const TCPInterfaceConfigBase & config_
 )
-    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies, {"PROXY"})
+    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies)
     , server(server_)
     , log(&Poco::Logger::get("TCPHandler"))
     , config(config_)
@@ -135,6 +135,8 @@ void TCPHandler::runImpl()
     handleProxyProtocol(socket());
     if (!config.allow_direct && !isIndirect())
         throw Exception("Direct connections are not allowed on the interface", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+
+    connection_context->getClientInfo().forwarded_for = Util::joinAddresses(getAddressChain());
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());

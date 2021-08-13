@@ -24,6 +24,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
+#include <Server/IndirectServerConnection.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
@@ -392,7 +393,7 @@ bool HTTPHandler::authenticateUser(
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
     client_info.http_referer = request.get("Referer", "");
-    client_info.forwarded_for = request.get("X-Forwarded-For", "");
+    client_info.forwarded_for = Util::joinAddresses(request.getConnection().getAddressChain());
 
     try
     {

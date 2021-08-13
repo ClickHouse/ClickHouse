@@ -4,7 +4,7 @@
 #include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Server/MySQLInterfaceConfig.h>
-#include <Server/IndirectTCPServerConnection.h>
+#include <Server/IndirectServerConnection.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsConnection.h>

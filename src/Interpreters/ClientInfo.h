@@ -91,7 +91,7 @@ public:
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For HTTP header, PROXY v1/v2 etc.)
     /// The first element is the connection initiator (the original client), the last element is the proxy closest to us (but not the current connection peer).
-    /// The element can be trusted only if you trust all proxies in the chain.
+    /// All proxies in the list can be considered trusted, otherwise, the field would be left empty.
     String forwarded_for;
 
     /// Common

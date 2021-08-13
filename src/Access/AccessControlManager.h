@@ -134,7 +134,7 @@ public:
         const String & user_name,
         const boost::container::flat_set<UUID> & enabled_roles,
         const Poco::Net::IPAddress & address,
-        const String & forwarded_address,
+        const Poco::Net::IPAddress & forwarded_address,
         const String & custom_quota_key) const;
 
     std::vector<QuotaUsage> getAllQuotasUsage() const;

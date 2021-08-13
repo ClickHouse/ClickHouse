@@ -11,8 +11,10 @@ HTTPServer::HTTPServer(
     Poco::ThreadPool & thread_pool,
     const Poco::Net::ServerSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params,
-    const HTTPInterfaceConfigBase & config)
-    : TCPServer(new HTTPServerConnectionFactory(context, params, factory_, config), thread_pool, socket, params), factory(factory_)
+    const HTTPInterfaceConfigBase & config
+)
+    : TCPServer(new HTTPServerConnectionFactory(context, params, factory_, config), thread_pool, socket, params)
+    , factory(factory_)
 {
 }
 

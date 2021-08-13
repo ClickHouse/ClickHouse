@@ -9,13 +9,19 @@
 namespace DB
 {
 
+class IndirectHTTPServerConnection;
 class HTTPServerResponse;
 class ReadBufferFromPocoSocket;
 
 class HTTPServerRequest : public HTTPRequest
 {
 public:
-    HTTPServerRequest(ContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session);
+    HTTPServerRequest(
+        ContextPtr context,
+        HTTPServerResponse & response,
+        Poco::Net::HTTPServerSession & session,
+        const IndirectHTTPServerConnection & connection_
+    );
 
     /// FIXME: it's a little bit inconvenient interface. The rationale is that all other ReadBuffer's wrap each other
     ///        via unique_ptr - but we can't inherit HTTPServerRequest from ReadBuffer and pass it around,
@@ -27,6 +33,8 @@ public:
         poco_check_ptr(stream);
         return *stream;
     }
+
+    const IndirectHTTPServerConnection & getConnection() const { return connection; }
 
     bool checkPeerConnected() const;
 
@@ -48,6 +56,8 @@ private:
     const size_t max_fields_number;
     const size_t max_field_name_size;
     const size_t max_field_value_size;
+
+    const IndirectHTTPServerConnection & connection;
 
     std::unique_ptr<ReadBuffer> stream;
     Poco::Net::SocketImpl * socket;

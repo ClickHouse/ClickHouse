@@ -16,7 +16,7 @@
 #include <vector>
 
 namespace Poco { class ThreadPool; }
-namespace Poco { namespace Util { class AbstractConfiguration; } }
+namespace Poco::Util { class AbstractConfiguration; }
 
 namespace DB
 {

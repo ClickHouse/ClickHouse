@@ -6,7 +6,6 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/InterfaceConfig.h>
 #include <Server/InterfaceConfigUtil.h>
-#include <Server/ProxyConfigUtil.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Poco/Net/NetException.h>

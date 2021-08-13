@@ -7,8 +7,13 @@
 #include <Poco/Timespan.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-namespace Poco { namespace Net { class SocketAddress; } }
-namespace Poco { namespace Net { class ServerSocket; } }
+namespace Poco::Net
+{
+
+class SocketAddress;
+class ServerSocket;
+
+}
 
 namespace DB
 {

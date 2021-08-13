@@ -284,14 +284,14 @@ PROXYProxyProtocolHandler::PROXYProxyProtocolHandler(const PROXYProxyConfig & co
 
 void PROXYProxyProtocolHandler::handle(Poco::Net::StreamSocket & socket)
 {
-    addressChain.clear();
+    address_chain.clear();
 
     const auto expect_v1 = (config.version != PROXYProxyConfig::Version::v2);
     const auto expect_v2 = (config.version != PROXYProxyConfig::Version::v1);
     const auto header = tryReadPROXYHeader(socket, expect_v1, expect_v2);
 
     if (header.has_value())
-        addressChain.emplace_back(header.value().source_address.to_string());
+        address_chain.emplace_back(header.value().source_address.to_string());
 }
 
 }

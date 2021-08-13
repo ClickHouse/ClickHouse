@@ -2,7 +2,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Server/PostgreSQLInterfaceConfig.h>
-#include <Server/IndirectTCPServerConnection.h>
+#include <Server/IndirectServerConnection.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <common/logger_useful.h>

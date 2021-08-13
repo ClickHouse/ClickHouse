@@ -24,7 +24,7 @@ SRCS(
     HTTPInterfaceConfig.cpp
     HTTPProxyConfig.cpp
     HTTPProxyProtocolHandler.cpp
-    IndirectTCPServerConnection.cpp
+    IndirectServerConnection.cpp
     InterfaceConfig.cpp
     InterfaceConfigUtil.cpp
     InterserverHTTPInterfaceConfig.cpp
@@ -46,7 +46,6 @@ SRCS(
     PrometheusRequestHandler.cpp
     ProtocolServerAdapter.cpp
     ProxyConfig.cpp
-    ProxyConfigUtil.cpp
     ProxyProtocolHandler.cpp
     PROXYProxyConfig.cpp
     PROXYProxyProtocolHandler.cpp

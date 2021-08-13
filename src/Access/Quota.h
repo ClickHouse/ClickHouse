@@ -78,8 +78,8 @@ struct Quota : public IAccessEntity
         NONE,       /// All users share the same quota.
         USER_NAME,  /// Connections with the same user name share the same quota.
         IP_ADDRESS, /// Connections from the same IP share the same quota.
-        FORWARDED_IP_ADDRESS, /// Use X-Forwarded-For HTTP header instead of IP address.
-        CLIENT_KEY, /// Client should explicitly supply a key to use.
+        FORWARDED_IP_ADDRESS,     /// Use the initiator IP address (first element from X-Forwarded-For HTTP header, PROXY v1/v2 reported address, etc., if trusted) instead of immediate peer IP address, if any.
+        CLIENT_KEY,               /// Client should explicitly supply a key to use.
         CLIENT_KEY_OR_USER_NAME,  /// Same as CLIENT_KEY, but use USER_NAME if the client doesn't supply a key.
         CLIENT_KEY_OR_IP_ADDRESS, /// Same as CLIENT_KEY, but use IP_ADDRESS if the client doesn't supply a key.
 

@@ -4,7 +4,13 @@
 
 #include <vector>
 
-namespace Poco { namespace Net { class StreamSocket; } }
+namespace Poco::Net
+{
+
+class StreamSocket;
+class IPAddress;
+
+}
 
 namespace DB
 {
@@ -16,10 +22,10 @@ class ProxyProtocolHandler
 public:
     virtual ~ProxyProtocolHandler() = default;
 
-    const std::vector<Poco::Net::IPAddress> & peerAddressChain() const;
+    const std::vector<Poco::Net::IPAddress> & getAddressChain() const;
 
 protected:
-    std::vector<Poco::Net::IPAddress> addressChain;
+    std::vector<Poco::Net::IPAddress> address_chain;
 };
 
 class StreamSocketAwareProxyProtocolHandler : virtual public ProxyProtocolHandler
@@ -33,5 +39,13 @@ class HTTPServerRequestAwareProxyProtocolHandler : virtual public ProxyProtocolH
 public:
     virtual void handle(const HTTPServerRequest & request) = 0;
 };
+
+namespace Util
+{
+
+std::vector<Poco::Net::IPAddress> splitAddresses(const std::string & addresses_str);
+std::string joinAddresses(const std::vector<Poco::Net::IPAddress> & addresses);
+
+}
 
 }

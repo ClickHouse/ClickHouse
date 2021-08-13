@@ -71,7 +71,7 @@ static String selectLimitReplacementQuery(const String & query);
 
 MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, size_t connection_id_, const MySQLInterfaceConfig & config_)
-    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies, {"PROXY"})
+    : IndirectTCPServerConnection(config_.name, socket_, config_.proxies)
     , server(server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , config(config_)
@@ -102,6 +102,8 @@ void MySQLHandler::run()
     handleProxyProtocol(socket());
     if (!config.allow_direct && !isIndirect())
         throw Exception("Direct connections are not allowed on the interface", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+
+    connection_context->getClientInfo().forwarded_for = Util::joinAddresses(getAddressChain());
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());

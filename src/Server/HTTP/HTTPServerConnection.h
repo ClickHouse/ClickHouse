@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Server/IndirectTCPServerConnection.h>
+#include <Server/IndirectServerConnection.h>
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTPInterfaceConfig.h>
 
@@ -11,7 +11,7 @@
 namespace DB
 {
 
-class HTTPServerConnection : public IndirectTCPServerConnection
+class HTTPServerConnection : public IndirectHTTPServerConnection
 {
 public:
     HTTPServerConnection(

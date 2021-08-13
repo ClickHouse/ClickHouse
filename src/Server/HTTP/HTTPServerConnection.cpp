@@ -18,7 +18,7 @@ HTTPServerConnection::HTTPServerConnection(
     HTTPRequestHandlerFactoryPtr factory_,
     const HTTPInterfaceConfigBase & config_
 )
-    : IndirectTCPServerConnection(config_.name, socket, config_.proxies, {"PROXY"})
+    : IndirectHTTPServerConnection(config_.name, socket, config_.proxies)
     , context(Context::createCopy(context_))
     , params(params_)
     , factory(factory_)
@@ -30,6 +30,8 @@ HTTPServerConnection::HTTPServerConnection(
 
 void HTTPServerConnection::run()
 {
+    // Try to read the forwarded address from the raw stream, but check the result against allow_direct
+    // only after the possible alternative info is extracted at each HTTP request later.
     handleProxyProtocol(socket());
 
     std::string server = params->getSoftwareVersion();
@@ -43,11 +45,20 @@ void HTTPServerConnection::run()
             if (!stopped)
             {
                 HTTPServerResponse response(session);
-                HTTPServerRequest request(context, response, session);
+                HTTPServerRequest request(context, response, session, *this);
 
                 handleProxyProtocol(request);
                 if (!config.allow_direct && !isIndirect())
+                {
+                    try
+                    {
+                        sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED);
+                    }
+                    catch (...)
+                    {
+                    }
                     throw Exception("Direct connections are not allowed on the interface", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+                }
 
                 Poco::Timestamp now;
                 response.setDate(now);

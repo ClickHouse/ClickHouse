@@ -1,5 +1,4 @@
 #include <Server/TCPInterfaceConfig.h>
-#include <Server/ProxyConfigUtil.h>
 #include <Common/Exception.h>
 
 #include <Poco/Util/AbstractConfiguration.h>

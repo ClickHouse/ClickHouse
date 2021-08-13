@@ -15,11 +15,18 @@
 
 namespace DB
 {
-HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
+
+HTTPServerRequest::HTTPServerRequest(
+    ContextPtr context,
+    HTTPServerResponse & response,
+    Poco::Net::HTTPServerSession & session,
+    const IndirectHTTPServerConnection & connection_
+)
     : max_uri_size(context->getSettingsRef().http_max_uri_size)
     , max_fields_number(context->getSettingsRef().http_max_fields)
     , max_field_name_size(context->getSettingsRef().http_max_field_name_size)
     , max_field_value_size(context->getSettingsRef().http_max_field_value_size)
+    , connection(connection_)
 {
     response.attachRequest(this);
 

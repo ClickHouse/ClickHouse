@@ -12,7 +12,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context.h>
 #include <Server/TCPInterfaceConfig.h>
-#include <Server/IndirectTCPServerConnection.h>
+#include <Server/IndirectServerConnection.h>
 
 #include "IServer.h"
 
@@ -106,10 +106,6 @@ struct LastBlockInputParameters
 class TCPHandler : public IndirectTCPServerConnection
 {
 public:
-    /** Note: immediate IP address is always used for access control (accept-list of IP networks),
-      *  because it allows to check the IP ranges of the trusted proxy.
-      * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
-      */
     TCPHandler(
         IServer & server_,
         const Poco::Net::StreamSocket & socket_,
