@@ -391,7 +391,7 @@ Shows information about read rows, marks and parts from `MergeTree` tables.
 Example:
 
 ```sql
-EXPLAIN ESTIMATES
+EXPLAIN ESTIMATE
 SELECT
     toYear(LO_ORDERDATE) AS year,
     S_CITY,
