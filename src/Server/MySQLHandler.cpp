@@ -1,8 +1,6 @@
 #include "MySQLHandler.h"
 
 #include <limits>
-#include <common/scope_guard.h>
-#include <Columns/ColumnVector.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Core/MySQL/Authentication.h>
@@ -10,7 +8,6 @@
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
-#include <DataStreams/copyData.h>
 #include <Interpreters/executeQuery.h>
 #include <IO/copyData.h>
 #include <IO/LimitReadBuffer.h>
@@ -20,7 +17,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/IStorage.h>
-#include <boost/algorithm/string/replace.hpp>
 #include <regex>
 #include <Access/User.h>
 #include <Access/AccessControlManager.h>
@@ -31,7 +27,6 @@
 #endif
 
 #if USE_SSL
-#    include <Poco/Crypto/CipherFactory.h>
 #    include <Poco/Crypto/RSAKey.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -57,6 +52,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 
@@ -352,8 +348,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         format_settings.mysql_wire.max_packet_size = max_packet_size;
         format_settings.mysql_wire.sequence_id = &sequence_id;
 
-        auto set_result_details = [&with_output](const String &, const String &, const String &, const String &)
+        auto set_result_details = [&with_output](const String &, const String &, const String &format, const String &)
         {
+            if (format != "MySQLWire")
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
             with_output = true;
         };
 
