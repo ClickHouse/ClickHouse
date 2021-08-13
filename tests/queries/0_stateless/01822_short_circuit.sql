@@ -121,3 +121,5 @@ select if(number > 0, intDiv(42, number), 1) from numbers(5);
 select if(number > 0, intDiv(42, number), 1) from numbers(5);
 select if(number > 0, intDiv(42, number), 1) from numbers(5);
 select if(number > 0, intDiv(42, number), 1) from numbers(5);
+
+select if(number > 0, 42 / toDecimal32(number, 2), 0) from numbers(5);
