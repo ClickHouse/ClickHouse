@@ -63,7 +63,7 @@ namespace ErrorCodes
 
         BlockInputStreamPtr loadUpdatedAll() override
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for RedisDictionarySource");
+            throw Exception{"Method loadUpdatedAll is unsupported for RedisDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
         }
 
         bool supportsSelectiveLoad() const override { return true; }
@@ -83,6 +83,7 @@ namespace ErrorCodes
     private:
         static RedisStorageType parseStorageType(const std::string& storage_type);
 
+    private:
         const DictionaryStructure dict_struct;
         const std::string host;
         const UInt16 port;

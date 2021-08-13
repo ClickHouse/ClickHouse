@@ -70,7 +70,7 @@
 
 #include <Parsers/ASTSystemQuery.h>
 
-#include <Databases/MySQL/MaterializedMySQLSyncThread.h>
+#include <Databases/MySQL/MaterializeMySQLSyncThread.h>
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
@@ -92,7 +92,7 @@ namespace ErrorCodes
 }
 
 
-std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
+std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, const SelectQueryOptions & options)
 {
     OpenTelemetrySpanHolder span("InterpreterFactory::get()");
 
@@ -112,7 +112,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTInsertQuery>())
     {
         ProfileEvents::increment(ProfileEvents::InsertQuery);
-        bool allow_materialized = static_cast<bool>(context->getSettingsRef().insert_allow_materialized_columns);
+        bool allow_materialized = static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns);
         return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);
     }
     else if (query->as<ASTCreateQuery>())

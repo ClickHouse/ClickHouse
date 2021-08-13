@@ -3,6 +3,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <boost/range/join.hpp>
+#include <ext/range.h>
 #include "DictionaryStructure.h"
 #include "writeParenthesisedString.h"
 
@@ -172,7 +173,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
 std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Simple key required for method");
+        throw Exception{"Simple key required for method", ErrorCodes::UNSUPPORTED_METHOD};
 
     WriteBufferFromOwnString out;
     writeString("SELECT ", out);
@@ -243,10 +244,10 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
     const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix)
 {
     if (!dict_struct.key)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Composite key required for method");
+        throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
 
     if (key_columns.size() != dict_struct.key->size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
+        throw Exception{"The size of key_columns does not equal to the size of dictionary key", ErrorCodes::LOGICAL_ERROR};
 
     WriteBufferFromOwnString out;
     writeString("SELECT ", out);
@@ -345,7 +346,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, cons
                                                size_t beg, size_t end) const
 {
     auto first = true;
-    for (size_t i = beg; i < end; ++i)
+    for (const auto i : ext::range(beg, end))
     {
         if (!first)
             writeString(" AND ", out);
@@ -357,7 +358,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, cons
         /// key_i=value_i
         writeQuoted(key_description.name, out);
         writeString("=", out);
-        key_description.type_serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
+        key_description.type->serializeAsTextQuoted(*key_columns[i], row, out, format_settings);
     }
 }
 
@@ -385,12 +386,12 @@ void ExternalQueryBuilder::composeInWithTuples(const Columns & key_columns, cons
 void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out, size_t beg, size_t end) const
 {
     if (!dict_struct.key)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Composite key required for method");
+        throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
 
     writeChar('(', out);
 
     auto first = true;
-    for (size_t i = beg; i < end; ++i)
+    for (const auto i : ext::range(beg, end))
     {
         if (!first)
             writeString(", ", out);
@@ -408,14 +409,13 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, const si
     writeString("(", out);
 
     auto first = true;
-    for (size_t i = beg; i < end; ++i)
+    for (const auto i : ext::range(beg, end))
     {
         if (!first)
             writeString(", ", out);
 
         first = false;
-        auto serialization = (*dict_struct.key)[i].type_serialization;
-        serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
+        (*dict_struct.key)[i].type->serializeAsTextQuoted(*key_columns[i], row, out, format_settings);
     }
 
     writeString(")", out);

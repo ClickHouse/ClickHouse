@@ -112,3 +112,4 @@ DB::Exception: Can't compare.
 -   [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
 
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/decimal/) <!--hide-->

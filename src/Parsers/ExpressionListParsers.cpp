@@ -3,6 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -22,10 +23,9 @@ const char * ParserMultiplicativeExpression::operators[] =
     nullptr
 };
 
-const char * ParserUnaryExpression::operators[] =
+const char * ParserUnaryMinusExpression::operators[] =
 {
     "-",     "negate",
-    "NOT",   "not",
     nullptr
 };
 
@@ -490,12 +490,14 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
     /** This is done, because among the unary operators there is only a minus and NOT.
       * But for a minus the chain of unary operators does not need to be supported.
       */
-    size_t count = 1;
     if (it[0] && 0 == strncmp(it[0], "NOT", 3))
     {
+        /// Was there an even number of NOTs.
+        bool even = false;
+
+        const char ** jt;
         while (true)
         {
-            const char ** jt;
             for (jt = operators; *jt; jt += 2)
                 if (parseOperator(pos, *jt, expected))
                     break;
@@ -503,8 +505,11 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
             if (!*jt)
                 break;
 
-            ++count;
+            even = !even;
         }
+
+        if (even)
+            it = jt;    /// Zero the result of parsing the first NOT. It turns out, as if there is no `NOT` chain at all.
     }
 
     ASTPtr elem;
@@ -515,32 +520,26 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
         node = elem;
     else
     {
-        for (size_t i = 0; i < count; ++i)
-        {
-            /// the function corresponding to the operator
-            auto function = std::make_shared<ASTFunction>();
+        /// the function corresponding to the operator
+        auto function = std::make_shared<ASTFunction>();
 
-            /// function arguments
-            auto exp_list = std::make_shared<ASTExpressionList>();
+        /// function arguments
+        auto exp_list = std::make_shared<ASTExpressionList>();
 
-            function->name = it[1];
-            function->arguments = exp_list;
-            function->children.push_back(exp_list);
+        function->name = it[1];
+        function->arguments = exp_list;
+        function->children.push_back(exp_list);
 
-            if (node)
-                exp_list->children.push_back(node);
-            else
-                exp_list->children.push_back(elem);
+        exp_list->children.push_back(elem);
 
-            node = function;
-        }
+        node = function;
     }
 
     return true;
 }
 
 
-bool ParserUnaryExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserUnaryMinusExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// As an exception, negative numbers should be parsed as literals, and not as an application of the operator.
 
@@ -559,32 +558,11 @@ bool ParserUnaryExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 }
 
 
-bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ASTPtr expr_ast;
-    if (!elem_parser.parse(pos, expr_ast, expected))
-        return false;
-
-    ASTPtr type_ast;
-    if (ParserToken(TokenType::DoubleColon).ignore(pos, expected)
-        && ParserDataType().parse(pos, type_ast, expected))
-    {
-        node = createFunctionCast(expr_ast, type_ast);
-    }
-    else
-    {
-        node = expr_ast;
-    }
-
-    return true;
-}
-
-
 bool ParserArrayElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &expected)
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserCastExpression>(),
+        std::make_unique<ParserExpressionElement>(),
         std::make_unique<ParserExpressionWithOptionalAlias>(false)
     }.parse(pos, node, expected);
 }

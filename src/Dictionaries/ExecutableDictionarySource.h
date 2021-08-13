@@ -15,23 +15,12 @@ namespace DB
 class ExecutableDictionarySource final : public IDictionarySource
 {
 public:
-
-    struct Configuration
-    {
-        const std::string command;
-        const std::string format;
-        const std::string update_field;
-        const UInt64 update_lag;
-        /// Implicit key means that the source script will return only values,
-        /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
-        const bool implicit_key;
-    };
-
     ExecutableDictionarySource(
         const DictionaryStructure & dict_struct_,
-        const Configuration & configuration_,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
         Block & sample_block_,
-        ContextPtr context_);
+        const Context & context_);
 
     ExecutableDictionarySource(const ExecutableDictionarySource & other);
     ExecutableDictionarySource & operator=(const ExecutableDictionarySource &) = delete;
@@ -58,15 +47,16 @@ public:
 
     std::string toString() const override;
 
-    BlockInputStreamPtr getStreamForBlock(const Block & block);
-
 private:
     Poco::Logger * log;
     time_t update_time = 0;
     const DictionaryStructure dict_struct;
-    const Configuration configuration;
+    bool implicit_key;
+    const std::string command;
+    const std::string update_field;
+    const std::string format;
     Block sample_block;
-    ContextPtr context;
+    Context context;
 };
 
 }

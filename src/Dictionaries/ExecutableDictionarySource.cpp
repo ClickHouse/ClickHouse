@@ -1,10 +1,9 @@
 #include "ExecutableDictionarySource.h"
 
 #include <functional>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
-#include <DataStreams/formatBlock.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -21,7 +20,6 @@
 
 namespace DB
 {
-
 static const UInt64 max_block_size = 8192;
 
 namespace ErrorCodes
@@ -29,6 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 namespace
@@ -59,20 +58,27 @@ namespace
 
 }
 
+
 ExecutableDictionarySource::ExecutableDictionarySource(
     const DictionaryStructure & dict_struct_,
-    const Configuration & configuration_,
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
     Block & sample_block_,
-    ContextPtr context_)
+    const Context & context_)
     : log(&Poco::Logger::get("ExecutableDictionarySource"))
-    , dict_struct(dict_struct_)
-    , configuration(configuration_)
+    , dict_struct{dict_struct_}
+    , implicit_key{config.getBool(config_prefix + ".implicit_key", false)}
+    , command{config.getString(config_prefix + ".command")}
+    , update_field{config.getString(config_prefix + ".update_field", "")}
+    , format{config.getString(config_prefix + ".format")}
     , sample_block{sample_block_}
     , context(context_)
 {
     /// Remove keys from sample_block for implicit_key dictionary because
     /// these columns will not be returned from source
-    if (configuration.implicit_key)
+    /// Implicit key means that the source script will return only values,
+    /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
+    if (implicit_key)
     {
         auto keys_names = dict_struct.getKeysNames();
 
@@ -86,40 +92,43 @@ ExecutableDictionarySource::ExecutableDictionarySource(
 
 ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionarySource & other)
     : log(&Poco::Logger::get("ExecutableDictionarySource"))
-    , update_time(other.update_time)
-    , dict_struct(other.dict_struct)
-    , configuration(other.configuration)
-    , sample_block(other.sample_block)
-    , context(Context::createCopy(other.context))
+    , update_time{other.update_time}
+    , dict_struct{other.dict_struct}
+    , implicit_key{other.implicit_key}
+    , command{other.command}
+    , update_field{other.update_field}
+    , format{other.format}
+    , sample_block{other.sample_block}
+    , context(other.context)
 {
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
-    if (configuration.implicit_key)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
+    if (implicit_key)
+        throw Exception("ExecutableDictionarySource with implicit_key does not support loadAll method", ErrorCodes::UNSUPPORTED_METHOD);
 
     LOG_TRACE(log, "loadAll {}", toString());
-    auto process = ShellCommand::execute(configuration.command);
-    auto input_stream = context->getInputFormat(configuration.format, process->out, sample_block, max_block_size);
+    auto process = ShellCommand::execute(command);
+    auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
     return std::make_shared<ShellCommandOwningBlockInputStream>(log, input_stream, std::move(process));
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll()
 {
-    if (configuration.implicit_key)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
+    if (implicit_key)
+        throw Exception("ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method", ErrorCodes::UNSUPPORTED_METHOD);
 
     time_t new_update_time = time(nullptr);
     SCOPE_EXIT(update_time = new_update_time);
 
-    std::string command_with_update_field = configuration.command;
+    std::string command_with_update_field = command;
     if (update_time)
-        command_with_update_field += " " + configuration.update_field + " " + DB::toString(LocalDateTime(update_time - configuration.update_lag));
+        command_with_update_field += " " + update_field + " " + DB::toString(LocalDateTime(update_time - 1));
 
     LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
     auto process = ShellCommand::execute(command_with_update_field);
-    auto input_stream = context->getInputFormat(configuration.format, process->out, sample_block, max_block_size);
+    auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
     return std::make_shared<ShellCommandOwningBlockInputStream>(log, input_stream, std::move(process));
 }
 
@@ -132,7 +141,7 @@ namespace
     {
     public:
         BlockInputStreamWithBackgroundThread(
-            ContextPtr context,
+            const Context & context,
             const std::string & format,
             const Block & sample_block,
             const std::string & command_str,
@@ -143,7 +152,7 @@ namespace
             send_data(std::move(send_data_)),
             thread([this] { send_data(command->in); })
         {
-            stream = context->getInputFormat(format, command->out, sample_block, max_block_size);
+            stream = context.getInputFormat(format, command->out, sample_block, max_block_size);
         }
 
         ~BlockInputStreamWithBackgroundThread() override
@@ -191,14 +200,101 @@ namespace
         std::function<void(WriteBufferFromFile &)> send_data;
         ThreadFromGlobalPool thread;
     };
+
+    /** A stream, adds additional columns to each block that it will read from inner stream.
+     *
+     *  block_to_add rows size must be equal to final sum rows size of all inner stream blocks.
+     */
+    class BlockInputStreamWithAdditionalColumns final: public IBlockInputStream
+    {
+    public:
+        BlockInputStreamWithAdditionalColumns(
+            Block block_to_add_,
+            std::unique_ptr<IBlockInputStream>&& stream_)
+            : block_to_add(std::move(block_to_add_))
+            , stream(std::move(stream_))
+        {
+        }
+
+        Block getHeader() const override
+        {
+            auto header = stream->getHeader();
+
+            if (header)
+            {
+                for (Int64 i = static_cast<Int64>(block_to_add.columns() - 1); i >= 0; --i)
+                    header.insert(0, block_to_add.getByPosition(i).cloneEmpty());
+            }
+
+            return header;
+        }
+
+        Block readImpl() override
+        {
+            auto block = stream->read();
+
+            if (block)
+            {
+                auto block_rows = block.rows();
+
+                auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, block_rows);
+
+                if (cut_block.rows() != block_rows)
+                    throw Exception(
+                        "Number of rows in block to add after cut must equal to number of rows in block from inner stream",
+                        ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+                for (Int64 i = static_cast<Int64>(cut_block.columns() - 1); i >= 0; --i)
+                    block.insert(0, cut_block.getByPosition(i));
+
+                current_range_index += block_rows;
+            }
+
+            return block;
+        }
+
+        void readPrefix() override
+        {
+            stream->readPrefix();
+        }
+
+        void readSuffix() override
+        {
+            stream->readSuffix();
+        }
+
+        String getName() const override { return "BlockInputStreamWithAdditionalColumns"; }
+
+    private:
+        Block block_to_add;
+        std::unique_ptr<IBlockInputStream> stream;
+        size_t current_range_index = 0;
+    };
+
 }
+
 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     auto block = blockForIds(dict_struct, ids);
-    return getStreamForBlock(block);
+
+    auto stream = std::make_unique<BlockInputStreamWithBackgroundThread>(
+        context, format, sample_block, command, log,
+        [block, this](WriteBufferFromFile & out) mutable
+        {
+            auto output_stream = context.getOutputStream(format, out, block.cloneEmpty());
+            formatBlock(output_stream, block);
+            out.close();
+        });
+
+    if (implicit_key)
+    {
+        return std::make_shared<BlockInputStreamWithAdditionalColumns>(block, std::move(stream));
+    }
+    else
+        return std::shared_ptr<BlockInputStreamWithBackgroundThread>(stream.release());
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
@@ -206,21 +302,17 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(const Columns & key_col
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-    return getStreamForBlock(block);
-}
 
-BlockInputStreamPtr ExecutableDictionarySource::getStreamForBlock(const Block & block)
-{
     auto stream = std::make_unique<BlockInputStreamWithBackgroundThread>(
-        context, configuration.format, sample_block, configuration.command, log,
+        context, format, sample_block, command, log,
         [block, this](WriteBufferFromFile & out) mutable
         {
-            auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
+            auto output_stream = context.getOutputStream(format, out, block.cloneEmpty());
             formatBlock(output_stream, block);
             out.close();
         });
 
-    if (configuration.implicit_key)
+    if (implicit_key)
         return std::make_shared<BlockInputStreamWithAdditionalColumns>(block, std::move(stream));
     else
         return std::shared_ptr<BlockInputStreamWithBackgroundThread>(stream.release());
@@ -238,7 +330,7 @@ bool ExecutableDictionarySource::supportsSelectiveLoad() const
 
 bool ExecutableDictionarySource::hasUpdateField() const
 {
-    return !configuration.update_field.empty();
+    return !update_field.empty();
 }
 
 DictionarySourcePtr ExecutableDictionarySource::clone() const
@@ -248,7 +340,7 @@ DictionarySourcePtr ExecutableDictionarySource::clone() const
 
 std::string ExecutableDictionarySource::toString() const
 {
-    return "Executable: " + configuration.command;
+    return "Executable: " + command;
 }
 
 void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
@@ -257,35 +349,25 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr context,
+                                 const Context & context,
                                  const std::string & /* default_database */,
-                                 bool created_from_ddl) -> DictionarySourcePtr
+                                 bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable` does not support attribute expressions");
+            throw Exception{"Dictionary source of type `executable` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
-        if (created_from_ddl && context->getApplicationType() != Context::ApplicationType::LOCAL)
-            throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable dictionary source are not allowed to be created from DDL query");
+        if (check_config)
+            throw Exception("Dictionaries with Executable dictionary source is not allowed", ErrorCodes::DICTIONARY_ACCESS_DENIED);
 
-        auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
-        std::string settings_config_prefix = config_prefix + ".executable";
-
-        ExecutableDictionarySource::Configuration configuration
-        {
-            .command = config.getString(settings_config_prefix + ".command"),
-            .format = config.getString(settings_config_prefix + ".format"),
-            .update_field = config.getString(settings_config_prefix + ".update_field", ""),
-            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false)
-        };
-
-        return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, context_local_copy);
+        return std::make_unique<ExecutableDictionarySource>(
+            dict_struct, config, config_prefix + ".executable",
+            sample_block, context_local_copy);
     };
-
     factory.registerSource("executable", create_table_source);
 }
 

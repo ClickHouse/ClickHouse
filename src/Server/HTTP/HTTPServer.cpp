@@ -6,16 +6,16 @@
 namespace DB
 {
 HTTPServer::HTTPServer(
-    ContextPtr context,
+    const Context & context,
     HTTPRequestHandlerFactoryPtr factory_,
-    UInt16 port_number,
+    UInt16 portNumber,
     Poco::Net::HTTPServerParams::Ptr params)
-    : TCPServer(new HTTPServerConnectionFactory(context, params, factory_), port_number, params), factory(factory_)
+    : TCPServer(new HTTPServerConnectionFactory(context, params, factory_), portNumber, params), factory(factory_)
 {
 }
 
 HTTPServer::HTTPServer(
-    ContextPtr context,
+    const Context & context,
     HTTPRequestHandlerFactoryPtr factory_,
     const Poco::Net::ServerSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params)
@@ -24,12 +24,12 @@ HTTPServer::HTTPServer(
 }
 
 HTTPServer::HTTPServer(
-    ContextPtr context,
+    const Context & context,
     HTTPRequestHandlerFactoryPtr factory_,
-    Poco::ThreadPool & thread_pool,
+    Poco::ThreadPool & threadPool,
     const Poco::Net::ServerSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params)
-    : TCPServer(new HTTPServerConnectionFactory(context, params, factory_), thread_pool, socket, params), factory(factory_)
+    : TCPServer(new HTTPServerConnectionFactory(context, params, factory_), threadPool, socket, params), factory(factory_)
 {
 }
 

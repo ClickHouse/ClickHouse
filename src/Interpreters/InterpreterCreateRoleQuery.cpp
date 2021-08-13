@@ -34,14 +34,14 @@ namespace
 BlockIO InterpreterCreateRoleQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTCreateRoleQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = context.getAccessControlManager();
     if (query.alter)
-        getContext()->checkAccess(AccessType::ALTER_ROLE);
+        context.checkAccess(AccessType::ALTER_ROLE);
     else
-        getContext()->checkAccess(AccessType::CREATE_ROLE);
+        context.checkAccess(AccessType::CREATE_ROLE);
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(query_ptr, context);
 
     std::optional<SettingsProfileElements> settings_from_query;
     if (query.settings)

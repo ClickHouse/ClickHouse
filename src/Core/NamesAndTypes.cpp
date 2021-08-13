@@ -23,9 +23,7 @@ NameAndTypePair::NameAndTypePair(
     : name(name_in_storage_ + (subcolumn_name_.empty() ? "" : "." + subcolumn_name_))
     , type(subcolumn_type_)
     , type_in_storage(type_in_storage_)
-    , subcolumn_delimiter_position(subcolumn_name_.empty() ? std::nullopt : std::make_optional(name_in_storage_.size()))
-{
-}
+    , subcolumn_delimiter_position(name_in_storage_.size()) {}
 
 String NameAndTypePair::getNameInStorage() const
 {
@@ -162,24 +160,18 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
-    /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
-#if !defined(ARCADIA_BUILD)
-    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
-#else
-    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
-#endif
-    types.set_empty_key(StringRef());
+    std::unordered_map<std::string_view, const NameAndTypePair *> self_columns;
 
     for (const auto & column : *this)
-        types[column.name] = &column.type;
+        self_columns[column.name] = &column;
 
     NamesAndTypesList res;
     for (const String & name : names)
     {
-        auto it = types.find(name);
-        if (it == types.end())
+        auto it = self_columns.find(name);
+        if (it == self_columns.end())
             throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
-        res.emplace_back(name, *it->second);
+        res.emplace_back(*it->second);
     }
 
     return res;

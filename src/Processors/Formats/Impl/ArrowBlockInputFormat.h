@@ -1,8 +1,5 @@
 #pragma once
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#endif
-
+#include "config_formats.h"
 #if USE_ARROW
 
 #include <Processors/Formats/IInputFormat.h>
@@ -14,7 +11,6 @@ namespace DB
 {
 
 class ReadBuffer;
-class ArrowColumnToCHColumn;
 
 class ArrowBlockInputFormat : public IInputFormat
 {
@@ -35,8 +31,6 @@ private:
     std::shared_ptr<arrow::RecordBatchReader> stream_reader;
     // The following fields are used only for Arrow format
     std::shared_ptr<arrow::ipc::RecordBatchFileReader> file_reader;
-
-    std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
 
     int record_batch_total = 0;
     int record_batch_current = 0;
