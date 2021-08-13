@@ -692,23 +692,7 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 #ifdef FUZZING_MODE
 #include <Functions/getFuzzerData.cpp>
 
-class FuzzApp
-{
-    DB::LocalServer app;
-
-public:
-    inline void init(int argc, char ** argv)
-    {
-        app.init(argc, argv);
-    }
-
-    inline int run()
-    {
-        return app.run();
-    }
-};
-
-std::optional<FuzzApp> fuzz_app;
+std::optional<DB::LocalServer> fuzz_app;
 
 extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
 {
