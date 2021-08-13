@@ -11,6 +11,10 @@ if (HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
     target_compile_definitions(clickhouse_functions_gatherutils PUBLIC HAS_SUGGEST_DESTRUCTOR_OVERRIDE)
 endif()
 
+if (HAVE_AVX2)
+    target_compile_options(clickhouse_functions_gatherutils PRIVATE -mavx2 -DNAMESPACE=AVX2)
+endif()
+
 if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
     target_compile_options(clickhouse_functions_gatherutils PRIVATE "-g0")
 endif()
