@@ -1282,13 +1282,6 @@
 * PODArray: Avoid call to memcpy with (nullptr, 0) arguments (Fix UBSan report). This fixes [#18525](https://github.com/ClickHouse/ClickHouse/issues/18525). [#18526](https://github.com/ClickHouse/ClickHouse/pull/18526) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Minor improvement for path concatenation of zookeeper paths inside DDLWorker. [#17767](https://github.com/ClickHouse/ClickHouse/pull/17767) ([Bharat Nallan](https://github.com/bharatnc)).
 * Allow to reload symbols from debug file. This PR also fixes a build-id issue. [#17637](https://github.com/ClickHouse/ClickHouse/pull/17637) ([Amos Bird](https://github.com/amosbird)).
-* TestFlows: fixes to LDAP tests that fail due to slow test execution. [#18790](https://github.com/ClickHouse/ClickHouse/pull/18790) ([vzakaznikov](https://github.com/vzakaznikov)).
-* TestFlows: Merging requirements for AES encryption functions. Updating aes_encryption tests to use new requirements. Updating TestFlows version to 1.6.72. [#18221](https://github.com/ClickHouse/ClickHouse/pull/18221) ([vzakaznikov](https://github.com/vzakaznikov)).
-* TestFlows: Updating TestFlows version to the latest 1.6.72. Re-generating requirements.py. [#18208](https://github.com/ClickHouse/ClickHouse/pull/18208) ([vzakaznikov](https://github.com/vzakaznikov)).
-* TestFlows: Updating TestFlows README.md to include "How To Debug Why Test Failed" section. [#17808](https://github.com/ClickHouse/ClickHouse/pull/17808) ([vzakaznikov](https://github.com/vzakaznikov)).
-* TestFlows: tests for RBAC [ACCESS MANAGEMENT](https://clickhouse.tech/docs/en/sql-reference/statements/grant/#grant-access-management) privileges. [#17804](https://github.com/ClickHouse/ClickHouse/pull/17804) ([MyroTk](https://github.com/MyroTk)).
-* TestFlows: RBAC tests for SHOW, TRUNCATE, KILL, and OPTIMIZE. - Updates to old tests. - Resolved comments from #https://github.com/ClickHouse/ClickHouse/pull/16977. [#17657](https://github.com/ClickHouse/ClickHouse/pull/17657) ([MyroTk](https://github.com/MyroTk)).
-* TestFlows: Added RBAC tests for `ATTACH`, `CREATE`, `DROP`, and `DETACH`. [#16977](https://github.com/ClickHouse/ClickHouse/pull/16977) ([MyroTk](https://github.com/MyroTk)).
 
 
 ## [Changelog for 2020](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/whats-new/changelog/2020.md)
