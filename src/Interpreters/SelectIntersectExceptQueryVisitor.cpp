@@ -18,87 +18,12 @@ namespace DB
 
 void SelectIntersectExceptQueryMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * select_intersect_except = ast->as<ASTSelectIntersectExceptQuery>())
-    {
-        if (select_intersect_except->final_operator != ASTSelectIntersectExceptQuery::Operator::UNKNOWN)
-            return;
-
-        data.initialize(select_intersect_except);
-        visit(*select_intersect_except, data);
-    }
-    else if (auto * select_union = ast->as<ASTSelectWithUnionQuery>())
-    {
+    if (auto * select_union = ast->as<ASTSelectWithUnionQuery>())
         visit(*select_union, data);
-    }
-}
-
-void SelectIntersectExceptQueryMatcher::visit(ASTSelectIntersectExceptQuery & ast, Data & data)
-{
-    /* Example: select 1 intersect select 1 intsect select 1 intersect select 1 intersect select 1;
-     *
-     * --SelectIntersectExceptQuery                --SelectIntersectExceptQuery
-     * ---ExpressionList                           ---ExpressionList
-     * ----SelectQuery                             ----SelectIntersectExceptQuery
-     * ----SelectQuery                             ------ExpressionList
-     * ----SelectQuery                --->         -------SelectIntersectExceptQuery
-     * ----SelectQuery                             --------ExpressionList
-     *                                             ---------SelectQuery
-     *                                             ---------SelectQuery
-     *                                             -------SelectQuery
-     *                                             ----SelectQuery
-    **/
-
-    auto & selects = data.reversed_list_of_selects;
-
-    if (selects.empty())
-        return;
-
-    const auto left = selects.back();
-    selects.pop_back();
-    const auto right = selects.back();
-    selects.pop_back();
-
-    auto & operators = data.reversed_list_of_operators;
-    const auto current_operator = operators.back();
-    operators.pop_back();
-
-    auto list_node = std::make_shared<ASTExpressionList>();
-    list_node->children = {left, right};
-
-    if (selects.empty())
-    {
-        ast.final_operator = current_operator;
-        ast.children = {std::move(list_node)};
-    }
-    else
-    {
-        auto select_intersect_except = std::make_shared<ASTSelectIntersectExceptQuery>();
-        select_intersect_except->final_operator = {current_operator};
-        select_intersect_except->list_of_selects = std::move(list_node);
-        select_intersect_except->children.push_back(select_intersect_except->list_of_selects);
-
-        selects.emplace_back(std::move(select_intersect_except));
-    }
-
-    visit(ast, data);
 }
 
 void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Data &)
 {
-    /* Example: select 1 union all select 2 except select 1 except select 2 union distinct select 5;
-     *
-     * --SelectWithUnionQuery                      --SelectIntersectExceptQuery
-     * ---ExpressionList                           ---ExpressionList
-     * ----SelectQuery                             ----SelectIntersectExceptQuery
-     * ----SelectQuery                             -----ExpressionList
-     * ----SelectQuery (except)        --->        ------SelectIntersectExceptQuery
-     * ----SelectQuery (except)                    -------ExpressionList
-     * ----SelectQuery                             --------SelectWithUnionQuery (select 1 union all select 2)
-     *                                             --------SelectQuery (select 1)
-     *                                             ------SelectQuery (select 2)
-     *                                             -----SelectQuery (select 5)
-    **/
-
     auto & union_modes = ast.list_of_modes;
 
     if (union_modes.empty())
@@ -107,8 +32,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
     auto selects = std::move(ast.list_of_selects->children);
 
     if (union_modes.size() + 1 != selects.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Incorrect ASTSelectWithUnionQuery (modes: {}, selects: {})",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect ASTSelectWithUnionQuery (modes: {}, selects: {})",
                         union_modes.size(), selects.size());
 
     std::reverse(selects.begin(), selects.end());
@@ -119,39 +43,70 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
 
     for (const auto & mode : union_modes)
     {
-        /// Flatten all previous selects into ASTSelectIntersectQuery
-        if (mode == ASTSelectWithUnionQuery::Mode::EXCEPT)
+        switch (mode)
         {
-            auto left = std::make_shared<ASTSelectWithUnionQuery>();
-            left->union_mode = ASTSelectWithUnionQuery::Mode::ALL;
+            case ASTSelectWithUnionQuery::Mode::EXCEPT:
+            {
+                auto left = std::make_shared<ASTSelectWithUnionQuery>();
+                left->union_mode = ASTSelectWithUnionQuery::Mode::ALL;
 
-            left->list_of_selects = std::make_shared<ASTExpressionList>();
-            left->children.push_back(left->list_of_selects);
-            left->list_of_selects->children = std::move(children);
+                left->list_of_selects = std::make_shared<ASTExpressionList>();
+                left->children.push_back(left->list_of_selects);
+                left->list_of_selects->children = std::move(children);
 
-            left->list_of_modes = std::move(modes);
-            modes = {};
+                left->list_of_modes = std::move(modes);
+                modes = {};
 
-            auto right = selects.back();
-            selects.pop_back();
+                auto right = selects.back();
+                selects.pop_back();
 
-            auto list_node = std::make_shared<ASTExpressionList>();
-            list_node->children = {left, right};
+                auto except_node = std::make_shared<ASTSelectIntersectExceptQuery>();
+                except_node->final_operator = ASTSelectIntersectExceptQuery::Operator::EXCEPT;
+                except_node->children = {left, right};
 
-            auto select_intersect_except = std::make_shared<ASTSelectIntersectExceptQuery>();
-            select_intersect_except->final_operator = {ASTSelectIntersectExceptQuery::Operator::EXCEPT};
-            select_intersect_except->children.emplace_back(std::move(list_node));
-            select_intersect_except->list_of_selects = std::make_shared<ASTExpressionList>();
-            select_intersect_except->list_of_selects->children.push_back(select_intersect_except->children[0]);
+                children = {except_node};
+                break;
+            }
+            case ASTSelectWithUnionQuery::Mode::INTERSECT:
+            {
+                bool from_except = false;
+                const auto * except_ast = typeid_cast<const ASTSelectIntersectExceptQuery *>(children.back().get());
+                if (except_ast && (except_ast->final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT))
+                    from_except = true;
 
-            children = {select_intersect_except};
-        }
-        else if (!selects.empty())
-        {
-            auto right = selects.back();
-            selects.pop_back();
-            children.emplace_back(std::move(right));
-            modes.push_back(mode);
+                ASTPtr left;
+                if (from_except)
+                {
+                    left = std::move(children.back()->children[1]);
+                }
+                else
+                {
+                    left = children.back();
+                    children.pop_back();
+                }
+
+                auto right = selects.back();
+                selects.pop_back();
+
+                auto intersect_node = std::make_shared<ASTSelectIntersectExceptQuery>();
+                intersect_node->final_operator = ASTSelectIntersectExceptQuery::Operator::INTERSECT;
+                intersect_node->children = {left, right};
+
+                if (from_except)
+                    children.back()->children[1] = std::move(intersect_node);
+                else
+                    children.push_back(std::move(intersect_node));
+
+                break;
+            }
+            default:
+            {
+                auto right = selects.back();
+                selects.pop_back();
+                children.emplace_back(std::move(right));
+                modes.push_back(mode);
+                break;
+            }
         }
     }
 

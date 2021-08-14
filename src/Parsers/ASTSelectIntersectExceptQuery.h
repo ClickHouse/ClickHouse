@@ -24,11 +24,6 @@ public:
         EXCEPT
     };
 
-    using Operators = std::vector<Operator>;
-
-    ASTPtr list_of_selects;
-    Operators list_of_operators;
-
     /// Final operator after applying visitor.
     Operator final_operator = Operator::UNKNOWN;
 };

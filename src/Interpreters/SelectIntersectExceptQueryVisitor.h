@@ -17,27 +17,11 @@ class ASTFunction;
 class SelectIntersectExceptQueryMatcher
 {
 public:
-    struct Data
-    {
-        Data() = default;
-
-        void initialize(const ASTSelectIntersectExceptQuery * select_intersect_except)
-        {
-            reversed_list_of_selects = select_intersect_except->list_of_selects->clone()->children;
-            reversed_list_of_operators = select_intersect_except->list_of_operators;
-
-            std::reverse(reversed_list_of_selects.begin(), reversed_list_of_selects.end());
-            std::reverse(reversed_list_of_operators.begin(), reversed_list_of_operators.end());
-        }
-
-        ASTs reversed_list_of_selects;
-        ASTSelectIntersectExceptQuery::Operators reversed_list_of_operators;
-    };
+    struct Data {};
 
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 
     static void visit(ASTPtr & ast, Data &);
-    static void visit(ASTSelectIntersectExceptQuery &, Data &);
     static void visit(ASTSelectWithUnionQuery &, Data &);
 };
 
