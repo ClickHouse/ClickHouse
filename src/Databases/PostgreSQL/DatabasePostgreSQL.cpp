@@ -143,7 +143,7 @@ StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextPtr
 }
 
 
-StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr local_context, const bool table_checked) const
+StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr, const bool table_checked) const
 {
     if (!cache_tables || !cached_tables.count(table_name))
     {
@@ -158,7 +158,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
 
         auto storage = StoragePostgreSQL::create(
                 StorageID(database_name, table_name), pool, table_name,
-                ColumnsDescription{*columns}, ConstraintsDescription{}, String{}, local_context);
+                ColumnsDescription{*columns}, ConstraintsDescription{}, String{});
 
         if (cache_tables)
             cached_tables[table_name] = storage;
