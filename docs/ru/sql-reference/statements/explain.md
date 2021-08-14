@@ -389,7 +389,7 @@ ExpressionTransform
 
  Отображает оценки числа строк, засечек и кусков, которые будут прочитаны при выполнении запроса. Применяется для таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree). 
 
-Пример:
+**Пример**
 
 Создадим таблицу:
 
