@@ -36,7 +36,6 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
         columns,
         ConstraintsDescription{},
         String{},
-        context,
         remote_table_schema);
 
     result->startup();

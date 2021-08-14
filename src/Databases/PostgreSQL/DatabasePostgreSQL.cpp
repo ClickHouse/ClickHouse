@@ -155,7 +155,7 @@ StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextPtr
 }
 
 
-StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr local_context, const bool table_checked) const
+StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr, const bool table_checked) const
 {
     if (!cache_tables || !cached_tables.count(table_name))
     {
@@ -174,8 +174,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             table_name,
             ColumnsDescription{*columns},
             ConstraintsDescription{},
-            String{},
-            local_context);
+            String{});
 
         if (cache_tables)
             cached_tables[table_name] = storage;
