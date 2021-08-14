@@ -1,7 +1,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <Common/DenseHashMap.h>
-#include <Common/DenseHashSet.h>
+#include <sparsehash/dense_hash_map>
+#include <sparsehash/dense_hash_set>
 #include <Common/quoteString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -228,12 +228,12 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     auto add_dependent_columns = [&updated_columns](const auto & expression, auto & to_set)
     {
-        auto required_columns = expression->getRequiredColumns();
-        for (const auto & dependency : required_columns)
+        auto requiered_columns = expression->getRequiredColumns();
+        for (const auto & dependency : requiered_columns)
         {
             if (updated_columns.count(dependency))
             {
-                to_set.insert(required_columns.begin(), required_columns.end());
+                to_set.insert(requiered_columns.begin(), requiered_columns.end());
                 return true;
             }
         }
@@ -320,13 +320,13 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 {
     Block res;
 
-    DenseHashMap<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
+    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
     virtuals_map.set_empty_key(StringRef());
 
     /// Virtual columns must be appended after ordinary, because user can
     /// override them.
     for (const auto & column : virtuals)
-        virtuals_map[column.name] = &column.type;
+        virtuals_map.emplace(column.name, &column.type);
 
     for (const auto & name : column_names)
     {
@@ -470,8 +470,13 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
 
 namespace
 {
-    using NamesAndTypesMap = DenseHashMap<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = DenseHashSet<StringRef, StringRefHash>;
+#if !defined(ARCADIA_BUILD)
+    using NamesAndTypesMap = google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
+#else
+    using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
+#endif
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {

@@ -1,6 +1,8 @@
 #include "MySQLHandler.h"
 
 #include <limits>
+#include <common/scope_guard.h>
+#include <Columns/ColumnVector.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Core/MySQL/Authentication.h>
@@ -8,6 +10,7 @@
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
+#include <DataStreams/copyData.h>
 #include <Interpreters/executeQuery.h>
 #include <IO/copyData.h>
 #include <IO/LimitReadBuffer.h>
@@ -17,6 +20,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/IStorage.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <regex>
 #include <Access/User.h>
 #include <Access/AccessControlManager.h>
@@ -27,6 +31,7 @@
 #endif
 
 #if USE_SSL
+#    include <Poco/Crypto/CipherFactory.h>
 #    include <Poco/Crypto/RSAKey.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -52,7 +57,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 
@@ -62,7 +66,6 @@ static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 static String selectEmptyReplacementQuery(const String & query);
 static String showTableStatusReplacementQuery(const String & query);
 static String killConnectionIdReplacementQuery(const String & query);
-static String selectLimitReplacementQuery(const String & query);
 
 MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled, size_t connection_id_)
@@ -80,7 +83,6 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
     replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
     replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
     replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
-    replacements.emplace("SET SQL_SELECT_LIMIT", selectLimitReplacementQuery);
 }
 
 void MySQLHandler::run()
@@ -91,7 +93,6 @@ void MySQLHandler::run()
     connection_context->getClientInfo().interface = ClientInfo::Interface::MYSQL;
     connection_context->setDefaultFormat("MySQLWire");
     connection_context->getClientInfo().connection_id = connection_id;
-    connection_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
@@ -348,10 +349,8 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         format_settings.mysql_wire.max_packet_size = max_packet_size;
         format_settings.mysql_wire.sequence_id = &sequence_id;
 
-        auto set_result_details = [&with_output](const String &, const String &, const String &format, const String &)
+        auto set_result_details = [&with_output](const String &, const String &, const String &, const String &)
         {
-            if (format != "MySQLWire")
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
             with_output = true;
         };
 
@@ -460,14 +459,6 @@ static String showTableStatusReplacementQuery(const String & query)
             " WHERE name LIKE "
             + suffix);
     }
-    return query;
-}
-
-static String selectLimitReplacementQuery(const String & query)
-{
-    const String prefix = "SET SQL_SELECT_LIMIT";
-    if (query.starts_with(prefix))
-        return "SET limit" + std::string(query.data() + prefix.length());
     return query;
 }
 

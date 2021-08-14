@@ -521,7 +521,7 @@ size_t MergeTreeRangeReader::ReadResult::countBytesInResultFilter(const IColumn:
 MergeTreeRangeReader::MergeTreeRangeReader(
     IMergeTreeReader * merge_tree_reader_,
     MergeTreeRangeReader * prev_reader_,
-    const PrewhereExprInfo * prewhere_info_,
+    const PrewhereInfoPtr & prewhere_info_,
     bool last_reader_in_chain_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part->index_granularity))
@@ -836,7 +836,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     return columns;
 }
 
-static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second_filter_size)
+static void checkCombindeFiltersSize(size_t bytes_in_first_filter, size_t second_filter_size)
 {
     if (bytes_in_first_filter != second_filter_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -846,42 +846,36 @@ static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second
 
 static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
 {
-    ConstantFilterDescription first_const_descr(*first);
+    ConstantFilterDescription firsrt_const_descr(*first);
 
-    if (first_const_descr.always_true)
+    if (firsrt_const_descr.always_true)
     {
-        checkCombinedFiltersSize(first->size(), second->size());
+        checkCombindeFiltersSize(first->size(), second->size());
         return second;
     }
 
-    if (first_const_descr.always_false)
+    if (firsrt_const_descr.always_false)
     {
-        checkCombinedFiltersSize(0, second->size());
+        checkCombindeFiltersSize(0, second->size());
         return first;
     }
 
-    FilterDescription first_descr(*first);
+    auto mut_first = IColumn::mutate(std::move(first));
+    FilterDescription firsrt_descr(*mut_first);
 
-    size_t bytes_in_first_filter = countBytesInFilter(*first_descr.data);
-    checkCombinedFiltersSize(bytes_in_first_filter, second->size());
+    size_t bytes_in_first_filter = countBytesInFilter(*firsrt_descr.data);
+    checkCombindeFiltersSize(bytes_in_first_filter, second->size());
 
     ConstantFilterDescription second_const_descr(*second);
 
     if (second_const_descr.always_true)
-        return first;
+        return mut_first;
 
     if (second_const_descr.always_false)
-        return second->cloneResized(first->size());
+        return second->cloneResized(mut_first->size());
 
     FilterDescription second_descr(*second);
-
-    MutableColumnPtr mut_first;
-    if (first_descr.data_holder)
-        mut_first = IColumn::mutate(std::move(first_descr.data_holder));
-    else
-        mut_first = IColumn::mutate(std::move(first));
-
-    auto & first_data = typeid_cast<ColumnUInt8 *>(mut_first.get())->getData();
+    auto & first_data = const_cast<IColumn::Filter &>(*firsrt_descr.data);
     const auto * second_data = second_descr.data->data();
 
     for (auto & val : first_data)
@@ -975,6 +969,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     {
         row_level_filter = combineFilters(std::move(row_level_filter), filter);
         result.setFilter(row_level_filter);
+
     }
     else
         result.setFilter(filter);
