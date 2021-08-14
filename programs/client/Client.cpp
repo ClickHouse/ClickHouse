@@ -62,7 +62,6 @@
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
-#include <IO/ReadBufferFromFile.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
@@ -1900,7 +1899,7 @@ private:
         {
             const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
             const auto in_file = in_file_node.value.safeGet<std::string>();
-            
+
             auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, ""));
 
             try
