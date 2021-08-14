@@ -90,7 +90,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     Pos before_values = pos;
 
-    
+
     /// VALUES or FROM INFILE or FORMAT or SELECT
     if (s_values.ignore(pos, expected))
     {
