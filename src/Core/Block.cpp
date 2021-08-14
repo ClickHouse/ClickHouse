@@ -44,6 +44,13 @@ void Block::initializeIndexByName()
 }
 
 
+void Block::reserve(size_t count)
+{
+    index_by_name.reserve(count);
+    data.reserve(count);
+}
+
+
 void Block::insert(size_t position, ColumnWithTypeAndName elem)
 {
     if (position > data.size())
@@ -287,6 +294,7 @@ std::string Block::dumpIndex() const
 Block Block::cloneEmpty() const
 {
     Block res;
+    res.reserve(data.size());
 
     for (const auto & elem : data)
         res.insert(elem.cloneEmpty());
@@ -364,6 +372,8 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
     Block res;
 
     size_t num_columns = data.size();
+    res.reserve(num_columns);
+
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ std::move(columns[i]), data[i].type, data[i].name });
 
@@ -381,6 +391,8 @@ Block Block::cloneWithColumns(const Columns & columns) const
         throw Exception("Cannot clone block with columns because block has " + toString(num_columns) + " columns, "
                         "but " + toString(columns.size()) + " columns given.", ErrorCodes::LOGICAL_ERROR);
 
+    res.reserve(num_columns);
+
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ columns[i], data[i].type, data[i].name });
 
@@ -393,6 +405,8 @@ Block Block::cloneWithoutColumns() const
     Block res;
 
     size_t num_columns = data.size();
+    res.reserve(num_columns);
+
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ nullptr, data[i].type, data[i].name });
 

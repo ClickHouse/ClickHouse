@@ -1,7 +1,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/dense_hash_set>
+#include <Common/DenseHashMap.h>
+#include <Common/DenseHashSet.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -320,18 +320,13 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 {
     Block res;
 
-#if !defined(ARCADIA_BUILD)
-    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
-#else
-    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
-#endif
-
+    DenseHashMap<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
     virtuals_map.set_empty_key(StringRef());
 
     /// Virtual columns must be appended after ordinary, because user can
     /// override them.
     for (const auto & column : virtuals)
-        virtuals_map.emplace(column.name, &column.type);
+        virtuals_map[column.name] = &column.type;
 
     for (const auto & name : column_names)
     {
@@ -475,13 +470,8 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
 
 namespace
 {
-#if !defined(ARCADIA_BUILD)
-    using NamesAndTypesMap = google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
-#else
-    using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
-#endif
+    using NamesAndTypesMap = DenseHashMap<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = DenseHashSet<StringRef, StringRefHash>;
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
