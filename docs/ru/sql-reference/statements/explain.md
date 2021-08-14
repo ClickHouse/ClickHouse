@@ -387,7 +387,7 @@ ExpressionTransform
 
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
- Отображает информацию о прочитанных строках, засечках и кусках из таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree). 
+ Отображает оценки числа строк, засечек и кусков, которые будут прочитаны при выполнении запроса. Применяется для таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree). 
 
 Пример:
 
