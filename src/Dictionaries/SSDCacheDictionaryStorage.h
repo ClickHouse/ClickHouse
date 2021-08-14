@@ -12,7 +12,6 @@
 #include <absl/container/flat_hash_set.h>
 
 #include <common/unaligned.h>
-#include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>

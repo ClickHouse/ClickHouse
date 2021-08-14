@@ -34,6 +34,7 @@ namespace
                                                   const std::string & db_,
                                                   const std::string & schema_,
                                                   const std::string & table_,
+                                                  const std::string & query_,
                                                   const std::string & where_,
                                                   IXDBCBridgeHelper & bridge_)
     {
@@ -59,7 +60,7 @@ namespace
                     bridge_.getName());
         }
 
-        return {dict_struct_, db_, schema, table, where_, bridge_.getIdentifierQuotingStyle()};
+        return {dict_struct_, db_, schema, table, query_, where_, bridge_.getIdentifierQuotingStyle()};
     }
 }
 
@@ -78,7 +79,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     , dict_struct(dict_struct_)
     , configuration(configuration_)
     , sample_block(sample_block_)
-    , query_builder(makeExternalQueryBuilder(dict_struct, configuration.db, configuration.schema, configuration.table, configuration.where, *bridge_))
+    , query_builder(makeExternalQueryBuilder(dict_struct, configuration.db, configuration.schema, configuration.table, configuration.query, configuration.where, *bridge_))
     , load_all_query(query_builder.composeLoadAllQuery())
     , bridge_helper(bridge_)
     , bridge_url(bridge_helper->getMainURI())
@@ -119,7 +120,7 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
     else
     {
         update_time = std::chrono::system_clock::now();
-        return query_builder.composeLoadAllQuery();
+        return load_all_query;
     }
 }
 
@@ -246,7 +247,8 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
         {
             .db = config.getString(settings_config_prefix + ".db", ""),
             .schema = config.getString(settings_config_prefix + ".schema", ""),
-            .table = config.getString(settings_config_prefix + ".table"),
+            .table = config.getString(settings_config_prefix + ".table", ""),
+            .query = config.getString(settings_config_prefix + ".query", ""),
             .where = config.getString(settings_config_prefix + ".where", ""),
             .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
