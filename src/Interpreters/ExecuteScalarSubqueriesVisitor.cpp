@@ -20,7 +20,6 @@
 #include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
-
 namespace DB
 {
 

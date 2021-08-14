@@ -4,7 +4,7 @@
 
 #include <common/types.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Processors/ISimpleTransform.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
@@ -13,7 +13,14 @@
 namespace DB
 {
 
+class IBlockOutputStream;
+using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
+
 struct DictionaryStructure;
+
+/// Write keys to block output stream.
+
+void formatBlock(BlockOutputStreamPtr & out, const Block & block);
 
 /// For simple key
 
@@ -38,17 +45,24 @@ ContextMutablePtr copyContextAndApplySettings(
      *
      *  block_to_add rows size must be equal to final sum rows size of all inner stream blocks.
      */
-class TransformWithAdditionalColumns final : public ISimpleTransform
+class BlockInputStreamWithAdditionalColumns final : public IBlockInputStream
 {
 public:
-    TransformWithAdditionalColumns(Block block_to_add_, const Block & header);
+    BlockInputStreamWithAdditionalColumns(Block block_to_add_, std::unique_ptr<IBlockInputStream> && stream_);
 
-    void transform(Chunk & chunk) override;
+    Block getHeader() const override;
+
+    Block readImpl() override;
+
+    void readPrefix() override;
+
+    void readSuffix() override;
 
     String getName() const override;
 
 private:
     Block block_to_add;
+    std::unique_ptr<IBlockInputStream> stream;
     size_t current_range_index = 0;
 };
 

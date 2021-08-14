@@ -50,7 +50,7 @@ IMergeTreeReader::IMergeTreeReader(
 
     columns_from_part.set_empty_key(StringRef());
     for (const auto & column_from_part : part_columns)
-        columns_from_part[column_from_part.name] = &column_from_part.type;
+        columns_from_part.emplace(column_from_part.name, &column_from_part.type);
 }
 
 IMergeTreeReader::~IMergeTreeReader() = default;

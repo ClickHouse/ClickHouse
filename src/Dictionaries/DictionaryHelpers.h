@@ -9,15 +9,13 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
-
 
 namespace DB
 {
@@ -502,10 +500,10 @@ private:
   * Note: readPrefix readImpl readSuffix will be called on stream object during function execution.
   */
 template <DictionaryKeyType dictionary_key_type>
-void mergeBlockWithPipe(
+void mergeBlockWithStream(
     size_t key_columns_size,
     Block & block_to_update,
-    Pipe pipe)
+    BlockInputStreamPtr & stream)
 {
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
     static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by updatePreviousyLoadedBlockWithStream");
@@ -556,13 +554,9 @@ void mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    QueryPipeline pipeline;
-    pipeline.init(std::move(pipe));
+    stream->readPrefix();
 
-    PullingPipelineExecutor executor(pipeline);
-    Block block;
-
-    while (executor.pull(block))
+    while (Block block = stream->read())
     {
         Columns block_key_columns;
         block_key_columns.reserve(key_columns_size);
@@ -595,6 +589,8 @@ void mergeBlockWithPipe(
             result_fetched_column->insertRangeFrom(*update_column, 0, rows);
         }
     }
+
+    stream->readSuffix();
 
     size_t result_fetched_rows = result_fetched_columns.front()->size();
     size_t filter_hint = filter.size() - indexes_to_remove_count;
@@ -648,16 +644,4 @@ static const PaddedPODArray<T> & getColumnVectorData(
     }
 }
 
-template <typename T>
-static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array)
-{
-    auto column_vector = ColumnVector<T>::create();
-    column_vector->getData().reserve(array.size());
-    column_vector->getData().insert(array.begin(), array.end());
-
-    return column_vector;
 }
-
-}
-
-

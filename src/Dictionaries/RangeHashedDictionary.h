@@ -9,10 +9,10 @@
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryHelpers.h>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
@@ -75,7 +75,7 @@ public:
 
     using RangeStorageType = Int64;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
     struct Range
     {
@@ -178,9 +178,9 @@ private:
         PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename RangeType>
-    Pipe readImpl(const Names & column_names, size_t max_block_size) const;
+    BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const;
 
-    friend struct RangeHashedDictionaryCallGetSourceImpl;
+    friend struct RangeHashedDictionaryCallGetBlockInputStreamImpl;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

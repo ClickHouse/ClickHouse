@@ -267,12 +267,13 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
             }
             else
             {
+
                 auto & session_auth_ids = storage.session_and_auth[session_id];
 
                 KeeperStorage::Node created_node;
 
                 Coordination::ACLs node_acls;
-                if (!fixupACL(request.acls, session_auth_ids, node_acls, !request.restored_from_zookeeper_log))
+                if (!fixupACL(request.acls, session_auth_ids, node_acls, request.need_to_hash_acls))
                 {
                     response.error = Coordination::Error::ZINVALIDACL;
                     return {response_ptr, {}};
@@ -306,28 +307,16 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                     path_created += seq_num_str.str();
                 }
 
-                int32_t parent_cversion = request.parent_cversion;
                 auto child_path = getBaseName(path_created);
                 int64_t prev_parent_zxid;
-                int32_t prev_parent_cversion;
-                container.updateValue(parent_path, [child_path, zxid, &prev_parent_zxid,
-                                                    parent_cversion, &prev_parent_cversion] (KeeperStorage::Node & parent)
+                container.updateValue(parent_path, [child_path, zxid, &prev_parent_zxid] (KeeperStorage::Node & parent)
                 {
-
-                    parent.children.insert(child_path);
-                    prev_parent_cversion = parent.stat.cversion;
-                    prev_parent_zxid = parent.stat.pzxid;
-
                     /// Increment sequential number even if node is not sequential
                     ++parent.seq_num;
-
-                    if (parent_cversion == -1)
-                        ++parent.stat.cversion;
-                    else if (parent_cversion > parent.stat.cversion)
-                        parent.stat.cversion = parent_cversion;
-
-                    if (zxid > parent.stat.pzxid)
-                        parent.stat.pzxid = zxid;
+                    parent.children.insert(child_path);
+                    ++parent.stat.cversion;
+                    prev_parent_zxid = parent.stat.pzxid;
+                    parent.stat.pzxid = zxid;
                     ++parent.stat.numChildren;
                 });
 
@@ -337,7 +326,7 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                 if (request.is_ephemeral)
                     ephemerals[session_id].emplace(path_created);
 
-                undo = [&storage, prev_parent_zxid, prev_parent_cversion, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path, child_path, acl_id]
+                undo = [&storage, prev_parent_zxid, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path, child_path, acl_id]
                 {
                     storage.container.erase(path_created);
                     storage.acl_map.removeUsage(acl_id);
@@ -345,11 +334,11 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
                     if (is_ephemeral)
                         storage.ephemerals[session_id].erase(path_created);
 
-                    storage.container.updateValue(parent_path, [child_path, prev_parent_zxid, prev_parent_cversion] (KeeperStorage::Node & undo_parent)
+                    storage.container.updateValue(parent_path, [child_path, prev_parent_zxid] (KeeperStorage::Node & undo_parent)
                     {
+                        --undo_parent.stat.cversion;
                         --undo_parent.stat.numChildren;
                         --undo_parent.seq_num;
-                        undo_parent.stat.cversion = prev_parent_cversion;
                         undo_parent.stat.pzxid = prev_parent_zxid;
                         undo_parent.children.erase(child_path);
                     });
@@ -405,24 +394,6 @@ struct KeeperStorageGetRequest final : public KeeperStorageRequest
     }
 };
 
-namespace
-{
-    /// Garbage required to apply log to "fuzzy" zookeeper snapshot
-    void updateParentPzxid(const std::string & child_path, int64_t zxid, KeeperStorage::Container & container)
-    {
-        auto parent_path = parentPath(child_path);
-        auto parent_it = container.find(parent_path);
-        if (parent_it != container.end())
-        {
-            container.updateValue(parent_path, [zxid](KeeperStorage::Node & parent)
-            {
-                if (parent.stat.pzxid < zxid)
-                    parent.stat.pzxid = zxid;
-            });
-        }
-    }
-}
-
 struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
@@ -441,7 +412,7 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
     }
 
     using KeeperStorageRequest::KeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/) const override
     {
         auto & container = storage.container;
         auto & ephemerals = storage.ephemerals;
@@ -454,8 +425,6 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
         auto it = container.find(request.path);
         if (it == container.end())
         {
-            if (request.restored_from_zookeeper_log)
-                updateParentPzxid(request.path, zxid, container);
             response.error = Coordination::Error::ZNONODE;
         }
         else if (request.version != -1 && request.version != it->value.stat.version)
@@ -468,9 +437,6 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
         }
         else
         {
-            if (request.restored_from_zookeeper_log)
-                updateParentPzxid(request.path, zxid, container);
-
             auto prev_node = it->value;
             if (prev_node.stat.ephemeralOwner != 0)
             {
@@ -753,7 +719,7 @@ struct KeeperStorageSetACLRequest final : public KeeperStorageRequest
             auto & session_auth_ids = storage.session_and_auth[session_id];
             Coordination::ACLs node_acls;
 
-            if (!fixupACL(request.acls, session_auth_ids, node_acls, !request.restored_from_zookeeper_log))
+            if (!fixupACL(request.acls, session_auth_ids, node_acls, request.need_to_hash_acls))
             {
                 response.error = Coordination::Error::ZINVALIDACL;
                 return {response_ptr, {}};

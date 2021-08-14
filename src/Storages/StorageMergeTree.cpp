@@ -18,7 +18,7 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeList.h>
@@ -109,8 +109,7 @@ void StorageMergeTree::startup()
     clearOldTemporaryDirectories(0);
 
     /// NOTE background task will also do the above cleanups periodically.
-    time_after_previous_cleanup_parts.restart();
-    time_after_previous_cleanup_temporary_directories.restart();
+    time_after_previous_cleanup.restart();
 
     try
     {
@@ -224,11 +223,11 @@ std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
     return getTotalActiveSizeInBytes();
 }
 
-SinkToStoragePtr
+BlockOutputStreamPtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     const auto & settings = local_context->getSettingsRef();
-    return std::make_shared<MergeTreeSink>(
+    return std::make_shared<MergeTreeBlockOutputStream>(
         *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
 }
 
@@ -1086,32 +1085,22 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
         }, PoolType::MERGE_MUTATE});
         return true;
     }
-    bool executed = false;
-    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
-    {
-        executor.execute({[this, share_lock] ()
-        {
-            clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
-            return true;
-        }, PoolType::MERGE_MUTATE});
-        executed = true;
-    }
-    if (time_after_previous_cleanup_parts.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
+    else if (auto cmp_lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
     {
         executor.execute({[this, share_lock] ()
         {
             /// All use relative_data_path which changes during rename
             /// so execute under share lock.
             clearOldPartsFromFilesystem();
+            clearOldTemporaryDirectories();
             clearOldWriteAheadLogs();
             clearOldMutations();
             clearEmptyParts();
             return true;
         }, PoolType::MERGE_MUTATE});
-        executed = true;
-     }
-
-    return executed;
+        return true;
+    }
+    return false;
 }
 
 Int64 StorageMergeTree::getCurrentMutationVersion(

@@ -10,10 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Processors/QueryPipeline.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-
-#include <Dictionaries//DictionarySource.h>
+#include <Dictionaries/DictionaryBlockInputStream.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
@@ -322,12 +319,10 @@ void FlatDictionary::updateData()
 {
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline;
-        pipeline.init(source_ptr->loadUpdatedAll());
+        auto stream = source_ptr->loadUpdatedAll();
+        stream->readPrefix();
 
-        PullingPipelineExecutor executor(pipeline);
-        Block block;
-        while (executor.pull(block))
+        while (const auto block = stream->read())
         {
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
@@ -340,14 +335,15 @@ void FlatDictionary::updateData()
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
+        stream->readSuffix();
     }
     else
     {
-        Pipe pipe(source_ptr->loadUpdatedAll());
-        mergeBlockWithPipe<DictionaryKeyType::simple>(
+        auto stream = source_ptr->loadUpdatedAll();
+        mergeBlockWithStream<DictionaryKeyType::simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipe));
+            stream);
     }
 
     if (update_field_loaded_block)
@@ -358,13 +354,13 @@ void FlatDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline;
-        pipeline.init(source_ptr->loadAll());
-        PullingPipelineExecutor executor(pipeline);
+        auto stream = source_ptr->loadAll();
+        stream->readPrefix();
 
-        Block block;
-        while (executor.pull(block))
+        while (const auto block = stream->read())
             blockToAttributes(block);
+
+        stream->readSuffix();
     }
     else
         updateData();
@@ -535,7 +531,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
     callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
-Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     const auto keys_count = loaded_keys.size();
 
@@ -546,8 +542,7 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size) con
         if (loaded_keys[key_index])
             keys.push_back(key_index);
 
-    return Pipe(std::make_shared<DictionarySource>(
-        DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
+    return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, std::move(keys), column_names);
 }
 
 void registerDictionaryFlat(DictionaryFactory & factory)
