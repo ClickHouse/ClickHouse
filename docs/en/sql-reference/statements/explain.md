@@ -388,7 +388,7 @@ ExpressionTransform
 
 Shows information about read rows, marks and parts from [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables. 
 
-Example:
+**Example**
 
 Creating a table:
 
