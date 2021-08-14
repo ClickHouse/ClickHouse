@@ -386,7 +386,7 @@ ExpressionTransform
 ```
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
-Shows information about read rows, marks and parts from [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) tables. 
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family. 
 
 **Example**
 
