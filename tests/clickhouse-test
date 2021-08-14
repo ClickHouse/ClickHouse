@@ -647,9 +647,13 @@ def run_tests_array(all_tests_with_params):
                         failures_chain += 1
                         status += MSG_FAIL
                         status += print_test_time(total_time)
-                        status += " - having exception:\n{}\n".format(
+                        status += " - having exception in stdout:\n{}\n".format(
                             '\n'.join(stdout.split('\n')[:100]))
                         status += 'Database: ' + testcase_args.testcase_database
+                    elif '@@SKIP@@' in stdout:
+                        skipped_total += 1
+                        skip_reason = stdout.replace('@@SKIP@@', '').rstrip("\n")
+                        status += MSG_SKIPPED + f" - {skip_reason}\n"
                     elif reference_file is None:
                         status += MSG_UNKNOWN
                         status += print_test_time(total_time)
