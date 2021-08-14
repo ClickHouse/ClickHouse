@@ -9,6 +9,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseIntervalKind.h>
+#include <Parsers/ParserUnionQueryElement.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
@@ -111,12 +112,18 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ParserUnionQueryElement elem_parser;
+    ParserKeyword s_union_parser("UNION");
+    ParserKeyword s_all_parser("ALL");
+    ParserKeyword s_distinct_parser("DISTINCT");
+    ParserKeyword s_except_parser("EXCEPT");
+    ParserKeyword s_intersect_parser("INTERSECT");
     ASTs elements;
 
     auto parse_element = [&]
     {
         ASTPtr element;
-        if (!elem_parser->parse(pos, element, expected))
+        if (!elem_parser.parse(pos, element, expected))
             return false;
 
         elements.push_back(element);
@@ -126,15 +133,15 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Parse UNION type
     auto parse_separator = [&]
     {
-        if (s_union_parser->ignore(pos, expected))
+        if (s_union_parser.ignore(pos, expected))
         {
             // SELECT ... UNION ALL SELECT ...
-            if (s_all_parser->check(pos, expected))
+            if (s_all_parser.check(pos, expected))
             {
                 union_modes.push_back(ASTSelectWithUnionQuery::Mode::ALL);
             }
             // SELECT ... UNION DISTINCT SELECT ...
-            else if (s_distinct_parser->check(pos, expected))
+            else if (s_distinct_parser.check(pos, expected))
             {
                 union_modes.push_back(ASTSelectWithUnionQuery::Mode::DISTINCT);
             }
@@ -145,9 +152,14 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
             return true;
         }
-        else if (s_except_parser->check(pos, expected))
+        else if (s_except_parser.check(pos, expected))
         {
             union_modes.push_back(ASTSelectWithUnionQuery::Mode::EXCEPT);
+            return true;
+        }
+        else if (s_intersect_parser.check(pos, expected))
+        {
+            union_modes.push_back(ASTSelectWithUnionQuery::Mode::INTERSECT);
             return true;
         }
         return false;

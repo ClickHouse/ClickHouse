@@ -10,13 +10,7 @@ namespace DB
 bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr list_node;
-
-    ParserUnionList parser(
-        std::make_unique<ParserUnionQueryElement>(),
-        std::make_unique<ParserKeyword>("UNION"),
-        std::make_unique<ParserKeyword>("ALL"),
-        std::make_unique<ParserKeyword>("DISTINCT"),
-        std::make_unique<ParserKeyword>("EXCEPT"));
+    ParserUnionList parser;
 
     if (!parser.parse(pos, list_node, expected))
         return false;

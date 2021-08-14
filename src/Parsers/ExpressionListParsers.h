@@ -79,20 +79,6 @@ private:
 class ParserUnionList : public IParserBase
 {
 public:
-        ParserUnionList(
-            ParserPtr && elem_parser_,
-            ParserPtr && s_union_parser_,
-            ParserPtr && s_all_parser_,
-            ParserPtr && s_distinct_parser_,
-            ParserPtr && s_except_parser_)
-        : elem_parser(std::move(elem_parser_))
-        , s_union_parser(std::move(s_union_parser_))
-        , s_all_parser(std::move(s_all_parser_))
-        , s_distinct_parser(std::move(s_distinct_parser_))
-        , s_except_parser(std::move(s_except_parser_))
-    {
-    }
-
     template <typename ElemFunc, typename SepFunc>
     static bool parseUtil(Pos & pos, const ElemFunc & parse_element, const SepFunc & parse_separator)
     {
@@ -122,11 +108,6 @@ protected:
     const char * getName() const override { return "list of union elements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 private:
-    ParserPtr elem_parser;
-    ParserPtr s_union_parser;
-    ParserPtr s_all_parser;
-    ParserPtr s_distinct_parser;
-    ParserPtr s_except_parser;
     ASTSelectWithUnionQuery::UnionModes union_modes;
 };
 

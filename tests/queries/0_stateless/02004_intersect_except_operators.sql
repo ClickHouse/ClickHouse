@@ -32,3 +32,10 @@ select 1 union all select 1 intersect select 2;
 select * from (select 1 union all select 2 union all select 3 union all select 4 except select 3 union all select 5) order by 1;
 select * from (select 1 union all select 2 union all select 3 union all select 4 intersect select 3 union all select 5) order by 1;
 select * from (select 1 union all select 2 union all select 3 union all select 4 intersect select 3 union all select 5 except select 1) order by 1;
+
+select 1 intersect (select 1 except select 2);
+select 1 union all select 2  except (select 2 except select 1 union all select 1) except select 4;
+
+explain syntax select 1 intersect select 1;
+explain syntax select 1 except select 1;
+explain syntax select 1 union all select 2  except (select 2 except select 1 union all select 1) except select 4;

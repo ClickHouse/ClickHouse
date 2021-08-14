@@ -23,7 +23,8 @@ public:
         Unspecified,
         ALL,
         DISTINCT,
-        EXCEPT
+        EXCEPT,
+        INTERSECT
     };
 
     using UnionModes = std::vector<Mode>;
