@@ -198,91 +198,83 @@ enum class SubqueryFunctionType
     ALL
 };
 
-static bool modifyAST(const String & operator_name, ASTPtr function, SubqueryFunctionType type)
+static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
 {
-    // = ANY --> IN, != ALL --> NOT IN
-    if ((type == SubqueryFunctionType::ANY && operator_name == "equals")
-        || (type == SubqueryFunctionType::ALL && operator_name == "notEquals"))
+    /* Rewrite in AST:
+     *  = ANY --> IN
+     * != ALL --> NOT IN
+     *  = ALL --> IN (SELECT singleValueOrNull(*) FROM subquery)
+     * != ANY --> NOT IN (SELECT singleValueOrNull(*) FROM subquery)
+    **/
+
+    auto * function = assert_cast<ASTFunction *>(ast.get());
+    String operator_name = function->name;
+
+    auto function_equals = operator_name == "equals";
+    auto function_not_equals = operator_name == "notEquals";
+
+    String aggregate_function_name;
+    if (function_equals || function_not_equals)
     {
-        assert_cast<ASTFunction *>(function.get())->name = "in";
         if (operator_name == "notEquals")
+            function->name = "notIn";
+        else
+            function->name = "in";
+
+        if ((type == SubqueryFunctionType::ANY && function_equals)
+            || (type == SubqueryFunctionType::ALL && function_not_equals))
         {
-            auto function_not = std::make_shared<ASTFunction>();
-            auto exp_list_not = std::make_shared<ASTExpressionList>();
-            exp_list_not->children.push_back(function);
-            function_not->name = "not";
-            function_not->children.push_back(exp_list_not);
-            function_not->arguments = exp_list_not;
-            function = function_not;
+            return true;
         }
-        return true;
+
+        aggregate_function_name = "singleValueOrNull";
     }
+    else if (operator_name == "greaterOrEquals" || operator_name == "greater")
+    {
+        aggregate_function_name = (type == SubqueryFunctionType::ANY ? "min" : "max");
+    }
+    else if (operator_name == "lessOrEquals" || operator_name == "less")
+    {
+        aggregate_function_name = (type == SubqueryFunctionType::ANY ? "max" : "min");
+    }
+    else
+        return false;
 
-    // subquery --> (SELECT aggregate_function(*) FROM subquery)
-    auto aggregate_function = std::make_shared<ASTFunction>();
-    auto aggregate_function_exp_list = std::make_shared<ASTExpressionList>();
-    aggregate_function_exp_list ->children.push_back(std::make_shared<ASTAsterisk>());
-    aggregate_function->arguments = aggregate_function_exp_list;
-    aggregate_function->children.push_back(aggregate_function_exp_list);
+    /// subquery --> (SELECT aggregate_function(*) FROM subquery)
+    auto aggregate_function = makeASTFunction(aggregate_function_name, std::make_shared<ASTAsterisk>());
+    auto subquery_node = function->children[0]->children[1];
 
-    ASTPtr subquery_node = function->children[0]->children[1];
-    auto select_query = std::make_shared<ASTSelectQuery>();
-    auto tables_in_select = std::make_shared<ASTTablesInSelectQuery>();
-    auto tables_in_select_element = std::make_shared<ASTTablesInSelectQueryElement>();
     auto table_expression = std::make_shared<ASTTableExpression>();
-    table_expression->subquery = subquery_node;
-    table_expression->children.push_back(subquery_node);
-    tables_in_select_element->table_expression = table_expression;
-    tables_in_select_element->children.push_back(table_expression);
-    tables_in_select->children.push_back(tables_in_select_element);
+    table_expression->subquery = std::move(subquery_node);
+    table_expression->children.push_back(table_expression->subquery);
+
+    auto tables_in_select_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    tables_in_select_element->table_expression = std::move(table_expression);
+    tables_in_select_element->children.push_back(tables_in_select_element->table_expression);
+
+    auto tables_in_select = std::make_shared<ASTTablesInSelectQuery>();
+    tables_in_select->children.push_back(std::move(tables_in_select_element));
+
     auto select_exp_list = std::make_shared<ASTExpressionList>();
     select_exp_list->children.push_back(aggregate_function);
+
+    auto select_query = std::make_shared<ASTSelectQuery>();
     select_query->children.push_back(select_exp_list);
     select_query->children.push_back(tables_in_select);
-    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_exp_list));
-    select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select));
+
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
 
     auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-    auto list_of_selects = std::make_shared<ASTExpressionList>();
-    list_of_selects->children.push_back(select_query);
-    select_with_union_query->list_of_selects = list_of_selects;
+    select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+    select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
     auto new_subquery = std::make_shared<ASTSubquery>();
     new_subquery->children.push_back(select_with_union_query);
-    function->children[0]->children.pop_back();
-    function->children[0]->children.push_back(new_subquery);
+    ast->children[0]->children.back() = std::move(new_subquery);
 
-    if (operator_name == "greaterOrEquals" || operator_name == "greater")
-    {
-        aggregate_function->name = type == SubqueryFunctionType::ANY ? "min" : "max";
-        return true;
-    }
-    if (operator_name == "lessOrEquals" || operator_name == "less")
-    {
-        aggregate_function->name = type == SubqueryFunctionType::ANY ? "max" : "min";
-        return true;
-    }
-
-    // = ALL --> IN (SELECT singleValueOrNull(*) FROM subquery)
-    // != ANY --> NOT IN (SELECT singleValueOrNull(*) FROM subquery)
-    if (operator_name == "equals" || operator_name == "notEquals")
-    {
-        aggregate_function->name = "singleValueOrNull";
-        assert_cast<ASTFunction *>(function.get())->name = "in";
-        if (operator_name == "notEquals")
-        {
-            auto function_not = std::make_shared<ASTFunction>();
-            auto exp_list_not = std::make_shared<ASTExpressionList>();
-            exp_list_not->children.push_back(function);
-            function_not->name = "not";
-            function_not->children.push_back(exp_list_not);
-            function_not->arguments = exp_list_not;
-            function = function_not;
-        }
-        return true;
-    }
-    return false;
+    return true;
 }
 
 bool ParserComparisonExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -346,7 +338,7 @@ bool ParserComparisonExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             exp_list->children.push_back(node);
             exp_list->children.push_back(elem);
 
-            if (subquery_function_type != SubqueryFunctionType::NONE && !modifyAST(function->name, function, subquery_function_type))
+            if (subquery_function_type != SubqueryFunctionType::NONE && !modifyAST(function, subquery_function_type))
                 return false;
 
             pos.increaseDepth();

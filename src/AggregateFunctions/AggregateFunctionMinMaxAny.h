@@ -50,6 +50,8 @@ private:
     T value;
 
 public:
+    static constexpr bool is_nullable = false;
+
     bool has() const
     {
         return has_value;
@@ -470,6 +472,8 @@ private:
     char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
 
 public:
+    static constexpr bool is_nullable = false;
+
     bool has() const
     {
         return size >= 0;
@@ -693,6 +697,8 @@ private:
     Field value;
 
 public:
+    static constexpr bool is_nullable = false;
+
     bool has() const
     {
         return !value.isNull();
@@ -979,6 +985,8 @@ struct AggregateFunctionAnyLastData : Data
 template <typename Data>
 struct AggregateFunctionSingleValueOrNullData : Data
 {
+    static constexpr bool is_nullable = true;
+
     using Self = AggregateFunctionSingleValueOrNullData;
 
     bool first_value = true;
@@ -1136,7 +1144,9 @@ public:
     DataTypePtr getReturnType() const override
     {
         auto result_type = this->argument_types.at(0);
-        return Data::name() == "singleValueOrNull" ? makeNullable(result_type) : result_type;
+        if constexpr (Data::is_nullable)
+            return makeNullable(result_type);
+        return result_type;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override

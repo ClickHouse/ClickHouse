@@ -14,7 +14,7 @@ class IntersectOrExceptTransform : public IProcessor
 using Operator = ASTSelectIntersectExceptQuery::Operator;
 
 public:
-    IntersectOrExceptTransform(const Block & header_, Operator operators);
+    IntersectOrExceptTransform(const Block & header_, Operator operator_);
 
     String getName() const override { return "IntersectOrExcept"; }
 
