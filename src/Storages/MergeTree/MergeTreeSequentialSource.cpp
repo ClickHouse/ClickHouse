@@ -53,7 +53,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     MergeTreeReaderSettings reader_settings =
     {
-        /// bytes to use direct IO (this is hack)
+        /// bytes to use AIO (this is hack)
         .min_bytes_to_use_direct_io = read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
         .max_read_buffer_size = DBMS_DEFAULT_BUFFER_SIZE,
         .save_marks_in_cache = false

@@ -14,7 +14,7 @@ Returns the largest round number that is less than or equal to `x`. A round numb
 Examples: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
 
 `x` is any numeric type. The result is a number of the same type.
-For integer arguments, it makes sense to round with a negative `N` value (for non-negative `N`, the function does not do anything).
+For integer arguments, it makes sense to round with a negative `N` value (for non-negative `N`, the function doesn’t do anything).
 If rounding causes overflow (for example, floor(-128, -1)), an implementation-specific result is returned.
 
 ## ceil(x\[, N\]), ceiling(x\[, N\]) {#ceilx-n-ceilingx-n}

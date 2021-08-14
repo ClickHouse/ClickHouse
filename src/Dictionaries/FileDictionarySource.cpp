@@ -1,17 +1,19 @@
 #include "FileDictionarySource.h"
+
+#include <filesystem>
+
+#include <Poco/File.h>
+
 #include <common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
-#include <Formats/FormatFactory.h>
-#include <Processors/Formats/IInputFormat.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include "DictionarySourceHelpers.h"
-
 
 namespace DB
 {
@@ -47,15 +49,14 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 }
 
 
-Pipe FileDictionarySource::loadAll()
+BlockInputStreamPtr FileDictionarySource::loadAll()
 {
     LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
-    auto source = FormatFactory::instance().getInput(format, *in_ptr, sample_block, context, max_block_size);
-    source->addBuffer(std::move(in_ptr));
+    auto stream = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
     last_modification = getLastModification();
 
-    return Pipe(std::move(source));
+    return std::make_shared<OwningBlockInputStream<ReadBuffer>>(stream, std::move(in_ptr));
 }
 
 
@@ -67,9 +68,8 @@ std::string FileDictionarySource::toString() const
 
 Poco::Timestamp FileDictionarySource::getLastModification() const
 {
-    return FS::getModificationTimestamp(filepath);
+    return Poco::File{filepath}.getLastModified();
 }
-
 
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {

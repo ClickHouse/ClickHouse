@@ -2,7 +2,6 @@
 
 #include <map>
 #include <list>
-#include <optional>
 #include <string>
 #include <set>
 #include <initializer_list>

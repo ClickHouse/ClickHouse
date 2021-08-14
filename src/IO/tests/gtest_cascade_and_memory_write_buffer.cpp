@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
+#include <Poco/File.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
@@ -8,9 +9,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/copyData.h>
 #include <Common/typeid_cast.h>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 using namespace DB;
 
 
@@ -236,7 +235,7 @@ try
 
         buf.reset();
         reread_buf.reset();
-        ASSERT_TRUE(!fs::exists(tmp_filename));
+        ASSERT_TRUE(!Poco::File(tmp_filename).exists());
     }
 }
 catch (...)

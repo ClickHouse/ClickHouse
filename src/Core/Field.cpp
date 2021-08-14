@@ -6,9 +6,7 @@
 #include <IO/readDecimalText.h>
 #include <Core/Field.h>
 #include <Core/DecimalComparison.h>
-#include <Common/FieldVisitorDump.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorWriteBinary.h>
+#include <Common/FieldVisitors.h>
 
 
 namespace DB
@@ -97,12 +95,12 @@ void writeBinary(const Array & x, WriteBuffer & buf)
     DB::writeBinary(size, buf);
 
     for (const auto & elem : x)
-        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem);
 }
 
 void writeText(const Array & x, WriteBuffer & buf)
 {
-    DB::String res = applyVisitor(FieldVisitorToString(), DB::Field(x));
+    DB::String res = applyVisitor(DB::FieldVisitorToString(), DB::Field(x));
     buf.write(res.data(), res.size());
 }
 
@@ -128,7 +126,7 @@ void writeBinary(const Tuple & x, WriteBuffer & buf)
     {
         const UInt8 type = elem.getType();
         DB::writeBinary(type, buf);
-        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem);
     }
 }
 
@@ -159,7 +157,7 @@ void writeBinary(const Map & x, WriteBuffer & buf)
     {
         const UInt8 type = elem.getType();
         DB::writeBinary(type, buf);
-        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
+        Field::dispatch([&buf] (const auto & value) { DB::FieldVisitorWriteBinary()(value, buf); }, elem);
     }
 }
 
@@ -196,14 +194,14 @@ template void readQuoted<Decimal256>(DecimalField<Decimal256> & x, ReadBuffer & 
 
 void writeFieldText(const Field & x, WriteBuffer & buf)
 {
-    String res = Field::dispatch(FieldVisitorToString(), x);
+    DB::String res = Field::dispatch(DB::FieldVisitorToString(), x);
     buf.write(res.data(), res.size());
 }
 
 
 String Field::dump() const
 {
-    return applyVisitor(FieldVisitorDump(), *this);
+    return applyVisitor(DB::FieldVisitorDump(), *this);
 }
 
 Field Field::restoreFromDump(const std::string_view & dump_)
@@ -453,16 +451,6 @@ template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 
 inline void writeText(const Null &, WriteBuffer & buf)
 {
     writeText(std::string("NULL"), buf);
-}
-
-inline void writeText(const NegativeInfinity &, WriteBuffer & buf)
-{
-    writeText(std::string("-Inf"), buf);
-}
-
-inline void writeText(const PositiveInfinity &, WriteBuffer & buf)
-{
-    writeText(std::string("+Inf"), buf);
 }
 
 String toString(const Field & x)

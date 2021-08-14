@@ -7,97 +7,21 @@ toc_title: "Массивы"
 
 ## empty {#function-empty}
 
-Проверяет, является ли входной массив пустым.
-
-**Синтаксис**
-
-``` sql
-empty([x])
-```
-
-Массив считается пустым, если он не содержит ни одного элемента.
-
-!!! note "Примечание"
-    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM TABLE` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
-
-Функция также поддерживает работу с типами [String](string-functions.md#empty) и [UUID](uuid-functions.md#empty).
-
-**Параметры**
-
--   `[x]` — массив на входе функции. [Array](../data-types/array.md).
-
-**Возвращаемое значение**
-
--   Возвращает `1` для пустого массива или `0` — для непустого массива.
-
-Тип: [UInt8](../data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT empty([]);
-```
-
-Ответ:
-
-```text
-┌─empty(array())─┐
-│              1 │
-└────────────────┘
-```
+Возвращает 1 для пустого массива, и 0 для непустого массива.
+Тип результата - UInt8.
+Функция также работает для строк.
 
 ## notEmpty {#function-notempty}
 
-Проверяет, является ли входной массив непустым.
-
-**Синтаксис**
-
-``` sql
-notEmpty([x])
-```
-
-Массив считается непустым, если он содержит хотя бы один элемент.
-
-!!! note "Примечание"
-    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
-
-Функция также поддерживает работу с типами [String](string-functions.md#notempty) и [UUID](uuid-functions.md#notempty).
-
-**Параметры**
-
--   `[x]` — массив на входе функции. [Array](../data-types/array.md).
-
-**Возвращаемое значение**
-
--   Возвращает `1` для непустого массива или `0` — для пустого массива.
-
-Тип: [UInt8](../data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT notEmpty([1,2]);
-```
-
-Результат:
-
-```text
-┌─notEmpty([1, 2])─┐
-│                1 │
-└──────────────────┘
-```
+Возвращает 0 для пустого массива, и 1 для непустого массива.
+Тип результата - UInt8.
+Функция также работает для строк.
 
 ## length {#array_functions-length}
 
 Возвращает количество элементов в массиве.
 Тип результата - UInt64.
 Функция также работает для строк.
-
-Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT length(arr) FROM table` преобразуется к запросу `SELECT arr.size0 FROM TABLE`.
 
 ## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
@@ -115,46 +39,10 @@ SELECT notEmpty([1,2]);
 
 Принимает пустой массив и возвращает массив из одного элемента, равного значению по умолчанию.
 
+## range(N) {#rangen}
 
-## range(end), range(\[start, \] end \[, step\]) {#range}
-
-Возвращает массив чисел от `start` до `end - 1` с шагом `step`.
-
-**Синтаксис**
-
-``` sql
-range([start, ] end [, step])
-```
-
-**Аргументы**
-
--   `start` — начало диапазона. Обязательно, когда указан `step`. По умолчанию равно `0`. Тип: [UInt](../data-types/int-uint.md)
--   `end` — конец диапазона. Обязательный аргумент. Должен быть больше, чем `start`. Тип: [UInt](../data-types/int-uint.md)
--   `step` — шаг обхода. Необязательный аргумент. По умолчанию равен `1`. Тип: [UInt](../data-types/int-uint.md)
-
-**Возвращаемые значения**
-
--   массив `UInt` чисел от `start` до `end - 1` с шагом `step`
-
-**Особенности реализации**
-
--   Не поддерживаются отрицательные значения аргументов: `start`, `end`, `step` имеют тип `UInt`.
-
--   Если в результате запроса создаются массивы суммарной длиной больше, чем количество элементов, указанное настройкой [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block), то генерируется исключение.
-
-**Примеры**
-
-Запрос:
-``` sql
-SELECT range(5), range(1, 5), range(1, 5, 2);
-```
-Ответ:
-```txt
-┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┐
-│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │
-└─────────────┴─────────────┴────────────────┘
-```
-
+Возвращает массив чисел от 0 до N-1.
+На всякий случай, если на блок данных, создаются массивы суммарной длины больше 100 000 000 элементов, то кидается исключение.
 
 ## array(x1, …), оператор \[x1, …\] {#arrayx1-operator-x1}
 

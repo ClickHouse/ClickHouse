@@ -7,7 +7,7 @@ toc_title: WATCH
 
 !!! important "Важно"
     Это экспериментальная функция. Она может повлечь потерю совместимости в будущих версиях.
-    Чтобы использовать `LIVE VIEW` и запросы `WATCH`, включите настройку `set allow_experimental_live_view = 1`.
+    Чтобы использовать `LIVE VIEW` и запросы `WATCH`, включите настройку `set allow_experimental_live_view = 1`. 
 
 **Синтаксис**
 

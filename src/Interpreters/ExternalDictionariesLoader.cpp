@@ -120,10 +120,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     std::string maybe_database_name = name.substr(0, pos);
     std::string maybe_table_name = name.substr(pos + 1);
 
-    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
-        {maybe_database_name, maybe_table_name},
-        const_pointer_cast<Context>(getContext()));
-
+    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, getContext());
     if (!db)
         return name;
     assert(table);

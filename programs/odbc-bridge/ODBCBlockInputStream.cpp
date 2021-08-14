@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
+#include <ext/range.h>
 
 
 namespace DB
@@ -115,8 +116,6 @@ void ODBCBlockInputStream::insertValue(
             assert_cast<ColumnFloat64 &>(column).insertValue(row.get<double>(idx));
             break;
         case ValueType::vtFixedString:[[fallthrough]];
-        case ValueType::vtEnum8:
-        case ValueType::vtEnum16:
         case ValueType::vtString:
             assert_cast<ColumnString &>(column).insert(row.get<std::string>(idx));
             break;
@@ -134,7 +133,7 @@ void ODBCBlockInputStream::insertValue(
             auto value = row.get<std::string>(idx);
             ReadBufferFromString in(value);
             time_t time = 0;
-            readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
+            readDateTimeText(time, in);
             if (time < 0)
                 time = 0;
             assert_cast<ColumnUInt32 &>(column).insertValue(time);

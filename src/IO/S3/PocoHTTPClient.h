@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
@@ -36,8 +34,6 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     unsigned int s3_max_redirects;
 
     void updateSchemeAndRegion();
-
-    std::function<void(const Aws::Client::ClientConfigurationPerRequest &)> error_report;
 
 private:
     PocoHTTPClientConfiguration(const String & force_region_, const RemoteHostFilter & remote_host_filter_, unsigned int s3_max_redirects_);
@@ -97,7 +93,6 @@ private:
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
     std::function<Aws::Client::ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
-    std::function<void(const Aws::Client::ClientConfigurationPerRequest &)> error_report;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;

@@ -5,7 +5,7 @@
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
@@ -13,6 +13,7 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 
+#include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
 namespace DB
 {

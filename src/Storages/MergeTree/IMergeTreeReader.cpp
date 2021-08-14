@@ -6,6 +6,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Common/typeid_cast.h>
+#include <Poco/File.h>
 
 
 namespace DB
@@ -50,7 +51,7 @@ IMergeTreeReader::IMergeTreeReader(
 
     columns_from_part.set_empty_key(StringRef());
     for (const auto & column_from_part : part_columns)
-        columns_from_part[column_from_part.name] = &column_from_part.type;
+        columns_from_part.emplace(column_from_part.name, &column_from_part.type);
 }
 
 IMergeTreeReader::~IMergeTreeReader() = default;
