@@ -49,7 +49,10 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     nested_interpreters.reserve(num_children);
     std::vector<Names> required_result_column_names_for_other_selects(num_children);
 
-    if (!required_result_column_names.empty() && num_children > 1)
+    /// If it is UNION DISTINCT, do not filter by required_result_columns.
+    bool is_union_distinct = ast->union_mode == ASTSelectWithUnionQuery::Mode::DISTINCT;
+
+    if (!required_result_column_names.empty() && num_children > 1 && !is_union_distinct)
     {
         /// Result header if there are no filtering by 'required_result_column_names'.
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
@@ -128,7 +131,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     for (size_t query_num = 0; query_num < num_children; ++query_num)
     {
         const Names & current_required_result_column_names
-            = query_num == 0 ? required_result_column_names : required_result_column_names_for_other_selects[query_num];
+            = !is_union_distinct && query_num == 0 ? required_result_column_names : required_result_column_names_for_other_selects[query_num];
 
         nested_interpreters.emplace_back(
             buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), current_required_result_column_names));
