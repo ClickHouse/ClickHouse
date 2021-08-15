@@ -27,9 +27,15 @@
 
     <max_connections>4096</max_connections>
 
-    <keeper_server>
-            <tcp_port>9181</tcp_port>
+    <interfaces>
+        <plain_keeper_tcp>
+            <protocol>keepr_tcp</protocol>
+            <port>9181</port>
+            <enable_tls>no</enable_tls>
+        </plain_keeper_tcp>
+    </interfaces>
 
+    <keeper_server>
             <!-- Must be unique among all keeper serves -->
             <server_id>1</server_id>
 

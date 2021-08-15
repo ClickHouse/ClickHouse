@@ -4,8 +4,15 @@
         <console>true</console>
     </logger>
 
+    <interfaces>
+        <plain_keeper_tcp>
+            <protocol>keepr_tcp</protocol>
+            <port>9181</port>
+            <enable_tls>no</enable_tls>
+        </plain_keeper_tcp>
+    </interfaces>
+
     <keeper_server>
-        <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
         <log_storage_path>./keeper_log</log_storage_path>
         <snapshot_storage_path>./keeper_snapshot</snapshot_storage_path>
