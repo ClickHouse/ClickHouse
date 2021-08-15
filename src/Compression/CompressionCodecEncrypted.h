@@ -2,11 +2,11 @@
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #include <Common/config.h>
-#if USE_SSL && USE_INTERNAL_SSL_LIBRARY
+#if USE_SSL && USE_INTERNAL_SSL_LIBRARY && !defined(ARCADIA_BUILD)
 
 #include <Compression/ICompressionCodec.h>
 #include <boost/noncopyable.hpp>
-#include <openssl/aead.h>
+#include <openssl/aead.h> // Y_IGNORE
 #include <optional>
 
 namespace DB

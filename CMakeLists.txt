@@ -271,12 +271,6 @@ endif()
 
 include(cmake/cpu_features.cmake)
 
-option(ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated.")
-
-if (ARCH_NATIVE)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
-endif ()
-
 # Asynchronous unwind tables are needed for Query Profiler.
 # They are already by default on some platforms but possibly not on all platforms.
 # Enable it explicitly.
@@ -401,9 +395,10 @@ endif ()
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-# We recommend avoiding this mode for production builds because we can't guarantee all needed libraries exist in your
-# system.
+# We recommend avoiding this mode for production builds because we can't guarantee
+# all needed libraries exist in your system.
 # This mode exists for enthusiastic developers who are searching for trouble.
+# The whole idea of using unknown version of libraries from the OS distribution is deeply flawed.
 # Useful for maintainers of OS packages.
 option (UNBUNDLED "Use system libraries instead of ones in contrib/" OFF)
 
