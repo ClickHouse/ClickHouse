@@ -12,11 +12,11 @@ namespace ErrorCodes
 
 /*
  * Note: there is a difference between intersect and except behaviour.
- * `intersect` is supposed to be a part of last SelectQuery, i.e. the sequence with no parenthesis:
+ * `intersect` is supposed to be a part of the last SelectQuery, i.e. the sequence with no parenthesis:
  * select 1 union all select 2 except select 1 intersect 2 except select 2 union distinct select 5;
  * is interpreted as:
  * select 1 union all select 2 except (select 1 intersect 2) except select 2 union distinct select 5;
- * Whereas `except` is applied to all union part like:
+ * Whereas `except` is applied to all left union part like:
  * (((select 1 union all select 2) except (select 1 intersect 2)) except select 2) union distinct select 5;
 **/
 
@@ -28,7 +28,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTPtr & ast, Data & data)
 
 void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Data &)
 {
-    auto & union_modes = ast.list_of_modes;
+    const auto & union_modes = ast.list_of_modes;
 
     if (union_modes.empty())
         return;

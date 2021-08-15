@@ -121,6 +121,8 @@ private:
     Operators_t overlapping_operators_to_skip = { (const char *[]){ nullptr } };
     ParserPtr first_elem_parser;
     ParserPtr remaining_elem_parser;
+    /// =, !=, <, > ALL (subquery) / ANY (subquery)
+    bool allow_any_all_operators = false;
 
 public:
     /** `operators_` - allowed operators and their corresponding functions
@@ -130,8 +132,10 @@ public:
     {
     }
 
-    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_)
-        : operators(operators_), overlapping_operators_to_skip(overlapping_operators_to_skip_), first_elem_parser(std::move(first_elem_parser_))
+    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_,
+            Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_, bool allow_any_all_operators_ = false)
+        : operators(operators_), overlapping_operators_to_skip(overlapping_operators_to_skip_),
+          first_elem_parser(std::move(first_elem_parser_)), allow_any_all_operators(allow_any_all_operators_)
     {
     }
 
@@ -341,12 +345,16 @@ class ParserComparisonExpression : public IParserBase
 private:
     static const char * operators[];
     static const char * overlapping_operators_to_skip[];
-    ParserBetweenExpression elem_parser;
+    ParserLeftAssociativeBinaryOperatorList operator_parser {operators,
+        overlapping_operators_to_skip, std::make_unique<ParserBetweenExpression>(), true};
 
 protected:
     const char * getName() const  override{ return "comparison expression"; }
 
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return operator_parser.parse(pos, node, expected);
+    }
 };
 
 /** Parser for nullity checking with IS (NOT) NULL.
@@ -355,6 +363,7 @@ class ParserNullityChecking : public IParserBase
 {
 private:
     ParserComparisonExpression elem_parser;
+
 protected:
     const char * getName() const override { return "nullity checking"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
