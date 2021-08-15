@@ -157,7 +157,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     # We wish these developers good luck.
     if unbundled:
         # We also disable all CPU features except basic x86_64.
-        # It is only slightly related to "unbundled" build, but it is a good place to test if code compiled without these instruction sets.
+        # It is only slightly related to "unbundled" build, but it is a good place to test if code compiles without these instruction sets.
         cmake_flags.append('-DUNBUNDLED=1 -DUSE_INTERNAL_RDKAFKA_LIBRARY=1 -DENABLE_ARROW=0 -DENABLE_AVRO=0 -DENABLE_ORC=0 -DENABLE_PARQUET=0 -DENABLE_SSSE3=0 -DENABLE_SSE41=0 -DENABLE_SSE42=0 -DENABLE_PCLMULQDQ=0 -DENABLE_POPCNT=0 -DENABLE_AVX=0 -DENABLE_AVX2=0')
 
     if split_binary:
