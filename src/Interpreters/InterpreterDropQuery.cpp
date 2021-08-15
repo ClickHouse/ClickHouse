@@ -324,6 +324,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             if (auto * materialize_postgresql = typeid_cast<DatabaseMaterializedPostgreSQL *>(database.get()))
                 materialize_postgresql->stopReplication();
 #endif
+            /// Protects from concurrent CREATE TABLE queries
+            auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
 
             if (database->shouldBeEmptyOnDetach())
             {
@@ -351,9 +353,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     uuids_to_wait.push_back(table_to_wait);
                 }
             }
-
-            /// Protects from concurrent CREATE TABLE queries
-            auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
 
             if (!drop)
                 database->assertCanBeDetached(true);
