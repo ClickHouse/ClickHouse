@@ -609,6 +609,27 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
     return data.window_functions;
 }
 
+class MarkTupleLiteralsAsLegacyData
+{
+public:
+    using TypeToVisit = ASTLiteral;
+
+    static void visit(ASTLiteral & literal, ASTPtr &)
+    {
+        if (literal.value.getType() == Field::Types::Tuple)
+            literal.use_legacy_column_name_of_tuple = true;
+    }
+};
+
+using MarkTupleLiteralsAsLegacyMatcher = OneTypeMatcher<MarkTupleLiteralsAsLegacyData>;
+using MarkTupleLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkTupleLiteralsAsLegacyMatcher, true>;
+
+void markTupleLiteralsAsLegacy(ASTPtr & query)
+{
+    MarkTupleLiteralsAsLegacyVisitor::Data data;
+    MarkTupleLiteralsAsLegacyVisitor(data).visit(query);
+}
+
 }
 
 TreeRewriterResult::TreeRewriterResult(
@@ -927,6 +948,9 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, select_options.only_analyze);
 
+    if (settings.legacy_column_name_of_tuple_literal)
+        markTupleLiteralsAsLegacy(query);
+
     TreeOptimizer::apply(query, result, tables_with_columns, getContext());
 
     /// array_join_alias_to_name, array_join_result_to_source.
@@ -993,6 +1017,9 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, getContext(), 0, result.scalars, false);
+
+    if (settings.legacy_column_name_of_tuple_literal)
+        markTupleLiteralsAsLegacy(query);
 
     TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
