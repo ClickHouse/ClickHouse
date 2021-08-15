@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
 
 #include <DataStreams/materializeBlock.h>
 
@@ -105,25 +106,57 @@ DataTypePtr convertTypeToNullable(const DataTypePtr & type)
     return type;
 }
 
+/// Convert column to nullable. If column LowCardinality or Const, convert nested column.
+/// Returns nullptr if conversion cannot be performed.
+static ColumnPtr tryConvertColumnToNullable(const ColumnPtr & col)
+{
+    if (isColumnNullable(*col) || col->canBeInsideNullable())
+        return makeNullable(col);
+
+    if (col->lowCardinality())
+    {
+        auto mut_col = IColumn::mutate(std::move(col));
+        ColumnLowCardinality * col_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
+        if (col_lc->nestedIsNullable())
+        {
+            return mut_col;
+        }
+        else if (col_lc->nestedCanBeInsideNullable())
+        {
+            col_lc->nestedToNullable();
+            return mut_col;
+        }
+    }
+    else if (const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(*col))
+    {
+        const auto & nested = col_const->getDataColumnPtr();
+        if (nested->isNullable() || nested->canBeInsideNullable())
+        {
+            return makeNullable(col);
+        }
+        else if (nested->lowCardinality())
+        {
+            ColumnPtr nested_nullable = tryConvertColumnToNullable(nested);
+            if (nested_nullable)
+                return ColumnConst::create(nested_nullable, col_const->size());
+        }
+    }
+    return nullptr;
+}
+
 void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
-    column.type = convertTypeToNullable(column.type);
-
     if (!column.column)
+    {
+        column.type = convertTypeToNullable(column.type);
         return;
-
-    if (column.column->lowCardinality())
-    {
-        /// Convert nested to nullable, not LowCardinality itself
-        auto mut_col = IColumn::mutate(std::move(column.column));
-        ColumnLowCardinality * col_as_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
-        if (!col_as_lc->nestedIsNullable())
-            col_as_lc->nestedToNullable();
-        column.column = std::move(mut_col);
     }
-    else if (column.column->canBeInsideNullable())
+
+    ColumnPtr nullable_column = tryConvertColumnToNullable(column.column);
+    if (nullable_column)
     {
-        column.column = makeNullable(column.column);
+        column.type = convertTypeToNullable(column.type);
+        column.column = std::move(nullable_column);
     }
 }
 
