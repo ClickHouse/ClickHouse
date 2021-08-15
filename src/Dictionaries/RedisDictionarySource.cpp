@@ -31,7 +31,7 @@ void registerDictionarySourceRedis(DictionarySourceFactory & factory)
 
 #include <IO/WriteHelpers.h>
 
-#include "RedisBlockInputStream.h"
+#include "RedisSource.h"
 
 
 namespace DB

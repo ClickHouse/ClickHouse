@@ -1,3 +1,5 @@
+#include "MongoDBSource.h"
+
 #include <string>
 #include <vector>
 
@@ -15,7 +17,6 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <common/range.h>
-#include <DataStreams/MongoDBBlockInputStream.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Version.h>

@@ -11,7 +11,7 @@
 #    include <DataTypes/convertMySQLDataType.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
-#    include <Formats/MySQLBlockInputStream.h>
+#    include <Formats/MySQLSource.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <Processors/QueryPipeline.h>
 #    include <IO/Operators.h>

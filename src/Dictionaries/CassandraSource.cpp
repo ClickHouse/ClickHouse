@@ -10,7 +10,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/ExternalResultDescription.h>
 #include <IO/ReadHelpers.h>
-#include "CassandraBlockInputStream.h"
+#include "CassandraSource.h"
 
 
 namespace DB

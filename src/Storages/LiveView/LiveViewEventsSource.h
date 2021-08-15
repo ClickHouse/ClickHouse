@@ -16,7 +16,7 @@ limitations under the License. */
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/LiveView/StorageLiveView.h>
 
 
@@ -27,7 +27,7 @@ namespace DB
  *  Keeps stream alive by outputting blocks with no rows
  *  based on period specified by the heartbeat interval.
  */
-class LiveViewEventsBlockInputStream : public IBlockInputStream
+class LiveViewEventsSource : public SourceWithProgress
 {
 
 using NonBlockingResult = std::pair<Block, bool>;
@@ -35,13 +35,14 @@ using NonBlockingResult = std::pair<Block, bool>;
 public:
     /// length default -2 because we want LIMIT to specify number of updates so that LIMIT 1 waits for 1 update
     /// and LIMIT 0 just returns data without waiting for any updates
-    LiveViewEventsBlockInputStream(std::shared_ptr<StorageLiveView> storage_,
+    LiveViewEventsSource(std::shared_ptr<StorageLiveView> storage_,
         std::shared_ptr<BlocksPtr> blocks_ptr_,
         std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_,
         std::shared_ptr<bool> active_ptr_,
         const bool has_limit_, const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_)
-        : storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)),
+        : SourceWithProgress({ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "version")}),
+          storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)),
           blocks_metadata_ptr(std::move(blocks_metadata_ptr_)),
           active_ptr(std::move(active_ptr_)), has_limit(has_limit_),
           limit(limit_),
@@ -51,20 +52,15 @@ public:
         active = active_ptr.lock();
     }
 
-    String getName() const override { return "LiveViewEventsBlockInputStream"; }
+    String getName() const override { return "LiveViewEventsSource"; }
 
-    void cancel(bool kill) override
+    void onCancel() override
     {
         if (isCancelled() || storage->shutdown_called)
             return;
-        IBlockInputStream::cancel(kill);
+
         std::lock_guard lock(storage->mutex);
         storage->condition.notify_all();
-    }
-
-    Block getHeader() const override
-    {
-        return {ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "version")};
     }
 
     void refresh()
@@ -109,10 +105,11 @@ public:
         return res;
     }
 protected:
-    Block readImpl() override
+    Chunk generate() override
     {
         /// try reading
-        return tryReadImpl(true).first;
+        auto block = tryReadImpl(true).first;
+        return Chunk(block.getColumns(), block.rows());
     }
 
     /** tryRead method attempts to read a block in either blocking
@@ -170,7 +167,7 @@ protected:
                     if (!end_of_blocks)
                     {
                         end_of_blocks = true;
-                        return { getHeader(), true };
+                        return { getPort().getHeader(), true };
                     }
                     while (true)
                     {
@@ -192,7 +189,7 @@ protected:
                         {
                             // repeat the event block as a heartbeat
                             last_event_timestamp_usec = static_cast<UInt64>(timestamp.epochMicroseconds());
-                            return { getHeader(), true };
+                            return { getPort().getHeader(), true };
                         }
                     }
                 }
