@@ -277,79 +277,6 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     return true;
 }
 
-bool ParserComparisonExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    bool first = true;
-
-    auto current_depth = pos.depth;
-    while (true)
-    {
-        if (first)
-        {
-            ASTPtr elem;
-            if (!elem_parser.parse(pos, elem, expected))
-                return false;
-
-            node = elem;
-            first = false;
-        }
-        else
-        {
-            /// try to find any of the valid operators
-            const char ** it;
-            Expected stub;
-            for (it = overlapping_operators_to_skip; *it; ++it)
-                if (ParserKeyword{*it}.checkWithoutMoving(pos, stub))
-                    break;
-
-            if (*it)
-                break;
-
-            for (it = operators; *it; it += 2)
-                if (parseOperator(pos, *it, expected))
-                    break;
-
-            if (!*it)
-                break;
-
-            /// the function corresponding to the operator
-            auto function = std::make_shared<ASTFunction>();
-
-            /// function arguments
-            auto exp_list = std::make_shared<ASTExpressionList>();
-
-            ASTPtr elem;
-            SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
-            if (ParserKeyword("ANY").ignore(pos, expected))
-                subquery_function_type = SubqueryFunctionType::ANY;
-            else if (ParserKeyword("ALL").ignore(pos, expected))
-                subquery_function_type = SubqueryFunctionType::ALL;
-            else if (!elem_parser.parse(pos, elem, expected))
-                return false;
-
-            if (subquery_function_type != SubqueryFunctionType::NONE && !ParserSubquery().parse(pos, elem, expected))
-                return false;
-
-            /// the first argument of the function is the previous element, the second is the next one
-            function->name = it[1];
-            function->arguments = exp_list;
-            function->children.push_back(exp_list);
-
-            exp_list->children.push_back(node);
-            exp_list->children.push_back(elem);
-
-            if (subquery_function_type != SubqueryFunctionType::NONE && !modifyAST(function, subquery_function_type))
-                return false;
-
-            pos.increaseDepth();
-            node = function;
-        }
-    }
-
-    pos.depth = current_depth;
-    return true;
-}
-
 bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool first = true;
@@ -393,7 +320,15 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             auto exp_list = std::make_shared<ASTExpressionList>();
 
             ASTPtr elem;
-            if (!(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, elem, expected))
+            SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
+            if (allow_any_all_operators && ParserKeyword("ANY").ignore(pos, expected))
+                subquery_function_type = SubqueryFunctionType::ANY;
+            else if (allow_any_all_operators && ParserKeyword("ALL").ignore(pos, expected))
+                subquery_function_type = SubqueryFunctionType::ALL;
+            else if (!(remaining_elem_parser ? remaining_elem_parser : first_elem_parser)->parse(pos, elem, expected))
+                return false;
+
+            if (subquery_function_type != SubqueryFunctionType::NONE && !ParserSubquery().parse(pos, elem, expected))
                 return false;
 
             /// the first argument of the function is the previous element, the second is the next one
@@ -403,6 +338,9 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
 
             exp_list->children.push_back(node);
             exp_list->children.push_back(elem);
+
+            if (allow_any_all_operators && subquery_function_type != SubqueryFunctionType::NONE && !modifyAST(function, subquery_function_type))
+                return false;
 
             /** special exception for the access operator to the element of the array `x[y]`, which
               * contains the infix part '[' and the suffix ''] '(specified as' [')

@@ -29,3 +29,23 @@ select number as a from numbers(10) where a != any (select 5 from numbers(3, 3))
 7
 8
 9
+select 1 < any (select 1 from numbers(10));
+0
+select 1 <= any (select 1 from numbers(10));
+1
+select 1 < any (select number from numbers(10));
+1
+select 1 > any (select number from numbers(10));
+1
+select 1 >= any (select number from numbers(10));
+1
+select 11 > all (select number from numbers(10));
+1
+select 11 <= all (select number from numbers(11));
+0
+select 11 < all (select 11 from numbers(10));
+0
+select 11 > all (select 11 from numbers(10));
+0
+select 11 >= all (select 11 from numbers(10));
+1

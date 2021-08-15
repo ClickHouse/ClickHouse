@@ -89,7 +89,6 @@ InterpreterSelectIntersectExceptQuery::buildCurrentChildInterpreter(const ASTPtr
     if (ast_ptr_->as<ASTSelectIntersectExceptQuery>())
         return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, SelectQueryOptions());
 
-    // if (ast_ptr_->as<ASTSubquery>())
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query: {}", ast_ptr_->getID());
 }
 
@@ -138,6 +137,12 @@ BlockIO InterpreterSelectIntersectExceptQuery::execute()
     res.pipeline.addInterpreterContext(context);
 
     return res;
+}
+
+void InterpreterSelectIntersectExceptQuery::ignoreWithTotals()
+{
+    for (auto & interpreter : nested_interpreters)
+        interpreter->ignoreWithTotals();
 }
 
 }

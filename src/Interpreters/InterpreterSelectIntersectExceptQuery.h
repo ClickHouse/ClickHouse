@@ -28,6 +28,8 @@ public:
 
     Block getSampleBlock() { return result_header; }
 
+    void ignoreWithTotals() override;
+
 private:
     static String getName() { return "SelectIntersectExceptQuery"; }
 
@@ -36,9 +38,8 @@ private:
 
     void buildQueryPlan(QueryPlan & query_plan) override;
 
-    void ignoreWithTotals() override {}
-
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
+
     Operator final_operator;
 };
 

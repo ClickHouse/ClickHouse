@@ -4,6 +4,7 @@
 namespace DB
 {
 
+/// After visitor is applied, ASTSelectIntersectExcept always has two child nodes.
 IntersectOrExceptTransform::IntersectOrExceptTransform(const Block & header_, Operator operator_)
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
