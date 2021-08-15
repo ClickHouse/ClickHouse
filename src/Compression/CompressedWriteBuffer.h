@@ -22,13 +22,14 @@ private:
     PODArray<char> compressed_buffer;
 
     void nextImpl() override;
-    void finalize() override;
 
 public:
     CompressedWriteBuffer(
         WriteBuffer & out_,
         CompressionCodecPtr codec_ = CompressionCodecFactory::instance().getDefaultCodec(),
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+
+    void finalize() override;
 
     /// The amount of compressed data
     size_t getCompressedBytes()
