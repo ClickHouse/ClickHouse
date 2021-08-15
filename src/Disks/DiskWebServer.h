@@ -26,6 +26,11 @@ struct DiskWebServerSettings
 };
 
 
+/*
+ * If url is not reachable on disk load when server is starting up tables, then all errors are caught.
+ * If in this case there were errors, tables can be reloaded (become visible) via detach table table_name -> attach table table_name.
+ * If metadata was successfully loaded at server startup, then tables are available straight away.
+**/
 class DiskWebServer : public IDisk, WithContext
 {
 using SettingsPtr = std::unique_ptr<DiskWebServerSettings>;
@@ -64,6 +69,7 @@ public:
         mutable TableDirectories tables_data;
 
         Metadata() {}
+
         void initialize(const String & uri_with_path, const String & files_prefix, const String & uuid, ContextPtr context) const;
     };
 
