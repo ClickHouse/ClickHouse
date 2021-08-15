@@ -38,7 +38,7 @@ Columns with request response parameters:
 	-   `ZSESSIONEXPIRED` — The session has expired.
     -   `NULL` — The request is completed.
 -   `watch_type` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — The type of the "watch" event (for responses with `op_num` = `Watch`), for the remaining responses: `NULL`.
--   `watch_state` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — The status of the "watch" event (for responses with `op_num` = `Watch`), for the remaining responses: NULL.
+-   `watch_state` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — The status of the "watch" event (for responses with `op_num` = `Watch`), for the remaining responses: `NULL`.
 -   `path_created` ([String](../../sql-reference/data-types/string.md)) — The path to the created ZooKeeper node (for responses to the `CREATE` request), may differ from the `path` if the node is created as a sequential.
 -   `stat_czxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — The `zxid` of the change that caused this ZooKeeper node to be created.
 -   `stat_mzxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — The `zxid` of the change that last modified this ZooKeeper node.
