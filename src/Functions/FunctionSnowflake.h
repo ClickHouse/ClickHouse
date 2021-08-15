@@ -25,7 +25,7 @@ class FunctionDateTimeToSnowflake : public IFunction
 private:
     const char * name;
 public:
-    FunctionDateTimeToSnowflake( const char * name_)
+    FunctionDateTimeToSnowflake(const char * name_)
         : name(name_)
     {
     }
@@ -79,7 +79,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        
         if (arguments.size() < 1 || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
 
@@ -107,7 +106,7 @@ public:
         {
             result_data[i] = ((source_data[i]>>22)+1288834974657)/1000;
         }
-            
+
         return res_column;
     }
 };
@@ -118,7 +117,7 @@ class FunctionDateTime64ToSnowflake : public IFunction
 private:
     const char * name;
 public:
-    FunctionDateTime64ToSnowflake( const char * name_)
+    FunctionDateTime64ToSnowflake(const char * name_)
         : name(name_)
     {
     }
@@ -172,7 +171,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        
+
         if (arguments.size() < 1 || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
 
@@ -200,7 +199,7 @@ public:
         {
             result_data[i] = (source_data[i]>>22)+1288834974657;
         }
-            
+
         return res_column;
     }
 };
