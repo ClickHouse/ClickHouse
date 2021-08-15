@@ -174,8 +174,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             table_name,
             ColumnsDescription{*columns},
             ConstraintsDescription{},
-            String{},
-            local_context);
+            String{});
 
         if (cache_tables)
             cached_tables[table_name] = storage;
