@@ -29,10 +29,9 @@ struct AggregateFunctionSparkbarData
             it->second += y;
         else
             points.emplace(x, y);
-        if (y < min_y)
-            min_y = y;
-        if (y > max_y)
-            max_y = y;
+
+        min_y = std::min(y, min_y);
+        max_y = std::max(y, max_y);
     }
 
     void merge(const AggregateFunctionSparkbarData & other)
@@ -49,11 +48,8 @@ struct AggregateFunctionSparkbarData
                 points.emplace(point.first, point.second);
         }
 
-        if (other.min_y < min_y)
-            min_y = other.min_y;
-
-        if (other.max_y > max_y)
-            max_y = other.max_y;
+        min_y = std::min(other.min_y, min_y);
+        max_y = std::max(other.max_y, max_y);
     }
 
     void serialize(WriteBuffer & buf) const
@@ -133,6 +129,8 @@ private:
     String render(const AggregateFunctionSparkbarData<X, Y> & data) const
     {
         String value;
+        if (data.points.empty())
+            return value;
         X local_min_x = data.points.begin()->first;
         X local_max_x = data.points.rbegin()->first;
         size_t diff_x = local_max_x - local_min_x;
