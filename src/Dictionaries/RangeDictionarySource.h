@@ -83,7 +83,7 @@ Block RangeDictionarySourceData<range_dictionary_type, RangeType>::getBlock(size
     block_start_dates.reserve(length);
     block_end_dates.reserve(length);
 
-    for (size_t index = start; index < start + length; ++index )
+    for (size_t index = start; index < start + length; ++index)
     {
         block_keys.push_back(keys[index]);
         block_start_dates.push_back(start_dates[index]);
