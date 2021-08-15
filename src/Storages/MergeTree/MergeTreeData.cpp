@@ -3227,7 +3227,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         return partition_ast.id;
     }
 
-    if (const auto * partition_function = partition_ast.value->as<ASTFunction>())
+    if (partition_ast.value->as<ASTFunction>())
         checkPartitionExpressionFunction(ast);
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
