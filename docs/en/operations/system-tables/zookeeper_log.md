@@ -17,7 +17,7 @@ Columns with request parameters:
 -   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address that was used to make the request.
 -   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — Host port.
 -   `session_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — The session ID that the ZooKeeper server sets for each connection.
--   `xid` ([Int32](../../sql-reference/data-types/int-uint.md)) — The ID of the request within the session. Usually, it is just a sequential request number. It is the same for the request line and the paired `response`/`finalize` line.
+-   `xid` ([Int32](../../sql-reference/data-types/int-uint.md)) — The ID of the request within the session. This is usually a sequential request number. It is the same for the request line and the paired `response`/`finalize` line.
 -   `has_watch` ([UInt8](../../sql-reference/data-types/int-uint.md)) — The request whether the [watch](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) has been installed.
 -   `op_num` ([Enum](../../sql-reference/data-types/enum.md)) — The request or response type.
 -   `path` ([String](../../sql-reference/data-types/string.md)) — The path to the ZooKeeper node specified in the request (if the request requires specifying a path) or an empty string.
