@@ -46,6 +46,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -490,9 +491,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ApplyWithGlobalVisitor().visit(ast);
         }
 
-        /// Normalize SelectWithUnionQuery
-        NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef().union_default_mode};
-        NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+        {
+            SelectIntersectExceptQueryVisitor::Data data;
+            SelectIntersectExceptQueryVisitor{data}.visit(ast);
+        }
+
+        {
+            /// Normalize SelectWithUnionQuery
+            NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef().union_default_mode};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+        }
 
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
