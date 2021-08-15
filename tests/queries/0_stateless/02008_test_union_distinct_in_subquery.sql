@@ -1,10 +1,10 @@
-DROP DATABASE IF EXISTS db1;
-DROP DATABASE IF EXISTS db2;
-DROP DATABASE IF EXISTS db3;
-CREATE DATABASE db1 ENGINE=Ordinary;
-CREATE DATABASE db2 ENGINE=Ordinary;
-CREATE DATABASE db3 ENGINE=Ordinary;
+drop table if exists test;
+create table test (name String, uuid UUID) engine=Memory();
+insert into test select '1', '00000000-0000-0000-0000-000000000000';
+insert into test select '2', '00000000-0000-0000-0000-000000000000';
+insert into test select '3', '00000000-0000-0000-0000-000000000000';
 
-select uuid from system.databases where name like 'db%' union distinct select uuid from system.databases where name like 'db%';
-SELECT count() FROM　(SELECT * FROM system.databases WHERE name LIKE 'db%' UNION DISTINCT SELECT * FROM system.databases WHERE name LIKE 'db%');
-select uuid from　(select * from system.databases where name like 'db%' union distinct select * from system.databases where name like 'db%');
+-- { echo }
+select count() from (select * from test union distinct select * from test);
+select uuid from test union distinct select uuid from test;
+select uuid from (select * from test union distinct select * from test);
