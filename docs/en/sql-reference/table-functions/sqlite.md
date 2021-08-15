@@ -1,8 +1,13 @@
-## functionName {#functionname-in-lower-case}
+---
+toc_priority: 55
+toc_title: sqlite
+---
+
+## sqlite {#sqlite}
 
 Short description.
 
-**Syntax** (without SELECT)
+**Syntax** 
 
 ``` sql
 <function syntax>
@@ -16,10 +21,6 @@ More text (Optional).
 
 -   `x` — Description. Optional (only for optional arguments). Possible values: <values list>. Default value: <value>. [Type name](relative/path/to/type/dscr.md#type).
 -   `y` — Description. Optional (only for optional arguments). Possible values: <values list>.Default value: <value>. [Type name](relative/path/to/type/dscr.md#type).
-
-**Parameters** (Optional, only for parametric aggregate functions)
-
--   `z` — Description. Optional (only for optional parameters). Possible values: <values list>. Default value: <value>. [Type name](relative/path/to/type/dscr.md#type).
 
 **Returned value(s)**
 

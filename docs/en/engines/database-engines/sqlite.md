@@ -1,4 +1,9 @@
-# EngineName {#enginename}
+---
+toc_priority: 32
+toc_title: SQLite
+---
+
+# SQLite {#sqlite}
 
 -   What the Database/Table engine does.
 -   Relations with other engines if they exist.
@@ -7,20 +12,8 @@
 ``` sql
     CREATE DATABASE ...
 ```
-or
-
-## Creating a Table {#creating-a-table}
-``` sql
-    CREATE TABLE ...
-```
 
 **Engine Parameters**
-
-**Query Clauses** (for Table engines only)
-
-## Virtual columns {#virtual-columns} (for Table engines only)
-
-List and virtual columns with description, if they exist.
 
 ## Data Types Support {#data_types-support} (for Database engines only)
 
