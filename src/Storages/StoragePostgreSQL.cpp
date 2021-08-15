@@ -46,12 +46,10 @@ StoragePostgreSQL::StoragePostgreSQL(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    ContextPtr context_,
     const String & remote_table_schema_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
-    , global_context(context_)
     , pool(std::move(pool_))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -341,7 +339,6 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.comment,
-            args.getContext(),
             remote_table_schema);
     },
     {
