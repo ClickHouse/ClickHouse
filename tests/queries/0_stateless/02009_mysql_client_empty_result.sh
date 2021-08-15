@@ -13,8 +13,8 @@ ${MYSQL_CLIENT} <<<"
     INSERT INTO b VALUES (1), (2), (3);
 "
 
-${MYSQL_CLIENT} --batch --execute 'SELECT * FROM default.b WHERE i>=3;'
-${MYSQL_CLIENT} --batch --execute 'SELECT * FROM default.b WHERE i>=300;'
+${MYSQL_CLIENT} --batch --execute 'SELECT * FROM b WHERE i>=3;'
+${MYSQL_CLIENT} --batch --execute 'SELECT * FROM b WHERE i>=300;'
 
 ${MYSQL_CLIENT} <<<"
     DROP TABLE b;
