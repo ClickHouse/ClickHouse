@@ -12,7 +12,7 @@
 #    include "DictionaryStructure.h"
 #    include "ExternalQueryBuilder.h"
 #    include "IDictionarySource.h"
-#    include <Formats/MySQLBlockInputStream.h>
+#    include <Formats/MySQLSource.h>
 
 namespace Poco
 {
@@ -35,6 +35,7 @@ public:
     {
         const std::string db;
         const std::string table;
+        const std::string query;
         const std::string where;
         const std::string invalidate_query;
         const std::string update_field;
@@ -53,13 +54,13 @@ public:
     MySQLDictionarySource(const MySQLDictionarySource & other);
     MySQLDictionarySource & operator=(const MySQLDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAll() override;
+    Pipe loadAll() override;
 
-    BlockInputStreamPtr loadUpdatedAll() override;
+    Pipe loadUpdatedAll() override;
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -72,7 +73,7 @@ public:
     std::string toString() const override;
 
 private:
-    BlockInputStreamPtr loadFromQuery(const String & query);
+    Pipe loadFromQuery(const String & query);
 
     std::string getUpdateFieldAndDate();
 

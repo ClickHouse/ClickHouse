@@ -1,3 +1,6 @@
+#include <string>
+#include "Common/MemoryTracker.h"
+#include "Columns/ColumnsNumber.h"
 #include "ConnectionParameters.h"
 #include "QueryFuzzer.h"
 #include "Suggest.h"
@@ -99,6 +102,14 @@
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
+
+namespace CurrentMetrics
+{
+    extern const Metric Revision;
+    extern const Metric VersionInteger;
+    extern const Metric MemoryTracking;
+    extern const Metric MaxDDLEntryID;
+}
 
 namespace fs = std::filesystem;
 
@@ -523,6 +534,18 @@ private:
     int mainImpl()
     {
         UseSSL use_ssl;
+
+        MainThreadStatus::getInstance();
+
+        /// Limit on total memory usage
+        size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+
+        if (max_client_memory_usage != 0)
+        {
+            total_memory_tracker.setHardLimit(max_client_memory_usage);
+            total_memory_tracker.setDescription("(total)");
+            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+        }
 
         registerFormats();
         registerFunctions();
@@ -1452,7 +1475,12 @@ private:
                         "Error while reconnecting to the server: {}\n",
                         getCurrentExceptionMessage(true));
 
-                    assert(!connection->isConnected());
+                    // The reconnection might fail, but we'll still be connected
+                    // in the sense of `connection->isConnected() = true`,
+                    // in case when the requested database doesn't exist.
+                    // Disconnect manually now, so that the following code doesn't
+                    // have any doubts, and the connection state is predictable.
+                    connection->disconnect();
                 }
             }
 
@@ -2576,6 +2604,7 @@ public:
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
             ("no-warnings", "disable warnings when client connects to server")
+            ("max_memory_usage_in_client", po::value<int>(), "sets memory limit in client")
         ;
 
         Settings cmd_settings;

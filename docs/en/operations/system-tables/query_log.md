@@ -50,6 +50,7 @@ Columns:
 -   `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Type of the query.
 -   `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the databases present in the query.
 -   `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the tables present in the query.
+-   `views` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the (materialized or live) views present in the query.
 -   `columns` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the columns present in the query.
 -   `projections` ([String](../../sql-reference/data-types/string.md)) — Names of the projections used during the query execution.
 -   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
@@ -180,5 +181,6 @@ used_table_functions:                  []
 **See Also**
 
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+-   [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — This table contains information about each view executed during a query.
 
 [Original article](https://clickhouse.tech/docs/en/operations/system-tables/query_log) <!--hide-->
