@@ -107,9 +107,19 @@ struct AccurateOrNullConvertStrategyAdditions
     UInt32 scale { 0 };
 };
 
+struct DateOrNullConvertStrategyAdditions
+{
+    UInt32 scale { 0 };
+};
 
 struct ConvertDefaultBehaviorTag {};
 struct ConvertReturnNullOnErrorTag {};
+
+template <typename FromType>
+static inline NO_SANITIZE_UNDEFINED bool isLtZero(const FromType & from)
+{
+    return from < 0;
+}
 
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
@@ -154,7 +164,8 @@ struct ConvertImpl
             {
                 UInt32 scale;
                 if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
-                    || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                    || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+                    || std::is_same_v<Additions, DateOrNullConvertStrategyAdditions>)
                 {
                     scale = additions.scale;
                 }
@@ -174,7 +185,8 @@ struct ConvertImpl
 
             ColumnUInt8::MutablePtr col_null_map_to;
             ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+            || std::is_same_v<Additions, DateOrNullConvertStrategyAdditions>)
             {
                 col_null_map_to = ColumnUInt8::create(input_rows_count, false);
                 vec_null_map_to = &col_null_map_to->getData();
@@ -263,13 +275,30 @@ struct ConvertImpl
                         }
                         else
                         {
-                            vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDateOrDateTime<ToDataType>)
+                            {
+                                if (isLtZero(vec_from[i]))
+                                {
+                                    vec_to[i] = 0;
+
+                                    if constexpr (std::is_same_v<Additions, DateOrNullConvertStrategyAdditions>)
+                                        (*vec_null_map_to)[i] = true;
+                                }
+
+                                else
+                                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            }
+                            else
+                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+
                         }
                     }
                 }
             }
 
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+                    || std::is_same_v<Additions, DateOrNullConvertStrategyAdditions>)
                 return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
             else
                 return col_to;
@@ -1887,8 +1916,6 @@ public:
 
         if constexpr (exception_mode == ConvertExceptionMode::Null)
         {
-            auto to_type = WhichDataType(res);
-            if (!(isInteger(arguments[0].type) && (to_type.isDateOrDate32() || to_type.isDateTime() || to_type.isDateTime64())))
                 res = std::make_shared<DataTypeNullable>(res);
         }
 
@@ -1912,48 +1939,30 @@ public:
         }
         else if (isInteger(from_type))
         {
-            auto data_type = WhichDataType(from_type);
+            TypeIndex from_type_index = from_type->getTypeId();
+            ColumnPtr result_column;
 
-            if (data_type.isUInt8())
-            {
-                return ConvertImpl<DataTypeUInt8, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
-                    arguments, result_type, input_rows_count, scale);
-            }
-            else if (data_type.isUInt16())
-            {
-                return ConvertImpl<DataTypeUInt16, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
-                    arguments, result_type, input_rows_count, scale);
-            }
-            else if (data_type.isUInt32())
-            {
-                return ConvertImpl<DataTypeUInt32, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
-                    arguments, result_type, input_rows_count, scale);
-            }
-            else if (data_type.isUInt64())
-            {
-                return ConvertImpl<DataTypeUInt64, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
-                    arguments, result_type, input_rows_count, scale);
-            }
-            else if (data_type.isInt8())
-            {
-                return ConvertImpl<DataTypeInt8, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
-                    arguments, result_type, input_rows_count, scale);
-            }
-            else if (data_type.isInt16())
-            {
-                return ConvertImpl<DataTypeInt16, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
-                    arguments, result_type, input_rows_count, scale);
-            }
-            else if (data_type.isInt32())
-            {
-                return ConvertImpl<DataTypeInt32, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
-                    arguments, result_type, input_rows_count, scale);
-            }
-            else if (data_type.isInt64())
-            {
-                return ConvertImpl<DataTypeInt64, ConvertToDataType, Name, AccurateOrNullConvertStrategyAdditions()>::execute(
-                    arguments, result_type, input_rows_count, scale);
-            }
+            auto res = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool {
+                using Types = std::decay_t<decltype(types)>;
+                using FromDataType = typename Types::LeftType;
+
+                if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDateOrDateTime<ConvertToDataType>)
+                {
+                    if constexpr (exception_mode == ConvertExceptionMode::Null)
+                        result_column = ConvertImpl<FromDataType, ConvertToDataType, Name, ConvertDefaultBehaviorTag()>::execute(
+                            arguments, result_type, input_rows_count, DateOrNullConvertStrategyAdditions());
+                    else
+                        result_column =  ConvertImpl<FromDataType, ConvertToDataType, Name, ConvertDefaultBehaviorTag()>::execute(
+                            arguments, result_type, input_rows_count, scale);
+
+                    return true;
+                }
+
+                return false;
+            });
+
+            if (res)
+                return result_column;
         }
 
         return nullptr;
