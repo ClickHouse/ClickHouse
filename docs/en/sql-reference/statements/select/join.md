@@ -52,6 +52,40 @@ The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_
 - [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
 - [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
 
+## Conditions in ON Section {conditions-in-on-section}
+
+In addition to join keys an `ON` section can contain conditions concatenated by `AND` and `OR`. Any condition can be applied either to the left or to the right table of a query. Rows are joined if the whole complex condition is met including matching join keys.
+If the condition is not met, still rows may be included in the result depending on the `JOIN` type. If the same conditions are placed in a `WHERE` section and they are not met, then rows are always filtered out from the result.
+
+**Example**
+
+Consider `table_1` and `table_2`:
+
+```
+┌─Id─┬─name─┐      ┌─Id─┬─text───────────┐
+│  1 │ A    │      │  1 │ Text A         │
+│  2 │ B    │      │  1 │ Another text A │
+│  3 │ C    │      │  2 │ Text B         │
+└────┴──────┘      └────┴────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT name, text FROM table_1 LEFT JOIN table_2 
+    ON table_1.Id = table_2.Id AND startsWith(table_2.text, 'Text');
+```
+
+Note that the result contains the row with the name `C` and an empty text column. It is there to satisfy the `OUTER` type of a join.
+
+```
+┌─name─┬─text───┐
+│ A    │ Text A │
+│ B    │ Text B │
+│ C    │        │
+└──────┴────────┘
+```
+
 ## ASOF JOIN Usage {#asof-join-usage}
 
 `ASOF JOIN` is useful when you need to join records that have no exact match.
