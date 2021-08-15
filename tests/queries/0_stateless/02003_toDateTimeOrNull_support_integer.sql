@@ -30,3 +30,15 @@ SELECT toDateTimeOrNull(1583851242, 'Asia/Shanghai');
 
 SELECT toDateTimeOrNull(1583851242, 'Asia/Shanghai') = toDateTime(1583851242, 'Asia/Shanghai');
 SELECT toDateTime(1583851242, 'Asia/Shanghai') = toDateTimeOrZero(1583851242, 'Asia/Shanghai');
+
+SELECT toDateTime(-1, 'Asia/Shanghai');
+SELECT toDateTimeOrNull(-1, 'Asia/Shanghai');
+SELECT toDateTimeOrZero(-1, 'Asia/Shanghai');
+
+SELECT toDate32OrNull(-1);
+SELECT toDate32OrNull(-200000001);
+SELECT toDate32OrNull(200000001);
+SELECT toDate32OrZero(1);
+SELECT toDate32OrZero(-200000001);
+SELECT toDate32OrZero(200000001);
+
