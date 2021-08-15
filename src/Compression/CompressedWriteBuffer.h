@@ -22,6 +22,7 @@ private:
     PODArray<char> compressed_buffer;
 
     void nextImpl() override;
+    void finalize() override;
 
 public:
     CompressedWriteBuffer(

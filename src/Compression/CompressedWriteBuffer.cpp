@@ -36,6 +36,12 @@ void CompressedWriteBuffer::nextImpl()
 }
 
 
+void CompressedWriteBuffer::finalize()
+{
+    next();
+}
+
+
 CompressedWriteBuffer::CompressedWriteBuffer(
     WriteBuffer & out_,
     CompressionCodecPtr codec_,
@@ -43,6 +49,7 @@ CompressedWriteBuffer::CompressedWriteBuffer(
     : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), codec(std::move(codec_))
 {
 }
+
 
 CompressedWriteBuffer::~CompressedWriteBuffer()
 {
