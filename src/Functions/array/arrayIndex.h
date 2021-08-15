@@ -115,6 +115,13 @@ private:
         [[maybe_unused]] const NullMap * const null_map_data,
         [[maybe_unused]] const NullMap * const null_map_item)
     {
+        if constexpr (std::is_same_v<Data, IColumn> && std::is_same_v<Target, IColumn>)
+        {
+            /// Generic variant is using IColumn::compare function that only allows to compare columns of identical types.
+            if (typeid(data) != typeid(target))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Columns {} and {} cannot be compared", data.getName(), target.getName());
+        }
+
         const size_t size = offsets.size();
 
         result.resize(size);
