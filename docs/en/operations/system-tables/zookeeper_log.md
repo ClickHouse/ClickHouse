@@ -20,7 +20,7 @@ Columns with request parameters:
 -   `xid` ([Int32](../../sql-reference/data-types/int-uint.md)) — The ID of the request within the session. This is usually a sequential request number. It is the same for the request line and the paired `response`/`finalize` line.
 -   `has_watch` ([UInt8](../../sql-reference/data-types/int-uint.md)) — The request whether the [watch](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) has been installed.
 -   `op_num` ([Enum](../../sql-reference/data-types/enum.md)) — The type of request or response.
--   `path` ([String](../../sql-reference/data-types/string.md)) — The path to the ZooKeeper node specified in the request (if the request requires specifying a path) or an empty string.
+-   `path` ([String](../../sql-reference/data-types/string.md)) — The path to the ZooKeeper node specified in the request, or an empty string  if the request not requires specifying a path.
 -   `data` ([String](../../sql-reference/data-types/string.md)) — The data written to the ZooKeeper node (for the `SET` and `CREATE` requests — what the request wanted to write, for the response to the `GET` request — what was read) or an empty string.
 -   `is_ephemeral` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Is the ZooKeeper node being created as an [ephemeral](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#Ephemeral+Nodes).
 -   `is_sequential` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Is the ZooKeeper node being created as an [sequential](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#Sequence+Nodes+--+Unique+Naming).
