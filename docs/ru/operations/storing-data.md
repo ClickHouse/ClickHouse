@@ -64,31 +64,16 @@ toc_title: "Хранение данных на внешних дисках"
         <disks>
             <disk_s3>
                 <type>s3</type>
-                <endpoint>http://minio1:9001/root/data/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <endpoint>...
             </disk_s3>
-            <disk_memory>
-                <type>memory</type>
-            </disk_memory>
-            <disk_local>
-                <type>local</type>
-                <path>/disk/</path>
-            </disk_local>
             <disk_s3_encrypted>
                 <type>encrypted</type>
                 <disk>disk_s3</disk>
-                <path>encrypted/</path>
-                <key id="0">firstfirstfirstf</key>
-                <key id="1">secondsecondseco</key>
+                <algorithm>AES_128_CTR</algorithm>
+                <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
+                <key_hex id="1">ffeeddccbbaa99887766554433221100</key_hex>
                 <current_key_id>1</current_key_id>
             </disk_s3_encrypted>
-            <disk_local_encrypted>
-                <type>encrypted</type>
-                <disk>disk_local</disk>
-                <path>encrypted/</path>
-                <key>abcdefghijklmnop</key>
-            </disk_local_encrypted>
         </disks>
     </storage_configuration>
 </yandex>
