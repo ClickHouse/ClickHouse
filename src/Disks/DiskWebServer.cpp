@@ -10,6 +10,7 @@
 
 #include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IDiskRemote.h>
+#include <Poco/Exception.h>
 
 #include <re2/re2.h>
 
@@ -31,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NETWORK_ERROR;
 }
 
 
@@ -57,7 +59,7 @@ void DiskWebServer::Metadata::initialize(const String & uri_with_path, const Str
          *        {prefix}-{uuid}-format_version.txt
          *        {prefix}-{uuid}-detached-{file}
          *        ...
-         */
+        **/
         if (RE2::FullMatch(remote_file_name, DIRECTORY_FILE_PATTERN(files_prefix), &uuid, &directory, &file))
         {
             if (uuid != table_uuid)
@@ -255,8 +257,28 @@ DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
     if (!RE2::Extract(path, EXTRACT_UUID_PATTERN, "\\1", &uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot extract uuid for: {}", path);
 
-    if (!metadata.tables_data.count(uuid))
-        metadata.initialize(uri, settings->files_prefix, uuid, getContext());
+    /// Do not throw if it is not a query, but disk load.
+    bool can_throw = false;
+    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
+        can_throw = true;
+
+    try
+    {
+        if (!metadata.tables_data.count(uuid))
+            metadata.initialize(uri, settings->files_prefix, uuid, getContext());
+    }
+    catch (const Poco::Exception &)
+    {
+        const auto message = getCurrentExceptionMessage(false);
+        if (can_throw)
+        {
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot load disk metadata. Error: {}", message);
+        }
+
+        LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Cannot load disk metadata. Error: {}", message);
+        /// Empty iterator.
+        return std::make_unique<DiskWebDirectoryIterator<Directory>>(metadata.tables_data[""], path);
+    }
 
     return std::make_unique<DiskWebDirectoryIterator<Directory>>(metadata.tables_data[uuid], path);
 }

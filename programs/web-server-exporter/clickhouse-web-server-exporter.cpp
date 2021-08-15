@@ -72,6 +72,7 @@ void processTableFiles(const String & url, const fs::path & path, const String &
 
 
 int mainEntryClickHouseWebServerExporter(int argc, char ** argv)
+try
 {
     using namespace DB;
     namespace po = boost::program_options;
@@ -106,7 +107,13 @@ int mainEntryClickHouseWebServerExporter(int argc, char ** argv)
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No files-prefix option passed");
 
-    fs::path fs_path = fs::canonical(metadata_path);
+    fs::path fs_path = fs::weakly_canonical(metadata_path);
+    if (!fs::exists(fs_path))
+    {
+        std::cerr << fmt::format("Data path ({}) does not exist", fs_path.string());
+        return 1;
+    }
+
     String uuid;
     if (!RE2::Extract(metadata_path, EXTRACT_UUID_PATTERN, "\\1", &uuid))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract uuid for: {}", metadata_path);
@@ -119,4 +126,9 @@ int mainEntryClickHouseWebServerExporter(int argc, char ** argv)
     processTableFiles(url, fs_path, files_prefix, uuid);
 
     return 0;
+}
+catch (...)
+{
+    std::cerr << DB::getCurrentExceptionMessage(true);
+    return 1;
 }
