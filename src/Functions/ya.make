@@ -39,6 +39,8 @@ PEERDIR(
 
 SRCS(
     CRC.cpp
+    CastOverloadResolver.cpp
+    DateOrDateTimeFunctionsConvertion.cpp
     FunctionChar.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
