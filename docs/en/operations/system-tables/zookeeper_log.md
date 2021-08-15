@@ -4,7 +4,7 @@ The table does not exist if ZooKeeper is not configured.
 
 This table contains information about the parameters of the request to the ZooKeeper client and the response from it.
 
-For requests, only columns with request parameters are filled in, and the remaining columns are filled with default values (`0` or NULL). When the response arrives, the data from the response is added to the other columns.
+For requests, only columns with request parameters are filled in, and the remaining columns are filled with default values (`0` or `NULL`). When the response arrives, the data from the response is added to the other columns.
 
 Columns with request parameters:
 
