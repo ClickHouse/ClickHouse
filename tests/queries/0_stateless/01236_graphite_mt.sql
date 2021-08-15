@@ -23,7 +23,7 @@ WITH dates AS
     select 2, 'max_2', today - number * 60 - 30, number, 1, number from dates, numbers(300) union all
 
     -- Older than 2 days use 6000 second windows
-    select 1 ASK key, 'sum_1' AS s, older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
+    select 1 AS key, 'sum_1' AS s, older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
     select 2, 'sum_1', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
     select 1, 'sum_2', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
     select 2, 'sum_2', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
