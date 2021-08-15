@@ -70,6 +70,7 @@ struct Progress;
 class Clusters;
 class QueryLog;
 class QueryThreadLog;
+class QueryViewsLog;
 class PartLog;
 class TextLog;
 class TraceLog;
@@ -219,6 +220,7 @@ private:
             tables = rhs.tables;
             columns = rhs.columns;
             projections = rhs.projections;
+            views = rhs.views;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -235,6 +237,7 @@ private:
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
             std::swap(projections, rhs.projections);
+            std::swap(views, rhs.views);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -242,7 +245,8 @@ private:
         std::set<std::string> databases{};
         std::set<std::string> tables{};
         std::set<std::string> columns{};
-        std::set<std::string> projections;
+        std::set<std::string> projections{};
+        std::set<std::string> views{};
     };
 
     QueryAccessInfo query_access_info;
@@ -469,7 +473,8 @@ public:
         const String & quoted_database_name,
         const String & full_quoted_table_name,
         const Names & column_names,
-        const String & projection_name = {});
+        const String & projection_name = {},
+        const String & view_name = {});
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories
@@ -730,6 +735,7 @@ public:
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog() const;
     std::shared_ptr<QueryThreadLog> getQueryThreadLog() const;
+    std::shared_ptr<QueryViewsLog> getQueryViewsLog() const;
     std::shared_ptr<TraceLog> getTraceLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
