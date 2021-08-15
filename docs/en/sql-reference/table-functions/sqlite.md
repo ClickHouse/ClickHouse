@@ -5,28 +5,22 @@ toc_title: sqlite
 
 ## sqlite {#sqlite}
 
-Short description.
+Allows to performed queries on data that is stored in the `SQLite` database.
 
 **Syntax** 
 
 ``` sql
-<function syntax>
+    sqlite('db_path', 'table_name')
 ```
 
-Alias: `<alias name>`. (Optional)
+**Arguments** 
 
-More text (Optional).
+-   `db_path` — Path to SQLite file with the database. [String](../../sql-reference/data-types/string.md).
+-   `table_name` — The SQLite table name. [String](../../sql-reference/data-types/string.md).
 
-**Arguments** (Optional)
+**Returned value**
 
--   `x` — Description. Optional (only for optional arguments). Possible values: <values list>. Default value: <value>. [Type name](relative/path/to/type/dscr.md#type).
--   `y` — Description. Optional (only for optional arguments). Possible values: <values list>.Default value: <value>. [Type name](relative/path/to/type/dscr.md#type).
-
-**Returned value(s)**
-
--   Returned values list.
-
-Type: [Type name](relative/path/to/type/dscr.md#type).
+-   A table object with the same columns as the original `SQLite` table.
 
 **Example**
 
@@ -47,6 +41,6 @@ Result:
 ``` text
 ```
 
-**See Also** (Optional)
+**See Also** 
 
--   [link](#)
+-   [`SQLite` table engine](../../engines/table-engines/integrations/sqlite.md)

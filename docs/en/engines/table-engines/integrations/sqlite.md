@@ -5,21 +5,26 @@ toc_title: SQLite
 
 # SQLite {#sqlite}
 
--   What the Database/Table engine does.
--   Relations with other engines if they exist.
+The engine provide to import and export data to SQLite and query SQLite tables directly in ClickHouse.
 
 ## Creating a Table {#creating-a-table}
+
 ``` sql
-    CREATE TABLE ...
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name
+    (
+        name1 [type1],
+        name2 [type2],
+        ...
+    ) 
+    ENGINE = SQLite('db_path', 'table')
 ```
 
 **Engine Parameters**
 
-**Query Clauses** 
-
-## Virtual columns {#virtual-columns} 
-
-List and virtual columns with description, if they exist.
+-   `name1, name2, ...` — The column names.
+-   `type1, type2, ...` — The column types.
+-   `db_path` — Path to SQLite file with the database.
+-   `table` — The SQLite table name.
 
 ## Specifics and recommendations {#specifics-and-recommendations}
 
@@ -52,4 +57,4 @@ Follow up with any text to clarify the example.
 
 **See Also**
 
--   [link](#)
+-   [The `sqlite` table function](../../../sql-reference/table-functions/sqlite.md)
