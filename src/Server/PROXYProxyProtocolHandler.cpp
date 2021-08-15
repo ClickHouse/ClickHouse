@@ -155,9 +155,12 @@ PROXYHeader tryReadPROXYv1Header(Poco::Net::StreamSocket & socket, std::vector<c
         read(socket, buffer, offset);
         return header;
     }
-    else if (match(socket, buffer, offset, {'U', 'N', 'K', 'N', 'O', 'W', 'N', ' '}))
+    else if (
+        match(socket, buffer, offset, {'U', 'N', 'K', 'N', 'O', 'W', 'N', '\r'}) ||
+        match(socket, buffer, offset, {'U', 'N', 'K', 'N', 'O', 'W', 'N', ' '})
+    )
     {
-        offset += 8;
+        offset += 7;
 
         const auto line_end = peekUntil(socket, buffer, {'\r', '\n'}, offset);
         offset += line_end + 2;
