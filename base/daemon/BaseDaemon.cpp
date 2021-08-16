@@ -44,6 +44,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
@@ -1058,4 +1059,50 @@ void BaseDaemon::setupWatchdog()
 String BaseDaemon::getStoredBinaryHash() const
 {
     return stored_binary_hash;
+}
+
+void BaseDaemon::loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
+{
+    /// Write a uuid file containing a unique uuid if the file doesn't already exist during server start.
+
+    if (fs::exists(server_uuid_file))
+    {
+        try
+        {
+            DB::UUID uuid;
+            DB::ReadBufferFromFile in(server_uuid_file);
+            DB::readUUIDText(uuid, in);
+            DB::assertEOF(in);
+            server_uuid = uuid;
+            return;
+        }
+        catch (...)
+        {
+            /// As for now it's ok to just overwrite it, because persistency in not essential.
+            LOG_ERROR(log, "Cannot read server UUID from file {}: {}. Will overwrite it",
+                      server_uuid_file.string(), DB::getCurrentExceptionMessage(true));
+        }
+    }
+
+    try
+    {
+        DB::UUID new_uuid = DB::UUIDHelpers::generateV4();
+        auto uuid_str = DB::toString(new_uuid);
+        DB::WriteBufferFromFile out(server_uuid_file);
+        out.write(uuid_str.data(), uuid_str.size());
+        out.sync();
+        out.finalize();
+        server_uuid = new_uuid;
+    }
+    catch (...)
+    {
+        throw Poco::Exception(
+            "Caught Exception " + DB::getCurrentExceptionMessage(true) + " while writing the Server UUID file "
+            + server_uuid_file.string());
+    }
+}
+
+DB::UUID BaseDaemon::getServerUUID() const
+{
+    return server_uuid;
 }

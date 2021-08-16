@@ -13,7 +13,6 @@
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
-#include <Poco/UUIDGenerator.h>
 #include <Poco/Environment.h>
 #include <common/scope_guard.h>
 #include <common/defines.h>
@@ -668,13 +667,14 @@ if (ThreadFuzzer::instance().isEffective())
 
     global_context->setRemoteHostFilter(config());
 
-    std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
+    std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
+    fs::path path = path_str;
     std::string default_database = config().getString("default_database", "default");
 
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
     struct stat statbuf;
-    if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+    if (stat(path_str.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
     {
         const auto effective_user = getUserName(effective_user_id);
         const auto data_owner = getUserName(statbuf.st_uid);
@@ -691,40 +691,11 @@ if (ThreadFuzzer::instance().isEffective())
         }
     }
 
-    global_context->setPath(path);
+    global_context->setPath(path_str);
 
-    StatusFile status{path + "status", StatusFile::write_full_info};
+    StatusFile status{path / "status", StatusFile::write_full_info};
 
-
-    /// Write a uuid file containing a unique uuid if the file doesn't already exist during server start.
-    {
-        fs::path server_uuid_file = fs::path(path) / "uuid";
-
-        if (!fs::exists(server_uuid_file))
-        {
-            try
-            {
-                /// Note: Poco::UUIDGenerator().createRandom() uses /dev/random and can be expensive. But since
-                /// it's only going to be generated once (i.e if the uuid file doesn't exist), it's probably fine.
-                auto uuid_str = Poco::UUIDGenerator().createRandom().toString();
-                WriteBufferFromFile out(server_uuid_file.string());
-                out.write(uuid_str.data(), uuid_str.size());
-                out.sync();
-                out.finalize();
-            }
-            catch (...)
-            {
-                throw Poco::Exception(
-                    "Caught Exception " + getCurrentExceptionMessage(false) + " while writing the Server UUID file "
-                    + server_uuid_file.string());
-            }
-            LOG_INFO(log, "Server UUID file {} containing a unique UUID has been written.\n", server_uuid_file.string());
-        }
-        else
-        {
-            LOG_INFO(log, "Server UUID file {} already exists, will keep it.\n", server_uuid_file.string());
-        }
-    }
+    loadServerUUID(path / "uuid", log);
 
     /// Try to increase limit on number of open files.
     {
@@ -758,7 +729,7 @@ if (ThreadFuzzer::instance().isEffective())
 
     /// Storage with temporary data for processing of heavy queries.
     {
-        std::string tmp_path = config().getString("tmp_path", path + "tmp/");
+        std::string tmp_path = config().getString("tmp_path", path / "tmp/");
         std::string tmp_policy = config().getString("tmp_policy", "");
         const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
         for (const DiskPtr & disk : volume->getDisks())
@@ -770,7 +741,7 @@ if (ThreadFuzzer::instance().isEffective())
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
     {
-        auto flags_path = fs::path(path) / "flags/";
+        auto flags_path = path / "flags/";
         fs::create_directories(flags_path);
         global_context->setFlagsPath(flags_path);
     }
@@ -779,29 +750,29 @@ if (ThreadFuzzer::instance().isEffective())
       */
     {
 
-        std::string user_files_path = config().getString("user_files_path", fs::path(path) / "user_files/");
+        std::string user_files_path = config().getString("user_files_path", path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
     }
 
     {
-        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", fs::path(path) / "dictionaries_lib/");
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
         fs::create_directories(dictionaries_lib_path);
     }
 
     /// top_level_domains_lists
     {
-        const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
+        const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 
     {
-        fs::create_directories(fs::path(path) / "data/");
-        fs::create_directories(fs::path(path) / "metadata/");
+        fs::create_directories(path / "data/");
+        fs::create_directories(path / "metadata/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
-        fs::create_directories(fs::path(path) / "metadata_dropped/");
+        fs::create_directories(path / "metadata_dropped/");
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -984,7 +955,7 @@ if (ThreadFuzzer::instance().isEffective())
 #endif
 
     /// Set path for format schema files
-    fs::path format_schema_path(config().getString("format_schema_path", fs::path(path) / "format_schemas/"));
+    fs::path format_schema_path(config().getString("format_schema_path", path / "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
@@ -1120,7 +1091,7 @@ if (ThreadFuzzer::instance().isEffective())
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
-    LOG_INFO(log, "Loading metadata from {}", path);
+    LOG_INFO(log, "Loading metadata from {}", path_str);
 
     try
     {

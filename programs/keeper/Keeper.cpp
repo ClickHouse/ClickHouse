@@ -326,6 +326,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         }
     }
 
+    loadServerUUID(path + "/uuid", log);
+
     const Settings & settings = global_context->getSettingsRef();
 
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 100));

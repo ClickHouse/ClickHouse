@@ -5,6 +5,7 @@
 #include <iostream>
 #include <memory>
 #include <functional>
+#include <filesystem>
 #include <optional>
 #include <mutex>
 #include <condition_variable>
@@ -24,6 +25,7 @@
 #include <Common/StatusFile.h>
 #include <loggers/Loggers.h>
 
+namespace fs = std::filesystem;
 
 /// \brief Base class for applications that can run as daemons.
 ///
@@ -124,6 +126,9 @@ public:
     /// Hash of the binary for integrity checks.
     String getStoredBinaryHash() const;
 
+    void loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log);
+    DB::UUID getServerUUID() const;
+
 protected:
     virtual void logRevision() const;
 
@@ -179,6 +184,8 @@ protected:
 
     bool should_setup_watchdog = false;
     char * argv0 = nullptr;
+
+    DB::UUID server_uuid = DB::UUIDHelpers::Nil;
 };
 
 
