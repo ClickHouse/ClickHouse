@@ -15,7 +15,7 @@ The following operations are available:
 
 -   `ALTER TABLE [db.]table CLEAR PROJECTION name IN PARTITION partition_name` - Deletes projection files from disk without removing description.
 
-The commands ADD, DROP and CLEAR are lightweight in a sense that they only change metadata or remove files.
+The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only change metadata or remove files.
 
 Also, they are replicated, syncing projections metadata via ZooKeeper.
 
