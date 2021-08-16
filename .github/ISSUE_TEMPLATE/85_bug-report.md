@@ -2,7 +2,7 @@
 name: Bug report
 about: Wrong behaviour (visible to users) in official ClickHouse release.
 title: ''
-labels: bug
+labels: 'potential bug'
 assignees: ''
 
 ---
