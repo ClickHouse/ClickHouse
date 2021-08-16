@@ -3941,7 +3941,7 @@ static void selectBestProjection(
     if (projection_parts.empty())
         return;
 
-    auto projection_result = reader.estimateNumMarksToRead(
+    auto projection_result_ptr = reader.estimateNumMarksToRead(
         projection_parts,
         candidate.required_columns,
         metadata_snapshot,
@@ -3951,10 +3951,10 @@ static void selectBestProjection(
         settings.max_threads,
         max_added_blocks);
 
-    if (projection_result.error_code)
+    if (projection_result_ptr->error())
         return;
 
-    auto sum_marks = projection_result.index_stats.back().num_granules_after;
+    auto sum_marks = projection_result_ptr->marks();
     if (normal_parts.empty())
     {
         // All parts are projection parts which allows us to use in_order_optimization.
@@ -3963,7 +3963,7 @@ static void selectBestProjection(
     }
     else
     {
-        auto normal_result = reader.estimateNumMarksToRead(
+        auto normal_result_ptr = reader.estimateNumMarksToRead(
             normal_parts,
             required_columns,
             metadata_snapshot,
@@ -3973,15 +3973,13 @@ static void selectBestProjection(
             settings.max_threads,
             max_added_blocks);
 
-        if (normal_result.error_code)
+        if (normal_result_ptr->error())
             return;
 
-        sum_marks += normal_result.index_stats.back().num_granules_after;
-        candidate.merge_tree_normal_select_result_ptr
-            = std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(normal_result)});
+        sum_marks += normal_result_ptr->marks();
+        candidate.merge_tree_normal_select_result_ptr = normal_result_ptr;
     }
-    candidate.merge_tree_projection_select_result_ptr
-        = std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(projection_result)});
+    candidate.merge_tree_projection_select_result_ptr = projection_result_ptr;
 
     // We choose the projection with least sum_marks to read.
     if (sum_marks < min_sum_marks)
@@ -4202,10 +4200,25 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
         auto parts = getDataPartsVector();
         MergeTreeDataSelectExecutor reader(*this);
+        query_info.merge_tree_select_result_ptr = reader.estimateNumMarksToRead(
+            parts,
+            analysis_result.required_columns,
+            metadata_snapshot,
+            metadata_snapshot,
+            query_info,
+            query_context,
+            settings.max_threads,
+            max_added_blocks);
+
+        size_t min_sum_marks = std::numeric_limits<size_t>::max();
+        if (!query_info.merge_tree_select_result_ptr->error())
+        {
+            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
+            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
+            min_sum_marks = query_info.merge_tree_select_result_ptr->marks() + 1;
+        }
 
         ProjectionCandidate * selected_candidate = nullptr;
-        size_t min_sum_marks = std::numeric_limits<size_t>::max();
-        bool has_ordinary_projection = false;
         /// Favor aggregate projections
         for (auto & candidate : candidates)
         {
@@ -4224,52 +4237,25 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     selected_candidate,
                     min_sum_marks);
             }
-            else
-                has_ordinary_projection = true;
         }
 
-        /// Select the best normal projection if no aggregate projection is available
-        if (!selected_candidate && has_ordinary_projection)
+        /// Select the best normal projection.
+        for (auto & candidate : candidates)
         {
-            auto result = reader.estimateNumMarksToRead(
-                parts,
-                analysis_result.required_columns,
-                metadata_snapshot,
-                metadata_snapshot,
-                query_info,
-                query_context,
-                settings.max_threads,
-                max_added_blocks);
-
-            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
-            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
-            min_sum_marks = result.index_stats.back().num_granules_after + 1;
-
-            for (auto & candidate : candidates)
+            if (candidate.desc->type == ProjectionDescription::Type::Normal)
             {
-                if (candidate.desc->type == ProjectionDescription::Type::Normal)
-                {
-                    selectBestProjection(
-                        reader,
-                        metadata_snapshot,
-                        query_info,
-                        analysis_result.required_columns,
-                        candidate,
-                        query_context,
-                        max_added_blocks,
-                        settings,
-                        parts,
-                        selected_candidate,
-                        min_sum_marks);
-                }
-            }
-
-            if (!selected_candidate)
-            {
-                // We don't have any good projections, result the MergeTreeDataSelectAnalysisResult for normal scan.
-                query_info.merge_tree_select_result_ptr = std::make_shared<MergeTreeDataSelectAnalysisResult>(
-                    MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
-                return false;
+                selectBestProjection(
+                    reader,
+                    metadata_snapshot,
+                    query_info,
+                    analysis_result.required_columns,
+                    candidate,
+                    query_context,
+                    max_added_blocks,
+                    settings,
+                    parts,
+                    selected_candidate,
+                    min_sum_marks);
             }
         }
 

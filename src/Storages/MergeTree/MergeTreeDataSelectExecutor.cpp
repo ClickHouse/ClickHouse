@@ -669,7 +669,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     Poco::Logger * log,
-    ReadFromMergeTree::AnalysisResult & result)
+    ReadFromMergeTree::IndexStats & index_stats)
 {
     const Settings & settings = context->getSettingsRef();
     std::optional<PartitionPruner> partition_pruner;
@@ -699,9 +699,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             }
             msg += ") nor partition expr is used and setting 'force_index_by_date' is set";
 
-            result.error_msg = msg;
-            result.error_code = ErrorCodes::INDEX_NOT_USED;
-            return;
+            throw Exception(msg, ErrorCodes::INDEX_NOT_USED);
         }
     }
 
@@ -729,7 +727,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             max_block_numbers_to_read,
             part_filter_counters);
 
-    result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+    index_stats.emplace_back(ReadFromMergeTree::IndexStat{
         .type = ReadFromMergeTree::IndexType::None,
         .num_parts_after = part_filter_counters.num_initial_selected_parts,
         .num_granules_after = part_filter_counters.num_initial_selected_granules});
@@ -737,7 +735,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     if (minmax_idx_condition)
     {
         auto description = minmax_idx_condition->getDescription();
-        result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::MinMax,
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
@@ -749,7 +747,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     if (partition_pruner)
     {
         auto description = partition_pruner->getKeyCondition().getDescription();
-        result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Partition,
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
@@ -1086,7 +1084,7 @@ static void selectColumnNames(
     }
 }
 
-ReadFromMergeTree::AnalysisResult MergeTreeDataSelectExecutor::estimateNumMarksToRead(
+MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     MergeTreeData::DataPartsVector parts,
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot_base,
@@ -1098,11 +1096,8 @@ ReadFromMergeTree::AnalysisResult MergeTreeDataSelectExecutor::estimateNumMarksT
 {
     size_t total_parts = parts.size();
     if (total_parts == 0)
-    {
-        ReadFromMergeTree::AnalysisResult result;
-        result.is_analyzed = true;
-        return result;
-    }
+        return std::make_shared<MergeTreeDataSelectAnalysisResult>(
+            MergeTreeDataSelectAnalysisResult{.result = ReadFromMergeTree::AnalysisResult()});
 
     Names real_column_names;
     Names virt_column_names;

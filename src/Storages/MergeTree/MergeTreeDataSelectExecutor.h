@@ -52,7 +52,7 @@ public:
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
     /// This method is used to select best projection for table.
-    ReadFromMergeTree::AnalysisResult estimateNumMarksToRead(
+    MergeTreeDataSelectAnalysisResultPtr estimateNumMarksToRead(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot_base,
@@ -91,8 +91,6 @@ private:
         size_t & total_granules,
         size_t & granules_dropped,
         Poco::Logger * log);
-
-    friend class ReadFromMergeTree;
 
     struct PartFilterCounters
     {
@@ -164,7 +162,7 @@ public:
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         Poco::Logger * log,
-        ReadFromMergeTree::AnalysisResult & result);
+        ReadFromMergeTree::IndexStats & index_stats);
 
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
