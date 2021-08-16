@@ -345,7 +345,7 @@ SYSTEM RESTORE REPLICA test;
 Альтернативный способ:
 
 ```sql
-RESTORE REPLICA test ON CLUSTER cluster;
+SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
 ```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
