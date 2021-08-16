@@ -733,7 +733,7 @@ struct FormatImpl<DataTypeDecimal<FieldType>>
     template <typename ReturnType = void>
     static ReturnType execute(const FieldType x, WriteBuffer & wb, const DataTypeDecimal<FieldType> * type, const DateLUTImpl *)
     {
-        writeText(x, type->getScale(), wb);
+        writeText(x, type->getScale(), wb, false);
         return ReturnType(true);
     }
 };
