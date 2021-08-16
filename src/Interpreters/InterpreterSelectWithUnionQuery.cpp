@@ -31,10 +31,12 @@ namespace ErrorCodes
 }
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
-    const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
+        const ASTPtr & query_ptr_, ContextPtr context_,
+        const SelectQueryOptions & options_, const Names & required_result_column_names)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
+    bool require_full_header = ast->hasNonDefaultUnionMode();
 
     const Settings & settings = context->getSettingsRef();
     if (options.subquery_depth == 0 && (settings.limit > 0 || settings.offset > 0))
@@ -51,10 +53,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     nested_interpreters.reserve(num_children);
     std::vector<Names> required_result_column_names_for_other_selects(num_children);
 
-    /// If it is UNION DISTINCT, do not filter by required_result_columns.
-    bool is_union_distinct = ast->union_mode == ASTSelectWithUnionQuery::Mode::DISTINCT;
-
-    if (!required_result_column_names.empty() && num_children > 1 && !is_union_distinct)
+    if (!require_full_header && !required_result_column_names.empty() && num_children > 1)
     {
         /// Result header if there are no filtering by 'required_result_column_names'.
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
@@ -133,10 +132,10 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     for (size_t query_num = 0; query_num < num_children; ++query_num)
     {
         const Names & current_required_result_column_names
-            = !is_union_distinct && query_num == 0 ? required_result_column_names : required_result_column_names_for_other_selects[query_num];
+            = query_num == 0 ? required_result_column_names : required_result_column_names_for_other_selects[query_num];
 
         nested_interpreters.emplace_back(
-            buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), current_required_result_column_names));
+            buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), require_full_header ? Names() : current_required_result_column_names));
     }
 
     /// Determine structure of the result.
