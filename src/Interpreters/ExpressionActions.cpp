@@ -17,6 +17,7 @@
 #include <queue>
 #include <stack>
 #include <Common/JSONBuilder.h>
+#include <Core/SettingsEnums.h>
 
 
 #if defined(MEMORY_SANITIZER)
@@ -47,7 +48,7 @@ namespace ErrorCodes
 
 ExpressionActions::~ExpressionActions() = default;
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, bool optimize_short_circuit_function_evaluation);
+static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
 ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
     : settings(settings_)
@@ -55,9 +56,7 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     actions_dag = actions_dag_->clone();
 
     /// It's important to determine lazy executed nodes before compiling expressions.
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes;
-    if (settings.use_short_circuit_function_evaluation)
-        lazy_executed_nodes = processShortCircuitFunctions(*actions_dag, settings.optimize_short_circuit_function_evaluation);
+    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(*actions_dag, settings.short_circuit_function_evaluation);
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
@@ -224,7 +223,7 @@ static void setLazyExecutionInfo(
 /// Enable lazy execution for short-circuit function arguments.
 static bool findLazyExecutedNodes(
     const ActionsDAG::NodeRawConstPtrs & children,
-    std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos,
+    std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> & lazy_execution_infos,
     bool force_enable_lazy_execution,
     std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes_out)
 {
@@ -278,8 +277,11 @@ static bool findLazyExecutedNodes(
     return has_lazy_node;
 }
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, bool optimize_short_circuit_function_evaluation)
+static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation)
 {
+    if (short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::DISABLE)
+        return {};
+
     const auto & nodes = actions_dag.getNodes();
 
     /// Firstly, find all short-circuit functions and get their settings.
@@ -305,7 +307,7 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
         findLazyExecutedNodes(
             node->children,
             lazy_execution_infos,
-            settings.force_enable_lazy_execution || !optimize_short_circuit_function_evaluation,
+            settings.force_enable_lazy_execution || short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::FORCE_ENABLE,
             lazy_executed_nodes);
     }
     return lazy_executed_nodes;
