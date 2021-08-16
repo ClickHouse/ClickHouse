@@ -104,21 +104,29 @@ void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractCo
 
 String CompressionCodecEncrypted::Configuration::getKey(UInt64 id) const
 {
+    if (!params.get())
+        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
     return params.get()->keys_storage.at(id);
 }
 
 String CompressionCodecEncrypted::Configuration::getCurrentKey() const
 {
+    if (!params.get())
+        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
     return params.get()->keys_storage.at(params.get()->current_key_id);
 }
 
 UInt64 CompressionCodecEncrypted::Configuration::getCurrentID() const
 {
+    if (!params.get())
+        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
     return params.get()->current_key_id;
 }
 
 String CompressionCodecEncrypted::Configuration::getNonce() const
 {
+    if (!params.get())
+        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
     return params.get()->nonce;
 }
 
