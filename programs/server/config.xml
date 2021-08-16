@@ -141,7 +141,7 @@
             <!-- List of IPv4 and/or IPv6 networks, connections from which will be assumed to be from trusted proxies. -->
             <trust>
                 <net>10.10.10.1/24</net>
-            <trust>
+            </trust>
         </my_load_balancer>
 
         <my_http_proxy>
@@ -154,7 +154,7 @@
               -->
             <trust>
                 <net>10.10.20.1/24</net>
-            <trust>
+            </trust>
         </my_http_proxy>
 
     </proxies>
@@ -341,7 +341,7 @@
             <protocol>prometheus</protocol>
             <port>9363</port>
             <enable_tls>no</enable_tls>
-        </plain_native_http>
+        </plain_prometheus_http>
     </interfaces>
 
     <!-- Hostname that is used by other replicas to request this server.
