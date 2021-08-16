@@ -3242,7 +3242,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     if (auto * f = partition_ast.value->as<ASTFunction>())
     {
         assert(f->name == "tuple");
-        if (f->arguments && f->arguments->as<ASTExpressionList>()->children.size())
+        if (f->arguments && !f->arguments->as<ASTExpressionList>()->children.empty())
         {
             ASTPtr query = partition_ast.value->clone();
             auto syntax_analyzer_result
