@@ -856,7 +856,7 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->updateInterserverCredentials(*config);
 
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
-            CompressionCodecEncrypted::updateEncryptionKeys(*config, "encryption_codecs");
+            CompressionCodecEncrypted::updateEncryptionKeys(*config, "encryption_codecs.aes_128_gcm_siv");
 #else
             LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
 #endif
@@ -936,7 +936,7 @@ if (ThreadFuzzer::instance().isEffective())
 // using if for unbundled build
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
     /// Set up encryption.
-    CompressionCodecEncrypted::updateEncryptionKeys(config(), "encryption_codecs");
+    CompressionCodecEncrypted::updateEncryptionKeys(config(), "encryption_codecs.aes_128_gcm_siv");
 #else
     LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
 #endif

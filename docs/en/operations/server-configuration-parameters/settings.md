@@ -75,41 +75,77 @@ Configures a command to obtain a key to be used by [encryption codecs](../../sql
 
 Keys can be hex or string. Their length must be equal to 16.
 
-!!! note "NOTE"
-    Storing keys in configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
-
 **Example**
-
-Load key from envirament variable:
-
-```xml
-<encryption>
-    <key_hex from_env="KEY"></key_hex>
-</encryption>
-```
-
-Where `KEY` is an enviroment variable.
 
 Load from config:
 
 ```xml
-<encryption>
-    <key_hex>...</key_hex>
-</encryption>
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key>...</key>
+    </aes_128_gcm_siv>
+</encryption_codecs>
 ```
+
+!!! note "NOTE"
+    Storing keys in configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
+
+Load from config, when key is in hex:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex>...</key_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Load key from environment variable:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex from_env="KEY"></key_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Where current_key_id sets the current key for encryption, and all specified keys can be used for decryption.
 
 All this methods can be applied for multiple keys:
 
 ```xml
-<encryption>
-    <key_hex id="0">...</key_hex>
-    <key_hex id="1" from_env=".."></key_hex>
-    <key_hex id="2">...</key_hex>
-    <current_key_id>2</current_key_id>
-</encryption>
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex id="0">...</key_hex>
+        <key_hex id="1" from_env=".."></key_hex>
+        <key_hex id="2">...</key_hex>
+        <current_key_id>2</current_key_id>
+    </aes_128_gcm_siv>
+</encryption_codecs>
 ```
 
 Where `current_key_id` shows current key for encryption.
+
+Also user can add nonce (by default encryption and decryption will use nonce consisting of zero bytes):
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <nonce>...</nonce>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Or it can be set in hex:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <nonce_hex>...</nonce_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 

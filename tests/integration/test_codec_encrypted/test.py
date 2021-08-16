@@ -21,9 +21,11 @@ def make_storage_with_key(id):
 <?xml version="1.0"?>
 <yandex>
     <encryption_codecs>
-        <key_hex id="0">83e84e9a4eb11535c0670dc62d808ee0</key_hex>
-        <key id="1">abcdefghijklmnop</key>
-        <current_key_id>{cur_id}</current_key_id>
+        <aes_128_gcm_siv>
+            <key_hex id="0">83e84e9a4eb11535c0670dc62d808ee0</key_hex>
+            <key id="1">abcdefghijklmnop</key>
+            <current_key_id>{cur_id}</current_key_id>
+        </aes_128_gcm_siv>
     </encryption_codecs>
 </yandex>
 EOF""".format(cur_id=id)])

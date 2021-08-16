@@ -1018,20 +1018,26 @@
          command is executed through /bin/sh and is expected to write
          a Base64-encoded key to the stdout. -->
     <encryption_codecs>
-        <!-- Example of getting hex key from env -->
-        <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
-        <!--key_hex from_env="..."></key_hex -->
+        <!-- aes_128_gcm_siv -->
+            <!-- Example of getting hex key from env -->
+            <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
+            <!--key_hex from_env="..."></key_hex -->
 
-        <!-- Example of multiple hex keys. They can be imported from env or be written down in config-->
-        <!-- the code should use these keys and throw an exception if their length is not 16 bytes -->
-        <!-- key_hex id="0">...</key_hex -->
-        <!-- key_hex id="1" from_env=".."></key_hex -->
-        <!-- key_hex id="2">...</key_hex -->
-        <!-- current_key_id>2</current_key_id -->
+            <!-- Example of multiple hex keys. They can be imported from env or be written down in config-->
+            <!-- the code should use these keys and throw an exception if their length is not 16 bytes -->
+            <!-- key_hex id="0">...</key_hex -->
+            <!-- key_hex id="1" from_env=".."></key_hex -->
+            <!-- key_hex id="2">...</key_hex -->
+            <!-- current_key_id>2</current_key_id -->
 
-        <!-- Example of getting hex key from config -->
-        <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
-        <!-- key>...</key -->
+            <!-- Example of getting hex key from config -->
+            <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
+            <!-- key>...</key -->
+
+            <!-- example of adding nonce -->
+            <!-- nonce>...</nonce -->
+
+        <!-- /aes_128_gcm_siv -->
     </encryption_codecs>
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.

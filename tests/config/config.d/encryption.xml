@@ -1,5 +1,7 @@
 <yandex>
     <encryption_codecs>
-        <key_hex>a32902703dab1cedd7ff7287067787ca</key_hex>
+        <aes_128_gcm_siv>
+            <key_hex>a32902703dab1cedd7ff7287067787ca</key_hex>
+        </aes_128_gcm_siv>
     </encryption_codecs>
 </yandex>
