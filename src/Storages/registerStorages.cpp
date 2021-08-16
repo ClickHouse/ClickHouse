@@ -60,7 +60,17 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 
 #if USE_LIBPQXX
 void registerStoragePostgreSQL(StorageFactory & factory);
+void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 #endif
+
+#if USE_MYSQL || USE_LIBPQXX
+void registerStorageExternalDistributed(StorageFactory & factory);
+#endif
+
+#if USE_SQLITE
+void registerStorageSQLite(StorageFactory & factory);
+#endif
+
 
 void registerStorages()
 {
@@ -117,6 +127,15 @@ void registerStorages()
 
     #if USE_LIBPQXX
     registerStoragePostgreSQL(factory);
+    registerStorageMaterializedPostgreSQL(factory);
+    #endif
+
+    #if USE_MYSQL || USE_LIBPQXX
+    registerStorageExternalDistributed(factory);
+    #endif
+
+    #if USE_SQLITE
+    registerStorageSQLite(factory);
     #endif
 }
 

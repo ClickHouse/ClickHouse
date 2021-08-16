@@ -34,8 +34,10 @@ public:
 
 private:
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
+    using Serializations = std::map<std::string, SerializationPtr>;
 
     FileStreams streams;
+    Serializations serializations;
 
     void addStreams(const NameAndTypePair & name_and_type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
@@ -43,7 +45,7 @@ private:
     void readData(
         const NameAndTypePair & name_and_type, ColumnPtr & column,
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-        IDataType::SubstreamsCache & cache);
+        ISerialization::SubstreamsCache & cache);
 };
 
 }

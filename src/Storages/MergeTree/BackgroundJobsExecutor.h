@@ -50,18 +50,16 @@ struct JobAndPool
 /// Consists of two important parts:
 /// 1) Task in background scheduling pool which receives new jobs from storages and put them into required pool.
 /// 2) One or more ThreadPool objects, which execute background jobs.
-class IBackgroundJobExecutor
+class IBackgroundJobExecutor : protected WithContext
 {
 protected:
-    Context & global_context;
-
     /// Configuration for single background ThreadPool
     struct PoolConfig
     {
         /// This pool type
         PoolType pool_type;
         /// Max pool size in threads
-        size_t max_pool_size;
+        const std::function<size_t()> get_max_pool_size;
         /// Metric that we have to increment when we execute task in this pool
         CurrentMetrics::Metric tasks_metric;
     };
@@ -101,23 +99,27 @@ public:
     /// Finish execution: deactivate background task and wait already scheduled jobs
     void finish();
 
+    /// Executes job in a nested pool
+    void execute(JobAndPool job_and_pool);
+
     /// Just call finish
     virtual ~IBackgroundJobExecutor();
 
 protected:
     IBackgroundJobExecutor(
-        Context & global_context_,
+        ContextPtr global_context_,
         const BackgroundTaskSchedulingSettings & sleep_settings_,
         const std::vector<PoolConfig> & pools_configs_);
 
     /// Name for task in background schedule pool
     virtual String getBackgroundTaskName() const = 0;
-    /// Get job for background execution
-    virtual std::optional<JobAndPool> getBackgroundJob() = 0;
+
+    /// Schedules a job in a nested pool in this class.
+    virtual bool scheduleJob() = 0;
 
 private:
     /// Function that executes in background scheduling pool
-    void jobExecutingTask();
+    void backgroundTaskFunction();
     /// Recalculate timeouts when we have to check for a new job
     void scheduleTask(bool with_backoff);
     /// Run background task as fast as possible and reset errors counter
@@ -134,11 +136,11 @@ private:
 public:
     BackgroundJobsExecutor(
         MergeTreeData & data_,
-        Context & global_context_);
+        ContextPtr global_context_);
 
 protected:
     String getBackgroundTaskName() const override;
-    std::optional<JobAndPool> getBackgroundJob() override;
+    bool scheduleJob() override;
 };
 
 /// Move jobs executor, move parts between disks in the background
@@ -150,11 +152,11 @@ private:
 public:
     BackgroundMovesExecutor(
         MergeTreeData & data_,
-        Context & global_context_);
+        ContextPtr global_context_);
 
 protected:
     String getBackgroundTaskName() const override;
-    std::optional<JobAndPool> getBackgroundJob() override;
+    bool scheduleJob() override;
 };
 
 }

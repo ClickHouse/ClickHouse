@@ -22,6 +22,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -38,7 +39,7 @@ struct MovingData
     using Array = PODArray<T, 32, Allocator>;
 
     Array value;    /// Prefix sums.
-    T sum = 0;
+    T sum{};
 
     void NO_SANITIZE_UNDEFINED add(T val, Arena * arena)
     {
@@ -52,7 +53,7 @@ struct MovingSumData : public MovingData<T>
 {
     static constexpr auto name = "groupArrayMovingSum";
 
-    T get(size_t idx, UInt64 window_size) const
+    T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
     {
         if (idx < window_size)
             return this->value[idx];
@@ -66,12 +67,12 @@ struct MovingAvgData : public MovingData<T>
 {
     static constexpr auto name = "groupArrayMovingAvg";
 
-    T get(size_t idx, UInt64 window_size) const
+    T NO_SANITIZE_UNDEFINED get(size_t idx, UInt64 window_size) const
     {
         if (idx < window_size)
-            return this->value[idx] / window_size;
+            return this->value[idx] / T(window_size);
         else
-            return (this->value[idx] - this->value[idx - window_size]) / window_size;
+            return (this->value[idx] - this->value[idx - window_size]) / T(window_size);
     }
 };
 
@@ -114,7 +115,7 @@ public:
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeResult>());
     }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto value = static_cast<const ColumnSource &>(*columns[0]).getData()[row_num];
         this->data(place).add(static_cast<ResultT>(value), arena);

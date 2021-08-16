@@ -20,7 +20,7 @@ public:
     bool second_with_brackets;
 
 public:
-    ASTPair(bool second_with_brackets_)
+    explicit ASTPair(bool second_with_brackets_)
         : second_with_brackets(second_with_brackets_)
     {
     }
@@ -49,7 +49,7 @@ public:
     /// Has brackets around arguments
     bool has_brackets;
 
-    ASTFunctionWithKeyValueArguments(bool has_brackets_ = true)
+    explicit ASTFunctionWithKeyValueArguments(bool has_brackets_ = true)
         : has_brackets(has_brackets_)
     {
     }

@@ -7,7 +7,7 @@ toc_title: Distributed
 
 **Движок Distributed не хранит данные самостоятельно**, а позволяет обрабатывать запросы распределённо, на нескольких серверах. Чтение автоматически распараллеливается. При чтении будут использованы индексы таблиц на удалённых серверах, если есть.
 
-Движок Distributed принимает параметры: 
+Движок Distributed принимает параметры:
 
 -   имя кластера в конфигурационном файле сервера
 
@@ -21,7 +21,7 @@ toc_title: Distributed
 
     Смотрите также:
 
-    -  настройка `insert_distributed_sync` 
+    -  настройка `insert_distributed_sync`
     -   [MergeTree](../mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) для примера
 
 Пример:
@@ -136,4 +136,3 @@ logs - имя кластера в конфигурационном файле с
 
 При выставлении опции max_parallel_replicas выполнение запроса распараллеливается по всем репликам внутри одного шарда. Подробнее смотрите раздел [max_parallel_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/distributed/) <!--hide-->

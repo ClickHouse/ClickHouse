@@ -28,8 +28,8 @@ select count(*) "'"'"initial query spans with proper parent"'"'"
     from
         (select *, attribute_name, attribute_value
             from system.opentelemetry_span_log
-                array join attribute.names as attribute_name,
-                    attribute.values as attribute_value) o
+                array join mapKeys(attribute) as attribute_name,
+                     mapValues(attribute) as attribute_value) o
         join system.query_log on query_id = o.attribute_value
     where
         trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
@@ -45,7 +45,7 @@ select count(*) "'"'"initial query spans with proper parent"'"'"
 -- same non-empty value for all 'query' spans in this trace.
 select uniqExact(value) "'"'"unique non-empty tracestate values"'"'"
     from system.opentelemetry_span_log
-        array join attribute.names as name, attribute.values as value
+        array join mapKeys(attribute) as name,  mapValues(attribute) as value
     where
         trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
         and operation_name = 'query'
@@ -108,14 +108,11 @@ wait
 
 ${CLICKHOUSE_CLIENT} -q "system flush logs"
 ${CLICKHOUSE_CLIENT} -q "
-    with count(*) as c
     -- expect 200 * 0.1 = 20 sampled events on average
-    select if(c > 1 and c < 50, 'OK', 'fail: ' || toString(c))
+    select if(count() > 1 and count() < 50, 'OK', 'Fail')
     from system.opentelemetry_span_log
-        array join attribute.names as name, attribute.values as value
-    where name = 'clickhouse.query_id'
-        and operation_name = 'query'
+    where operation_name = 'query'
         and parent_span_id = 0  -- only account for the initial queries
-        and value like '$query_id-%'
+        and attribute['clickhouse.query_id'] like '$query_id-%'
     ;
 "

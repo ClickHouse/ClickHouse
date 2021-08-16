@@ -23,7 +23,7 @@ public:
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;

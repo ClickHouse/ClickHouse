@@ -2,7 +2,9 @@
 set -exu
 set -o pipefail
 trap "exit" INT TERM
-trap 'kill $(jobs -pr) ||:' EXIT
+# The watchdog is in the separate process group, so we have to kill it separately
+# if the script terminates earlier.
+trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -97,6 +99,7 @@ function configure
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
     rm -r db0/{data,metadata}/system ||:
+    rm db0/status ||:
     cp -al db0/ left/db/
     cp -al db0/ right/db/
 }
@@ -240,9 +243,12 @@ function run_tests
     profile_seconds_left=600
 
     # Run the tests.
+    total_tests=$(echo "$test_files" | wc -w)
+    current_test=0
     test_name="<none>"
     for test in $test_files
     do
+        echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
         clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
@@ -270,6 +276,7 @@ function run_tests
         profile_seconds_left=$(awk -F'	' \
             'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
             "$test_name-raw.tsv")
+        current_test=$((current_test + 1))
     done
 
     unset TIMEFORMAT
@@ -312,14 +319,14 @@ function get_profiles
 
     wait
 
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
+    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type = 'QueryFinish' format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > left-async-metric-log.tsv ||: &
 
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type = 'QueryFinish' format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > right-query-thread-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
@@ -357,6 +364,8 @@ mkdir analyze analyze/tmp ||:
 build_log_column_definitions
 
 # Split the raw test output into files suitable for analysis.
+# To debug calculations only for a particular test, substitute a suitable
+# wildcard here, e.g. `for test_file in modulo-raw.tsv`.
 for test_file in *-raw.tsv
 do
     test_name=$(basename "$test_file" "-raw.tsv")
@@ -400,10 +409,10 @@ create view right_query_log as select *
         '$(cat "right-query-log.tsv.columns")');
 
 create view query_logs as
-    select 0 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
+    select 0 version, query_id, ProfileEvents,
         query_duration_ms, memory_usage from left_query_log
     union all
-    select 1 version, query_id, ProfileEvents.Names, ProfileEvents.Values,
+    select 1 version, query_id, ProfileEvents,
         query_duration_ms, memory_usage from right_query_log
     ;
 
@@ -415,7 +424,7 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
     with (
         -- sumMapState with the list of all keys with '-0.' values. Negative zero is because
         -- sumMap removes keys with positive zeros.
-        with (select groupUniqArrayArray(ProfileEvents.Names) from query_logs) as all_names
+        with (select groupUniqArrayArray(mapKeys(ProfileEvents)) from query_logs) as all_names
             select arrayReduce('sumMapState', [(all_names, arrayMap(x->-0., all_names))])
         ) as all_metrics
     select test, query_index, version, query_id,
@@ -424,8 +433,8 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
                 [
                     all_metrics,
                     arrayReduce('sumMapState',
-                        [(ProfileEvents.Names,
-                            arrayMap(x->toFloat64(x), ProfileEvents.Values))]
+                        [(mapKeys(ProfileEvents),
+                            arrayMap(x->toFloat64(x), mapValues(ProfileEvents)))]
                     ),
                     arrayReduce('sumMapState', [(
                         ['client_time', 'server_time', 'memory_usage'],
@@ -466,7 +475,13 @@ create view broken_queries as
 create table query_run_metrics_for_stats engine File(
         TSV, -- do not add header -- will parse with grep
         'analyze/query-run-metrics-for-stats.tsv')
-    as select test, query_index, 0 run, version, metric_values
+    as select test, query_index, 0 run, version,
+        -- For debugging, add a filter for a particular metric like this:
+        -- arrayFilter(m, n -> n = 'client_time', metric_values, metric_names)
+        --     metric_values
+        -- Note that further reporting may break, because the metric names are
+        -- not filtered.
+        metric_values
     from query_run_metric_arrays
     where (test, query_index) not in broken_queries
     order by test, query_index, run, version
@@ -537,6 +552,66 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
     order by test, query_index, metric_name
     ;
 " 2> >(tee -a analyze/errors.log 1>&2)
+
+# Fetch historical query variability thresholds from the CI database
+if [ -v CHPC_DATABASE_URL ]
+then
+    set +x # Don't show password in the log
+    client=(clickhouse-client
+        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
+        # so I have to extract host and port with clickhouse-local. I tried to use
+        # Poco URI parser to support this in the client, but it's broken and can't
+        # parse host:port.
+        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        --secure
+        --user "${CHPC_DATABASE_USER}"
+        --password "${CHPC_DATABASE_PASSWORD}"
+        --config "right/config/client_config.xml"
+        --database perftest
+        --date_time_input_format=best_effort)
+
+
+# Precision is going to be 1.5 times worse for PRs, because we run the queries
+# less times. How do I know it? I ran this:
+# SELECT quantilesExact(0., 0.1, 0.5, 0.75, 0.95, 1.)(p / m)
+# FROM
+# (
+#     SELECT
+#         quantileIf(0.95)(stat_threshold, pr_number = 0) AS m,
+#         quantileIf(0.95)(stat_threshold, (pr_number != 0) AND (abs(diff) < stat_threshold)) AS p
+#     FROM query_metrics_v2
+#     WHERE (event_date > (today() - toIntervalMonth(1))) AND (metric = 'client_time')
+#     GROUP BY
+#         test,
+#         query_index,
+#         query_display_name
+#     HAVING count(*) > 100
+# )
+#
+# The file can be empty if the server is inaccessible, so we can't use
+# TSVWithNamesAndTypes.
+#
+    "${client[@]}" --query "
+            select test, query_index,
+                quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
+                quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
+                query_display_name
+            from query_metrics_v2
+            -- We use results at least one week in the past, so that the current
+            -- changes do not immediately influence the statistics, and we have
+            -- some time to notice that something is wrong.
+            where event_date between now() - interval 1 month - interval 1 week
+                    and now() - interval 1 week
+                and metric = 'client_time'
+                and pr_number = 0
+            group by test, query_index, query_display_name
+            having count(*) > 100
+            " > analyze/historical-thresholds.tsv
+    set -x
+else
+    touch analyze/historical-thresholds.tsv
+fi
+
 }
 
 # Analyze results
@@ -581,26 +656,57 @@ create view query_metric_stats as
             diff float, stat_threshold float')
     ;
 
+create table report_thresholds engine File(TSVWithNamesAndTypes, 'report/thresholds.tsv')
+    as select
+        query_display_names.test test, query_display_names.query_index query_index,
+        ceil(greatest(0.1, historical_thresholds.max_diff,
+            test_thresholds.report_threshold), 2) changed_threshold,
+        ceil(greatest(0.2, historical_thresholds.max_stat_threshold,
+            test_thresholds.report_threshold + 0.1), 2) unstable_threshold,
+        query_display_names.query_display_name query_display_name
+    from query_display_names
+    left join file('analyze/historical-thresholds.tsv', TSV,
+        'test text, query_index int, max_diff float, max_stat_threshold float,
+            query_display_name text') historical_thresholds
+    on query_display_names.test = historical_thresholds.test
+        and query_display_names.query_index = historical_thresholds.query_index
+        and query_display_names.query_display_name = historical_thresholds.query_display_name
+    left join file('analyze/report-thresholds.tsv', TSV,
+        'test text, report_threshold float') test_thresholds
+    on query_display_names.test = test_thresholds.test
+    ;
+
 -- Main statistics for queries -- query time as reported in query log.
 create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
-        abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
-        abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
+        -- It is important to have a non-strict inequality with stat_threshold
+        -- here. The randomization distribution is actually discrete, and when
+        -- the number of runs is small, the quantile we need (e.g. 0.99) turns
+        -- out to be the maximum value of the distribution. We can also hit this
+        -- maximum possible value with our test run, and this obviously means
+        -- that we have observed the difference to the best precision possible
+        -- for the given number of runs. If we use a strict equality here, we
+        -- will miss such cases. This happened in the wild and lead to some
+        -- uncaught regressions, because for the default 7 runs we do for PRs,
+        -- the randomization distribution has only 16 values, so the max quantile
+        -- is actually 0.9375.
+        abs(diff) > changed_threshold        and abs(diff) >= stat_threshold as changed_fail,
+        abs(diff) > changed_threshold - 0.05 and abs(diff) >= stat_threshold as changed_show,
 
-        not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
-        not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
+        not changed_fail and stat_threshold > unstable_threshold as unstable_fail,
+        not changed_show and stat_threshold > unstable_threshold - 0.05 as unstable_show,
 
         left, right, diff, stat_threshold,
-        if(report_threshold > 0, report_threshold, 0.10) as report_threshold,
         query_metric_stats.test test, query_metric_stats.query_index query_index,
-        query_display_name
+        query_display_names.query_display_name query_display_name
     from query_metric_stats
-    left join file('analyze/report-thresholds.tsv', TSV,
-            'test text, report_threshold float') thresholds
-        on query_metric_stats.test = thresholds.test
     left join query_display_names
         on query_metric_stats.test = query_display_names.test
             and query_metric_stats.query_index = query_display_names.query_index
+    left join report_thresholds
+        on query_display_names.test = report_thresholds.test
+            and query_display_names.query_index = report_thresholds.query_index
+            and query_display_names.query_display_name = report_thresholds.query_display_name
     -- 'server_time' is rounded down to ms, which might be bad for very short queries.
     -- Use 'client_time' instead.
     where metric_name = 'client_time'
@@ -738,7 +844,7 @@ create view test_times_view as
         total_client_time,
         queries,
         query_max,
-        real / queries avg_real_per_query,
+        real / if(queries > 0, queries, 1) avg_real_per_query,
         query_min,
         runs
     from test_time
@@ -759,7 +865,7 @@ create view test_times_view_total as
         sum(total_client_time),
         sum(queries),
         max(query_max),
-        sum(real) / sum(queries) avg_real_per_query,
+        sum(real) / if(sum(queries) > 0, sum(queries), 1) avg_real_per_query,
         min(query_min),
         -- Totaling the number of runs doesn't make sense, but use the max so
         -- that the reporting script doesn't complain about queries being too
@@ -863,7 +969,6 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
     order by test, query_index;
 " 2> >(tee -a report/errors.log 1>&2)
 
-
 # Prepare source data for metrics and flamegraphs for queries that were profiled
 # by perf.py.
 for version in {right,left}
@@ -898,10 +1003,11 @@ create view query_log as select *
 
 create table unstable_run_metrics engine File(TSVWithNamesAndTypes,
         'unstable-run-metrics.$version.rep') as
-    select
-        test, query_index, query_id,
-        ProfileEvents.Values value, ProfileEvents.Names metric
-    from query_log array join ProfileEvents
+    select test, query_index, query_id, value, metric
+    from query_log
+    array join
+        mapValues(ProfileEvents) as value,
+        mapKeys(ProfileEvents) as metric
     join unstable_query_runs using (query_id)
     ;
 
@@ -993,6 +1099,7 @@ done
 wait
 
 # Create per-query flamegraphs
+touch report/query-files.txt
 IFS=$'\n'
 for version in {right,left}
 do
@@ -1071,11 +1178,11 @@ create view right_async_metric_log as
 -- Use the right log as time reference because it may have higher precision.
 create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     with (select min(event_time) from right_async_metric_log) as min_time
-    select name metric, r.event_time - min_time event_time, l.value as left, r.value as right
+    select metric, r.event_time - min_time event_time, l.value as left, r.value as right
     from right_async_metric_log r
     asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes,
         '$(cat left-async-metric-log.tsv.columns)') l
-    on l.name = r.name and r.event_time <= l.event_time
+    on l.metric = r.metric and r.event_time <= l.event_time
     order by metric, event_time
     ;
 
@@ -1089,7 +1196,7 @@ create table changes engine File(TSV, 'metrics/changes.tsv') as
             if(left > right, left / right, right / left) times_diff
         from metrics
         group by metric
-        having abs(diff) > 0.05 and isFinite(diff)
+        having abs(diff) > 0.05 and isFinite(diff) and isFinite(times_diff)
     )
     order by diff desc
     ;
@@ -1121,26 +1228,76 @@ unset IFS
 
 function upload_results
 {
+    # Prepare info for the CI checks table.
+    rm ci-checks.tsv
+    clickhouse-local --query "
+create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes,
+    'changed_fail int, changed_show int, unstable_fail int, unstable_show int,
+        left float, right float, diff float, stat_threshold float,
+        test text, query_index int, query_display_name text');
+
+create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
+    as select
+        $PR_TO_TEST pull_request_number,
+        '$SHA_TO_TEST' commit_sha,
+        'Performance' check_name,
+        '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' check_status,
+        -- TODO toDateTime() can't parse output of 'date', so no time for now.
+        ($(date +%s) - $CHPC_CHECK_START_TIMESTAMP) * 1000 check_duration_ms,
+        fromUnixTimestamp($CHPC_CHECK_START_TIMESTAMP) check_start_time,
+        test_name,
+        test_status,
+        test_duration_ms,
+        report_url,
+        $PR_TO_TEST = 0
+            ? 'https://github.com/ClickHouse/ClickHouse/commit/$SHA_TO_TEST'
+            : 'https://github.com/ClickHouse/ClickHouse/pull/$PR_TO_TEST' pull_request_url,
+        '' commit_url,
+        '' task_url,
+        '' base_ref,
+        '' base_repo,
+        '' head_ref,
+        '' head_repo
+    from (
+        select '' test_name,
+            '$(sed -n 's/.*<!--message: \(.*\)-->/\1/p' report.html)' test_status,
+            0 test_duration_ms,
+            'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#fail1' report_url
+        union all
+            select test || ' #' || toString(query_index), 'slower' test_status, 0 test_duration_ms,
+                'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#changes-in-performance.'
+                    || test || '.' || toString(query_index) report_url
+            from queries where changed_fail != 0 and diff > 0
+        union all
+            select test || ' #' || toString(query_index), 'unstable' test_status, 0 test_duration_ms,
+                'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#unstable-queries.'
+                    || test || '.' || toString(query_index) report_url
+            from queries where unstable_fail != 0
+    )
+;
+    "
+
     if ! [ -v CHPC_DATABASE_URL ]
     then
         echo Database for test results is not specified, will not upload them.
         return 0
-    fi 
+    fi
 
-    # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
-    # so I have to extract host and port with clickhouse-local. I tried to use
-    # Poco URI parser to support this in the client, but it's broken and can't
-    # parse host:port.
     set +x # Don't show password in the log
-    clickhouse-client \
-        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV") \
-        --secure \
-        --user "${CHPC_DATABASE_USER}" \
-        --password "${CHPC_DATABASE_PASSWORD}" \
-        --config "right/config/client_config.xml" \
-        --database perftest \
-        --date_time_input_format=best_effort \
-        --query "
+    client=(clickhouse-client
+        # Surprisingly, clickhouse-client doesn't understand --host 127.0.0.1:9000
+        # so I have to extract host and port with clickhouse-local. I tried to use
+        # Poco URI parser to support this in the client, but it's broken and can't
+        # parse host:port.
+        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        --secure
+        --user "${CHPC_DATABASE_USER}"
+        --password "${CHPC_DATABASE_PASSWORD}"
+        --config "right/config/client_config.xml"
+        --database perftest
+        --date_time_input_format=best_effort)
+
+    "${client[@]}" --query "
             insert into query_metrics_v2
             select
                 toDate(event_time) event_date,
@@ -1163,6 +1320,35 @@ function upload_results
             format TSV
             settings date_time_input_format='best_effort'
 " < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
+
+    # Upload some run attributes. I use this weird form because it is the same
+    # form that can be used for historical data when you only have compare.log.
+    cat compare.log \
+        | sed -n '
+            s/.*Model name:[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\1/p;
+            s/.*L1d cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1d-cache	\1/p;
+            s/.*L1i cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1i-cache	\1/p;
+            s/.*L2 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l2-cache	\1/p;
+            s/.*L3 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l3-cache	\1/p;
+            s/.*left_sha=\(.*\)$/old-sha	\1/p;
+            s/.*right_sha=\(.*\)/new-sha	\1/p' \
+        | awk '
+            BEGIN { FS = "\t"; OFS = "\t" }
+            /^old-sha/ { old_sha=$2 }
+            /^new-sha/ { new_sha=$2 }
+            /^metric/ { print old_sha, new_sha, $2, $3 }' \
+        | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
+
+    # Grepping numactl results from log is too crazy, I'll just call it again.
+    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
+$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
+$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
+EOF
+
+    # Also insert some data about the check into the CI checks table.
+    "${client[@]}" --query "INSERT INTO "'"'"gh-data"'"'".checks FORMAT TSVWithNamesAndTypes" \
+        < ci-checks.tsv
+
     set -x
 }
 
@@ -1245,3 +1431,4 @@ esac
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
 pstree -apgT
+

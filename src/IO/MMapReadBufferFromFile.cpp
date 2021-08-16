@@ -44,7 +44,8 @@ MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name_, s
     : file_name(file_name_)
 {
     open();
-    init(fd, offset, length_);
+    mapped.set(fd, offset, length_);
+    init();
 }
 
 
@@ -52,7 +53,8 @@ MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name_, s
     : file_name(file_name_)
 {
     open();
-    init(fd, offset);
+    mapped.set(fd, offset);
+    init();
 }
 
 

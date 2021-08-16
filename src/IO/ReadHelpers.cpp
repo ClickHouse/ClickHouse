@@ -81,11 +81,6 @@ void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 
     parseHex(&src36[16], dst16, 8);
 }
 
-UInt128 stringToUUID(const String & str)
-{
-    return parseFromString<UUID>(str);
-}
-
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
@@ -332,6 +327,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
             && decoded_char != '"'
             && decoded_char != '`'  /// MySQL style identifiers
             && decoded_char != '/'  /// JavaScript in HTML
+            && decoded_char != '='  /// Yandex's TSKV
             && !isControlASCII(decoded_char))
         {
             s.push_back('\\');
@@ -356,8 +352,11 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
     };
 
     ++buf.position();
+
     if (buf.eof())
         return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+
+    assert(buf.hasPendingData());
 
     switch (*buf.position())
     {
@@ -770,7 +769,7 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 
     auto ignore_delimiter = [&]
     {
-        if (!buf.eof())
+        if (!buf.eof() && !isNumericASCII(*buf.position()))
         {
             ++buf.position();
             return true;
@@ -831,14 +830,18 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     static constexpr auto date_time_broken_down_length = 19;
     /// YYYY-MM-DD
     static constexpr auto date_broken_down_length = 10;
-    /// unix timestamp max length
-    static constexpr auto unix_timestamp_max_length = 10;
 
     char s[date_time_broken_down_length];
     char * s_pos = s;
 
-    /// A piece similar to unix timestamp.
-    while (s_pos < s + unix_timestamp_max_length && !buf.eof() && isNumericASCII(*buf.position()))
+    /** Read characters, that could represent unix timestamp.
+      * Only unix timestamp of at least 5 characters is supported.
+      * Then look at 5th character. If it is a number - treat whole as unix timestamp.
+      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
+      */
+
+    /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
+    while (s_pos < s + date_time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))
     {
         *s_pos = *buf.position();
         ++s_pos;
@@ -846,7 +849,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
 
     /// 2015-01-01 01:02:03 or 2015-01-01
-    if (s_pos == s + 4 && !buf.eof() && (*buf.position() < '0' || *buf.position() > '9'))
+    if (s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         const auto already_read_length = s_pos - s;
         const size_t remaining_date_time_size = date_time_broken_down_length - already_read_length;
@@ -885,8 +888,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
     else
     {
-        /// Only unix timestamp of 5-10 characters is supported. For consistency. See readDateTimeTextImpl.
-        if (s_pos - s >= 5 && s_pos - s <= 10)
+        if (s_pos - s >= 5)
         {
             /// Not very efficient.
             datetime = 0;
@@ -1050,6 +1052,25 @@ void readAndThrowException(ReadBuffer & buf, const String & additional_message)
 }
 
 
+void skipToCarriageReturnOrEOF(ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\r'>(buf.position(), buf.buffer().end());
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (*buf.position() == '\r')
+        {
+            ++buf.position();
+            return;
+        }
+    }
+}
+
+
 void skipToNextLineOrEOF(ReadBuffer & buf)
 {
     while (!buf.eof())
@@ -1104,13 +1125,16 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
     assert(current >= in.position());
     assert(current <= in.buffer().end());
 
-    const int old_bytes = memory.size();
-    const int additional_bytes = current - in.position();
-    const int new_bytes = old_bytes + additional_bytes;
+    const size_t old_bytes = memory.size();
+    const size_t additional_bytes = current - in.position();
+    const size_t new_bytes = old_bytes + additional_bytes;
+
     /// There are no new bytes to add to memory.
     /// No need to do extra stuff.
     if (new_bytes == 0)
         return;
+
+    assert(in.position() + additional_bytes <= in.buffer().end());
     memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;

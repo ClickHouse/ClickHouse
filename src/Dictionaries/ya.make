@@ -9,6 +9,7 @@ PEERDIR(
     contrib/libs/poco/MongoDB
     contrib/libs/poco/Redis
     contrib/libs/sparsehash
+    contrib/restricted/abseil-cpp
 )
 
 IF (USE_ODBC)
@@ -20,15 +21,14 @@ NO_COMPILER_WARNINGS()
 
 SRCS(
     CacheDictionary.cpp
-    CassandraBlockInputStream.cpp
+    CacheDictionaryUpdateQueue.cpp
     CassandraDictionarySource.cpp
     CassandraHelpers.cpp
+    CassandraSource.cpp
     ClickHouseDictionarySource.cpp
-    ComplexKeyCacheDictionary.cpp
-    ComplexKeyDirectDictionary.cpp
-    ComplexKeyHashedDictionary.cpp
-    DictionaryBlockInputStreamBase.cpp
     DictionaryFactory.cpp
+    DictionarySource.cpp
+    DictionarySourceBase.cpp
     DictionarySourceFactory.cpp
     DictionarySourceHelpers.cpp
     DictionaryStructure.cpp
@@ -42,27 +42,27 @@ SRCS(
     Embedded/RegionsHierarchy.cpp
     Embedded/RegionsNames.cpp
     ExecutableDictionarySource.cpp
+    ExecutablePoolDictionarySource.cpp
     ExternalQueryBuilder.cpp
     FileDictionarySource.cpp
     FlatDictionary.cpp
     HTTPDictionarySource.cpp
     HashedDictionary.cpp
+    HierarchyDictionariesUtils.cpp
     IPAddressDictionary.cpp
     LibraryDictionarySource.cpp
-    LibraryDictionarySourceExternal.cpp
     MongoDBDictionarySource.cpp
     MySQLDictionarySource.cpp
     PolygonDictionary.cpp
     PolygonDictionaryImplementations.cpp
     PolygonDictionaryUtils.cpp
     RangeHashedDictionary.cpp
-    RedisBlockInputStream.cpp
     RedisDictionarySource.cpp
-    SSDCacheDictionary.cpp
-    SSDComplexKeyCacheDictionary.cpp
+    RedisSource.cpp
     XDBCDictionarySource.cpp
     getDictionaryConfigurationFromAST.cpp
     readInvalidateQuery.cpp
+    registerCacheDictionaries.cpp
     registerDictionaries.cpp
     writeParenthesisedString.cpp
 

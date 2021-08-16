@@ -1,14 +1,15 @@
-#include <Processors/Executors/PipelineExecutor.h>
 #include <queue>
 #include <IO/WriteBufferFromString.h>
-#include <Processors/printPipeline.h>
 #include <Common/EventCounter.h>
-#include <ext/scope_guard.h>
 #include <Common/CurrentThread.h>
-#include <Processors/ISource.h>
 #include <Common/setThreadName.h>
+#include <Common/MemoryTracker.h>
+#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/printPipeline.h>
+#include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <common/scope_guard_safe.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -44,6 +45,8 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     try
     {
         graph = std::make_unique<ExecutingGraph>(processors);
+        if (process_list_element)
+            process_list_element->addPipelineExecutor(this);
     }
     catch (Exception & exception)
     {
@@ -56,6 +59,12 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
 
         throw;
     }
+}
+
+PipelineExecutor::~PipelineExecutor()
+{
+    if (process_list_element)
+        process_list_element->removePipelineExecutor(this);
 }
 
 void PipelineExecutor::addChildlessProcessorsToStack(Stack & stack)
@@ -390,6 +399,9 @@ void PipelineExecutor::finish()
 
 void PipelineExecutor::execute(size_t num_threads)
 {
+    if (num_threads < 1)
+        num_threads = 1;
+
     try
     {
         executeImpl(num_threads);
@@ -540,7 +552,12 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                     /// If we execute in single thread, wait for async tasks here.
                     auto res = async_task_queue.wait(lock);
                     if (!res)
+                    {
+                        /// The query had been cancelled (finished is also set)
+                        if (finished)
+                            break;
                         throw Exception("Empty task was returned from async task queue", ErrorCodes::LOGICAL_ERROR);
+                    }
 
                     node = static_cast<ExecutingGraph::Node *>(res.data);
                     break;
@@ -735,7 +752,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
     bool finished_flag = false;
 
-    SCOPE_EXIT(
+    SCOPE_EXIT_SAFE(
         if (!finished_flag)
         {
             finish();
@@ -761,9 +778,9 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 if (thread_group)
                     CurrentThread::attachTo(thread_group);
 
-                SCOPE_EXIT(
-                        if (thread_group)
-                            CurrentThread::detachQueryIfNotDetached();
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
                 );
 
                 try

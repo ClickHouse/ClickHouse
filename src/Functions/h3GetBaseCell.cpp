@@ -9,7 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #include <h3api.h>
 
@@ -29,7 +29,7 @@ class FunctionH3GetBaseCell : public IFunction
 public:
     static constexpr auto name = "h3GetBaseCell";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3GetBaseCell>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetBaseCell>(); }
 
     std::string getName() const override { return name; }
 
@@ -41,8 +41,9 @@ public:
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -55,11 +56,11 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : ext::range(0, input_rows_count))
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 hindex = col_hindex->getUInt(row);
 
-            UInt8 res = h3GetBaseCell(hindex);
+            UInt8 res = getBaseCellNumber(hindex);
 
             dst_data[row] = res;
         }

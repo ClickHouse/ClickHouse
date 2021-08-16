@@ -28,8 +28,8 @@ INSERT INTO x_dist SELECT * FROM numbers(10); -- { serverError 55 }
 INSERT INTO y_dist SELECT * FROM numbers(10); -- { serverError 55 }
 
 -- invalid shard id
-INSERT INTO x_dist SELECT * FROM numbers(10) settings insert_shard_id = 3; -- { serverError 1003 }
-INSERT INTO y_dist SELECT * FROM numbers(10) settings insert_shard_id = 3; -- { serverError 1003 }
+INSERT INTO x_dist SELECT * FROM numbers(10) settings insert_shard_id = 3; -- { serverError 577 }
+INSERT INTO y_dist SELECT * FROM numbers(10) settings insert_shard_id = 3; -- { serverError 577 }
 
 DROP TABLE x;
 DROP TABLE x_dist;

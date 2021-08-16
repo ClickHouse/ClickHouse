@@ -1,7 +1,7 @@
 #  docker build -t yandex/clickhouse-fasttest .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -27,7 +27,7 @@ RUN apt-get update \
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
+RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
@@ -43,19 +43,20 @@ RUN apt-get update \
         clang-tidy-${LLVM_VERSION} \
         cmake \
         curl \
-        lsof \
         expect \
         fakeroot \
+        gdb \
         git \
         gperf \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
+        lsof \
         moreutils \
         ninja-build \
         psmisc \
         python3 \
-        python3-pip \
         python3-lxml \
+        python3-pip \
         python3-requests \
         python3-termcolor \
         rename \
@@ -64,7 +65,7 @@ RUN apt-get update \
         unixodbc \
        --yes --no-install-recommends
 
-RUN pip3 install numpy scipy pandas
+RUN pip3 install numpy scipy pandas Jinja2
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld

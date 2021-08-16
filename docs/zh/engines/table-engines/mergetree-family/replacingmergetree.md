@@ -28,7 +28,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 -   `ver` — 版本列。类型为 `UInt*`, `Date` 或 `DateTime`。可选参数。
 
     在数据合并的时候，`ReplacingMergeTree` 从所有具有相同排序键的行中选择一行留下：
-    
+
      - 如果 `ver` 列未指定，保留最后一条。
      - 如果 `ver` 列已指定，保留 `ver` 值最大的版本。
 

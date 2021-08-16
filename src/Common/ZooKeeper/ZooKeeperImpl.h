@@ -80,6 +80,10 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperSession;
 }
 
+namespace DB
+{
+    class ZooKeeperLog;
+}
 
 namespace Coordination
 {
@@ -88,7 +92,7 @@ using namespace DB;
 
 /** Usage scenario: look at the documentation for IKeeper class.
   */
-class ZooKeeper : public IKeeper
+class ZooKeeper final : public IKeeper
 {
 public:
     struct Node
@@ -110,7 +114,8 @@ public:
         const String & auth_data,
         Poco::Timespan session_timeout_,
         Poco::Timespan connection_timeout,
-        Poco::Timespan operation_timeout_);
+        Poco::Timespan operation_timeout_,
+        std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
 
@@ -121,6 +126,9 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
+    void executeGenericRequest(
+        const ZooKeeperRequestPtr & request,
+        ResponseCallback callback);
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
@@ -166,6 +174,22 @@ public:
     void multi(
         const Requests & requests,
         MultiCallback callback) override;
+
+    /// Without forcefully invalidating (finalizing) ZooKeeper session before
+    /// establishing a new one, there was a possibility that server is using
+    /// two ZooKeeper sessions simultaneously in different parts of code.
+    /// This is strong antipattern and we always prevented it.
+
+    /// ZooKeeper is linearizeable for writes, but not linearizeable for
+    /// reads, it only maintains "sequential consistency": in every session
+    /// you observe all events in order but possibly with some delay. If you
+    /// perform write in one session, then notify different part of code and
+    /// it will do read in another session, that read may not see the
+    /// already performed write.
+
+    void finalize()  override { finalize(false, false); }
+
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
 private:
     String root_path;
@@ -241,7 +265,10 @@ private:
     template <typename T>
     void read(T &);
 
+    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false);
+
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
+    std::shared_ptr<ZooKeeperLog> zk_log;
 };
 
 }

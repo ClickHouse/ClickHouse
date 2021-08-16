@@ -18,7 +18,7 @@ def started_cluster():
 
 
 def test_access_control_on_cluster():
-    ch1.query_with_retry("CREATE USER Alex ON CLUSTER 'cluster'", retry_count=3)
+    ch1.query_with_retry("CREATE USER IF NOT EXISTS Alex ON CLUSTER 'cluster'", retry_count=5)
     assert ch1.query("SHOW CREATE USER Alex") == "CREATE USER Alex\n"
     assert ch2.query("SHOW CREATE USER Alex") == "CREATE USER Alex\n"
     assert ch3.query("SHOW CREATE USER Alex") == "CREATE USER Alex\n"

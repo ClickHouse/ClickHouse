@@ -17,7 +17,7 @@ def privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=flush_logs, flags=TE,
+        Suite(run=flush_logs,
             examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in flush_logs.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -38,13 +38,14 @@ def privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=flush_logs, flags=TE,
+        Suite(run=flush_logs,
             examples=Examples("privilege on grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in flush_logs.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege on",[
+    ("ALL", "*.*"),
     ("SYSTEM", "*.*"),
     ("SYSTEM FLUSH", "*.*"),
     ("SYSTEM FLUSH LOGS", "*.*"),
@@ -62,11 +63,19 @@ def flush_logs(self, privilege, on, grant_target_name, user_name, node=None):
         node = self.context.node
 
     with Scenario("SYSTEM FLUSH LOGS without privilege"):
-        with When("I check the user can't flush logs"):
+
+        with When("I grant the user NONE privilege"):
+            node.query(f"GRANT NONE TO {grant_target_name}")
+
+        with And("I grant the user USAGE privilege"):
+            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+        with Then("I check the user can't flush logs"):
             node.query(f"SYSTEM FLUSH LOGS", settings = [("user", f"{user_name}")],
                 exitcode=exitcode, message=message)
 
     with Scenario("SYSTEM FLUSH LOGS with privilege"):
+
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -74,6 +83,7 @@ def flush_logs(self, privilege, on, grant_target_name, user_name, node=None):
             node.query(f"SYSTEM FLUSH LOGS", settings = [("user", f"{user_name}")])
 
     with Scenario("SYSTEM FLUSH LOGS with revoked privilege"):
+
         with When(f"I grant {privilege} on the table"):
             node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -97,7 +107,7 @@ def distributed_privileges_granted_directly(self, node=None):
     with user(node, f"{user_name}"):
         table_name = f"table_name_{getuid()}"
 
-        Suite(run=flush_distributed, flags=TE,
+        Suite(run=flush_distributed,
             examples=Examples("privilege on grant_target_name user_name table_name", [
                 tuple(list(row)+[user_name,user_name,table_name]) for row in flush_distributed.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -119,13 +129,14 @@ def distributed_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=flush_distributed, flags=TE,
+        Suite(run=flush_distributed,
             examples=Examples("privilege on grant_target_name user_name table_name", [
                 tuple(list(row)+[role_name,user_name,table_name]) for row in flush_distributed.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege on",[
+    ("ALL", "*.*"),
     ("SYSTEM", "*.*"),
     ("SYSTEM FLUSH", "*.*"),
     ("SYSTEM FLUSH DISTRIBUTED", "table"),
@@ -151,11 +162,19 @@ def flush_distributed(self, privilege, on, grant_target_name, user_name, table_n
                 node.query(f"CREATE TABLE {table_name} (a UInt64) ENGINE = Distributed(sharded_cluster, default, {table0_name}, rand())")
 
             with Scenario("SYSTEM FLUSH DISTRIBUTED without privilege"):
-                with When("I check the user can't flush distributed"):
+
+                with When("I grant the user NONE privilege"):
+                    node.query(f"GRANT NONE TO {grant_target_name}")
+
+                with And("I grant the user USAGE privilege"):
+                    node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+                with Then("I check the user can't flush distributed"):
                     node.query(f"SYSTEM FLUSH DISTRIBUTED {table_name}", settings = [("user", f"{user_name}")],
                         exitcode=exitcode, message=message)
 
             with Scenario("SYSTEM FLUSH DISTRIBUTED with privilege"):
+
                 with When(f"I grant {privilege} on the table"):
                     node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -163,6 +182,7 @@ def flush_distributed(self, privilege, on, grant_target_name, user_name, table_n
                     node.query(f"SYSTEM FLUSH DISTRIBUTED {table_name}", settings = [("user", f"{user_name}")])
 
             with Scenario("SYSTEM FLUSH DISTRIBUTED with revoked privilege"):
+
                 with When(f"I grant {privilege} on the table"):
                     node.query(f"GRANT {privilege} ON {on} TO {grant_target_name}")
 
@@ -182,6 +202,8 @@ def flush_distributed(self, privilege, on, grant_target_name, user_name, table_n
 @Name("system flush")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_System_Flush("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SYSTEM FLUSH.

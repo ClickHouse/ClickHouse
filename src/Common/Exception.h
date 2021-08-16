@@ -24,6 +24,8 @@ namespace DB
 class Exception : public Poco::Exception
 {
 public:
+    using FramePointers = std::vector<void *>;
+
     Exception() = default;
     Exception(const std::string & msg, int code, bool remote_ = false);
     Exception(const std::string & msg, const Exception & nested, int code);
@@ -66,6 +68,8 @@ public:
     bool isRemoteException() const { return remote; }
 
     std::string getStackTraceString() const;
+    /// Used for system.errors
+    FramePointers getStackFramePointers() const;
 
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
@@ -78,6 +82,7 @@ private:
 
 
 std::string getExceptionStackTraceString(const std::exception & e);
+std::string getExceptionStackTraceString(std::exception_ptr e);
 
 
 /// Contains an additional member `saved_errno`. See the throwFromErrno function.
@@ -115,9 +120,7 @@ public:
     template <typename ...Args>
     ParsingException(int code, const std::string & fmt, Args&&... args)
         : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
-    {
-        Exception::message(Exception::message() + "{}");
-    }
+    {}
 
 
     std::string displayText() const
@@ -165,6 +168,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();
+int getExceptionErrorCode(std::exception_ptr e);
 
 
 /// An execution status of any piece of code, contains return code and optional error

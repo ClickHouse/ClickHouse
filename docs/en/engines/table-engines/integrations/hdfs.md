@@ -1,11 +1,11 @@
 ---
-toc_priority: 4
+toc_priority: 6
 toc_title: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}
 
-This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)via ClickHouse. This engine is similar
+This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) via ClickHouse. This engine is similar
 to the [File](../../../engines/table-engines/special/file.md#table_engines-file) and [URL](../../../engines/table-engines/special/url.md#table_engines-url) engines, but provides Hadoop-specific features.
 
 ## Usage {#usage}
@@ -50,11 +50,11 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Implementation Details {#implementation-details}
 
--   Reads and writes can be parallel
+-   Reads and writes can be parallel.
+-   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is supported.  
 -   Not supported:
     -   `ALTER` and `SELECT...SAMPLE` operations.
     -   Indexes.
-    -   Replication.
 
 **Globs in path**
 
@@ -71,12 +71,12 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 1.  Suppose we have several files in TSV format with the following URIs on HDFS:
 
--   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
+-   'hdfs://hdfs1:9000/some_dir/some_file_1'
+-   'hdfs://hdfs1:9000/some_dir/some_file_2'
+-   'hdfs://hdfs1:9000/some_dir/some_file_3'
+-   'hdfs://hdfs1:9000/another_dir/some_file_1'
+-   'hdfs://hdfs1:9000/another_dir/some_file_2'
+-   'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 1.  There are several ways to make a table consisting of all six files:
 
@@ -126,8 +126,9 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
   </hdfs_root>
 ```
 
-### List of possible configuration options with default values
-#### Supported by libhdfs3
+### Configuration Options {#configuration-options}
+
+#### Supported by libhdfs3 {#supported-by-libhdfs3}
 
 
 | **parameter**                                         | **default value**       |
@@ -174,7 +175,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | dfs\_domain\_socket\_path                             | ""                      |
 
 
-[HDFS Configuration Reference ](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) might explain some parameters.
+[HDFS Configuration Reference](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) might explain some parameters.
 
 
 #### ClickHouse extras {#clickhouse-extras}
@@ -184,8 +185,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 |hadoop\_kerberos\_principal                            | ""                      |
 |hadoop\_kerberos\_kinit\_command                       | kinit                   |
 
-#### Limitations {#limitations}
-
+### Limitations {#limitations}
   * hadoop\_security\_kerberos\_ticket\_cache\_path can be global only, not user specific
 
 ## Kerberos support {#kerberos-support}
@@ -207,4 +207,4 @@ If hadoop\_kerberos\_keytab, hadoop\_kerberos\_principal or hadoop\_kerberos\_ki
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/hdfs/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/hdfs/) <!--hide-->

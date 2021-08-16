@@ -6,7 +6,7 @@
 #include <Parsers/ASTRowPolicyName.h>
 #include <Parsers/parseUserName.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <assert.h>
 
 
@@ -25,7 +25,7 @@ namespace
 
     bool parseEntityType(IParserBase::Pos & pos, Expected & expected, EntityType & type, bool & plural)
     {
-        for (auto i : ext::range(EntityType::MAX))
+        for (auto i : collections::range(EntityType::MAX))
         {
             const auto & type_info = EntityTypeInfo::get(i);
             if (ParserKeyword{type_info.name.c_str()}.ignore(pos, expected)
@@ -37,7 +37,7 @@ namespace
             }
         }
 
-        for (auto i : ext::range(EntityType::MAX))
+        for (auto i : collections::range(EntityType::MAX))
         {
             const auto & type_info = EntityTypeInfo::get(i);
             if (ParserKeyword{type_info.plural_name.c_str()}.ignore(pos, expected)

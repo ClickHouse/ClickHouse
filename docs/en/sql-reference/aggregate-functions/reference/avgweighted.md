@@ -12,14 +12,14 @@ Calculates the [weighted arithmetic mean](https://en.wikipedia.org/wiki/Weighted
 avgWeighted(x, weight)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Values.
 -   `weight` — Weights of the values.
 
 `x` and `weight` must both be
 [Integer](../../../sql-reference/data-types/int-uint.md),
-[floating-point](../../../sql-reference/data-types/float.md), or 
+[floating-point](../../../sql-reference/data-types/float.md), or
 [Decimal](../../../sql-reference/data-types/decimal.md),
 but may have different types.
 

@@ -10,7 +10,7 @@ ReadNothingStep::ReadNothingStep(Block output_header)
 {
 }
 
-void ReadNothingStep::initializePipeline(QueryPipeline & pipeline)
+void ReadNothingStep::initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.init(Pipe(std::make_shared<NullSource>(getOutputStream().header)));
 }

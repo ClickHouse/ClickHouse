@@ -31,7 +31,7 @@ ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
 ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
 
     finish();
 
@@ -61,28 +61,53 @@ void ZstdDeflatingWriteBuffer::nextImpl()
     input.size = offset();
     input.pos = 0;
 
-    bool finished = false;
-    do
+    try
     {
-        out->nextIfAtEnd();
+        bool ended = false;
+        do
+        {
+            out->nextIfAtEnd();
 
-        output.dst = reinterpret_cast<unsigned char *>(out->buffer().begin());
-        output.size = out->buffer().size();
-        output.pos = out->offset();
+            output.dst = reinterpret_cast<unsigned char *>(out->buffer().begin());
+            output.size = out->buffer().size();
+            output.pos = out->offset();
 
 
-        ZSTD_compressStream2(cctx, &output, &input, mode);
-        out->position() = out->buffer().begin() + output.pos;
-        finished = (input.pos == input.size);
-    } while (!finished);
-
+            ZSTD_compressStream2(cctx, &output, &input, mode);
+            out->position() = out->buffer().begin() + output.pos;
+            ended = (input.pos == input.size);
+        } while (!ended);
+    }
+    catch (...)
+    {
+        /// Do not try to write next time after exception.
+        out->position() = out->buffer().begin();
+        throw;
+    }
 }
 
 void ZstdDeflatingWriteBuffer::finish()
 {
-    if (flushed)
+    if (finished)
         return;
 
+    try
+    {
+        finishImpl();
+        out->finalize();
+        finished = true;
+    }
+    catch (...)
+    {
+        /// Do not try to flush next time after exception.
+        out->position() = out->buffer().begin();
+        finished = true;
+        throw;
+    }
+}
+
+void ZstdDeflatingWriteBuffer::finishImpl()
+{
     next();
 
     out->nextIfAtEnd();
@@ -99,7 +124,6 @@ void ZstdDeflatingWriteBuffer::finish()
     if (ZSTD_isError(remaining))
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder end failed: zstd version: {}", ZSTD_VERSION_STRING);
     out->position() = out->buffer().begin() + output.pos;
-    flushed = true;
 }
 
 }

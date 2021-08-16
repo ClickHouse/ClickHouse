@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -51,6 +52,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "total_replicas",                       std::make_shared<DataTypeUInt8>()    },
         { "active_replicas",                      std::make_shared<DataTypeUInt8>()    },
         { "zookeeper_exception",                  std::make_shared<DataTypeString>()   },
+        { "replica_is_active",                    std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt8>()) }
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -60,14 +62,14 @@ Pipe StorageSystemReplicas::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    const auto access = context.getAccess();
+    const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     /// We collect a set of replicated tables.
@@ -101,7 +103,8 @@ Pipe StorageSystemReplicas::read(
             || column_name == "log_pointer"
             || column_name == "total_replicas"
             || column_name == "active_replicas"
-            || column_name == "zookeeper_exception")
+            || column_name == "zookeeper_exception"
+            || column_name == "replica_is_active")
         {
             with_zk_fields = true;
             break;
@@ -184,6 +187,18 @@ Pipe StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.total_replicas);
         res_columns[col_num++]->insert(status.active_replicas);
         res_columns[col_num++]->insert(status.zookeeper_exception);
+
+        Map replica_is_active_values;
+        for (const auto & [name, is_active] : status.replica_is_active)
+        {
+            Tuple is_replica_active_value;
+            is_replica_active_value.emplace_back(name);
+            is_replica_active_value.emplace_back(is_active);
+
+            replica_is_active_values.emplace_back(std::move(is_replica_active_value));
+        }
+
+        res_columns[col_num++]->insert(std::move(replica_is_active_values));
     }
 
     Block header = metadata_snapshot->getSampleBlock();

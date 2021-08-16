@@ -19,10 +19,10 @@ static bool registered = false;
 #pragma GCC diagnostic ignored "-Wunused-function"
 static std::string configurationToString(const DictionaryConfigurationPtr & config)
 {
-    const Poco::Util::XMLConfiguration * xml_config = dynamic_cast<const Poco::Util::XMLConfiguration *>(config.get());
+    const Poco::Util::XMLConfiguration & xml_config = dynamic_cast<const Poco::Util::XMLConfiguration &>(*config);
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
-    xml_config->save(oss);
+    xml_config.save(oss);
     return oss.str();
 }
 

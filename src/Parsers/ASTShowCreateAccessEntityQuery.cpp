@@ -72,10 +72,10 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & sett
 }
 
 
-void ASTShowCreateAccessEntityQuery::replaceEmptyDatabaseWithCurrent(const String & current_database)
+void ASTShowCreateAccessEntityQuery::replaceEmptyDatabase(const String & current_database)
 {
     if (row_policy_names)
-        row_policy_names->replaceEmptyDatabaseWithCurrent(current_database);
+        row_policy_names->replaceEmptyDatabase(current_database);
 
     if (database_and_table_name)
     {

@@ -19,7 +19,7 @@ Gets a named value from the [macros](../../operations/server-configuration-param
 getMacro(name);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `name` — Name to retrieve from the `macros` section. [String](../../sql-reference/data-types/string.md#string).
 
@@ -108,7 +108,7 @@ Extracts the trailing part of a string after the last slash or backslash. This f
 basename( expr )
 ```
 
-**Parameters**
+**Arguments**
 
 -   `expr` — Expression resulting in a [String](../../sql-reference/data-types/string.md) type value. All the backslashes must be escaped in the resulting value.
 
@@ -192,7 +192,7 @@ Returns estimation of uncompressed byte size of its arguments in memory.
 byteSize(argument [, ...])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `argument` — Value.
 
@@ -349,7 +349,7 @@ The function is intended for development, debugging and demonstration.
 isConstant(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Expression to check.
 
@@ -420,7 +420,7 @@ Checks whether floating point value is finite.
 
     ifNotFinite(x,y)
 
-**Parameters**
+**Arguments**
 
 -   `x` — Value to be checked for infinity. Type: [Float\*](../../sql-reference/data-types/float.md).
 -   `y` — Fallback value. Type: [Float\*](../../sql-reference/data-types/float.md).
@@ -460,7 +460,7 @@ Allows building a unicode-art diagram.
 
 `bar(x, min, max, width)` draws a band with a width proportional to `(x - min)` and equal to `width` characters when `x = max`.
 
-Parameters:
+**Arguments**
 
 -   `x` — Size to display.
 -   `min, max` — Integer constants. The value must fit in `Int64`.
@@ -645,7 +645,7 @@ Accepts the time delta in seconds. Returns a time delta with (year, month, day, 
 formatReadableTimeDelta(column[, maximum_unit])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `column` — A column with numeric time delta.
 -   `maximum_unit` — Optional. Maximum unit to show. Acceptable values seconds, minutes, hours, days, months, years.
@@ -696,10 +696,6 @@ Returns the server’s uptime in seconds.
 
 Returns the version of the server as a string.
 
-## timezone() {#timezone}
-
-Returns the timezone of the server.
-
 ## blockNumber {#blocknumber}
 
 Returns the sequence number of the data block where the row is located.
@@ -728,9 +724,9 @@ The result of the function depends on the affected data blocks and the order of 
     It can reach the neighbor rows only inside the currently processed data block.
 
 The rows order used during the calculation of `neighbor` can differ from the order of rows returned to the user.
-To prevent that you can make a subquery with ORDER BY and call the function from outside the subquery.
+To prevent that you can make a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
 
-**Parameters**
+**Arguments**
 
 -   `column` — A column name or scalar expression.
 -   `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../sql-reference/data-types/int-uint.md).
@@ -834,12 +830,12 @@ Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
 
 !!! warning "Warning"
-    It can reach the previos row only inside the currently processed data block.
-    
+    It can reach the previous row only inside the currently processed data block.
+
 The result of the function depends on the affected data blocks and the order of data in the block.
 
 The rows order used during the calculation of `runningDifference` can differ from the order of rows returned to the user.
-To prevent that you can make a subquery with ORDER BY and call the function from outside the subquery.
+To prevent that you can make a subquery with [ORDER BY](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
 
 Example:
 
@@ -907,7 +903,65 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-Same as for [runningDifference](../../sql-reference/functions/other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
+Same as for [runningDifference](./other-functions.md#other_functions-runningdifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
+
+## runningConcurrency {#runningconcurrency}
+
+Calculates the number of concurrent events.
+Each event has a start time and an end time. The start time is included in the event, while the end time is excluded. Columns with a start time and an end time must be of the same data type.
+The function calculates the total number of active (concurrent) events for each event start time.
+
+
+!!! warning "Warning"
+    Events must be ordered by the start time in ascending order. If this requirement is violated the function raises an exception.
+    Every data block is processed separately. If events from different data blocks overlap then they can not be processed correctly.
+
+**Syntax**
+
+``` sql
+runningConcurrency(start, end)
+```
+
+**Arguments**
+
+-   `start` — A column with the start time of events. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `end` — A column with the end time of events.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), or [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Returned values**
+
+-   The number of concurrent events at each event start time.
+
+Type: [UInt32](../../sql-reference/data-types/int-uint.md)
+
+**Example**
+
+Consider the table:
+
+``` text
+┌──────start─┬────────end─┐
+│ 2021-03-03 │ 2021-03-11 │
+│ 2021-03-06 │ 2021-03-12 │
+│ 2021-03-07 │ 2021-03-08 │
+│ 2021-03-11 │ 2021-03-12 │
+└────────────┴────────────┘
+```
+
+Query:
+
+``` sql
+SELECT start, runningConcurrency(start, end) FROM example_table;
+```
+
+Result:
+
+``` text
+┌──────start─┬─runningConcurrency(start, end)─┐
+│ 2021-03-03 │                              1 │
+│ 2021-03-06 │                              2 │
+│ 2021-03-07 │                              3 │
+│ 2021-03-11 │                              2 │
+└────────────┴────────────────────────────────┘
+```
 
 ## MACNumToString(num) {#macnumtostringnum}
 
@@ -929,7 +983,7 @@ Returns the number of fields in [Enum](../../sql-reference/data-types/enum.md).
 getSizeOfEnumType(value)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `value` — Value of type `Enum`.
 
@@ -958,7 +1012,7 @@ Returns size on disk (without taking into account compression).
 blockSerializedSize(value[, value[, ...]])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `value` — Any value.
 
@@ -990,7 +1044,7 @@ Returns the name of the class that represents the data type of the column in RAM
 toColumnTypeName(value)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `value` — Any type of value.
 
@@ -1030,7 +1084,7 @@ Outputs a detailed description of data structures in RAM
 dumpColumnStructure(value)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `value` — Any type of value.
 
@@ -1060,7 +1114,7 @@ Does not include default values for custom columns set by the user.
 defaultValueOfArgumentType(expression)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
 
@@ -1102,7 +1156,7 @@ Does not include default values for custom columns set by the user.
 defaultValueOfTypeName(type)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `type` — A string representing a type name.
 
@@ -1134,6 +1188,109 @@ SELECT defaultValueOfTypeName('Nullable(Int8)')
 └──────────────────────────────────────────┘
 ```
 
+## indexHint {#indexhint}
+The function is intended for debugging and introspection purposes. The function ignores it's argument and always returns 1. Arguments are not even evaluated.
+
+But for the purpose of index analysis, the argument of this function is analyzed as if it was present directly without being wrapped inside `indexHint` function. This allows to select data in index ranges by the corresponding condition but without further filtering by this condition. The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
+
+**Syntax**
+
+```sql
+SELECT * FROM table WHERE indexHint(<expression>)
+```
+
+**Returned value**
+
+1. Type: [Uint8](https://clickhouse.yandex/docs/en/data_types/int_uint/#diapazony-uint).
+
+**Example**
+
+Here is the example of test data from the table [ontime](../../getting-started/example-datasets/ontime.md).
+
+Input table:
+
+```sql
+SELECT count() FROM ontime
+```
+
+```text
+┌─count()─┐
+│ 4276457 │
+└─────────┘
+```
+
+The table has indexes on the fields `(FlightDate, (Year, FlightDate))`.
+
+Create a query, where the index is not used.
+
+Query:
+
+```sql
+SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
+```
+
+ClickHouse processed the entire table (`Processed 4.28 million rows`).
+
+Result:
+
+```text
+┌──────────k─┬─count()─┐
+│ 2017-01-01 │   13970 │
+│ 2017-01-02 │   15882 │
+........................
+│ 2017-09-28 │   16411 │
+│ 2017-09-29 │   16384 │
+│ 2017-09-30 │   12520 │
+└────────────┴─────────┘
+```
+
+To apply the index, select a specific date.
+
+Query:
+
+```sql
+SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
+```
+
+By using the index, ClickHouse processed a significantly smaller number of rows (`Processed 32.74 thousand rows`).
+
+Result:
+
+```text
+┌──────────k─┬─count()─┐
+│ 2017-09-15 │   16428 │
+└────────────┴─────────┘
+```
+
+Now wrap the expression `k = '2017-09-15'` into `indexHint` function.
+
+Query:
+
+```sql
+SELECT
+    FlightDate AS k,
+    count()
+FROM ontime
+WHERE indexHint(k = '2017-09-15')
+GROUP BY k
+ORDER BY k ASC
+```
+
+ClickHouse used the index in the same way as the previous time (`Processed 32.74 thousand rows`).
+The expression `k = '2017-09-15'` was not used when generating the result.
+In examle the `indexHint` function allows to see adjacent dates.
+
+Result:
+
+```text
+┌──────────k─┬─count()─┐
+│ 2017-09-14 │    7071 │
+│ 2017-09-15 │   16428 │
+│ 2017-09-16 │    1077 │
+│ 2017-09-30 │    8167 │
+└────────────┴─────────┘
+```
+
 ## replicate {#other-functions-replicate}
 
 Creates an array with a single value.
@@ -1144,7 +1301,7 @@ Used for internal implementation of [arrayJoin](../../sql-reference/functions/ar
 SELECT replicate(x, arr);
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
 -   `x` — The value that the resulting array will be filled with.
@@ -1267,17 +1424,89 @@ Result:
 └───────────┴────────┘
 ```
 
+## initializeAggregation {#initializeaggregation}
+
+Calculates result of aggregate function based on single value. It is intended to use this function to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction) or use initialized aggregates as default values.
+
+**Syntax**
+
+``` sql
+initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
+```
+
+**Arguments**
+
+-   `aggregate_function` — Name of the aggregation function to initialize. [String](../../sql-reference/data-types/string.md).
+-   `arg` — Arguments of aggregate function.
+
+**Returned value(s)**
+
+- Result of aggregation for every row passed to the function.
+
+The return type is the same as the return type of function, that `initializeAgregation` takes as first argument.
+
+**Example**
+
+Query:
+
+```sql
+SELECT uniqMerge(state) FROM (SELECT initializeAggregation('uniqState', number % 3) AS state FROM numbers(10000));
+```
+Result:
+
+```text
+┌─uniqMerge(state)─┐
+│                3 │
+└──────────────────┘
+```
+
+Query:
+
+```sql
+SELECT finalizeAggregation(state), toTypeName(state) FROM (SELECT initializeAggregation('sumState', number % 3) AS state FROM numbers(5));
+```
+Result:
+
+```text
+┌─finalizeAggregation(state)─┬─toTypeName(state)─────────────┐
+│                          0 │ AggregateFunction(sum, UInt8) │
+│                          1 │ AggregateFunction(sum, UInt8) │
+│                          2 │ AggregateFunction(sum, UInt8) │
+│                          0 │ AggregateFunction(sum, UInt8) │
+│                          1 │ AggregateFunction(sum, UInt8) │
+└────────────────────────────┴───────────────────────────────┘
+```
+
+Example with `AggregatingMergeTree` table engine and `AggregateFunction` column:
+
+```sql
+CREATE TABLE metrics
+(
+    key UInt64,
+    value AggregateFunction(sum, UInt64) DEFAULT initializeAggregation('sumState', toUInt64(0))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY key
+```
+
+```sql
+INSERT INTO metrics VALUES (0, initializeAggregation('sumState', toUInt64(42)))
+```
+
+**See Also**
+-   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
+
 ## finalizeAggregation {#function-finalizeaggregation}
 
 Takes state of aggregate function. Returns result of aggregation (or finalized state when using[-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 finalizeAggregation(state)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `state` — State of aggregation. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
 
@@ -1285,7 +1514,7 @@ finalizeAggregation(state)
 
 -   Value/values that was aggregated.
 
-Type: Value of any types that was aggregated. 
+Type: Value of any types that was aggregated.
 
 **Examples**
 
@@ -1317,7 +1546,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-Note that `NULL` values are ignored. 
+Note that `NULL` values are ignored.
 
 Query:
 
@@ -1363,10 +1592,9 @@ Result:
 └────────┴─────────────┴────────────────┘
 ```
 
-**See Also** 
-
+**See Also**
 -   [arrayReduce](../../sql-reference/functions/array-functions.md#arrayreduce)
--   [initializeAggregation](../../sql-reference/aggregate-functions/reference/initializeAggregation.md)
+-   [initializeAggregation](#initializeaggregation)
 
 ## runningAccumulate {#runningaccumulate}
 
@@ -1381,7 +1609,7 @@ Accumulates states of an aggregate function for each row of a data block.
 runningAccumulate(agg_state[, grouping]);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `agg_state` — State of the aggregate function. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
 -   `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../../sql-reference/data-types/index.md) for which the equality operator is defined.
@@ -1487,7 +1715,7 @@ Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` st
 joinGet(join_storage_table_name, `value_column`, join_keys)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
 -   `value_column` — name of the column of the table that contains required data.
@@ -1497,7 +1725,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 Returns list of values corresponded to list of keys.
 
-If certain doesn’t exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
+If certain does not exist in source table then `0` or `null` will be returned based on [join_use_nulls](../../operations/settings/settings.md#join_use_nulls) setting.
 
 More info about `join_use_nulls` in [Join operation](../../engines/table-engines/special/join.md).
 
@@ -1557,7 +1785,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 ## identity {#identity}
 
-Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer doesn’t look inside `identity` functions. Also constant folding is not applied too.
+Returns the same value that was used as its argument. Used for debugging and testing, allows to cancel using index, and get the query performance of a full scan. When query is analyzed for possible use of index, the analyzer does not look inside `identity` functions. Also constant folding is not applied too.
 
 **Syntax**
 
@@ -1591,7 +1819,7 @@ Generates a string with a random set of [ASCII](https://en.wikipedia.org/wiki/AS
 randomPrintableASCII(length)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `length` — Resulting string length. Positive integer.
 
@@ -1627,7 +1855,7 @@ Generates a binary string of the specified length filled with random bytes (incl
 randomString(length)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `length` — String length. Positive integer.
 
@@ -1675,7 +1903,7 @@ Generates a binary string of the specified length filled with random bytes (incl
 randomFixedString(length);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `length` — String length in bytes. [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1702,7 +1930,6 @@ Result:
 
 ```
 
-
 ## randomStringUTF8 {#randomstringutf8}
 
 Generates a random string of a specified length. Result string contains valid UTF-8 code points. The value of code points may be outside of the range of assigned Unicode.
@@ -1713,7 +1940,7 @@ Generates a random string of a specified length. Result string contains valid UT
 randomStringUTF8(length);
 ```
 
-**Parameters**
+**Arguments**
 
 -   `length` — Required length of the resulting string in code points. [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -1785,7 +2012,7 @@ Checks whether the [Decimal](../../sql-reference/data-types/decimal.md) value is
 isDecimalOverflow(d, [p])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `d` — value. [Decimal](../../sql-reference/data-types/decimal.md).
 -   `p` — precision. Optional. If omitted, the initial precision of the first argument is used. Using of this paratemer could be helpful for data extraction to another DBMS or file. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
@@ -1822,7 +2049,7 @@ Returns number of decimal digits you need to represent the value.
 countDigits(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — [Int](../../sql-reference/data-types/int-uint.md) or [Decimal](../../sql-reference/data-types/decimal.md) value.
 
@@ -1881,7 +2108,7 @@ Returns [native interface](../../interfaces/tcp.md) TCP port number listened by 
 tcpPort()
 ```
 
-**Parameters**
+**Arguments**
 
 -   None.
 
@@ -1911,4 +2138,101 @@ Result:
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->
+## currentProfiles {#current-profiles}
+
+Returns a list of the current [settings profiles](../../operations/access-rights.md#settings-profiles-management) for the current user. 
+
+The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
+
+**Syntax**
+
+``` sql
+currentProfiles()
+```
+
+**Returned value**
+
+-   List of the current user settings profiles. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## enabledProfiles {#enabled-profiles}
+
+ Returns settings profiles, assigned to the current user both explicitly and implicitly. Explicitly assigned profiles are the same as returned by the [currentProfiles](#current-profiles) function. Implicitly assigned profiles include parent profiles of other assigned profiles, profiles assigned via granted roles, profiles assigned via their own settings, and the main default profile (see the `default_profile` section in the main server configuration file).
+
+**Syntax**
+
+``` sql
+enabledProfiles()
+```
+
+**Returned value**
+
+-   List of the enabled settings profiles. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## defaultProfiles {#default-profiles}
+
+Returns all the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement).
+
+**Syntax**
+
+``` sql
+defaultProfiles()
+```
+
+**Returned value**
+
+-   List of the default settings profiles. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## currentRoles {#current-roles}
+
+Returns the names of the roles which are current for the current user. The current roles can be changed by the [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement) statement. If the `SET ROLE` statement was not used, the function `currentRoles` returns the same as `defaultRoles`.
+
+**Syntax**
+
+``` sql
+currentRoles()
+```
+
+**Returned value**
+
+-   List of the current roles for the current user. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## enabledRoles {#enabled-roles}
+
+Returns the names of the current roles and the roles, granted to some of the current roles.
+
+**Syntax**
+
+``` sql
+enabledRoles()
+```
+
+**Returned value**
+
+-   List of the enabled roles for the current user. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## defaultRoles {#default-roles}
+
+Returns the names of the roles which are enabled by default for the current user when he logins. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant/#grant-select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement. 
+
+**Syntax**
+
+``` sql
+defaultRoles()
+```
+
+**Returned value**
+
+-   List of the default roles for the current user. 
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
