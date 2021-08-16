@@ -1436,16 +1436,17 @@ dateTimeToSnowflake(value)
 Query:
 
 ``` sql
-SELECT dateTimeToSnowflake(CAST('2021-08-15 18:57:56', 'DateTime'));
+WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt
+SELECT dateTimeToSnowflake(dt);
 ```
 
 Result:
 
 ``` text
 
-┌─dateTimeToSnowflake(CAST('2021-08-15 18:57:56', 'DateTime'))─┐
-│                                          1426860702823350272 │
-└──────────────────────────────────────────────────────────────┘
+┌─dateTimeToSnowflake(dt)─┐
+│     1426860702823350272 │
+└─────────────────────────┘
 ```
 
 
@@ -1473,13 +1474,14 @@ dateTime64ToSnowflake(value)
 Query:
 
 ``` sql
-SELECT dateTime64ToSnowflake(CAST('2021-08-15 18:57:56.073', 'DateTime64'));
+WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64
+SELECT dateTime64ToSnowflake(dt64);
 ```
 
 Result:
 
 ``` text
-┌─dateTime64ToSnowflake(CAST('2021-08-15 18:57:56.073', 'DateTime64'))─┐
-│                                                  1426860703129534464 │
-└──────────────────────────────────────────────────────────────────────┘
+┌─dateTime64ToSnowflake(dt64)─┐
+│         1426860704886947840 │
+└─────────────────────────────┘
 ```
