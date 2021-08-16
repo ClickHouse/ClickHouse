@@ -3207,16 +3207,28 @@ Pipe MergeTreeData::alterPartition(
     return {};
 }
 
+void checkPartitionExpressionFunction(const ASTPtr & ast)
+{
+    if (const auto * func = ast->as<ASTFunction>())
+        if (func->name == "arrayJoin")
+            throw Exception("The partition expression cannot contain array joins", ErrorCodes::INVALID_PARTITION_VALUE);
+    for (const auto & child : ast->children)
+        checkPartitionExpressionFunction(child);
+}
+
+
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
 
     if (!partition_ast.value)
     {
-        if (!MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version))
-            throw Exception("Invalid partition format: " + partition_ast.id, ErrorCodes::INVALID_PARTITION_VALUE);
+        MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
         return partition_ast.id;
     }
+
+    if (partition_ast.value->as<ASTFunction>())
+        checkPartitionExpressionFunction(ast);
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -3225,10 +3237,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         if (partition_lit && partition_lit->value.getType() == Field::Types::String)
         {
             String partition_id = partition_lit->value.get<String>();
-            if (partition_id.size() != 6 || !std::all_of(partition_id.begin(), partition_id.end(), isNumericASCII))
-                throw Exception(
-                    "Invalid partition format: " + partition_id + ". Partition should consist of 6 digits: YYYYMM",
-                    ErrorCodes::INVALID_PARTITION_VALUE);
+            MergeTreePartInfo::validatePartitionID(partition_id, format_version);
             return partition_id;
         }
     }

@@ -1,6 +1,5 @@
 -- { echo }
 -- Another test for window functions because the other one is too long.
-set allow_experimental_window_functions = 1;
 
 -- some craziness with a mix of materialized and unmaterialized const columns
 -- after merging sorted transform, that used to break the peer group detection in

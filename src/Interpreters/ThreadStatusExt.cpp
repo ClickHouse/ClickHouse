@@ -1,12 +1,17 @@
 #include <Common/ThreadStatus.h>
 
+#include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryThreadLog.h>
+#include <Interpreters/QueryViewsLog.h>
+#include <Parsers/formatAST.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/QueryProfiler.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TraceCollector.h>
 #include <common/errnoToString.h>
@@ -17,6 +22,14 @@
 #   include <sys/time.h>
 #   include <sys/resource.h>
 #endif
+
+namespace ProfileEvents
+{
+extern const Event SelectedRows;
+extern const Event SelectedBytes;
+extern const Event InsertedRows;
+extern const Event InsertedBytes;
+}
 
 
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
@@ -287,8 +300,18 @@ void ThreadStatus::finalizePerformanceCounters()
     }
 }
 
+void ThreadStatus::resetPerformanceCountersLastUsage()
+{
+    *last_rusage = RUsageCounters::current();
+    if (taskstats)
+        taskstats->reset();
+}
+
 void ThreadStatus::initQueryProfiler()
 {
+    if (!query_profiled_enabled)
+        return;
+
     /// query profilers are useless without trace collector
     auto global_context_ptr = global_context.lock();
     if (!global_context_ptr || !global_context_ptr->hasTraceCollector())
@@ -453,6 +476,64 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
     }
 
     thread_log.add(elem);
+}
+
+static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
+{
+    String res = serializeAST(*q, true);
+    if (auto * masker = SensitiveDataMasker::getInstance())
+        masker->wipeSensitiveData(res);
+
+    res = res.substr(0, context->getSettingsRef().log_queries_cut_to_length);
+
+    return res;
+}
+
+void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
+{
+    auto query_context_ptr = query_context.lock();
+    if (!query_context_ptr)
+        return;
+    auto views_log = query_context_ptr->getQueryViewsLog();
+    if (!views_log)
+        return;
+
+    QueryViewsLogElement element;
+
+    element.event_time = time_in_seconds(vinfo.runtime_stats.event_time);
+    element.event_time_microseconds = time_in_microseconds(vinfo.runtime_stats.event_time);
+    element.view_duration_ms = vinfo.runtime_stats.elapsed_ms;
+
+    element.initial_query_id = query_id;
+    element.view_name = vinfo.table_id.getFullTableName();
+    element.view_uuid = vinfo.table_id.uuid;
+    element.view_type = vinfo.runtime_stats.type;
+    if (vinfo.query)
+        element.view_query = getCleanQueryAst(vinfo.query, query_context_ptr);
+    element.view_target = vinfo.runtime_stats.target_name;
+
+    auto events = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
+    element.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
+    element.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
+    element.written_rows = (*events)[ProfileEvents::InsertedRows];
+    element.written_bytes = (*events)[ProfileEvents::InsertedBytes];
+    element.peak_memory_usage = memory_tracker.getPeak() > 0 ? memory_tracker.getPeak() : 0;
+    if (query_context_ptr->getSettingsRef().log_profile_events != 0)
+    {
+        element.profile_counters = events;
+    }
+
+    element.status = vinfo.runtime_stats.event_status;
+    element.exception_code = 0;
+    if (vinfo.exception)
+    {
+        element.exception_code = getExceptionErrorCode(vinfo.exception);
+        element.exception = getExceptionMessage(vinfo.exception, false);
+        if (query_context_ptr->getSettingsRef().calculate_text_stack_trace)
+            element.stack_trace = getExceptionStackTraceString(vinfo.exception);
+    }
+
+    views_log->add(element);
 }
 
 void CurrentThread::initializeQuery()
