@@ -17,6 +17,7 @@ class AsynchronousReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 {
 protected:
     AsynchronousReaderPtr reader;
+    Int32 priority;
 
     Memory<> prefetch_buffer;
     std::future<IAsynchronousReader::Result> prefetch_future;
@@ -34,10 +35,10 @@ protected:
 
 public:
     AsynchronousReadBufferFromFileDescriptor(
-        AsynchronousReaderPtr reader_,
+        AsynchronousReaderPtr reader_, Int32 priority_,
         int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
         : ReadBufferFromFileBase(buf_size, existing_memory, alignment),
-        reader(std::move(reader_)), prefetch_buffer(buf_size, alignment), required_alignment(alignment), fd(fd_)
+        reader(std::move(reader_)), priority(priority_), prefetch_buffer(buf_size, alignment), required_alignment(alignment), fd(fd_)
     {
     }
 

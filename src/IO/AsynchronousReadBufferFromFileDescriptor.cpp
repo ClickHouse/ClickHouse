@@ -37,6 +37,7 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch()
     request.buf = prefetch_buffer.data();
     request.size = prefetch_buffer.size();
     request.offset = file_offset_of_buffer_end;
+    request.priority = priority;
 
     prefetch_future = reader->submit(request);
 }
