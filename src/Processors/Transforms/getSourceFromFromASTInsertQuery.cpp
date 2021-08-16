@@ -35,6 +35,9 @@ Pipe getSourceFromFromASTInsertQuery(
     if (!ast_insert_query)
         throw Exception("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::LOGICAL_ERROR);
 
+    if (ast_insert_query->infile)
+        throw Exception("Logical error: query has infile and was send directly to server", ErrorCodes::LOGICAL_ERROR);
+
     String format = ast_insert_query->format;
     if (format.empty())
     {

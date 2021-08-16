@@ -1908,7 +1908,7 @@ private:
             }
             catch (Exception & e)
             {
-                e.addMessage("data for INSERT was parsed from query");
+                e.addMessage("data for INSERT was parsed from file");
                 throw;
             }
         }
