@@ -51,6 +51,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -3940,7 +3941,7 @@ static void selectBestProjection(
     if (projection_parts.empty())
         return;
 
-    auto sum_marks = reader.estimateNumMarksToRead(
+    auto projection_result = reader.estimateNumMarksToRead(
         projection_parts,
         candidate.required_columns,
         metadata_snapshot,
@@ -3950,6 +3951,10 @@ static void selectBestProjection(
         settings.max_threads,
         max_added_blocks);
 
+    if (projection_result.error_code)
+        return;
+
+    auto sum_marks = projection_result.index_stats.back().num_granules_after;
     if (normal_parts.empty())
     {
         // All parts are projection parts which allows us to use in_order_optimization.
@@ -3958,7 +3963,7 @@ static void selectBestProjection(
     }
     else
     {
-        sum_marks += reader.estimateNumMarksToRead(
+        auto normal_result = reader.estimateNumMarksToRead(
             normal_parts,
             required_columns,
             metadata_snapshot,
@@ -3967,7 +3972,16 @@ static void selectBestProjection(
             query_context,
             settings.max_threads,
             max_added_blocks);
+
+        if (normal_result.error_code)
+            return;
+
+        sum_marks += normal_result.index_stats.back().num_granules_after;
+        candidate.merge_tree_normal_select_result_ptr
+            = std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(normal_result)});
     }
+    candidate.merge_tree_projection_select_result_ptr
+        = std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(projection_result)});
 
     // We choose the projection with least sum_marks to read.
     if (sum_marks < min_sum_marks)
@@ -4217,7 +4231,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         /// Select the best normal projection if no aggregate projection is available
         if (!selected_candidate && has_ordinary_projection)
         {
-            min_sum_marks = reader.estimateNumMarksToRead(
+            auto result = reader.estimateNumMarksToRead(
                 parts,
                 analysis_result.required_columns,
                 metadata_snapshot,
@@ -4229,7 +4243,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
             // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
             // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
-            min_sum_marks += 1;
+            min_sum_marks = result.index_stats.back().num_granules_after + 1;
 
             for (auto & candidate : candidates)
             {
@@ -4249,6 +4263,14 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                         min_sum_marks);
                 }
             }
+
+            if (!selected_candidate)
+            {
+                // We don't have any good projections, result the MergeTreeDataSelectAnalysisResult for normal scan.
+                query_info.merge_tree_select_result_ptr = std::make_shared<MergeTreeDataSelectAnalysisResult>(
+                    MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
+                return false;
+            }
         }
 
         if (!selected_candidate)
@@ -4261,7 +4283,6 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         }
 
         query_info.projection = std::move(*selected_candidate);
-
         return true;
     }
     return false;

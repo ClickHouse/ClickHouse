@@ -40,18 +40,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct ReadFromMergeTree::AnalysisResult
-{
-    RangesInDataParts parts_with_ranges;
-    MergeTreeDataSelectSamplingData sampling;
-    IndexStats index_stats;
-    Names column_names_to_read;
-    ReadFromMergeTree::ReadType read_type = ReadFromMergeTree::ReadType::Default;
-    UInt64 selected_rows = 0;
-    UInt64 selected_marks = 0;
-    UInt64 selected_parts = 0;
-};
-
 static MergeTreeReaderSettings getMergeTreeReaderSettings(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -84,7 +72,8 @@ ReadFromMergeTree::ReadFromMergeTree(
     size_t num_streams_,
     bool sample_factor_column_queried_,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
-    Poco::Logger * log_)
+    Poco::Logger * log_,
+    MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr)
     : ISourceStep(DataStream{.header = MergeTreeBaseSelectProcessor::transformHeader(
         metadata_snapshot_->getSampleBlockForColumns(real_column_names_, data_.getVirtuals(), data_.getStorageID()),
         getPrewhereInfo(query_info_),
@@ -116,6 +105,10 @@ ReadFromMergeTree::ReadFromMergeTree(
         auto type = std::make_shared<DataTypeFloat64>();
         output_stream->header.insert({type->createColumn(), type, "_sample_factor"});
     }
+
+    /// If we have analyzed result, reuse it for future planing.
+    if (analysis_result_ptr)
+        analyzed_result = analysis_result_ptr->result;
 }
 
 Pipe ReadFromMergeTree::readFromPool(
@@ -781,6 +774,33 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTreeData::DataPartsVector parts) const
 {
+    return selectRangesToRead(
+        std::move(parts),
+        metadata_snapshot_base,
+        metadata_snapshot,
+        query_info,
+        context,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        data,
+        real_column_names,
+        sample_factor_column_queried,
+        log);
+}
+
+ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(
+    MergeTreeData::DataPartsVector parts,
+    const StorageMetadataPtr & metadata_snapshot_base,
+    const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryInfo & query_info,
+    ContextPtr context,
+    unsigned num_streams,
+    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
+    const MergeTreeData & data,
+    const Names & real_column_names,
+    bool sample_factor_column_queried,
+    Poco::Logger * log)
+{
     AnalysisResult result;
     const auto & settings = context->getSettingsRef();
 
@@ -808,10 +828,10 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
-        throw Exception(
-            ErrorCodes::INDEX_NOT_USED,
-            "Primary key ({}) is not used and setting 'force_primary_key' is set.",
-            fmt::join(primary_key_columns, ", "));
+        result.error_msg
+            = fmt::format("Primary key ({}) is not used and setting 'force_primary_key' is set.", fmt::join(primary_key_columns, ", "));
+        result.error_code = ErrorCodes::INDEX_NOT_USED;
+        return result;
     }
     LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
@@ -819,11 +839,30 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 
     MergeTreeDataSelectExecutor::filterPartsByPartition(
         parts, part_values, metadata_snapshot_base, data, query_info, context,
-        max_block_numbers_to_read.get(), log, result.index_stats);
+        max_block_numbers_to_read.get(), log, result);
 
-    result.sampling = MergeTreeDataSelectExecutor::getSampling(
-        select, metadata_snapshot->getColumns().getAllPhysical(), parts, key_condition,
-        data, metadata_snapshot, context, sample_factor_column_queried, log);
+    if (result.error_code)
+        return result;
+
+    try
+    {
+        result.sampling = MergeTreeDataSelectExecutor::getSampling(
+            select,
+            metadata_snapshot->getColumns().getAllPhysical(),
+            parts,
+            key_condition,
+            data,
+            metadata_snapshot,
+            context,
+            sample_factor_column_queried,
+            log);
+    }
+    catch (Exception & e)
+    {
+        result.error_code = e.code();
+        result.error_msg = e.message();
+        return result;
+    }
 
     if (result.sampling.read_nothing)
         return result;
@@ -834,18 +873,27 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 
     size_t parts_before_pk = parts.size();
 
-    result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-        std::move(parts),
-        metadata_snapshot,
-        query_info,
-        context,
-        key_condition,
-        reader_settings,
-        log,
-        requested_num_streams,
-        result.index_stats,
-        true /* use_skip_indexes */,
-        true /* check_limits */);
+    try
+    {
+        auto reader_settings = getMergeTreeReaderSettings(context);
+        result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
+            std::move(parts),
+            metadata_snapshot,
+            query_info,
+            context,
+            key_condition,
+            reader_settings,
+            log,
+            num_streams,
+            result.index_stats,
+            true /* use_skip_indexes */);
+    }
+    catch (Exception & e)
+    {
+        result.error_code = e.code();
+        result.error_msg = e.message();
+        return result;
+    }
 
     size_t sum_marks_pk = total_marks_pk;
     for (const auto & stat : result.index_stats)
@@ -862,23 +910,15 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
         sum_marks += part.getMarksCount();
         sum_rows += part.getRowsCount();
     }
-    result.selected_parts = result.parts_with_ranges.size();
-    result.selected_marks = sum_marks;
-    result.selected_rows  = sum_rows;
-    LOG_DEBUG(
-        log,
-        "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
-        parts_before_pk,
-        total_parts,
-        result.parts_with_ranges.size(),
-        sum_marks_pk,
-        total_marks_pk,
-        sum_marks,
-        sum_ranges);
 
-    ProfileEvents::increment(ProfileEvents::SelectedParts, result.parts_with_ranges.size());
-    ProfileEvents::increment(ProfileEvents::SelectedRanges, sum_ranges);
-    ProfileEvents::increment(ProfileEvents::SelectedMarks, sum_marks);
+    result.total_parts = total_parts;
+    result.parts_before_pk = parts_before_pk;
+    result.selected_parts = result.parts_with_ranges.size();
+    result.selected_ranges = sum_ranges;
+    result.selected_marks = sum_marks;
+    result.selected_marks_pk = sum_marks_pk;
+    result.total_marks_pk = total_marks_pk;
+    result.selected_rows = sum_rows;
 
     const auto & input_order_info = query_info.input_order_info
         ? query_info.input_order_info
@@ -893,7 +933,26 @@ ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(MergeTre
 
 void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto result = selectRangesToRead(prepared_parts);
+    auto result = analyzed_result.is_analyzed ? std::move(analyzed_result) : selectRangesToRead(prepared_parts);
+
+    if (result.error_code)
+        throw Exception(result.error_msg, result.error_code);
+
+    LOG_DEBUG(
+        log,
+        "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
+        result.parts_before_pk,
+        result.total_parts,
+        result.selected_parts,
+        result.selected_marks_pk,
+        result.total_marks_pk,
+        result.selected_marks,
+        result.selected_ranges);
+
+    ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
+    ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
+    ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
+
     auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result.parts_with_ranges, context);
 
     if (result.parts_with_ranges.empty())
@@ -1084,7 +1143,7 @@ static const char * readTypeToString(ReadFromMergeTree::ReadType type)
 
 void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 {
-    auto result = selectRangesToRead(prepared_parts);
+    auto result = analyzed_result.is_analyzed ? std::move(analyzed_result) : selectRangesToRead(prepared_parts);
     std::string prefix(format_settings.offset, format_settings.indent_char);
     format_settings.out << prefix << "ReadType: " << readTypeToString(result.read_type) << '\n';
 
@@ -1097,7 +1156,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 
 void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 {
-    auto result = selectRangesToRead(prepared_parts);
+    auto result = analyzed_result.is_analyzed ? std::move(analyzed_result) : selectRangesToRead(prepared_parts);
     map.add("Read Type", readTypeToString(result.read_type));
     if (!result.index_stats.empty())
     {
@@ -1108,7 +1167,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
-    auto result = selectRangesToRead(prepared_parts);
+    auto result = analyzed_result.is_analyzed ? std::move(analyzed_result) : selectRangesToRead(prepared_parts);
     auto index_stats = std::move(result.index_stats);
 
     std::string prefix(format_settings.offset, format_settings.indent_char);
@@ -1160,7 +1219,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 
 void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 {
-    auto result = selectRangesToRead(prepared_parts);
+    auto result = analyzed_result.is_analyzed ? std::move(analyzed_result) : selectRangesToRead(prepared_parts);
     auto index_stats = std::move(result.index_stats);
 
     if (!index_stats.empty())

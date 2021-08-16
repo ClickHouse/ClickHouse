@@ -41,7 +41,9 @@ public:
                                                   query_info,
                                                   context,
                                                   max_block_size,
-                                                  num_streams));
+                                                  num_streams,
+                                                  nullptr,
+                                                  analysis_result_ptr));
 
         return query_plan.convertToPipe(
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
@@ -80,15 +82,16 @@ protected:
         setInMemoryMetadata(part_->storage.getInMemoryMetadata());
     }
 
-    StorageFromMergeTreeDataPart(MergeTreeData::DataPartsVector && parts_)
-        : IStorage(getIDFromParts(parts_))
-        , parts(std::move(parts_))
+    StorageFromMergeTreeDataPart(
+        MergeTreeData::DataPartsVector && parts_, MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr_ = nullptr)
+        : IStorage(getIDFromParts(parts_)), parts(std::move(parts_)), analysis_result_ptr(analysis_result_ptr_)
     {
         setInMemoryMetadata(parts.front()->storage.getInMemoryMetadata());
     }
 
 private:
     MergeTreeData::DataPartsVector parts;
+    MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr;
 
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {
