@@ -90,16 +90,16 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     Pos before_values = pos;
 
-
-    /// VALUES or FROM INFILE or FORMAT or SELECT
-    if (s_values.ignore(pos, expected))
-    {
-        data = pos->begin;
-    }
-    else if (s_from_infile.ignore(pos, expected))
+    if (s_from_infile.ignore(pos, expected))
     {
         if (!infile_name_p.parse(pos, infile, expected))
             return false;
+    }
+
+    /// VALUES or FROM INFILE or FORMAT or SELECT
+    if (!infile && s_values.ignore(pos, expected))
+    {
+        data = pos->begin;
     }
     else if (s_format.ignore(pos, expected))
     {
@@ -146,7 +146,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
 
-    if (format)
+    if (format && !infile)
     {
         Pos last_token = pos;
         --last_token;
