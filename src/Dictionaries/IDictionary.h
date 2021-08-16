@@ -191,7 +191,7 @@ struct IDictionary : public IExternalLoadable
                         getDictionaryID().getNameForLogs());
     }
 
-    virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
+    virtual Pipe read(const Names & column_names, size_t max_block_size) const = 0;
 
     bool supportUpdates() const override { return true; }
 

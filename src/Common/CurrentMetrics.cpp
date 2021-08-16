@@ -60,6 +60,7 @@
     M(BrokenDistributedFilesToInsert, "Number of files for asynchronous insertion into Distributed tables that has been marked as broken. This metric will starts from 0 on start. Number of files for every shard is summed.") \
     M(TablesToDropQueueSize, "Number of dropped tables, that are waiting for background data removal.") \
     M(MaxDDLEntryID, "Max processed DDL entry of DDLWorker.") \
+    M(MaxPushedDDLEntryID, "Max DDL entry of DDLWorker that pushed to zookeeper.") \
     M(PartsTemporary, "The part is generating now, it is not in data_parts list.") \
     M(PartsPreCommitted, "The part is in data_parts, but not used for SELECTs.") \
     M(PartsCommitted, "Active data part, used by current and upcoming SELECTs.") \
@@ -71,6 +72,10 @@
     M(PartsInMemory, "In-memory parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
+    M(AsyncDrainedConnections, "Number of connections drained asynchronously.") \
+    M(ActiveAsyncDrainedConnections, "Number of active connections drained asynchronously.") \
+    M(SyncDrainedConnections, "Number of connections drained synchronously.") \
+    M(ActiveSyncDrainedConnections, "Number of active connections drained synchronously.") \
 
 namespace CurrentMetrics
 {

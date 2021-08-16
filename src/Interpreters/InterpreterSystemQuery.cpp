@@ -20,11 +20,13 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
+#include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
@@ -416,7 +418,9 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto text_log = getContext()->getTextLog()) text_log->flush(true); },
                 [&] { if (auto metric_log = getContext()->getMetricLog()) metric_log->flush(true); },
                 [&] { if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
-                [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); }
+                [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
+                [&] { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); },
+                [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); }
             );
             break;
         }
@@ -663,7 +667,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(
-                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out! "
+                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out. "
                     "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
         }
         LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id.getNameForLogs());

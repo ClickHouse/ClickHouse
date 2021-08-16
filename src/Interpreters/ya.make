@@ -110,6 +110,7 @@ SRCS(
     JoinSwitcher.cpp
     JoinToSubqueryTransformVisitor.cpp
     JoinedTables.cpp
+    Lemmatizers.cpp
     LogicalExpressionsOptimizer.cpp
     MarkTableIdentifiersVisitor.cpp
     MergeJoin.cpp
@@ -132,6 +133,7 @@ SRCS(
     QueryNormalizer.cpp
     QueryParameterVisitor.cpp
     QueryThreadLog.cpp
+    QueryViewsLog.cpp
     RemoveInjectiveFunctionsVisitor.cpp
     RenameColumnVisitor.cpp
     ReplaceQueryParameterVisitor.cpp
@@ -147,6 +149,7 @@ SRCS(
     SortedBlocksWriter.cpp
     StorageID.cpp
     SubqueryForSet.cpp
+    SynonymsExtensions.cpp
     SystemLog.cpp
     TableJoin.cpp
     TablesStatus.cpp
@@ -158,6 +161,7 @@ SRCS(
     TreeRewriter.cpp
     UserDefinedObjectsOnDisk.cpp
     WindowDescription.cpp
+    ZooKeeperLog.cpp
     addMissingDefaults.cpp
     addTypeConversionToAST.cpp
     castColumn.cpp

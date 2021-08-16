@@ -16,7 +16,7 @@ class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 class RowBitmaps;
-
+enum class JoinTableSide;
 
 class MergeJoin : public IJoin
 {
@@ -32,6 +32,8 @@ public:
 
     size_t getTotalRowCount() const override { return right_blocks.row_count; }
     size_t getTotalByteCount() const override { return right_blocks.bytes; }
+    /// Has to be called only after setTotals()/mergeRightBlocks()
+    bool alwaysReturnsEmptySet() const override { return (is_right || is_inner) && min_max_right_blocks.empty(); }
 
     BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
 
@@ -78,6 +80,14 @@ private:
     Block right_table_keys;
     Block right_columns_to_add;
     SortedBlocksWriter::Blocks right_blocks;
+
+    Names key_names_right;
+    Names key_names_left;
+
+    /// Additional conditions for rows to join from JOIN ON section.
+    /// Only rows where conditions are met can be joined.
+    String mask_column_name_left;
+    String mask_column_name_right;
 
     /// Each block stores first and last row from corresponding sorted block on disk
     Blocks min_max_right_blocks;
@@ -151,6 +161,9 @@ private:
     void mergeFlushedRightBlocks();
 
     void initRightTableWriter();
+
+    bool needConditionJoinColumn() const;
+    void addConditionJoinColumn(Block & block, JoinTableSide block_side) const;
 };
 
 }

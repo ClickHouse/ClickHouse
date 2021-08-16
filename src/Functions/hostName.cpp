@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/DNSResolver.h>
 #include <Core/Field.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -15,9 +16,13 @@ class FunctionHostName : public IFunction
 {
 public:
     static constexpr auto name = "hostName";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionHostName>();
+        return std::make_shared<FunctionHostName>(context->isDistributed());
+    }
+
+    explicit FunctionHostName(bool is_distributed_) : is_distributed(is_distributed_)
+    {
     }
 
     String getName() const override
@@ -29,10 +34,10 @@ public:
 
     bool isDeterministicInScopeOfQuery() const override
     {
-        return false;
+        return true;
     }
 
-    bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
     size_t getNumberOfArguments() const override
     {
@@ -44,14 +49,12 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    /** convertToFullColumn needed because in distributed query processing,
-      *    each server returns its own value.
-      */
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return result_type->createColumnConst(
-            input_rows_count, DNSResolver::instance().getHostName())->convertToFullColumnIfConst();
+        return result_type->createColumnConst(input_rows_count, DNSResolver::instance().getHostName());
     }
+private:
+    bool is_distributed;
 };
 
 }

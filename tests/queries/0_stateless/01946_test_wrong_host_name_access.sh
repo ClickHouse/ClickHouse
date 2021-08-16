@@ -16,3 +16,5 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 1" --user dns_fail_1 --host ${MYHOSTNAME}
 ${CLICKHOUSE_CLIENT} --query "SELECT 2" --user dns_fail_2 --host ${MYHOSTNAME}
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS dns_fail_1, dns_fail_2"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP DNS CACHE"

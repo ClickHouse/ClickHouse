@@ -23,7 +23,8 @@ class EnabledQuota;
 class EnabledSettings;
 struct QuotaUsage;
 struct Settings;
-class SettingsConstraints;
+struct SettingsProfilesInfo;
+class SettingsChanges;
 class AccessControlManager;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
@@ -84,11 +85,9 @@ public:
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
 
-    /// Returns the default settings, i.e. the settings to apply on user's login.
-    std::shared_ptr<const Settings> getDefaultSettings() const;
-
-    /// Returns the settings' constraints.
-    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
+    /// Returns the default settings, i.e. the settings which should be applied on user's login.
+    SettingsChanges getDefaultSettings() const;
+    std::shared_ptr<const SettingsProfilesInfo> getDefaultProfileInfo() const;
 
     /// Returns the current access rights.
     std::shared_ptr<const AccessRights> getAccessRights() const;

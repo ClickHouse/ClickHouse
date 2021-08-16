@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/SymbolIndex.h>
 #include <Core/Field.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -18,9 +19,13 @@ class FunctionBuildId : public IFunction
 {
 public:
     static constexpr auto name = "buildId";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionBuildId>();
+        return std::make_shared<FunctionBuildId>(context->isDistributed());
+    }
+
+    explicit FunctionBuildId(bool is_distributed_) : is_distributed(is_distributed_)
+    {
     }
 
     String getName() const override
@@ -33,6 +38,10 @@ public:
         return 0;
     }
 
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isSuitableForConstantFolding() const override { return !is_distributed; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeString>();
@@ -42,6 +51,9 @@ public:
     {
         return DataTypeString().createColumnConst(input_rows_count, SymbolIndex::instance()->getBuildIDHex());
     }
+
+private:
+    bool is_distributed;
 };
 
 }
