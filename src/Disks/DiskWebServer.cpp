@@ -10,6 +10,7 @@
 
 #include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IDiskRemote.h>
+#include <Access/AccessControlManager.h>
 #include <Poco/Exception.h>
 
 #include <re2/re2.h>
@@ -33,6 +34,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -240,9 +242,12 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 }
 
 
-std::unique_ptr<WriteBufferFromFileBase> DiskWebServer::writeFile(const String &, size_t, WriteMode)
+std::unique_ptr<WriteBufferFromFileBase> DiskWebServer::writeFile(const String & path, size_t, WriteMode)
 {
-    return std::make_unique<WriteBufferFromNothing>();
+    if (path.ends_with("format_version.txt"))
+        return std::make_unique<WriteBufferFromNothing>();
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
 }
 
 

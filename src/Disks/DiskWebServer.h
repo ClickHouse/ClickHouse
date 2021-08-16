@@ -121,9 +121,15 @@ public:
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode) override;
 
-    void moveFile(const String &, const String &) override {}
+    void moveFile(const String &, const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
 
-    void replaceFile(const String &, const String &) override {}
+    void replaceFile(const String &, const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
 
     void removeFile(const String &) override
     {
@@ -145,17 +151,35 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    void removeSharedFile(const String &, bool) override {}
+    void removeSharedFile(const String &, bool) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
 
-    void removeSharedRecursive(const String &, bool) override {}
+    void removeSharedRecursive(const String &, bool) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
 
-    void clearDirectory(const String &) override {}
+    void clearDirectory(const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
 
-    void moveDirectory(const String &, const String &) override {}
+    void moveDirectory(const String &, const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
 
-    void removeDirectory(const String &) override {}
+    void removeDirectory(const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
 
-    void setLastModified(const String &, const Poco::Timestamp &) override {}
+    void setLastModified(const String &, const Poco::Timestamp &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
 
     /// Create part
 
