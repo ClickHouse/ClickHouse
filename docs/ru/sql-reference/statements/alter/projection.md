@@ -5,7 +5,7 @@ toc_title: PROJECTION
 
 # Манипуляции с проекциями {#manipulations-with-projections}
 
-Доступны следующие операции:
+Доступны следующие операции с [проекциями](../../../engines/table-engines/mergetree-family/mergetree.md#projections):
 
 -   `ALTER TABLE [db].name ADD PROJECTION name AS SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]` — добавляет описание проекции в метаданные.
 
