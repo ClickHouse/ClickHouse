@@ -27,16 +27,6 @@ namespace ErrorCodes
 
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
-    appendColumnNameImpl(ostr, nullptr);
-}
-
-void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings & settings) const
-{
-    appendColumnNameImpl(ostr, &settings);
-}
-
-void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings * settings) const
-{
     if (name == "view")
         throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
 
@@ -50,10 +40,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings * sett
             if (it != parameters->children.begin())
                 writeCString(", ", ostr);
 
-            if (settings)
-                (*it)->appendColumnName(ostr, *settings);
-            else
-                (*it)->appendColumnName(ostr);
+            (*it)->appendColumnName(ostr);
         }
         writeChar(')', ostr);
     }
@@ -66,10 +53,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings * sett
             if (it != arguments->children.begin())
                 writeCString(", ", ostr);
 
-            if (settings)
-                (*it)->appendColumnName(ostr, *settings);
-            else
-                (*it)->appendColumnName(ostr);
+            (*it)->appendColumnName(ostr);
         }
     }
 

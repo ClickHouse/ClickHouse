@@ -33,6 +33,9 @@ namespace ErrorCodes
   * splitByString(sep, s)
   * splitByRegexp(regexp, s)
   *
+  * splitByWhitespace(s)      - split the string by whitespace characters
+  * splitByNonAlpha(s)        - split the string by whitespace and punctuation characters
+  *
   * extractAll(s, regexp)     - select from the string the subsequences corresponding to the regexp.
   * - first subpattern, if regexp has subpattern;
   * - zero subpattern (the match part, otherwise);
@@ -111,6 +114,121 @@ public:
     }
 };
 
+class SplitByNonAlphaImpl
+{
+private:
+    Pos pos;
+    Pos end;
+
+public:
+    /// Get the name of the function.
+    static constexpr auto name = "splitByNonAlpha";
+    static String getName() { return name; }
+
+    static size_t getNumberOfArguments() { return 1; }
+
+    /// Check the type of the function's arguments.
+    static void checkArguments(const DataTypes & arguments)
+    {
+        if (!isString(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    /// Initialize by the function arguments.
+    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+
+    /// Called for each next string.
+    void set(Pos pos_, Pos end_)
+    {
+        pos = pos_;
+        end = end_;
+    }
+
+    /// Returns the position of the argument, that is the column of strings
+    size_t getStringsArgumentPosition()
+    {
+        return 0;
+    }
+
+    /// Get the next token, if any, or return false.
+    bool get(Pos & token_begin, Pos & token_end)
+    {
+        /// Skip garbage
+        while (pos < end && (isWhitespaceASCII(*pos) || isPunctuationASCII(*pos)))
+            ++pos;
+
+        if (pos == end)
+            return false;
+
+        token_begin = pos;
+
+        while (pos < end && !(isWhitespaceASCII(*pos) || isPunctuationASCII(*pos)))
+            ++pos;
+
+        token_end = pos;
+
+        return true;
+    }
+};
+
+class SplitByWhitespaceImpl
+{
+private:
+    Pos pos;
+    Pos end;
+
+public:
+    /// Get the name of the function.
+    static constexpr auto name = "splitByWhitespace";
+    static String getName() { return name; }
+
+    static size_t getNumberOfArguments() { return 1; }
+
+    /// Check the type of the function's arguments.
+    static void checkArguments(const DataTypes & arguments)
+    {
+        if (!isString(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    /// Initialize by the function arguments.
+    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
+
+    /// Called for each next string.
+    void set(Pos pos_, Pos end_)
+    {
+        pos = pos_;
+        end = end_;
+    }
+
+    /// Returns the position of the argument, that is the column of strings
+    size_t getStringsArgumentPosition()
+    {
+        return 0;
+    }
+
+    /// Get the next token, if any, or return false.
+    bool get(Pos & token_begin, Pos & token_end)
+    {
+        /// Skip garbage
+        while (pos < end && isWhitespaceASCII(*pos))
+            ++pos;
+
+        if (pos == end)
+            return false;
+
+        token_begin = pos;
+
+        while (pos < end && !isWhitespaceASCII(*pos))
+            ++pos;
+
+        token_end = pos;
+
+        return true;
+    }
+};
 
 class SplitByCharImpl
 {
@@ -662,6 +780,8 @@ public:
 
 
 using FunctionAlphaTokens = FunctionTokens<AlphaTokensImpl>;
+using FunctionSplitByNonAlpha = FunctionTokens<SplitByNonAlphaImpl>;
+using FunctionSplitByWhitespace = FunctionTokens<SplitByWhitespaceImpl>;
 using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>;
 using FunctionSplitByString = FunctionTokens<SplitByStringImpl>;
 using FunctionSplitByRegexp = FunctionTokens<SplitByRegexpImpl>;

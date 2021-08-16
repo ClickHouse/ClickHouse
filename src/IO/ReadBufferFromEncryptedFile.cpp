@@ -9,20 +9,19 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-using InitVector = FileEncryption::InitVector;
-
 ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     size_t buffer_size_,
     std::unique_ptr<ReadBufferFromFileBase> in_,
-    FileEncryption::Algorithm encryption_algorithm_,
     const String & key_,
-    const InitVector & init_vector_)
+    const FileEncryption::Header & header_,
+    size_t offset_)
     : ReadBufferFromFileBase(buffer_size_, nullptr, 0)
     , in(std::move(in_))
     , encrypted_buffer(buffer_size_)
-    , encryptor(encryption_algorithm_, key_, init_vector_)
+    , encryptor(header_.algorithm, key_, header_.init_vector)
 {
-    /// We should start reading from `in` at the offset == InitVector::kSize.
+    offset = offset_;
+    encryptor.setOffset(offset_);
     need_seek = true;
 }
 
@@ -76,7 +75,7 @@ bool ReadBufferFromEncryptedFile::nextImpl()
 {
     if (need_seek)
     {
-        off_t raw_offset = offset + InitVector::kSize;
+        off_t raw_offset = offset + FileEncryption::Header::kSize;
         if (in->seek(raw_offset, SEEK_SET) != raw_offset)
             return false;
         need_seek = false;

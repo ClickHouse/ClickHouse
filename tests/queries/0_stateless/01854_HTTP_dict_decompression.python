@@ -28,20 +28,20 @@ CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 # accessible from clickhouse server.
 #####################################################################################
 
-# IP-address of this host accessible from outside world.
-HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip()
+# IP-address of this host accessible from the outside world. Get the first one
+HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip().split()[0]
 HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST)
 
 # IP address and port of the HTTP server started from this script.
 HTTP_SERVER_ADDRESS = (HTTP_SERVER_HOST, HTTP_SERVER_PORT)
 HTTP_SERVER_URL_STR = 'http://' + ':'.join(str(s) for s in HTTP_SERVER_ADDRESS) + "/"
 
-# Because we need to check content of file.csv we can create this content and avoid reading csv 
+# Because we need to check the content of file.csv we can create this content and avoid reading csv
 CSV_DATA = "Hello, 1\nWorld, 2\nThis, 152\nis, 9283\ntesting, 2313213\ndata, 555\n"
 
 
-# Choose compression method 
-# (Will change during test, need to check standart data sending, to make sure that nothing broke)
+# Choose compression method
+# (Will change during test, need to check standard data sending, to make sure that nothing broke)
 COMPRESS_METHOD = 'none'
 ADDING_ENDING = ''
 ENDINGS = ['.gz', '.xz']
@@ -88,7 +88,7 @@ class HttpProcessor(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         self._set_headers()
-    
+
         if COMPRESS_METHOD == 'none':
             self.wfile.write(CSV_DATA.encode())
         else:
@@ -120,7 +120,7 @@ def test_select(dict_name="", schema="word String, counter UInt32", requests=[],
         if i > 2:
             ADDING_ENDING = ENDINGS[i-3]
             SEND_ENCODING = False
-        
+
         if dict_name:
             get_ch_answer("drop dictionary if exists {}".format(dict_name))
             get_ch_answer('''CREATE DICTIONARY {} ({})

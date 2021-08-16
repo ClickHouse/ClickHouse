@@ -6,30 +6,26 @@
 namespace DB
 {
 
-KafkaBlockOutputStream::KafkaBlockOutputStream(
+KafkaSink::KafkaSink(
     StorageKafka & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const ContextPtr & context_)
-    : storage(storage_)
+    : SinkToStorage(metadata_snapshot_->getSampleBlockNonMaterialized())
+    , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
 {
 }
 
-Block KafkaBlockOutputStream::getHeader() const
+void KafkaSink::onStart()
 {
-    return metadata_snapshot->getSampleBlockNonMaterialized();
-}
-
-void KafkaBlockOutputStream::writePrefix()
-{
-    buffer = storage.createWriteBuffer(getHeader());
+    buffer = storage.createWriteBuffer(getPort().getHeader());
 
     auto format_settings = getFormatSettings(context);
     format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
     child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
-        getHeader(), context,
+        getPort().getHeader(), context,
         [this](const Columns & columns, size_t row)
         {
             buffer->countRow(columns, row);
@@ -37,20 +33,17 @@ void KafkaBlockOutputStream::writePrefix()
         format_settings);
 }
 
-void KafkaBlockOutputStream::write(const Block & block)
+void KafkaSink::consume(Chunk chunk)
 {
-    child->write(block);
+    child->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
-void KafkaBlockOutputStream::writeSuffix()
+void KafkaSink::onFinish()
 {
     if (child)
         child->writeSuffix();
-    flush();
-}
+    //flush();
 
-void KafkaBlockOutputStream::flush()
-{
     if (buffer)
         buffer->flush();
 }

@@ -4,6 +4,8 @@
 #include <common/types.h>
 #include <DataStreams/SizeLimits.h>
 
+class Stopwatch;
+
 namespace DB
 {
 
@@ -25,7 +27,7 @@ public:
     /// Pause execution in case if speed limits were exceeded.
     void throttle(size_t read_rows, size_t read_bytes, size_t total_rows_to_read, UInt64 total_elapsed_microseconds) const;
 
-    bool checkTimeLimit(UInt64 elapsed_ns, OverflowMode overflow_mode) const;
+    bool checkTimeLimit(const Stopwatch & stopwatch, OverflowMode overflow_mode) const;
 };
 
 }

@@ -1,3 +1,6 @@
+#include <string>
+#include "Common/MemoryTracker.h"
+#include "Columns/ColumnsNumber.h"
 #include "ConnectionParameters.h"
 #include "QueryFuzzer.h"
 #include "Suggest.h"
@@ -26,6 +29,9 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
 #include <Poco/Util/Application.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/QueryPipeline.h>
 #include <Columns/ColumnString.h>
 #include <common/find_symbols.h>
 #include <common/LineReader.h>
@@ -55,8 +61,7 @@
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -80,6 +85,7 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
+#include <Formats/FormatFactory.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
 #include <common/argsToConfig.h>
@@ -96,6 +102,14 @@
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
+
+namespace CurrentMetrics
+{
+    extern const Metric Revision;
+    extern const Metric VersionInteger;
+    extern const Metric MemoryTracking;
+    extern const Metric MaxDDLEntryID;
+}
 
 namespace fs = std::filesystem;
 
@@ -194,7 +208,7 @@ private:
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// The user can specify to redirect query output to a file.
-    std::optional<WriteBufferFromFile> out_file_buf;
+    std::unique_ptr<WriteBuffer> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
 
     /// The user could specify special file for server logs (stderr by default)
@@ -422,6 +436,7 @@ private:
                {TokenType::Semicolon, Replxx::Color::INTENSE},
                {TokenType::Dot, Replxx::Color::INTENSE},
                {TokenType::Asterisk, Replxx::Color::INTENSE},
+               {TokenType::HereDoc, Replxx::Color::CYAN},
                {TokenType::Plus, Replxx::Color::INTENSE},
                {TokenType::Minus, Replxx::Color::INTENSE},
                {TokenType::Slash, Replxx::Color::INTENSE},
@@ -447,8 +462,7 @@ private:
                {TokenType::ErrorDoubleQuoteIsNotClosed, Replxx::Color::RED},
                {TokenType::ErrorSinglePipeMark, Replxx::Color::RED},
                {TokenType::ErrorWrongNumber, Replxx::Color::RED},
-               { TokenType::ErrorMaxQuerySizeExceeded,
-                 Replxx::Color::RED }};
+               {TokenType::ErrorMaxQuerySizeExceeded, Replxx::Color::RED }};
 
         const Replxx::Color unknown_token_color = Replxx::Color::RED;
 
@@ -520,6 +534,18 @@ private:
     int mainImpl()
     {
         UseSSL use_ssl;
+
+        MainThreadStatus::getInstance();
+
+        /// Limit on total memory usage
+        size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+
+        if (max_client_memory_usage != 0)
+        {
+            total_memory_tracker.setHardLimit(max_client_memory_usage);
+            total_memory_tracker.setDescription("(total)");
+            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+        }
 
         registerFormats();
         registerFunctions();
@@ -1449,7 +1475,12 @@ private:
                         "Error while reconnecting to the server: {}\n",
                         getCurrentExceptionMessage(true));
 
-                    assert(!connection->isConnected());
+                    // The reconnection might fail, but we'll still be connected
+                    // in the sense of `connection->isConnected() = true`,
+                    // in case when the requested database doesn't exist.
+                    // Disconnect manually now, so that the following code doesn't
+                    // have any doubts, and the connection state is predictable.
+                    connection->disconnect();
                 }
             }
 
@@ -1925,19 +1956,24 @@ private:
                 current_format = insert->format;
         }
 
-        BlockInputStreamPtr block_input = context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+        auto source = FormatFactory::instance().getInput(current_format, buf, sample, context, insert_format_max_block_size);
+        Pipe pipe(source);
 
         if (columns_description.hasDefaults())
-            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns_description, context);
-
-        BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
-
-        async_block_input->readPrefix();
-
-        while (true)
         {
-            Block block = async_block_input->read();
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, context);
+            });
+        }
 
+        QueryPipeline pipeline;
+        pipeline.init(std::move(pipe));
+        PullingAsyncPipelineExecutor executor(pipeline);
+
+        Block block;
+        while (executor.pull(block))
+        {
             /// Check if server send Log packet
             receiveLogs();
 
@@ -1949,18 +1985,18 @@ private:
                  * We're exiting with error, so it makes sense to kill the
                  * input stream without waiting for it to complete.
                  */
-                async_block_input->cancel(true);
+                executor.cancel();
                 return;
             }
 
-            connection->sendData(block);
-            processed_rows += block.rows();
-
-            if (!block)
-                break;
+            if (block)
+            {
+                connection->sendData(block);
+                processed_rows += block.rows();
+            }
         }
 
-        async_block_input->readSuffix();
+        connection->sendData({});
     }
 
 
@@ -2230,8 +2266,11 @@ private:
                     const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                     const auto & out_file = out_file_node.value.safeGet<std::string>();
 
-                    out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                    out_buf = &*out_file_buf;
+                    out_file_buf = wrapWriteBufferWithCompressionMethod(
+                        std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                        chooseCompressionMethod(out_file, ""),
+                        /* compression level = */ 3
+                    );
 
                     // We are writing to file, so default format is the same as in non-interactive mode.
                     if (is_interactive && is_default_format)
@@ -2251,9 +2290,9 @@ private:
 
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
             if (!need_render_progress)
-                block_out_stream = context->getOutputStreamParallelIfPossible(current_format, *out_buf, block);
+                block_out_stream = context->getOutputStreamParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
             else
-                block_out_stream = context->getOutputStream(current_format, *out_buf, block);
+                block_out_stream = context->getOutputStream(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
             block_out_stream->writePrefix();
         }
@@ -2565,6 +2604,7 @@ public:
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
             ("no-warnings", "disable warnings when client connects to server")
+            ("max_memory_usage_in_client", po::value<int>(), "sets memory limit in client")
         ;
 
         Settings cmd_settings;

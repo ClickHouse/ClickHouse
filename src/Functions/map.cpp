@@ -184,9 +184,11 @@ public:
     {
         bool is_const = isColumnConst(*arguments[0].column);
         const ColumnMap * col_map = is_const ? checkAndGetColumnConstData<ColumnMap>(arguments[0].column.get()) : checkAndGetColumn<ColumnMap>(arguments[0].column.get());
-        if (!col_map)
+        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
+        if (!col_map || !map_type)
             throw Exception{"First argument for function " + getName() + " must be a map", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
+        auto key_type = map_type->getKeyType();
         const auto & nested_column = col_map->getNestedColumn();
         const auto & keys_data = col_map->getNestedData().getColumn(0);
 
@@ -196,7 +198,7 @@ public:
         {
             {
                 is_const ? ColumnConst::create(std::move(column_array), keys_data.size()) : std::move(column_array),
-                std::make_shared<DataTypeArray>(result_type),
+                std::make_shared<DataTypeArray>(key_type),
                 ""
             },
             arguments[1]

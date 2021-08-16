@@ -37,6 +37,7 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
 
     auto storage = StorageSQLite::create(StorageID(getDatabaseName(), table_name),
                                          sqlite_db,
+                                         database_path,
                                          remote_table_name,
                                          columns, ConstraintsDescription{}, context);
 

@@ -1196,7 +1196,7 @@ create table changes engine File(TSV, 'metrics/changes.tsv') as
             if(left > right, left / right, right / left) times_diff
         from metrics
         group by metric
-        having abs(diff) > 0.05 and isFinite(diff)
+        having abs(diff) > 0.05 and isFinite(diff) and isFinite(times_diff)
     )
     order by diff desc
     ;
