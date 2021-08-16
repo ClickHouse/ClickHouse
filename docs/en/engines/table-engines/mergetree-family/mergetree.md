@@ -388,20 +388,24 @@ Functions with a constant argument that is less than ngram size can’t be used 
     -   `s != 1`
     -   `NOT startsWith(s, 'test')`
 
-### Projections {#projections}
-Projections are like materialized views but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
+## Projections {#projections}
+Projections are like [materialized views](../../sql-reference/statements/create/view.md#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
-#### Query {#projection-query}
-A projection query is what defines a projection. It has the following grammar:
+Projections are an experimental feature. To enable them you must set the [allow_experimental_projection_optimization](../../../operations/settings/settings.md#allow-experimental-projection-optimization) to `1`. See also the [force_optimize_projection ](../../../operations/settings/settings.md#force_optimize_projection) setting.
 
-`SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]`
+### Projection Query {#projection-query}
+A projection query is what defines a projection. It implicitly selects data from the parent table. It has the following syntax:
 
-It implicitly selects data from the parent table.
+```sql
+SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
+```
 
-#### Storage {#projection-storage}
-Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous MergeTree table's part. The table is induced by the definition query of the projection. If there is a GROUP BY clause, the underlying storage engine becomes AggregatedMergeTree, and all aggregate functions are converted to AggregateFunction. If there is an ORDER BY clause, the MergeTree table will use it as its primary key expression. During the merge process, the projection part will be merged via its storage's merge routine. The checksum of the parent table's part will combine the projection's part. Other maintenance jobs are similar to skip indices.
+Projections can be modified or dropped with the [ALTER](../../../sql-reference/statement/alter/projection.md) statement.
 
-#### Query Analysis {#projection-query-analysis}
+### Projection Storage {#projection-storage}
+Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous `MergeTree` table's part. The table is induced by the definition query of the projection. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](aggregatingmergetree.md), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
+
+### Query Analysis {#projection-query-analysis}
 1. Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.
 2. Select the best feasible match, which contains the least granules to read.
 3. The query pipeline which uses projections will be different from the one that uses the original parts. If the projection is absent in some parts, we can add the pipeline to "project" it on the fly.
