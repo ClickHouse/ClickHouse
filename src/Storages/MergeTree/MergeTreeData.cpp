@@ -3207,16 +3207,6 @@ Pipe MergeTreeData::alterPartition(
     return {};
 }
 
-void checkPartitionExpressionFunction(const ASTPtr & ast)
-{
-    if (const auto * func = ast->as<ASTFunction>())
-        if (func->name == "arrayJoin")
-            throw Exception("The partition expression cannot contain array joins", ErrorCodes::INVALID_PARTITION_VALUE);
-    for (const auto & child : ast->children)
-        checkPartitionExpressionFunction(child);
-}
-
-
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
@@ -3226,9 +3216,6 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
         return partition_ast.id;
     }
-
-    if (partition_ast.value->as<ASTFunction>())
-        checkPartitionExpressionFunction(ast);
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -3251,6 +3238,16 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
             ", must be: " + toString(fields_count),
             ErrorCodes::INVALID_PARTITION_VALUE);
+
+    if (partition_ast.value->as<ASTFunction>())
+    {
+        ASTPtr query = partition_ast.value->clone();
+        auto syntax_analyzer_result = TreeRewriter(local_context)
+                  .analyze(query, metadata_snapshot->getPartitionKey().sample_block.getNamesAndTypesList(), {}, {}, false, false);
+        auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, local_context).getActions(true);
+        if (actions->hasArrayJoin())
+            throw Exception("The partition expression cannot contain array joins", ErrorCodes::INVALID_PARTITION_VALUE);
+    }
 
     const FormatSettings format_settings;
     Row partition_row(fields_count);
