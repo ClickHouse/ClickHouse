@@ -63,7 +63,15 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
     }
     else
     {
-        impl = initialize();
+        try
+        {
+            impl = initialize();
+        }
+        catch (const Poco::Exception & e)
+        {
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Unreachable url: {}. Error: {}", url, e.what());
+        }
+
         next_result = impl->hasPendingData();
     }
 
