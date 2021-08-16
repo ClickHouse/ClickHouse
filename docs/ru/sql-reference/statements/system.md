@@ -288,7 +288,7 @@ SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
-Реинициализирует состояние сессий Zookeeper для таблицы семейства `ReplicatedMergeTree`. Сравнивает текущее состояние с Zookeeper (как с эталоном) и при необходимости добавляет задачи в очередь репликации Zookeeper. 
+Реинициализирует состояние сессий Zookeeper для таблицы семейства `ReplicatedMergeTree`. Сравнивает текущее состояние с состоянием в Zookeeper (как с эталоном) и при необходимости добавляет задачи в очередь репликации в Zookeeper. 
 Инициализация очереди репликации на основе данных ZooKeeper происходит так же, как при `ATTACH TABLE`. Некоторое время таблица будет недоступна для любых операций.
 
 ``` sql
