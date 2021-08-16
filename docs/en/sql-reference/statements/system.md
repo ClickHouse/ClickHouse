@@ -330,7 +330,7 @@ SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_fami
 
 **Example**
 
-Creating a table on multiple servers. After the replica's root directory is lost, the table will attach as read-only as metadata is missing. The last query needs to execute on every replica.
+Creating a table on multiple servers. After the replica's metadata in ZooKeeper is lost, the table will attach as read-only as metadata is missing. The last query needs to execute on every replica.
 
 ```sql
 CREATE TABLE test(n UInt32)
