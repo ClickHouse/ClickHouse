@@ -976,7 +976,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns
-    if (settings.optimize_respect_aliases && result.metadata_snapshot)
+    if (settings.optimize_respect_aliases && result.metadata_snapshot && !select_options.hasShardInfo())
     {
         /// If query is changed, we need to redo some work to correct name resolution.
         if (replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext()))
