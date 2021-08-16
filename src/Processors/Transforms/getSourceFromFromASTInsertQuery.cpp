@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;
+    extern const int UNKNOWN_TYPE_OF_QUERY;
 }
 
 
@@ -36,7 +37,7 @@ Pipe getSourceFromFromASTInsertQuery(
         throw Exception("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::LOGICAL_ERROR);
 
     if (ast_insert_query->infile)
-        throw Exception("Logical error: query has infile and was send directly to server", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Query has infile and was send directly to server", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 
     String format = ast_insert_query->format;
     if (format.empty())
