@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
+
 
 namespace ProfileEvents
 {
@@ -51,7 +51,6 @@ struct QueryLogElement
 
     String current_database;
     String query;
-    String formatted_query;
     UInt64 normalized_query_hash{};
 
     String query_kind;
@@ -59,7 +58,6 @@ struct QueryLogElement
     std::set<String> query_tables;
     std::set<String> query_columns;
     std::set<String> query_projections;
-    std::set<String> query_views;
 
     std::unordered_set<String> used_aggregate_functions;
     std::unordered_set<String> used_aggregate_function_combinators;
@@ -85,8 +83,7 @@ struct QueryLogElement
 
     static std::string name() { return "QueryLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases();
+    static Block createBlock();
     void appendToBlock(MutableColumns & columns) const;
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);

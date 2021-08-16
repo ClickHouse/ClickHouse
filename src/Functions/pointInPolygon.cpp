@@ -108,7 +108,7 @@ public:
             if (elements.size() != 2)
                 throw Exception(getMessagePrefix(i) + " must have exactly two elements", ErrorCodes::BAD_ARGUMENTS);
 
-            for (auto j : collections::range(0, elements.size()))
+            for (auto j : ext::range(0, elements.size()))
             {
                 if (!isNativeNumber(elements[j]))
                 {
@@ -506,7 +506,7 @@ private:
             if (size == 0)
                 throw Exception(getMessagePrefix(i) + " shouldn't be empty.", ErrorCodes::ILLEGAL_COLUMN);
 
-            for (auto j : collections::range(0, size))
+            for (auto j : ext::range(0, size))
             {
                 CoordinateType x_coord = column_x->getFloat64(j);
                 CoordinateType y_coord = column_y->getFloat64(j);

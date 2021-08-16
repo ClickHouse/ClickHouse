@@ -43,7 +43,6 @@ SRCS(
     SettingsProfile.cpp
     SettingsProfileElement.cpp
     SettingsProfilesCache.cpp
-    SettingsProfilesInfo.cpp
     User.cpp
     UsersConfigAccessStorage.cpp
 

@@ -1,7 +1,6 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <DataStreams/PostgreSQLSource.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -17,6 +16,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <DataStreams/PostgreSQLBlockInputStream.h>
 #include <Core/Settings.h>
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
@@ -27,7 +27,6 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Common/parseRemoteDescription.h>
 #include <Processors/Pipe.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -90,47 +89,51 @@ Pipe StoragePostgreSQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size_));
+    return Pipe(std::make_shared<SourceFromInputStream>(
+            std::make_shared<PostgreSQLBlockInputStream>(pool->get(), query, sample_block, max_block_size_)));
 }
 
 
-class PostgreSQLSink : public SinkToStorage
+class PostgreSQLBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit PostgreSQLSink(
+    explicit PostgreSQLBlockOutputStream(
         const StorageMetadataPtr & metadata_snapshot_,
         postgres::ConnectionHolderPtr connection_holder_,
-        const String & remote_table_name_,
-        const String & remote_table_schema_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , metadata_snapshot(metadata_snapshot_)
+        const std::string & remote_table_name_)
+        : metadata_snapshot(metadata_snapshot_)
         , connection_holder(std::move(connection_holder_))
         , remote_table_name(remote_table_name_)
-        , remote_table_schema(remote_table_schema_)
     {
     }
 
-    String getName() const override { return "PostgreSQLSink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override
+
+    void writePrefix() override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        if (!inserter)
-            inserter = std::make_unique<StreamTo>(connection_holder->get(),
-                                                  remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
-                                                                              : pqxx::table_path({remote_table_schema, remote_table_name}),
-                                                  block.getNames());
+        work = std::make_unique<pqxx::work>(connection_holder->get());
+    }
+
+
+    void write(const Block & block) override
+    {
+        if (!work)
+            return;
 
         const auto columns = block.getColumns();
         const size_t num_rows = block.rows(), num_cols = block.columns();
         const auto data_types = block.getDataTypes();
 
+        if (!stream_inserter)
+            stream_inserter = std::make_unique<pqxx::stream_to>(*work, remote_table_name, block.getNames());
+
         /// std::optional lets libpqxx to know if value is NULL
         std::vector<std::optional<std::string>> row(num_cols);
 
-        for (const auto i : collections::range(0, num_rows))
+        for (const auto i : ext::range(0, num_rows))
         {
-            for (const auto j : collections::range(0, num_cols))
+            for (const auto j : ext::range(0, num_cols))
             {
                 if (columns[j]->isNullAt(i))
                 {
@@ -153,18 +156,23 @@ public:
                 }
             }
 
-            inserter->stream.write_values(row);
+            stream_inserter->write_values(row);
         }
     }
 
-    void onFinish() override
+
+    void writeSuffix() override
     {
-        if (inserter)
-            inserter->complete();
+        if (stream_inserter)
+        {
+            stream_inserter->complete();
+            work->commit();
+        }
     }
 
+
     /// Cannot just use serializeAsText for array data type even though it converts perfectly
-    /// any dimension number array into text format, because it encloses in '[]' and for postgres it must be '{}'.
+    /// any dimension number array into text format, because it incloses in '[]' and for postgres it must be '{}'.
     /// Check if array[...] syntax from PostgreSQL will be applicable.
     void parseArray(const Field & array_field, const DataTypePtr & data_type, WriteBuffer & ostr)
     {
@@ -199,6 +207,7 @@ public:
         writeChar('}', ostr);
     }
 
+
     /// Conversion is done via column casting because with writeText(Array..) got incorrect conversion
     /// of Date and DateTime data types and it added extra quotes for values inside array.
     static std::string clickhouseToPostgresArray(const Array & array_field, const DataTypePtr & data_type)
@@ -213,6 +222,7 @@ public:
         assert(ostr.str().size() >= 2);
         return '{' + std::string(ostr.str().begin() + 1, ostr.str().end() - 1) + '}';
     }
+
 
     static MutableColumnPtr createNested(DataTypePtr nested)
     {
@@ -236,10 +246,6 @@ public:
         else if (which.isFloat64())                      nested_column = ColumnFloat64::create();
         else if (which.isDate())                         nested_column = ColumnUInt16::create();
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
-        else if (which.isDateTime64())
-        {
-            nested_column = ColumnDecimal<DateTime64>::create(0, 6);
-        }
         else if (which.isDecimal32())
         {
             const auto & type = typeid_cast<const DataTypeDecimal<Decimal32> *>(nested.get());
@@ -269,38 +275,21 @@ public:
         return nested_column;
     }
 
+
 private:
-    struct StreamTo
-    {
-        pqxx::work tx;
-        Names columns;
-        pqxx::stream_to stream;
-
-        StreamTo(pqxx::connection & connection, pqxx::table_path table_, Names columns_)
-            : tx(connection)
-            , columns(std::move(columns_))
-            , stream(pqxx::stream_to::raw_table(tx, connection.quote_table(table_), connection.quote_columns(columns)))
-        {
-        }
-
-        void complete()
-        {
-            stream.complete();
-            tx.commit();
-        }
-    };
-
     StorageMetadataPtr metadata_snapshot;
     postgres::ConnectionHolderPtr connection_holder;
-    const String remote_table_name, remote_table_schema;
-    std::unique_ptr<StreamTo> inserter;
+    std::string remote_table_name;
+
+    std::unique_ptr<pqxx::work> work;
+    std::unique_ptr<pqxx::stream_to> stream_inserter;
 };
 
 
-SinkToStoragePtr StoragePostgreSQL::write(
+BlockOutputStreamPtr StoragePostgreSQL::write(
         const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
 {
-    return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema);
+    return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, pool->get(), remote_table_name);
 }
 
 

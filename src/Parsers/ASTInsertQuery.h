@@ -47,8 +47,6 @@ public:
         return res;
     }
 
-    const char * getQueryKindString() const override { return "Insert"; }
-
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };

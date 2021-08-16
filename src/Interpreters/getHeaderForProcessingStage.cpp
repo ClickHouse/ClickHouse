@@ -98,12 +98,12 @@ Block getHeaderForProcessingStage(
 
                 if (prewhere_info.row_level_filter)
                 {
-                    header = prewhere_info.row_level_filter->updateHeader(std::move(header));
+                    prewhere_info.row_level_filter->execute(header);
                     header.erase(prewhere_info.row_level_column_name);
                 }
 
                 if (prewhere_info.prewhere_actions)
-                    header = prewhere_info.prewhere_actions->updateHeader(std::move(header));
+                    prewhere_info.prewhere_actions->execute(header);
 
                 if (prewhere_info.remove_prewhere_column)
                     header.erase(prewhere_info.prewhere_column_name);
@@ -113,7 +113,6 @@ Block getHeaderForProcessingStage(
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
         case QueryProcessingStage::WithMergeableStateAfterAggregation:
-        case QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit:
         case QueryProcessingStage::MAX:
         {
             auto query = query_info.query->clone();

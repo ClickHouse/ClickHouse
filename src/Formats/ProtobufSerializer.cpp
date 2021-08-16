@@ -32,7 +32,7 @@
 #   include <IO/ReadHelpers.h>
 #   include <IO/WriteBufferFromString.h>
 #   include <IO/WriteHelpers.h>
-#   include <common/range.h>
+#   include <ext/range.h>
 #   include <google/protobuf/descriptor.h>
 #   include <google/protobuf/descriptor.pb.h>
 #   include <boost/algorithm/string.hpp>
@@ -1007,7 +1007,7 @@ namespace
             auto iless = [](const std::string_view & s1, const std::string_view & s2) { return ColumnNameWithProtobufFieldNameComparator::less(s1, s2); };
             boost::container::flat_map<std::string_view, int, decltype(iless)> string_to_protobuf_enum_value_map;
             typename decltype(string_to_protobuf_enum_value_map)::sequence_type string_to_protobuf_enum_value_seq;
-            for (int i : collections::range(enum_descriptor.value_count()))
+            for (int i : ext::range(enum_descriptor.value_count()))
                 string_to_protobuf_enum_value_seq.emplace_back(enum_descriptor.value(i)->name(), enum_descriptor.value(i)->number());
             string_to_protobuf_enum_value_map.adopt_sequence(std::move(string_to_protobuf_enum_value_seq));
 
@@ -1423,23 +1423,18 @@ namespace
     };
 
 
-    /// Serializes a ColumnVector<UInt32> containing datetimes to a field of any type except TYPE_MESSAGE, TYPE_GROUP, TYPE_BOOL, TYPE_ENUM.
+    /// Serializes a ColumnVector<UInt32> containing dates to a field of any type except TYPE_MESSAGE, TYPE_GROUP, TYPE_BOOL, TYPE_ENUM.
     class ProtobufSerializerDateTime : public ProtobufSerializerNumber<UInt32>
     {
     public:
         ProtobufSerializerDateTime(
-            const DataTypeDateTime & type,
-            const FieldDescriptor & field_descriptor_,
-            const ProtobufReaderOrWriter & reader_or_writer_)
-            : ProtobufSerializerNumber<UInt32>(field_descriptor_, reader_or_writer_),
-            date_lut(type.getTimeZone())
+            const FieldDescriptor & field_descriptor_, const ProtobufReaderOrWriter & reader_or_writer_)
+            : ProtobufSerializerNumber<UInt32>(field_descriptor_, reader_or_writer_)
         {
             setFunctions();
         }
 
     protected:
-        const DateLUTImpl & date_lut;
-
         void setFunctions()
         {
             switch (field_typeid)
@@ -1463,17 +1458,17 @@ namespace
                 {
                     write_function = [this](UInt32 value)
                     {
-                        dateTimeToString(value, text_buffer, date_lut);
+                        dateTimeToString(value, text_buffer);
                         writeStr(text_buffer);
                     };
 
                     read_function = [this]() -> UInt32
                     {
                         readStr(text_buffer);
-                        return stringToDateTime(text_buffer, date_lut);
+                        return stringToDateTime(text_buffer);
                     };
 
-                    default_function = [this]() -> UInt32 { return stringToDateTime(field_descriptor.default_value_string(), date_lut); };
+                    default_function = [this]() -> UInt32 { return stringToDateTime(field_descriptor.default_value_string()); };
                     break;
                 }
 
@@ -1482,17 +1477,17 @@ namespace
             }
         }
 
-        static void dateTimeToString(time_t tm, String & str, const DateLUTImpl & lut)
+        static void dateTimeToString(time_t tm, String & str)
         {
             WriteBufferFromString buf{str};
-            writeDateTimeText(tm, buf, lut);
+            writeDateTimeText(tm, buf);
         }
 
-        static time_t stringToDateTime(const String & str, const DateLUTImpl & lut)
+        static time_t stringToDateTime(const String & str)
         {
             ReadBufferFromString buf{str};
             time_t tm = 0;
-            readDateTimeText(tm, buf, lut);
+            readDateTimeText(tm, buf);
             if (tm < 0)
                 tm = 0;
             return tm;
@@ -1900,7 +1895,7 @@ namespace
         {
             const auto & column_array = assert_cast<const ColumnArray &>(*column);
             const auto & offsets = column_array.getOffsets();
-            for (size_t i : collections::range(offsets[row_num - 1], offsets[row_num]))
+            for (size_t i : ext::range(offsets[row_num - 1], offsets[row_num]))
                 element_serializer->writeRow(i);
         }
 
@@ -1972,7 +1967,7 @@ namespace
             assert(num_columns == 1);
             column = columns[0];
             const auto & column_tuple = assert_cast<const ColumnTuple &>(*column);
-            for (size_t i : collections::range(tuple_size))
+            for (size_t i : ext::range(tuple_size))
             {
                 auto element_column = column_tuple.getColumnPtr(i);
                 element_serializers[i]->setColumns(&element_column, 1);
@@ -1989,7 +1984,7 @@ namespace
 
         void writeRow(size_t row_num) override
         {
-            for (size_t i : collections::range(tuple_size))
+            for (size_t i : ext::range(tuple_size))
                 element_serializers[i]->writeRow(row_num);
         }
 
@@ -2025,12 +2020,12 @@ namespace
 
             try
             {
-                for (size_t i : collections::range(tuple_size))
+                for (size_t i : ext::range(tuple_size))
                     element_serializers[i]->insertDefaults(row_num);
             }
             catch (...)
             {
-                for (size_t i : collections::range(tuple_size))
+                for (size_t i : ext::range(tuple_size))
                 {
                     auto element_column = column_tuple.getColumnPtr(i)->assumeMutable();
                     if (element_column->size() > old_size)
@@ -2079,7 +2074,7 @@ namespace
             std::sort(field_infos.begin(), field_infos.end(),
                       [](const FieldInfo & lhs, const FieldInfo & rhs) { return lhs.field_tag < rhs.field_tag; });
 
-            for (size_t i : collections::range(field_infos.size()))
+            for (size_t i : ext::range(field_infos.size()))
                 field_index_by_field_tag.emplace(field_infos[i].field_tag, i);
         }
 
@@ -2101,7 +2096,7 @@ namespace
             if (reader)
             {
                 missing_column_indices.resize(num_columns_);
-                for (size_t column_index : collections::range(num_columns_))
+                for (size_t column_index : ext::range(num_columns_))
                     missing_column_indices[column_index] = column_index;
                 for (const FieldInfo & info : field_infos)
                 {
@@ -2116,7 +2111,7 @@ namespace
         {
             Columns cols;
             cols.reserve(num_columns_);
-            for (size_t i : collections::range(num_columns_))
+            for (size_t i : ext::range(num_columns_))
                 cols.push_back(columns_[i]->getPtr());
             setColumns(cols.data(), cols.size());
         }
@@ -2290,7 +2285,7 @@ namespace
             assert(tuple_size);
             Columns element_columns;
             element_columns.reserve(tuple_size);
-            for (size_t i : collections::range(tuple_size))
+            for (size_t i : ext::range(tuple_size))
                 element_columns.emplace_back(column_tuple.getColumnPtr(i));
             nested_message_serializer->setColumns(element_columns.data(), element_columns.size());
         }
@@ -2330,7 +2325,7 @@ namespace
             offset_columns.clear();
             offset_columns.reserve(num_columns);
 
-            for (size_t i : collections::range(num_columns))
+            for (size_t i : ext::range(num_columns))
             {
                 const auto & column_array = assert_cast<const ColumnArray &>(*columns[i]);
                 data_columns.emplace_back(column_array.getDataPtr());
@@ -2347,7 +2342,7 @@ namespace
         {
             Columns cols;
             cols.reserve(num_columns);
-            for (size_t i : collections::range(num_columns))
+            for (size_t i : ext::range(num_columns))
                 cols.push_back(columns[i]->getPtr());
             setColumns(cols.data(), cols.size());
         }
@@ -2357,13 +2352,13 @@ namespace
             const auto & offset_column0 = assert_cast<const ColumnArray::ColumnOffsets &>(*offset_columns[0]);
             size_t start_offset = offset_column0.getElement(row_num - 1);
             size_t end_offset = offset_column0.getElement(row_num);
-            for (size_t i : collections::range(1, offset_columns.size()))
+            for (size_t i : ext::range(1, offset_columns.size()))
             {
                 const auto & offset_column = assert_cast<const ColumnArray::ColumnOffsets &>(*offset_columns[i]);
                 if (offset_column.getElement(row_num) != end_offset)
                     throw Exception("Components of FlattenedNested have different sizes", ErrorCodes::PROTOBUF_BAD_CAST);
             }
-            for (size_t i : collections::range(start_offset, end_offset))
+            for (size_t i : ext::range(start_offset, end_offset))
                 nested_message_serializer->writeRow(i);
         }
 
@@ -2473,7 +2468,7 @@ namespace
 
             missing_column_indices.clear();
             missing_column_indices.reserve(column_names.size() - used_column_indices.size());
-            boost::range::set_difference(collections::range(column_names.size()), used_column_indices,
+            boost::range::set_difference(ext::range(column_names.size()), used_column_indices,
                                          std::back_inserter(missing_column_indices));
 
             return serializer;
@@ -2485,7 +2480,7 @@ namespace
         {
             Strings field_names;
             field_names.reserve(message_descriptor.field_count());
-            for (int i : collections::range(message_descriptor.field_count()))
+            for (int i : ext::range(message_descriptor.field_count()))
                 field_names.emplace_back(message_descriptor.field(i)->name());
             return field_names;
         }
@@ -2552,7 +2547,7 @@ namespace
 
             /// Find all fields which have the same name as column's name (case-insensitively); i.e. we're checking
             /// field_name == column_name.
-            for (int i : collections::range(message_descriptor.field_count()))
+            for (int i : ext::range(message_descriptor.field_count()))
             {
                 const auto & field_descriptor = *message_descriptor.field(i);
                 if (columnNameEqualsToFieldName(column_name, field_descriptor))
@@ -2567,7 +2562,7 @@ namespace
 
             /// Find all fields which name is used as prefix in column's name; i.e. we're checking
             /// column_name == field_name + '.' + nested_message_field_name
-            for (int i : collections::range(message_descriptor.field_count()))
+            for (int i : ext::range(message_descriptor.field_count()))
             {
                 const auto & field_descriptor = *message_descriptor.field(i);
                 std::string_view suffix;
@@ -2598,7 +2593,7 @@ namespace
             data_types.reserve(initial_size * 2);
             elements1.reserve(initial_size * 2);
             elements2.reserve(initial_size * 2);
-            for (size_t i : collections::range(initial_size))
+            for (size_t i : ext::range(initial_size))
             {
                 if (data_types[i]->getTypeId() == TypeIndex::Array)
                 {
@@ -2664,7 +2659,7 @@ namespace
             std::vector<std::pair<const FieldDescriptor *, std::string_view>> field_descriptors_with_suffixes;
 
             /// We're going through all the passed columns.
-            for (size_t column_idx : collections::range(num_columns))
+            for (size_t column_idx : ext::range(num_columns))
             {
                 if (boost::range::binary_search(used_column_indices, column_idx))
                     continue;
@@ -2700,7 +2695,7 @@ namespace
                         nested_column_indices.push_back(column_idx);
                         nested_column_names.push_back(suffix);
 
-                        for (size_t j : collections::range(column_idx + 1, num_columns))
+                        for (size_t j : ext::range(column_idx + 1, num_columns))
                         {
                             if (boost::range::binary_search(used_column_indices, j))
                                 continue;
@@ -2795,7 +2790,7 @@ namespace
             if ((message_descriptor.file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO2)
                     && reader_or_writer.writer)
             {
-                for (int i : collections::range(message_descriptor.field_count()))
+                for (int i : ext::range(message_descriptor.field_count()))
                 {
                     const auto & field_descriptor = *message_descriptor.field(i);
                     if (field_descriptor.is_required() && !field_descriptors_in_use.count(&field_descriptor))
@@ -2838,7 +2833,7 @@ namespace
                 case TypeIndex::Float32: return std::make_unique<ProtobufSerializerNumber<Float32>>(field_descriptor, reader_or_writer);
                 case TypeIndex::Float64: return std::make_unique<ProtobufSerializerNumber<Float64>>(field_descriptor, reader_or_writer);
                 case TypeIndex::Date: return std::make_unique<ProtobufSerializerDate>(field_descriptor, reader_or_writer);
-                case TypeIndex::DateTime: return std::make_unique<ProtobufSerializerDateTime>(assert_cast<const DataTypeDateTime &>(*data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::DateTime: return std::make_unique<ProtobufSerializerDateTime>(field_descriptor, reader_or_writer);
                 case TypeIndex::DateTime64: return std::make_unique<ProtobufSerializerDateTime64>(assert_cast<const DataTypeDateTime64 &>(*data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::String: return std::make_unique<ProtobufSerializerString<false>>(field_descriptor, reader_or_writer);
                 case TypeIndex::FixedString: return std::make_unique<ProtobufSerializerString<true>>(typeid_cast<std::shared_ptr<const DataTypeFixedString>>(data_type), field_descriptor, reader_or_writer);

@@ -11,13 +11,12 @@ namespace ErrorCodes
 
 namespace DB
 {
-struct Settings;
 
 namespace
 {
 
 AggregateFunctionPtr createAggregateFunctionRankCorrelation(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertBinary(name, argument_types);
     assertNoParameters(name, parameters);

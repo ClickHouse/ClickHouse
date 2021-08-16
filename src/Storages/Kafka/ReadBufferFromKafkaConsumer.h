@@ -97,7 +97,7 @@ private:
     Messages::const_iterator current;
 
     // order is important, need to be destructed before consumer
-    std::optional<cppkafka::TopicPartitionList> assignment;
+    cppkafka::TopicPartitionList assignment;
     const Names topics;
 
     void drain();

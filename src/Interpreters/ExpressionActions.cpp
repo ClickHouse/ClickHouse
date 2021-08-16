@@ -342,13 +342,6 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             res_column.type = action.node->result_type;
             res_column.name = action.node->result_name;
 
-            if (action.node->column)
-            {
-                /// Do not execute function if it's result is already known.
-                res_column.column = action.node->column->cloneResized(num_rows);
-                break;
-            }
-
             ColumnsWithTypeAndName arguments(action.arguments.size());
             for (size_t i = 0; i < arguments.size(); ++i)
             {
@@ -538,12 +531,11 @@ Names ExpressionActions::getRequiredColumns() const
 
 bool ExpressionActions::hasArrayJoin() const
 {
-    return getActionsDAG().hasArrayJoin();
-}
+    for (const auto & action : actions)
+        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return true;
 
-void ExpressionActions::assertDeterministic() const
-{
-    getActionsDAG().assertDeterministic();
+    return false;
 }
 
 
@@ -818,9 +810,6 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     NameSet required_names = required_output_;
     for (const auto & name : analyzed_join->keyNamesLeft())
         required_names.emplace(name);
-
-    if (ASTPtr extra_condition_column = analyzed_join->joinConditionColumn(JoinTableSide::Left))
-        required_names.emplace(extra_condition_column->getColumnName());
 
     for (const auto & column : required_columns)
     {

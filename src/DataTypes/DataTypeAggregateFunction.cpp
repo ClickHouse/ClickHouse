@@ -1,3 +1,5 @@
+#include <Common/FieldVisitors.h>
+
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -6,7 +8,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/AlignedBuffer.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -46,7 +47,7 @@ std::string DataTypeAggregateFunction::doGetName() const
         {
             if (i)
                 stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+            stream << applyVisitor(DB::FieldVisitorToString(), parameters[i]);
         }
         stream << ')';
     }

@@ -7,6 +7,8 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Core/Block.h>
+#include <ext/range.h>
+#include <ext/size.h>
 #include <Common/HashTable/HashMap.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
@@ -97,10 +99,10 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
-    Pipe getSourceBlockInputStream(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    BlockInputStreamPtr getSourceBlockInputStream(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
