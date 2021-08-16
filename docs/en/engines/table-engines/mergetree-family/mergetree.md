@@ -389,7 +389,7 @@ Functions with a constant argument that is less than ngram size can’t be used 
     -   `NOT startsWith(s, 'test')`
 
 ## Projections {#projections}
-Projections are like [materialized views](../../sql-reference/statements/create/view.md#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
+Projections are like [materialized views](../../../sql-reference/statements/create/view.md#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
 Projections are an experimental feature. To enable them you must set the [allow_experimental_projection_optimization](../../../operations/settings/settings.md#allow-experimental-projection-optimization) to `1`. See also the [force_optimize_projection ](../../../operations/settings/settings.md#force_optimize_projection) setting.
 
@@ -402,7 +402,7 @@ A projection query is what defines a projection. It implicitly selects data from
 SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 ```
 
-Projections can be modified or dropped with the [ALTER](../../../sql-reference/statement/alter/projection.md) statement.
+Projections can be modified or dropped with the [ALTER](../../../sql-reference/statements/alter/projection.md) statement.
 
 ### Projection Storage {#projection-storage}
 Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous `MergeTree` table's part. The table is induced by the definition query of the projection. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](aggregatingmergetree.md), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
