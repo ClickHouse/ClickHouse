@@ -11,9 +11,9 @@ with 3 as "1" select 1, "1"; -- { serverError 352 }
 
 -- https://github.com/ClickHouse/ClickHouse/issues/9953
 select 1, * from (select 2 x) a left join (select 1, 3 y) b on y = x;
-select 1, * from (select 2 x, 1) a right join (select 3 y) b on y = x; -- { serverError 352 }
-select null, isConstant(null), * from (select 2 x) a left join (select null, 3 y) b on y = x; -- { serverError 352 }
-select null, isConstant(null), * from (select 2 x, null) a right join (select 3 y) b on y = x; -- { serverError 352 }
+select 1, * from (select 2 x, 1) a right join (select 3 y) b on y = x;
+select null, isConstant(null), * from (select 2 x) a left join (select null, 3 y) b on y = x;
+select null, isConstant(null), * from (select 2 x, null) a right join (select 3 y) b on y = x;
 
 -- other cases with joins and constants
 
