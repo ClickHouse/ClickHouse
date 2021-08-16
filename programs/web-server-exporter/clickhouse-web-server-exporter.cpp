@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromHTTP.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <IO/createReadBufferFromFileBase.h>
 
@@ -26,10 +27,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/*
+ * A tool to collect files on local fs as is (into current directory or into path from --output-dir option).
+ * If test-mode option is added, files will be put by given url via PUT request.
+ */
 
-void processTableFiles(const String & url, const fs::path & path, const String & files_prefix, String uuid)
+void processTableFiles(const fs::path & path, const String & files_prefix, String uuid, WriteBuffer & metadata_buf, std::function<std::shared_ptr<WriteBuffer>(const String &)> create_dst_buf)
 {
-    WriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(url) / (".index-" + uuid)), Poco::Net::HTTPRequest::HTTP_PUT);
     fs::directory_iterator dir_end;
 
     auto process_file = [&](const String & file_name, const String & file_path)
@@ -41,11 +45,11 @@ void processTableFiles(const String & url, const fs::path & path, const String &
         writeChar('\n', metadata_buf);
 
         auto src_buf = createReadBufferFromFileBase(file_path, fs::file_size(file_path), 0, 0, nullptr);
-        WriteBufferFromHTTP dst_buf(Poco::URI(fs::path(url) / remote_file_name), Poco::Net::HTTPRequest::HTTP_PUT);
+        auto dst_buf = create_dst_buf(remote_file_name);
 
-        copyData(*src_buf, dst_buf);
-        dst_buf.next();
-        dst_buf.finalize();
+        copyData(*src_buf, *dst_buf);
+        dst_buf->next();
+        dst_buf->finalize();
     };
 
     for (fs::directory_iterator dir_it(path); dir_it != dir_end; ++dir_it)
@@ -63,11 +67,7 @@ void processTableFiles(const String & url, const fs::path & path, const String &
             process_file(dir_it->path().filename(), dir_it->path());
         }
     }
-
-    metadata_buf.next();
-    metadata_buf.finalize();
 }
-
 }
 
 
@@ -81,7 +81,9 @@ try
     description.add_options()
         ("help,h", "produce help message")
         ("metadata-path", po::value<std::string>(), "Metadata path (select data_paths from system.tables where name='table_name'")
-        ("url", po::value<std::string>(), "Web server url")
+        ("test-mode", "Use test mode, which will put data on given url via PUT")
+        ("url", po::value<std::string>(), "Web server url for test mode")
+        ("output-dir", po::value<std::string>(), "Directory to put files in non-test mode")
         ("files-prefix", po::value<std::string>(), "Prefix for stored files");
 
     po::parsed_options parsed = po::command_line_parser(argc, argv).options(description).run();
@@ -118,17 +120,46 @@ try
     if (!RE2::Extract(metadata_path, EXTRACT_UUID_PATTERN, "\\1", &uuid))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot extract uuid for: {}", metadata_path);
 
-    if (options.count("url"))
-        url = options["url"].as<std::string>();
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No url option passed");
+    std::shared_ptr<WriteBuffer> metadata_buf;
+    std::function<std::shared_ptr<WriteBuffer>(const String &)> create_dst_buf;
+    String root_path;
 
-    processTableFiles(url, fs_path, files_prefix, uuid);
+    if (options.count("test-mode"))
+    {
+        if (options.count("url"))
+            url = options["url"].as<std::string>();
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No url option passed for test mode");
+
+        metadata_buf = std::make_shared<WriteBufferFromHTTP>(Poco::URI(fs::path(url) / (".index-" + uuid)), Poco::Net::HTTPRequest::HTTP_PUT);
+
+        create_dst_buf = [&](const String & remote_file_name)
+        {
+            return std::make_shared<WriteBufferFromHTTP>(Poco::URI(fs::path(url) / remote_file_name), Poco::Net::HTTPRequest::HTTP_PUT);
+        };
+    }
+    else
+    {
+        if (options.count("output-dir"))
+            root_path = options["output-dir"].as<std::string>();
+        else
+            root_path = fs::current_path();
+
+        metadata_buf = std::make_shared<WriteBufferFromFile>(fs::path(root_path) / (".index-" + uuid));
+        create_dst_buf = [&](const String & remote_file_name)
+        {
+            return std::make_shared<WriteBufferFromFile>(fs::path(root_path) / remote_file_name);
+        };
+    }
+
+    processTableFiles(fs_path, files_prefix, uuid, *metadata_buf, create_dst_buf);
+    metadata_buf->next();
+    metadata_buf->finalize();
 
     return 0;
 }
 catch (...)
 {
-    std::cerr << DB::getCurrentExceptionMessage(true);
+    std::cerr << DB::getCurrentExceptionMessage(false);
     return 1;
 }
