@@ -3251,7 +3251,7 @@ SETTINGS index_granularity = 8192 │
 
 ## force_optimize_projection {#force-optimize-projection}
 
-Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow_experimental_projection_optimization)). 
+Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)). 
 
 Возможные значения:
 
