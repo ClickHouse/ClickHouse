@@ -15,7 +15,7 @@ AddingDefaultBlockOutputStream::AddingDefaultBlockOutputStream(
     : output(output_), header(header_)
 {
     auto dag = addMissingDefaults(header_, output->getHeader().getNamesAndTypesList(), columns_, context_, null_as_default_);
-    adding_defaults_actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context_));
+    adding_defaults_actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context_, CompileExpressions::yes));
 }
 
 void AddingDefaultBlockOutputStream::write(const Block & block)

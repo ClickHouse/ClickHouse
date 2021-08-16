@@ -4,15 +4,15 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 
 namespace DB
 {
 
-class StorageView final : public ext::shared_ptr_helper<StorageView>, public IStorage
+class StorageView final : public shared_ptr_helper<StorageView>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageView>;
+    friend struct shared_ptr_helper<StorageView>;
 public:
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
@@ -52,7 +52,8 @@ protected:
     StorageView(
         const StorageID & table_id_,
         const ASTCreateQuery & query,
-        const ColumnsDescription & columns_);
+        const ColumnsDescription & columns_,
+        const String & comment);
 };
 
 }

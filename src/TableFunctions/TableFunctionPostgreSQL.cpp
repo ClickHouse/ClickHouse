@@ -1,6 +1,9 @@
 #include <TableFunctions/TableFunctionPostgreSQL.h>
 
 #if USE_LIBPQXX
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <Storages/StoragePostgreSQL.h>
+
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -9,10 +12,8 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include "registerTableFunctions.h"
-#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
 #include <Common/parseRemoteDescription.h>
-#include <Storages/StoragePostgreSQL.h>
 
 
 namespace DB
@@ -30,8 +31,13 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 {
     auto columns = getActualTableStructure(context);
     auto result = std::make_shared<StoragePostgreSQL>(
-            StorageID(getDatabaseName(), table_name), connection_pool, remote_table_name,
-            columns, ConstraintsDescription{}, context, remote_table_schema);
+        StorageID(getDatabaseName(), table_name),
+        connection_pool,
+        remote_table_name,
+        columns,
+        ConstraintsDescription{},
+        String{},
+        remote_table_schema);
 
     result->startup();
     return result;
@@ -41,11 +47,12 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context) const
 {
     const bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
+    auto connection_holder = connection_pool->get();
     auto columns = fetchPostgreSQLTableStructure(
-            connection_pool->get(),
+            connection_holder->get(),
             remote_table_schema.empty() ? doubleQuoteString(remote_table_name)
                                         : doubleQuoteString(remote_table_schema) + '.' + doubleQuoteString(remote_table_name),
-            use_nulls);
+            use_nulls).columns;
 
     return ColumnsDescription{*columns};
 }

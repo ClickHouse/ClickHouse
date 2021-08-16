@@ -5,17 +5,18 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include "AggregateFunctionFactory.h"
 #include "FactoryHelpers.h"
 #include "Helpers.h"
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -23,13 +24,14 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
 namespace
 {
     using FuncLinearRegression = AggregateFunctionMLMethod<LinearModelData, NameLinearRegression>;
     using FuncLogisticRegression = AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression>;
-    template <class Method>
-    AggregateFunctionPtr
-    createAggregateFunctionMLMethod(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+    template <typename Method>
+    AggregateFunctionPtr createAggregateFunctionMLMethod(
+        const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         if (parameters.size() > 4)
             throw Exception(

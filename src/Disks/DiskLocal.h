@@ -5,9 +5,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
-#include <Poco/DirectoryIterator.h>
-#include <Poco/File.h>
 
 namespace DB
 {
@@ -27,7 +26,7 @@ public:
         : name(name_), disk_path(path_), keep_free_space_bytes(keep_free_space_bytes_)
     {
         if (disk_path.back() != '/')
-            throw Exception("Disk path must ends with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Disk path must end with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
     }
 
     const String & getName() const override { return name; }
@@ -76,7 +75,7 @@ public:
         const String & path,
         size_t buf_size,
         size_t estimated_size,
-        size_t aio_threshold,
+        size_t direct_io_threshold,
         size_t mmap_threshold,
         MMappedFileCache * mmap_cache) const override;
 
@@ -102,7 +101,11 @@ public:
 
     DiskType::Type getType() const override { return DiskType::Type::Local; }
 
+    bool supportZeroCopyReplication() const override { return false; }
+
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
+
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
 
 private:
     bool tryReserve(UInt64 bytes);
@@ -110,7 +113,7 @@ private:
 private:
     const String name;
     const String disk_path;
-    const UInt64 keep_free_space_bytes;
+    std::atomic<UInt64> keep_free_space_bytes;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
@@ -119,5 +122,6 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("DiskLocal");
 };
+
 
 }

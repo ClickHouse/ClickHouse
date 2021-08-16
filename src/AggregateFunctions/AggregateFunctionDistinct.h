@@ -13,6 +13,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 template <typename T>
@@ -166,8 +167,8 @@ private:
     }
 
 public:
-    AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments)
-    : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, nested_func_->getParameters())
+    AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments, const Array & params_)
+    : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, params_)
     , nested_func(nested_func_)
     , arguments_num(arguments.size()) {}
 

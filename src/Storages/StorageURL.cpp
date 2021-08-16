@@ -16,11 +16,12 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <Poco/Net/HTTPRequest.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <Processors/QueryPipeline.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <common/logger_useful.h>
 #include <algorithm>
 
@@ -41,16 +42,14 @@ IStorageURLBase::IStorageURLBase(
     const std::optional<FormatSettings> & format_settings_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     const String & compression_method_)
-    : IStorage(table_id_)
-    , uri(uri_)
-    , compression_method(compression_method_)
-    , format_name(format_name_)
-    , format_settings(format_settings_)
+    : IStorage(table_id_), uri(uri_), compression_method(compression_method_), format_name(format_name_), format_settings(format_settings_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -106,8 +105,15 @@ namespace
                 compression_method);
 
             auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
-            reader = std::make_shared<InputStreamFromInputFormat>(input_format);
-            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
+            pipeline = std::make_unique<QueryPipeline>();
+            pipeline->init(Pipe(input_format));
+
+            pipeline->addSimpleTransform([&](const Block & cur_header)
+            {
+                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *input_format, context);
+            });
+
+            reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
         }
 
         String getName() const override
@@ -120,15 +126,11 @@ namespace
             if (!reader)
                 return {};
 
-            if (!initialized)
-                reader->readPrefix();
+            Chunk chunk;
+            if (reader->pull(chunk))
+                return chunk;
 
-            initialized = true;
-
-            if (auto block = reader->read())
-                return Chunk(block.getColumns(), block.rows());
-
-            reader->readSuffix();
+            pipeline->reset();
             reader.reset();
 
             return {};
@@ -137,19 +139,20 @@ namespace
     private:
         String name;
         std::unique_ptr<ReadBuffer> read_buf;
-        BlockInputStreamPtr reader;
-        bool initialized = false;
+        std::unique_ptr<QueryPipeline> pipeline;
+        std::unique_ptr<PullingPipelineExecutor> reader;
     };
 }
 
-StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
-        const String & format,
-        const std::optional<FormatSettings> & format_settings,
-        const Block & sample_block_,
-        ContextPtr context,
-        const ConnectionTimeouts & timeouts,
-        const CompressionMethod compression_method)
-        : sample_block(sample_block_)
+StorageURLSink::StorageURLSink(
+    const Poco::URI & uri,
+    const String & format,
+    const std::optional<FormatSettings> & format_settings,
+    const Block & sample_block,
+    ContextPtr context,
+    const ConnectionTimeouts & timeouts,
+    const CompressionMethod compression_method)
+    : SinkToStorage(sample_block)
 {
     write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
@@ -159,17 +162,18 @@ StorageURLBlockOutputStream::StorageURLBlockOutputStream(const Poco::URI & uri,
 }
 
 
-void StorageURLBlockOutputStream::write(const Block & block)
+void StorageURLSink::consume(Chunk chunk)
 {
-    writer->write(block);
+    if (is_first_chunk)
+    {
+        writer->writePrefix();
+        is_first_chunk = false;
+    }
+
+    writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
-void StorageURLBlockOutputStream::writePrefix()
-{
-    writer->writePrefix();
-}
-
-void StorageURLBlockOutputStream::writeSuffix()
+void StorageURLSink::onFinish()
 {
     writer->writeSuffix();
     writer->flush();
@@ -291,39 +295,40 @@ Pipe StorageURLWithFailover::read(
 }
 
 
-BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    return std::make_shared<StorageURLBlockOutputStream>(uri, format_name,
+    return std::make_shared<StorageURLSink>(uri, format_name,
         format_settings, metadata_snapshot->getSampleBlock(), context,
         ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(uri.toString(), compression_method));
 }
 
-StorageURL::StorageURL(const Poco::URI & uri_,
-           const StorageID & table_id_,
-           const String & format_name_,
-           const std::optional<FormatSettings> & format_settings_,
-           const ColumnsDescription & columns_,
-           const ConstraintsDescription & constraints_,
-           ContextPtr context_,
-           const String & compression_method_)
-    : IStorageURLBase(uri_, context_, table_id_, format_name_,
-                      format_settings_, columns_, constraints_, compression_method_)
+StorageURL::StorageURL(
+    const Poco::URI & uri_,
+    const StorageID & table_id_,
+    const String & format_name_,
+    const std::optional<FormatSettings> & format_settings_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    const String & comment,
+    ContextPtr context_,
+    const String & compression_method_)
+    : IStorageURLBase(uri_, context_, table_id_, format_name_, format_settings_, columns_, constraints_, comment, compression_method_)
 {
     context_->getRemoteHostFilter().checkURL(uri);
 }
 
 
 StorageURLWithFailover::StorageURLWithFailover(
-        const std::vector<String> & uri_options_,
-        const StorageID & table_id_,
-        const String & format_name_,
-        const std::optional<FormatSettings> & format_settings_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        ContextPtr context_,
-        const String & compression_method_)
-    : StorageURL(Poco::URI(), table_id_, format_name_, format_settings_, columns_, constraints_, context_, compression_method_)
+    const std::vector<String> & uri_options_,
+    const StorageID & table_id_,
+    const String & format_name_,
+    const std::optional<FormatSettings> & format_settings_,
+    const ColumnsDescription & columns_,
+    const ConstraintsDescription & constraints_,
+    ContextPtr context_,
+    const String & compression_method_)
+    : StorageURL(Poco::URI(), table_id_, format_name_, format_settings_, columns_, constraints_, String{}, context_, compression_method_)
 {
     for (const auto & uri_option : uri_options_)
     {
@@ -404,7 +409,10 @@ void registerStorageURL(StorageFactory & factory)
             args.table_id,
             format_name,
             format_settings,
-            args.columns, args.constraints, args.getContext(),
+            args.columns,
+            args.constraints,
+            args.comment,
+            args.getContext(),
             compression_method);
     },
     {

@@ -20,9 +20,16 @@ StoragePtr TableFunctionURL::getStorage(
     if ((source.find('{') == std::string::npos || source.find('}') == std::string::npos) && source.find('|') == std::string::npos)
     {
         Poco::URI uri(source);
-        return StorageURL::create(uri, StorageID(getDatabaseName(), table_name),
-            format_, std::nullopt /*format settings*/, columns,
-            ConstraintsDescription{}, global_context, compression_method_);
+        return StorageURL::create(
+            uri,
+            StorageID(getDatabaseName(), table_name),
+            format_,
+            std::nullopt /*format settings*/,
+            columns,
+            ConstraintsDescription{},
+            String{},
+            global_context,
+            compression_method_);
     }
     else
     {

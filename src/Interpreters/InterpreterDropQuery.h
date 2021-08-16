@@ -16,15 +16,17 @@ class AccessRightsElements;
   * or remove information about table (just forget) from server (DETACH),
   * or just clear all data in table (TRUNCATE).
   */
-class InterpreterDropQuery : public IInterpreter, WithContext
+class InterpreterDropQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterDropQuery(const ASTPtr & query_ptr_, ContextPtr context_);
+    InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_);
 
     /// Drop table or database.
     BlockIO execute() override;
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
+
+    static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool no_delay);
 
 private:
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;

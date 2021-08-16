@@ -5,7 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
-#include <ext/enumerate.h>
 
 
 namespace DB
@@ -45,8 +44,11 @@ void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, Contex
         column_precedence.insert(precedence);
     };
 
-    for (auto [i, storage] : ext::enumerate(storages))
+    for (size_t i = 0; i < storages.size(); ++i)
+    {
+        const auto & storage = storages[i];
         add_row(*storage, i + 1);
+    }
 }
 
 }

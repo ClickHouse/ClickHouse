@@ -11,10 +11,10 @@ class ASTSetQuery;
 
 /** Change one or several settings for the session or just for the current context.
   */
-class InterpreterSetQuery : public IInterpreter, WithContext
+class InterpreterSetQuery : public IInterpreter, WithMutableContext
 {
 public:
-    InterpreterSetQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
+    InterpreterSetQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
 
     /** Usual SET query. Set setting for the session.
       */

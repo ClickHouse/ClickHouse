@@ -12,7 +12,7 @@ The following assumptions are made:
 1.  The field name (function argument) must be a constant.
 2.  The field name is somehow canonically encoded in JSON. For example: `visitParamHas('{"abc":"def"}', 'abc') = 1`, but `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
 3.  Fields are searched for on any nesting level, indiscriminately. If there are multiple matching fields, the first occurrence is used.
-4.  The JSON doesn’t have space characters outside of string literals.
+4.  The JSON does not have space characters outside of string literals.
 
 ## visitParamHas(params, name) {#visitparamhasparams-name}
 
@@ -22,7 +22,7 @@ Alias: `simpleJSONHas`.
 
 ## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
 
-Parses UInt64 from the value of the field named `name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field doesn’t exist, or it exists but doesn’t contain a number, it returns 0.
+Parses UInt64 from the value of the field named `name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns 0.
 
 Alias: `simpleJSONExtractUInt`.
 
@@ -106,7 +106,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 -   Positive integer = access the n-th member/key from the beginning.
 -   Negative integer = access the n-th member/key from the end.
 
-Minimum index of the element is 1. Thus the element 0 doesn’t exist.
+Minimum index of the element is 1. Thus the element 0 does not exist.
 
 You may use integers to access both JSON arrays and JSON objects.
 
@@ -306,3 +306,49 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## toJSONString {#tojsonstring}
+
+Serializes a value to its JSON representation. Various data types and nested structures are supported.
+64-bit [integers](../../sql-reference/data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
+Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals) setting to show them.
+When serializing an [Enum](../../sql-reference/data-types/enum.md) value, the function outputs its name.
+
+**Syntax**
+
+``` sql
+toJSONString(value)
+```
+
+**Arguments**
+
+-   `value` — Value to serialize. Value may be of any data type.
+
+**Returned value**
+
+-   JSON representation of the value.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+The first example shows serialization of a [Map](../../sql-reference/data-types/map.md).
+The second example shows some special values wrapped into a [Tuple](../../sql-reference/data-types/tuple.md).
+
+Query:
+
+``` sql
+SELECT toJSONString(map('key1', 1, 'key2', 2));
+SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_format_json_quote_denormals = 1;
+```
+
+Result:
+
+``` text
+{"key1":1,"key2":2}
+[1.25,null,"nan","inf","-inf",[]]
+```
+
+**See Also**
+
+-   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
+-   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)

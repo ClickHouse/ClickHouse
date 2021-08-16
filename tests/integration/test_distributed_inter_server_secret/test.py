@@ -83,7 +83,7 @@ def get_query_user_info(node, query_pattern):
 def get_query_setting_on_shard(node, query_pattern, setting):
     node.query("SYSTEM FLUSH LOGS")
     return node.query("""
-    SELECT (arrayFilter(x -> ((x.1) = '{}'), arrayZip(Settings.Names, Settings.Values))[1]).2
+    SELECT Settings['{}']
     FROM system.query_log
     WHERE
         query LIKE '%{}%' AND

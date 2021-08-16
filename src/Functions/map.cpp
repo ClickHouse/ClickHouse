@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeMap.h>
@@ -182,19 +182,23 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const ColumnMap * col_map = typeid_cast<const ColumnMap *>(arguments[0].column.get());
-        if (!col_map)
-            return nullptr;
+        bool is_const = isColumnConst(*arguments[0].column);
+        const ColumnMap * col_map = is_const ? checkAndGetColumnConstData<ColumnMap>(arguments[0].column.get()) : checkAndGetColumn<ColumnMap>(arguments[0].column.get());
+        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
+        if (!col_map || !map_type)
+            throw Exception{"First argument for function " + getName() + " must be a map", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
+        auto key_type = map_type->getKeyType();
         const auto & nested_column = col_map->getNestedColumn();
         const auto & keys_data = col_map->getNestedData().getColumn(0);
 
         /// Prepare arguments to call arrayIndex for check has the array element.
+        ColumnPtr column_array = ColumnArray::create(keys_data.getPtr(), nested_column.getOffsetsPtr());
         ColumnsWithTypeAndName new_arguments =
         {
             {
-                ColumnArray::create(keys_data.getPtr(), nested_column.getOffsetsPtr()),
-                std::make_shared<DataTypeArray>(result_type),
+                is_const ? ColumnConst::create(std::move(column_array), keys_data.size()) : std::move(column_array),
+                std::make_shared<DataTypeArray>(key_type),
                 ""
             },
             arguments[1]

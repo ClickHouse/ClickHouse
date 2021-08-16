@@ -1,6 +1,6 @@
 #include <iomanip>
 #include <pcg_random.hpp>
-#include <ext/bit_cast.h>
+#include <common/bit_cast.h>
 
 //#if defined(NDEBUG)
 //#undef NDEBUG
@@ -33,8 +33,8 @@ static void NO_INLINE sort3(Key * data, size_t size)
 {
     std::sort(data, data + size, [](Key a, Key b)
     {
-        return RadixSortFloatTransform<uint64_t>::forward(ext::bit_cast<uint64_t>(a))
-            < RadixSortFloatTransform<uint64_t>::forward(ext::bit_cast<uint64_t>(b));
+        return RadixSortFloatTransform<uint64_t>::forward(bit_cast<uint64_t>(a))
+            < RadixSortFloatTransform<uint64_t>::forward(bit_cast<uint64_t>(b));
     });
 }
 
@@ -58,8 +58,8 @@ static void NO_INLINE sort7(Key * data, size_t size, size_t limit)
 {
     std::partial_sort(data, data + limit, data + size, [](Key a, Key b)
     {
-        return RadixSortFloatTransform<uint64_t>::forward(ext::bit_cast<uint64_t>(a))
-            < RadixSortFloatTransform<uint64_t>::forward(ext::bit_cast<uint64_t>(b));
+        return RadixSortFloatTransform<uint64_t>::forward(bit_cast<uint64_t>(a))
+            < RadixSortFloatTransform<uint64_t>::forward(bit_cast<uint64_t>(b));
     });
 }
 

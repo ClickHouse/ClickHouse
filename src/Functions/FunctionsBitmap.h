@@ -11,7 +11,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -460,9 +460,24 @@ public:
     }
 };
 
+struct BitmapSubsetOffsetLimitImpl
+{
+public:
+    static constexpr auto name = "subBitmap";
+    template <typename T>
+    static void apply(
+        const AggregateFunctionGroupBitmapData<T> & bitmap_data_0,
+        UInt64 range_start,
+        UInt64 range_end,
+        AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
+        {
+        bitmap_data_0.rbs.rb_offset_limit(range_start, range_end, bitmap_data_2.rbs);
+        }
+};
+
 using FunctionBitmapSubsetInRange = FunctionBitmapSubset<BitmapSubsetInRangeImpl>;
 using FunctionBitmapSubsetLimit = FunctionBitmapSubset<BitmapSubsetLimitImpl>;
-
+using FunctionBitmapSubsetOffsetLimit = FunctionBitmapSubset<BitmapSubsetOffsetLimitImpl>;
 
 class FunctionBitmapTransform : public IFunction
 {

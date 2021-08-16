@@ -1,4 +1,8 @@
-## rankCorr {#agg_function-rankcorr}
+---
+toc_priority: 145
+---
+
+# rankCorr {#agg_function-rankcorr}
 
 Computes a rank correlation coefficient.
 

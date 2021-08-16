@@ -1,4 +1,4 @@
-#include <Compression/CompressionCodecDelta.h>
+#include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <common/unaligned.h>
@@ -10,6 +10,29 @@
 
 namespace DB
 {
+
+class CompressionCodecDelta : public ICompressionCodec
+{
+public:
+    explicit CompressionCodecDelta(UInt8 delta_bytes_size_);
+
+    uint8_t getMethodByte() const override;
+
+    void updateHash(SipHash & hash) const override;
+
+protected:
+    UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
+    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+
+    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { return uncompressed_size + 2; }
+
+    bool isCompression() const override { return false; }
+    bool isGenericCompression() const override { return false; }
+
+private:
+    UInt8 delta_bytes_size;
+};
+
 
 namespace ErrorCodes
 {
@@ -109,6 +132,10 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 bytes_size = source[0];
+
+    if (bytes_size == 0)
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
+
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
 
     if (UInt32(2 + bytes_to_skip) > source_size)

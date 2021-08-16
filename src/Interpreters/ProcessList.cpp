@@ -6,6 +6,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryNormalization.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -297,7 +298,10 @@ QueryStatus::QueryStatus(
 {
 }
 
-QueryStatus::~QueryStatus() = default;
+QueryStatus::~QueryStatus()
+{
+    assert(executors.empty());
+}
 
 void QueryStatus::setQueryStreams(const BlockIO & io)
 {
@@ -351,6 +355,11 @@ CancellationCode QueryStatus::cancelQuery(bool kill)
 
     BlockInputStreamPtr input_stream;
     BlockOutputStreamPtr output_stream;
+    SCOPE_EXIT({
+        std::lock_guard lock(query_streams_mutex);
+        for (auto * e : executors)
+            e->cancel();
+    });
 
     if (tryGetQueryStreams(input_stream, output_stream))
     {
@@ -364,6 +373,20 @@ CancellationCode QueryStatus::cancelQuery(bool kill)
     /// Query is not even started
     is_killed.store(true);
     return CancellationCode::CancelSent;
+}
+
+void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
+{
+    std::lock_guard lock(query_streams_mutex);
+    assert(std::find(executors.begin(), executors.end(), e) == executors.end());
+    executors.push_back(e);
+}
+
+void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
+{
+    std::lock_guard lock(query_streams_mutex);
+    assert(std::find(executors.begin(), executors.end(), e) != executors.end());
+    std::erase_if(executors, [e](PipelineExecutor * x) { return x == e; });
 }
 
 

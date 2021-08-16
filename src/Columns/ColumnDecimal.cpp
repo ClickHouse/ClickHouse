@@ -7,7 +7,7 @@
 
 #include <common/unaligned.h>
 #include <common/sort.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 
 #include <IO/WriteHelpers.h>

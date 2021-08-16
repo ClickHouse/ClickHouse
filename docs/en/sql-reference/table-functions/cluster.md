@@ -24,7 +24,7 @@ clusterAllReplicas('cluster_name', db, table[, sharding_key])
 
 `sharding_key` - When insert into cluster function with more than one shard, sharding_key need to be provided.
 
-Using the `cluster` and `clusterAllReplicas` table functions are less efficient than creating a `Distributed` table because in this case, the server connection is re-established for every request. When processing a large number of queries, please always create the `Distributed` table ahead of time, and don’t use the `cluster` and `clusterAllReplicas` table functions.
+Using the `cluster` and `clusterAllReplicas` table functions are less efficient than creating a `Distributed` table because in this case, the server connection is re-established for every request. When processing a large number of queries, please always create the `Distributed` table ahead of time, and do not use the `cluster` and `clusterAllReplicas` table functions.
 
 The `cluster` and `clusterAllReplicas` table functions can be useful in the following cases:
 

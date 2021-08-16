@@ -9,6 +9,7 @@
 
 namespace DB
 {
+struct Settings;
 
 /** Hashes a set of arguments to the aggregate function
   *  to calculate the number of unique values

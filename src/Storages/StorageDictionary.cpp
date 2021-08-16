@@ -96,15 +96,14 @@ StorageDictionary::StorageDictionary(
     const StorageID & table_id_,
     const String & dictionary_name_,
     const ColumnsDescription & columns_,
+    const String & comment,
     Location location_,
     ContextPtr context_)
-    : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
-    , dictionary_name(dictionary_name_)
-    , location(location_)
+    : IStorage(table_id_), WithContext(context_->getGlobalContext()), dictionary_name(dictionary_name_), location(location_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -116,11 +115,7 @@ StorageDictionary::StorageDictionary(
     Location location_,
     ContextPtr context_)
     : StorageDictionary(
-        table_id_,
-        dictionary_name_,
-        ColumnsDescription{getNamesAndTypes(dictionary_structure_)},
-        location_,
-        context_)
+        table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, String{}, location_, context_)
 {
 }
 
@@ -172,10 +167,9 @@ Pipe StorageDictionary::read(
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, local_context);
-    auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
-    /// TODO: update dictionary interface for processors.
-    return Pipe(std::make_shared<SourceFromInputStream>(stream));
+    auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
+    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
+    return dictionary->read(column_names, max_block_size);
 }
 
 void StorageDictionary::shutdown()
@@ -190,7 +184,7 @@ void StorageDictionary::startup()
     bool lazy_load = global_context->getConfigRef().getBool("dictionaries_lazy_load", true);
     if (!lazy_load)
     {
-        auto & external_dictionaries_loader = global_context->getExternalDictionariesLoader();
+        const auto & external_dictionaries_loader = global_context->getExternalDictionariesLoader();
 
         /// reloadConfig() is called here to force loading the dictionary.
         external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
@@ -220,23 +214,26 @@ LoadablesConfigurationPtr StorageDictionary::getConfiguration() const
 
 void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 {
+    auto old_table_id = getStorageID();
+    IStorage::renameInMemory(new_table_id);
+
     if (configuration)
     {
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
 
-        auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
-        external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
+        const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
+        auto result = external_dictionaries_loader.getLoadResult(old_table_id.getInternalDictionaryName());
 
-        auto result = external_dictionaries_loader.getLoadResult(getStorageID().getInternalDictionaryName());
-        if (!result.object)
-            return;
+        if (result.object)
+        {
+            const auto dictionary = std::static_pointer_cast<const IDictionary>(result.object);
+            dictionary->updateDictionaryName(new_table_id);
+        }
 
-        const auto dictionary = std::static_pointer_cast<const IDictionary>(result.object);
-        dictionary->updateDictionaryName(new_table_id);
+        external_dictionaries_loader.reloadConfig(old_table_id.getInternalDictionaryName());
+        dictionary_name = new_table_id.getFullNameNotQuoted();
     }
-
-    IStorage::renameInMemory(new_table_id);
 }
 
 void registerStorageDictionary(StorageFactory & factory)
@@ -289,7 +286,8 @@ void registerStorageDictionary(StorageFactory & factory)
                 checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
             }
 
-            return StorageDictionary::create(args.table_id, dictionary_name, args.columns, StorageDictionary::Location::Custom, local_context);
+            return StorageDictionary::create(
+                args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
         }
     });
 }

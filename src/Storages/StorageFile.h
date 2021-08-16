@@ -1,15 +1,11 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-
-#include <Poco/File.h>
-#include <Poco/Path.h>
-
 #include <common/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 
 namespace DB
@@ -18,9 +14,9 @@ namespace DB
 class StorageFileBlockInputStream;
 class StorageFileBlockOutputStream;
 
-class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public IStorage
+class StorageFile final : public shared_ptr_helper<StorageFile>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageFile>;
+    friend struct shared_ptr_helper<StorageFile>;
 public:
     std::string getName() const override { return "File"; }
 
@@ -33,7 +29,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(
+    SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context) override;
@@ -57,11 +53,12 @@ public:
         std::string compression_method;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
+        const String & comment;
     };
 
     NamesAndTypesList getVirtuals() const override;
 
-    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context);
+    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
     /// Check if the format is column-oriented.
     /// Is is useful because column oriented formats could effectively skip unknown columns
@@ -71,7 +68,7 @@ public:
 
 protected:
     friend class StorageFileSource;
-    friend class StorageFileBlockOutputStream;
+    friend class StorageFileSink;
 
     /// From file descriptor
     StorageFile(int table_fd_, CommonArguments args);
@@ -98,14 +95,15 @@ private:
     std::string base_path;
     std::vector<std::string> paths;
 
-    bool is_db_table = true;                     /// Table is stored in real database, not user's file
-    bool use_table_fd = false;                    /// Use table_fd instead of path
-    std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
-    off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
+    bool is_db_table = true;        /// Table is stored in real database, not user's file
+    bool use_table_fd = false;      /// Use table_fd instead of path
 
     mutable std::shared_timed_mutex rwlock;
 
     Poco::Logger * log = &Poco::Logger::get("StorageFile");
+
+    /// Total number of bytes to read (sums for multiple files in case of globs). Needed for progress bar.
+    size_t total_bytes_to_read = 0;
 };
 
 }

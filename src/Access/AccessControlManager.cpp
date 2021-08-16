@@ -64,7 +64,12 @@ public:
         std::lock_guard lock{mutex};
         auto x = cache.get(params);
         if (x)
-            return *x;
+        {
+            if ((*x)->getUser())
+                return *x;
+            /// No user, probably the user has been dropped while it was in the cache.
+            cache.remove(params);
+        }
         auto res = std::shared_ptr<ContextAccess>(new ContextAccess(manager, params));
         cache.add(params, res);
         return res;
@@ -484,10 +489,11 @@ std::shared_ptr<const EnabledSettings> AccessControlManager::getEnabledSettings(
     return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
 }
 
-std::shared_ptr<const SettingsChanges> AccessControlManager::getProfileSettings(const String & profile_name) const
+std::shared_ptr<const SettingsProfilesInfo> AccessControlManager::getSettingsProfileInfo(const UUID & profile_id)
 {
-    return settings_profiles_cache->getProfileSettings(profile_name);
+    return settings_profiles_cache->getSettingsProfileInfo(profile_id);
 }
+
 
 const ExternalAuthenticators & AccessControlManager::getExternalAuthenticators() const
 {

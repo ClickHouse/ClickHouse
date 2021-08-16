@@ -62,7 +62,7 @@ public:
 
         bool second_argument_is_date = false;
         auto check_second_argument = [&] {
-            if (!isDateOrDateTime(arguments[1].type))
+            if (!isDate(arguments[1].type) && !isDateTime(arguments[1].type) && !isDateTime64(arguments[1].type))
                 throw Exception(
                     "Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName()
                         + ". Should be a date or a date with time",

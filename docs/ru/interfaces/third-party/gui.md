@@ -111,7 +111,7 @@ toc_title: "Визуальные интерфейсы от сторонних р
 
 ### DataGrip {#datagrip}
 
-[DataGrip](https://www.jetbrains.com/datagrip/) — это IDE для баз данных о JetBrains с выделенной поддержкой ClickHouse. Он также встроен в другие инструменты на основе IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm и другие.
+[DataGrip](https://www.jetbrains.com/datagrip/) — это IDE для баз данных от JetBrains с выделенной поддержкой ClickHouse. Он также встроен в другие инструменты на основе IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm и другие.
 
 Основные возможности:
 

@@ -22,7 +22,7 @@ struct State
 {
     State(const State&) = delete;
 
-    ContextPtr context;
+    ContextMutablePtr context;
 
     static const State & instance()
     {
@@ -85,7 +85,8 @@ private:
             const auto & db_name = tab.table.database;
             database->attachTable(
                 table_name,
-                StorageMemory::create(StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}));
+                StorageMemory::create(
+                    StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
         context->setCurrentDatabase("test");
@@ -175,7 +176,7 @@ TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
           R"(SELECT "column" FROM "test"."table" WHERE 1 AND ("column" = 42) AND ("column" IN (1, 42)) AND ("column" != 4))");
     check(state, 1,
           "SELECT column FROM test.table WHERE toString(column) = '42' AND left(column, 10) = RIGHT(column, 10) AND column = 42",
-          R"(SELECT "column" FROM "test"."table" WHERE ("column" = 42))");
+          R"(SELECT "column" FROM "test"."table" WHERE "column" = 42)");
 }
 
 TEST(TransformQueryForExternalDatabase, Issue7245)
