@@ -144,8 +144,11 @@ done
 
 dmesg -T > dmesg.log
 
+cat /proc/sys/kernel/core_pattern
+
 7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} \
     {right,left}/{performance,scripts} {{right,left}/db,db0}/preprocessed_configs \
-    report analyze benchmark metrics
+    report analyze benchmark metrics \
+    ./*.core
 
 cp compare.log /output
