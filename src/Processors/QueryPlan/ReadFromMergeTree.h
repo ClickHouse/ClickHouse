@@ -81,11 +81,6 @@ public:
         UInt64 selected_marks_pk = 0;
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
-        bool is_analyzed = false;
-
-        // If error_code is not zero, throw error during initializePipeline.
-        int error_code = 0;
-        String error_msg;
     };
 
     ReadFromMergeTree(
@@ -102,7 +97,7 @@ public:
         bool sample_factor_column_queried_,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         Poco::Logger * log_,
-        MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr
+        MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_
     );
 
     String getName() const override { return "ReadFromMergeTree"; }
@@ -120,7 +115,7 @@ public:
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
 
-    static ReadFromMergeTree::AnalysisResult selectRangesToRead(
+    static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
@@ -186,14 +181,17 @@ private:
         const Names & column_names,
         ActionsDAGPtr & out_projection);
 
-    ReadFromMergeTree::AnalysisResult selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
-    AnalysisResult analyzed_result;
+    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
+    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
+    MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
 };
 
-// For forward declaration.
 struct MergeTreeDataSelectAnalysisResult
 {
-    ReadFromMergeTree::AnalysisResult result;
+    std::variant<std::exception_ptr, ReadFromMergeTree::AnalysisResult> result;
+
+    bool error() const;
+    size_t marks() const;
 };
 
 }
