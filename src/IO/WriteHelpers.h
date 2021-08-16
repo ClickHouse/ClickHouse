@@ -910,17 +910,17 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr)
     {
         if (x <= std::numeric_limits<UInt32>::max())
         {
-            writeDecimalFractional(static_cast<UInt32>(x), std::min<UInt32>(scale, std::numeric_limits<UInt32>::digits10), ostr);
+            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr);
             return;
         }
         else if (x <= std::numeric_limits<UInt64>::max())
         {
-            writeDecimalFractional(static_cast<UInt64>(x), std::min<UInt32>(scale, std::numeric_limits<UInt64>::digits10), ostr);
+            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr);
             return;
         }
         else if (x <= std::numeric_limits<UInt128>::max())
         {
-            writeDecimalFractional(static_cast<UInt128>(x), std::min<UInt32>(scale, std::numeric_limits<UInt128>::digits10), ostr);
+            writeDecimalFractional(static_cast<UInt128>(x), scale, ostr);
             return;
         }
     }
@@ -928,17 +928,17 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr)
     {
         if (x <= std::numeric_limits<UInt32>::max())
         {
-            writeDecimalFractional(static_cast<UInt32>(x), std::min<UInt32>(scale, std::numeric_limits<UInt32>::digits10), ostr);
+            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr);
             return;
         }
         else if (x <= std::numeric_limits<UInt64>::max())
         {
-            writeDecimalFractional(static_cast<UInt64>(x), std::min<UInt32>(scale, std::numeric_limits<UInt64>::digits10), ostr);
+            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr);
             return;
         }
     }
 
-    constexpr size_t max_digits = std::numeric_limits<T>::digits10;
+    constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
     assert(scale <= max_digits);
     char buf[max_digits];
     memset(buf, '0', scale);
