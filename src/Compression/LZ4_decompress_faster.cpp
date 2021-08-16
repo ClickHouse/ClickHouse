@@ -439,10 +439,13 @@ bool NO_INLINE decompressImpl(
             {
                 s = *ip++;
                 length += s;
-            } while (unlikely(s == 255));
+            } while (ip < input_end && unlikely(s == 255));
         };
 
         /// Get literal length.
+
+        if (unlikely(ip >= input_end))
+            return false;
 
         const unsigned token = *ip++;
         length = token >> 4;
@@ -475,7 +478,7 @@ bool NO_INLINE decompressImpl(
         ip += length;
         op = copy_end;
 
-        if (unlikely(ip > input_end))
+        if (unlikely(ip + 1 >= input_end))
             return false;
 
         /// Get match offset.
