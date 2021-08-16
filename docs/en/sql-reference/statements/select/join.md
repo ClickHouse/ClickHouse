@@ -52,10 +52,13 @@ The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_
 - [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
 - [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
 
-## Conditions in ON Section {conditions-in-on-section}
+## ON Section Conditions {on-section-conditions}
 
-In addition to join keys an `ON` section can contain conditions concatenated by `AND` and `OR`. Any condition can be applied either to the left or to the right table of a query. Rows are joined if the whole complex condition is met including matching join keys.
-If the condition is not met, still rows may be included in the result depending on the `JOIN` type. If the same conditions are placed in a `WHERE` section and they are not met, then rows are always filtered out from the result.
+An `ON` section can contain several conditions combined using the `AND` operator. Conditions specifying join keys must refer both left and right tables and must use the equality operator. Other conditions may use other logical operators but they must refer either left or right table of a query.
+Rows are joined if the whole complex condition is met. If the conditions are not met, still rows may be included in the result depending on the `JOIN` type. Note that if the same conditions are placed in a `WHERE` section and they are not met, then rows are always filtered out from the result.
+
+!!! note "Note"
+    Combining conditions using the `OR` operator inside an `ON` section is not supported yet.
 
 **Example**
 
@@ -69,14 +72,14 @@ Consider `table_1` and `table_2`:
 └────┴──────┘      └────┴────────────────┘
 ```
 
-Query:
+Query with one join key condition and an additional condition for `table_2`:
 
 ``` sql
-SELECT name, text FROM table_1 LEFT JOIN table_2 
+SELECT name, text FROM table_1 LEFT OUTER JOIN table_2 
     ON table_1.Id = table_2.Id AND startsWith(table_2.text, 'Text');
 ```
 
-Note that the result contains the row with the name `C` and an empty text column. It is there to satisfy the `OUTER` type of a join.
+Note that the result contains the row with the name `C` and the empty text column. It is included into the result because an `OUTER` type of a join is used.
 
 ```
 ┌─name─┬─text───┐
