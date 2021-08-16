@@ -56,7 +56,11 @@ namespace ErrorCodes
 
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
 {
-    return disk->readFile(path, std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), disk->getFileSize(path)));
+    size_t file_size = disk->getFileSize(path);
+    ReadSettings settings;
+    settings.local_fs_buffer_size = std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, file_size);
+    settings.remote_fs_buffer_size = settings.local_fs_buffer_size;
+    return disk->readFile(path, settings, file_size);
 }
 
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path)

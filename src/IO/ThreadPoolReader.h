@@ -162,7 +162,7 @@ public:
         });
 
         auto future = task->get_future();
-        pool.scheduleOrThrow([task]{ (*task)(); }, request.priority);
+        pool.scheduleOrThrow([task]{ (*task)(); }, -request.priority);
         return future;
     }
 
