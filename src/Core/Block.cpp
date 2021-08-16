@@ -145,8 +145,8 @@ void Block::insert(size_t position, ColumnWithTypeAndName elem)
 
     auto [it, inserted] = index_by_name.emplace(elem.name, position);
     if (!inserted)
-        checkColumnStructure<void>(elem, data[it->second],
-            "(columns with identical name must have identical structure)", false, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+        checkColumnStructure<void>(data[it->second], elem,
+            "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
     data.emplace(data.begin() + position, std::move(elem));
 }
@@ -159,8 +159,8 @@ void Block::insert(ColumnWithTypeAndName elem)
 
     auto [it, inserted] = index_by_name.emplace(elem.name, data.size());
     if (!inserted)
-        checkColumnStructure<void>(elem, data[it->second],
-            "(columns with identical name must have identical structure)", false, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+        checkColumnStructure<void>(data[it->second], elem,
+            "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
     data.emplace_back(std::move(elem));
 }
