@@ -224,7 +224,7 @@
 
             <!-- List of names of proxies, configured above in 'proxies' section, to trust/detect on this interface.
                  Each section may have parameters that override the parameters from the original configuration of that proxy.
-                 Based on the remote peer address of each conection a proxy will be selected from this list, and the connection will be handled
+                 Based on the remote peer address of each connection a proxy will be selected from this list, and the connection will be handled
                   accordingly, extracting all the info about intermediate peers, and more specifically, the initiator peer (the original client).
                  Since we explicitly establish a trust relationship by this configuration, that address of the initiator (client) peer
                   can be used for quotas etc.
