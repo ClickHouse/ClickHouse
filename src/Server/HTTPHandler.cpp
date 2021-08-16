@@ -680,8 +680,6 @@ void HTTPHandler::processQuery(
     std::string database = request.get("X-ClickHouse-Database", "");
     std::string default_format = request.get("X-ClickHouse-Format", "");
 
-    const auto & query = getQuery(request, params, context);
-
     SettingsChanges settings_changes;
     for (const auto & [key, value] : params)
     {
@@ -716,6 +714,7 @@ void HTTPHandler::processQuery(
     context->checkSettingsConstraints(settings_changes);
     context->applySettingsChanges(settings_changes);
 
+    const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
     in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
@@ -945,7 +944,9 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
     {
         /// Save name and values of substitution in dictionary.
         const String parameter_name = key.substr(strlen("param_"));
-        context->setQueryParameter(parameter_name, value);
+
+        if(!context->getQueryParameters().contains(parameter_name))
+            context->setQueryParameter(parameter_name, value);
         return true;
     }
 
@@ -971,8 +972,16 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
     for (const auto & it : params)
+    {
         if (it.first == param_name)
+        {
             full_query += it.second;
+        }
+        else
+        {
+            customizeQueryParam(context, it.first, it.second);
+        }
+    }
 
     return full_query;
 }
