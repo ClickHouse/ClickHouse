@@ -138,6 +138,8 @@ struct SelectQueryOptions
         shard_count = shard_count_;
         return *this;
     }
+
+    bool hasShardInfo() const { return shard_num.has_value() || shard_count.has_value(); }
 };
 
 }
