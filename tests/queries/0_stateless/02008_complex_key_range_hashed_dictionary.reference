@@ -1,8 +1,8 @@
 Dictionary not nullable
 dictGet
-0.2
-0.2
-0.2
+0.33
+0.42
+0.46
 0.2
 0.4
 dictHas
@@ -29,9 +29,9 @@ onlySpecificColumn
 0.46
 Dictionary nullable
 dictGet
-0.2
-0.2
-0.2
+0.33
+0.42
+\N
 0.2
 0.4
 dictHas

@@ -512,9 +512,12 @@ public:
             }
             else
             {
-                key_columns = {key_column, range_col};
-                key_types = {std::make_shared<DataTypeUInt64>(), range_col_type};
+                key_columns = {key_column};
+                key_types = {std::make_shared<DataTypeUInt64>()};
             }
+
+            key_columns.emplace_back(range_col);
+            key_types.emplace_back(range_col_type);
 
             result = executeDictionaryRequest(
                 dictionary,
