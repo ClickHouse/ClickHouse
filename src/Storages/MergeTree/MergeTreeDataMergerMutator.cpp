@@ -1332,11 +1332,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     {
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         NameSet updated_columns;
-        if (mutation_kind != MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION)
-        {
-            for (const auto & name_type : updated_header.getNamesAndTypesList())
-                updated_columns.emplace(name_type.name);
-        }
+        for (const auto & name_type : updated_header.getNamesAndTypesList())
+            updated_columns.emplace(name_type.name);
 
         auto indices_to_recalc = getIndicesToRecalculate(
             in, updated_columns, metadata_snapshot, context, materialized_indices, source_part);
@@ -1345,7 +1342,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         NameSet files_to_skip = collectFilesToSkip(
             source_part,
-            mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : updated_header,
+            updated_header,
             indices_to_recalc,
             mrk_extension,
             projections_to_recalc);
@@ -1413,8 +1410,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 metadata_snapshot,
                 indices_to_recalc,
                 projections_to_recalc,
-                // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-                mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : updated_header,
+                updated_header,
                 new_data_part,
                 in,
                 time_of_mutation,
