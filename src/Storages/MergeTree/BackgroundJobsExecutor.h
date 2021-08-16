@@ -90,6 +90,8 @@ public:
     /// Schedule background task as soon as possible, even if it sleep at this
     /// moment for some reason.
     void triggerTask();
+
+    void triggerTaskWithDelay();
     /// Finish execution: deactivate background task and wait already scheduled jobs
     void finish();
 

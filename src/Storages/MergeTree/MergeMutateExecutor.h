@@ -43,6 +43,12 @@ public:
         return false;
     }
 
+    /// FIX ?
+    bool completedSuccessfully() override
+    {
+        return true;
+    }
+
 private:
     std::function<void()> inner;
 };
@@ -62,11 +68,13 @@ public:
         CountGetter threads_count_getter_,
         CountGetter max_task_count_getter_,
         GlobalMetricGetter current_tasks_count_getter_,
-        Callback on_task_finish_)
+        Callback on_task_succeeded_,
+        Callback on_task_failed_)
         : threads_count_getter(threads_count_getter_)
         , max_task_count_getter(max_task_count_getter_)
         , current_tasks_count_getter(current_tasks_count_getter_)
-        , on_task_finish(on_task_finish_)
+        , on_task_succeeded(on_task_succeeded_)
+        , on_task_failed(on_task_failed_)
     {
         updatePoolConfiguration();
         scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
@@ -164,12 +172,16 @@ private:
                             return;
                         }
 
-                        // current.reset();
-                        on_task_finish();
+                        if (task->completedSuccessfully())
+                            on_task_succeeded();
+                        else
+                            on_task_failed();
+
                         decrementTasksCount();
                     }
                     catch(...)
                     {
+                        on_task_failed();
                         decrementTasksCount();
                         tryLogCurrentException(__PRETTY_FUNCTION__);
                     }
@@ -187,7 +199,8 @@ private:
     CountGetter threads_count_getter;
     CountGetter max_task_count_getter;
     GlobalMetricGetter current_tasks_count_getter;
-    Callback on_task_finish;
+    Callback on_task_succeeded;
+    Callback on_task_failed;
 
     using TasksQueue = std::deque<BackgroundTaskPtr>;
     TasksQueue tasks;

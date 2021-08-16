@@ -72,7 +72,12 @@ bool MutatePlainMergeTreeTask::execute()
         case State::NEED_FINISH :
         {
             // Nothing to do
+            state = State::SUCCESS;
             return false;
+        }
+        case State::SUCCESS:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Task with state SUCCESS mustn't be executed again");
         }
     }
 

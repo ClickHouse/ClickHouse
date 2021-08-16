@@ -26,7 +26,8 @@ static MergeTreeBackgroundExecutor buildMergeMutateExecutor(ContextPtr context, 
         [context] () { return context->getSettingsRef().background_pool_size; },
         [context] () { return context->getSettingsRef().background_pool_size; },
         [] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask]; },
-        [parent] () { parent->triggerTask(); }
+        [parent] () { parent->triggerTaskWithDelay(); },
+        [parent] () { parent->triggerTaskWithDelay(); }
     );
 }
 
@@ -36,7 +37,8 @@ static MergeTreeBackgroundExecutor buildFetchExecutor(ContextPtr context, Backgr
         [context] () { return context->getSettingsRef().background_fetches_pool_size; },
         [context] () { return context->getSettingsRef().background_fetches_pool_size; },
         [] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask]; },
-        [parent] () { parent->triggerTask(); }
+        [parent] () { parent->triggerTaskWithDelay(); },
+        [parent] () { parent->triggerTaskWithDelay(); }
     );
 }
 
@@ -47,7 +49,8 @@ static MergeTreeBackgroundExecutor buildMovesExecutor(ContextPtr context, Backgr
         [context] () { return context->getSettingsRef().background_move_pool_size; },
         [context] () { return context->getSettingsRef().background_move_pool_size; },
         [] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundMovePoolTask]; },
-        [parent] () { parent->triggerTask(); }
+        [parent] () { parent->triggerTaskWithDelay(); },
+        [parent] () { parent->triggerTaskWithDelay(); }
     );
 }
 
@@ -102,22 +105,19 @@ void BackgroundJobExecutor::scheduleTask(bool with_backoff)
 
 void BackgroundJobExecutor::executeMergeMutateTask(BackgroundTaskPtr merge_task)
 {
-    bool result = merge_mutate_executor.trySchedule(merge_task);
-    scheduleTask(/* with_backoff = */ !result);
+    merge_mutate_executor.trySchedule(merge_task);
 }
 
 
 void BackgroundJobExecutor::executeFetchTask(BackgroundTaskPtr fetch_task)
 {
-    bool result = fetch_executor.trySchedule(fetch_task);
-    scheduleTask(!result);
+    fetch_executor.trySchedule(fetch_task);
 }
 
 
 void BackgroundJobExecutor::executeMoveTask(BackgroundTaskPtr move_task)
 {
-    bool result = fetch_executor.trySchedule(move_task);
-    scheduleTask(!result);
+    fetch_executor.trySchedule(move_task);
 }
 
 void BackgroundJobExecutor::start()
@@ -152,14 +152,24 @@ void BackgroundJobExecutor::triggerTask()
 {
     std::lock_guard lock(scheduling_task_mutex);
     if (scheduling_task)
+    {
         runTaskWithoutDelay();
+    }
+
+}
+
+void BackgroundJobExecutor::triggerTaskWithDelay()
+{
+    std::lock_guard lock(scheduling_task_mutex);
+    if (scheduling_task)
+        scheduleTask(/* with_backoff = */ true);
 }
 
 void BackgroundJobExecutor::backgroundTaskFunction()
 try
 {
-    if (!selectTaskAndExecute())
-        scheduleTask(/* with_backoff = */ true);
+    bool result = selectTaskAndExecute();
+    scheduleTask(/* with_backoff = */ !result);
 }
 catch (...) /// Catch any exception to avoid thread termination.
 {

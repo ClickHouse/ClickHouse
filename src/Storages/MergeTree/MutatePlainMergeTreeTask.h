@@ -35,6 +35,11 @@ public:
 
     bool execute() override;
 
+    bool completedSuccessfully() override
+    {
+        return state == State::SUCCESS;
+    }
+
 private:
 
     void prepare();
@@ -43,7 +48,9 @@ private:
     {
         NEED_PREPARE,
         NEED_EXECUTE,
-        NEED_FINISH
+        NEED_FINISH,
+
+        SUCCESS
     };
 
     State state{State::NEED_PREPARE};

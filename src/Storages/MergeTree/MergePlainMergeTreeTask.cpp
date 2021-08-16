@@ -42,7 +42,13 @@ bool MergePlainMergeTreeTask::execute()
         case State::NEED_FINISH :
         {
             finish();
+
+            state = State::SUCCESS;
             return false;
+        }
+        case State::SUCCESS:
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Task with state SUCCESS mustn't be executed again");
         }
     }
     return false;

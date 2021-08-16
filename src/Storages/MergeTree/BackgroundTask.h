@@ -9,6 +9,7 @@ class BackgroundTask
 {
 public:
     virtual bool execute() = 0;
+    virtual bool completedSuccessfully() = 0;
     virtual ~BackgroundTask() = default;
 };
 

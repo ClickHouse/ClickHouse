@@ -25,6 +25,11 @@ public:
 
     ~ReplicatedMergeMutateTaskBase() override = default;
 
+    bool completedSuccessfully() override
+    {
+        return state == State::SUCCESS;
+    }
+
     bool execute() override;
 
 protected:
