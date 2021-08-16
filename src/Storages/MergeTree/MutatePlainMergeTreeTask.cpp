@@ -7,6 +7,12 @@ namespace DB
 {
 
 
+StorageID MutatePlainMergeTreeTask::getStorageID()
+{
+    return storage.getStorageID();
+}
+
+
 void MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;

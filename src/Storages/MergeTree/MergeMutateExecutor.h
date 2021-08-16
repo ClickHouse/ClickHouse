@@ -35,7 +35,7 @@ class LambdaAdapter : public shared_ptr_helper<LambdaAdapter>, public Background
 public:
 
     template <typename T>
-    explicit LambdaAdapter(T && inner_) : inner(inner_) {}
+    explicit LambdaAdapter(T && inner_, StorageID storage_id_) : inner(inner_), storage_id(storage_id_) {}
 
     bool execute() override
     {
@@ -43,19 +43,20 @@ public:
         return false;
     }
 
-    /// FIX ?
-    bool completedSuccessfully() override
+    void onCompleted() override {} // FIXME
+
+    StorageID getStorageID() override
     {
-        return true;
+        return storage_id;
     }
 
 private:
     std::function<void()> inner;
+    StorageID storage_id;
 };
 
 
-
-class MergeTreeBackgroundExecutor
+class MergeTreeBackgroundExecutor : public shared_ptr_helper<MergeTreeBackgroundExecutor>
 {
 public:
 
@@ -64,25 +65,29 @@ public:
     using Callback = std::function<void()>;
 
 
-    MergeTreeBackgroundExecutor(
-        CountGetter threads_count_getter_,
-        CountGetter max_task_count_getter_,
-        GlobalMetricGetter current_tasks_count_getter_,
-        Callback on_task_succeeded_,
-        Callback on_task_failed_)
-        : threads_count_getter(threads_count_getter_)
-        , max_task_count_getter(max_task_count_getter_)
-        , current_tasks_count_getter(current_tasks_count_getter_)
-        , on_task_succeeded(on_task_succeeded_)
-        , on_task_failed(on_task_failed_)
+    MergeTreeBackgroundExecutor()
     {
-        updatePoolConfiguration();
         scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
     }
 
     ~MergeTreeBackgroundExecutor()
     {
         wait();
+    }
+
+    void setThreadsCount(CountGetter && getter)
+    {
+        threads_count_getter = getter;
+    }
+
+    void setTasksCount(CountGetter && getter)
+    {
+        max_task_count_getter = getter;
+    }
+
+    void setCurrentTasksCountGetter(GlobalMetricGetter && getter)
+    {
+        current_tasks_count_getter = getter;
     }
 
     bool trySchedule(BackgroundTaskPtr task)
@@ -92,7 +97,7 @@ public:
 
         std::lock_guard lock(mutex);
 
-        if (shutdown)
+        if (shutdown_suspend)
             return false;
 
         tasks.emplace_back(task);
@@ -101,12 +106,23 @@ public:
         return true;
     }
 
+    void removeTasksCorrespondingToStorage(StorageID id)
+    {
+        /// Stop scheduler thread and pool
+        auto lock = getUniqueLock();
+        /// Get lock to the tasks
+        std::lock_guard second_lock(mutex);
+
+        auto erased = std::erase_if(tasks, [id = std::move(id)] (auto task) -> bool { return task->getStorageID() == id; });
+        (void) erased;
+    }
+
 
     void wait()
     {
         {
             std::lock_guard lock(mutex);
-            shutdown = true;
+            shutdown_suspend = true;
             has_tasks.notify_all();
         }
 
@@ -120,8 +136,43 @@ public:
             std::rethrow_exception(last_exception);
     }
 
-
 private:
+
+    using ExecutorSuspender = std::unique_lock<MergeTreeBackgroundExecutor>;
+    friend class std::unique_lock<MergeTreeBackgroundExecutor>;
+
+    ExecutorSuspender getUniqueLock()
+    {
+        return ExecutorSuspender(*this);
+    }
+
+    void lock()
+    {
+        suspend();
+    }
+
+    void unlock()
+    {
+        resume();
+    }
+
+    void suspend()
+    {
+        {
+            std::unique_lock lock(mutex);
+            shutdown_suspend = true;
+            has_tasks.notify_one();
+        }
+        scheduler.join();
+        pool.wait();
+    }
+
+
+    void resume()
+    {
+        scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
+    }
+
 
     void updatePoolConfiguration()
     {
@@ -139,68 +190,12 @@ private:
         --current_metric;
     }
 
-    void schedulerThreadFunction()
-    {
-        while (true)
-        {
-            BackgroundTaskPtr current;
-            {
-                std::unique_lock lock(mutex);
-                has_tasks.wait(lock, [this](){ return !tasks.empty() || shutdown; });
+    void schedulerThreadFunction();
 
-                if (shutdown)
-                    break;
-
-                current = std::move(tasks.front());
-                tasks.pop_front();
-
-                /// This is needed to increase / decrease the number of threads at runtime
-                updatePoolConfiguration();
-            }
-
-            try
-            {
-                pool.scheduleOrThrowOnError([this, task = std::move(current)] ()
-                {
-                    try
-                    {
-                        if (task->execute())
-                        {
-                            std::lock_guard guard(mutex);
-                            tasks.emplace_back(task);
-                            has_tasks.notify_one();
-                            return;
-                        }
-
-                        if (task->completedSuccessfully())
-                            on_task_succeeded();
-                        else
-                            on_task_failed();
-
-                        decrementTasksCount();
-                    }
-                    catch(...)
-                    {
-                        on_task_failed();
-                        decrementTasksCount();
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-                    }
-                });
-            }
-            catch (...)
-            {
-                std::lock_guard lock(mutex);
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                last_exception = std::current_exception();
-            }
-        }
-    }
 
     CountGetter threads_count_getter;
     CountGetter max_task_count_getter;
     GlobalMetricGetter current_tasks_count_getter;
-    Callback on_task_succeeded;
-    Callback on_task_failed;
 
     using TasksQueue = std::deque<BackgroundTaskPtr>;
     TasksQueue tasks;
@@ -209,14 +204,12 @@ private:
     std::condition_variable has_tasks;
 
     std::atomic_size_t scheduled_tasks_count{0};
-    std::atomic_bool shutdown{false};
+    std::atomic_bool shutdown_suspend{false};
 
     std::exception_ptr last_exception{nullptr};
 
     ThreadPool pool;
     ThreadFromGlobalPool scheduler;
 };
-
-
 
 }

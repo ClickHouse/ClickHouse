@@ -8,6 +8,12 @@ namespace DB
 {
 
 
+StorageID MergePlainMergeTreeTask::getStorageID()
+{
+    return storage.getStorageID();
+}
+
+
 bool MergePlainMergeTreeTask::execute()
 {
     /// Make out memory tracker a parent of current thread memory tracker

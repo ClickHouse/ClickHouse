@@ -98,6 +98,13 @@ namespace CurrentMetrics
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
+
+
+    extern const Metric DelayedInserts;
+    extern const Metric BackgroundPoolTask;
+    extern const Metric BackgroundMovePoolTask;
+    extern const Metric BackgroundFetchesPoolTask;
+
 }
 
 
@@ -2851,5 +2858,42 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 
     return ignored_part_uuids;
 }
+
+
+void Context::initializeBackgroundExecutors()
+{
+    merge_mutate_executor = MergeTreeBackgroundExecutor::create();
+    moves_executor = MergeTreeBackgroundExecutor::create();
+    fetch_executor = MergeTreeBackgroundExecutor::create();
+
+    merge_mutate_executor->setThreadsCount([context = shared_from_this()] () { return context->getSettingsRef().background_pool_size; });
+    merge_mutate_executor->setTasksCount([context = shared_from_this()] () { return context->getSettingsRef().background_pool_size; });
+    merge_mutate_executor->setCurrentTasksCountGetter([] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask]; });
+
+    moves_executor->setThreadsCount([context = shared_from_this()] () { return context->getSettingsRef().background_move_pool_size; });
+    moves_executor->setTasksCount([context = shared_from_this()] () { return context->getSettingsRef().background_move_pool_size; });
+    moves_executor->setCurrentTasksCountGetter([] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundMovePoolTask]; });
+
+    fetch_executor->setThreadsCount([context = shared_from_this()] () { return context->getSettingsRef().background_fetches_pool_size; });
+    fetch_executor->setTasksCount([context = shared_from_this()] () { return context->getSettingsRef().background_fetches_pool_size; });
+    fetch_executor->setCurrentTasksCountGetter([] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask]; });
+}
+
+
+MergeTreeBackgroundExecutorPtr Context::getMergeMutateExecutor() const
+{
+    return merge_mutate_executor;
+}
+
+MergeTreeBackgroundExecutorPtr Context::getMovesExecutor() const
+{
+    return moves_executor;
+}
+
+MergeTreeBackgroundExecutorPtr Context::getFetchesExecutor() const
+{
+    return fetch_executor;
+}
+
 
 }

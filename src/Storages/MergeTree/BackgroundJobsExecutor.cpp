@@ -5,68 +5,16 @@
 #include <pcg_random.hpp>
 #include <random>
 
-namespace CurrentMetrics
-{
-    extern const Metric BackgroundPoolTask;
-    extern const Metric BackgroundMovePoolTask;
-    extern const Metric BackgroundFetchesPoolTask;
-}
-
 namespace DB
 {
-
-
-
-namespace ExecutorBuilder
-{
-
-static MergeTreeBackgroundExecutor buildMergeMutateExecutor(ContextPtr context, BackgroundJobExecutor * parent)
-{
-    return MergeTreeBackgroundExecutor(
-        [context] () { return context->getSettingsRef().background_pool_size; },
-        [context] () { return context->getSettingsRef().background_pool_size; },
-        [] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask]; },
-        [parent] () { parent->triggerTaskWithDelay(); },
-        [parent] () { parent->triggerTaskWithDelay(); }
-    );
-}
-
-static MergeTreeBackgroundExecutor buildFetchExecutor(ContextPtr context, BackgroundJobExecutor * parent)
-{
-    return MergeTreeBackgroundExecutor(
-        [context] () { return context->getSettingsRef().background_fetches_pool_size; },
-        [context] () { return context->getSettingsRef().background_fetches_pool_size; },
-        [] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask]; },
-        [parent] () { parent->triggerTaskWithDelay(); },
-        [parent] () { parent->triggerTaskWithDelay(); }
-    );
-}
-
-
-static MergeTreeBackgroundExecutor buildMovesExecutor(ContextPtr context, BackgroundJobExecutor * parent)
-{
-    return MergeTreeBackgroundExecutor(
-        [context] () { return context->getSettingsRef().background_move_pool_size; },
-        [context] () { return context->getSettingsRef().background_move_pool_size; },
-        [] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundMovePoolTask]; },
-        [parent] () { parent->triggerTaskWithDelay(); },
-        [parent] () { parent->triggerTaskWithDelay(); }
-    );
-}
-
-}
-
 
 BackgroundJobExecutor::BackgroundJobExecutor(MergeTreeData & data_, ContextPtr global_context_)
     : WithContext(global_context_)
     , data(data_)
     , sleep_settings(global_context_->getBackgroundMoveTaskSchedulingSettings())
     , rng(randomSeed())
-    , merge_mutate_executor(ExecutorBuilder::buildMergeMutateExecutor(global_context_, this))
-    , fetch_executor(ExecutorBuilder::buildFetchExecutor(global_context_, this))
-    , moves_executor(ExecutorBuilder::buildMovesExecutor(global_context_, this))
+    , storage_id(data.getStorageID())
 {
-
 }
 
 double BackgroundJobExecutor::getSleepRandomAdd()
@@ -105,19 +53,19 @@ void BackgroundJobExecutor::scheduleTask(bool with_backoff)
 
 void BackgroundJobExecutor::executeMergeMutateTask(BackgroundTaskPtr merge_task)
 {
-    merge_mutate_executor.trySchedule(merge_task);
+    getContext()->getMergeMutateExecutor()->trySchedule(merge_task);
 }
 
 
 void BackgroundJobExecutor::executeFetchTask(BackgroundTaskPtr fetch_task)
 {
-    fetch_executor.trySchedule(fetch_task);
+    getContext()->getFetchesExecutor()->trySchedule(fetch_task);
 }
 
 
 void BackgroundJobExecutor::executeMoveTask(BackgroundTaskPtr move_task)
 {
-    fetch_executor.trySchedule(move_task);
+    getContext()->getMovesExecutor()->trySchedule(move_task);
 }
 
 void BackgroundJobExecutor::start()
@@ -142,9 +90,11 @@ void BackgroundJobExecutor::finish()
         // for (auto & [pool_type, pool] : pools)
         //     pool.wait();
 
-        merge_mutate_executor.wait();
-        fetch_executor.wait();
-        moves_executor.wait();
+        auto context = getContext();
+
+        context->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        context->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        context->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
     }
 }
 
@@ -169,7 +119,8 @@ void BackgroundJobExecutor::backgroundTaskFunction()
 try
 {
     bool result = selectTaskAndExecute();
-    scheduleTask(/* with_backoff = */ !result);
+    (void) result;
+    scheduleTask(/* with_backoff = */ true);
 }
 catch (...) /// Catch any exception to avoid thread termination.
 {

@@ -25,10 +25,9 @@ public:
 
     ~ReplicatedMergeMutateTaskBase() override = default;
 
-    bool completedSuccessfully() override
-    {
-        return state == State::SUCCESS;
-    }
+    void onCompleted() override {}
+
+    StorageID getStorageID() override;
 
     bool execute() override;
 

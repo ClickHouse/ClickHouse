@@ -30,10 +30,9 @@ public:
 
     bool execute() override;
 
-    bool completedSuccessfully() override
-    {
-        return state == State::SUCCESS;
-    }
+    void onCompleted() override {}
+
+    StorageID getStorageID() override;
 
 private:
 

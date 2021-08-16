@@ -200,6 +200,7 @@ public:
     /// Add a part to the queue of parts whose data you want to check in the background thread.
     void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0)
     {
+        LOG_FATAL(&Poco::Logger::get("enqueuePartForCheck"), StackTrace().toString());
         part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
     }
 

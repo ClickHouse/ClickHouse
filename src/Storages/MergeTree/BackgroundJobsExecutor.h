@@ -71,16 +71,15 @@ private:
     /// no new jobs.
     std::atomic<size_t> no_work_done_count{0};
 
-    MergeTreeBackgroundExecutor merge_mutate_executor;
-    MergeTreeBackgroundExecutor fetch_executor;
-    MergeTreeBackgroundExecutor moves_executor;
-
     /// Scheduling task which assign jobs in background pool
     BackgroundSchedulePool::TaskHolder scheduling_task;
     /// Mutex for thread safety
     std::mutex scheduling_task_mutex;
     /// Mutex for pcg random generator thread safety
     std::mutex random_mutex;
+
+    /// Save storage id to prevent use-after-free in destructor
+    StorageID storage_id;
 
 public:
     /// These three functions are thread safe

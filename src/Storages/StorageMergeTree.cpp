@@ -1050,7 +1050,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor & executo
         {
             clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
             return true;
-        }));
+        }, getStorageID()));
         executed = true;
     }
     if (time_after_previous_cleanup_parts.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
@@ -1065,7 +1065,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor & executo
             clearOldMutations();
             clearEmptyParts();
             return true;
-        }));
+        }, getStorageID()));
         executed = true;
      }
 
