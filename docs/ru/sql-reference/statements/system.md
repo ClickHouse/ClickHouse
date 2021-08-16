@@ -299,7 +299,7 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 
 Восстанавливает реплику, если метаданные в Zookeeper потеряны, но сами данные возможно существуют.
 
-Работает только с таблицами семейства `ReplicatedMergeTree` и только в режиме чтения.
+Работает только с таблицами семейства `ReplicatedMergeTree` и только если таблица находится в readonly-режиме.
 
 Запрос можно выполнить из:
 
