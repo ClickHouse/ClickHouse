@@ -945,7 +945,7 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
         /// Save name and values of substitution in dictionary.
         const String parameter_name = key.substr(strlen("param_"));
 
-        if(!context->getQueryParameters().contains(parameter_name))
+        if (!context->getQueryParameters().contains(parameter_name))
             context->setQueryParameter(parameter_name, value);
         return true;
     }
