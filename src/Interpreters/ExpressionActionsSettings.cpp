@@ -14,8 +14,7 @@ ExpressionActionsSettings ExpressionActionsSettings::fromSettings(const Settings
     settings.max_temporary_columns = from.max_temporary_columns;
     settings.max_temporary_non_const_columns = from.max_temporary_non_const_columns;
     settings.compile_expressions = compile_expressions;
-    settings.use_short_circuit_function_evaluation = from.use_short_circuit_function_evaluation;
-    settings.optimize_short_circuit_function_evaluation = from.optimize_short_circuit_function_evaluation;
+    settings.short_circuit_function_evaluation = from.short_circuit_function_evaluation;
 
     return settings;
 }
