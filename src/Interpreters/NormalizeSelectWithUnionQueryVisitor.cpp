@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EXPECTED_ALL_OR_DISTINCT;
+    extern const int LOGICAL_ERROR;
 }
 
 void NormalizeSelectWithUnionQueryMatcher::getSelectsFromUnionListNode(ASTPtr ast_select, ASTs & selects)
@@ -39,7 +40,7 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
     if (select_list.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty list of selects for ASTSelectWithUnionQuery");
 
-    /// Since nodes are traversed from bottom to top, we can also collect union modes from chidlren up to parents.
+    /// Since nodes are traversed from bottom to top, we can also collect union modes from children up to parents.
     ASTSelectWithUnionQuery::UnionModesSet current_set_of_modes;
     bool distinct_found = false;
 
