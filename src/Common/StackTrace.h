@@ -37,18 +37,11 @@ public:
         std::optional<UInt64> line;
     };
 
-    static constexpr size_t capacity =
-#ifndef NDEBUG
-        /* The stacks are normally larger in debug version due to less inlining.
-         *
-         * NOTE: it cannot be larger then 56 right now, since otherwise it will
-         * not fit into minimal PIPE_BUF (512) in TraceCollector.
-         */
-        56
-#else
-        32
-#endif
-        ;
+    /* NOTE: It cannot be larger right now, since otherwise it
+     * will not fit into minimal PIPE_BUF (512) in TraceCollector.
+     */
+    static constexpr size_t capacity = 45;
+
     using FramePointers = std::array<void *, capacity>;
     using Frames = std::array<Frame, capacity>;
 

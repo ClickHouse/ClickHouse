@@ -9,6 +9,8 @@ class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
 void registerFunctionCurrentUser(FunctionFactory &);
+void registerFunctionCurrentProfiles(FunctionFactory &);
+void registerFunctionCurrentRoles(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
 void registerFunctionFQDN(FunctionFactory &);
 void registerFunctionVisibleWidth(FunctionFactory &);
@@ -74,6 +76,8 @@ void registerFunctionFile(FunctionFactory & factory);
 void registerFunctionConnectionId(FunctionFactory & factory);
 void registerFunctionPartitionId(FunctionFactory & factory);
 void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
+void registerFunctionQueryID(FunctionFactory & factory);
+void registerFunctionInitialQueryID(FunctionFactory & factory);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -83,6 +87,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
     registerFunctionCurrentUser(factory);
+    registerFunctionCurrentProfiles(factory);
+    registerFunctionCurrentRoles(factory);
     registerFunctionHostName(factory);
     registerFunctionFQDN(factory);
     registerFunctionVisibleWidth(factory);
@@ -148,6 +154,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionConnectionId(factory);
     registerFunctionPartitionId(factory);
     registerFunctionIsIPAddressContainedIn(factory);
+    registerFunctionQueryID(factory);
+    registerFunctionInitialQueryID(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

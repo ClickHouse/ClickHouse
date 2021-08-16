@@ -10,7 +10,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/QuotaUsage.h>
 #include <Access/AccessFlags.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -64,7 +64,7 @@ NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypesImpl(bool add_column_
     names_and_types.push_back({"end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())});
     names_and_types.push_back({"duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())});
 
-    for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
     {
         const auto & type_info = ResourceTypeInfo::get(resource_type);
         String column_name = type_info.name;
@@ -117,7 +117,7 @@ void StorageSystemQuotaUsage::fillDataImpl(
     NullMap * column_usage_null_map[MAX_RESOURCE_TYPE];
     IColumn * column_max[MAX_RESOURCE_TYPE];
     NullMap * column_max_null_map[MAX_RESOURCE_TYPE];
-    for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
     {
         column_usage[resource_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn();
         column_usage_null_map[resource_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
@@ -148,7 +148,7 @@ void StorageSystemQuotaUsage::fillDataImpl(
             column_end_time_null_map.push_back(true);
             column_duration.insertDefault();
             column_duration_null_map.push_back(true);
-            for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+            for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
             {
                 column_usage[resource_type]->insertDefault();
                 column_usage_null_map[resource_type]->push_back(true);
@@ -168,7 +168,7 @@ void StorageSystemQuotaUsage::fillDataImpl(
         column_end_time_null_map.push_back(false);
         column_duration_null_map.push_back(false);
 
-        for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
+        for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
         {
             const auto & type_info = ResourceTypeInfo::get(resource_type);
             addValue(*column_max[resource_type], *column_max_null_map[resource_type], interval->max[resource_type], type_info);

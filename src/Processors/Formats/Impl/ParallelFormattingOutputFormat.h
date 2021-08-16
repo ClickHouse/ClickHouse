@@ -172,6 +172,7 @@ private:
     ThreadPool pool;
     // Collecting all memory to original ReadBuffer
     ThreadFromGlobalPool collector_thread;
+    std::mutex collector_thread_mutex;
 
     std::exception_ptr background_exception = nullptr;
 

@@ -172,4 +172,10 @@ struct ModuloImpl
 #endif
 };
 
+template <typename A, typename B>
+struct ModuloLegacyImpl : ModuloImpl<A, B>
+{
+    using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
+};
+
 }

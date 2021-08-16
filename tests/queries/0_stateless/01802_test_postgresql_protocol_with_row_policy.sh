@@ -41,3 +41,5 @@ SELECT 'after row policy with plaintext_password';
 
 psql "postgresql://postgresql_user:qwerty@localhost:${CLICKHOUSE_PORT_POSTGRESQL}/db01802" -c "SELECT * FROM postgresql;"
 
+$CLICKHOUSE_CLIENT -q "DROP TABLE db01802.postgresql"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE db01802"

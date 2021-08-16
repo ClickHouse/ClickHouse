@@ -1,7 +1,7 @@
 #include <mutex>
-#include <ext/bit_cast.h>
+#include <common/bit_cast.h>
 
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -11,7 +11,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -194,8 +194,7 @@ private:
         ColumnsWithTypeAndName args = arguments;
         args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
-        auto impl = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(std::make_shared<FunctionTransform>()))
-                    .build(args);
+        auto impl = FunctionToOverloadResolverAdaptor(std::make_shared<FunctionTransform>()).build(args);
 
         return impl->execute(args, result_type, input_rows_count);
     }
@@ -494,7 +493,7 @@ private:
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
@@ -510,7 +509,7 @@ private:
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
@@ -526,7 +525,7 @@ private:
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
             else
@@ -544,7 +543,7 @@ private:
         ColumnString::Offset current_dst_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            const auto * it = table.find(ext::bit_cast<UInt64>(src[i]));
+            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             StringRef ref = it ? it->getMapped() : dst_default;
             dst_data.resize(current_dst_offset + ref.size);
             memcpy(&dst_data[current_dst_offset], ref.data, ref.size);

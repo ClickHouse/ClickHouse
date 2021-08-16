@@ -4,10 +4,11 @@
 #include <AggregateFunctions/Helpers.h>
 
 #include <Core/Field.h>
-#include "registerAggregateFunctions.h"
+
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -85,7 +86,8 @@ static constexpr bool supportBigInt()
 }
 
 template <template <typename, bool> class Function>
-AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, const DataTypes & argument_types, const Array & params)
+AggregateFunctionPtr createAggregateFunctionQuantile(
+    const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     /// Second argument type check doesn't depend on the type of the first one.
     Function<void, true>::assertSecondArg(argument_types);
@@ -125,44 +127,47 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
 
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
 {
+    /// For aggregate functions returning array we cannot return NULL on empty set.
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
+
     factory.registerFunction(NameQuantile::name, createAggregateFunctionQuantile<FuncQuantile>);
-    factory.registerFunction(NameQuantiles::name, createAggregateFunctionQuantile<FuncQuantiles>);
+    factory.registerFunction(NameQuantiles::name, { createAggregateFunctionQuantile<FuncQuantiles>, properties });
 
     factory.registerFunction(NameQuantileDeterministic::name, createAggregateFunctionQuantile<FuncQuantileDeterministic>);
-    factory.registerFunction(NameQuantilesDeterministic::name, createAggregateFunctionQuantile<FuncQuantilesDeterministic>);
+    factory.registerFunction(NameQuantilesDeterministic::name, { createAggregateFunctionQuantile<FuncQuantilesDeterministic>, properties });
 
     factory.registerFunction(NameQuantileExact::name, createAggregateFunctionQuantile<FuncQuantileExact>);
-    factory.registerFunction(NameQuantilesExact::name, createAggregateFunctionQuantile<FuncQuantilesExact>);
+    factory.registerFunction(NameQuantilesExact::name, { createAggregateFunctionQuantile<FuncQuantilesExact>, properties });
 
     factory.registerFunction(NameQuantileExactLow::name, createAggregateFunctionQuantile<FuncQuantileExactLow>);
-    factory.registerFunction(NameQuantilesExactLow::name, createAggregateFunctionQuantile<FuncQuantilesExactLow>);
+    factory.registerFunction(NameQuantilesExactLow::name, { createAggregateFunctionQuantile<FuncQuantilesExactLow>, properties });
 
     factory.registerFunction(NameQuantileExactHigh::name, createAggregateFunctionQuantile<FuncQuantileExactHigh>);
-    factory.registerFunction(NameQuantilesExactHigh::name, createAggregateFunctionQuantile<FuncQuantilesExactHigh>);
+    factory.registerFunction(NameQuantilesExactHigh::name, { createAggregateFunctionQuantile<FuncQuantilesExactHigh>, properties });
 
     factory.registerFunction(NameQuantileExactExclusive::name, createAggregateFunctionQuantile<FuncQuantileExactExclusive>);
-    factory.registerFunction(NameQuantilesExactExclusive::name, createAggregateFunctionQuantile<FuncQuantilesExactExclusive>);
+    factory.registerFunction(NameQuantilesExactExclusive::name, { createAggregateFunctionQuantile<FuncQuantilesExactExclusive>, properties });
 
     factory.registerFunction(NameQuantileExactInclusive::name, createAggregateFunctionQuantile<FuncQuantileExactInclusive>);
-    factory.registerFunction(NameQuantilesExactInclusive::name, createAggregateFunctionQuantile<FuncQuantilesExactInclusive>);
+    factory.registerFunction(NameQuantilesExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantilesExactInclusive>, properties });
 
     factory.registerFunction(NameQuantileExactWeighted::name, createAggregateFunctionQuantile<FuncQuantileExactWeighted>);
-    factory.registerFunction(NameQuantilesExactWeighted::name, createAggregateFunctionQuantile<FuncQuantilesExactWeighted>);
+    factory.registerFunction(NameQuantilesExactWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesExactWeighted>, properties });
 
     factory.registerFunction(NameQuantileTiming::name, createAggregateFunctionQuantile<FuncQuantileTiming>);
-    factory.registerFunction(NameQuantilesTiming::name, createAggregateFunctionQuantile<FuncQuantilesTiming>);
+    factory.registerFunction(NameQuantilesTiming::name, { createAggregateFunctionQuantile<FuncQuantilesTiming>, properties });
 
     factory.registerFunction(NameQuantileTimingWeighted::name, createAggregateFunctionQuantile<FuncQuantileTimingWeighted>);
-    factory.registerFunction(NameQuantilesTimingWeighted::name, createAggregateFunctionQuantile<FuncQuantilesTimingWeighted>);
+    factory.registerFunction(NameQuantilesTimingWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesTimingWeighted>, properties });
 
     factory.registerFunction(NameQuantileTDigest::name, createAggregateFunctionQuantile<FuncQuantileTDigest>);
-    factory.registerFunction(NameQuantilesTDigest::name, createAggregateFunctionQuantile<FuncQuantilesTDigest>);
+    factory.registerFunction(NameQuantilesTDigest::name, { createAggregateFunctionQuantile<FuncQuantilesTDigest>, properties });
 
     factory.registerFunction(NameQuantileTDigestWeighted::name, createAggregateFunctionQuantile<FuncQuantileTDigestWeighted>);
-    factory.registerFunction(NameQuantilesTDigestWeighted::name, createAggregateFunctionQuantile<FuncQuantilesTDigestWeighted>);
+    factory.registerFunction(NameQuantilesTDigestWeighted::name, { createAggregateFunctionQuantile<FuncQuantilesTDigestWeighted>, properties });
 
     factory.registerFunction(NameQuantileBFloat16::name, createAggregateFunctionQuantile<FuncQuantileBFloat16>);
-    factory.registerFunction(NameQuantilesBFloat16::name, createAggregateFunctionQuantile<FuncQuantilesBFloat16>);
+    factory.registerFunction(NameQuantilesBFloat16::name, { createAggregateFunctionQuantile<FuncQuantilesBFloat16>, properties });
 
     factory.registerFunction(NameQuantileBFloat16Weighted::name, createAggregateFunctionQuantile<FuncQuantileBFloat16Weighted>);
     factory.registerFunction(NameQuantilesBFloat16Weighted::name, createAggregateFunctionQuantile<FuncQuantilesBFloat16Weighted>);

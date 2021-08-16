@@ -28,7 +28,6 @@ struct StorageInMemoryMetadata
     ConstraintsDescription constraints;
     /// Table projections. Currently supported for MergeTree only.
     ProjectionsDescription projections;
-    mutable const ProjectionDescription * selected_projection{};
     /// PARTITION BY expression. Currently supported for MergeTree only.
     KeyDescription partition_key;
     /// PRIMARY KEY expression. If absent, than equal to order_by_ast.
@@ -47,6 +46,8 @@ struct StorageInMemoryMetadata
     /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;
 
+    String comment;
+
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
@@ -55,6 +56,9 @@ struct StorageInMemoryMetadata
     /// NOTE: Thread unsafe part. You should modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
     /// object. See example in IStorage.
+
+    /// Sets a user-defined comment for a table
+    void setComment(const String & comment_);
 
     /// Sets only real columns, possibly overwrites virtual ones.
     void setColumns(ColumnsDescription columns_);

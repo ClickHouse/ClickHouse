@@ -15,10 +15,11 @@ limitations under the License. */
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/BlocksSource.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
+#include <Processors/Sources/BlocksSource.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <DataStreams/copyData.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -26,9 +27,9 @@ limitations under the License. */
 #include <Common/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
-#include <Storages/LiveView/LiveViewBlockInputStream.h>
-#include <Storages/LiveView/LiveViewBlockOutputStream.h>
-#include <Storages/LiveView/LiveViewEventsBlockInputStream.h>
+#include <Storages/LiveView/LiveViewSource.h>
+#include <Storages/LiveView/LiveViewSink.h>
+#include <Storages/LiveView/LiveViewEventsSource.h>
 #include <Storages/LiveView/StorageBlocks.h>
 #include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 
@@ -49,7 +50,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW;
@@ -82,9 +82,8 @@ static StorageID extractDependentTable(ASTPtr & query, ContextPtr context, const
     {
         auto * ast_select = subquery->as<ASTSelectWithUnionQuery>();
         if (!ast_select)
-            throw Exception("Logical error while creating StorageLiveView."
-                            " Could not retrieve table name from select query.",
-                            DB::ErrorCodes::LOGICAL_ERROR);
+            throw Exception("LIVE VIEWs are only supported for queries from tables, but there is no table name in select query.",
+                            DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
 
@@ -112,15 +111,23 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
 
     InterpreterSelectQuery interpreter(mergeable_query->clone(), local_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
 
-    auto view_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().getInputStream());
+    auto io = interpreter.execute();
+    io.pipeline.addSimpleTransform([&](const Block & cur_header)
+    {
+        return std::make_shared<MaterializingTransform>(cur_header);
+    });
 
-    while (Block this_block = view_mergeable_stream->read())
+    new_mergeable_blocks->sample_block = io.pipeline.getHeader();
+
+    PullingPipelineExecutor executor(io.pipeline);
+    Block this_block;
+
+    while (executor.pull(this_block))
         base_blocks->push_back(this_block);
 
     new_blocks->push_back(base_blocks);
 
     new_mergeable_blocks->blocks = new_blocks;
-    new_mergeable_blocks->sample_block = view_mergeable_stream->getHeader();
 
     return new_mergeable_blocks;
 }
@@ -135,7 +142,7 @@ Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 }
 
 /// Complete query using input streams from mergeable blocks
-BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
+QueryPipeline StorageLiveView::completeQuery(Pipes pipes)
 {
     //FIXME it's dangerous to create Context on stack
     auto block_context = Context::createCopy(getContext());
@@ -149,18 +156,25 @@ BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
             std::move(pipes), QueryProcessingStage::WithMergeableState);
     };
     block_context->addExternalTable(getBlocksTableName(), TemporaryTableHolder(getContext(), creator));
-
     InterpreterSelectQuery select(getInnerBlocksQuery(), block_context, StoragePtr(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete));
-    BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().getInputStream());
+    auto io = select.execute();
+    io.pipeline.addSimpleTransform([&](const Block & cur_header)
+    {
+        return std::make_shared<MaterializingTransform>(cur_header);
+    });
 
     /// Squashing is needed here because the view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
-    data = std::make_shared<SquashingBlockInputStream>(
-        data, getContext()->getSettingsRef().min_insert_block_size_rows,
-        getContext()->getSettingsRef().min_insert_block_size_bytes);
+    io.pipeline.addSimpleTransform([&](const Block & cur_header)
+    {
+        return std::make_shared<SquashingChunksTransform>(
+            cur_header,
+            getContext()->getSettingsRef().min_insert_block_size_rows,
+            getContext()->getSettingsRef().min_insert_block_size_bytes);
+    });
 
-    return data;
+    return std::move(io.pipeline);
 }
 
 void StorageLiveView::writeIntoLiveView(
@@ -168,7 +182,7 @@ void StorageLiveView::writeIntoLiveView(
     const Block & block,
     ContextPtr local_context)
 {
-    BlockOutputStreamPtr output = std::make_shared<LiveViewBlockOutputStream>(live_view);
+    auto output = std::make_shared<LiveViewSink>(live_view);
 
     /// Check if live view has any readers if not
     /// just reset blocks to empty and do nothing else
@@ -222,10 +236,16 @@ void StorageLiveView::writeIntoLiveView(
         InterpreterSelectQuery select_block(mergeable_query, local_context, blocks_storage.getTable(), blocks_storage.getTable()->getInMemoryMetadataPtr(),
             QueryProcessingStage::WithMergeableState);
 
-        auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
-            select_block.execute().getInputStream());
+        auto io = select_block.execute();
+        io.pipeline.addSimpleTransform([&](const Block & cur_header)
+        {
+            return std::make_shared<MaterializingTransform>(cur_header);
+        });
 
-        while (Block this_block = data_mergeable_stream->read())
+        PullingPipelineExecutor executor(io.pipeline);
+        Block this_block;
+
+        while (executor.pull(this_block))
             new_mergeable_blocks->push_back(this_block);
 
         if (new_mergeable_blocks->empty())
@@ -240,8 +260,15 @@ void StorageLiveView::writeIntoLiveView(
         }
     }
 
-    BlockInputStreamPtr data = live_view.completeQuery(std::move(from));
-    copyData(*data, *output);
+    auto pipeline = live_view.completeQuery(std::move(from));
+    pipeline.resize(1);
+    pipeline.setSinks([&](const Block &, Pipe::StreamType)
+    {
+        return std::move(output);
+    });
+
+    auto executor = pipeline.execute();
+    executor->execute(pipeline.getNumThreads());
 }
 
 
@@ -353,9 +380,11 @@ bool StorageLiveView::getNewBlocks()
     /// inserted data to be duplicated
     auto new_mergeable_blocks = collectMergeableBlocks(live_view_context);
     Pipes from = blocksToPipes(new_mergeable_blocks->blocks, new_mergeable_blocks->sample_block);
-    BlockInputStreamPtr data = completeQuery(std::move(from));
+    auto pipeline = completeQuery(std::move(from));
 
-    while (Block block = data->read())
+    PullingPipelineExecutor executor(pipeline);
+    Block block;
+    while (executor.pull(block))
     {
         /// calculate hash before virtual column is added
         block.updateHash(hash);
@@ -523,7 +552,7 @@ Pipe StorageLiveView::read(
     return Pipe(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
 }
 
-BlockInputStreams StorageLiveView::watch(
+Pipe StorageLiveView::watch(
     const Names & /*column_names*/,
     const SelectQueryInfo & query_info,
     ContextPtr local_context,
@@ -535,7 +564,7 @@ BlockInputStreams StorageLiveView::watch(
 
     bool has_limit = false;
     UInt64 limit = 0;
-    BlockInputStreamPtr reader;
+    Pipe reader;
 
     if (query.limit_length)
     {
@@ -544,15 +573,15 @@ BlockInputStreams StorageLiveView::watch(
     }
 
     if (query.is_watch_events)
-        reader = std::make_shared<LiveViewEventsBlockInputStream>(
+        reader = Pipe(std::make_shared<LiveViewEventsSource>(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
-            local_context->getSettingsRef().live_view_heartbeat_interval.totalSeconds());
+            local_context->getSettingsRef().live_view_heartbeat_interval.totalSeconds()));
     else
-        reader = std::make_shared<LiveViewBlockInputStream>(
+        reader = Pipe(std::make_shared<LiveViewSource>(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
-            local_context->getSettingsRef().live_view_heartbeat_interval.totalSeconds());
+            local_context->getSettingsRef().live_view_heartbeat_interval.totalSeconds()));
 
     {
         std::lock_guard lock(mutex);
@@ -565,7 +594,7 @@ BlockInputStreams StorageLiveView::watch(
     }
 
     processed_stage = QueryProcessingStage::Complete;
-    return { reader };
+    return reader;
 }
 
 NamesAndTypesList StorageLiveView::getVirtuals() const

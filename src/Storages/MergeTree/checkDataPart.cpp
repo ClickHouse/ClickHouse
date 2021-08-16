@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <optional>
 
-#include <Poco/File.h>
 #include <Poco/DirectoryIterator.h>
 
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -70,7 +69,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     NamesAndTypesList columns_txt;
 
     {
-        auto buf = disk->readFile(path + "columns.txt");
+        auto buf = disk->readFile(fs::path(path) / "columns.txt");
         columns_txt.readText(*buf);
         assertEOF(*buf);
     }
@@ -231,9 +230,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
     /// Checksums from the rest files listed in checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.
     IMergeTreeDataPart::Checksums checksums_txt;
 
-    if (require_checksums || disk->exists(path + "checksums.txt"))
+    if (require_checksums || disk->exists(fs::path(path) / "checksums.txt"))
     {
-        auto buf = disk->readFile(path + "checksums.txt");
+        auto buf = disk->readFile(fs::path(path) / "checksums.txt");
         checksums_txt.read(*buf);
         assertEOF(*buf);
     }

@@ -43,7 +43,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         /// If the end of range is inside the block, we will need to read it too.
         if (right_mark < marks_count && marks_loader.getMark(right_mark).offset_in_decompressed_block > 0)
         {
-            auto indices = ext::range(right_mark, marks_count);
+            auto indices = collections::range(right_mark, marks_count);
             auto it = std::upper_bound(indices.begin(), indices.end(), right_mark, [this](size_t i, size_t j)
             {
                 return marks_loader.getMark(i).offset_in_compressed_file < marks_loader.getMark(j).offset_in_compressed_file;

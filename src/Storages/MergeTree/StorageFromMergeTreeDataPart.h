@@ -9,16 +9,16 @@
 #include <Processors/QueryPipeline.h>
 #include <Core/Defines.h>
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 
 namespace DB
 {
 
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFromMergeTreeDataPart final : public ext::shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
+class StorageFromMergeTreeDataPart final : public shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageFromMergeTreeDataPart>;
+    friend struct shared_ptr_helper<StorageFromMergeTreeDataPart>;
 public:
     String getName() const override { return "FromMergeTreeDataPart"; }
 
@@ -41,15 +41,13 @@ public:
                                                   query_info,
                                                   context,
                                                   max_block_size,
-                                                  num_streams,
-                                                  nullptr,
-                                                  query_info.projection ? query_info.projection->merge_tree_data_select_base_cache.get()
-                                                                        : query_info.merge_tree_data_select_cache.get()));
+                                                  num_streams));
 
         return query_plan.convertToPipe(
             QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     }
 
+    bool supportsPrewhere() const override { return true; }
 
     bool supportsIndexForIn() const override { return true; }
 

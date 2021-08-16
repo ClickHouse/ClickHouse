@@ -31,7 +31,16 @@ def build_nav_entry(root, args):
                 result_items.append((prio, title, payload))
         elif filename.endswith('.md'):
             path = os.path.join(root, filename)
-            meta, content = util.read_md_file(path)
+
+            meta = ''
+            content = ''
+
+            try:
+                meta, content = util.read_md_file(path)
+            except:
+                print('Error in file: {}'.format(path))
+                raise
+
             path = path.split('/', 2)[-1]
             title = meta.get('toc_title', find_first_header(content))
             if title:

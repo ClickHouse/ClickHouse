@@ -374,7 +374,7 @@ bool DiskAccessStorage::isPathEqual(const String & directory_path_) const
 void DiskAccessStorage::clear()
 {
     entries_by_id.clear();
-    for (auto type : ext::range(EntityType::MAX))
+    for (auto type : collections::range(EntityType::MAX))
         entries_by_name_and_type[static_cast<size_t>(type)].clear();
 }
 
@@ -384,7 +384,7 @@ bool DiskAccessStorage::readLists()
     clear();
 
     bool ok = true;
-    for (auto type : ext::range(EntityType::MAX))
+    for (auto type : collections::range(EntityType::MAX))
     {
         auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
         auto file_path = getListFilePath(directory_path, type);
@@ -543,7 +543,7 @@ bool DiskAccessStorage::rebuildLists()
         entries_by_name[entry.name] = &entry;
     }
 
-    for (auto type : ext::range(EntityType::MAX))
+    for (auto type : collections::range(EntityType::MAX))
         types_of_lists_to_write.insert(type);
 
     return true;
@@ -786,7 +786,7 @@ void DiskAccessStorage::prepareNotifications(const UUID & id, const Entry & entr
 }
 
 
-ext::scope_guard DiskAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+scope_guard DiskAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     std::lock_guard lock{mutex};
     auto it = entries_by_id.find(id);
@@ -807,7 +807,7 @@ ext::scope_guard DiskAccessStorage::subscribeForChangesImpl(const UUID & id, con
     };
 }
 
-ext::scope_guard DiskAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
+scope_guard DiskAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     std::lock_guard lock{mutex};
     auto & handlers = handlers_by_type[static_cast<size_t>(type)];

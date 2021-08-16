@@ -9,7 +9,7 @@ namespace DB
 BuildQueryPipelineSettings BuildQueryPipelineSettings::fromSettings(const Settings & from)
 {
     BuildQueryPipelineSettings settings;
-    settings.actions_settings = ExpressionActionsSettings::fromSettings(from);
+    settings.actions_settings = ExpressionActionsSettings::fromSettings(from, CompileExpressions::yes);
     return settings;
 }
 

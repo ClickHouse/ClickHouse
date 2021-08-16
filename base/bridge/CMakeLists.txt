@@ -3,5 +3,11 @@ add_library (bridge
 )
 
 target_include_directories (daemon PUBLIC ..)
-target_link_libraries (bridge PRIVATE daemon dbms Poco::Data Poco::Data::ODBC)
+target_link_libraries (bridge 
+    PRIVATE 
+	daemon
+	dbms
+	Poco::Data
+	Poco::Data::ODBC
+)
 

@@ -5,7 +5,7 @@
 struct ContextHolder
 {
     DB::SharedContextHolder shared_context;
-    DB::ContextPtr context;
+    DB::ContextMutablePtr context;
 
     ContextHolder()
         : shared_context(DB::Context::createShared())

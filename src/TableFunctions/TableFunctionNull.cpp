@@ -38,7 +38,7 @@ ColumnsDescription TableFunctionNull::getActualTableStructure(ContextPtr context
 StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
-    auto res = StorageNull::create(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription());
+    auto res = StorageNull::create(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription(), String{});
     res->startup();
     return res;
 }

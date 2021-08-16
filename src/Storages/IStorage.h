@@ -51,6 +51,9 @@ class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
+class SinkToStorage;
+using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
+
 class QueryPipeline;
 using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
@@ -190,9 +193,10 @@ protected:
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
-
 private:
+
     StorageID storage_id;
+
     mutable std::mutex id_mutex;
 
     /// Multiversion storage metadata. Allows to read/write storage metadata
@@ -260,7 +264,7 @@ public:
      *
      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
      */
-    virtual BlockInputStreams watch(
+    virtual Pipe watch(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,
@@ -270,6 +274,10 @@ public:
     {
         throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
+    /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
+    virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
@@ -321,7 +329,7 @@ public:
       * changed during lifetime of the returned streams, but the snapshot is
       * guaranteed to be immutable.
       */
-    virtual BlockOutputStreamPtr write(
+    virtual SinkToStoragePtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/)
@@ -349,6 +357,8 @@ public:
       * If you do not need any action other than deleting the directory with data, you can leave this method blank.
       */
     virtual void drop() {}
+
+    virtual void dropInnerTableIfAny(bool /* no_delay */, ContextPtr /* context */) {}
 
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).
@@ -444,12 +454,31 @@ public:
       */
     virtual void startup() {}
 
+    /**
+      * If the storage requires some complicated work on destroying,
+      * then you have two virtual methods:
+      * - flush()
+      * - shutdown()
+      *
+      * @see shutdown()
+      * @see flush()
+      */
+    void flushAndShutdown()
+    {
+        flush();
+        shutdown();
+    }
+
     /** If the table have to do some complicated work when destroying an object - do it in advance.
       * For example, if the table contains any threads for background work - ask them to complete and wait for completion.
       * By default, does nothing.
       * Can be called simultaneously from different threads, even after a call to drop().
       */
     virtual void shutdown() {}
+
+    /// Called before shutdown() to flush data to underlying storage
+    /// (for Buffer)
+    virtual void flush() {}
 
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned

@@ -41,6 +41,9 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isString(arguments[0].type))
@@ -65,9 +68,7 @@ public:
         const ColumnConst * column_tld_list_name = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
         FirstSignificantSubdomainCustomLookup tld_lookup(column_tld_list_name->getValue<String>());
 
-        /// FIXME: convertToFullColumnIfConst() is suboptimal
-        auto column = arguments[0].column->convertToFullColumnIfConst();
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(*column))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(*arguments[0].column))
         {
             auto col_res = ColumnString::create();
             vector(tld_lookup, col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());

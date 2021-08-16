@@ -8,7 +8,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 
-
 class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
     def __init__(self, base_path, config_dir, testcase_name):
         ClickHouseCluster.__init__(self, base_path, name=testcase_name)
@@ -83,7 +82,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
         assert codes[0] == "0", "\n" + tsv_content
 
     def ddl_check_query(self, instance, query, num_hosts=None, settings=None):
-        contents = instance.query(query, settings=settings)
+        contents = instance.query_with_retry(query, settings=settings)
         self.check_all_hosts_successfully_executed(contents, num_hosts)
         return contents
 

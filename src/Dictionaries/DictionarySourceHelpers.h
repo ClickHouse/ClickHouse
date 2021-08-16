@@ -3,25 +3,17 @@
 #include <vector>
 
 #include <common/types.h>
-
-#include <Poco/File.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/ISimpleTransform.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 
+
 namespace DB
 {
 
-class IBlockOutputStream;
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
-
 struct DictionaryStructure;
-
-/// Write keys to block output stream.
-
-void formatBlock(BlockOutputStreamPtr & out, const Block & block);
 
 /// For simple key
 
@@ -37,12 +29,7 @@ Block blockForKeys(
     const std::vector<size_t> & requested_rows);
 
 /// Used for applying settings to copied context in some register[...]Source functions
-ContextPtr copyContextAndApplySettings(
-    const std::string & config_prefix,
-    ContextPtr context,
-    const Poco::Util::AbstractConfiguration & config);
-
-void applySettingsToContext(
+ContextMutablePtr copyContextAndApplySettings(
     const std::string & config_prefix,
     ContextPtr context,
     const Poco::Util::AbstractConfiguration & config);
@@ -51,24 +38,17 @@ void applySettingsToContext(
      *
      *  block_to_add rows size must be equal to final sum rows size of all inner stream blocks.
      */
-class BlockInputStreamWithAdditionalColumns final : public IBlockInputStream
+class TransformWithAdditionalColumns final : public ISimpleTransform
 {
 public:
-    BlockInputStreamWithAdditionalColumns(Block block_to_add_, std::unique_ptr<IBlockInputStream> && stream_);
+    TransformWithAdditionalColumns(Block block_to_add_, const Block & header);
 
-    Block getHeader() const override;
-
-    Block readImpl() override;
-
-    void readPrefix() override;
-
-    void readSuffix() override;
+    void transform(Chunk & chunk) override;
 
     String getName() const override;
 
 private:
     Block block_to_add;
-    std::unique_ptr<IBlockInputStream> stream;
     size_t current_range_index = 0;
 };
 

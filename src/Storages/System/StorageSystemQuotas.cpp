@@ -12,7 +12,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/Quota.h>
 #include <Access/AccessFlags.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -25,7 +25,7 @@ namespace
     DataTypeEnum8::Values getKeyTypeEnumValues()
     {
         DataTypeEnum8::Values enum_values;
-        for (auto key_type : ext::range(KeyType::MAX))
+        for (auto key_type : collections::range(KeyType::MAX))
         {
             const auto & type_info = KeyTypeInfo::get(key_type);
             if ((key_type != KeyType::NONE) && type_info.base_types.empty())
