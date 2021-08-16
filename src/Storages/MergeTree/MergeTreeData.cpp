@@ -3207,6 +3207,16 @@ Pipe MergeTreeData::alterPartition(
     return {};
 }
 
+void checkPartitionExpressionFunction(const ASTPtr & ast)
+{
+    if (const auto * func = ast->as<ASTFunction>())
+        if (func->name == "arrayJoin")
+            throw Exception("The partition expression cannot contain array joins", ErrorCodes::INVALID_PARTITION_VALUE);
+    for (const auto & child : ast->children)
+        checkPartitionExpressionFunction(child);
+}
+
+
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
@@ -3216,6 +3226,9 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
         return partition_ast.id;
     }
+
+    if (partition_ast.value->as<ASTFunction>())
+        checkPartitionExpressionFunction(ast);
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
