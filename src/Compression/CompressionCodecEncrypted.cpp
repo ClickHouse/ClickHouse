@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <Common/config.h>
 #include "Common/Exception.h"
@@ -52,7 +53,7 @@ CompressionCodecEncrypted::Configuration & CompressionCodecEncrypted::Configurat
 
 void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    std::unique_ptr<Params> new_params;
+    Params new_params;
     Strings config_keys;
     config.keys(config_prefix, config_keys);
     for (const std::string & config_key : config_keys)
@@ -73,32 +74,32 @@ void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractCo
         else
             continue;
 
-        if (new_params->keys_storage.contains(key_id))
+        if (new_params.keys_storage.contains(key_id))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple keys have the same ID {}", key_id);
-        new_params->keys_storage[key_id] = key;
+        new_params.keys_storage[key_id] = key;
     }
 
-    if (new_params->keys_storage.empty())
+    if (new_params.keys_storage.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No keys, an encrypted disk needs keys to work");
 
-    new_params->current_key_id = config.getUInt64(config_prefix + ".current_key_id", 0);
-    if (!new_params->keys_storage.contains(new_params->current_key_id))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", new_params->current_key_id);
-    if (new_params->keys_storage[new_params->current_key_id].size() != 16)
+    new_params.current_key_id = config.getUInt64(config_prefix + ".current_key_id", 0);
+    if (!new_params.keys_storage.contains(new_params.current_key_id))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", new_params.current_key_id);
+    if (new_params.keys_storage[new_params.current_key_id].size() != 16)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Got an encryption key with unexpected size {}, the size should be 16",
-            new_params->keys_storage[new_params->current_key_id].size());
+            new_params.keys_storage[new_params.current_key_id].size());
 
     if (config.has(config_prefix + ".nonce_hex"))
-        new_params->nonce = unhexKey(config.getString(config_prefix + ".nonce_hex"));
+        new_params.nonce = unhexKey(config.getString(config_prefix + ".nonce_hex"));
     else
-        new_params->nonce = config.getString(config_prefix + ".nonce", "");
+        new_params.nonce = config.getString(config_prefix + ".nonce", "");
 
-    if (new_params->nonce.size() != 12 && !new_params->nonce.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be 12", new_params->nonce.size());
+    if (new_params.nonce.size() != 12 && !new_params.nonce.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be 12", new_params.nonce.size());
 
-    params.set(std::move(new_params));
+    params.set(std::make_unique<Params>(new_params));
 }
 
 String CompressionCodecEncrypted::Configuration::getKey(UInt64 id) const
@@ -183,11 +184,9 @@ void CompressionCodecEncrypted::encrypt(const std::string_view & plaintext, char
 {
     auto& conf = Configuration::instance();
     String nonce_from_config = conf.getNonce();
-    std::string_view nonce;
-    if (nonce_from_config.empty())
+    std::string_view nonce("\0\0\0\0\0\0\0\0\0\0\0\0", 12);
+    if (!nonce_from_config.empty())
         nonce = nonce_from_config;
-    else
-        nonce = "\0\0\0\0\0\0\0\0\0\0\0\0";
 
     char * start_of_encrypted = writeVarUInt(conf.getCurrentID(), ciphertext_and_tag);
 
@@ -215,28 +214,26 @@ void CompressionCodecEncrypted::decrypt(const std::string_view & ciphertext, cha
 {
     auto& conf = Configuration::instance();
     String nonce_from_config = conf.getNonce();
-    std::string_view nonce;
-    if (nonce_from_config.empty())
+    std::string_view nonce("\0\0\0\0\0\0\0\0\0\0\0\0", 12);
+    if (!nonce_from_config.empty())
         nonce = nonce_from_config;
-    else
-        nonce = "\0\0\0\0\0\0\0\0\0\0\0\0";
 
     size_t out_len;
     EVP_AEAD_CTX decrypt_ctx;
     EVP_AEAD_CTX_zero(&decrypt_ctx);
 
     const int ok_init = EVP_AEAD_CTX_init(&decrypt_ctx, EVP_aead_aes_128_gcm_siv(),
-                                            reinterpret_cast<const uint8_t*>(conf.getKey(key_id).data()), conf.getKey(key_id).size(),
-                                            16 /* tag size */, nullptr);
+                                          reinterpret_cast<const uint8_t*>(conf.getKey(key_id).data()), conf.getKey(key_id).size(),
+                                          16 /* tag size */, nullptr);
     if (!ok_init)
         throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
     const int ok_open = EVP_AEAD_CTX_open(&decrypt_ctx,
-                                            reinterpret_cast<uint8_t *>(plaintext),
-                                            &out_len, ciphertext.size(),
-                                            reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size(),
-                                            reinterpret_cast<const uint8_t *>(ciphertext.data()), ciphertext.size(),
-                                            nullptr, 0);
+                                          reinterpret_cast<uint8_t *>(plaintext),
+                                          &out_len, ciphertext.size(),
+                                          reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size(),
+                                          reinterpret_cast<const uint8_t *>(ciphertext.data()), ciphertext.size(),
+                                          nullptr, 0);
     if (!ok_open)
         throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
