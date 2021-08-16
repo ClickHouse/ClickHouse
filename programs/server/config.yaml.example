@@ -741,10 +741,11 @@ query_views_log:
 
 # Uncomment if use part log.
 # Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).
-# part_log:
-#     database: system
-#     table: part_log
-#     flush_interval_milliseconds: 7500
+part_log:
+    database: system
+    table: part_log
+    partition_by: toYYYYMM(event_date)
+    flush_interval_milliseconds: 7500
 
 # Uncomment to write text log into table.
 # Text log contains all information from usual server log but stores it in structured and efficient way.
