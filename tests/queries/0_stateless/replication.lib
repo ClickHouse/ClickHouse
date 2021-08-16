@@ -35,6 +35,10 @@ function try_sync_replicas()
 
 function check_replication_consistency()
 {
+    # Trigger pullLogsToQueue(...) and updateMutations(...) on some replica to make it pull all mutations, so it will be possible to kill them
+    some_table=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database=currentDatabase() AND name like '$1%' LIMIT 1")
+    $CLICKHOUSE_CLIENT --receive_timeout 3 -q "SYSTEM SYNC REPLICA $some_table" 2>/dev/null
+
     # Forcefully cancel mutations to avoid waiting for them to finish
     ${CLICKHOUSE_CLIENT} -q "KILL MUTATION WHERE database=currentDatabase() AND table like '$1%'" > /dev/null
 
