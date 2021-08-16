@@ -5466,9 +5466,9 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
 
     const auto & stop_waiting = [&]()
     {
-        bool stop_waiting_itself = waiting_itself && (partial_shutdown_called || is_dropped);
+        bool stop_waiting_itself = waiting_itself && partial_shutdown_called;
         bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active");
-        return stop_waiting_itself || stop_waiting_non_active;
+        return is_dropped || stop_waiting_itself || stop_waiting_non_active;
     };
 
     /// Don't recheck ZooKeeper too often
