@@ -21,7 +21,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     : IMergedBlockOutputStream(data_part, metadata_snapshot_)
     , header(header_)
 {
-    const auto & global_settings = data_part->storage.global_context.getSettings();
+    const auto & global_settings = data_part->storage.getContext()->getSettings();
     const auto & storage_settings = data_part->storage.getSettings();
 
     MergeTreeWriterSettings writer_settings(
@@ -67,6 +67,12 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
     writer->finish(checksums, sync);
+
+    for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
+        checksums.addFile(
+            projection_name + ".proj",
+            projection_part->checksums.getTotalSizeOnDisk(),
+            projection_part->checksums.getTotalChecksumUInt128());
 
     auto columns = new_part->getColumns();
 

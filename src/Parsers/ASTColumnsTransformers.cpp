@@ -165,7 +165,7 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     expr->formatImpl(settings, state, frame);
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << name;
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
 }
 
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

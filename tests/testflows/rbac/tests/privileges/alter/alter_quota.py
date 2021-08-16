@@ -31,7 +31,7 @@ def alter_quota_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=alter_quota, flags=TE,
+        Suite(run=alter_quota,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in alter_quota.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -52,13 +52,14 @@ def alter_quota_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=alter_quota, flags=TE,
+        Suite(run=alter_quota,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in alter_quota.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
+    ("ALL",),
     ("ACCESS MANAGEMENT",),
     ("ALTER QUOTA",),
 ])
@@ -75,7 +76,13 @@ def alter_quota(self, privilege, grant_target_name, user_name, node=None):
 
         with quota(node, alter_quota_name):
 
-            with When("I check the user can't alter a quota"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't alter a quota"):
                 node.query(f"ALTER QUOTA {alter_quota_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
@@ -127,6 +134,8 @@ def alter_quota(self, privilege, grant_target_name, user_name, node=None):
 @Name("alter quota")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterQuota("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of ALTER QUOTA.

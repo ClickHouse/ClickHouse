@@ -30,12 +30,12 @@ NamesAndTypesList StorageSystemReplicatedFetches::getNamesAndTypes()
     };
 }
 
-void StorageSystemReplicatedFetches::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemReplicatedFetches::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    const auto access = context.getAccess();
+    const auto access = context->getAccess();
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
-    for (const auto & fetch : context.getReplicatedFetchList().get())
+    for (const auto & fetch : context->getReplicatedFetchList().get())
     {
         if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, fetch.database, fetch.table))
             continue;

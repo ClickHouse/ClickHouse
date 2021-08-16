@@ -1,6 +1,6 @@
 ---
 toc_priority: 37
-toc_title: "\u041a\u043e\u043c\u0431\u0438\u043d\u0430\u0442\u043e\u0440\u044b\u0020\u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043d\u044b\u0445\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0439"
+toc_title: "Комбинаторы агрегатных функций"
 ---
 
 
@@ -26,6 +26,40 @@ toc_title: "\u041a\u043e\u043c\u0431\u0438\u043d\u0430\u0442\u043e\u0440\u044b\u
 Пример 2: `uniqArray(arr)` - посчитать количество уникальных элементов всех массивов arr. Это можно было бы сделать проще: `uniq(arrayJoin(arr))`, но не всегда есть возможность добавить arrayJoin в запрос.
 
 Комбинаторы -If и -Array можно сочетать. При этом, должен сначала идти Array, а потом If. Примеры: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Из-за такого порядка получается, что аргумент cond не должен быть массивом.
+
+## -SimpleState {#agg-functions-combinator-simplestate}
+
+При использовании этого комбинатора агрегатная функция возвращает то же значение, но типа [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md). Текущее значение функции может храниться в таблице для последующей работы с таблицами семейства [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md).
+
+**Синтаксис**
+
+``` sql
+<aggFunction>SimpleState(x)
+```
+
+**Аргументы**
+
+-   `x` — параметры агрегатной функции.
+
+**Возвращаемое значение**
+
+Значение агрегатной функции типа `SimpleAggregateFunction(...)`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
+```
+
+Результат:
+
+``` text
+┌─toTypeName(c)────────────────────────┬─c─┐
+│ SimpleAggregateFunction(any, UInt64) │ 0 │
+└──────────────────────────────────────┴───┘
+```
 
 ## -State {#state}
 
@@ -70,9 +104,9 @@ toc_title: "\u041a\u043e\u043c\u0431\u0438\u043d\u0430\u0442\u043e\u0440\u044b\u
 <aggFunction>OrDefault(x)
 ```
 
-**Параметры**
+**Аргументы**
 
-- `x` — Параметры агрегатной функции.
+-   `x` — аргументы агрегатной функции.
 
 **Возращаемые зачения**
 
@@ -131,14 +165,14 @@ FROM
 <aggFunction>OrNull(x)
 ```
 
-**Параметры**
+**Аргументы**
 
-- `x` — Параметры агрегатной функции.
+-   `x` — аргументы агрегатной функции.
 
 **Возвращаемые значения**
 
-- Результат агрегатной функции, преобразованный в тип данных `Nullable`.
-- `NULL`, если у агрегатной функции нет входных данных.
+-   Результат агрегатной функции, преобразованный в тип данных `Nullable`.
+-   `NULL`, если у агрегатной функции нет входных данных.
 
 Тип: `Nullable(aggregate function return type)`.
 
@@ -188,7 +222,7 @@ FROM
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `start` — начальное значение для интервала значений `resampling_key`.
 -   `stop` — конечное значение для интервала значений `resampling_key`. Интервал не включает значение `stop` (`[start, stop)`).
@@ -247,5 +281,3 @@ FROM people
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘
 ```
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/agg_functions/combinators/) <!--hide-->

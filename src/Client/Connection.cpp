@@ -8,10 +8,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <IO/TimeoutSetter.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
-#include <Client/TimeoutSetter.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -109,6 +109,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+        in->setAsyncCallback(std::move(async_callback));
+
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
         connected = true;
@@ -422,7 +424,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -549,6 +551,15 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
     out->next();
 }
 
+
+void Connection::sendReadTaskResponse(const String & response)
+{
+    writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
+    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
+    writeStringBinary(response, *out);
+    out->next();
+}
+
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
@@ -569,6 +580,12 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 
 void Connection::sendScalarsData(Scalars & data)
 {
+    /// Avoid sending scalars to old servers. Note that this isn't a full fix. We didn't introduce a
+    /// dedicated revision after introducing scalars, so this will still break some versions with
+    /// revision 54428.
+    if (server_revision < DBMS_MIN_REVISION_WITH_SCALARS)
+        return;
+
     if (data.empty())
         return;
 
@@ -669,8 +686,12 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
+        if (!elem->pipe)
+            elem->pipe = elem->creating_pipe_callback();
+
         QueryPipeline pipeline;
         pipeline.init(std::move(*elem->pipe));
+        elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
         pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
@@ -753,11 +774,8 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
+Packet Connection::receivePacket()
 {
-    in->setAsyncCallback(std::move(async_callback));
-    SCOPE_EXIT(in->setAsyncCallback({}));
-
     try
     {
         Packet res;
@@ -806,6 +824,9 @@ Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_
 
             case Protocol::Server::PartUUIDs:
                 readVectorBinary(res.part_uuids, *in);
+                return res;
+
+            case Protocol::Server::ReadTaskRequest:
                 return res;
 
             default:
@@ -908,13 +929,13 @@ void Connection::setDescription()
 }
 
 
-std::unique_ptr<Exception> Connection::receiveException()
+std::unique_ptr<Exception> Connection::receiveException() const
 {
     return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
 {
     size_t num = Protocol::Server::stringsInMessage(msg_type);
     std::vector<String> strings(num);
@@ -924,7 +945,7 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 }
 
 
-Progress Connection::receiveProgress()
+Progress Connection::receiveProgress() const
 {
     Progress progress;
     progress.read(*in, server_revision);
@@ -932,7 +953,7 @@ Progress Connection::receiveProgress()
 }
 
 
-BlockStreamProfileInfo Connection::receiveProfileInfo()
+BlockStreamProfileInfo Connection::receiveProfileInfo() const
 {
     BlockStreamProfileInfo profile_info;
     profile_info.read(*in);

@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <sparsehash/dense_hash_map>
+#include <Common/DenseHashMap.h>
 
 
 namespace DB
@@ -23,7 +23,9 @@ NameAndTypePair::NameAndTypePair(
     : name(name_in_storage_ + (subcolumn_name_.empty() ? "" : "." + subcolumn_name_))
     , type(subcolumn_type_)
     , type_in_storage(type_in_storage_)
-    , subcolumn_delimiter_position(name_in_storage_.size()) {}
+    , subcolumn_delimiter_position(subcolumn_name_.empty() ? std::nullopt : std::make_optional(name_in_storage_.size()))
+{
+}
 
 String NameAndTypePair::getNameInStorage() const
 {
@@ -160,18 +162,20 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
-    std::unordered_map<std::string_view, const NameAndTypePair *> self_columns;
+    /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
+    DenseHashMap<StringRef, const DataTypePtr *, StringRefHash> types;
+    types.set_empty_key(StringRef());
 
     for (const auto & column : *this)
-        self_columns[column.name] = &column;
+        types[column.name] = &column.type;
 
     NamesAndTypesList res;
     for (const String & name : names)
     {
-        auto it = self_columns.find(name);
-        if (it == self_columns.end())
+        auto it = types.find(name);
+        if (it == types.end())
             throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
-        res.emplace_back(*it->second);
+        res.emplace_back(name, *it->second);
     }
 
     return res;

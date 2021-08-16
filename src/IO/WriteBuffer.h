@@ -95,8 +95,15 @@ public:
         ++pos;
     }
 
-    virtual void sync() {}
-    virtual void finalize() {}
+    virtual void sync()
+    {
+        next();
+    }
+
+    virtual void finalize()
+    {
+        next();
+    }
 
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).

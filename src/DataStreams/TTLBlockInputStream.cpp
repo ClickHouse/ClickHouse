@@ -68,8 +68,9 @@ TTLBlockInputStream::TTLBlockInputStream(
                 auto default_ast = it->second.expression->clone();
                 default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
 
-                auto syntax_result = TreeRewriter(storage_.global_context).analyze(default_ast, metadata_snapshot_->getColumns().getAllPhysical());
-                default_expression = ExpressionAnalyzer{default_ast, syntax_result, storage_.global_context}.getActions(true);
+                auto syntax_result
+                    = TreeRewriter(storage_.getContext()).analyze(default_ast, metadata_snapshot_->getColumns().getAllPhysical());
+                default_expression = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
                 default_column_name = default_ast->getColumnName();
             }
 

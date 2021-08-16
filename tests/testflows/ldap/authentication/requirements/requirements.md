@@ -468,7 +468,7 @@ version: 1.0
 the following RBAC command
 
 ```sql
-CREATE USER name IDENTIFIED WITH ldap_server BY 'server_name'
+CREATE USER name IDENTIFIED WITH ldap SERVER 'server_name'
 ```
 
 #### RQ.SRS-007.LDAP.Configuration.User.Syntax

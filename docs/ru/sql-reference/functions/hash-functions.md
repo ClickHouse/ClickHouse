@@ -1,11 +1,13 @@
 ---
 toc_priority: 50
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0445\u044d\u0448\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f"
+toc_title: "Функции хэширования"
 ---
 
 # Функции хэширования {#funktsii-kheshirovaniia}
 
 Функции хэширования могут использоваться для детерминированного псевдослучайного разбрасывания элементов.
+
+Simhash – это хеш-функция, которая для близких значений возвращает близкий хеш.
 
 ## halfMD5 {#hash-functions-halfmd5}
 
@@ -18,9 +20,9 @@ halfMD5(par1, ...)
 Функция относительно медленная (5 миллионов коротких строк в секунду на ядро процессора).
 По возможности, используйте функцию [sipHash64](#hash_functions-siphash64) вместо неё.
 
-**Параметры**
+**Аргументы**
 
-Функция принимает переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -29,7 +31,7 @@ halfMD5(par1, ...)
 **Пример**
 
 ``` sql
-SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS halfMD5hash, toTypeName(halfMD5hash) AS type
+SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS halfMD5hash, toTypeName(halfMD5hash) AS type;
 ```
 
 ``` text
@@ -61,9 +63,9 @@ sipHash64(par1,...)
 3.  Затем функция принимает хэш-значение, вычисленное на предыдущем шаге, и третий элемент исходного хэш-массива, и вычисляет хэш для массива из них.
 4.  Предыдущий шаг повторяется для всех остальных элементов исходного хэш-массива.
 
-**Параметры**
+**Аргументы**
 
-Функция принимает переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -72,7 +74,7 @@ sipHash64(par1,...)
 **Пример**
 
 ``` sql
-SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type
+SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;
 ```
 
 ``` text
@@ -97,9 +99,9 @@ cityHash64(par1,...)
 
 Это не криптографическая хэш-функция. Она использует CityHash алгоритм для строковых параметров и зависящую от реализации быструю некриптографическую хэш-функцию для параметров с другими типами данных. Функция использует комбинатор CityHash для получения конечных результатов.
 
-**Параметры**
+**Аргументы**
 
-Функция принимает переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -110,7 +112,7 @@ cityHash64(par1,...)
 Пример вызова:
 
 ``` sql
-SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type
+SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type;
 ```
 
 ``` text
@@ -166,9 +168,9 @@ farmHash64(par1, ...)
 
 Эти функции используют методы `Fingerprint64` и `Hash64` из всех [доступных методов](https://github.com/google/farmhash/blob/master/src/farmhash.h).
 
-**Параметры**
+**Аргументы**
 
-Функция принимает переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -177,7 +179,7 @@ farmHash64(par1, ...)
 **Пример**
 
 ``` sql
-SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type
+SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type;
 ```
 
 ``` text
@@ -191,7 +193,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки. `JavaHash` не отличается ни скоростью, ни качеством, поэтому эту функцию следует считать устаревшей. Используйте эту функцию, если вам необходимо получить значение хэша по такому же алгоритму.
 
 ``` sql
-SELECT javaHash('');
+SELECT javaHash('')
 ```
 
 **Возвращаемое значение**
@@ -208,7 +210,7 @@ SELECT javaHash('');
 SELECT javaHash('Hello, world!');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─javaHash('Hello, world!')─┐
@@ -226,7 +228,7 @@ SELECT javaHash('Hello, world!');
 javaHashUTF16LE(stringUtf16le)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `stringUtf16le` — строка в `UTF-16LE`.
 
@@ -243,10 +245,10 @@ javaHashUTF16LE(stringUtf16le)
 Запрос:
 
 ``` sql
-SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))
+SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'));
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))─┐
@@ -259,7 +261,7 @@ SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))
 Вычисляет `HiveHash` от строки.
 
 ``` sql
-SELECT hiveHash('');
+SELECT hiveHash('')
 ```
 
 `HiveHash` — это результат [JavaHash](#hash_functions-javahash) с обнулённым битом знака числа. Функция используется в [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) вплоть до версии 3.0.
@@ -278,7 +280,7 @@ SELECT hiveHash('');
 SELECT hiveHash('Hello, world!');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─hiveHash('Hello, world!')─┐
@@ -294,9 +296,9 @@ SELECT hiveHash('Hello, world!');
 metroHash64(par1, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
-Функция принимает переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -305,7 +307,7 @@ metroHash64(par1, ...)
 **Пример**
 
 ``` sql
-SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MetroHash, toTypeName(MetroHash) AS type
+SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MetroHash, toTypeName(MetroHash) AS type;
 ```
 
 ``` text
@@ -329,9 +331,9 @@ murmurHash2_32(par1, ...)
 murmurHash2_64(par1, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
-Обе функции принимают переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Обе функции принимают переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -341,7 +343,7 @@ murmurHash2_64(par1, ...)
 **Пример**
 
 ``` sql
-SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type
+SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type;
 ```
 
 ``` text
@@ -360,9 +362,9 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 gccMurmurHash(par1, ...);
 ```
 
-**Параметры**
+**Аргументы**
 
--   `par1, ...` — Переменное число параметров. Каждый параметр может быть любого из [поддерживаемых типов данных](../../sql-reference/data-types/index.md).
+-   `par1, ...` — переменное число параметров. Каждый параметр может быть любого из [поддерживаемых типов данных](../../sql-reference/data-types/index.md).
 
 **Возвращаемое значение**
 
@@ -397,9 +399,9 @@ murmurHash3_32(par1, ...)
 murmurHash3_64(par1, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
-Обе функции принимают переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Обе функции принимают переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -409,7 +411,7 @@ murmurHash3_64(par1, ...)
 **Пример**
 
 ``` sql
-SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type
+SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
 ```
 
 ``` text
@@ -426,9 +428,9 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 murmurHash3_128( expr )
 ```
 
-**Параметры**
+**Аргументы**
 
--   `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее значение типа[String](../../sql-reference/functions/hash-functions.md).
+-   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -437,13 +439,13 @@ murmurHash3_128( expr )
 **Пример**
 
 ``` sql
-SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3) AS type
+SELECT hex(murmurHash3_128('example_string')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
 ```
 
 ``` text
-┌─MurmurHash3──────┬─type────────────┐
-│ 6�1�4"S5KT�~~q │ FixedString(16) │
-└──────────────────┴─────────────────┘
+┌─MurmurHash3──────────────────────┬─type───┐
+│ 368A1A311CB7342253354B548E7E7E71 │ String │
+└──────────────────────────────────┴────────┘
 ```
 
 ## xxHash32, xxHash64 {#hash-functions-xxhash32-xxhash64}
@@ -451,11 +453,11 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 Вычисляет `xxHash` от строки. Предлагается в двух вариантах: 32 и 64 бита.
 
 ``` sql
-SELECT xxHash32('');
+SELECT xxHash32('')
 
 OR
 
-SELECT xxHash64('');
+SELECT xxHash64('')
 ```
 
 **Возвращаемое значение**
@@ -472,7 +474,7 @@ SELECT xxHash64('');
 SELECT xxHash32('Hello, world!');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─xxHash32('Hello, world!')─┐
@@ -484,4 +486,937 @@ SELECT xxHash32('Hello, world!');
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/hash_functions/) <!--hide-->
+## ngramSimHash {#ngramsimhash}
+
+Выделяет из ASCII строки отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистрозависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
+
+**Синтаксис**
+
+``` sql
+ngramSimHash(string[, ngramsize])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Значение хеш-функции от строки.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramSimHash('ClickHouse') AS Hash;
+```
+
+Результат:
+
+``` text
+┌───────Hash─┐
+│ 1627567969 │
+└────────────┘
+```
+
+## ngramSimHashCaseInsensitive {#ngramsimhashcaseinsensitive}
+
+Выделяет из ASCII строки отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистро**не**зависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
+
+**Синтаксис**
+
+``` sql
+ngramSimHashCaseInsensitive(string[, ngramsize])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Значение хеш-функции от строки.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramSimHashCaseInsensitive('ClickHouse') AS Hash;
+```
+
+Результат:
+
+``` text
+┌──────Hash─┐
+│ 562180645 │
+└───────────┘
+```
+
+## ngramSimHashUTF8 {#ngramsimhashutf8}
+
+Выделяет из UTF-8 строки отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистрозависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
+
+**Синтаксис**
+
+``` sql
+ngramSimHashUTF8(string[, ngramsize])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Значение хеш-функции от строки.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramSimHashUTF8('ClickHouse') AS Hash;
+```
+
+Результат:
+
+``` text
+┌───────Hash─┐
+│ 1628157797 │
+└────────────┘
+```
+
+## ngramSimHashCaseInsensitiveUTF8 {#ngramsimhashcaseinsensitiveutf8}
+
+Выделяет из UTF-8 строки отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистро**не**зависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
+
+**Синтаксис**
+
+``` sql
+ngramSimHashCaseInsensitiveUTF8(string[, ngramsize])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Значение хеш-функции от строки.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramSimHashCaseInsensitiveUTF8('ClickHouse') AS Hash;
+```
+
+Результат:
+
+``` text
+┌───────Hash─┐
+│ 1636742693 │
+└────────────┘
+```
+
+## wordShingleSimHash {#wordshinglesimhash}
+
+Выделяет из ASCII строки отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистрозависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
+
+**Синтаксис**
+
+``` sql
+wordShingleSimHash(string[, shinglesize])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Значение хеш-функции от строки.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleSimHash('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
+```
+
+Результат:
+
+``` text
+┌───────Hash─┐
+│ 2328277067 │
+└────────────┘
+```
+
+## wordShingleSimHashCaseInsensitive {#wordshinglesimhashcaseinsensitive}
+
+Выделяет из ASCII строки отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистро**не**зависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
+
+**Синтаксис**
+
+``` sql
+wordShingleSimHashCaseInsensitive(string[, shinglesize])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Значение хеш-функции от строки.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleSimHashCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
+```
+
+Результат:
+
+``` text
+┌───────Hash─┐
+│ 2194812424 │
+└────────────┘
+```
+
+## wordShingleSimHashUTF8 {#wordshinglesimhashutf8}
+
+Выделяет из UTF-8 строки отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистрозависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
+
+**Синтаксис**
+
+``` sql
+wordShingleSimHashUTF8(string[, shinglesize])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Значение хеш-функции от строки.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleSimHashUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
+```
+
+Результат:
+
+``` text
+┌───────Hash─┐
+│ 2328277067 │
+└────────────┘
+```
+
+## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimhashcaseinsensitiveutf8}
+
+Выделяет из UTF-8 строки отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистро**не**зависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
+
+**Синтаксис**
+
+``` sql
+wordShingleSimHashCaseInsensitiveUTF8(string[, shinglesize])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Значение хеш-функции от строки.
+
+Тип: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleSimHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
+```
+
+Результат:
+
+``` text
+┌───────Hash─┐
+│ 2194812424 │
+└────────────┘
+```
+
+## ngramMinHash {#ngramminhash}
+
+Выделяет из ASCII строки отрезки (n-граммы) размером `ngramsize` символов и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
+
+**Синтаксис**
+
+``` sql
+ngramMinHash(string[, ngramsize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж с двумя хешами — минимальным и максимальным.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramMinHash('ClickHouse') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple──────────────────────────────────────┐
+│ (18333312859352735453,9054248444481805918) │
+└────────────────────────────────────────────┘
+```
+
+## ngramMinHashCaseInsensitive {#ngramminhashcaseinsensitive}
+
+Выделяет из ASCII строки отрезки (n-граммы) размером `ngramsize` символов и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистро**не**зависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
+
+**Синтаксис**
+
+``` sql
+ngramMinHashCaseInsensitive(string[, ngramsize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж с двумя хешами — минимальным и максимальным.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramMinHashCaseInsensitive('ClickHouse') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple──────────────────────────────────────┐
+│ (2106263556442004574,13203602793651726206) │
+└────────────────────────────────────────────┘
+```
+
+## ngramMinHashUTF8 {#ngramminhashutf8}
+
+Выделяет из UTF-8 строки отрезки (n-граммы) размером `ngramsize` символов и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
+
+**Синтаксис**
+``` sql
+ngramMinHashUTF8(string[, ngramsize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж с двумя хешами — минимальным и максимальным.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramMinHashUTF8('ClickHouse') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple──────────────────────────────────────┐
+│ (18333312859352735453,6742163577938632877) │
+└────────────────────────────────────────────┘
+```
+
+## ngramMinHashCaseInsensitiveUTF8 {#ngramminhashcaseinsensitiveutf8}
+
+Выделяет из UTF-8 строки отрезки (n-граммы) размером `ngramsize` символов и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистро**не**зависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
+
+**Синтаксис**
+
+``` sql
+ngramMinHashCaseInsensitiveUTF8(string [, ngramsize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж с двумя хешами — минимальным и максимальным.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramMinHashCaseInsensitiveUTF8('ClickHouse') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple───────────────────────────────────────┐
+│ (12493625717655877135,13203602793651726206) │
+└─────────────────────────────────────────────┘
+```
+
+## ngramMinHashArg {#ngramminhasharg}
+
+Выделяет из ASCII строки отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммы с минимальным и максимальным хешами, вычисленными функцией [ngramMinHash](#ngramminhash) с теми же входными данными. Функция регистрозависимая.
+
+**Синтаксис**
+
+``` sql
+ngramMinHashArg(string[, ngramsize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж из двух кортежей, каждый из которых состоит из `hashnum` n-грамм.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramMinHashArg('ClickHouse') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────────────┐
+│ (('ous','ick','lic','Hou','kHo','use'),('Hou','lic','ick','ous','ckH','Cli')) │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+## ngramMinHashArgCaseInsensitive {#ngramminhashargcaseinsensitive}
+
+Выделяет из ASCII строки отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммы с минимальным и максимальным хешами, вычисленными функцией [ngramMinHashCaseInsensitive](#ngramminhashcaseinsensitive) с теми же входными данными. Функция регистро**не**зависимая.
+
+**Синтаксис**
+
+``` sql
+ngramMinHashArgCaseInsensitive(string[, ngramsize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж из двух кортежей, каждый из которых состоит из `hashnum` n-грамм.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramMinHashArgCaseInsensitive('ClickHouse') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────────────┐
+│ (('ous','ick','lic','kHo','use','Cli'),('kHo','lic','ick','ous','ckH','Hou')) │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+## ngramMinHashArgUTF8 {#ngramminhashargutf8}
+
+Выделяет из UTF-8 строки отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммы с минимальным и максимальным хешами, вычисленными функцией [ngramMinHashUTF8](#ngramminhashutf8) с теми же входными данными. Функция регистрозависимая.
+
+**Синтаксис**
+
+``` sql
+ngramMinHashArgUTF8(string[, ngramsize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж из двух кортежей, каждый из которых состоит из `hashnum` n-грамм.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramMinHashArgUTF8('ClickHouse') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────────────┐
+│ (('ous','ick','lic','Hou','kHo','use'),('kHo','Hou','lic','ick','ous','ckH')) │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+## ngramMinHashArgCaseInsensitiveUTF8 {#ngramminhashargcaseinsensitiveutf8}
+
+Выделяет из UTF-8 строки отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммы с минимальным и максимальным хешами, вычисленными функцией [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) с теми же входными данными. Функция регистро**не**зависимая.
+
+**Синтаксис**
+
+``` sql
+ngramMinHashArgCaseInsensitiveUTF8(string[, ngramsize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — размер n-грамм. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж из двух кортежей, каждый из которых состоит из `hashnum` n-грамм.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngramMinHashArgCaseInsensitiveUTF8('ClickHouse') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────────────┐
+│ (('ckH','ous','ick','lic','kHo','use'),('kHo','lic','ick','ous','ckH','Hou')) │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+## wordShingleMinHash {#wordshingleminhash}
+
+Выделяет из ASCII строки отрезки (шинглы) из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
+
+**Синтаксис**
+
+``` sql
+wordShingleMinHash(string[, shinglesize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж с двумя хешами — минимальным и максимальным.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleMinHash('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple──────────────────────────────────────┐
+│ (16452112859864147620,5844417301642981317) │
+└────────────────────────────────────────────┘
+```
+
+## wordShingleMinHashCaseInsensitive {#wordshingleminhashcaseinsensitive}
+
+Выделяет из ASCII строки отрезки (шинглы) из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистро**не**зависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
+
+**Синтаксис**
+
+``` sql
+wordShingleMinHashCaseInsensitive(string[, shinglesize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж с двумя хешами — минимальным и максимальным.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleMinHashCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple─────────────────────────────────────┐
+│ (3065874883688416519,1634050779997673240) │
+└───────────────────────────────────────────┘
+```
+
+## wordShingleMinHashUTF8 {#wordshingleminhashutf8}
+
+Выделяет из UTF-8 строки отрезки (шинглы) из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
+
+**Синтаксис**
+
+``` sql
+wordShingleMinHashUTF8(string[, shinglesize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж с двумя хешами — минимальным и максимальным.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleMinHashUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple──────────────────────────────────────┐
+│ (16452112859864147620,5844417301642981317) │
+└────────────────────────────────────────────┘
+```
+
+## wordShingleMinHashCaseInsensitiveUTF8 {#wordshingleminhashcaseinsensitiveutf8}
+
+Выделяет из UTF-8 строки отрезки (шинглы) из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистро**не**зависимая.
+
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
+
+**Синтаксис**
+
+``` sql
+wordShingleMinHashCaseInsensitiveUTF8(string[, shinglesize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж с двумя хешами — минимальным и максимальным.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleMinHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple─────────────────────────────────────┐
+│ (3065874883688416519,1634050779997673240) │
+└───────────────────────────────────────────┘
+```
+
+## wordShingleMinHashArg {#wordshingleminhasharg}
+
+Выделяет из ASCII строки отрезки (шинглы) из `shinglesize` слов и возвращает шинглы с минимальным и максимальным хешами, вычисленными функцией [wordshingleMinHash](#wordshingleminhash) с теми же входными данными. Функция регистрозависимая.
+
+**Синтаксис**
+
+``` sql
+wordShingleMinHashArg(string[, shinglesize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж из двух кортежей, каждый из которых состоит из `hashnum` шинглов.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleMinHashArg('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────┐
+│ (('OLAP','database','analytical'),('online','oriented','processing')) │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+## wordShingleMinHashArgCaseInsensitive {#wordshingleminhashargcaseinsensitive}
+
+Выделяет из ASCII строки отрезки (шинглы) из `shinglesize` слов и возвращает шинглы с минимальным и максимальным хешами, вычисленными функцией [wordShingleMinHashCaseInsensitive](#wordshingleminhashcaseinsensitive) с теми же входными данными. Функция регистро**не**зависимая.
+
+**Синтаксис**
+
+``` sql
+wordShingleMinHashArgCaseInsensitive(string[, shinglesize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж из двух кортежей, каждый из которых состоит из `hashnum` шинглов.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleMinHashArgCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple──────────────────────────────────────────────────────────────────┐
+│ (('queries','database','analytical'),('oriented','processing','DBMS')) │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## wordShingleMinHashArgUTF8 {#wordshingleminhashargutf8}
+
+Выделяет из UTF-8 строки отрезки (шинглы) из `shinglesize` слов и возвращает шинглы с минимальным и максимальным хешами, вычисленными функцией [wordShingleMinHashUTF8](#wordshingleminhashutf8) с теми же входными данными. Функция регистрозависимая.
+
+**Синтаксис**
+
+``` sql
+wordShingleMinHashArgUTF8(string[, shinglesize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж из двух кортежей, каждый из которых состоит из `hashnum` шинглов.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleMinHashArgUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────┐
+│ (('OLAP','database','analytical'),('online','oriented','processing')) │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+## wordShingleMinHashArgCaseInsensitiveUTF8 {#wordshingleminhashargcaseinsensitiveutf8}
+
+Выделяет из UTF-8 строки отрезки (шинглы) из `shinglesize` слов и возвращает шинглы с минимальным и максимальным хешами, вычисленными функцией [wordShingleMinHashCaseInsensitiveUTF8](#wordshingleminhashcaseinsensitiveutf8) с теми же входными данными. Функция регистро**не**зависимая.
+
+**Синтаксис**
+
+``` sql
+wordShingleMinHashArgCaseInsensitiveUTF8(string[, shinglesize, hashnum])
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — размер словесных шинглов. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — количество минимальных и максимальных хешей, которое используется при вычислении результата. Необязательный. Возможные значения: любое число от `1` до `25`. Значение по умолчанию: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Кортеж из двух кортежей, каждый из которых состоит из `hashnum` шинглов.
+
+Тип: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT wordShingleMinHashArgCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
+```
+
+Результат:
+
+``` text
+┌─Tuple──────────────────────────────────────────────────────────────────┐
+│ (('queries','database','analytical'),('oriented','processing','DBMS')) │
+└────────────────────────────────────────────────────────────────────────┘
+```

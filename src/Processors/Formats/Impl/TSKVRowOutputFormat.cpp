@@ -24,10 +24,10 @@ TSKVRowOutputFormat::TSKVRowOutputFormat(WriteBuffer & out_, const Block & heade
 }
 
 
-void TSKVRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void TSKVRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
     writeString(fields[field_number].name, out);
-    type.serializeAsTextEscaped(column, row_num, out, format_settings);
+    serialization.serializeTextEscaped(column, row_num, out, format_settings);
     ++field_number;
 }
 

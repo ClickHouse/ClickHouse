@@ -5,7 +5,7 @@
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
@@ -13,7 +13,6 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 
-#include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
 namespace DB
 {
@@ -24,6 +23,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -75,28 +75,8 @@ void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
 ColumnAggregateFunction::~ColumnAggregateFunction()
 {
     if (!func->hasTrivialDestructor() && !src)
-    {
-        if (copiedDataInfo.empty())
-        {
-            for (auto * val : data)
-            {
-                func->destroy(val);
-            }
-        }
-        else
-        {
-            size_t pos;
-            for (Map::iterator it = copiedDataInfo.begin(), it_end = copiedDataInfo.end(); it != it_end; ++it)
-            {
-                pos = it->getValue().second;
-                if (data[pos] != nullptr)
-                {
-                    func->destroy(data[pos]);
-                    data[pos] = nullptr;
-                }
-            }
-        }
-    }
+        for (auto * val : data)
+            func->destroy(val);
 }
 
 void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
@@ -181,12 +161,12 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     return res;
 }
 
-MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, const Context & context) const
+MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAndName & arguments, ContextPtr context) const
 {
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
 
-    auto * machine_learning_function = func.get();
+    const auto * machine_learning_function = func.get();
     if (machine_learning_function)
     {
         if (data.size() == 1)
@@ -475,37 +455,14 @@ void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
     ///  (only as a whole, see comment above).
     ensureOwnership();
     insertDefault();
-    insertCopyFrom(assert_cast<const ColumnAggregateFunction &>(from).data[n]);
+    insertMergeFrom(from, n);
 }
 
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 {
     ensureOwnership();
     insertDefault();
-    insertCopyFrom(place);
-}
-
-void ColumnAggregateFunction::insertCopyFrom(ConstAggregateDataPtr place)
-{
-    Map::LookupResult result;
-    result = copiedDataInfo.find(place);
-    if (result == nullptr)
-    {
-        copiedDataInfo[place] = data.size()-1;
-        func->merge(data.back(), place, &createOrGetArena());
-    }
-    else
-    {
-        size_t pos = result->getValue().second;
-        if (pos != data.size() - 1)
-        {
-            data[data.size() - 1] = data[pos];
-        }
-        else /// insert same data to same pos, merge them.
-        {
-            func->merge(data.back(), place, &createOrGetArena());
-        }
-    }
+    insertMergeFrom(place);
 }
 
 void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
@@ -527,7 +484,7 @@ Arena & ColumnAggregateFunction::createOrGetArena()
 }
 
 
-static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, IAggregateFunction * func)
+static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Arena & arena, const IAggregateFunction * func)
 {
     data.push_back(arena.alignedAlloc(func->sizeOfData(), func->alignOfData()));
     try
@@ -594,6 +551,11 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
     func->deserialize(data.back(), read_buffer, &dst_arena);
 
     return read_buffer.position();
+}
+
+const char * ColumnAggregateFunction::skipSerializedInArena(const char *) const
+{
+    throw Exception("Method skipSerializedInArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void ColumnAggregateFunction::popBack(size_t n)
@@ -740,4 +702,5 @@ MutableColumnPtr ColumnAggregateFunction::cloneResized(size_t size) const
         return cloned_col;
     }
 }
+
 }

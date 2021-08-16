@@ -24,11 +24,12 @@ def create_table(self, name, create_statement, on_cluster=False):
                 node.query(f"DROP TABLE IF EXISTS {name}")
 
 @TestStep(Given)
-def add_ldap_servers_configuration(self, servers, config_d_dir="/etc/clickhouse-server/config.d",
+def add_ldap_servers_configuration(self, servers, config=None, config_d_dir="/etc/clickhouse-server/config.d",
         config_file="ldap_servers.xml", timeout=60, restart=False):
     """Add LDAP servers configuration to config.xml.
     """
-    config = create_ldap_servers_config_content(servers, config_d_dir, config_file)
+    if config is None:
+        config = create_ldap_servers_config_content(servers, config_d_dir, config_file)
     return add_config(config, restart=restart)
 
 @TestStep(Given)

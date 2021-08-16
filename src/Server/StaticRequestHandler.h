@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/Net/HTTPRequestHandler.h>
+#include <Server/HTTP/HTTPRequestHandler.h>
 #include <common/types.h>
 
 
@@ -11,7 +11,7 @@ class IServer;
 class WriteBuffer;
 
 /// Response with custom string. Can be used for browser.
-class StaticRequestHandler : public Poco::Net::HTTPRequestHandler
+class StaticRequestHandler : public HTTPRequestHandler
 {
 private:
     IServer & server;
@@ -29,7 +29,7 @@ public:
 
     void writeResponse(WriteBuffer & out);
 
-    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 };
 
 }

@@ -11,7 +11,7 @@ service clickhouse-server start && sleep 5
 
 cd /sqlancer/sqlancer-master
 
-export TIMEOUT=60
+export TIMEOUT=300
 export NUM_QUERIES=1000
 
 ( java -jar target/sqlancer-*.jar --num-threads 10 --timeout-seconds $TIMEOUT --num-queries $NUM_QUERIES  --username default --password "" clickhouse --oracle TLPWhere | tee /test_output/TLPWhere.out )  3>&1 1>&2 2>&3 | tee /test_output/TLPWhere.err
@@ -29,4 +29,5 @@ tail -n 1000 /var/log/clickhouse-server/stderr.log > /test_output/stderr.log
 tail -n 1000 /var/log/clickhouse-server/stdout.log > /test_output/stdout.log
 tail -n 1000 /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log
 
+/process_sqlancer_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 ls /test_output

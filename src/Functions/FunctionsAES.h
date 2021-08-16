@@ -141,7 +141,7 @@ class FunctionEncrypt : public IFunction
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionEncrypt>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEncrypt>(); }
 
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
@@ -416,7 +416,7 @@ class FunctionDecrypt : public IFunction
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDecrypt>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDecrypt>(); }
 
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
@@ -538,8 +538,9 @@ private:
 
         [[maybe_unused]] const auto block_size = static_cast<size_t>(EVP_CIPHER_block_size(evp_cipher));
         [[maybe_unused]] const auto iv_size = static_cast<size_t>(EVP_CIPHER_iv_length(evp_cipher));
-        const auto key_size = static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
-        const auto tag_size = 16; // https://tools.ietf.org/html/rfc5116#section-5.1
+
+        const size_t key_size = static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
+        static constexpr size_t tag_size = 16; // https://tools.ietf.org/html/rfc5116#section-5.1
 
         auto decrypted_result_column = ColumnString::create();
         auto & decrypted_result_column_data = decrypted_result_column->getChars();
@@ -549,9 +550,17 @@ private:
             size_t resulting_size = 0;
             for (size_t r = 0; r < input_rows_count; ++r)
             {
-                resulting_size += input_column->getDataAt(r).size + 1;
+                size_t string_size = input_column->getDataAt(r).size;
+                resulting_size += string_size + 1;  /// With terminating zero.
+
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
+                {
+                    if (string_size < tag_size)
+                        throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
+                            ErrorCodes::BAD_ARGUMENTS);
+
                     resulting_size -= tag_size;
+                }
             }
 
 #if defined(MEMORY_SANITIZER)
@@ -565,6 +574,7 @@ private:
             decrypted_result_column_data.resize(resulting_size);
 #endif
         }
+
         auto * decrypted = decrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder;
@@ -631,7 +641,7 @@ private:
                     // 1.a.2: Set AAD if present
                     if (aad_column)
                     {
-                        const auto aad_data = aad_column->getDataAt(r);
+                        StringRef aad_data = aad_column->getDataAt(r);
                         int tmp_len = 0;
                         if (aad_data.size != 0 && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
                                 reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)

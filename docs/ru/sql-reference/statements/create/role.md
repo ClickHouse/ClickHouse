@@ -1,6 +1,6 @@
 ---
 toc_priority: 40
-toc_title: "\u0420\u043e\u043b\u044c"
+toc_title: "Роль"
 ---
 
 # CREATE ROLE {#create-role-statement}
@@ -46,5 +46,4 @@ SET ROLE accountant;
 SELECT * FROM db.*;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/role) 
 <!--hide-->

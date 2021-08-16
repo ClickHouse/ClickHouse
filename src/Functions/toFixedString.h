@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -32,7 +32,7 @@ class FunctionToFixedString : public IFunction
 {
 public:
     static constexpr auto name = "toFixedString";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToFixedString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToFixedString>(); }
     static FunctionPtr create() { return std::make_shared<FunctionToFixedString>(); }
 
     String getName() const override

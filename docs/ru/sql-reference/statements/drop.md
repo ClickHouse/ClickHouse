@@ -97,4 +97,3 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/drop/) <!--hide-->

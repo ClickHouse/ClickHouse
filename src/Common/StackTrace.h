@@ -11,7 +11,9 @@
 
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
-#   pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   ifdef __clang__
+#       pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   endif
 #   define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
@@ -35,14 +37,11 @@ public:
         std::optional<UInt64> line;
     };
 
-    static constexpr size_t capacity =
-#ifndef NDEBUG
-        /* The stacks are normally larger in debug version due to less inlining. */
-        64
-#else
-        32
-#endif
-        ;
+    /* NOTE: It cannot be larger right now, since otherwise it
+     * will not fit into minimal PIPE_BUF (512) in TraceCollector.
+     */
+    static constexpr size_t capacity = 45;
+
     using FramePointers = std::array<void *, capacity>;
     using Frames = std::array<Frame, capacity>;
 

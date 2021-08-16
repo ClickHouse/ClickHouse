@@ -7,8 +7,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 PORT="$(($RANDOM%63000+2001))"
 
-TEMP_FILE="${CLICKHOUSE_TMP}/01622_defaults_for_url_engine.tmp"
-
 function thread1
 {
     while true; do
@@ -19,7 +17,7 @@ function thread1
 function thread2
 {
     while true; do
-        $CLICKHOUSE_CLIENT --input_format_defaults_for_omitted_fields=1 -q "SELECT * FROM url('http://127.0.0.1:$1/', JSONEachRow, 'a int, b int default 7, c default a + b') format Values"
+        $CLICKHOUSE_CLIENT --input_format_defaults_for_omitted_fields=1 -q "SELECT * FROM url('http://127.0.0.1:$1/', JSONEachRow, 'a int, b int default 7, c default a + b') format Values" | grep -F '(1,7,8)' && break
     done
 }
 
@@ -27,11 +25,11 @@ function thread2
 export -f thread1;
 export -f thread2;
 
-TIMEOUT=5
+TIMEOUT=60
 
 timeout $TIMEOUT bash -c "thread1 $PORT" > /dev/null 2>&1 &
-timeout $TIMEOUT bash -c "thread2 $PORT" 2> /dev/null > $TEMP_FILE &
+PID=$!
 
-wait
+bash -c "thread2 $PORT" 2> /dev/null | grep -q -F '(1,7,8)' && echo "Ok" && kill -9 $PID
 
-grep -q '(1,7,8)' $TEMP_FILE && echo "Ok"
+wait >/dev/null 2>&1

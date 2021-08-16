@@ -40,8 +40,8 @@ $CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT $settings -q "
 WITH
     any(query_duration_ms*1000) AS duration,
-    sumIf(PV, PN = 'RealTimeMicroseconds') AS threads_realtime,
-    sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds', 'OSCPUWaitMicroseconds')) AS threads_time_user_system_io
+    sum(ProfileEvents['RealTimeMicroseconds']) AS threads_realtime,
+    sum(ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] + ProfileEvents['OSIOWaitMicroseconds'] + ProfileEvents['OSCPUWaitMicroseconds']) AS threads_time_user_system_io
 SELECT
     -- duration, threads_realtime, threads_time_user_system_io,
     threads_realtime >= 0.99 * duration,
@@ -49,7 +49,7 @@ SELECT
     any(length(thread_ids)) >= 1
     FROM
         (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-1 AND current_database = currentDatabase() AND type=2 ORDER BY event_time DESC LIMIT 1)
-    ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV"
+"
 
 # Clean
 rm "$server_logs_file"

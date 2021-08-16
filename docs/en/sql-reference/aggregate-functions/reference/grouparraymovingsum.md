@@ -13,7 +13,7 @@ groupArrayMovingSum(window_size)(numbers_for_summing)
 
 The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
 
-**Parameters**
+**Arguments**
 
 -   `numbers_for_summing` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) resulting in a numeric data type value.
 -   `window_size` — Size of the calculation window.

@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>
-#include <Poco/File.h>
 
 namespace DB
 {

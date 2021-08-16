@@ -16,8 +16,10 @@ extern const int CASSANDRA_INTERNAL_ERROR;
 void cassandraCheck(CassError code)
 {
     if (code != CASS_OK)
-        throw Exception("Cassandra driver error " + std::to_string(code) + ": " + cass_error_desc(code),
-                        ErrorCodes::CASSANDRA_INTERNAL_ERROR);
+        throw Exception(ErrorCodes::CASSANDRA_INTERNAL_ERROR,
+            "Cassandra driver error {}: {}",
+            std::to_string(code),
+            cass_error_desc(code));
 }
 
 
@@ -31,8 +33,12 @@ void cassandraWaitAndCheck(CassFuturePtr & future)
     const char * message;
     size_t message_len;
     cass_future_error_message(future, &message, & message_len);
-    std::string full_message = "Cassandra driver error " + std::to_string(code) + ": " + cass_error_desc(code) + ": " + message;
-    throw Exception(full_message, ErrorCodes::CASSANDRA_INTERNAL_ERROR);
+
+    throw Exception(ErrorCodes::CASSANDRA_INTERNAL_ERROR,
+        "Cassandra driver error {}: {}: {}",
+        std::to_string(code),
+        cass_error_desc(code),
+        message);
 }
 
 static std::once_flag setup_logging_flag;

@@ -138,4 +138,23 @@ enum class UnionMode
 
 DECLARE_SETTING_ENUM(UnionMode)
 
+enum class DistributedDDLOutputMode
+{
+    NONE,
+    THROW,
+    NULL_STATUS_ON_TIMEOUT,
+    NEVER_THROW,
+};
+
+DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
+
+enum class HandleKafkaErrorMode
+{
+    DEFAULT = 0, // Ignore errors whit threshold.
+    STREAM, // Put errors to stream in the virtual column named ``_error.
+    /*FIXED_SYSTEM_TABLE, Put errors to in a fixed system table likey system.kafka_errors. This is not implemented now.  */
+    /*CUSTOM_SYSTEM_TABLE, Put errors to in a custom system table. This is not implemented now.  */
+};
+
+DECLARE_SETTING_ENUM(HandleKafkaErrorMode)
 }

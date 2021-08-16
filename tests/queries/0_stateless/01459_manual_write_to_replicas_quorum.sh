@@ -11,7 +11,7 @@ NUM_REPLICAS=10
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -n -q "
         DROP TABLE IF EXISTS r$i;
-        CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/01459_manual_write_ro_replicas_quorum/r', 'r$i') ORDER BY x;
+        CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r$i') ORDER BY x;
     "
 done
 

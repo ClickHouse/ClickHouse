@@ -14,8 +14,8 @@ add_library (mysqlxx
 target_include_directories (mysqlxx PUBLIC ..)
 
 if (USE_INTERNAL_MYSQL_LIBRARY)
-    target_include_directories (mysqlxx PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include)
-    target_include_directories (mysqlxx PUBLIC ${ClickHouse_BINARY_DIR}/contrib/mariadb-connector-c/include)
+    target_include_directories (mysqlxx PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include")
+    target_include_directories (mysqlxx PUBLIC "${ClickHouse_BINARY_DIR}/contrib/mariadb-connector-c/include")
 else ()
     set(PLATFORM_LIBRARIES ${CMAKE_DL_LIBS})
 
