@@ -13,7 +13,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
 #include <filesystem>
-
+#include <string>
 #include "Client.h"
 
 #include <common/argsToConfig.h>
@@ -31,11 +31,13 @@
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
 #include <Common/InterruptListener.h>
+#include "Common/MemoryTracker.h"
 
 #include <Core/QueryProcessingStage.h>
 #include <Client/Connection.h>
 #include <Client/TestHint.h>
 #include <Columns/ColumnString.h>
+#include "Columns/ColumnsNumber.h"
 #include <Poco/Util/Application.h>
 
 #include <Processors/Formats/IInputFormat.h>
@@ -73,6 +75,14 @@
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
+
+namespace CurrentMetrics
+{
+    extern const Metric Revision;
+    extern const Metric VersionInteger;
+    extern const Metric MemoryTracking;
+    extern const Metric MaxDDLEntryID;
+}
 
 namespace fs = std::filesystem;
 
@@ -363,6 +373,18 @@ int Client::mainImpl()
 {
     try
     {
+        MainThreadStatus::getInstance();
+
+        /// Limit on total memory usage
+        size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+
+        if (max_client_memory_usage != 0)
+        {
+            total_memory_tracker.setHardLimit(max_client_memory_usage);
+            total_memory_tracker.setDescription("(total)");
+            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+        }
+
         registerFormats();
         registerFunctions();
         registerAggregateFunctions();
@@ -1719,6 +1741,7 @@ void Client::addAndCheckOptions(OptionsDescription & options_description, po::va
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
         ("history_file", po::value<std::string>(), "path to history file")
         ("no-warnings", "disable warnings when client connects to server")
+        ("max_memory_usage_in_client", po::value<int>(), "sets memory limit in client")
     ;
 
     /// Commandline options related to external tables.

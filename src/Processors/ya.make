@@ -7,11 +7,11 @@ PEERDIR(
     clickhouse/src/Common
     contrib/libs/msgpack
     contrib/libs/protobuf
-    contrib/libs/arrow
+    contrib/libs/apache/arrow
 )
 
 ADDINCL(
-    contrib/libs/arrow/src
+    contrib/libs/apache/arrow/src
 )
 
 CFLAGS(-DUSE_ARROW=1)
@@ -35,9 +35,9 @@ SRCS(
     Formats/Impl/ArrowBlockOutputFormat.cpp
     Formats/Impl/ArrowBufferedStreams.cpp
     Formats/Impl/ArrowColumnToCHColumn.cpp
-    Formats/Impl/CHColumnToArrowColumn.cpp
     Formats/Impl/BinaryRowInputFormat.cpp
     Formats/Impl/BinaryRowOutputFormat.cpp
+    Formats/Impl/CHColumnToArrowColumn.cpp
     Formats/Impl/CSVRowInputFormat.cpp
     Formats/Impl/CSVRowOutputFormat.cpp
     Formats/Impl/ConstantExpressionTemplate.cpp
@@ -176,6 +176,7 @@ SRCS(
     Transforms/ReverseTransform.cpp
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
+    Transforms/SquashingChunksTransform.cpp
     Transforms/TotalsHavingTransform.cpp
     Transforms/WindowTransform.cpp
     Transforms/getSourceFromFromASTInsertQuery.cpp

@@ -32,6 +32,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <common/logger_useful.h>
+#include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
@@ -45,6 +46,27 @@
 
 namespace DB
 {
+
+namespace
+{
+std::string formatHTTPErrorResponse(const Poco::Util::AbstractConfiguration& config)
+{
+    std::string result = fmt::format(
+        "HTTP/1.0 400 Bad Request\r\n\r\n"
+        "Port {} is for clickhouse-client program\r\n",
+        config.getString("tcp_port"));
+
+    if (config.has("http_port"))
+    {
+        result += fmt::format(
+            "You must use port {} for HTTP.\r\n",
+            config.getString("http_port"));
+    }
+
+    return result;
+}
+}
+
 
 namespace ErrorCodes
 {
@@ -922,10 +944,8 @@ void TCPHandler::receiveHello()
           */
         if (packet_type == 'G' || packet_type == 'P')
         {
-            writeString("HTTP/1.0 400 Bad Request\r\n\r\n"
-                "Port " + server.config().getString("tcp_port") + " is for clickhouse-client program.\r\n"
-                "You must use port " + server.config().getString("http_port") + " for HTTP.\r\n",
-                *out);
+            writeString(formatHTTPErrorResponse(server.config()),
+                        *out);
 
             throw Exception("Client has connected to wrong port", ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT);
         }
