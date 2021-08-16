@@ -393,6 +393,8 @@ Projections are like [materialized views](../../sql-reference/statements/create/
 
 Projections are an experimental feature. To enable them you must set the [allow_experimental_projection_optimization](../../../operations/settings/settings.md#allow-experimental-projection-optimization) to `1`. See also the [force_optimize_projection ](../../../operations/settings/settings.md#force_optimize_projection) setting.
 
+Projections are not supported in the `SELECT` statements with [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
+
 ### Projection Query {#projection-query}
 A projection query is what defines a projection. It implicitly selects data from the parent table. It has the following syntax:
 
