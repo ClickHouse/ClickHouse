@@ -376,7 +376,7 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
     -   `NOT startsWith(s, 'test')`
 
 ## Проекции {#projections}
-Проекции похожи на [материализованные представления](../../sql-reference/statements/create/view.md#materialized), но определяются на уровне кусков данных. Это обеспечивает гарантии согласованности данных наряду с автоматическим использованием в запросах.
+Проекции похожи на [материализованные представления](../../../sql-reference/statements/create/view.md#materialized), но определяются на уровне кусков данных. Это обеспечивает гарантии согласованности данных наряду с автоматическим использованием в запросах.
 
 Проекции это экспериментальная возможность. Чтобы включить поддержку проекций, установите настройку [allow_experimental_projection_optimization](../../../operations/settings/settings.md#allow-experimental-projection-optimization) в значение `1`. См. также настройку [force_optimize_projection ](../../../operations/settings/settings.md#force_optimize_projection).
 
@@ -389,7 +389,7 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 ```
 
-Проекции можно изменить или удалить с помощью запроса [ALTER](../../../sql-reference/statement/alter/projection.md).
+Проекции можно изменить или удалить с помощью запроса [ALTER](../../../sql-reference/statements/alter/projection.md).
 
 ### Хранение проекции {#projection-storage}
 Проекции хранятся в каталоге куска данных. Это похоже на хранение индексов, но используется подкаталог, в котором хранится анонимный кусок таблицы `MergeTree`. Таблица создается запросом определения проекции. Если есть секция `GROUP BY`, то используется движок [AggregatingMergeTree](aggregatingmergetree.md), а все агрегатные функции преобразуются в `AggregateFunction`. Если есть секция `ORDER BY`, таблица `MergeTree` использует ее в качестве выражения для первичного ключа. Во время процесса слияния кусок данных проекции объединяется с помощью процедуры слияния ее хранилища. Контрольная сумма куска данных родительской таблицы включает кусок данных проекции. Другие процедуры аналогичны индексам пропуска данных.
