@@ -10,7 +10,7 @@ Allows to access all shards in an existing cluster which configured in `remote_s
 `clusterAllReplicas` function — same as `cluster`, but all replicas are queried. Each replica in a cluster is used as separate shard/connection.
 
 !!! note "Note"
-    All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters) table.
+    All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
 
 **Syntax**
 
@@ -32,7 +32,7 @@ The dataset from clusters.
 
 **Using Macros**
 
-Arguments can contain macros — substitutions in curly brackets. The substituted values are taken from the [macros](../../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration file.
+`cluster_name` can contain macros — substitution in curly brackets. The substituted value is taken from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration file.
 
 Example:
 
