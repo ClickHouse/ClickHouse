@@ -1028,7 +1028,7 @@ void MergeJoin::initRightTableWriter()
 }
 
 /// Stream from not joined earlier rows of the right table.
-class NotJoinedMerge final : public NotJoinedInputStream::RightColumnsFiller
+class NotJoinedMerge final : public NotJoinedBlocks::RightColumnsFiller
 {
 public:
     NotJoinedMerge(const MergeJoin & parent_, UInt64 max_block_size_)
@@ -1089,15 +1089,15 @@ private:
 };
 
 
-BlockInputStreamPtr MergeJoin::createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const
+std::shared_ptr<NotJoinedBlocks> MergeJoin::getNonJoinedBlocks(const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (table_join->strictness() == ASTTableJoin::Strictness::All && (is_right || is_full))
     {
         size_t left_columns_count = result_sample_block.columns() - right_columns_to_add.columns();
         auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
-        return std::make_shared<NotJoinedInputStream>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
+        return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
     }
-    return {};
+    return nullptr;
 }
 
 bool MergeJoin::needConditionJoinColumn() const

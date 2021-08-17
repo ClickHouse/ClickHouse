@@ -21,7 +21,6 @@
 
 #include <Storages/StorageDictionary.h>
 
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 
 #include <Core/ColumnNumbers.h>
@@ -629,7 +628,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     ConstNullMapPtr null_map{};
     ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    /// If RIGHT or FULL save blocks with nulls for NotJoinedInputStream
+    /// If RIGHT or FULL save blocks with nulls for NotJoinedBlocks
     UInt8 save_nullmap = 0;
     if (isRightOrFull(kind) && null_map)
     {
@@ -1468,7 +1467,7 @@ struct AdderNonJoined
 
 
 /// Stream from not joined earlier rows of the right table.
-class NotJoinedHash final : public NotJoinedInputStream::RightColumnsFiller
+class NotJoinedHash final : public NotJoinedBlocks::RightColumnsFiller
 {
 public:
     NotJoinedHash(const HashJoin & parent_, UInt64 max_block_size_)
@@ -1578,7 +1577,7 @@ private:
 };
 
 
-BlockInputStreamPtr HashJoin::createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const
+std::shared_ptr<NotJoinedBlocks> HashJoin::getNonJoinedBlocks(const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (table_join->strictness() == ASTTableJoin::Strictness::Asof ||
         table_join->strictness() == ASTTableJoin::Strictness::Semi ||
@@ -1589,7 +1588,7 @@ BlockInputStreamPtr HashJoin::createStreamWithNonJoinedRows(const Block & result
 
     size_t left_columns_count = result_sample_block.columns() - required_right_keys.columns() - sample_block_with_columns_to_add.columns();
     auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size);
-    return std::make_shared<NotJoinedInputStream>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
+    return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
 }
 
 void HashJoin::reuseJoinedData(const HashJoin & join)

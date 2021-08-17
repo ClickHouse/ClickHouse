@@ -20,7 +20,6 @@
 #include <Columns/ColumnFixedString.h>
 
 #include <DataStreams/SizeLimits.h>
-#include <DataStreams/IBlockStream_fwd.h>
 
 #include <Core/Block.h>
 
@@ -164,7 +163,7 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
+    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
