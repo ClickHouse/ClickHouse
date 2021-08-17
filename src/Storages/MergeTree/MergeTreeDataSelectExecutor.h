@@ -47,7 +47,7 @@ public:
         UInt64 max_block_size,
         unsigned num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
-        MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr = nullptr) const;
+        MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr = nullptr) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.

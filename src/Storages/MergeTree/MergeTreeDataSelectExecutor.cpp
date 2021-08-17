@@ -133,11 +133,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
     const auto & settings = context->getSettingsRef();
-    auto parts = data.getDataPartsVector();
     if (!query_info.projection)
     {
         auto plan = readFromParts(
-            parts,
+            query_info.merge_tree_select_result_ptr ? MergeTreeData::DataPartsVector{} : data.getDataPartsVector(),
             column_names_to_return,
             metadata_snapshot,
             metadata_snapshot,
@@ -163,27 +162,15 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         ProjectionDescription::typeToString(query_info.projection->desc->type),
         query_info.projection->desc->name);
 
-    MergeTreeData::DataPartsVector projection_parts;
-    MergeTreeData::DataPartsVector normal_parts;
-    for (const auto & part : parts)
-    {
-        const auto & projections = part->getProjectionParts();
-        auto it = projections.find(query_info.projection->desc->name);
-        if (it != projections.end())
-            projection_parts.push_back(it->second);
-        else
-            normal_parts.push_back(part);
-    }
-
     Pipes pipes;
     Pipe projection_pipe;
     Pipe ordinary_pipe;
 
-    if (!projection_parts.empty())
+    if (query_info.projection->merge_tree_projection_select_result_ptr)
     {
         LOG_DEBUG(log, "projection required columns: {}", fmt::join(query_info.projection->required_columns, ", "));
         auto plan = readFromParts(
-            projection_parts,
+            {},
             query_info.projection->required_columns,
             metadata_snapshot,
             query_info.projection->desc->metadata,
@@ -224,10 +211,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         }
     }
 
-    if (!normal_parts.empty())
+    if (query_info.projection->merge_tree_normal_select_result_ptr)
     {
         auto storage_from_base_parts_of_projection
-            = StorageFromMergeTreeDataPart::create(std::move(normal_parts), query_info.projection->merge_tree_normal_select_result_ptr);
+            = StorageFromMergeTreeDataPart::create(data, query_info.projection->merge_tree_normal_select_result_ptr);
         auto interpreter = InterpreterSelectQuery(
             query_info.query,
             context,
@@ -1133,8 +1120,13 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr) const
 {
-    size_t total_parts = parts.size();
-    if (total_parts == 0)
+    /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
+    if (merge_tree_select_result_ptr)
+    {
+        if (merge_tree_select_result_ptr->marks() == 0)
+            return std::make_unique<QueryPlan>();
+    }
+    else if (parts.empty())
         return std::make_unique<QueryPlan>();
 
     Names real_column_names;
