@@ -148,9 +148,22 @@
             <!-- Proxy information from X-Forwarded-For HTTP header.-->
             <protocol>HTTP</protocol>
 
+            <!-- If proxy_chain_limit is set to 0 then all intermediate proxies (the list of addresses extracted from X-Forwarded-For HTTP header)
+                  will be checked to be trusted, and the first element (from left) of that list will be taken as a client address.
+                 Otherwise, at most (proxy_chain_limit - 1) intermediate proxy addresses (from right to left) will be verified to be trusted,
+                  and (proxy_chain_limit - 1)-th address in that chain (from right) will be taken as a client address. The rest of the addresses,
+                  if any, will be ignored.
+                 If not specified, proxy_chain_limit is set to 1 by default, resulting in the first address (from right) to be taken as
+                  a client address.
+                 The immediate peer address of the connection is checked for belonging to the trusted networks always, automatically,
+                  during proxy configuration selection for each new connection on the interface.
+              -->
+            <!-- <proxy_chain_limit>0</proxy_chain_limit> -->
+
             <!-- List of IPv4 and/or IPv6 networks, connections from which will be assumed to be from trusted proxies.
-                 Note, that all intermediate peers (but not the initiator client peer) from X-Forwarded-For must be from
-                  some of the networks from this list, for the information about the forwarding chain to be considered authentic.
+                 Note, that all (or several last ones; see proxy_chain_limit) intermediate peers (but not the initiator client peer)
+                  from X-Forwarded-For must be from some of the networks from this list, for the information about the forwarding chain
+                  to be considered authentic.
               -->
             <trust>
                 <net>10.10.20.1/24</net>
@@ -173,7 +186,7 @@
             - prometheus
             - interserver_http
             - keeper_tcp
-         You can define any number of interfaces for each of the protocols.
+         You can define any number of listening interfaces for each of the protocols.
       -->
     <interfaces>
 

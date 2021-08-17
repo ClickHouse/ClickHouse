@@ -20,6 +20,9 @@ std::unique_ptr<ProxyConfig> HTTPProxyConfig::clone() const
 void HTTPProxyConfig::updateConfig(const Poco::Util::AbstractConfiguration & config)
 {
     ProxyConfig::updateConfig(config);
+
+    if (config.has("proxy_chain_limit"))
+        proxy_chain_limit = config.getUInt64("proxy_chain_limit");
 }
 
 std::unique_ptr<ProxyProtocolHandler> HTTPProxyConfig::createProxyProtocolHandler() const
