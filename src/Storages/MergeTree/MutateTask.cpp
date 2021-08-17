@@ -1094,14 +1094,11 @@ private:
                 ctx->mutating_stream = std::make_shared<TTLBlockInputStream>(
                     ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
 
-            Block mutation_header =
-                ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : ctx->updated_header;
-
             IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets; // ??
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
-                mutation_header,
+                ctx->updated_header,
                 ctx->compression_codec,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 nullptr,
@@ -1324,11 +1321,8 @@ bool MutateTask::prepare()
     {
 
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
-        if (ctx->mutation_kind != MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION)
-        {
-            for (const auto & name_type : ctx->updated_header.getNamesAndTypesList())
-                ctx->updated_columns.emplace(name_type.name);
-        }
+        for (const auto & name_type : ctx->updated_header.getNamesAndTypesList())
+            ctx->updated_columns.emplace(name_type.name);
 
         ctx->indices_to_recalc = MutationHelpers::getIndicesToRecalculate(
             ctx->mutating_stream, ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_indices, ctx->source_part);
@@ -1337,7 +1331,7 @@ bool MutateTask::prepare()
 
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,
-            ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : ctx->updated_header,
+            ctx->updated_header,
             ctx->indices_to_recalc,
             ctx->mrk_extension,
             ctx->projections_to_recalc);
