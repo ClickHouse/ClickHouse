@@ -881,15 +881,16 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
         {
             for (const auto & elem : ast_union->list_of_selects->children)
             {
-                /// After normalization, the height of the AST tree is at most 2.
+                /// After normalization for union child node the height of the AST tree is at most 2.
                 if (const auto * child_union = elem->as<ASTSelectWithUnionQuery>())
                 {
                     for (const auto & child_elem : child_union->list_of_selects->children)
                         if (hasWithTotalsInAnySubqueryInFromClause(child_elem->as<ASTSelectQuery &>()))
                             return true;
                 }
-                /// After normalization, the height of the AST tree can have any depth,
-                /// but the number of children at each level is always 2.
+                /// After normalization in case there are intersect or except nodes, the height of
+                /// the AST tree can have any depth (each intersect/except adds a level), but the
+                /// number of children in those nodes is always 2.
                 else if (elem->as<ASTSelectIntersectExceptQuery>())
                 {
                     std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
