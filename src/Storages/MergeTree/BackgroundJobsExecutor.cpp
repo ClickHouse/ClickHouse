@@ -118,8 +118,8 @@ void BackgroundJobExecutor::triggerTaskWithDelay()
 void BackgroundJobExecutor::backgroundTaskFunction()
 try
 {
-    bool result = selectTaskAndExecute();
-    scheduleTask(/* with_backoff = */ !result);
+    selectTaskAndExecute();
+    scheduleTask(/* with_backoff = */ true);
 }
 catch (...) /// Catch any exception to avoid thread termination.
 {
