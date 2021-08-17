@@ -57,62 +57,107 @@ struct NotProcessedCrossJoin : public ExtraBlock
 
 namespace JoinStuff
 {
-    /// Version of `getUsed` with dynamic dispatch
+    /// for single disjunct
     bool JoinUsedFlags::getUsedSafe(size_t i) const
     {
-        if (flags.empty())
-            return !need_flags;
-        return flags[i].load();
+        return getUsedSafe(nullptr, i);
     }
 
+    /// for multiple disjuncts
+    bool JoinUsedFlags::getUsedSafe(const Block * block_ptr, size_t row_idx) const
+    {
+        if (auto it = flags.find(block_ptr); it != flags.end())
+            return it->second[row_idx].load();
+        return !need_flags;
+    }
+
+    /// for single disjunct
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
     void JoinUsedFlags::reinit(size_t size)
     {
         if constexpr (MapGetter<KIND, STRICTNESS>::flagged)
         {
-            assert(flags.size() <= size);
+            assert(flags[nullptr].size() <= size);
             need_flags = true;
-            flags = std::vector<std::atomic_bool>(size);
+            flags[nullptr] = std::vector<std::atomic_bool>(size);
+        }
+    }
+
+    /// for multiple disjuncts
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
+    void JoinUsedFlags::reinit(const Block * block_ptr)
+    {
+        if constexpr (MapGetter<KIND, STRICTNESS>::flagged)
+        {
+            assert(flags[block_ptr].size() <= block_ptr->rows());
+            need_flags = true;
+            flags[block_ptr] = std::vector<std::atomic_bool>(block_ptr->rows());
         }
     }
 
     template <bool use_flags, bool multiple_disjuncts, typename FindResult>
     void JoinUsedFlags::setUsed(const FindResult & f)
     {
-        if constexpr (use_flags)
+        if constexpr (!use_flags)
+            return;
+
+        /// Could be set simultaneously from different threads.
+        if constexpr (multiple_disjuncts)
         {
-            /// Could be set simultaneously from different threads.
-            if constexpr (!multiple_disjuncts)
-            {
-                flags[f.getOffset()].store(true, std::memory_order_relaxed);
-            }
+            auto & mapped = f.getMapped();
+            flags[mapped.block][mapped.row_num].store(true, std::memory_order_relaxed);
+        }
+        else
+        {
+            flags[nullptr][f.getOffset()].store(true, std::memory_order_relaxed);
         }
     }
 
     template <bool use_flags, bool multiple_disjuncts, typename FindResult>
     bool JoinUsedFlags::getUsed(const FindResult & f)
     {
-        if constexpr (use_flags)
+        if constexpr (!use_flags)
+            return true;
+
+        if constexpr (multiple_disjuncts)
         {
-            return flags[f.getOffset()].load();
+            auto & mapped = f.getMapped();
+            return flags[mapped.block][mapped.row_num].load();
         }
-        return true;
+        else
+        {
+            return flags[nullptr][f.getOffset()].load();
+        }
     }
 
     template <bool use_flags, bool multiple_disjuncts, typename FindResult>
     bool JoinUsedFlags::setUsedOnce(const FindResult & f)
     {
-        if constexpr (use_flags)
+        if constexpr (!use_flags)
+            return true;
+
+        if constexpr (multiple_disjuncts)
         {
-            size_t off = f.getOffset();
+            auto & mapped = f.getMapped();
+
             /// fast check to prevent heavy CAS with seq_cst order
-            if (flags[off].load(std::memory_order_relaxed))
+            if (flags[mapped.block][mapped.row_num].load(std::memory_order_relaxed))
                 return false;
 
             bool expected = false;
-            return flags[off].compare_exchange_strong(expected, true);
+            return flags[mapped.block][mapped.row_num].compare_exchange_strong(expected, true);
         }
-        return true;
+        else
+        {
+            auto off = f.getOffset();
+
+            /// fast check to prevent heavy CAS with seq_cst order
+            if (flags[nullptr][off].load(std::memory_order_relaxed))
+                return false;
+
+            bool expected = false;
+            return flags[nullptr][off].compare_exchange_strong(expected, true);
+        }
     }
 }
 
@@ -389,11 +434,14 @@ static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes 
         return KeyGetter(key_columns, key_sizes, nullptr);
 }
 
+template <typename Mapped, bool need_offset = false>
+using FindResultImpl = ColumnsHashing::columns_hashing_impl::FindResultImpl<Mapped, true>;
+
 class KeyGetterForDict
 {
 public:
     using Mapped = RowRef;
-    using FindResult = ColumnsHashing::columns_hashing_impl::FindResultImpl<Mapped, true>;
+    using FindResult = FindResultImpl<Mapped, true>;
 
     KeyGetterForDict(const TableJoin & table_join, const ColumnRawPtrs & key_columns)
     {
@@ -681,15 +729,15 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 
 }
 
-HashJoin::BlockWithFlags HashJoin::structureRightBlock(const Block & block) const
+Block HashJoin::structureRightBlock(const Block & block) const
 {
-    BlockWithFlags structured_block;
+    Block structured_block;
     for (const auto & sample_column : savedBlockSample().getColumnsWithTypeAndName())
     {
         ColumnWithTypeAndName column = block.getByName(sample_column.name);
         if (sample_column.column->isNullable())
             JoinCommon::convertColumnToNullable(column);
-        structured_block.block.insert(column);
+        structured_block.insert(column);
     }
 
     return structured_block;
@@ -741,12 +789,13 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 
     ColumnRawPtrs all_key_columns = JoinCommon::materializeColumnsInplace(block, all_key_names_right);
 
-    BlockWithFlags structured_block = structureRightBlock(block);
+    Block structured_block = structureRightBlock(block);
     bool multiple_disjuncts = disjuncts_num > 1;
     if (nullable_right_side && multiple_disjuncts)
     {
-        JoinCommon::convertColumnsToNullable(structured_block.block);
+        JoinCommon::convertColumnsToNullable(structured_block);
     }
+
     std::vector<ColumnPtr> join_mask_col_vector(disjuncts_num);
     for (size_t d = 0; d < disjuncts_num; ++d)
         join_mask_col_vector[d] = JoinCommon::getColumnAsMask(block, condition_mask_column_name_right[d]);
@@ -760,10 +809,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             throw DB::Exception("addJoinedBlock called when HashJoin locked to prevent updates",
                                 ErrorCodes::LOGICAL_ERROR);
 
-        data->blocks.emplace_back(std::move(structured_block));
-        BlockWithFlags & stored_block_with_flags = data->blocks.back();
+        BlockWithFlags & stored_block_with_flags = data->blocks.emplace_back(std::move(structured_block));
         Block * stored_block = &stored_block_with_flags.block;
-        stored_block_with_flags.flags = std::vector<std::atomic_bool>(stored_block->rows());
 
         if (rows)
             data->empty = false;
@@ -773,7 +820,10 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         for (size_t d = 0; d < disjuncts_num; ++d)
         {
             ColumnRawPtrs key_columns(key_names_right_indexes[d].size());
-            std::transform(std::cbegin(key_names_right_indexes[d]), std::cend(key_names_right_indexes[d]), std::begin(key_columns), [&](size_t ind){return all_key_columns[ind];});
+            std::transform(std::cbegin(key_names_right_indexes[d]),
+                           std::cend(key_names_right_indexes[d]),
+                           std::begin(key_columns),
+                           [&all_key_columns](size_t i){ return all_key_columns[i]; });
 
             /// We will insert to the map only keys, where all components are not NULL.
 
@@ -799,12 +849,12 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
                             *this, data->type, map, rows, key_columns, key_sizes[d], stored_block, null_map_vector.back(),
                             join_mask_col_vector[d] ? &assert_cast<const ColumnUInt8 &>(*join_mask_col_vector[d]).getData() : nullptr,
                             data->pool);
-                        /// Number of buckets + 1 value from zero storage
 
-                        if (!d)
-                        {
+                        if (multiple_disjuncts)
+                            used_flags.reinit<kind_, strictness_>(stored_block);
+                        else
+                            /// Number of buckets + 1 value from zero storage
                             used_flags.reinit<kind_, strictness_>(size + 1);
-                        }
                     });
                 }
 
@@ -1109,7 +1159,12 @@ public:
 };
 
 template <typename Map, bool add_missing, bool multiple_disjuncts>
-void addFoundRowAll(const typename Map::mapped_type & mapped, AddedColumns & added, IColumn::Offset & current_offset, KnownRowsHolder<multiple_disjuncts> & known_rows [[maybe_unused]])
+void addFoundRowAll(
+    const typename Map::mapped_type & mapped,
+    AddedColumns & added,
+    IColumn::Offset & current_offset,
+    KnownRowsHolder<multiple_disjuncts> & known_rows [[maybe_unused]],
+    JoinStuff::JoinUsedFlags * used_flags [[maybe_unused]])
 {
     if constexpr (add_missing)
         added.applyLazyDefaults();
@@ -1129,9 +1184,11 @@ void addFoundRowAll(const typename Map::mapped_type & mapped, AddedColumns & add
                     new_known_rows_ptr = std::make_unique<std::vector<KnownRowsHolder<true>::Type>>();
                 }
                 new_known_rows_ptr->push_back(std::make_pair(it->block, it->row_num));
-                const HashJoin::BlockWithFlags * block_with_flags = reinterpret_cast<const HashJoin::BlockWithFlags*>(it->block);
-
-                block_with_flags->flags[it->row_num].store(true, std::memory_order_relaxed);
+                if (used_flags)
+                {
+                    used_flags->JoinStuff::JoinUsedFlags::setUsedOnce<true, multiple_disjuncts>(
+                        FindResultImpl<const RowRef, false>(*it, true, 0));
+                }
             }
         }
 
@@ -1178,7 +1235,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
     const std::vector<ConstNullMapPtr> & null_map [[maybe_unused]],
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
-    JoinFeatures<KIND, STRICTNESS> jf;
+    constexpr JoinFeatures<KIND, STRICTNESS> jf;
 
     size_t rows = added_columns.rows_to_add;
     IColumn::Filter filter;
@@ -1191,14 +1248,6 @@ NO_INLINE IColumn::Filter joinRightColumns(
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
     size_t disjunct_num = added_columns.key_columns.size();
-
-    // std::vector<KeyGetter> key_getter_vector;
-
-    // for (size_t d = 0; d < disjunct_num; ++d)
-    // {
-    //     auto key_getter = createKeyGetter<KeyGetter, jf.is_asof_join>(added_columns.key_columns[d], added_columns.key_sizes[d]);
-    //     key_getter_vector.push_back(std::move(key_getter));
-    // }
 
     IColumn::Offset current_offset = 0;
 
@@ -1237,7 +1286,11 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     if (const RowRef * found = mapped.findAsof(asof_type, asof_inequality, left_asof_key, i))
                     {
                         setUsed<need_filter>(filter, i);
-                        used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
+                        if constexpr (multiple_disjuncts)
+                            used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(FindResultImpl<const RowRef, false>(found, true, 0));
+                        else
+                            used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
+
                         added_columns.appendFromBlock<jf.add_missing>(*found->block, found->row_num);
                     }
                     else
@@ -1247,17 +1300,18 @@ NO_INLINE IColumn::Filter joinRightColumns(
                 {
                     setUsed<need_filter>(filter, i);
                     used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
-                    addFoundRowAll<Map, jf.add_missing>(mapped, added_columns, current_offset, known_rows);
+                    auto used_flags_opt = jf.need_flags ? &used_flags : nullptr;
+                    addFoundRowAll<Map, jf.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
                 }
                 else if constexpr ((jf.is_any_join || jf.is_semi_join) && jf.right)
                 {
                     /// Use first appeared left key + it needs left columns replication
                     bool used_once = used_flags.template setUsedOnce<jf.need_flags, multiple_disjuncts>(find_result);
-
                     if (used_once)
                     {
+                        auto used_flags_opt = jf.need_flags ? &used_flags : nullptr;
                         setUsed<need_filter>(filter, i);
-                        addFoundRowAll<Map, jf.add_missing>(mapped, added_columns, current_offset, known_rows);
+                        addFoundRowAll<Map, jf.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
                     }
                 }
                 else if constexpr (jf.is_any_join && KIND == ASTTableJoin::Kind::Inner)
@@ -1287,12 +1341,6 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     setUsed<need_filter>(filter, i);
                     used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
                     added_columns.appendFromBlock<jf.add_missing>(*mapped.block, mapped.row_num);
-                    if constexpr (multiple_disjuncts)
-                    {
-                        const HashJoin::BlockWithFlags * block_with_flags = reinterpret_cast<const HashJoin::BlockWithFlags*>(mapped.block);
-                        block_with_flags->flags[mapped.row_num].store(true, std::memory_order_relaxed);
-                    }
-
 
                     if (jf.is_any_join)
                     {
@@ -1979,16 +2027,15 @@ private:
 
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
-                const HashJoin::BlockWithFlags & block_with_flags = *it;
+                const Block & mapped_block = it->block;
 
-                for (size_t row = 0; row < block_with_flags.flags.size(); ++row)
+                for (size_t row = 0; row < mapped_block.rows(); ++row)
                 {
-                    if (!block_with_flags.flags[row])
+                    if (!parent.isUsed(&mapped_block, row))
                     {
                         for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
                         {
-                            auto clmn = block_with_flags.block.getByPosition(colnum).column;
-                            columns_keys_and_right[colnum]->insertFrom(*clmn, row);
+                            columns_keys_and_right[colnum]->insertFrom(*mapped_block.getByPosition(colnum).column, row);
                         }
 
                         ++rows_added;
@@ -2016,7 +2063,6 @@ private:
                 if (parent.isUsed(off))
                     continue;
                 AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
-
 
                 if (rows_added >= max_block_size)
                 {
