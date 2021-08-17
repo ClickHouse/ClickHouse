@@ -68,7 +68,7 @@ toc_title: "Хранение данных на внешних дисках"
     <type>encrypted</type>
     <disk>disk1</disk>
     <path>path2/</path>
-    <key>...</key>
+    <key>_16_ascii_chars_</key>
   </disk2>
 </disks>
 ```
