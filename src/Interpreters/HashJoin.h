@@ -35,18 +35,27 @@ namespace JoinStuff
 /// Flags needed to implement RIGHT and FULL JOINs.
 class JoinUsedFlags
 {
-    std::vector<std::atomic_bool> flags;
+    using RawBlockPtr = const Block *;
+    using UsedFlagsForBlock = std::vector<std::atomic_bool>;
+
+    /// For multiple dijuncts each empty in hashmap stores flags for particular block
+    /// For single dicunct we store all flags in `nullptr` entry, index is the offset in FindResult
+    std::unordered_map<RawBlockPtr, UsedFlagsForBlock> flags;
+
     bool need_flags;
 
 public:
-
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
     void reinit(size_t size_);
 
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
+    void reinit(const Block * block_ptr);
+
     bool getUsedSafe(size_t i) const;
+    bool getUsedSafe(const Block * block_ptr, size_t row_idx) const;
 
     template <bool use_flags, bool multiple_disjuncts, typename T>
     void setUsed(const T & f);
@@ -309,16 +318,21 @@ public:
     using MapsAsof = MapsTemplate<AsofRowRefs>;
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
-    using BlockNullmapList = std::deque<std::pair<const Block *, ColumnPtr>>;
-    using BlockUsedmapList = std::deque<std::pair<const Block *, ColumnPtr>>;
 
-    struct BlockWithFlags : public ExtraBlock
+    using RawBlockPtr = const Block *;
+    using BlockNullmapList = std::deque<std::pair<RawBlockPtr, ColumnPtr>>;
+
+    struct BlockWithFlags
     {
-        mutable std::vector<std::atomic_bool> flags;
+        explicit BlockWithFlags(Block && block_)
+            : block(std::move(block_))
+        {}
+
+        Block block;
+        bool empty() const { return !block; }
     };
 
     using BlocksWithFlagsList = std::list<BlockWithFlags>;
-
 
     struct RightTableData
     {
@@ -334,7 +348,7 @@ public:
         Arena pool;
     };
 
-    using RightTableDataPtr       = std::shared_ptr<RightTableData>;
+    using RightTableDataPtr = std::shared_ptr<RightTableData>;
 
     /// We keep correspondence between used_flags and hash table internal buffer.
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
@@ -345,12 +359,10 @@ public:
 
     void reuseJoinedData(const HashJoin & join);
 
-    std::shared_ptr<RightTableData> getJoinedData() const
-    {
-        return data;
-    }
+    RightTableDataPtr getJoinedData() const { return data; }
 
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
+    bool isUsed(const Block * block_ptr, size_t row_idx) const { return used_flags.getUsedSafe(block_ptr, row_idx); }
 
 private:
     template<bool> friend class NotJoinedHash;
@@ -414,7 +426,7 @@ private:
     const Block & savedBlockSample() const { return data->sample_block; }
 
     /// Modify (structure) right block to save it in block list
-    BlockWithFlags structureRightBlock(const Block & stored_block) const;
+    Block structureRightBlock(const Block & stored_block) const;
     void initRightBlockStructure(Block & saved_block_sample);
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
