@@ -47,7 +47,7 @@
 -   `stat_version` ([Int32](../../sql-reference/data-types/int-uint.md)) — количество изменений в данных узла ZooKeeper.
 -   `stat_cversion` ([Int32](../../sql-reference/data-types/int-uint.md)) — количество изменений в детях узла ZooKeeper.
 -   `stat_dataLength` ([Int32](../../sql-reference/data-types/int-uint.md)) — длина поля данных узла ZooKeeper.
--   `stat_numChildren` ([Int32](../../sql-reference/data-types/int-uint.md)) — количество детей узла ZooKeeper.
+-   `stat_numChildren` ([Int32](../../sql-reference/data-types/int-uint.md)) — количество дочерних узлов ZooKeeper.
 -   `children` ([Array(String)](../../sql-reference/data-types/array.md)) — список дочерних узлов ZooKeeper (для ответов на запрос `LIST`).
 
 **Пример**
