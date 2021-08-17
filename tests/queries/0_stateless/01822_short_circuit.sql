@@ -123,3 +123,8 @@ select if(number > 0, intDiv(42, number), 1) from numbers(5);
 select if(number > 0, intDiv(42, number), 1) from numbers(5);
 
 select if(number > 0, 42 / toDecimal32(number, 2), 0) from numbers(5);
+select if(number = 0, 0, toDecimal32(42, 2) / number) from numbers(5);
+select if(isNull(x), Null, 42 / x) from (select CAST(materialize(Null), 'Nullable(Decimal32(2))') as x);
+select if(isNull(x), Null, x / 0) from (select CAST(materialize(Null), 'Nullable(Decimal32(2))') as x);
+
+select if(isNull(x), Null, intDiv(42, x)) from (select CAST(materialize(Null), 'Nullable(Int64)') as x);
