@@ -7,6 +7,7 @@
 #include <Client/Suggest.h>
 #include <Client/QueryFuzzer.h>
 #include <Common/ShellCommand.h>
+#include <Core/ExternalTable.h>
 
 namespace po = boost::program_options;
 
@@ -34,6 +35,14 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
+    void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
+    void receiveResult(ASTPtr parsed_query);
+    bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
+    void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
+    void initLogsOutputStream();
+    void sendExternalTables(ASTPtr parsed_query);
+    virtual void connect() = 0;
+
     /*
      * Run interactive or non-interactive mode. Depends on:
      *  - processSingleQuery
@@ -97,6 +106,12 @@ protected:
 
     virtual void loadSuggestionData(Suggest &) = 0;
 
+    void onData(Block & block, ASTPtr parsed_query);
+    void onLogData(Block & block);
+    void onTotals(Block & block, ASTPtr parsed_query);
+    void onExtremes(Block & block, ASTPtr parsed_query);
+    void onReceiveExceptionFromServer(std::unique_ptr<Exception> && e);
+    void onProfileInfo(const BlockStreamProfileInfo & profile_info);
 
     void resetOutput();
 
@@ -200,6 +215,27 @@ protected:
 
     /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
     std::vector<std::pair<String, String>> query_id_formats;
+
+    /// Dictionary with query parameters for prepared statements.
+    NameToNameMap query_parameters;
+
+    std::unique_ptr<IServerConnection> connection;
+    ConnectionParameters connection_parameters;
+
+    String format; /// Query results output format.
+    bool is_default_format = true; /// false, if format is set in the config or command line.
+
+    /// The last exception that was received from the server. Is used for the
+    /// return code in batch mode.
+    std::unique_ptr<Exception> server_exception;
+    /// Likewise, the last exception that occurred on the client.
+    std::unique_ptr<Exception> client_exception;
+
+    QueryProcessingStage::Enum query_processing_stage;
+
+    /// External tables info.
+    std::list<ExternalTable> external_tables;
+
 };
 
 }
