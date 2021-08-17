@@ -41,7 +41,7 @@
 -   `watch_type` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — тип события watch (для ответов на запрос при `op_num` = `Watch`), для остальных ответов: `NULL`.
 -   `watch_state` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — статус события watch (для ответов на запрос при `op_num` = `Watch`), для остальных ответов: `NULL`.
 -   `path_created` ([String](../../sql-reference/data-types/string.md)) — путь к созданному узлу ZooKeeper (для ответов на запрос `CREATE`). Может отличаться от `path`, если узел создается как sequential.
--   `stat_czxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — `zxid` изменения, в результате которого был создан узел ZooKeeper.
+-   `stat_czxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — идентификатор транзакции, в результате которой был создан узел ZooKeeper.
 -   `stat_mzxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — идентификатор транзакции, которая последней модифицировала узел ZooKeeper.
 -   `stat_pzxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — идентификатор транзакции, которая последней модифицировала дочерние узлы ZooKeeper.
 -   `stat_version` ([Int32](../../sql-reference/data-types/int-uint.md)) — количество изменений в данных узла ZooKeeper.
