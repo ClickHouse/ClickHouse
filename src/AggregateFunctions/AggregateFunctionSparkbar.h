@@ -8,6 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -15,21 +16,28 @@ namespace DB
 template<typename X, typename Y>
 struct AggregateFunctionSparkbarData
 {
-    using Points = std::map<X, Y>;
 
+    using Points = HashMap<X, Y>;
     Points points;
+
+    X min_x = std::numeric_limits<X>::max();
+    X max_x = std::numeric_limits<X>::lowest();
 
     Y min_y = std::numeric_limits<Y>::max();
     Y max_y = std::numeric_limits<Y>::lowest();
 
+    void insert(const X & x, const Y & y)
+    {
+        auto result = points.insert({x, y});
+        if (!result.second)
+            result.first->getMapped() += y;
+    }
+
     void add(X x, Y y)
     {
-        auto it = points.find(x);
-        if (it != points.end())
-            it->second += y;
-        else
-            points.emplace(x, y);
-
+        insert(x, y);
+        min_x = std::min(x, min_x);
+        max_x = std::max(x, max_x);
         min_y = std::min(y, min_y);
         max_y = std::max(y, max_y);
     }
@@ -40,49 +48,46 @@ struct AggregateFunctionSparkbarData
             return;
 
         for (auto & point : other.points)
-        {
-            auto it = points.find(point.first);
-            if (it != points.end())
-                it->second += point.second;
-            else
-                points.emplace(point.first, point.second);
-        }
+            insert(point.getKey(), point.getMapped());
 
+        min_x = std::min(other.min_x, min_x);
+        max_x = std::max(other.max_x, max_x);
         min_y = std::min(other.min_y, min_y);
         max_y = std::max(other.max_y, max_y);
     }
 
     void serialize(WriteBuffer & buf) const
     {
+        writeBinary(min_x, buf);
+        writeBinary(max_x, buf);
         writeBinary(min_y, buf);
         writeBinary(max_y, buf);
         writeVarUInt(points.size(), buf);
 
         for (const auto & elem : points)
         {
-            writeBinary(elem.first, buf);
-            writeBinary(elem.second, buf);
+            writeBinary(elem.getKey(), buf);
+            writeBinary(elem.getMapped(), buf);
         }
     }
 
     void deserialize(ReadBuffer & buf)
     {
-        readPODBinary(min_y, buf);
-        readPODBinary(max_y, buf);
+        readBinary(min_x, buf);
+        readBinary(max_x, buf);
+        readBinary(min_y, buf);
+        readBinary(max_y, buf);
         size_t size;
         readVarUInt(size, buf);
 
         /// TODO Protection against huge size
-
-        points.clear();
-
         X x;
         Y y;
         for (size_t i = 0; i < size; ++i)
         {
             readBinary(x, buf);
             readBinary(y, buf);
-            points.emplace(x, y);
+            insert(x, y);
         }
     }
 
@@ -129,10 +134,10 @@ private:
     String render(const AggregateFunctionSparkbarData<X, Y> & data) const
     {
         String value;
-        if (data.points.empty())
+        if (data.points.empty() || !width)
             return value;
-        X local_min_x = data.points.begin()->first;
-        X local_max_x = data.points.rbegin()->first;
+        X local_min_x = data.min_x;
+        X local_max_x = data.max_x;
         size_t diff_x = local_max_x - local_min_x;
         if ((diff_x + 1) <= width)
         {
@@ -146,13 +151,13 @@ private:
                 {
                     auto it = data.points.find(local_min_x + i);
                     bool found = it != data.points.end();
-                    value += getBar(found ? std::round(((it->second - min_y) / diff_y) * 7) + 1 : 0);
+                    value += getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0);
                 }
             }
             else
             {
                 for (size_t i = 0; i <= diff_x; ++i)
-                    value += getBar(data.points.count(local_min_x + i) ? 1 : 0);
+                    value += getBar(data.points.has(local_min_x + i) ? 1 : 0);
             }
         }
         else
@@ -160,45 +165,36 @@ private:
             // begin reshapes to width buckets
             Float64 multiple_d = (diff_x + 1) / static_cast<Float64>(width);
 
-            // init bounds
-            std::map<size_t, Float64> bounds;
-            for (size_t i = 1; i <= width; ++i)
-            {
-                Float64 bound = i * multiple_d;
-                bounds.template emplace(std::floor(bound), bound);
-            }
-
             std::optional<Float64> min_y;
             std::optional<Float64> max_y;
 
             std::optional<Float64> new_y;
             std::map<size_t, std::optional<Float64>> newPoints;
+
+            std::pair<size_t, Float64> bound{0, 0.0};
+            size_t cur_bucket_num = 0;
+            // upper bound for bucket
+            auto upperBound = [&](size_t bucket_num)
+            {
+                bound.second = (bucket_num + 1) * multiple_d;
+                bound.first = std::floor(bound.second);
+            };
+            upperBound(cur_bucket_num);
             for (size_t i = 0; i <= (diff_x + 1); ++i)
             {
-                auto bound = bounds.find(i);
-                if (bound != bounds.end()) // is bound
+                if (i == bound.first) // is bound
                 {
-                    Float64 proportion = bound->second - bound->first;
+                    Float64 proportion = bound.second - bound.first;
                     auto it = data.points.find(local_min_x + i);
                     bool found = (it != data.points.end());
                     if (found)
-                        new_y ? new_y = new_y.value() + it->second * proportion : new_y = it->second * proportion;
-
-                    // find bucket_num
-                    size_t bucket_num = 0;
-                    for (auto & b : bounds)
-                    {
-                        if (i <= b.second)
-                            break;
-                        else
-                            ++bucket_num;
-                    }
+                        new_y = new_y.value_or(0) + it->getMapped() * proportion;
 
                     if (new_y)
                     {
                         Float64 avg_y = new_y.value() / multiple_d;
 
-                        newPoints.template emplace(bucket_num, avg_y);
+                        newPoints.template emplace(cur_bucket_num, avg_y);
                         if (!min_y || avg_y < min_y)
                             min_y = avg_y;
                         if (!max_y || avg_y > max_y)
@@ -206,17 +202,18 @@ private:
                     }
                     else
                     {
-                        newPoints.template emplace(bucket_num, std::optional<Float64>());
+                        newPoints.template emplace(cur_bucket_num, std::optional<Float64>());
                     }
 
                     // next bucket
-                    new_y = found ? ((1 - proportion) * it->second) : std::optional<Float64>();
+                    new_y = found ? ((1 - proportion) * it->getMapped()) : std::optional<Float64>();
+                    upperBound(++cur_bucket_num);
                 }
                 else
                 {
                     auto it = data.points.find(local_min_x + i);
                     if (it != data.points.end())
-                        new_y ? new_y = new_y.value() + it->second : new_y = it->second;
+                        new_y = new_y.value_or(0) + it->getMapped();
                 }
             }
 
@@ -225,13 +222,13 @@ private:
 
             Float64 diff_y = max_y.value() - min_y.value();
 
-            auto getBars = [&] (std::pair<size_t, std::optional<Float64>> point)
+            auto getBars = [&] (const std::pair<size_t, std::optional<Float64>> & point)
             {
                 value += getBar(point.second ? std::round(((point.second.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
             };
-            auto getBarsForConstant = [&] (std::pair<size_t, std::optional<Float64>> point)
+            auto getBarsForConstant = [&] (const std::pair<size_t, std::optional<Float64>> & point)
             {
-                value += getBar(point.second ?  1 : 0);
+                value += getBar(point.second ? 1 : 0);
             };
 
             if (diff_y)
