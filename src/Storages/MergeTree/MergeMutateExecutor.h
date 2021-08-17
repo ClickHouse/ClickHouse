@@ -138,8 +138,8 @@ public:
 
         pool.wait();
 
-        if (last_exception)
-            std::rethrow_exception(last_exception);
+        // if (last_exception)
+        //     std::rethrow_exception(last_exception);
     }
 
 private:
