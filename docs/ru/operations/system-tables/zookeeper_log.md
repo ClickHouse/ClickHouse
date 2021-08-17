@@ -17,7 +17,7 @@
 -   `event_time` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — дата и время завершения выполнения запроса.
 -   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого был сделан запрос.
 -   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт, с которого был сделан запрос.
--   `session_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — идентификатор сессии, который сервер ZooKeeper устанавливает для каждого соединения.
+-   `session_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — идентификатор сессии, который сервер ZooKeeper создает для каждого соединения.
 -   `xid` ([Int32](../../sql-reference/data-types/int-uint.md)) — идентификатор запроса внутри сессии. Обычно это последовательный номер запроса, одинаковый у строки запроса и у парной строки `response`/`finalize`.
 -   `has_watch` ([UInt8](../../sql-reference/data-types/int-uint.md)) — установлен ли запрос [watch](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches).
 -   `op_num` ([Enum](../../sql-reference/data-types/enum.md)) — тип запроса или ответа на запрос.
