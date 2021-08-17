@@ -37,6 +37,8 @@ class FunctionServerUUID : public IFunction
 
         bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
             return DataTypeUUID().createColumnConst(input_rows_count, server_uuid);
