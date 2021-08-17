@@ -53,28 +53,22 @@ void BackgroundJobExecutor::scheduleTask(bool with_backoff)
 
 void BackgroundJobExecutor::executeMergeMutateTask(BackgroundTaskPtr merge_task)
 {
-    if (getContext()->getMergeMutateExecutor()->trySchedule(merge_task))
-        runTaskWithoutDelay();
-    else
-        scheduleTask(/* with_backoff = */ true);
+    bool res = getContext()->getMergeMutateExecutor()->trySchedule(merge_task);
+    scheduleTask(/* with_backoff = */ !res);
 }
 
 
 void BackgroundJobExecutor::executeFetchTask(BackgroundTaskPtr fetch_task)
 {
-    if (getContext()->getFetchesExecutor()->trySchedule(fetch_task))
-        runTaskWithoutDelay();
-    else
-        scheduleTask(/* with_backoff = */ true);
+    bool res = getContext()->getFetchesExecutor()->trySchedule(fetch_task);
+    scheduleTask(/* with_backoff = */ !res);
 }
 
 
 void BackgroundJobExecutor::executeMoveTask(BackgroundTaskPtr move_task)
 {
-    if (getContext()->getMovesExecutor()->trySchedule(move_task))
-        runTaskWithoutDelay();
-    else
-        scheduleTask(/* with_backoff = */ true);
+    bool res = getContext()->getMovesExecutor()->trySchedule(move_task);
+    scheduleTask(/* with_backoff = */ !res);
 }
 
 void BackgroundJobExecutor::start()

@@ -102,7 +102,7 @@ public:
             return false;
 
         auto & value = CurrentMetrics::values[metric];
-        if (value.load() > static_cast<int64_t>(max_task_count_getter()))
+        if (value.load() >= static_cast<int64_t>(max_task_count_getter()))
             return false;
 
         CurrentMetrics::add(metric);
