@@ -1049,8 +1049,10 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                     if (ignore_constant_values && res_const)
                         src_node = dst_node = &actions_dag->addColumn(res_elem);
                     else
-                        throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
-                                        ErrorCodes::THERE_IS_NO_COLUMN);
+                        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+                                        "Cannot find column `{}` in source stream, there are only columns: [{}]",
+                                        res_elem.name, Block(source).dumpNames());
+
                 }
                 else
                 {
