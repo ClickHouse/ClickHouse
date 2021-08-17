@@ -3089,7 +3089,7 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
     }
     try
     {
-        queue.pullLogsToQueue(getZooKeeper(), queue_updating_task->getWatchCallback());
+        queue.pullLogsToQueue(getZooKeeper(), queue_updating_task->getWatchCallback(), ReplicatedMergeTreeQueue::UPDATE);
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
     }
@@ -4325,11 +4325,9 @@ void StorageReplicatedMergeTree::startup()
         restarting_thread.start();
 
         /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attempt to do it
+        /// TODO Do we still need startup_event?
         startup_event.wait();
 
-        /// If we don't separate create/start steps, race condition will happen
-        /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
-        background_executor.start();
         startBackgroundMovesIfNeeded();
 
         part_moves_between_shards_orchestrator.start();
@@ -6970,7 +6968,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     Stopwatch watch;
 
     /// Let's fetch new log entries firstly
-    queue.pullLogsToQueue(getZooKeeper());
+    queue.pullLogsToQueue(getZooKeeper(), {}, ReplicatedMergeTreeQueue::SYNC);
 
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
@@ -7208,6 +7206,7 @@ MutationCommands StorageReplicatedMergeTree::getFirstAlterMutationCommandsForPar
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
+    /// FIXME is it related to replication somehow? If it is we should start it from RestartingThread only
     if (areBackgroundMovesNeeded())
         background_moves_executor.start();
 }

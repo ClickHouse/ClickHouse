@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int ABORTED;
+    extern const int READONLY;
 }
 
 
@@ -472,9 +473,18 @@ bool ReplicatedMergeTreeQueue::removeFailedQuorumPart(const MergeTreePartInfo & 
     return virtual_parts.remove(part_info);
 }
 
-int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
+int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback, PullLogsReason reason)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
+    if (storage.is_readonly && reason != LOAD)
+    {
+        /// Pulling logs when replica is readonly may cause obscure bugs, allow it on replica startup only
+        if (reason == SYNC)
+            throw Exception(ErrorCodes::READONLY, "Cannot SYNC REPLICA, because replica is readonly");
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Some background task ({}) tried to pull logs on readonly replica, it's a bug", reason);
+    }
+
     if (pull_log_blocker.isCancelled())
         throw Exception("Log pulling is cancelled", ErrorCodes::ABORTED);
 
@@ -1834,7 +1844,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         }
     }
 
-    merges_version = queue_.pullLogsToQueue(zookeeper);
+    merges_version = queue_.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
 
     {
         /// We avoid returning here a version to be used in a lightweight transaction.
