@@ -3239,6 +3239,21 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             ", must be: " + toString(fields_count),
             ErrorCodes::INVALID_PARTITION_VALUE);
 
+    if (auto * f = partition_ast.value->as<ASTFunction>())
+    {
+        assert(f->name == "tuple");
+        if (f->arguments && !f->arguments->as<ASTExpressionList>()->children.empty())
+        {
+            ASTPtr query = partition_ast.value->clone();
+            auto syntax_analyzer_result
+                = TreeRewriter(local_context)
+                      .analyze(query, metadata_snapshot->getPartitionKey().sample_block.getNamesAndTypesList(), {}, {}, false, false);
+            auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, local_context).getActions(true);
+            if (actions->hasArrayJoin())
+                throw Exception("The partition expression cannot contain array joins", ErrorCodes::INVALID_PARTITION_VALUE);
+        }
+    }
+
     const FormatSettings format_settings;
     Row partition_row(fields_count);
 

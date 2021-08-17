@@ -160,6 +160,7 @@
         "01781_merge_tree_deduplication",
         "00980_zookeeper_merge_tree_alter_settings",
         "00980_merge_alter_settings",
+        "02009_array_join_partition",
         /// Old syntax is not allowed
         "01062_alter_on_mutataion_zookeeper",
         "00925_zookeeper_empty_replicated_merge_tree_optimize_final",
