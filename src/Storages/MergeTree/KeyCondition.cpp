@@ -1056,6 +1056,8 @@ public:
 
     bool hasInformationAboutMonotonicity() const override { return func->hasInformationAboutMonotonicity(); }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override { return func->isSuitableForShortCircuitArgumentsExecution(arguments); }
+
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         return func->getMonotonicityForRange(type, left, right);
