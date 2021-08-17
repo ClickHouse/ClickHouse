@@ -4,7 +4,7 @@
 
 #if USE_BROTLI
 #    include <IO/Bzip2WriteBuffer.h>
-#    include <bzlib.h>
+#    include <bzlib.h> // Y_IGNORE
 
 #include <Common/MemoryTracker.h>
 
