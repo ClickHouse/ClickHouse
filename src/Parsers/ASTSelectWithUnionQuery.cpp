@@ -32,12 +32,15 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
     auto mode_to_str = [&](auto mode)
     {
-        if (mode == Mode::Unspecified)
-            return "";
-        else if (mode == Mode::ALL)
+        if (mode == Mode::ALL)
             return " ALL";
-        else
+        else if (mode == Mode::DISTINCT)
             return " DISTINCT";
+        else if (mode == Mode::INTERSECT)
+            return " INTERSECT";
+        else if (mode == Mode::EXCEPT)
+            return " EXCEPT";
+        return "";
     };
 
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
