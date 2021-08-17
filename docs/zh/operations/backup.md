@@ -1,9 +1,3 @@
----
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_priority: 49
-toc_title: "\u6570\u636E\u5907\u4EFD"
----
 
 # 数据备份 {#data-backup}
 
