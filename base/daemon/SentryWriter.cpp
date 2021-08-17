@@ -12,7 +12,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/getServerUUID.h>
+#include <Common/ServerUUID.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "Common/config_version.h"
@@ -39,7 +39,7 @@ void setExtras()
     if (!anonymize)
         sentry_set_extra("server_name", sentry_value_new_string(getFQDNOrHostName().c_str()));
 
-    DB::UUID server_uuid = getServerUUID();
+    DB::UUID server_uuid = DB::ServerUUID::get();
     if (server_uuid != DB::UUIDHelpers::Nil)
     {
         std::string server_uuid_str = DB::toString(server_uuid);
