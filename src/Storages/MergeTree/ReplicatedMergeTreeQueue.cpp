@@ -476,13 +476,10 @@ bool ReplicatedMergeTreeQueue::removeFailedQuorumPart(const MergeTreePartInfo & 
 int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback, PullLogsReason reason)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
-    if (storage.is_readonly && reason != LOAD)
+    if (storage.is_readonly && reason == SYNC)
     {
-        /// Pulling logs when replica is readonly may cause obscure bugs, allow it on replica startup only
-        if (reason == SYNC)
-            throw Exception(ErrorCodes::READONLY, "Cannot SYNC REPLICA, because replica is readonly");
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Some background task ({}) tried to pull logs on readonly replica, it's a bug", reason);
+        throw Exception(ErrorCodes::READONLY, "Cannot SYNC REPLICA, because replica is readonly");
+        /// TODO throw logical error for other reasons (except LOAD)
     }
 
     if (pull_log_blocker.isCancelled())
@@ -724,13 +721,22 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 
         std::vector<std::future<Coordination::GetResponse>> futures;
         for (const String & entry : entries_to_load)
-            futures.emplace_back(zookeeper->asyncGet(fs::path(zookeeper_path) / "mutations" / entry));
+            futures.emplace_back(zookeeper->asyncTryGet(fs::path(zookeeper_path) / "mutations" / entry));
 
         std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
+            auto maybe_response = futures[i].get();
+            if (maybe_response.error != Coordination::Error::ZOK)
+            {
+                assert(maybe_response.error == Coordination::Error::ZNONODE);
+                /// It's ok if it happened on server startup or table creation and replica loads all mutation entries.
+                /// It's also ok if mutation was killed.
+                LOG_WARNING(log, "Cannot get mutation node {} ({}), probably it was concurrently removed", entries_to_load[i], maybe_response.error);
+                continue;
+            }
             new_mutations.push_back(std::make_shared<ReplicatedMergeTreeMutationEntry>(
-                ReplicatedMergeTreeMutationEntry::parse(futures[i].get().data, entries_to_load[i])));
+                ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i])));
         }
 
         bool some_mutations_are_probably_done = false;
