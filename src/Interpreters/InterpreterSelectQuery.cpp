@@ -890,7 +890,7 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
                 }
                 /// After normalization, the height of the AST tree can have any depth,
                 /// but the number of children at each level is always 2.
-                else if (const auto * child_intersect_except = elem->as<ASTSelectIntersectExceptQuery>())
+                else if (elem->as<ASTSelectIntersectExceptQuery>())
                 {
                     std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
                     {
