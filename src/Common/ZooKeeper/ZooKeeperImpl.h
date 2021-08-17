@@ -189,6 +189,8 @@ public:
 
     void finalize()  override { finalize(false, false); }
 
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+
 private:
     String root_path;
     ACLs default_acls;

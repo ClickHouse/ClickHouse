@@ -322,7 +322,7 @@ struct Checker
     {
         checkRequiredInstructions();
     }
-} checker;
+} checker __attribute__((init_priority(101)));  /// Run before other static initializers.
 
 }
 

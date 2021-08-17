@@ -70,6 +70,7 @@ struct Progress;
 class Clusters;
 class QueryLog;
 class QueryThreadLog;
+class QueryViewsLog;
 class PartLog;
 class TextLog;
 class TraceLog;
@@ -113,6 +114,11 @@ class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 struct BackgroundTaskSchedulingSettings;
+
+#if USE_NLP
+    class SynonymsExtensions;
+    class Lemmatizers;
+#endif
 
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
@@ -191,11 +197,13 @@ private:
 
     QueryStatus * process_list_elem = nullptr;  /// For tracking total resource usage for query.
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
+    bool is_distributed = false;  /// Whether the current context it used for distributed query
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
+    Scalars local_scalars;
 
     /// Fields for distributed s3 function
     std::optional<ReadTaskCallback> next_task_callback;
@@ -212,6 +220,7 @@ private:
             tables = rhs.tables;
             columns = rhs.columns;
             projections = rhs.projections;
+            views = rhs.views;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -228,6 +237,7 @@ private:
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
             std::swap(projections, rhs.projections);
+            std::swap(views, rhs.views);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -235,7 +245,8 @@ private:
         std::set<std::string> databases{};
         std::set<std::string> tables{};
         std::set<std::string> columns{};
-        std::set<std::string> projections;
+        std::set<std::string> projections{};
+        std::set<std::string> views{};
     };
 
     QueryAccessInfo query_access_info;
@@ -454,12 +465,16 @@ public:
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
+    const Block * tryGetLocalScalar(const String & name) const;
+    void addLocalScalar(const String & name, const Block & block);
+
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
     void addQueryAccessInfo(
         const String & quoted_database_name,
         const String & full_quoted_table_name,
         const Names & column_names,
-        const String & projection_name = {});
+        const String & projection_name = {},
+        const String & view_name = {});
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories
@@ -500,6 +515,9 @@ public:
     void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
     const StorageID & getInsertionTable() const { return insertion_table; }
 
+    void setDistributed(bool is_distributed_) { is_distributed = is_distributed_; }
+    bool isDistributed() const { return is_distributed; }
+
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
 
@@ -533,6 +551,11 @@ public:
     ExternalModelsLoader & getExternalModelsLoaderUnlocked();
     void tryCreateEmbeddedDictionaries() const;
     void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
+
+#if USE_NLP
+    SynonymsExtensions & getSynonymsExtensions() const;
+    Lemmatizers & getLemmatizers() const;
+#endif
 
     void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
@@ -649,6 +672,8 @@ public:
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
+    void setSystemZooKeeperLogAfterInitializationIfNeeded();
+
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(size_t max_size_in_bytes);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
@@ -710,6 +735,7 @@ public:
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog() const;
     std::shared_ptr<QueryThreadLog> getQueryThreadLog() const;
+    std::shared_ptr<QueryViewsLog> getQueryViewsLog() const;
     std::shared_ptr<TraceLog> getTraceLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
@@ -799,6 +825,8 @@ public:
     void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
+    /// Removes context of current distributed DDL.
+    void resetZooKeeperMetadataTransaction();
 
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;

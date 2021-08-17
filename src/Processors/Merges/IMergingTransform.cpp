@@ -14,9 +14,11 @@ IMergingTransformBase::IMergingTransformBase(
     size_t num_inputs,
     const Block & input_header,
     const Block & output_header,
-    bool have_all_inputs_)
+    bool have_all_inputs_,
+    bool has_limit_below_one_block_)
     : IProcessor(InputPorts(num_inputs, input_header), {output_header})
     , have_all_inputs(have_all_inputs_)
+    , has_limit_below_one_block(has_limit_below_one_block_)
 {
 }
 
@@ -64,10 +66,7 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
             continue;
 
         if (input_states[i].is_initialized)
-        {
-            // input.setNotNeeded();
             continue;
-        }
 
         input.setNeeded();
 
@@ -77,12 +76,17 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
             continue;
         }
 
-        auto chunk = input.pull();
+        /// setNotNeeded after reading first chunk, because in optimismtic case
+        /// (e.g. with optimized 'ORDER BY primary_key LIMIT n' and small 'n')
+        /// we won't have to read any chunks anymore;
+        auto chunk = input.pull(has_limit_below_one_block);
         if (!chunk.hasRows())
         {
-
             if (!input.isFinished())
+            {
+                input.setNeeded();
                 all_inputs_has_data = false;
+            }
 
             continue;
         }

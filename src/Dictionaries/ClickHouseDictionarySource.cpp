@@ -1,8 +1,11 @@
 #include "ClickHouseDictionarySource.h"
 #include <memory>
 #include <Client/ConnectionPool.h>
-#include <DataStreams/RemoteBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
+#include <Processors/Sources/RemoteSource.h>
+#include <DataStreams/RemoteQueryExecutor.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
@@ -64,7 +67,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , configuration{configuration_}
-    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.where, IdentifierQuotingStyle::Backticks}
+    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks}
     , sample_block{sample_block_}
     , context(Context::createCopy(context_))
     , pool{createPool(configuration)}
@@ -80,7 +83,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
     , dict_struct{other.dict_struct}
     , configuration{other.configuration}
     , invalidate_query_response{other.invalidate_query_response}
-    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.where, IdentifierQuotingStyle::Backticks}
+    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks}
     , sample_block{other.sample_block}
     , context(Context::createCopy(other.context))
     , pool{createPool(configuration)}
@@ -105,29 +108,29 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-BlockInputStreamPtr ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
+Pipe ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
 {
     return createStreamForQuery(load_all_query, result_size_hint);
 }
 
-BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
+Pipe ClickHouseDictionarySource::loadAll()
 {
     return createStreamForQuery(load_all_query);
 }
 
-BlockInputStreamPtr ClickHouseDictionarySource::loadUpdatedAll()
+Pipe ClickHouseDictionarySource::loadUpdatedAll()
 {
     String load_update_query = getUpdateFieldAndDate();
     return createStreamForQuery(load_update_query);
 }
 
-BlockInputStreamPtr ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     return createStreamForQuery(query_builder.composeLoadIdsQuery(ids));
 }
 
 
-BlockInputStreamPtr ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     String query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
     return createStreamForQuery(query);
@@ -157,32 +160,41 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-BlockInputStreamPtr ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
+Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
 {
-    BlockInputStreamPtr stream;
+    QueryPipeline pipeline;
 
     /// Sample block should not contain first row default values
     auto empty_sample_block = sample_block.cloneEmpty();
 
     if (configuration.is_local)
     {
-        stream = executeQuery(query, context, true).getInputStream();
-        stream = std::make_shared<ConvertingBlockInputStream>(stream, empty_sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        pipeline = executeQuery(query, context, true).pipeline;
+        auto converting = ActionsDAG::makeConvertingActions(
+            pipeline.getHeader().getColumnsWithTypeAndName(),
+            empty_sample_block.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position);
+
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ExpressionTransform>(header, std::make_shared<ExpressionActions>(converting));
+        });
     }
     else
     {
-        stream = std::make_shared<RemoteBlockInputStream>(pool, query, empty_sample_block, context);
+        pipeline.init(Pipe(std::make_shared<RemoteSource>(
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context), false, false)));
     }
 
     if (result_size_hint)
     {
-        stream->setProgressCallback([result_size_hint](const Progress & progress)
+        pipeline.setProgressCallback([result_size_hint](const Progress & progress)
         {
             *result_size_hint += progress.total_rows_to_read;
         });
     }
 
-    return stream;
+    return QueryPipeline::getPipe(std::move(pipeline));
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
@@ -191,15 +203,16 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     if (configuration.is_local)
     {
         auto query_context = Context::createCopy(context);
-        auto input_block = executeQuery(request, query_context, true).getInputStream();
-        return readInvalidateQuery(*input_block);
+        auto pipe = QueryPipeline::getPipe(executeQuery(request, query_context, true).pipeline);
+        return readInvalidateQuery(std::move(pipe));
     }
     else
     {
         /// We pass empty block to RemoteBlockInputStream, because we don't know the structure of the result.
         Block invalidate_sample_block;
-        RemoteBlockInputStream invalidate_stream(pool, request, invalidate_sample_block, context);
-        return readInvalidateQuery(invalidate_stream);
+        Pipe pipe(std::make_shared<RemoteSource>(
+            std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context), false, false));
+        return readInvalidateQuery(std::move(pipe));
     }
 }
 
@@ -228,7 +241,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             .user = config.getString(settings_config_prefix + ".user", "default"),
             .password = config.getString(settings_config_prefix + ".password", ""),
             .db = config.getString(settings_config_prefix + ".db", default_database),
-            .table = config.getString(settings_config_prefix + ".table"),
+            .table = config.getString(settings_config_prefix + ".table", ""),
+            .query = config.getString(settings_config_prefix + ".query", ""),
             .where = config.getString(settings_config_prefix + ".where", ""),
             .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),

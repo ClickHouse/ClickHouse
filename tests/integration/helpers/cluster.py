@@ -110,6 +110,7 @@ def subprocess_check_call(args, detach=False, nothrow=False):
     #logging.info('run:' + ' '.join(args))
     return run_and_check(args, detach=detach, nothrow=nothrow)
 
+
 def get_odbc_bridge_path():
     path = os.environ.get('CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH')
     if path is None:
@@ -261,6 +262,7 @@ class ClickHouseCluster:
         self.with_hdfs = False
         self.with_kerberized_hdfs = False
         self.with_mongo = False
+        self.with_mongo_secure = False
         self.with_net_trics = False
         self.with_redis = False
         self.with_cassandra = False
@@ -548,7 +550,6 @@ class ClickHouseCluster:
 
         return self.base_mysql_client_cmd
 
-
     def setup_mysql_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mysql = True
         env_variables['MYSQL_HOST'] = self.mysql_host
@@ -680,6 +681,17 @@ class ClickHouseCluster:
                                     '--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')]
         return self.base_rabbitmq_cmd
 
+    def setup_mongo_secure_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mongo = self.with_mongo_secure = True
+        env_variables['MONGO_HOST'] = self.mongo_host
+        env_variables['MONGO_EXTERNAL_PORT'] = str(self.mongo_port)
+        env_variables['MONGO_INTERNAL_PORT'] = "27017"
+        env_variables['MONGO_CONFIG_PATH'] = HELPERS_DIR
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo_secure.yml')])
+        self.base_mongo_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo_secure.yml')]
+        return self.base_mongo_cmd
+
     def setup_mongo_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mongo = True
         env_variables['MONGO_HOST'] = self.mongo_host
@@ -723,7 +735,8 @@ class ClickHouseCluster:
                      macros=None, with_zookeeper=False, with_zookeeper_secure=False,
                      with_mysql_client=False, with_mysql=False, with_mysql8=False, with_mysql_cluster=False,
                      with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
-                     with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False, with_kerberized_hdfs=False, with_mongo=False,
+                     with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False,
+                     with_kerberized_hdfs=False, with_mongo=False, with_mongo_secure=False,
                      with_redis=False, with_minio=False, with_cassandra=False, with_jdbc_bridge=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
@@ -776,7 +789,7 @@ class ClickHouseCluster:
             with_kerberized_kafka=with_kerberized_kafka,
             with_rabbitmq=with_rabbitmq,
             with_kerberized_hdfs=with_kerberized_hdfs,
-            with_mongo=with_mongo,
+            with_mongo=with_mongo or with_mongo_secure,
             with_redis=with_redis,
             with_minio=with_minio,
             with_cassandra=with_cassandra,
@@ -861,8 +874,11 @@ class ClickHouseCluster:
         if with_kerberized_hdfs and not self.with_kerberized_hdfs:
             cmds.append(self.setup_kerberized_hdfs_cmd(instance, env_variables, docker_compose_yml_dir))
 
-        if with_mongo and not self.with_mongo:
-            cmds.append(self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir))
+        if (with_mongo or with_mongo_secure) and not (self.with_mongo or self.with_mongo_secure):
+            if with_mongo_secure:
+                cmds.append(self.setup_mongo_secure_cmd(instance, env_variables, docker_compose_yml_dir))
+            else:
+                cmds.append(self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if self.with_net_trics:
             for cmd in cmds:
@@ -1234,7 +1250,6 @@ class ClickHouseCluster:
                 logging.debug("Waiting for Kafka to start up")
                 time.sleep(1)
 
-
     def wait_hdfs_to_start(self, timeout=300, check_marker=False):
         start = time.time()
         while time.time() - start < timeout:
@@ -1251,9 +1266,11 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait HDFS to start")
 
-    def wait_mongo_to_start(self, timeout=180):
+    def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = 'mongodb://{user}:{password}@{host}:{port}'.format(
             host='localhost', port=self.mongo_port, user='root', password='clickhouse')
+        if secure:
+            connection_str += '/?tls=true&tlsAllowInvalidCertificates=true'
         connection = pymongo.MongoClient(connection_str)
         start = time.time()
         while time.time() - start < timeout:
@@ -1319,7 +1336,6 @@ class ClickHouseCluster:
                 time.sleep(1)
 
         raise Exception("Can't wait Schema Registry to start")
-
 
     def wait_cassandra_to_start(self, timeout=180):
         self.cassandra_ip = self.get_instance_ip(self.cassandra_host)
@@ -1505,7 +1521,7 @@ class ClickHouseCluster:
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')
                 run_and_check(self.base_mongo_cmd + common_opts)
-                self.wait_mongo_to_start(30)
+                self.wait_mongo_to_start(30, secure=self.with_mongo_secure)
 
             if self.with_redis and self.base_redis_cmd:
                 logging.debug('Setup Redis')

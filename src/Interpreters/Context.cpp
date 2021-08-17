@@ -77,6 +77,8 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Interpreters/SynonymsExtensions.h>
+#include <Interpreters/Lemmatizers.h>
 #include <filesystem>
 
 
@@ -348,6 +350,11 @@ struct ContextSharedPart
     scope_guard models_repository_guard;
 
     scope_guard dictionaries_xmls;
+
+#if USE_NLP
+    mutable std::optional<SynonymsExtensions> synonyms_extensions;
+    mutable std::optional<Lemmatizers> lemmatizers;
+#endif
 
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
@@ -803,6 +810,9 @@ void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAd
     auto user = access->getUser();
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
+    if (!user->default_database.empty())
+        setCurrentDatabase(user->default_database);
+
     auto default_profile_info = access->getDefaultProfileInfo();
     settings_constraints_and_current_profiles = default_profile_info->getConstraintsAndProfileIDs();
     applySettingsChanges(default_profile_info->settings);
@@ -997,6 +1007,13 @@ const Block & Context::getScalar(const String & name) const
     return it->second;
 }
 
+const Block * Context::tryGetLocalScalar(const String & name) const
+{
+    auto it = local_scalars.find(name);
+    if (local_scalars.end() == it)
+        return nullptr;
+    return &it->second;
+}
 
 Tables Context::getExternalTables() const
 {
@@ -1056,6 +1073,13 @@ void Context::addScalar(const String & name, const Block & block)
 }
 
 
+void Context::addLocalScalar(const String & name, const Block & block)
+{
+    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    local_scalars[name] = block;
+}
+
+
 bool Context::hasScalar(const String & name) const
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
@@ -1064,7 +1088,11 @@ bool Context::hasScalar(const String & name) const
 
 
 void Context::addQueryAccessInfo(
-    const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names, const String & projection_name)
+    const String & quoted_database_name,
+    const String & full_quoted_table_name,
+    const Names & column_names,
+    const String & projection_name,
+    const String & view_name)
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
@@ -1074,6 +1102,8 @@ void Context::addQueryAccessInfo(
         query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
     if (!projection_name.empty())
         query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
+    if (!view_name.empty())
+        query_access_info.views.emplace(view_name);
 }
 
 
@@ -1502,6 +1532,29 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
         std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
 }
 
+#if USE_NLP
+
+SynonymsExtensions & Context::getSynonymsExtensions() const
+{
+    auto lock = getLock();
+
+    if (!shared->synonyms_extensions)
+        shared->synonyms_extensions.emplace(getConfigRef());
+
+    return *shared->synonyms_extensions;
+}
+
+Lemmatizers & Context::getLemmatizers() const
+{
+    auto lock = getLock();
+
+    if (!shared->lemmatizers)
+        shared->lemmatizers.emplace(getConfigRef());
+
+    return *shared->lemmatizers;
+}
+#endif
+
 void Context::setProgressCallback(ProgressCallback callback)
 {
     /// Callback is set to a session or to a query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
@@ -1684,7 +1737,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     if (!shared->message_broker_schedule_pool)
         shared->message_broker_schedule_pool.emplace(
             settings.background_message_broker_schedule_pool_size,
-            CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             "BgMBSchPool");
     return *shared->message_broker_schedule_pool;
 }
@@ -1752,6 +1805,24 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
+{
+    /// It can be nearly impossible to understand in which order global objects are initialized on server startup.
+    /// If getZooKeeper() is called before initializeSystemLogs(), then zkutil::ZooKeeper gets nullptr
+    /// instead of pointer to system table and it logs nothing.
+    /// This method explicitly sets correct pointer to system log after its initialization.
+    /// TODO get rid of this if possible
+
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (!shared->system_logs || !shared->system_logs->zookeeper_log)
+        return;
+
+    if (shared->zookeeper)
+        shared->zookeeper->setZooKeeperLog(shared->system_logs->zookeeper_log);
+
+    for (auto & zk : shared->auxiliary_zookeepers)
+        zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
+}
 
 void Context::initializeKeeperStorageDispatcher() const
 {
@@ -2053,7 +2124,6 @@ std::shared_ptr<QueryLog> Context::getQueryLog() const
     return shared->system_logs->query_log;
 }
 
-
 std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 {
     auto lock = getLock();
@@ -2064,6 +2134,15 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
     return shared->system_logs->query_thread_log;
 }
 
+std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->query_views_log;
+}
 
 std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
 {
@@ -2729,6 +2808,13 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
 {
     assert(!metadata_transaction || hasQueryContext());
     return metadata_transaction;
+}
+
+void Context::resetZooKeeperMetadataTransaction()
+{
+    assert(metadata_transaction);
+    assert(hasQueryContext());
+    metadata_transaction = nullptr;
 }
 
 PartUUIDsPtr Context::getPartUUIDs() const
