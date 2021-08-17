@@ -466,13 +466,20 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     if (!allowed || !hasMorePolledMessages())
         return false;
 
-    // XXX: very fishy place with const casting.
-    auto * new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(current->get_payload().get_data()));
-    BufferBase::set(new_position, current->get_payload().get_size(), 0);
-    allowed = false;
+    const auto * message_data = current->get_payload().get_data();
+    size_t message_size = current->get_payload().get_size();
 
+    allowed = false;
     ++current;
 
+    // in some cases message can be NULL (tombstone records for example)
+    // parsers are not ready to get NULLs on input.
+    if (unlikely(message_data == nullptr))
+        return false;
+
+    // XXX: very fishy place with const casting.
+    auto * new_position = reinterpret_cast<char *>(const_cast<unsigned char *>(message_data));
+    BufferBase::set(new_position, message_size, 0);
     return true;
 }
 
