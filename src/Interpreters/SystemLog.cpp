@@ -63,6 +63,10 @@ std::shared_ptr<TSystemLog> createSystemLog(
             throw Exception("If 'engine' is specified for system table, "
                             "TTL parameters should be specified directly inside 'engine' and 'ttl' setting doesn't make sense",
                             ErrorCodes::BAD_ARGUMENTS);
+        if (config.has(config_prefix + ".settings"))
+            throw Exception("If 'engine' is specified for system table, "
+                            "SETTINGS parameters should be specified directly inside 'engine' and 'settings' setting doesn't make sense",
+                            ErrorCodes::BAD_ARGUMENTS);
         engine = config.getString(config_prefix + ".engine");
     }
     else
@@ -75,6 +79,9 @@ std::shared_ptr<TSystemLog> createSystemLog(
         if (!ttl.empty())
             engine += " TTL " + ttl;
         engine += " ORDER BY (event_date, event_time)";
+        String settings = config.getString(config_prefix + ".settings", "");
+        if (!settings.empty())
+            engine += " SETTINGS " + settings;
     }
     // Validate engine definition grammatically to prevent some configuration errors
     ParserStorage storage_parser;

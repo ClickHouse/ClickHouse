@@ -842,6 +842,13 @@
         -->
         <partition_by>toYYYYMM(event_date)</partition_by>
         <!--
+            SETTINGS expr: https://clickhouse.tech/docs/en/sql-reference/statements/alter/setting/
+            Example:
+                ttl_only_drop_parts=1
+                max_part_loading_threads=8
+        <settings>ttl_only_drop_parts=1</settings>
+        -->
+        <!--
             Table TTL specification: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
             Example:
                 event_date + INTERVAL 1 WEEK

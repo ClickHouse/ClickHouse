@@ -28,8 +28,9 @@ toc_title: "Системные таблицы"
 -   `table` — таблица для добавления данных.
 -   `partition_by` — [ключ партиционирования](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
 -   `ttl` — [время жизни](../../sql-reference/statements/alter/ttl.md) записей в таблице.
+-   `settings` - дополнительные [настройки](../../sql-reference/statements/alter/setting.md) таблицы.
 -   `flush_interval_milliseconds` — интервал сброса данных на диск, в миллисекундах.
--   `engine` — полное имя движка (начиная с `ENGINE =` ) с параметрами. Эта опция противоречит `partition_by` и `ttl`. Если указать оба параметра вместе, сервер вернет ошибку и завершит работу.
+-   `engine` — полное имя движка (начиная с `ENGINE =` ) с параметрами. Эта опция противоречит `partition_by`, `ttl` и `settings`. Если указать параметры вместе, сервер вернет ошибку и завершит работу.
 
 Пример:
 
@@ -40,8 +41,9 @@ toc_title: "Системные таблицы"
         <table>query_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+        <settings>ttl_only_drop_parts=1</settings>
         <!--
-        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS ttl_only_drop_parts=1</engine>
         -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>

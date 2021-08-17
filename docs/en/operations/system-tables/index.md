@@ -28,8 +28,9 @@ System log tables can be customized by creating a config file with the same name
 -   `table`: table to insert data.
 -   `partition_by`: specify [PARTITION BY](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) expression.
 -   `ttl`: specify table [TTL](../../sql-reference/statements/alter/ttl.md) expression.
+-   `settings`: specify table [SETTINGS](../../sql-reference/statements/alter/setting.md).
 -   `flush_interval_milliseconds`: interval of flushing data to disk.
--   `engine`: provide full engine expression (starting with `ENGINE =` ) with parameters. This option is contradict with `partition_by` and `ttl`. If set together, the server would raise an exception and exit.
+-   `engine`: provide full engine expression (starting with `ENGINE =` ) with parameters. This option conflicts with `partition_by`, `ttl`, and `settings`. If set together, the server would raise an exception and exit.
 
 An example:
 
@@ -40,8 +41,9 @@ An example:
         <table>query_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+        <settings>ttl_only_drop_parts=1</settings>
         <!--
-        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS ttl_only_drop_parts=1</engine>
         -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>

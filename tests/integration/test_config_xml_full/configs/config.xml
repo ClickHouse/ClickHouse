@@ -801,6 +801,13 @@
         -->
         <partition_by>toYYYYMM(event_date)</partition_by>
         <!--
+            SETTINGS expr: https://clickhouse.tech/docs/en/sql-reference/statements/alter/setting/
+            Example:
+                ttl_only_drop_parts=1
+                max_part_loading_threads=8
+        -->
+        <settings>ttl_only_drop_parts=1</settings>
+        <!--
             Table TTL specification: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
             Example:
                 event_date + INTERVAL 1 WEEK
@@ -826,6 +833,7 @@
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <settings>ttl_only_drop_parts=1</settings>
     </trace_log>
 
     <!-- Query thread log. Has information about all threads participated in query execution.
@@ -835,6 +843,7 @@
         <table>query_thread_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <settings>ttl_only_drop_parts=1</settings>
     </query_thread_log>
 
     <!-- Uncomment if use part log.
@@ -844,6 +853,7 @@
         <table>part_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <settings>ttl_only_drop_parts=1</settings>
     </part_log>
 
     <!-- Uncomment to write text log into table.
@@ -863,6 +873,7 @@
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <settings>ttl_only_drop_parts=1</settings>
     </metric_log>
 
     <!--
@@ -877,6 +888,7 @@
             no need to flush more often.
         -->
         <flush_interval_milliseconds>60000</flush_interval_milliseconds>
+        <settings>ttl_only_drop_parts=1</settings>
     </asynchronous_metric_log>
 
     <!--
@@ -901,6 +913,7 @@
         <database>system</database>
         <table>opentelemetry_span_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <settings>ttl_only_drop_parts=1</settings>
     </opentelemetry_span_log>
 
 
@@ -912,6 +925,7 @@
 
         <partition_by />
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <settings>ttl_only_drop_parts=1</settings>
     </crash_log>
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
