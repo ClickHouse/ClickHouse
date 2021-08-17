@@ -53,19 +53,28 @@ void BackgroundJobExecutor::scheduleTask(bool with_backoff)
 
 void BackgroundJobExecutor::executeMergeMutateTask(BackgroundTaskPtr merge_task)
 {
-    getContext()->getMergeMutateExecutor()->trySchedule(merge_task);
+    if (getContext()->getMergeMutateExecutor()->trySchedule(merge_task))
+        runTaskWithoutDelay();
+    else
+        scheduleTask(/* with_backoff = */ true);
 }
 
 
 void BackgroundJobExecutor::executeFetchTask(BackgroundTaskPtr fetch_task)
 {
-    getContext()->getFetchesExecutor()->trySchedule(fetch_task);
+    if (getContext()->getFetchesExecutor()->trySchedule(fetch_task))
+        runTaskWithoutDelay();
+    else
+        scheduleTask(/* with_backoff = */ true);
 }
 
 
 void BackgroundJobExecutor::executeMoveTask(BackgroundTaskPtr move_task)
 {
-    getContext()->getMovesExecutor()->trySchedule(move_task);
+    if (getContext()->getMovesExecutor()->trySchedule(move_task))
+        runTaskWithoutDelay();
+    else
+        scheduleTask(/* with_backoff = */ true);
 }
 
 void BackgroundJobExecutor::start()
@@ -119,7 +128,6 @@ void BackgroundJobExecutor::backgroundTaskFunction()
 try
 {
     selectTaskAndExecute();
-    scheduleTask(/* with_backoff = */ true);
 }
 catch (...) /// Catch any exception to avoid thread termination.
 {
@@ -135,10 +143,10 @@ BackgroundJobExecutor::~BackgroundJobExecutor()
 
 bool BackgroundJobExecutor::selectTaskAndExecute()
 {
-    // if (counter % 2 == 0)
-    return data.scheduleDataProcessingJob(*this);
-    // else
-    //     return data.scheduleDataMovingJob(*this);
+    if (counter % 2 == 0)
+        return data.scheduleDataProcessingJob(*this);
+    else
+        return data.scheduleDataMovingJob(*this);
 }
 
 
