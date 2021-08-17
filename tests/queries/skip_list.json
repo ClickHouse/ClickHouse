@@ -416,7 +416,6 @@
         "01507_clickhouse_server_start_with_embedded_config",
         "01509_dictionary_preallocate",
         "01516_create_table_primary_key",
-        "01516_drop_table_stress",
         "01517_drop_mv_with_inner_table",
         "01526_complex_key_dict_direct_layout",
         "01527_clickhouse_local_optimize",
