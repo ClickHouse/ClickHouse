@@ -120,8 +120,9 @@ public:
         /// Get lock to the tasks
         std::lock_guard second_lock(mutex);
 
-        auto erased = std::erase_if(tasks, [id = std::move(id)] (auto task) -> bool { return task->getStorageID() == id; });
-        (void) erased;
+        size_t erased_count = std::erase_if(tasks, [id = std::move(id)] (auto task) -> bool { return task->getStorageID() == id; });
+
+        CurrentMetrics::sub(metric, erased_count);
     }
 
 
