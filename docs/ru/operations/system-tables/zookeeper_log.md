@@ -126,7 +126,7 @@ stat_numChildren: 7
 children:         ['query-0000000006','query-0000000005','query-0000000004','query-0000000003','query-0000000002','query-0000000001','query-0000000000']
 ```
 
-**Смотрите также**
+**См. также**
 
 -   [ZooKeeper](../../operations/tips.md#zookeeper)
 -   [Руководство по ZooKeeper](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html)
