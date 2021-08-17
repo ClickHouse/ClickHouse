@@ -5,7 +5,7 @@ from testflows.core import *
 append_path(sys.path, ".")
 
 from helpers.argparser import argparser
-
+# comment to trigger ci #0
 @TestModule
 @Name("clickhouse")
 @ArgumentParser(argparser)
