@@ -25,10 +25,11 @@ public:
     void setName(const String & name_);
     void setFunctionCore(ASTPtr function_core_);
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
 private:
     Block executeCore(const ColumnsWithTypeAndName & arguments) const;
 
-private:
     String name;
     ASTPtr function_core;
     ContextPtr context;
