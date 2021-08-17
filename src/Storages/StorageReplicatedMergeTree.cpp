@@ -2840,7 +2840,7 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor
         executor.executeFetchTask(LambdaAdapter::create([this, selected_entry] () mutable
         {
             return processQueueEntry(selected_entry);
-        }, getStorageID()));
+        }, *this));
         return true;
     }
     else if (job_type == LogEntry::MERGE_PARTS)
@@ -2860,7 +2860,7 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor
         executor.executeFetchTask(LambdaAdapter::create([this, selected_entry] () mutable
         {
             return processQueueEntry(selected_entry);
-        }, getStorageID()));
+        }, *this));
         return true;
     }
 }

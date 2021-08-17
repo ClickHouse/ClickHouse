@@ -25,7 +25,7 @@ public:
 
     ~ReplicatedMergeMutateTaskBase() override = default;
 
-    void onCompleted() override {}
+    void onCompleted() override;
 
     StorageID getStorageID() override;
 

@@ -4694,7 +4694,7 @@ bool MergeTreeData::scheduleDataMovingJob(BackgroundJobExecutor & executor)
     executor.executeMoveTask(LambdaAdapter::create([this, moving_tagger] () mutable
     {
         return moveParts(moving_tagger);
-    }, getStorageID()));
+    }, *this));
     return true;
 }
 

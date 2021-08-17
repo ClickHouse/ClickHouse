@@ -2868,15 +2868,15 @@ void Context::initializeBackgroundExecutors()
 
     merge_mutate_executor->setThreadsCount([context = shared_from_this()] () { return context->getSettingsRef().background_pool_size; });
     merge_mutate_executor->setTasksCount([context = shared_from_this()] () { return context->getSettingsRef().background_pool_size; });
-    merge_mutate_executor->setCurrentTasksCountGetter([] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask]; });
+    merge_mutate_executor->setMetric(CurrentMetrics::BackgroundPoolTask);
 
     moves_executor->setThreadsCount([context = shared_from_this()] () { return context->getSettingsRef().background_move_pool_size; });
     moves_executor->setTasksCount([context = shared_from_this()] () { return context->getSettingsRef().background_move_pool_size; });
-    moves_executor->setCurrentTasksCountGetter([] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundMovePoolTask]; });
+    moves_executor->setMetric(CurrentMetrics::BackgroundMovePoolTask);
 
     fetch_executor->setThreadsCount([context = shared_from_this()] () { return context->getSettingsRef().background_fetches_pool_size; });
     fetch_executor->setTasksCount([context = shared_from_this()] () { return context->getSettingsRef().background_fetches_pool_size; });
-    fetch_executor->setCurrentTasksCountGetter([] () -> std::atomic<CurrentMetrics::Value> & { return CurrentMetrics::values[CurrentMetrics::BackgroundFetchesPoolTask]; });
+    fetch_executor->setMetric(CurrentMetrics::BackgroundFetchesPoolTask);
 }
 
 

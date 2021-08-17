@@ -13,6 +13,12 @@ StorageID MergePlainMergeTreeTask::getStorageID()
     return storage.getStorageID();
 }
 
+void MergePlainMergeTreeTask::onCompleted()
+{
+    bool delay = state == State::SUCCESS;
+    storage.triggerBackgroundOperationTask(delay);
+}
+
 
 bool MergePlainMergeTreeTask::execute()
 {

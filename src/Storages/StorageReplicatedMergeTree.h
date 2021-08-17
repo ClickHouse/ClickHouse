@@ -264,6 +264,15 @@ public:
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
+
+    void triggerBackgroundOperationTask(bool delay) override
+    {
+        if (delay)
+            background_executor.triggerTaskWithDelay();
+        else
+            background_executor.triggerTask();
+    }
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -609,6 +618,7 @@ private:
     std::mutex currently_fetching_parts_mutex;
 
     /// Must be the last
+    /// Move to MergeTreeData ? 
     BackgroundJobExecutor background_executor;
 
     /// With the quorum being tracked, add a replica to the quorum for the part.

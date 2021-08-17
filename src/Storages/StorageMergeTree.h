@@ -100,6 +100,15 @@ public:
     bool scheduleDataProcessingJob(BackgroundJobExecutor & executor) override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
+
+    void triggerBackgroundOperationTask(bool delay) override
+    {
+        if (delay)
+            background_executor.triggerTaskWithDelay();
+        else
+            background_executor.triggerTask();
+    }
+
 private:
 
     /// Mutex and condvar for synchronous mutations wait

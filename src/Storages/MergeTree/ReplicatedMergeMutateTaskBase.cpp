@@ -21,6 +21,12 @@ StorageID ReplicatedMergeMutateTaskBase::getStorageID()
     return storage.getStorageID();
 }
 
+void ReplicatedMergeMutateTaskBase::onCompleted()
+{
+    bool delay = state == State::SUCCESS;
+    storage.triggerBackgroundOperationTask(delay);
+}
+
 
 bool ReplicatedMergeMutateTaskBase::execute()
 {

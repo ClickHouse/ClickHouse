@@ -119,8 +119,7 @@ void BackgroundJobExecutor::backgroundTaskFunction()
 try
 {
     bool result = selectTaskAndExecute();
-    (void) result;
-    scheduleTask(/* with_backoff = */ true);
+    scheduleTask(/* with_backoff = */ !result);
 }
 catch (...) /// Catch any exception to avoid thread termination.
 {
@@ -136,10 +135,10 @@ BackgroundJobExecutor::~BackgroundJobExecutor()
 
 bool BackgroundJobExecutor::selectTaskAndExecute()
 {
-    if (counter % 2 == 0)
-        return data.scheduleDataProcessingJob(*this);
-    else
-        return data.scheduleDataMovingJob(*this);
+    // if (counter % 2 == 0)
+    return data.scheduleDataProcessingJob(*this);
+    // else
+    //     return data.scheduleDataMovingJob(*this);
 }
 
 

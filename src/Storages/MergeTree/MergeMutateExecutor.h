@@ -9,6 +9,7 @@
 #include <common/shared_ptr_helper.h>
 #include <Common/ThreadPool.h>
 #include <Storages/MergeTree/BackgroundTask.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 
 namespace DB
@@ -35,24 +36,28 @@ class LambdaAdapter : public shared_ptr_helper<LambdaAdapter>, public Background
 public:
 
     template <typename T>
-    explicit LambdaAdapter(T && inner_, StorageID storage_id_) : inner(inner_), storage_id(storage_id_) {}
+    explicit LambdaAdapter(T && inner_, MergeTreeData & data_) : inner(inner_), data(data_) {}
 
     bool execute() override
     {
-        inner();
+        res = inner();
         return false;
     }
 
-    void onCompleted() override {} // FIXME
+    void onCompleted() override
+    {
+        data.triggerBackgroundOperationTask(!res);
+    }
 
     StorageID getStorageID() override
     {
-        return storage_id;
+        return data.getStorageID();
     }
 
 private:
-    std::function<void()> inner;
-    StorageID storage_id;
+    bool res = false;
+    std::function<bool()> inner;
+    MergeTreeData & data;
 };
 
 
@@ -61,7 +66,6 @@ class MergeTreeBackgroundExecutor : public shared_ptr_helper<MergeTreeBackground
 public:
 
     using CountGetter = std::function<size_t()>;
-    using GlobalMetricGetter = std::function<std::atomic<Int64> &()>;
     using Callback = std::function<void()>;
 
 
@@ -85,20 +89,23 @@ public:
         max_task_count_getter = getter;
     }
 
-    void setCurrentTasksCountGetter(GlobalMetricGetter && getter)
+    void setMetric(CurrentMetrics::Metric metric_)
     {
-        current_tasks_count_getter = getter;
+        metric = metric_;
     }
 
     bool trySchedule(BackgroundTaskPtr task)
     {
-        if (!incrementMetricIfLessThanMax(current_tasks_count_getter(), max_task_count_getter()))
-            return false;
-
         std::lock_guard lock(mutex);
 
         if (shutdown_suspend)
             return false;
+
+        auto & value = CurrentMetrics::values[metric];
+        if (value.load() > static_cast<int64_t>(max_task_count_getter()))
+            return false;
+
+        CurrentMetrics::add(metric);
 
         tasks.emplace_back(task);
         ++scheduled_tasks_count;
@@ -126,11 +133,10 @@ public:
             has_tasks.notify_all();
         }
 
-        pool.wait();
-
         if (scheduler.joinable())
             scheduler.join();
 
+        pool.wait();
 
         if (last_exception)
             std::rethrow_exception(last_exception);
@@ -146,14 +152,18 @@ private:
         return ExecutorSuspender(*this);
     }
 
+    std::mutex lock_mutex;
+
     void lock()
     {
+        lock_mutex.lock();
         suspend();
     }
 
     void unlock()
     {
         resume();
+        lock_mutex.unlock();
     }
 
     void suspend()
@@ -170,6 +180,7 @@ private:
 
     void resume()
     {
+        shutdown_suspend = false;
         scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
     }
 
@@ -185,9 +196,7 @@ private:
     void decrementTasksCount()
     {
         --scheduled_tasks_count;
-
-        auto & current_metric = current_tasks_count_getter();
-        --current_metric;
+        CurrentMetrics::sub(metric);
     }
 
     void schedulerThreadFunction();
@@ -195,7 +204,7 @@ private:
 
     CountGetter threads_count_getter;
     CountGetter max_task_count_getter;
-    GlobalMetricGetter current_tasks_count_getter;
+    CurrentMetrics::Metric metric;
 
     using TasksQueue = std::deque<BackgroundTaskPtr>;
     TasksQueue tasks;

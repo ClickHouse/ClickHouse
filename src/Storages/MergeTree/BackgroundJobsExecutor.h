@@ -56,7 +56,7 @@ class BackgroundJobExecutor : protected WithContext
 {
 
 private:
-    UInt64 counter{0};
+    [[ maybe_unused ]] UInt64 counter{0};
 
     MergeTreeData & data;
 

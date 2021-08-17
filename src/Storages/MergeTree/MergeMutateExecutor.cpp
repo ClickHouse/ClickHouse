@@ -36,13 +36,17 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
                     return;
                 }
 
+                decrementTasksCount();
                 task->onCompleted();
 
-                decrementTasksCount();
+                std::lock_guard guard(mutex);
+                has_tasks.notify_one();
             }
             catch(...)
             {
                 decrementTasksCount();
+                std::lock_guard guard(mutex);
+                has_tasks.notify_one();
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         });
@@ -55,11 +59,6 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
         }
     }
 }
-
-
-// static MergeTreeBackgroundExecutor merge_mutate_executor;
-// static MergeTreeBackgroundExecutor fetch_executor;
-// static MergeTreeBackgroundExecutor moves_executor;
 
 
 }

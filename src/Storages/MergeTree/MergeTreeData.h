@@ -835,6 +835,9 @@ public:
     /// Mutex for currently_submerging_parts and currently_emerging_parts
     mutable std::mutex currently_submerging_emerging_mutex;
 
+    /// Trigger merge scheduling task
+    virtual void triggerBackgroundOperationTask(bool delay) = 0;
+
 protected:
 
     friend class IMergeTreeDataPart;

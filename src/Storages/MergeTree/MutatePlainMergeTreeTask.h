@@ -35,7 +35,7 @@ public:
 
     bool execute() override;
 
-    void onCompleted() override {}
+    void onCompleted() override;
 
     StorageID getStorageID() override;
 

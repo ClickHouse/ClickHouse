@@ -12,6 +12,12 @@ StorageID MutatePlainMergeTreeTask::getStorageID()
     return storage.getStorageID();
 }
 
+void MutatePlainMergeTreeTask::onCompleted()
+{
+    bool delay = state == State::SUCCESS;
+    storage.triggerBackgroundOperationTask(delay);
+}
+
 
 void MutatePlainMergeTreeTask::prepare()
 {
@@ -73,6 +79,7 @@ bool MutatePlainMergeTreeTask::execute()
             {
                 storage.updateMutationEntriesErrors(future_part, false, getCurrentExceptionMessage(false));
                 write_part_log(ExecutionStatus::fromCurrentException());
+                return false;
             }
         }
         case State::NEED_FINISH :

@@ -1043,20 +1043,20 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor & executo
         return true;
     }
     bool executed = false;
-    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
+    if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
     {
         /// FIXME: Use common pool instead of fetch?
-        executor.executeFetchTask(LambdaAdapter::create([this, share_lock] ()
+        executor.executeMergeMutateTask(LambdaAdapter::create([this, share_lock] ()
         {
             clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
             return true;
-        }, getStorageID()));
+        }, *this));
         executed = true;
     }
-    if (time_after_previous_cleanup_parts.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
+    if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
     {
         /// FIXME: Same here
-        executor.executeFetchTask(LambdaAdapter::create([this, share_lock] ()
+        executor.executeMergeMutateTask(LambdaAdapter::create([this, share_lock] ()
         {
             /// All use relative_data_path which changes during rename
             /// so execute under share lock.
@@ -1065,7 +1065,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor & executo
             clearOldMutations();
             clearEmptyParts();
             return true;
-        }, getStorageID()));
+        }, *this));
         executed = true;
      }
 
