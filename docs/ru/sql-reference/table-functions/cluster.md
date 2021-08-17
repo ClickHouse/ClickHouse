@@ -10,7 +10,7 @@ toc_title: cluster
 Функция `clusterAllReplicas` работает также как `cluster`, но каждая реплика в кластере используется как отдельный шард/отдельное соединение.
 
 !!! note "Примечание"
-    Все доступные кластеры перечислены в таблице [system.clusters](../../operations/system-tables/clusters).
+    Все доступные кластеры перечислены в таблице [system.clusters](../../operations/system-tables/clusters.md).
 
 **Синтаксис**
 
@@ -32,7 +32,7 @@ clusterAllReplicas('cluster_name', db, table[, sharding_key])
 
 **Использование макросов**
 
-Аргументы могут содержать макросы — подстановки в фигурных скобках. Эти подстановки заменяются на соответствующие значения из конфигурационного файла, из секции [macros](../../../operations/server-configuration-parameters/settings.md#macros).
+`cluster_name` может содержать макрос — подстановку в фигурных скобках. Эта подстановка заменяется на соответствующее значение из конфигурационного файла, из секции [macros](../../operations/server-configuration-parameters/settings.md#macros).
 
 Пример:
 
