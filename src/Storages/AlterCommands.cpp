@@ -679,6 +679,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
     while (true)
     {
+        if (from->equals(*to))
+            return true;
+
         auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
         for (auto it = it_range.first; it != it_range.second; ++it)
         {
