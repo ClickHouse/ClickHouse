@@ -42,7 +42,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
-    extern const int BAD_ARGUMENTS;
     extern const int TYPE_MISMATCH;
 }
 
@@ -259,11 +258,6 @@ public:
             key_columns.emplace_back(range_col);
             key_types.emplace_back(range_col_type);
         }
-
-        std::cerr << "FunctionDictHas::executeImpl" << std::endl;
-
-        for (auto & key_type : key_types)
-            std::cerr << "Key type " << key_type->getName() << std::endl;
 
         return dictionary->hasKeys(key_columns, key_types);
     }
