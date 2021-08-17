@@ -52,6 +52,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/InterserverCredentials.h>
+#include <Interpreters/UserDefinedObjectsOnDisk.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -767,6 +768,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
         fs::create_directories(fs::path(path) / "data/");
         fs::create_directories(fs::path(path) / "metadata/");
+        fs::create_directories(fs::path(path) / "user_defined/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         fs::create_directories(fs::path(path) / "metadata_dropped/");
@@ -1087,6 +1089,18 @@ if (ThreadFuzzer::instance().isEffective())
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
+
+    LOG_INFO(log, "Loading user defined objects from {}", path);
+    try
+    {
+        UserDefinedObjectsOnDisk::instance().loadUserDefinedObjects(global_context);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Caught exception while loading user defined objects");
+        throw;
+    }
+    LOG_DEBUG(log, "Loaded user defined objects");
 
     LOG_INFO(log, "Loading metadata from {}", path);
 
