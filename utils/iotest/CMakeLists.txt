@@ -4,6 +4,8 @@ target_link_libraries (iotest PRIVATE clickhouse_common_io)
 
 add_executable (iotest_nonblock iotest_nonblock.cpp ${SRCS})
 target_link_libraries (iotest_nonblock PRIVATE clickhouse_common_io)
+target_no_warning(iotest_nonblock reserved-identifier)
 
 add_executable (iotest_aio iotest_aio.cpp ${SRCS})
 target_link_libraries (iotest_aio PRIVATE clickhouse_common_io)
+target_no_warning(iotest_aio reserved-identifier)
