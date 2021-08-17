@@ -24,3 +24,10 @@ SELECT sparkbar(11,toDate('2020-01-02'),toDate('2020-01-02'))(event_date,cnt) fr
 SELECT sparkbar(11,toDate('2020-01-02'),toDate('2020-01-05'))(event_date,cnt) from spark_bar_test;
 SELECT sparkbar(11,toDate('2020-01-03'),toDate('2020-01-07'))(event_date,cnt) from spark_bar_test;
 SELECT sparkbar(11,toDate('2020-01-04'),toDate('2020-01-11'))(event_date,cnt) from spark_bar_test;
+
+SELECT sparkbar(2,toDate('2020-01-01'),toDate('2020-01-08'))(event_date,cnt) from spark_bar_test;
+SELECT sparkbar(2,toDate('2020-01-02'),toDate('2020-01-09'))(event_date,cnt) from spark_bar_test;
+SELECT sparkbar(3,toDate('2020-01-01'),toDate('2020-01-09'))(event_date,cnt) from spark_bar_test;
+SELECT sparkbar(3,toDate('2020-01-01'),toDate('2020-01-10'))(event_date,cnt) from spark_bar_test;
+SELECT sparkbar(4,toDate('2020-01-01'),toDate('2020-01-08'))(event_date,cnt) from spark_bar_test;
+SELECT sparkbar(5,toDate('2020-01-01'),toDate('2020-01-10'))(event_date,cnt) from spark_bar_test;
