@@ -1,4 +1,4 @@
-#include <Common/getServerUUID.h>
+#include <Common/ServerUUID.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -17,7 +17,7 @@ class FunctionServerUUID : public IFunction
 
         static FunctionPtr create(ContextPtr context)
         {
-            return std::make_shared<FunctionServerUUID>(context->isDistributed(), getServerUUID());
+            return std::make_shared<FunctionServerUUID>(context->isDistributed(), ServerUUID::get());
         }
 
         explicit FunctionServerUUID(bool is_distributed_, UUID server_uuid_)

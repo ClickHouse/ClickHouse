@@ -39,6 +39,7 @@
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
+#include <Common/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
@@ -695,7 +696,7 @@ if (ThreadFuzzer::instance().isEffective())
 
     StatusFile status{path / "status", StatusFile::write_full_info};
 
-    loadServerUUID(path / "uuid", log);
+    DB::ServerUUID::load(path / "uuid", log);
 
     /// Try to increase limit on number of open files.
     {

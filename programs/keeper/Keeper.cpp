@@ -17,6 +17,7 @@
 #include <Poco/Version.h>
 #include <Poco/Environment.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/ServerUUID.h>
 #include <filesystem>
 #include <IO/UseSSL.h>
 
@@ -326,7 +327,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         }
     }
 
-    loadServerUUID(path + "/uuid", log);
+    DB::ServerUUID::load(path + "/uuid", log);
 
     const Settings & settings = global_context->getSettingsRef();
 
