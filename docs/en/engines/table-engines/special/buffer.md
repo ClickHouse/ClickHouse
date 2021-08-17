@@ -56,6 +56,9 @@ The same thing happens if the subordinate table does not exist when the buffer i
 
 If you need to run ALTER for a subordinate table, and the Buffer table, we recommend first deleting the Buffer table, running ALTER for the subordinate table, then creating the Buffer table again.
 
+!!! attention "Attention"
+    Running ALTER on Buffer table in releases made prior to 28 Sep 2020 will cause `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117)), so deleting Buffer table and then recreating it is the only option. Please check error is fixed in your release before trying to run ALTER on Buffer table.
+
 If the server is restarted abnormally, the data in the buffer is lost.
 
 `FINAL` and `SAMPLE` do not work correctly for Buffer tables. These conditions are passed to the destination table, but are not used for processing data in the buffer. If these features are required we recommend only using the Buffer table for writing, while reading from the destination table.
