@@ -7,6 +7,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/materialize.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -1069,8 +1070,10 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                     if (ignore_constant_values && res_const)
                         src_node = dst_node = &actions_dag->addColumn(res_elem);
                     else
-                        throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
-                                        ErrorCodes::THERE_IS_NO_COLUMN);
+                        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+                                        "Cannot find column `{}` in source stream, there are only columns: [{}]",
+                                        res_elem.name, Block(source).dumpNames());
+
                 }
                 else
                 {
@@ -1110,8 +1113,8 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             const auto * right_arg = &actions_dag->addColumn(std::move(column));
             const auto * left_arg = dst_node;
 
-            FunctionCast::Diagnostic diagnostic = {dst_node->result_name, res_elem.name};
-            FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic));
+            FunctionCastBase::Diagnostic diagnostic = {dst_node->result_name, res_elem.name};
+            FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(std::move(diagnostic));
 
             NodeRawConstPtrs children = { left_arg, right_arg };
             dst_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {});
@@ -1876,7 +1879,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                 predicate->children = {left_arg, right_arg};
                 auto arguments = prepareFunctionArguments(predicate->children);
 
-                FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false);
+                FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
 
                 predicate->function_builder = func_builder_cast;
                 predicate->function_base = predicate->function_builder->build(arguments);

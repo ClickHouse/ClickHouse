@@ -79,7 +79,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
 -   `SAMPLE BY` — An expression for sampling. Optional.
 
-    If a sampling expression is used, the primary key must contain it. The result of sampling expression must be unsigned integer. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+    If a sampling expression is used, the primary key must contain it. The result of a sampling expression must be an unsigned integer. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
 -   `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes). Optional.
 
@@ -844,44 +844,3 @@ S3 disk can be configured as `main` or `cold` storage:
 ```
 
 In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule.
-
-## Using HDFS for Data Storage {#table_engine-mergetree-hdfs}
-
-[HDFS](https://hadoop.apache.org/docs/r1.2.1/hdfs_design.html) is a distributed file system for remote data storage.
-
-`MergeTree` family table engines can store data to HDFS using a disk with type `HDFS`.
-
-Configuration markup:
-``` xml
-<yandex>
-    <storage_configuration>
-        <disks>
-            <hdfs>
-                <type>hdfs</type>
-                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
-            </hdfs>
-        </disks>
-        <policies>
-            <hdfs>
-                <volumes>
-                    <main>
-                        <disk>hdfs</disk>
-                    </main>
-                </volumes>
-            </hdfs>
-        </policies>
-    </storage_configuration>
-
-    <merge_tree>
-        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
-    </merge_tree>
-</yandex>
-```
-
-Required parameters:
-
--   `endpoint` — HDFS endpoint URL in `path` format. Endpoint URL should contain a root path to store data.
-
-Optional parameters:
-
--   `min_bytes_for_seek` — The minimal number of bytes to use seek operation instead of sequential read. Default value: `1 Mb`.
