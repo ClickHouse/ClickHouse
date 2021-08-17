@@ -64,7 +64,7 @@ Pipe getSourceFromFromASTInsertQuery(
         const auto in_file = in_file_node.value.safeGet<std::string>();
 
         input_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, ""));
-    } else 
+    } else
     {
         ConcatReadBuffer::ReadBuffers buffers;
         if (ast_insert_query->data)
