@@ -197,7 +197,7 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
 
 void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
 {
-    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete);
+    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false);
 
     while (true)
     {

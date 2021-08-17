@@ -51,7 +51,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromOStream.h>
 
-#include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 
 #include <Parsers/ASTCreateQuery.h>
@@ -65,7 +64,6 @@
 #include <Parsers/formatAST.h>
 
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
 
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -289,7 +287,7 @@ static bool queryHasWithClause(const IAST * ast)
 std::vector<String> Client::loadWarningMessages()
 {
     std::vector<String> messages;
-    connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */, QueryProcessingStage::Complete);
+    connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false);
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -930,21 +928,6 @@ bool Client::processWithFuzzing(const String & full_query)
 }
 
 
-/// Convert external tables to ExternalTableData and send them using the connection.
-void Client::sendExternalTables(ASTPtr parsed_query)
-{
-    const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
-    if (!select && !external_tables.empty())
-        throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
-
-    std::vector<ExternalTableDataPtr> data;
-    for (auto & table : external_tables)
-        data.emplace_back(table.getData(global_context));
-
-    connection->sendExternalTablesData(data);
-}
-
-
 void Client::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     /// Process the query that requires transferring data blocks to the server.
@@ -972,61 +955,6 @@ void Client::processInsertQuery(const String & query_to_execute, ASTPtr parsed_q
         /// send our data with that structure.
         sendData(sample, columns_description, parsed_query);
         receiveEndOfQuery();
-    }
-}
-
-
-void Client::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
-{
-    /// Rewrite query only when we have query parameters.
-    /// Note that if query is rewritten, comments in query are lost.
-    /// But the user often wants to see comments in server logs, query log, processlist, etc.
-    auto query = query_to_execute;
-    if (!query_parameters.empty())
-    {
-        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        ReplaceQueryParameterVisitor visitor(query_parameters);
-        visitor.visit(parsed_query);
-
-        /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
-        query = serializeAST(*parsed_query);
-    }
-
-    int retries_left = 10;
-    for (;;)
-    {
-        assert(retries_left > 0);
-
-        try
-        {
-            connection->sendQuery(
-                connection_parameters.timeouts,
-                query,
-                global_context->getCurrentQueryId(),
-                query_processing_stage,
-                &global_context->getSettingsRef(),
-                &global_context->getClientInfo(),
-                true);
-
-            sendExternalTables(parsed_query);
-            receiveResult(parsed_query);
-
-            break;
-        }
-        catch (const Exception & e)
-        {
-            /// Retry when the server said "Client should retry" and no rows
-            /// has been received yet.
-            if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
-            {
-                std::cerr << "Got a transient error from the server, will"
-                        << " retry (" << retries_left << " retries left)";
-            }
-            else
-            {
-                throw;
-            }
-        }
     }
 }
 
@@ -1196,7 +1124,7 @@ void Client::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescrip
         receiveLogs(parsed_query);
 
         /// Check if server send Exception packet
-        auto packet_type = connection->checkPacket();
+        auto packet_type = connection->checkPacket(/* timeout_milliseconds */0);
         if (packet_type && *packet_type == Protocol::Server::Exception)
         {
             /*
@@ -1209,137 +1137,12 @@ void Client::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescrip
 
         if (block)
         {
-            connection->sendData(block);
+            connection->sendData(block, /* name */"", /* scalar */false);
             processed_rows += block.rows();
         }
     }
 
-    connection->sendData({});
-}
-
-
-/// Receives and processes packets coming from server.
-/// Also checks if query execution should be cancelled.
-void Client::receiveResult(ASTPtr parsed_query)
-{
-    InterruptListener interrupt_listener;
-    bool cancelled = false;
-
-    // TODO: get the poll_interval from commandline.
-    const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
-    constexpr size_t default_poll_interval = 1000000; /// in microseconds
-    constexpr size_t min_poll_interval = 5000; /// in microseconds
-    const size_t poll_interval
-        = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
-
-    while (true)
-    {
-        Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
-
-        while (true)
-        {
-            /// Has the Ctrl+C been pressed and thus the query should be cancelled?
-            /// If this is the case, inform the server about it and receive the remaining packets
-            /// to avoid losing sync.
-            if (!cancelled)
-            {
-                auto cancel_query = [&] {
-                    connection->sendCancel();
-                    cancelled = true;
-                    if (is_interactive)
-                    {
-                        progress_indication.clearProgressOutput();
-                        std::cout << "Cancelling query." << std::endl;
-                    }
-
-                    /// Pressing Ctrl+C twice results in shut down.
-                    interrupt_listener.unblock();
-                };
-
-                if (interrupt_listener.check())
-                {
-                    cancel_query();
-                }
-                else
-                {
-                    double elapsed = receive_watch.elapsedSeconds();
-                    if (elapsed > receive_timeout.totalSeconds())
-                    {
-                        std::cout << "Timeout exceeded while receiving data from server."
-                                    << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
-                                    << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
-
-                        cancel_query();
-                    }
-                }
-            }
-
-            /// Poll for changes after a cancellation check, otherwise it never reached
-            /// because of progress updates from server.
-            if (connection->poll(poll_interval))
-                break;
-        }
-
-        if (!receiveAndProcessPacket(parsed_query, cancelled))
-            break;
-    }
-
-    if (cancelled && is_interactive)
-        std::cout << "Query was cancelled." << std::endl;
-}
-
-
-/// Receive a part of the result, or progress info or an exception and process it.
-/// Returns true if one should continue receiving packets.
-/// Output of result is suppressed if query was cancelled.
-bool Client::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
-{
-    Packet packet = connection->receivePacket();
-
-    switch (packet.type)
-    {
-        case Protocol::Server::PartUUIDs:
-            return true;
-
-        case Protocol::Server::Data:
-            if (!cancelled)
-                onData(packet.block, parsed_query);
-            return true;
-
-        case Protocol::Server::Progress:
-            onProgress(packet.progress);
-            return true;
-
-        case Protocol::Server::ProfileInfo:
-            onProfileInfo(packet.profile_info);
-            return true;
-
-        case Protocol::Server::Totals:
-            if (!cancelled)
-                onTotals(packet.block, parsed_query);
-            return true;
-
-        case Protocol::Server::Extremes:
-            if (!cancelled)
-                onExtremes(packet.block, parsed_query);
-            return true;
-
-        case Protocol::Server::Exception:
-            onReceiveExceptionFromServer(std::move(packet.exception));
-            return false;
-
-        case Protocol::Server::Log:
-            onLogData(packet.block);
-            return true;
-
-        case Protocol::Server::EndOfStream:
-            onEndOfStream();
-            return false;
-
-        default:
-            throw Exception(
-                ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
-    }
+    connection->sendData({}, "", false);
 }
 
 
@@ -1412,189 +1215,19 @@ bool Client::receiveEndOfQuery()
 /// Process Log packets, used when inserting data by blocks
 void Client::receiveLogs(ASTPtr parsed_query)
 {
-    auto packet_type = connection->checkPacket();
+    auto packet_type = connection->checkPacket(0);
 
     while (packet_type && *packet_type == Protocol::Server::Log)
     {
         receiveAndProcessPacket(parsed_query, false);
-        packet_type = connection->checkPacket();
+        packet_type = connection->checkPacket(/* timeout_milliseconds */0);
     }
-}
-
-
-void Client::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
-{
-    if (!block_out_stream)
-    {
-        /// Ignore all results when fuzzing as they can be huge.
-        if (query_fuzzer_runs)
-        {
-            block_out_stream = std::make_shared<NullBlockOutputStream>(block);
-            return;
-        }
-
-        WriteBuffer * out_buf = nullptr;
-        String pager = config().getString("pager", "");
-        if (!pager.empty())
-        {
-            signal(SIGPIPE, SIG_IGN);
-            pager_cmd = ShellCommand::execute(pager, true);
-            out_buf = &pager_cmd->in;
-        }
-        else
-        {
-            out_buf = &std_out;
-        }
-
-        String current_format = format;
-
-        /// The query can specify output format or output file.
-        /// FIXME: try to prettify this cast using `as<>()`
-        if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
-        {
-            if (query_with_output->out_file)
-            {
-                const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
-                const auto & out_file = out_file_node.value.safeGet<std::string>();
-
-                out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
-                    chooseCompressionMethod(out_file, ""),
-                    /* compression level = */ 3
-                );
-
-                // We are writing to file, so default format is the same as in non-interactive mode.
-                if (is_interactive && is_default_format)
-                    current_format = "TabSeparated";
-            }
-            if (query_with_output->format != nullptr)
-            {
-                if (has_vertical_output_suffix)
-                    throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
-                const auto & id = query_with_output->format->as<ASTIdentifier &>();
-                current_format = id.name();
-            }
-        }
-
-        if (has_vertical_output_suffix)
-            current_format = "Vertical";
-
-        /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-        if (!need_render_progress)
-            block_out_stream = global_context->getOutputStreamParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
-        else
-            block_out_stream = global_context->getOutputStream(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
-
-        block_out_stream->writePrefix();
-    }
-}
-
-
-void Client::initLogsOutputStream()
-{
-    if (!logs_out_stream)
-    {
-        WriteBuffer * wb = out_logs_buf.get();
-
-        if (!out_logs_buf)
-        {
-            if (server_logs_file.empty())
-            {
-                /// Use stderr by default
-                out_logs_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO);
-                wb = out_logs_buf.get();
-            }
-            else if (server_logs_file == "-")
-            {
-                /// Use stdout if --server_logs_file=- specified
-                wb = &std_out;
-            }
-            else
-            {
-                out_logs_buf
-                    = std::make_unique<WriteBufferFromFile>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
-                wb = out_logs_buf.get();
-            }
-        }
-
-        logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb, stdout_is_a_tty);
-        logs_out_stream->writePrefix();
-    }
-}
-
-
-void Client::onData(Block & block, ASTPtr parsed_query)
-{
-    if (!block)
-        return;
-
-    processed_rows += block.rows();
-
-    /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
-    initBlockOutputStream(block, parsed_query);
-
-    /// The header block containing zero rows was used to initialize
-    /// block_out_stream, do not output it.
-    /// Also do not output too much data if we're fuzzing.
-    if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
-        return;
-
-    if (need_render_progress)
-        progress_indication.clearProgressOutput();
-
-    block_out_stream->write(block);
-    written_first_block = true;
-
-    /// Received data block is immediately displayed to the user.
-    block_out_stream->flush();
-
-    /// Restore progress bar after data block.
-    if (need_render_progress)
-        progress_indication.writeProgress();
-}
-
-
-void Client::onLogData(Block & block)
-{
-    initLogsOutputStream();
-    progress_indication.clearProgressOutput();
-    logs_out_stream->write(block);
-    logs_out_stream->flush();
-}
-
-
-void Client::onTotals(Block & block, ASTPtr parsed_query)
-{
-    initBlockOutputStream(block, parsed_query);
-    block_out_stream->setTotals(block);
-}
-
-
-void Client::onExtremes(Block & block, ASTPtr parsed_query)
-{
-    initBlockOutputStream(block, parsed_query);
-    block_out_stream->setExtremes(block);
 }
 
 
 void Client::writeFinalProgress()
 {
     progress_indication.writeFinalProgress();
-}
-
-
-void Client::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
-{
-    have_error = true;
-    server_exception = std::move(e);
-    resetOutput();
-}
-
-
-void Client::onProfileInfo(const BlockStreamProfileInfo & profile_info)
-{
-    if (profile_info.hasAppliedLimit() && block_out_stream)
-        block_out_stream->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
 }
 
 

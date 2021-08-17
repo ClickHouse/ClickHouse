@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/ClientBase.h>
+#include <Client/LocalConnection.h>
 
 #include <Common/ProgressIndication.h>
 #include <Common/StatusFile.h>
@@ -34,6 +35,12 @@ public:
     }
 
 protected:
+    void connect() override
+    {
+        connection_parameters = ConnectionParameters(config());
+        connection = std::make_unique<LocalConnection>(global_context);
+    }
+
     void processSingleQuery(const String & full_query) override;
 
     bool processMultiQuery(const String & all_queries_text) override;

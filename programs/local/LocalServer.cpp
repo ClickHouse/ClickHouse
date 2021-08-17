@@ -257,10 +257,10 @@ void LocalServer::checkInterruptListener()
 }
 
 
-void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* parsed_query */)
+void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
-    ReadBufferFromString read_buf(query_to_execute);
-    WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
+    // ReadBufferFromString read_buf(query_to_execute);
+    // WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
     cancelled = false;
 
@@ -291,8 +291,8 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
         };
     }
 
-    if (is_interactive)
-        interrupt_listener.emplace();
+    // if (is_interactive)
+    //     interrupt_listener.emplace();
 
     SCOPE_EXIT_SAFE({
         if (interrupt_listener)
@@ -310,7 +310,7 @@ void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr /* 
 
     try
     {
-        executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, query_context, {}, {}, flush_buffer_func);
+        processOrdinaryQuery(query_to_execute, parsed_query);
     }
     catch (const Exception & e)
     {
@@ -473,6 +473,8 @@ try
         progress_indication.setFileProgressCallback(query_context);
     }
 
+    connect();
+
     if (is_interactive)
     {
         std::cout << std::endl;
@@ -563,6 +565,12 @@ void LocalServer::processConfig()
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
+    is_default_format = !config().has("vertical") && !config().has("format");
+    if (config().has("vertical"))
+        format = config().getString("format", "Vertical");
+    else
+        format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
+
     /// Skip networking
 
     /// Sets external authenticators config (LDAP, Kerberos).
@@ -631,6 +639,9 @@ void LocalServer::processConfig()
     std::map<String, String> prompt_substitutions{{"display_name", server_display_name}};
     for (const auto & [key, value] : prompt_substitutions)
         boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
+
+    ClientInfo & client_info = global_context->getClientInfo();
+    client_info.setInitialQuery();
 }
 
 
