@@ -60,6 +60,40 @@ You can encrypt the data stored on [S3](../engines/table-engines/mergetree-famil
 Configuration markup:
 
 ``` xml
+<disks>
+  <disk1>
+    <type>local</type>
+    <path>/path1/</path>
+  </disk1>
+  <disk2>
+    <type>encrypted</type>
+    <disk>disk1</disk>
+    <path>path2/</path>
+    <key>_16_ascii_chars_</key>
+  </disk2>
+</disks>
+```
+
+For example, when ClickHouse writes data from some table to a file `store/all_1_1_0/data.bin` to `disk1`, then in fact this file will be written to the physical disk along the path `/path1/store/all_1_1_0/data.bin`.
+
+When writing the same file to `disk2`, it will actually be written to the physical disk at the path `/path1/path2/store/all_1_1_0/data.bin` in encrypted mode.
+
+Required parameters:
+
+-   `type` — `encrypted`. Otherwise the encrypted disk is not created.
+-   `disk` — Type of disk for data storage.
+-   `key` — The key for encryption and decryption. Type: [Uint64](../sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encrypt in hexadecimal form.
+    You can specify multiple keys using the `id` attribute (see example above).
+
+Optional parameters:
+
+-   `path` — Path to the location on the disk where the data will be saved. If not specified, the data will be saved in the root directory.
+-   `current_key_id` — The key used for encryption. All the specified keys can be used for decryption, and you can always switch to another key while maintaining access to previously encrypted data.
+-   `algorithm` — [Algorithm](../sql-reference/statements/create/table.md#create-query-encryption-codecs) for encryption. Possible values: `AES_128_CTR`, `AES_192_CTR` or `AES_256_CTR`. Default value: `AES_128_CTR`. The key length depends on the algorithm: `AES_128_CTR` — 16 bytes, `AES_192_CTR` — 24 bytes, `AES_256_CTR` — 32 bytes.
+
+Example of disk configuration:
+
+``` xml
 <yandex>
     <storage_configuration>
         <disks>
@@ -79,37 +113,3 @@ Configuration markup:
     </storage_configuration>
 </yandex>
 ```
-
-Required parameters:
-
--   `type` — `encrypted`. Otherwise the encrypted disk is not created.
--   `disk` — Type of disk for data storage.
--   `key` — The key for encryption and decryption. Type: [Uint64](../sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encrypt in hexadecimal form.
-    You can specify multiple keys using the `id` attribute (see example above).
-
-Optional parameters:
-
--   `path` — Path to the location on the disk where the data will be saved. If not specified, the data will be saved in the root directory.
--   `current_key_id` — The key used for encryption. All the specified keys can be used for decryption, and you can always switch to another key while maintaining access to previously encrypted data.
--   `algorithm` — [Algorithm](../sql-reference/statements/create/table.md#create-query-encryption-codecs) for encryption. Possible values: `AES_128_CTR`, `AES_192_CTR` or `AES_256_CTR`. Default value: `AES_128_CTR`. The key length depends on the algorithm: `AES_128_CTR` — 16 bytes, `AES_192_CTR` — 24 bytes, `AES_256_CTR` — 32 bytes.
-
-Example of disk configuration:
-
-``` xml
-<disks>
-  <disk1>
-    <type>local</type>
-    <path>/path1/</path>
-  </disk1>
-  <disk2>
-    <type>encrypted</type>
-    <disk>disk1</disk>
-    <path>path2/</path>
-    <key>...</key>
-  </disk2>
-</disks>
-```
-
-For example, when ClickHouse writes data from some table to a file `store/all_1_1_0/data.bin` to `disk1`, then in fact this file will be written to the physical disk along the path `/path1/store/all_1_1_0/data.bin`.
-
-When writing the same file to `disk2`, it will actually be written to the physical disk at the path `/path1/path2/store/all_1_1_0/data.bin` in encrypted mode.
