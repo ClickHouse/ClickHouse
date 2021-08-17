@@ -1,7 +1,3 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
 
 # system.data_type_families {#system_tables-data_type_families}
 
