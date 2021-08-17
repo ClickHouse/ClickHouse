@@ -5,7 +5,6 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
-#include <DataStreams/IBlockInputStream.h>
 
 namespace DB
 {
@@ -65,7 +64,7 @@ void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 }
 
 /// Creates result from right table data in RIGHT and FULL JOIN when keys are not present in left table.
-class NotJoinedInputStream : public IBlockInputStream
+class NotJoinedBlocks final
 {
 public:
     using LeftToRightKeyRemap = std::unordered_map<String, String>;
@@ -82,16 +81,12 @@ public:
         virtual ~RightColumnsFiller() = default;
     };
 
-    NotJoinedInputStream(std::unique_ptr<RightColumnsFiller> filler_,
+    NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
               const Block & result_sample_block_,
               size_t left_columns_count,
               const LeftToRightKeyRemap & left_to_right_key_remap);
 
-    String getName() const override { return "NonJoined"; }
-    Block getHeader() const override { return result_sample_block; }
-
-protected:
-    Block readImpl() override final;
+    Block read();
 
 private:
     void extractColumnChanges(size_t right_pos, size_t result_pos);

@@ -492,7 +492,7 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 
 }
 
-NotJoinedInputStream::NotJoinedInputStream(std::unique_ptr<RightColumnsFiller> filler_,
+NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
                      const Block & result_sample_block_,
                      size_t left_columns_count,
                      const LeftToRightKeyRemap & left_to_right_key_remap)
@@ -537,7 +537,7 @@ NotJoinedInputStream::NotJoinedInputStream(std::unique_ptr<RightColumnsFiller> f
                         ErrorCodes::LOGICAL_ERROR);
 }
 
-void NotJoinedInputStream::setRightIndex(size_t right_pos, size_t result_position)
+void NotJoinedBlocks::setRightIndex(size_t right_pos, size_t result_position)
 {
     if (!column_indices_right.contains(right_pos))
     {
@@ -548,7 +548,7 @@ void NotJoinedInputStream::setRightIndex(size_t right_pos, size_t result_positio
         same_result_keys[result_position] = column_indices_right[right_pos];
 }
 
-void NotJoinedInputStream::extractColumnChanges(size_t right_pos, size_t result_pos)
+void NotJoinedBlocks::extractColumnChanges(size_t right_pos, size_t result_pos)
 {
     auto src_props = getLowcardAndNullability(saved_block_sample.getByPosition(right_pos).column);
     auto dst_props = getLowcardAndNullability(result_sample_block.getByPosition(result_pos).column);
@@ -560,7 +560,7 @@ void NotJoinedInputStream::extractColumnChanges(size_t right_pos, size_t result_
         right_lowcard_changes.push_back({result_pos, dst_props.is_lowcard});
 }
 
-void NotJoinedInputStream::correctLowcardAndNullability(Block & block)
+void NotJoinedBlocks::correctLowcardAndNullability(Block & block)
 {
     for (auto & [pos, added] : right_nullability_changes)
     {
@@ -588,7 +588,7 @@ void NotJoinedInputStream::correctLowcardAndNullability(Block & block)
     }
 }
 
-void NotJoinedInputStream::addLeftColumns(Block & block, size_t rows_added) const
+void NotJoinedBlocks::addLeftColumns(Block & block, size_t rows_added) const
 {
     for (size_t pos : column_indices_left)
     {
@@ -600,7 +600,7 @@ void NotJoinedInputStream::addLeftColumns(Block & block, size_t rows_added) cons
     }
 }
 
-void NotJoinedInputStream::addRightColumns(Block & block, MutableColumns & columns_right) const
+void NotJoinedBlocks::addRightColumns(Block & block, MutableColumns & columns_right) const
 {
     for (const auto & pr : column_indices_right)
     {
@@ -610,7 +610,7 @@ void NotJoinedInputStream::addRightColumns(Block & block, MutableColumns & colum
     }
 }
 
-void NotJoinedInputStream::copySameKeys(Block & block) const
+void NotJoinedBlocks::copySameKeys(Block & block) const
 {
     for (const auto & pr : same_result_keys)
     {
@@ -620,7 +620,7 @@ void NotJoinedInputStream::copySameKeys(Block & block) const
     }
 }
 
-Block NotJoinedInputStream::readImpl()
+Block NotJoinedBlocks::read()
 
 {
     Block right_block = filler->getEmptyBlock();
@@ -635,7 +635,7 @@ Block NotJoinedInputStream::readImpl()
     correctLowcardAndNullability(right_block);
 
 #ifndef NDEBUG
-    assertBlocksHaveEqualStructure(right_block, result_sample_block, getName());
+    assertBlocksHaveEqualStructure(right_block, result_sample_block, "NotJoinedBlocks");
 #endif
     return right_block;
 }
