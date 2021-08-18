@@ -12,23 +12,28 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+/** According to Twitter's post on Snowflake, we can extract the timestamp for a snowflake ID by right shifting
+ * the snowflake ID by 22 bits(10 bits machine ID and 12 bits sequence ID) and adding the Twitter epoch time of 1288834974657.
+ * https://en.wikipedia.org/wiki/Snowflake_ID
+ * https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake
+ * https://ws-dl.blogspot.com/2019/08/2019-08-03-tweetedat-finding-tweet.html
+*/
+static constexpr long snowflake_epoch = 1288834974657L;
+static constexpr int time_shift = 22;
 
 class FunctionDateTimeToSnowflake : public IFunction
 {
 private:
     const char * name;
+
 public:
-    FunctionDateTimeToSnowflake(const char * name_)
-        : name(name_)
-    {
-    }
+    FunctionDateTimeToSnowflake(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -54,7 +59,7 @@ public:
         const auto & source_data = typeid_cast<const ColumnUInt32 &>(col).getData();
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            result_data[i] = (int64_t(source_data[i])*1000-1288834974657)<<22;
+            result_data[i] = (Int64(source_data[i]) * 1000 - snowflake_epoch) << time_shift;
         }
 
         return res_column;
@@ -66,11 +71,9 @@ class FunctionSnowflakeToDateTime : public IFunction
 {
 private:
     const char * name;
+
 public:
-    FunctionSnowflakeToDateTime(const char * name_)
-        : name(name_)
-    {
-    }
+    FunctionSnowflakeToDateTime(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -104,9 +107,8 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            result_data[i] = ((source_data[i]>>22)+1288834974657)/1000;
+            result_data[i] = ((source_data[i] >> time_shift) + snowflake_epoch) / 1000;
         }
-
         return res_column;
     }
 };
@@ -116,11 +118,9 @@ class FunctionDateTime64ToSnowflake : public IFunction
 {
 private:
     const char * name;
+
 public:
-    FunctionDateTime64ToSnowflake(const char * name_)
-        : name(name_)
-    {
-    }
+    FunctionDateTime64ToSnowflake(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -146,7 +146,7 @@ public:
         const auto & source_data = typeid_cast<const ColumnDecimal<DateTime64> &>(col).getData();
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            result_data[i] = (source_data[i]-1288834974657)<<22;
+            result_data[i] = (source_data[i] - snowflake_epoch) << time_shift;
         }
 
         return res_column;
@@ -158,11 +158,9 @@ class FunctionSnowflakeToDateTime64 : public IFunction
 {
 private:
     const char * name;
+
 public:
-    FunctionSnowflakeToDateTime64(const char * name_)
-        : name(name_)
-    {
-    }
+    FunctionSnowflakeToDateTime64(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -171,7 +169,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-
         if (arguments.size() < 1 || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
 
@@ -197,9 +194,8 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            result_data[i] = (source_data[i]>>22)+1288834974657;
+            result_data[i] = (source_data[i] >> time_shift) + snowflake_epoch;
         }
-
         return res_column;
     }
 };
