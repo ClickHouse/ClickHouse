@@ -51,7 +51,7 @@ bool JoinSwitcher::addJoinedBlock(const Block & block, bool)
 void JoinSwitcher::switchJoin()
 {
     std::shared_ptr<HashJoin::RightTableData> joined_data = static_cast<const HashJoin &>(*join).getJoinedData();
-    HashJoin::BlocksWithFlagsList right_blocks = std::move(joined_data->blocks);
+    BlocksList right_blocks = std::move(joined_data->blocks);
 
     /// Destroy old join & create new one. Early destroy for memory saving.
     join = std::make_shared<MergeJoin>(table_join, right_sample_block);
@@ -62,20 +62,20 @@ void JoinSwitcher::switchJoin()
     if (!right_blocks.empty())
     {
         positions.reserve(right_sample_block.columns());
-        const HashJoin::BlockWithFlags & tmp_block = *right_blocks.begin();
+        const Block & tmp_block = *right_blocks.begin();
         for (const auto & sample_column : right_sample_block)
         {
-            positions.emplace_back(tmp_block.block.getPositionByName(sample_column.name));
+            positions.emplace_back(tmp_block.getPositionByName(sample_column.name));
             is_nullable.emplace_back(sample_column.type->isNullable());
         }
     }
 
-    for (HashJoin::BlockWithFlags & saved_block : right_blocks)
+    for (Block & saved_block : right_blocks)
     {
         Block restored_block;
         for (size_t i = 0; i < positions.size(); ++i)
         {
-            auto & column = saved_block.block.getByPosition(positions[i]);
+            auto & column = saved_block.getByPosition(positions[i]);
             restored_block.insert(correctNullability(std::move(column), is_nullable[i]));
         }
         join->addJoinedBlock(restored_block);
