@@ -12,7 +12,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/UserDefinedObjectsOnDisk.h>
+#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -290,7 +290,7 @@ try
         fs::create_directories(fs::path(path) / "user_defined/");
         LOG_DEBUG(log, "Loading user defined objects from {}", path);
         Poco::File(path + "user_defined/").createDirectories();
-        UserDefinedObjectsOnDisk::instance().loadUserDefinedObjects(global_context);
+        UserDefinedObjectsLoader::instance().loadObjects(global_context);
         LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);

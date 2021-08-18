@@ -52,7 +52,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/UserDefinedObjectsOnDisk.h>
+#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -1093,7 +1093,7 @@ if (ThreadFuzzer::instance().isEffective())
     LOG_INFO(log, "Loading user defined objects from {}", path);
     try
     {
-        UserDefinedObjectsOnDisk::instance().loadUserDefinedObjects(global_context);
+        UserDefinedObjectsLoader::instance().loadObjects(global_context);
     }
     catch (...)
     {

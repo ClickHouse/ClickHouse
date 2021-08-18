@@ -9,10 +9,13 @@ namespace DB
 class ASTCreateFunctionQuery;
 class Context;
 
-class InterpreterCreateFunctionQuery : public IInterpreter, WithMutableContext
+class InterpreterCreateFunctionQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterCreateFunctionQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
+    InterpreterCreateFunctionQuery(const ASTPtr & query_ptr_, ContextPtr context_, bool is_internal_)
+        : WithContext(context_)
+        , query_ptr(query_ptr_)
+        , is_internal(is_internal_) {}
 
     BlockIO execute() override;
 
@@ -23,11 +26,8 @@ private:
     static void getIdentifiers(ASTPtr node, std::set<String> & identifiers);
     static void validateFunctionRecursiveness(ASTPtr node, const String & function_to_create);
 
-private:
     ASTPtr query_ptr;
-
-    /// Is this an internal query - not from the user.
-    bool internal = false;
+    bool is_internal;
 };
 
 }

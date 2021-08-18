@@ -4,7 +4,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/UserDefinedObjectsOnDisk.h>
+#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -15,28 +15,39 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
     extern const int CANNOT_CREATE_RECURSIVE_FUNCTION;
+    // extern const int UNSUPPORTED_OPERATION;
 }
 
 BlockIO InterpreterCreateFunctionQuery::execute()
 {
     getContext()->checkAccess(AccessType::CREATE_FUNCTION);
     FunctionNameNormalizer().visit(query_ptr.get());
-    auto & create_function_query = query_ptr->as<ASTCreateFunctionQuery &>();
-    validateFunction(create_function_query.function_core, create_function_query.function_name);
-    FunctionFactory::instance().registerUserDefinedFunction(create_function_query);
-    if (!internal)
+    auto * create_function_query = query_ptr->as<ASTCreateFunctionQuery>();
+
+    // if (!create_function_query)
+    //     throw Exception(ErrorCodes::UNSUPPORTED_OPERATION, "Expected CREATE FUNCTION query");
+
+    auto & function_name = create_function_query->function_name;
+    validateFunction(create_function_query->function_core, function_name);
+
+    if (is_internal)
+    {
+        FunctionFactory::instance().registerUserDefinedFunction(*create_function_query);
+    }
+    else
     {
         try
         {
-            UserDefinedObjectsOnDisk::instance().storeUserDefinedFunction(getContext(), create_function_query);
+            UserDefinedObjectsLoader::instance().storeObject(getContext(), UserDefinedObjectType::Function, function_name, *query_ptr);
+            FunctionFactory::instance().registerUserDefinedFunction(*create_function_query);
         }
         catch (Exception & e)
         {
-            FunctionFactory::instance().unregisterUserDefinedFunction(create_function_query.function_name);
-            e.addMessage(fmt::format("while storing user defined function {} on disk", backQuote(create_function_query.function_name)));
+            e.addMessage(fmt::format("while storing user defined function {} on disk", backQuote(function_name)));
             throw;
         }
     }
+
     return {};
 }
 
@@ -54,11 +65,7 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
     for (const auto & identifier : identifiers_in_body)
     {
         if (!arguments.contains(identifier))
-        {
-            WriteBufferFromOwnString s;
-            s << "Identifier '" << identifier << "' does not exist in arguments";
-            throw Exception(s.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
-        }
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier {} does not exist in arguments", backQuote(identifier));
     }
 
     validateFunctionRecursiveness(function_body, name);
@@ -82,15 +89,10 @@ void InterpreterCreateFunctionQuery::validateFunctionRecursiveness(ASTPtr node, 
     {
         auto function_name_opt = tryGetFunctionName(child);
         if (function_name_opt && function_name_opt.value() == function_to_create)
-            throw Exception("You cannot create recursive function", ErrorCodes::CANNOT_CREATE_RECURSIVE_FUNCTION);
+            throw Exception(ErrorCodes::CANNOT_CREATE_RECURSIVE_FUNCTION, "You cannot create recursive function");
 
         validateFunctionRecursiveness(child, function_to_create);
     }
-}
-
-void InterpreterCreateFunctionQuery::setInternal(bool internal_)
-{
-    internal = internal_;
 }
 
 }
