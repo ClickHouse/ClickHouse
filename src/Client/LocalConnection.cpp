@@ -1,5 +1,6 @@
 #include "LocalConnection.h"
 #include <Interpreters/executeQuery.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
@@ -70,25 +71,79 @@ void LocalConnection::sendQuery(
     query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
     /// query_context->setCurrentDatabase(default_database);
 
+    /// Send structure of columns to client for function input()
+    query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
+    {
+        if (context != query_context)
+            throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
+
+        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
+        state.need_receive_data_for_input = true;
+
+        /// Send ColumnsDescription for input storage.
+        // if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
+        //     && query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+        // {
+        //     sendTableColumns(metadata_snapshot->getColumns());
+        // }
+
+        /// Send block to the client - input storage structure.
+        state.input_header = metadata_snapshot->getSampleBlock();
+        next_packet_type = Protocol::Server::Data;
+        state.block = state.input_header;
+    });
+
     state.query_id = query_id_;
     state.query = query_;
 
-    state.io = executeQuery(state.query, query_context, false, state.stage, false);
+    std::cerr << "\n\nQuery: " << state.query << std::endl;
+    state.io = executeQuery(state.query, query_context, false, state.stage, true);
     if (state.io.out)
     {
         state.need_receive_data_for_insert = true;
-        /// processInsertQuery();
+        processInsertQuery();
+        std::cerr << "\n\nProcess insert query\n\n";
     }
     else if (state.io.pipeline.initialized())
     {
+        std::cerr << "\n\nProcess query with processors\n\n";
         state.executor = std::make_unique<PullingAsyncPipelineExecutor>(state.io.pipeline);
     }
     else if (state.io.in)
     {
+        std::cerr << "\n\nProcess query with streams\n\n";
         state.async_in = std::make_unique<AsynchronousBlockInputStream>(state.io.in);
         state.async_in->readPrefix();
     }
 }
+
+void LocalConnection::processInsertQuery()
+{
+    state.io.out->writePrefix();
+    next_packet_type = Protocol::Server::Data;
+    state.block = state.io.out->getHeader();
+}
+
+
+void LocalConnection::sendData(const Block & block, const String &, bool)
+{
+    if (block)
+    {
+        if (state.need_receive_data_for_input)
+        {
+            std::cerr << "\n\nInput table function\n\n";
+            /// 'input' table function.
+            state.block_for_input = block;
+        }
+        else
+        {
+            std::cerr << "\n\nWritten block\n\n";
+            /// INSERT query.
+            state.io.out->write(block);
+        }
+    }
+}
+
 
 void LocalConnection::sendCancel()
 {
@@ -132,6 +187,7 @@ void LocalConnection::finishQuery()
     // sendProgress();
     state.io.onFinish();
     query_context.reset();
+    // state.reset();
 }
 
 bool LocalConnection::poll(size_t)

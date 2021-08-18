@@ -42,6 +42,18 @@ protected:
     void initLogsOutputStream();
     void sendExternalTables(ASTPtr parsed_query);
     virtual void connect() = 0;
+    void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query);
+    void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
+    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
+    void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
+    void sendDataFrom(ReadBuffer & buf, Block & sample,
+                      const ColumnsDescription & columns_description, ASTPtr parsed_query);
+    bool receiveEndOfQuery();
+    void receiveLogs(ASTPtr parsed_query);
+    void writeFinalProgress();
+    void processSingleQuery(const String & full_query);
+    bool processMultiQuery(const String & all_queries_text);
+
 
     /*
      * Run interactive or non-interactive mode. Depends on:
@@ -58,14 +70,14 @@ protected:
     /*
      * Method to implement multi-query processing.
      * Must make some preparation and then call processMultiQueryImpl. Afterwards it might execute some finishing code.
-    **/
     virtual bool processMultiQuery(const String & all_queries_text) = 0;
+    **/
 
     /*
      * Method to implement single-query processing.
      * Must make some preparation and then call processSingleQueryImpl. Afterwards it might execute some finishing code.
-    **/
     virtual void processSingleQuery(const String & query) = 0;
+    **/
 
     virtual bool processWithFuzzing(const String &)
     {
@@ -88,16 +100,6 @@ protected:
     **/
     void processSingleQueryImpl(const String & query, const String & query_to_execute, ASTPtr parsed_query,
                                 std::optional<bool> echo_query_ = {}, bool report_error = false);
-    /*
-     * Just execute a single query.
-     * full_query - current query as it was given to the client.
-     * parsed_query - parsed query (used to determine some settings e.g. format, output file).
-     * query_to_execute - current query as it will be executed by server.
-     *                    (It may differ from the full query for INSERT queries, for which the
-     *                    data that follows the query is stripped and sent separately.)
-    **/
-    virtual void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) = 0;
-
 
     virtual void reportQueryError(const String & query) const = 0;
 
@@ -235,6 +237,12 @@ protected:
 
     /// External tables info.
     std::list<ExternalTable> external_tables;
+    String current_profile;
+
+    size_t format_max_block_size = 0; /// Max block size for console output.
+    String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
+    size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
+    size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
 };
 

@@ -257,74 +257,45 @@ void LocalServer::checkInterruptListener()
 }
 
 
-void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
-{
-    // ReadBufferFromString read_buf(query_to_execute);
-    // WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
-
-    cancelled = false;
-
-    /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
-    /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
-    /// first exception or whether we need to even rethrow it because there is --ignore-error.
-    if (!ignore_error)
-        local_server_exception.reset();
-
-    std::function<void(WriteBuffer & out, size_t result_rows)> flush_buffer_func;
-    if (need_render_progress)
-    {
-        flush_buffer_func = [&](WriteBuffer & out, size_t result_rows)
-        {
-            written_first_block = true;
-            processed_rows = result_rows;
-
-            if (need_render_progress)
-                progress_indication.clearProgressOutput();
-
-            out.next();
-
-            /// Restore progress bar after data block.
-            if (need_render_progress)
-                progress_indication.writeProgress();
-
-            checkInterruptListener();
-        };
-    }
-
-    // if (is_interactive)
-    //     interrupt_listener.emplace();
-
-    SCOPE_EXIT_SAFE({
-        if (interrupt_listener)
-            interrupt_listener.reset();
-    });
-
-    auto process_error = [&]()
-    {
-        if (!ignore_error)
-            throw;
-
-        local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-        have_error = true;
-    };
-
-    try
-    {
-        processOrdinaryQuery(query_to_execute, parsed_query);
-    }
-    catch (const Exception & e)
-    {
-        if (is_interactive && e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
-            std::cout << "Query was cancelled." << std::endl;
-        else
-            process_error();
-    }
-    catch (...)
-    {
-        process_error();
-    }
-    onEndOfStream();
-}
+// void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
+// {
+//     // ReadBufferFromString read_buf(query_to_execute);
+//     // WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
+//
+//     cancelled = false;
+//
+//     /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
+//     /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
+//     /// first exception or whether we need to even rethrow it because there is --ignore-error.
+//     if (!ignore_error)
+//         local_server_exception.reset();
+//
+//     auto process_error = [&]()
+//     {
+//         if (!ignore_error)
+//             throw;
+//
+//         local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+//         have_error = true;
+//     };
+//
+//     try
+//     {
+//         processOrdinaryQuery(query_to_execute, parsed_query);
+//     }
+//     catch (const Exception & e)
+//     {
+//         if (is_interactive && e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+//             std::cout << "Query was cancelled." << std::endl;
+//         else
+//             process_error();
+//     }
+//     catch (...)
+//     {
+//         process_error();
+//     }
+//     onEndOfStream();
+// }
 
 
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
@@ -379,36 +350,36 @@ void LocalServer::setupUsers()
 }
 
 
-bool LocalServer::processMultiQuery(const String & all_queries_text)
-{
-    auto process_single_query = [&](const String & query_to_execute, const String &, ASTPtr)
-    {
-        try
-        {
-            processSingleQueryImpl(query_to_execute, query_to_execute, nullptr, echo_queries, false);
-        }
-        catch (...)
-        {
-            local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(false), getCurrentExceptionCode());
-            have_error = true;
-        }
-    };
+// bool LocalServer::processMultiQuery(const String & all_queries_text)
+// {
+//     auto process_single_query = [&](const String & query_to_execute, const String &, ASTPtr)
+//     {
+//         try
+//         {
+//             processSingleQueryImpl(query_to_execute, query_to_execute, nullptr, echo_queries, false);
+//         }
+//         catch (...)
+//         {
+//             local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(false), getCurrentExceptionCode());
+//             have_error = true;
+//         }
+//     };
+//
+//     return processMultiQueryImpl(all_queries_text, process_single_query);
+// }
 
-    return processMultiQueryImpl(all_queries_text, process_single_query);
-}
 
-
-void LocalServer::processSingleQuery(const String & full_query)
-{
-    ASTPtr parsed_query;
-    if (is_interactive)
-    {
-        const auto * this_query_begin = full_query.data();
-        parsed_query = parseQuery(this_query_begin, full_query.data() + full_query.size(), false);
-    }
-
-    processSingleQueryImpl(full_query, full_query, parsed_query, echo_queries);
-}
+// void LocalServer::processSingleQuery(const String & full_query)
+// {
+//     ASTPtr parsed_query;
+//     if (is_interactive)
+//     {
+//         const auto * this_query_begin = full_query.data();
+//         parsed_query = parseQuery(this_query_begin, full_query.data() + full_query.size(), false);
+//     }
+//
+//     processSingleQueryImpl(full_query, full_query, parsed_query, echo_queries);
+// }
 
 
 String LocalServer::getQueryTextPrefix()
@@ -570,6 +541,13 @@ void LocalServer::processConfig()
         format = config().getString("format", "Vertical");
     else
         format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
+
+    insert_format = "Values";
+    /// Setting value from cmd arg overrides one from config
+    if (global_context->getSettingsRef().max_insert_block_size.changed)
+        insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
+    else
+        insert_format_max_block_size = config().getInt("insert_format_max_block_size", global_context->getSettingsRef().max_insert_block_size);
 
     /// Skip networking
 

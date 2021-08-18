@@ -41,14 +41,7 @@ protected:
         connection = std::make_unique<LocalConnection>(global_context);
     }
 
-    void processSingleQuery(const String & full_query) override;
-
-    bool processMultiQuery(const String & all_queries_text) override;
-
-
     void reportQueryError(const String & query) const override;
-
-    void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
 
     String getQueryTextPrefix() override;
 
