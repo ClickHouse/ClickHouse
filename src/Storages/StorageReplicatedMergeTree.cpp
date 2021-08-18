@@ -3968,7 +3968,6 @@ void StorageReplicatedMergeTree::startup()
         /// If we don't separate create/start steps, race condition will happen
         /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
         background_executor.start();
-        background_moves_executor.start();
         startBackgroundMovesIfNeeded();
 
         part_moves_between_shards_orchestrator.start();
@@ -6600,7 +6599,7 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         || action_type == ActionLocks::PartsFetch || action_type == ActionLocks::PartsSend
         || action_type == ActionLocks::ReplicationQueue)
         background_executor.triggerTask();
-    if (action_type == ActionLocks::PartsMove)
+    else if (action_type == ActionLocks::PartsMove)
         background_moves_executor.triggerTask();
 }
 

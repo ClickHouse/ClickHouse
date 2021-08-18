@@ -271,7 +271,10 @@ public:
         else
             background_executor.triggerTask();
 
-        background_moves_executor.triggerTask();
+        if (delay)
+            background_moves_executor.triggerTaskWithDelay();
+        else
+            background_moves_executor.triggerTask();
     }
 
 private:

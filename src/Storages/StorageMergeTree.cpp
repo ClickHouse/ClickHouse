@@ -118,7 +118,6 @@ void StorageMergeTree::startup()
     try
     {
         background_executor.start();
-        background_moves_executor.start();
         startBackgroundMovesIfNeeded();
     }
     catch (...)
@@ -1524,7 +1523,7 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge ||  action_type == ActionLocks::PartsTTLMerge)
         background_executor.triggerTask();
-    if (action_type == ActionLocks::PartsMove)
+    else if (action_type == ActionLocks::PartsMove)
         background_moves_executor.triggerTask();
 }
 
