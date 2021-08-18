@@ -334,6 +334,10 @@ if (USE_NLP)
     add_subdirectory(lemmagen-c-cmake)
 endif()
 
+if (USE_BZIP2)
+    add_subdirectory(bzip2-cmake)
+endif()
+
 if (USE_SQLITE)
     add_subdirectory(sqlite-cmake)
 endif()

@@ -455,7 +455,7 @@ UUID IAccessStorage::login(
         if (!replace_exception_with_cannot_authenticate)
             throw;
 
-        tryLogCurrentException(getLogger(), credentials.getUserName() + ": Authentication failed");
+        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
         throwCannotAuthenticate(credentials.getUserName());
     }
 }
