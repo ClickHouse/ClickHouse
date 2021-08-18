@@ -257,34 +257,7 @@ int Client::mainImpl()
                 }
             }
 
-            auto try_process_query_text = [&](std::function<bool()> func)
-            {
-                try
-                {
-                    return func();
-                }
-                catch (const Exception & e)
-                {
-                    /// We don't need to handle the test hints in the interactive mode.
-                    bool print_stack_trace = config().getBool("stacktrace", false);
-                    std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-
-                    client_exception = std::make_unique<Exception>(e);
-                }
-
-                if (client_exception)
-                {
-                    /// client_exception may have been set above or elsewhere.
-                    /// Client-side exception during query execution can result in the loss of
-                    /// sync in the connection protocol.
-                    /// So we reconnect and allow to enter the next query.
-                    reconnectIfNeeded();
-                }
-
-                return true;
-            };
-
-            runInteractive(try_process_query_text);
+            runInteractive();
         }
         else
         {

@@ -48,6 +48,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
+#include <IO/CompressionMethod.h>
 
 #include <DataStreams/NullBlockOutputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
@@ -174,12 +175,6 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
         data.emplace_back(table.getData(global_context));
 
     connection->sendExternalTablesData(data);
-}
-
-
-void ClientBase::writeFinalProgress()
-{
-    progress_indication.writeFinalProgress();
 }
 
 
@@ -664,7 +659,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 {
     /// Process the query that requires transferring data blocks to the server.
     const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
-    if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
+    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
         throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
     connection->sendQuery(
@@ -697,8 +692,24 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
     if (!parsed_insert_query)
         return;
+    if (parsed_insert_query->infile)
+    {
+        const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
+        const auto in_file = in_file_node.value.safeGet<std::string>();
 
-    if (parsed_insert_query->data)
+        auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, ""));
+
+        try
+        {
+            sendDataFrom(*in_buffer, sample, columns_description, parsed_query);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("data for INSERT was parsed from file");
+            throw;
+        }
+    }
+    else if (parsed_insert_query->data)
     {
         /// Send data contained in the query.
         ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
@@ -923,8 +934,8 @@ void ClientBase::executeSingleQuery(const String & query_to_execute, ASTPtr pars
 }
 
 
-
-void ClientBase::processSingleQueryImpl(const String & full_query, const String & query_to_execute, ASTPtr parsed_query, std::optional<bool> echo_query_, bool report_error)
+void ClientBase::processSingleQueryImpl(const String & full_query, const String & query_to_execute,
+        ASTPtr parsed_query, std::optional<bool> echo_query_, bool report_error)
 {
     resetOutput();
     have_error = false;
@@ -1264,7 +1275,7 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
 }
 
 
-void ClientBase::runInteractive(std::function<bool(std::function<bool()>)> try_process_query_text)
+void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
         throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
@@ -1358,8 +1369,29 @@ void ClientBase::runInteractive(std::function<bool(std::function<bool()>)> try_p
             has_vertical_output_suffix = true;
         }
 
-        if (!try_process_query_text([&]() -> bool { return processQueryText(input); }))
-            break;
+        try
+        {
+            if (!processQueryText(input))
+                break;
+        }
+        catch (const Exception & e)
+        {
+            /// We don't need to handle the test hints in the interactive mode.
+            bool print_stack_trace = config().getBool("stacktrace", false);
+            std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+
+            client_exception = std::make_unique<Exception>(e);
+        }
+
+        if (client_exception)
+        {
+            /// client_exception may have been set above or elsewhere.
+            /// Client-side exception during query execution can result in the loss of
+            /// sync in the connection protocol.
+            /// So we reconnect and allow to enter the next query.
+            if (!connection->checkConnected())
+                connect();
+        }
     }
     while (true);
 

@@ -67,8 +67,12 @@ void LocalConnection::sendQuery(
     bool)
 {
     query_context = Context::createCopy(getContext());
+    query_context->makeSessionContext();
     query_context->makeQueryContext();
+    query_context->setUser("default", "", Poco::Net::SocketAddress{});
+    query_context->setCurrentQueryId("");
     query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+
     /// query_context->setCurrentDatabase(default_database);
 
     /// Send structure of columns to client for function input()
@@ -96,22 +100,18 @@ void LocalConnection::sendQuery(
     state.query_id = query_id_;
     state.query = query_;
 
-    std::cerr << "\n\nQuery: " << state.query << std::endl;
     state.io = executeQuery(state.query, query_context, false, state.stage, true);
     if (state.io.out)
     {
         state.need_receive_data_for_insert = true;
         processInsertQuery();
-        std::cerr << "\n\nProcess insert query\n\n";
     }
     else if (state.io.pipeline.initialized())
     {
-        std::cerr << "\n\nProcess query with processors\n\n";
         state.executor = std::make_unique<PullingAsyncPipelineExecutor>(state.io.pipeline);
     }
     else if (state.io.in)
     {
-        std::cerr << "\n\nProcess query with streams\n\n";
         state.async_in = std::make_unique<AsynchronousBlockInputStream>(state.io.in);
         state.async_in->readPrefix();
     }
@@ -131,13 +131,11 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
     {
         if (state.need_receive_data_for_input)
         {
-            std::cerr << "\n\nInput table function\n\n";
             /// 'input' table function.
             state.block_for_input = block;
         }
         else
         {
-            std::cerr << "\n\nWritten block\n\n";
             /// INSERT query.
             state.io.out->write(block);
         }

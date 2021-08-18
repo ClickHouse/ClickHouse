@@ -226,78 +226,6 @@ void LocalServer::loadSuggestionData(Suggest & suggest)
 }
 
 
-void LocalServer::checkInterruptListener()
-{
-    if (!interrupt_listener)
-        return;
-    assert(is_interactive);
-
-    if (interrupt_listener->check() && !cancelled && interrupt_listener_mutex.try_lock())
-    {
-        try
-        {
-            progress_indication.clearProgressOutput();
-            std::cout << "Cancelling query." << std::endl;
-
-            auto * process_list_elem = query_context->getProcessListElement();
-            if (process_list_elem)
-                cancelled = (process_list_elem->cancelQuery(true) == CancellationCode::CancelSent);
-            else
-                std::cerr << "Cannot cancel query: no process list element.";
-
-            interrupt_listener->unblock();
-        }
-        catch (...)
-        {
-            cancelled = false;
-        }
-
-        interrupt_listener_mutex.unlock();
-    }
-}
-
-
-// void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
-// {
-//     // ReadBufferFromString read_buf(query_to_execute);
-//     // WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
-//
-//     cancelled = false;
-//
-//     /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
-//     /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
-//     /// first exception or whether we need to even rethrow it because there is --ignore-error.
-//     if (!ignore_error)
-//         local_server_exception.reset();
-//
-//     auto process_error = [&]()
-//     {
-//         if (!ignore_error)
-//             throw;
-//
-//         local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-//         have_error = true;
-//     };
-//
-//     try
-//     {
-//         processOrdinaryQuery(query_to_execute, parsed_query);
-//     }
-//     catch (const Exception & e)
-//     {
-//         if (is_interactive && e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
-//             std::cout << "Query was cancelled." << std::endl;
-//         else
-//             process_error();
-//     }
-//     catch (...)
-//     {
-//         process_error();
-//     }
-//     onEndOfStream();
-// }
-
-
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {
     std::stringstream ss{std::string{xml_data}};    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -382,6 +310,47 @@ void LocalServer::setupUsers()
 // }
 
 
+// void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
+// {
+//     // ReadBufferFromString read_buf(query_to_execute);
+//     // WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
+//
+//     cancelled = false;
+//
+//     /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
+//     /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
+//     /// first exception or whether we need to even rethrow it because there is --ignore-error.
+//     if (!ignore_error)
+//         local_server_exception.reset();
+//
+//     auto process_error = [&]()
+//     {
+//         if (!ignore_error)
+//             throw;
+//
+//         local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+//         have_error = true;
+//     };
+//
+//     try
+//     {
+//         processOrdinaryQuery(query_to_execute, parsed_query);
+//     }
+//     catch (const Exception & e)
+//     {
+//         if (is_interactive && e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+//             std::cout << "Query was cancelled." << std::endl;
+//         else
+//             process_error();
+//     }
+//     catch (...)
+//     {
+//         process_error();
+//     }
+//     onEndOfStream();
+// }
+
+
 String LocalServer::getQueryTextPrefix()
 {
     return getInitialCreateTableQuery();
@@ -391,9 +360,9 @@ String LocalServer::getQueryTextPrefix()
 void LocalServer::reportQueryError(const String & query) const
 {
     /// For non-interactive mode process exception only when all queries were executed.
-    if (local_server_exception && is_interactive)
+    if (server_exception && is_interactive)
     {
-        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, local_server_exception->message());
+        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, server_exception->message());
         fmt::print(stderr, "\n");
     }
 }
@@ -419,60 +388,24 @@ try
 
     processConfig();
 
-    /// we can't mutate global_context (can lead to races, as it was already passed to some background threads)
-    /// so we can't reuse it safely as a query context and need a copy here
     query_context = Context::createCopy(global_context);
-    query_context->makeSessionContext();
-    query_context->makeQueryContext();
-    query_context->setUser("default", "", Poco::Net::SocketAddress{});
-    query_context->setCurrentQueryId("");
-
     applyCmdSettings(query_context);
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(query_context);
-
-    if (need_render_progress)
-    {
-        /// Set progress callback, which can be run from multiple threads.
-        query_context->setProgressCallback([&](const Progress & value)
-        {
-            checkInterruptListener();
-            onProgress(value);
-        });
-
-        /// Set callback for file processing progress.
-        progress_indication.setFileProgressCallback(query_context);
-    }
 
     connect();
 
     if (is_interactive)
     {
         std::cout << std::endl;
-
-        auto try_process_query_text = [&](std::function<bool()> func)
-        {
-            try
-            {
-                return func();
-            }
-            catch (const Exception & e)
-            {
-                bool print_stack_trace = config().getBool("stacktrace", false);
-                std::cerr << "Received exception:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-            }
-
-            return true;
-        };
-
-        runInteractive(try_process_query_text);
+        runInteractive();
     }
     else
     {
         runNonInteractive();
 
-        if (local_server_exception)
-            local_server_exception->rethrow();
+        if (server_exception)
+            server_exception->rethrow();
     }
 
     global_context->shutdown();
