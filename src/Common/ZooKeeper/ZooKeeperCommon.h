@@ -45,6 +45,8 @@ struct ZooKeeperRequest : virtual Request
     /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
     bool probably_sent = false;
 
+    bool restored_from_zookeeper_log = false;
+
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
     virtual ~ZooKeeperRequest() override = default;
@@ -172,6 +174,9 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
 
 struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
 {
+    /// used only during restore from zookeeper log
+    int32_t parent_cversion = -1;
+
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
@@ -183,9 +188,6 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 
     size_t bytesSize() const override { return CreateRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
-
-    /// During recovery from log we don't rehash ACLs
-    bool need_to_hash_acls = true;
 };
 
 struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
@@ -362,8 +364,6 @@ struct ZooKeeperSetACLRequest final : SetACLRequest, ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 
     size_t bytesSize() const override { return SetACLRequest::bytesSize() + sizeof(xid); }
-
-    bool need_to_hash_acls = true;
 };
 
 struct ZooKeeperSetACLResponse final : SetACLResponse, ZooKeeperResponse
