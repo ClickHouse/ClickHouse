@@ -39,7 +39,7 @@
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
-#include <Common/ServerUUID.h>
+#include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>

@@ -1,4 +1,4 @@
-#include <Common/ServerUUID.h>
+#include <Core/ServerUUID.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
