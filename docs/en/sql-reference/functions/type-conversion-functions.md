@@ -1342,7 +1342,7 @@ Result:
 
 ## snowflakeToDateTime {#snowflakeToDateTime}
 
-extract time from snowflake id as DateTime format.
+Extract time from snowflake id as DateTime format.
 
 **Syntax**
 
@@ -1378,7 +1378,7 @@ Result:
 
 ## snowflakeToDateTime64 {#snowflakeToDateTime64}
 
-extract time from snowflake id as DateTime64 format.
+Extract time from snowflake id as DateTime64 format.
 
 **Syntax**
 
@@ -1414,7 +1414,7 @@ Result:
 
 ## dateTimeToSnowflake {#dateTimeToSnowflake}
 
-convert DateTime to the first snowflake id at the giving time.
+Convert DateTime to the first snowflake id at the giving time.
 
 **Syntax**
 
@@ -1452,7 +1452,7 @@ Result:
 
 ## dateTime64ToSnowflake {#dateTime64ToSnowflake}
 
-convert DateTime64 to the first snowflake id at the giving time.
+Convert DateTime64 to the first snowflake id at the giving time.
 
 **Syntax**
 
