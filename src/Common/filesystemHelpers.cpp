@@ -27,7 +27,6 @@ namespace ErrorCodes
     extern const int CANNOT_STATVFS;
     extern const int PATH_ACCESS_DENIED;
     extern const int CANNOT_CREATE_FILE;
-    extern const int BAD_ARGUMENTS;
 }
 
 
