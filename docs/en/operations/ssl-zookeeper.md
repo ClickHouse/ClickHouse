@@ -13,6 +13,7 @@ You have two options how to handle custom certificate verification on the ClickH
 
 Client section in `config.xml` will look like:
 
+``` xml
 <client>
     <certificateFile>/etc/clickhouse-server/client.crt</certificateFile>
     <privateKeyFile>/etc/clickhouse-server/client.key</privateKeyFile>
@@ -25,16 +26,18 @@ Client section in `config.xml` will look like:
         <name>RejectCertificateHandler</name>
     </invalidCertificateHandler>
 </client>
+```
 
-2. Add `zookeeper.crt` to trusted certificates:
+2. Add `zookeeper.crt` to trusted certificates.
 
-```bash
+``` bash
 sudo cp zookeeper.crt /usr/local/share/ca-certificates/zookeeper.crt
 sudo update-ca-certificates
 ```
 
 Client section in `config.xml` will look like:
 
+``` xml
 <client>
     <certificateFile>/etc/clickhouse-server/client.crt</certificateFile>
     <privateKeyFile>/etc/clickhouse-server/client.key</privateKeyFile>
@@ -46,9 +49,11 @@ Client section in `config.xml` will look like:
         <name>RejectCertificateHandler</name>
     </invalidCertificateHandler>
 </client>
+```
 
 Add Zookeeper to ClickHouse config with some cluster and macros:
 
+``` xml
 <yandex>
     <zookeeper>
         <node>
@@ -58,6 +63,7 @@ Add Zookeeper to ClickHouse config with some cluster and macros:
         </node>
     </zookeeper>
 </yandex>
+```
 
 Start `clickhouse-server`. In logs you should see:
 
@@ -69,7 +75,7 @@ Prefix `secure://` indicates that connection is secured by SSL.
 
 To ensure traffic is encrypted run `tcpdump` on secured port:
 
-```text
+```bash
 tcpdump -i any dst port 2281 -nnXS
 ```
 
