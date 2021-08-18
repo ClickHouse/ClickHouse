@@ -913,7 +913,6 @@
         <database>system</database>
         <table>opentelemetry_span_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <settings>ttl_only_drop_parts=1</settings>
     </opentelemetry_span_log>
 
 
