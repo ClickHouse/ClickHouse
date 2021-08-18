@@ -193,6 +193,13 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
 
+    LOG_DEBUG(log, "Right keys: [{}] (required: [{}]), left keys: [{}]",
+              fmt::join(key_names_right, ", "),
+              fmt::join(required_right_keys.getNames(), ", "),
+              fmt::join(table_join->keyNamesLeft(), ", "));
+
+    LOG_DEBUG(log, "Columns to add: [{}]", sample_block_with_columns_to_add.dumpStructure());
+
     std::tie(condition_mask_column_name_left, condition_mask_column_name_right) = table_join->joinConditionColumnNames();
 
     JoinCommon::removeLowCardinalityInplace(right_table_keys);

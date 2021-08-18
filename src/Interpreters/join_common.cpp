@@ -500,6 +500,9 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
     , saved_block_sample(filler->getEmptyBlock())
     , result_sample_block(materializeBlock(result_sample_block_))
 {
+    LOG_DEBUG(&Poco::Logger::get("NotJoinedBlocks"), "saved_block_sample {}",saved_block_sample.dumpStructure());
+    LOG_DEBUG(&Poco::Logger::get("NotJoinedBlocks"), "result_sample_block {}",result_sample_block.dumpStructure());
+
     for (size_t left_pos = 0; left_pos < left_columns_count; ++left_pos)
     {
         /// We need right 'x' for 'RIGHT JOIN ... USING(x)'
@@ -621,23 +624,25 @@ void NotJoinedBlocks::copySameKeys(Block & block) const
 }
 
 Block NotJoinedBlocks::read()
-
 {
-    Block right_block = filler->getEmptyBlock();
-    MutableColumns columns_right = right_block.cloneEmptyColumns();
-    size_t rows_added = filler->fillColumns(columns_right);
-    if (rows_added == 0)
-        return {};
+    Block result_block = result_sample_block.cloneEmpty();
+    {
+        Block right_block = filler->getEmptyBlock();
+        MutableColumns columns_right = right_block.cloneEmptyColumns();
+        size_t rows_added = filler->fillColumns(columns_right);
+        if (rows_added == 0)
+            return {};
 
-    addLeftColumns(right_block, rows_added);
-    addRightColumns(right_block, columns_right);
-    copySameKeys(right_block);
-    correctLowcardAndNullability(right_block);
+        addLeftColumns(result_block, rows_added);
+        addRightColumns(result_block, columns_right);
+    }
+    copySameKeys(result_block);
+    correctLowcardAndNullability(result_block);
 
 #ifndef NDEBUG
-    assertBlocksHaveEqualStructure(right_block, result_sample_block, "NotJoinedBlocks");
+    assertBlocksHaveEqualStructure(result_block, result_sample_block, "NotJoinedBlocks");
 #endif
-    return right_block;
+    return result_block;
 }
 
 }
