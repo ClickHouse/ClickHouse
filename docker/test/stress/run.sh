@@ -75,7 +75,7 @@ function start()
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
-        if [ "$counter" -gt 120 ]
+        if [ "$counter" -gt 240 ]
         then
             echo "Cannot start clickhouse-server"
             cat /var/log/clickhouse-server/stdout.log
