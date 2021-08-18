@@ -75,7 +75,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
 bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
 {
-    return set_of_modes.contains(Mode::DISTINCT) || set_of_modes.contains(Mode::INTERSECT) || set_of_modes.contains(Mode::EXCEPT);
+    return set_of_modes.contains(Mode::DISTINCT);
 }
 
 }
