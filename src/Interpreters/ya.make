@@ -91,6 +91,7 @@ SRCS(
     InterpreterKillQueryQuery.cpp
     InterpreterOptimizeQuery.cpp
     InterpreterRenameQuery.cpp
+    InterpreterSelectIntersectExceptQuery.cpp
     InterpreterSelectQuery.cpp
     InterpreterSelectWithUnionQuery.cpp
     InterpreterSetQuery.cpp
@@ -144,6 +145,7 @@ SRCS(
     RewriteFunctionToSubcolumnVisitor.cpp
     RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
+    SelectIntersectExceptQueryVisitor.cpp
     Set.cpp
     SetVariants.cpp
     SortedBlocksWriter.cpp
@@ -159,7 +161,9 @@ SRCS(
     TranslateQualifiedNamesVisitor.cpp
     TreeOptimizer.cpp
     TreeRewriter.cpp
-    UserDefinedObjectsOnDisk.cpp
+    UserDefinedFunctionFactory.cpp
+    UserDefinedFunctionsVisitor.cpp
+    UserDefinedObjectsLoader.cpp
     WindowDescription.cpp
     ZooKeeperLog.cpp
     addMissingDefaults.cpp
