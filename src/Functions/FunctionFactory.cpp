@@ -21,8 +21,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FUNCTION;
     extern const int LOGICAL_ERROR;
-    extern const int FUNCTION_ALREADY_EXISTS;
-    extern const int CANNOT_DROP_SYSTEM_FUNCTION;
 }
 
 const String & getFunctionCanonicalNameIfAny(const String & name)
