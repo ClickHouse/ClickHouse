@@ -26,34 +26,38 @@ The engine provide to import and export data to SQLite and query SQLite tables d
 -   `db_path` — Path to SQLite file with the database.
 -   `table` — The SQLite table name.
 
-## Specifics and recommendations {#specifics-and-recommendations}
-
-Algorithms
-Specifics of read and write processes
-Examples of tasks
-Recommendations for usage
-Specifics of data storage
-
 ## Usage Example {#usage-example}
 
-The example must show usage and use cases. The following text contains the recommended parts of this section.
+Show query creating the SQLite table:
 
-Input table:
-
-``` text
-```
-
-Query:
-
-``` sql
+```sql
+SHOW CREATE TABLE sqlite_db.table2;
 ```
 
 Result:
 
 ``` text
+CREATE TABLE SQLite.table2
+( 
+    `col1` Nullable(Int32), 
+    `col2` Nullable(String)
+) 
+ENGINE = SQLite('sqlite.db','table2');
 ```
 
-Follow up with any text to clarify the example.
+Returns the data from the table:
+
+``` sql
+SELECT * FROM sqlite_db.table2 ORDER BY col1;
+```
+
+```text
+┌─col1─┬─col2──┐
+│    1 │ text1 │
+│    2 │ text2 │
+│    3 │ text3 │
+└──────┴───────┘
+```
 
 **See Also**
 

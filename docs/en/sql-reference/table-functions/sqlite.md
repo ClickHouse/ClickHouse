@@ -24,21 +24,20 @@ Allows to performed queries on data that is stored in the `SQLite` database.
 
 **Example**
 
-The example must show usage and/or a use cases. The following text contains recommended parts of an example.
-
-Input table (Optional):
-
-``` text
-```
-
 Query:
 
 ``` sql
+SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 ```
 
 Result:
 
 ``` text
+┌─col1──┬─col2─┐
+│ line1	│    1 │
+│ line2	│    2 │
+│ line3	│    3 │
+└───────┴──────┘
 ```
 
 **See Also** 
