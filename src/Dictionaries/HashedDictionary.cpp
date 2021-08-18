@@ -6,7 +6,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Dictionaries//DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
@@ -367,10 +367,12 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        auto stream = source_ptr->loadUpdatedAll();
-        stream->readPrefix();
+        QueryPipeline pipeline;
+        pipeline.init(source_ptr->loadUpdatedAll());
 
-        while (const auto block = stream->read())
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
+        while (executor.pull(block))
         {
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
@@ -383,15 +385,14 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
-        stream->readSuffix();
     }
     else
     {
-        auto stream = source_ptr->loadUpdatedAll();
-        mergeBlockWithStream<dictionary_key_type>(
+        auto pipe = source_ptr->loadUpdatedAll();
+        mergeBlockWithPipe<dictionary_key_type>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            stream);
+            std::move(pipe));
     }
 
     if (update_field_loaded_block)
@@ -560,15 +561,15 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
     {
         std::atomic<size_t> new_size = 0;
 
-        BlockInputStreamPtr stream;
+        QueryPipeline pipeline;
         if (configuration.preallocate)
-            stream = source_ptr->loadAllWithSizeHint(&new_size);
+            pipeline.init(source_ptr->loadAllWithSizeHint(&new_size));
         else
-            stream = source_ptr->loadAll();
+            pipeline.init(source_ptr->loadAll());
 
-        stream->readPrefix();
-
-        while (const auto block = stream->read())
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
+        while (executor.pull(block))
         {
             if (configuration.preallocate && new_size)
             {
@@ -584,8 +585,6 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 
             blockToAttributes(block);
         }
-
-        stream->readSuffix();
     }
     else
         updateData();
@@ -637,7 +636,7 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
-BlockInputStreamPtr HashedDictionary<dictionary_key_type, sparse>::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_names, size_t max_block_size) const
 {
     PaddedPODArray<HashedDictionary::KeyType> keys;
 
@@ -667,9 +666,9 @@ BlockInputStreamPtr HashedDictionary<dictionary_key_type, sparse>::getBlockInput
     }
 
     if constexpr (dictionary_key_type == DictionaryKeyType::simple)
-        return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, std::move(keys), column_names);
+        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
     else
-        return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, keys, column_names);
+        return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), keys, column_names), max_block_size));
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>

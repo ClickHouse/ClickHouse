@@ -1,4 +1,4 @@
-0.10000000000000000000000000000000000000
+0.1
 SELECT CAST(\'0.1\', \'Decimal(38, 38)\') AS c
 [1,2,3]
 SELECT CAST(\'[1, 2, 3]\', \'Array(UInt32)\') AS c
@@ -27,7 +27,7 @@ SELECT
 FROM numbers(1)
 1970-01-11
 SELECT CAST((((0 + 1) + 2) + 3) + 4, \'Date\') AS c
-0.6000
+0.6
 SELECT CAST((CAST(\'0.1\', \'Decimal(4, 4)\') + CAST(\'0.2\', \'Decimal(4, 4)\')) + CAST(\'0.3\', \'Decimal(4, 4)\'), \'Decimal(4, 4)\') AS c
 [1]
 [[1,2,3],[],[1]]
