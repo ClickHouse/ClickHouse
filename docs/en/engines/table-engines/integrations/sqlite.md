@@ -5,18 +5,16 @@ toc_title: SQLite
 
 # SQLite {#sqlite}
 
-The engine provide to import and export data to SQLite and query SQLite tables directly in ClickHouse.
+The engine provides to import and export data to SQLite and query SQLite tables directly in ClickHouse.
 
 ## Creating a Table {#creating-a-table}
 
 ``` sql
-    CREATE TABLE [IF NOT EXISTS] [db.]table_name
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name 
     (
-        name1 [type1],
-        name2 [type2],
-        ...
-    ) 
-    ENGINE = SQLite('db_path', 'table')
+        name1 [type1], 
+        name2 [type2], ...
+    ) ENGINE = SQLite('db_path', 'table')
 ```
 
 **Engine Parameters**
@@ -33,8 +31,6 @@ Show query creating the SQLite table:
 ```sql
 SHOW CREATE TABLE sqlite_db.table2;
 ```
-
-Result:
 
 ``` text
 CREATE TABLE SQLite.table2
@@ -61,4 +57,4 @@ SELECT * FROM sqlite_db.table2 ORDER BY col1;
 
 **See Also**
 
--   [The `sqlite` table function](../../../sql-reference/table-functions/sqlite.md)
+-   [sqlite](../../../sql-reference/table-functions/sqlite.md) table function
