@@ -733,7 +733,7 @@ struct FormatImpl<DataTypeDecimal<FieldType>>
     template <typename ReturnType = void>
     static ReturnType execute(const FieldType x, WriteBuffer & wb, const DataTypeDecimal<FieldType> * type, const DateLUTImpl *)
     {
-        writeText(x, type->getScale(), wb);
+        writeText(x, type->getScale(), wb, false);
         return ReturnType(true);
     }
 };
@@ -1454,6 +1454,10 @@ public:
     static constexpr bool to_string_or_fixed_string = std::is_same_v<ToDataType, DataTypeFixedString> ||
                                                       std::is_same_v<ToDataType, DataTypeString>;
 
+    static constexpr bool to_date_or_datetime = std::is_same_v<ToDataType, DataTypeDate> ||
+                                                std::is_same_v<ToDataType, DataTypeDate32> ||
+                                                std::is_same_v<ToDataType, DataTypeDateTime>;
+
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvert>(); }
     static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
 
@@ -1465,6 +1469,11 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        /// TODO: We can make more optimizations here.
+        return !(to_date_or_datetime && isNumber(*arguments[0].type));
+    }
 
     using DefaultReturnTypeGetter = std::function<DataTypePtr(const ColumnsWithTypeAndName &)>;
     static DataTypePtr getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments, const DefaultReturnTypeGetter & getter)
@@ -1789,6 +1798,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -2470,6 +2480,7 @@ public:
 
     bool isDeterministic() const override { return true; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool hasInformationAboutMonotonicity() const override
     {

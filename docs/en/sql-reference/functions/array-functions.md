@@ -952,7 +952,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 
 ## arrayIntersect(arr) {#array-functions-arrayintersect}
 
-Takes multiple arrays, returns an array with elements that are present in all source arrays. Elements order in the resulting array is the same as in the first array.
+Takes multiple arrays, returns an array with elements that are present in all source arrays.
 
 Example:
 

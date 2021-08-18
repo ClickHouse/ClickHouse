@@ -311,12 +311,12 @@ One may execute query after:
   - Individual replica path `/replicas/replica_name/` loss.
 
 Replica attaches locally found parts and sends info about them to Zookeeper.
-Parts present on replica before metadata loss are not re-fetched from other replicas if not being outdated
-(so replica restoration does not mean re-downloading all data over the network).
+Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
 
-Caveat: parts in all states are moved to `detached/` folder. Parts active before data loss (Committed) are attached.
+!!! warning "Warning"
+    Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
 
-#### Syntax
+**Syntax**
 
 ```sql
 SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
@@ -328,11 +328,11 @@ Alternative syntax:
 SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
 ```
 
-#### Example
+**Example**
+
+Creating a table on multiple servers. After the replica's metadata in ZooKeeper is lost, the table will attach as read-only as metadata is missing. The last query needs to execute on every replica.
 
 ```sql
--- Creating table on multiple servers
-
 CREATE TABLE test(n UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
 ORDER BY n PARTITION BY n % 10;
@@ -341,8 +341,14 @@ INSERT INTO test SELECT * FROM numbers(1000);
 
 -- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- root loss.
 
-SYSTEM RESTART REPLICA test; -- Table will attach as readonly as metadata is missing.
-SYSTEM RESTORE REPLICA test; -- Need to execute on every replica, another way: RESTORE REPLICA test ON CLUSTER cluster
+SYSTEM RESTART REPLICA test;
+SYSTEM RESTORE REPLICA test;
+```
+
+Another way:
+
+```sql
+SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
 ```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
