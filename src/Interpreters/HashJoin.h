@@ -322,18 +322,6 @@ public:
     using RawBlockPtr = const Block *;
     using BlockNullmapList = std::deque<std::pair<RawBlockPtr, ColumnPtr>>;
 
-    struct BlockWithFlags
-    {
-        explicit BlockWithFlags(Block && block_)
-            : block(std::move(block_))
-        {}
-
-        Block block;
-        bool empty() const { return !block; }
-    };
-
-    using BlocksWithFlagsList = std::list<BlockWithFlags>;
-
     struct RightTableData
     {
         Type type = Type::EMPTY;
@@ -341,7 +329,7 @@ public:
 
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        BlocksWithFlagsList blocks;
+        BlocksList blocks;
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
