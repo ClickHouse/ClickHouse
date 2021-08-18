@@ -1,5 +1,4 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/UserDefinedFunction.h>
 
 #include <Interpreters/Context.h>
 
@@ -36,7 +35,6 @@ void FunctionFactory::registerFunction(
     Value creator,
     CaseSensitiveness case_sensitiveness)
 {
-    std::lock_guard<std::mutex> guard(mutex);
     if (!functions.emplace(name, creator).second)
         throw Exception("FunctionFactory: the function name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
@@ -79,7 +77,6 @@ FunctionOverloadResolverPtr FunctionFactory::getImpl(
 
 std::vector<std::string> FunctionFactory::getAllNames() const
 {
-    std::lock_guard<std::mutex> guard(mutex);
     std::vector<std::string> res;
     res.reserve(functions.size());
     for (const auto & func : functions)
@@ -98,7 +95,6 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
     ContextPtr context) const
 {
-    std::lock_guard<std::mutex> guard(mutex);
     String name = getAliasToOrName(name_param);
     FunctionOverloadResolverPtr res;
 
@@ -138,50 +134,6 @@ FunctionFactory & FunctionFactory::instance()
 {
     static FunctionFactory ret;
     return ret;
-}
-
-void FunctionFactory::registerUserDefinedFunction(const ASTCreateFunctionQuery & create_function_query)
-{
-    if (hasNameOrAlias(create_function_query.function_name))
-        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function {} already exists", create_function_query.function_name);
-
-    if (AggregateFunctionFactory::instance().isAggregateFunctionName(create_function_query.function_name))
-        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function {} already exists", create_function_query.function_name);
-
-    {
-        std::lock_guard<std::mutex> guard(mutex);
-        user_defined_functions.insert(create_function_query.function_name);
-    }
-    registerFunction(create_function_query.function_name, [create_function_query](ContextPtr context)
-    {
-        auto function = UserDefinedFunction::create(context);
-        function->setName(create_function_query.function_name);
-        function->setFunctionCore(create_function_query.function_core);
-
-        FunctionOverloadResolverPtr res = std::make_unique<FunctionToOverloadResolverAdaptor>(function);
-        return res;
-    }, CaseSensitiveness::CaseSensitive);
-}
-
-void FunctionFactory::unregisterUserDefinedFunction(const String & name)
-{
-    std::lock_guard<std::mutex> guard(mutex);
-    if (functions.contains(name))
-    {
-        if (user_defined_functions.contains(name))
-        {
-            functions.erase(name);
-            user_defined_functions.erase(name);
-            return;
-        } else
-            throw Exception("System functions cannot be dropped", ErrorCodes::CANNOT_DROP_SYSTEM_FUNCTION);
-    }
-
-    auto hints = this->getHints(name);
-    if (!hints.empty())
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}. Maybe you meant: {}", name, toString(hints));
-    else
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown function {}", name);
 }
 
 }

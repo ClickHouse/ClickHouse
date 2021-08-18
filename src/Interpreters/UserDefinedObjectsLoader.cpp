@@ -47,9 +47,10 @@ void UserDefinedObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDef
     auto name_ref = StringRef(name.data(), name.size());
     LOG_DEBUG(log, "Loading user defined object {} from file {}", backQuote(name_ref), path);
 
-    String object_create_query;
     /// There is .sql file with user defined object creation statement.
-    ReadBufferFromFile in(path, 1024);
+    ReadBufferFromFile in(path);
+
+    String object_create_query;
     readStringUntilEOF(object_create_query, in);
 
     try
@@ -119,7 +120,6 @@ void UserDefinedObjectsLoader::storeObject(ContextPtr context, UserDefinedObject
         }
     }
 
-    std::cerr << "UserDefinedObjectsLoader::storeObject " << file_path << std::endl;
     if (std::filesystem::exists(file_path))
         throw Exception(ErrorCodes::OBJECT_ALREADY_STORED_ON_DISK, "User defined object {} already stored on disk", backQuote(file_path));
 
@@ -145,17 +145,16 @@ void UserDefinedObjectsLoader::removeObject(ContextPtr context, UserDefinedObjec
     String dir_path = context->getPath() + "user_defined/";
     LOG_DEBUG(log, "Removing file for user defined object {} from {}", backQuote(object_name), dir_path);
 
-    String file_path_name;
+    std::filesystem::path file_path;
 
     switch (object_type)
     {
         case UserDefinedObjectType::Function:
         {
-            file_path_name = dir_path + "function_" + escapeForFileName(object_name) + ".sql";
+            file_path = dir_path + "function_" + escapeForFileName(object_name) + ".sql";
         }
     }
 
-    std::filesystem::path file_path(file_path_name);
     if (!std::filesystem::exists(file_path))
         throw Exception(ErrorCodes::OBJECT_WAS_NOT_STORED_ON_DISK, "User defined object {} was not stored on disk", backQuote(file_path.string()));
 

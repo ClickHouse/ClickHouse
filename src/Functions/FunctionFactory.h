@@ -70,9 +70,7 @@ private:
     using Functions = std::unordered_map<std::string, Value>;
 
     Functions functions;
-    std::unordered_set<String> user_defined_functions;
     Functions case_insensitive_functions;
-    mutable std::mutex mutex;
 
     template <typename Function>
     static FunctionOverloadResolverPtr adaptFunctionToOverloadResolver(ContextPtr context)

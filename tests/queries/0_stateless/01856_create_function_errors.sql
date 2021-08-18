@@ -1,13 +1,17 @@
-create function MyFunc2 as (a, b) -> a || b || c; -- { serverError 47 }
+-- CREATE FUNCTION MyFunc2 AS (a, b) -> a || b || c; --{serverError 47}
 
-create function MyFunc2 as (a, b) -> MyFunc2(a, b) + MyFunc2(a, b); -- { serverError 593 } recursive function
+-- CREATE FUNCTION MyFunc2 AS (a, b) -> MyFunc2(a, b) + MyFunc2(a, b); --{serverError 600}
 
-create function cast as a -> a + 1; -- { serverError 591 } function already exist
+-- CREATE FUNCTION cast AS a -> a + 1; --{serverError 598}
 
-create function sum as (a, b) -> a + b; -- { serverError 591 } aggregate function already exist
+-- CREATE FUNCTION sum AS (a, b) -> a + b; --{serverError 598}
 
-create function MyFunc3 as (a, b) -> a + b;
+-- CREATE FUNCTION MyFunc3 AS (a, b) -> a + b;
 
-create function MyFunc3 as (a) -> a || '!!!'; -- { serverError 591 } function already exist
+-- CREATE FUNCTION MyFunc3 AS (a) -> a || '!!!'; --{serverError 598}
 
-drop function MyFunc3;
+-- DROP FUNCTION MyFunc3;
+
+-- DROP FUNCTION unknownFunc; -- {serverError 46}
+
+DROP FUNCTION CAST; -- {serverError 599}
