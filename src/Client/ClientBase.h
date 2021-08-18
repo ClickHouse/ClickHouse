@@ -35,6 +35,21 @@ public:
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
+    /*
+     * Run interactive or non-interactive mode. Depends on:
+     *  - processSingleQuery
+     *  - processMultiQuery
+     *  - processWithFuzzing
+     */
+    void runNonInteractive();
+    void runInteractive();
+
+    virtual bool processWithFuzzing(const String &)
+    {
+        throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+
     void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
     void receiveResult(ASTPtr parsed_query);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
@@ -53,36 +68,6 @@ protected:
     void writeFinalProgress();
     void processSingleQuery(const String & full_query);
     bool processMultiQuery(const String & all_queries_text);
-
-
-    /*
-     * Run interactive or non-interactive mode. Depends on:
-     *  - processSingleQuery
-     *  - processMultiQuery
-     *  - processWithFuzzing
-     */
-    void runNonInteractive();
-
-    /// Pass lambda, which executes passed function and catches/processes exceptions, returns result of passed function.
-    void runInteractive(std::function<bool(std::function<bool()>)> try_process_query_text);
-
-
-    /*
-     * Method to implement multi-query processing.
-     * Must make some preparation and then call processMultiQueryImpl. Afterwards it might execute some finishing code.
-    virtual bool processMultiQuery(const String & all_queries_text) = 0;
-    **/
-
-    /*
-     * Method to implement single-query processing.
-     * Must make some preparation and then call processSingleQueryImpl. Afterwards it might execute some finishing code.
-    virtual void processSingleQuery(const String & query) = 0;
-    **/
-
-    virtual bool processWithFuzzing(const String &)
-    {
-        throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
 
 
     /*

@@ -47,11 +47,5 @@ private:
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
 
     std::vector<String> loadWarningMessages();
-    void reconnectIfNeeded()
-    {
-        if (!connection->checkConnected())
-            connect();
-    }
-
 };
 }

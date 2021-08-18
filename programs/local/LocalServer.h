@@ -38,7 +38,8 @@ protected:
     void connect() override
     {
         connection_parameters = ConnectionParameters(config());
-        connection = std::make_unique<LocalConnection>(global_context);
+        /// Using query context withcmd settings.
+        connection = std::make_unique<LocalConnection>(query_context);
     }
 
     void reportQueryError(const String & query) const override;
@@ -86,8 +87,6 @@ private:
     ContextMutablePtr query_context;
 
     std::optional<StatusFile> status;
-
-    std::unique_ptr<Exception> local_server_exception;
 
     void processQuery(const String & query, std::exception_ptr exception);
 
