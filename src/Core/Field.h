@@ -974,9 +974,9 @@ __attribute__ ((noreturn)) inline void writeText(const AggregateFunctionStateDat
 }
 
 template <typename T>
-inline void writeText(const DecimalField<T> & value, WriteBuffer & buf)
+inline void writeText(const DecimalField<T> & value, WriteBuffer & buf, bool trailing_zeros = false)
 {
-    writeText(value.getValue(), value.getScale(), buf);
+    writeText(value.getValue(), value.getScale(), buf, trailing_zeros);
 }
 
 template <typename T>

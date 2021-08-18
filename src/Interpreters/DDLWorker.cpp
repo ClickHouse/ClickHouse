@@ -1175,7 +1175,6 @@ void DDLWorker::runMainThread()
                         new_stat.numChildren,
                         new_stat.pzxid);
                     context->getZooKeeperLog()->flush();
-                    abort();
                 }
             }
         }
