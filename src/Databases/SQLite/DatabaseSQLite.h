@@ -19,7 +19,8 @@ class DatabaseSQLite final : public IDatabase, protected WithContext
 public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
 
-    DatabaseSQLite(ContextPtr context_, const ASTStorage * database_engine_define_, const String & database_path_);
+    DatabaseSQLite(ContextPtr context_, const ASTStorage * database_engine_define_,
+                   bool is_attach_, const String & database_path_);
 
     String getEngineName() const override { return "SQLite"; }
 
@@ -47,7 +48,9 @@ protected:
 private:
     ASTPtr database_engine_define;
 
-    SQLitePtr sqlite_db;
+    String database_path;
+
+    mutable SQLitePtr sqlite_db;
 
     Poco::Logger * log;
 

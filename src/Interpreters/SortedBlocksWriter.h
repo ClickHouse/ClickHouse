@@ -6,6 +6,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <Processors/Pipe.h>
 #include <DataStreams/SizeLimits.h>
 #include <DataStreams/IBlockStream_fwd.h>
 
@@ -16,6 +17,8 @@ namespace DB
 class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
+
+class Pipe;
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
@@ -56,7 +59,7 @@ struct SortedBlocksWriter
     struct PremergedFiles
     {
         SortedFiles files;
-        BlockInputStreams streams;
+        Pipe pipe;
     };
 
     static constexpr const size_t num_streams = 2;
@@ -94,7 +97,7 @@ struct SortedBlocksWriter
     }
 
     String getPath() const;
-    BlockInputStreamPtr streamFromFile(const TmpFilePtr & file) const;
+    Pipe streamFromFile(const TmpFilePtr & file) const;
 
     void insert(Block && block);
     TmpFilePtr flush(const BlocksList & blocks) const;

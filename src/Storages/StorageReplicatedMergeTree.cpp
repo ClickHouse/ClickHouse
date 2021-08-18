@@ -21,7 +21,7 @@
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
@@ -4390,12 +4390,6 @@ void StorageReplicatedMergeTree::shutdown()
         /// Wait for all of them
         std::unique_lock lock(data_parts_exchange_ptr->rwlock);
     }
-
-    /// We clear all old parts after stopping all background operations. It's
-    /// important, because background operations can produce temporary parts
-    /// which will remove themselves in their destructors. If so, we may have
-    /// race condition between our remove call and background process.
-    clearOldPartsFromFilesystem(true);
 }
 
 
@@ -4567,7 +4561,7 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     const auto storage_settings_ptr = getSettings();
     assertNotReadonly();
@@ -4576,7 +4570,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
 
     // TODO: should we also somehow pass list of columns to deduplicate on to the ReplicatedMergeTreeBlockOutputStream ?
-    return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(
+    return std::make_shared<ReplicatedMergeTreeSink>(
         *this, metadata_snapshot, query_settings.insert_quorum,
         query_settings.insert_quorum_timeout.totalMilliseconds(),
         query_settings.max_partitions_per_insert_block,
@@ -4991,6 +4985,8 @@ void StorageReplicatedMergeTree::alter(
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
+            /// It would be better to clone ops instead of moving, so we could retry on ZBADVERSION,
+            /// but clone() is not implemented for Coordination::Request.
             txn->moveOpsTo(ops);
             /// NOTE: IDatabase::alterTable(...) is called when executing ALTER_METADATA queue entry without query context,
             /// so we have to update metadata of DatabaseReplicated here.
@@ -5033,6 +5029,11 @@ void StorageReplicatedMergeTree::alter(
             if (results[0]->error != Coordination::Error::ZOK)
                 throw Exception("Metadata on replica is not up to date with common metadata in Zookeeper. Cannot alter",
                     ErrorCodes::CANNOT_ASSIGN_ALTER);
+
+            /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
+            if (query_context->getZooKeeperMetadataTransaction())
+                throw Exception("Cannot execute alter, because mutations version was suddenly changed due to concurrent alter",
+                                ErrorCodes::CANNOT_ASSIGN_ALTER);
 
             continue;
         }
@@ -5276,7 +5277,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
-    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, query_context,
+    ReplicatedMergeTreeSink output(*this, metadata_snapshot, 0, 0, 0, false, false, query_context,
         /*is_attach*/true);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
@@ -5595,8 +5596,11 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
             res.total_replicas = all_replicas.size();
 
             for (const String & replica : all_replicas)
-                if (zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active"))
-                    ++res.active_replicas;
+            {
+                bool is_replica_active = zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active");
+                res.active_replicas += static_cast<UInt8>(is_replica_active);
+                res.replica_is_active.emplace(replica, is_replica_active);
+            }
         }
         catch (const Coordination::Exception &)
         {
@@ -6027,6 +6031,10 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
         }
         else if (rc == Coordination::Error::ZBADVERSION)
         {
+            /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
+            if (query_context->getZooKeeperMetadataTransaction())
+                throw Exception("Cannot execute alter, because mutations version was suddenly changed due to concurrent alter",
+                                ErrorCodes::CANNOT_ASSIGN_ALTER);
             LOG_TRACE(log, "Version conflict when trying to create a mutation node, retrying...");
             continue;
         }

@@ -361,10 +361,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     pipes.emplace_back(std::move(projection_pipe));
     pipes.emplace_back(std::move(ordinary_pipe));
     auto pipe = Pipe::unitePipes(std::move(pipes));
-    // TODO what if pipe is empty?
     pipe.resize(1);
 
-    auto step = std::make_unique<ReadFromStorageStep>(std::move(pipe), "MergeTree(with projection)");
+    auto step = std::make_unique<ReadFromStorageStep>(
+        std::move(pipe),
+        fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name));
     auto plan = std::make_unique<QueryPlan>();
     plan->addStep(std::move(step));
     return plan;
@@ -1457,9 +1458,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     size_t & granules_dropped,
     Poco::Logger * log)
 {
-    if (!part->volume->getDisk()->exists(part->getFullRelativePath() + index_helper->getFileName() + ".idx"))
+    const std::string & path_prefix = part->getFullRelativePath() + index_helper->getFileName();
+    if (!index_helper->getDeserializedFormat(part->volume->getDisk(), path_prefix))
     {
-        LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
+        LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name), path_prefix);
         return ranges;
     }
 

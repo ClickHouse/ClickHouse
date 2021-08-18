@@ -944,7 +944,9 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
     {
         /// Save name and values of substitution in dictionary.
         const String parameter_name = key.substr(strlen("param_"));
-        context->setQueryParameter(parameter_name, value);
+
+        if (!context->getQueryParameters().contains(parameter_name))
+            context->setQueryParameter(parameter_name, value);
         return true;
     }
 
@@ -970,8 +972,16 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
     for (const auto & it : params)
+    {
         if (it.first == param_name)
+        {
             full_query += it.second;
+        }
+        else
+        {
+            customizeQueryParam(context, it.first, it.second);
+        }
+    }
 
     return full_query;
 }

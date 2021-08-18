@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Common/SipHash.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <cassert>
@@ -180,6 +181,9 @@ namespace
             memcpy(out, plaintext, plaintext_size);
         return plaintext_size;
     }
+
+    constexpr const char kHeaderSignature[] = "ENC";
+    constexpr const UInt16 kHeaderCurrentVersion = 1;
 }
 
 
@@ -352,9 +356,57 @@ void Encryptor::decrypt(const char * data, size_t size, char * out)
     offset += in_size;
 }
 
-bool isKeyLengthSupported(size_t key_length)
+
+void Header::read(ReadBuffer & in)
 {
-    return (key_length == 16) || (key_length == 24) || (key_length == 32);
+    constexpr size_t header_signature_size = std::size(kHeaderSignature) - 1;
+    char signature[std::size(kHeaderSignature)] = {};
+    in.readStrict(signature, header_signature_size);
+    if (strcmp(signature, kHeaderSignature) != 0)
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Wrong signature, this is not an encrypted file");
+
+    UInt16 version;
+    readPODBinary(version, in);
+    if (version != kHeaderCurrentVersion)
+        throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Version {} of the header is not supported", version);
+
+    UInt16 algorithm_u16;
+    readPODBinary(algorithm_u16, in);
+    algorithm = static_cast<Algorithm>(algorithm_u16);
+
+    readPODBinary(key_id, in);
+    readPODBinary(key_hash, in);
+    init_vector.read(in);
+
+    constexpr size_t reserved_size = kSize - header_signature_size - sizeof(version) - sizeof(algorithm_u16) - sizeof(key_id) - sizeof(key_hash) - InitVector::kSize;
+    static_assert(reserved_size < kSize);
+    in.ignore(reserved_size);
+}
+
+void Header::write(WriteBuffer & out) const
+{
+    constexpr size_t header_signature_size = std::size(kHeaderSignature) - 1;
+    out.write(kHeaderSignature, header_signature_size);
+
+    UInt16 version = kHeaderCurrentVersion;
+    writePODBinary(version, out);
+
+    UInt16 algorithm_u16 = static_cast<UInt16>(algorithm);
+    writePODBinary(algorithm_u16, out);
+
+    writePODBinary(key_id, out);
+    writePODBinary(key_hash, out);
+    init_vector.write(out);
+
+    constexpr size_t reserved_size = kSize - header_signature_size - sizeof(version) - sizeof(algorithm_u16) - sizeof(key_id) - sizeof(key_hash) - InitVector::kSize;
+    static_assert(reserved_size < kSize);
+    char reserved_zero_bytes[reserved_size] = {};
+    out.write(reserved_zero_bytes, reserved_size);
+}
+
+UInt8 calculateKeyHash(const String & key)
+{
+    return static_cast<UInt8>(sipHash64(key.data(), key.size())) & 0x0F;
 }
 
 }

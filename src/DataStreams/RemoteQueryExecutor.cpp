@@ -35,16 +35,36 @@ namespace ErrorCodes
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
+    const String & query_, const Block & header_, ContextPtr context_,
+    const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    : header(header_), query(query_), context(context_), scalars(scalars_)
+    , external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
+{}
+
+RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
     const String & query_, const Block & header_, ContextPtr context_,
     ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
     QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
-    : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_), sync_draining(true)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_)
 {
     create_connections = [this, &connection, throttler]()
     {
         return std::make_shared<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
+    };
+}
+
+RemoteQueryExecutor::RemoteQueryExecutor(
+    std::shared_ptr<Connection> connection_ptr,
+    const String & query_, const Block & header_, ContextPtr context_,
+    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_)
+{
+    create_connections = [this, connection_ptr, throttler]()
+    {
+        return std::make_shared<MultiplexedConnections>(connection_ptr, context->getSettingsRef(), throttler);
     };
 }
 
@@ -82,7 +102,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             if (main_table)
                 table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
-            return std::make_shared<HedgedConnections>(pool, current_settings, timeouts, throttler, pool_mode, table_to_check);
+            return std::make_shared<HedgedConnections>(pool, context, timeouts, throttler, pool_mode, table_to_check);
         }
 #endif
 
@@ -414,16 +434,13 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
 
     /// Send the request to abort the execution of the request, if not already sent.
     tryCancel("Cancelling query because enough data has been read", read_context);
+    /// Try to drain connections asynchronously.
+    if (auto conn = ConnectionCollector::enqueueConnectionCleanup(pool, connections))
     {
-        /// Finish might be called in multiple threads. Make sure we release connections in thread-safe way.
-        std::lock_guard guard(connection_draining_mutex);
-        if (auto conn = ConnectionCollector::enqueueConnectionCleanup(pool, connections))
-        {
-            /// Drain connections synchronously.
-            CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
-            ConnectionCollector::drainConnections(*conn);
-            CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
-        }
+        /// Drain connections synchronously.
+        CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
+        ConnectionCollector::drainConnections(*conn);
+        CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
     }
     finished = true;
 }
