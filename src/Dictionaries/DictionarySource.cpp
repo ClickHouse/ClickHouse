@@ -132,7 +132,7 @@ Block DictionarySourceData::fillBlock(
         {
             ColumnPtr column;
 
-            if (dictionary_key_type == DictionaryKeyType::simple)
+            if (dictionary_key_type == DictionaryKeyType::Simple)
             {
                 column = dictionary->getColumn(
                     attribute.name,

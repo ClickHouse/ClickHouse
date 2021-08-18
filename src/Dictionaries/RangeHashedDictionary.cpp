@@ -95,6 +95,13 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
     const DataTypes & key_types,
     const ColumnPtr & default_values_column) const
 {
+    if (dictionary_key_type == DictionaryKeyType::Complex)
+    {
+        auto key_types_copy = key_types;
+        key_types_copy.pop_back();
+        dict_struct.validateKeyTypes(key_types_copy);
+    }
+
     ColumnPtr result;
 
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
@@ -206,9 +213,15 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumn(
 template <DictionaryKeyType dictionary_key_type>
 ColumnUInt8::Ptr RangeHashedDictionary<dictionary_key_type>::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
+    if (dictionary_key_type == DictionaryKeyType::Complex)
+    {
+        auto key_types_copy = key_types;
+        key_types_copy.pop_back();
+        dict_struct.validateKeyTypes(key_types_copy);
+    }
     auto range_column_storage_type = std::make_shared<DataTypeInt64>();
     auto range_storage_column = key_columns.back();
-    ColumnWithTypeAndName column_to_cast = {range_storage_column->convertToFullColumnIfConst(), key_types[1], ""};
+    ColumnWithTypeAndName column_to_cast = {range_storage_column->convertToFullColumnIfConst(), key_types.back(), ""};
     auto range_column_updated = castColumnAccurate(column_to_cast, range_column_storage_type);
     PaddedPODArray<RangeStorageType> range_backup_storage;
     const PaddedPODArray<RangeStorageType> & dates = getColumnVectorData(this, range_column_updated, range_backup_storage);
@@ -383,7 +396,7 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
         callOnDictionaryAttributeType(attribute.type, type_call);
     }
 
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         bytes_allocated += complex_key_arena.size();
 }
 
@@ -607,10 +620,9 @@ Pipe RangeHashedDictionary<dictionary_key_type>::readImpl(const Names & column_n
     PaddedPODArray<RangeType> end_dates;
     getKeysAndDates(keys, start_dates, end_dates);
 
-    static constexpr RangeDictionaryType range_dictionary_type = (dictionary_key_type == DictionaryKeyType::simple) ? RangeDictionaryType::simple : RangeDictionaryType::complex;
-    using RangeDictionarySourceType = RangeDictionarySource<range_dictionary_type, RangeType>;
+    using RangeDictionarySourceType = RangeDictionarySource<dictionary_key_type, RangeType>;
 
-    auto source_data = RangeDictionarySourceData<range_dictionary_type, RangeType>(
+    auto source_data = RangeDictionarySourceData<dictionary_key_type, RangeType>(
         shared_from_this(),
         column_names,
         std::move(keys),
@@ -690,7 +702,7 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<RangeHashedDictionary<DictionaryKeyType::simple>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<RangeHashedDictionary<DictionaryKeyType::Simple>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("range_hashed", create_layout_simple, false);
 
@@ -713,7 +725,7 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<RangeHashedDictionary<DictionaryKeyType::complex>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<RangeHashedDictionary<DictionaryKeyType::Complex>>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("complex_key_range_hashed", create_layout_complex, true);
 }
