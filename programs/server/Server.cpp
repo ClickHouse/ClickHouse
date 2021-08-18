@@ -146,8 +146,6 @@ static bool jemallocOptionEnabled(const char *name)
 static bool jemallocOptionEnabled(const char *) { return 0; }
 #endif
 
-namespace fs = std::filesystem;
-
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
