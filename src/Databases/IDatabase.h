@@ -240,6 +240,12 @@ public:
         throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Whether the contained tables should be written to a backup.
+    virtual DatabaseTablesIteratorPtr getTablesIteratorForBackup(ContextPtr context) const
+    {
+        return getTablesIterator(context); /// By default we backup each table.
+    }
+
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
 
