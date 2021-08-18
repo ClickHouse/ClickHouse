@@ -4325,7 +4325,6 @@ void StorageReplicatedMergeTree::startup()
         restarting_thread.start();
 
         /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attempt to do it
-        /// TODO Do we still need startup_event?
         startup_event.wait();
 
         startBackgroundMovesIfNeeded();
@@ -7206,7 +7205,6 @@ MutationCommands StorageReplicatedMergeTree::getFirstAlterMutationCommandsForPar
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
-    /// FIXME is it related to replication somehow? If it is we should start it from RestartingThread only
     if (areBackgroundMovesNeeded())
         background_moves_executor.start();
 }
