@@ -1,22 +1,19 @@
 # system.zookeeper_log {#system-zookeeper_log}
 
-Эта таблица содержит информацию о параметрах запроса к клиенту ZooKeeper и ответа от него.
+Эта таблица содержит информацию о параметрах запроса к серверу ZooKeeper и ответа от него.
 
 Для запросов заполняются только столбцы с параметрами запроса, а остальные столбцы заполняются значениями по умолчанию (`0` или `NULL`). Когда поступает ответ, данные добавляются в столбцы с параметрами ответа на запрос.
-
-!!! info "Примечание"
-    Таблицы не существует, если ZooKeeper не сконфигурирован.
 
 Столбцы с параметрами запроса:
 
 -   `type` ([Enum](../../sql-reference/data-types/enum.md)) — тип события в клиенте ZooKeeper. Может иметь одно из следующих значений:
-    -   `request` — запрос отправлен.
-    -   `response` — ответ получен.
-    -   `finalize` — соединение разорвано, ответ не получен.
--   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата завершения выполнения запроса.
--   `event_time` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — дата и время завершения выполнения запроса.
--   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP адрес, с которого был сделан запрос.
--   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт, с которого был сделан запрос.
+    -   `Request` — запрос отправлен.
+    -   `Response` — ответ получен.
+    -   `Finalize` — соединение разорвано, ответ не получен.
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата, когда произошло событие.
+-   `event_time` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — дата и время, когда произошло событие.
+-   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP адрес сервера ZooKeeper, с которого был сделан запрос.
+-   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт сервера ZooKeeper, с которого был сделан запрос.
 -   `session_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — идентификатор сессии, который сервер ZooKeeper создает для каждого соединения.
 -   `xid` ([Int32](../../sql-reference/data-types/int-uint.md)) — идентификатор запроса внутри сессии. Обычно это последовательный номер запроса, одинаковый у строки запроса и у парной строки `response`/`finalize`.
 -   `has_watch` ([UInt8](../../sql-reference/data-types/int-uint.md)) — установлен ли запрос [watch](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches).
@@ -32,8 +29,8 @@
 Столбцы с параметрами ответа на запрос:
 
 -   `zxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — идентификатор транзакции в ZooKeeper. Последовательный номер, выданный сервером ZooKeeper в ответе на успешно выполненный запрос (`0` — запрос не был выполнен, возвращена ошибка или клиент ZooKeeper не знает, был ли выполнен запрос).
--   `error` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — код ошибки. Может иметь одно из следующих значений:
-    -   `ZOK` — получен ответ на запрос.
+-   `error` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — код ошибки. Может иметь много значений, здесь приведены только некоторые из них:
+    -   `ZOK` — запрос успешно выполнен.
     -   `ZCONNECTIONLOSS` — соединение разорвано.
     -   `ZOPERATIONTIMEOUT` — истекло время ожидания выполнения запроса.
 	-   `ZSESSIONEXPIRED` — истекло время сессии.
