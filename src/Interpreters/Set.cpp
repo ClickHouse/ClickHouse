@@ -99,14 +99,14 @@ void NO_INLINE Set::insertFromBlockImplCase(
 }
 
 
-void Set::setHeader(const Block & header)
+void Set::setHeader(const ColumnsWithTypeAndName & header)
 {
     std::unique_lock lock(rwlock);
 
     if (!data.empty())
         return;
 
-    keys_size = header.columns();
+    keys_size = header.size();
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
     data_types.reserve(keys_size);
@@ -118,10 +118,10 @@ void Set::setHeader(const Block & header)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(header.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        materialized_columns.emplace_back(header.at(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back(materialized_columns.back().get());
-        data_types.emplace_back(header.safeGetByPosition(i).type);
-        set_elements_types.emplace_back(header.safeGetByPosition(i).type);
+        data_types.emplace_back(header.at(i).type);
+        set_elements_types.emplace_back(header.at(i).type);
 
         /// Convert low cardinality column to full.
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
@@ -161,7 +161,7 @@ void Set::setHeader(const Block & header)
 }
 
 
-bool Set::insertFromBlock(const Block & block)
+bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
     std::unique_lock lock(rwlock);
 
@@ -177,11 +177,11 @@ bool Set::insertFromBlock(const Block & block)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        materialized_columns.emplace_back(columns.at(i).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
-    size_t rows = block.rows();
+    size_t rows = columns.at(0).column->size();
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
@@ -192,7 +192,7 @@ bool Set::insertFromBlock(const Block & block)
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;
     if (fill_set_elements)
-        filter = ColumnUInt8::create(block.rows());
+        filter = ColumnUInt8::create(rows);
 
     switch (data.type)
     {
@@ -224,16 +224,16 @@ bool Set::insertFromBlock(const Block & block)
 }
 
 
-ColumnPtr Set::execute(const Block & block, bool negative) const
+ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
-    size_t num_key_columns = block.columns();
+    size_t num_key_columns = columns.size();
 
     if (0 == num_key_columns)
         throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
 
     auto res = ColumnUInt8::create();
     ColumnUInt8::Container & vec_res = res->getData();
-    vec_res.resize(block.safeGetByPosition(0).column->size());
+    vec_res.resize(columns.at(0).column->size());
 
     if (vec_res.empty())
         return res;
@@ -264,7 +264,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     {
         ColumnPtr result;
 
-        const auto & column_before_cast = block.safeGetByPosition(i);
+        const auto & column_before_cast = columns.at(i);
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
