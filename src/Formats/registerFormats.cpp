@@ -123,11 +123,12 @@ void registerFormats()
     registerOutputFormatProcessorORC(factory);
     registerInputFormatProcessorParquet(factory);
     registerOutputFormatProcessorParquet(factory);
-    registerInputFormatProcessorArrow(factory);
-    registerOutputFormatProcessorArrow(factory);
     registerInputFormatProcessorAvro(factory);
     registerOutputFormatProcessorAvro(factory);
 #endif
+
+    registerInputFormatProcessorArrow(factory);
+    registerOutputFormatProcessorArrow(factory);
 
     registerOutputFormatNull(factory);
 

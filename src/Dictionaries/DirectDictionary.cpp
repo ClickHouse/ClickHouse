@@ -2,12 +2,14 @@
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
+
+#include <Processors/QueryPipeline.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 namespace DB
 {
@@ -66,11 +68,13 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    BlockInputStreamPtr stream = getSourceBlockInputStream(key_columns, requested_keys);
+    QueryPipeline pipeline;
+    pipeline.init(getSourceBlockInputStream(key_columns, requested_keys));
 
-    stream->readPrefix();
+    PullingPipelineExecutor executor(pipeline);
 
-    while (const auto block = stream->read())
+    Block block;
+    while (executor.pull(block))
     {
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
@@ -97,8 +101,6 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
         block_key_columns.clear();
     }
-
-    stream->readSuffix();
 
     Field value_to_insert;
 
@@ -183,13 +185,14 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    BlockInputStreamPtr stream = getSourceBlockInputStream(key_columns, requested_keys);
+    QueryPipeline pipeline;
+    pipeline.init(getSourceBlockInputStream(key_columns, requested_keys));
 
-    stream->readPrefix();
+    PullingPipelineExecutor executor(pipeline);
 
     size_t keys_found = 0;
-
-    while (const auto block = stream->read())
+    Block block;
+    while (executor.pull(block))
     {
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
@@ -215,8 +218,6 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
 
         block_key_columns.clear();
     }
-
-    stream->readSuffix();
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -260,13 +261,13 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
+Pipe DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
     const Columns & key_columns [[maybe_unused]],
     const PaddedPODArray<KeyType> & requested_keys [[maybe_unused]]) const
 {
     size_t requested_keys_size = requested_keys.size();
 
-    BlockInputStreamPtr stream;
+    Pipe pipe;
 
     if constexpr (dictionary_key_type == DictionaryKeyType::simple)
     {
@@ -276,7 +277,7 @@ BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputSt
         for (auto key : requested_keys)
             ids.emplace_back(key);
 
-        stream = source_ptr->loadIds(ids);
+        pipe = source_ptr->loadIds(ids);
     }
     else
     {
@@ -285,14 +286,14 @@ BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputSt
         for (size_t i = 0; i < requested_keys_size; ++i)
             requested_rows.emplace_back(i);
 
-        stream = source_ptr->loadKeys(key_columns, requested_rows);
+        pipe = source_ptr->loadKeys(key_columns, requested_rows);
     }
 
-    return stream;
+    return pipe;
 }
 
 template <DictionaryKeyType dictionary_key_type>
-BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getBlockInputStream(const Names & /* column_names */, size_t /* max_block_size */) const
+Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */) const
 {
     return source_ptr->loadAll();
 }

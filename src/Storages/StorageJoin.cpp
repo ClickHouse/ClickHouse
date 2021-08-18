@@ -6,7 +6,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnNumbers.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/joinDispatch.h>
@@ -68,7 +67,7 @@ StorageJoin::StorageJoin(
     restore();
 }
 
-BlockOutputStreamPtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::lock_guard mutate_lock(mutate_mutex);
     return StorageSetOrJoinBase::write(query, metadata_snapshot, context);

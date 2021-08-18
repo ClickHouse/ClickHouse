@@ -81,8 +81,12 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
 
 std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
 {
+    bool has_dictionary = has(dictionary_name);
+    if (has_dictionary)
+        return dictionary_name;
+
     std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name);
-    bool has_dictionary = has(resolved_name);
+    has_dictionary = has(resolved_name);
 
     if (!has_dictionary)
     {

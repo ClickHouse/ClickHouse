@@ -82,6 +82,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    bool needRewriteQueryWithFinal(const Names & column_names) const override;
+
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -118,6 +120,8 @@ public:
     /// Get nested table (or throw if it does not exist), set in-memory metadata (taken from nested table)
     /// for current table, set has_nested = true.
     StoragePtr prepare();
+
+    bool supportsFinal() const override { return true; }
 
 protected:
     StorageMaterializedPostgreSQL(

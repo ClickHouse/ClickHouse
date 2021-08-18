@@ -13,11 +13,15 @@ namespace DB
         addChunk(Chunk{}, ProcessingUnitType::FINALIZE, /*can_throw_exception*/ false);
         collector_finished.wait();
 
-        if (collector_thread.joinable())
-            collector_thread.join();
+        {
+            std::lock_guard<std::mutex> lock(collector_thread_mutex);
+            if (collector_thread.joinable())
+                collector_thread.join();
+        }
 
         {
             std::unique_lock<std::mutex> lock(mutex);
+
             if (background_exception)
                 std::rethrow_exception(background_exception);
         }
@@ -66,8 +70,11 @@ namespace DB
             writer_condvar.notify_all();
         }
 
-        if (collector_thread.joinable())
-            collector_thread.join();
+        {
+            std::lock_guard<std::mutex> lock(collector_thread_mutex);
+            if (collector_thread.joinable())
+                collector_thread.join();
+        }
 
         try
         {

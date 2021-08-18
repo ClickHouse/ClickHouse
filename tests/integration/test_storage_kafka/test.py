@@ -2,7 +2,6 @@ import json
 import os.path as p
 import random
 import socket
-import subprocess
 import threading
 import time
 import logging
@@ -66,7 +65,7 @@ def get_kafka_producer(port, serializer, retries):
         except Exception as e:
             errors += [str(e)]
             time.sleep(1)
-    
+
     raise Exception("Connection not establised, {}".format(errors))
 
 def producer_serializer(x):
@@ -181,32 +180,6 @@ def avro_confluent_message(schema_registry_client, value):
     })
     return serializer.encode_record_with_schema('test_subject', schema, value)
 
-# Since everything is async and shaky when receiving messages from Kafka,
-# we may want to try and check results multiple times in a loop.
-def kafka_check_result(result, check=False, ref_file='test_kafka_json.reference'):
-    fpath = p.join(p.dirname(__file__), ref_file)
-    with open(fpath) as reference:
-        if check:
-            assert TSV(result) == TSV(reference)
-        else:
-            return TSV(result) == TSV(reference)
-
-def describe_consumer_group(kafka_cluster, name):
-    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
-    consumer_groups = admin_client.describe_consumer_groups([name])
-    res = []
-    for member in consumer_groups[0].members:
-        member_info = {}
-        member_info['member_id'] = member.member_id
-        member_info['client_id'] = member.client_id
-        member_info['client_host'] = member.client_host
-        member_topics_assignment = []
-        for (topic, partitions) in member.member_assignment.assignment:
-            member_topics_assignment.append({'topic': topic, 'partitions': partitions})
-        member_info['assignment'] = member_topics_assignment
-        res.append(member_info)
-    return res
-
 # Fixtures
 
 @pytest.fixture(scope="module")
@@ -262,7 +235,7 @@ kafka_topic_old	old
 
     kafka_check_result(result, True)
 
-    members = describe_consumer_group('old')
+    members = describe_consumer_group(kafka_cluster, 'old')
     assert members[0]['client_id'] == 'ClickHouse-instance-test-kafka'
     # text_desc = kafka_cluster.exec_in_container(kafka_cluster.get_container_id('kafka1'),"kafka-consumer-groups --bootstrap-server localhost:9092 --describe --members --group old --verbose"))
 
@@ -302,7 +275,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
 
     kafka_check_result(result, True)
 
-    members = describe_consumer_group('new')
+    members = describe_consumer_group(kafka_cluster, 'new')
     assert members[0]['client_id'] == 'instance test 1234'
 
 
@@ -734,82 +707,6 @@ def kafka_setup_teardown():
 
 
 # Tests
-
-def test_kafka_settings_old_syntax(kafka_cluster):
-    assert TSV(instance.query("SELECT * FROM system.macros WHERE macro like 'kafka%' ORDER BY macro",
-                              ignore_error=True)) == TSV('''kafka_broker	kafka1
-kafka_client_id	instance
-kafka_format_json_each_row	JSONEachRow
-kafka_group_name_new	new
-kafka_group_name_old	old
-kafka_topic_new	new
-kafka_topic_old	old
-''')
-
-    instance.query('''
-        CREATE TABLE test.kafka (key UInt64, value UInt64)
-            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n');
-        ''')
-
-    # Don't insert malformed messages since old settings syntax
-    # doesn't support skipping of broken messages.
-    messages = []
-    for i in range(50):
-        messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce(kafka_cluster, 'old', messages)
-
-    result = ''
-    while True:
-        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
-        if kafka_check_result(result):
-            break
-
-    kafka_check_result(result, True)
-
-    members = describe_consumer_group(kafka_cluster, 'old')
-    assert members[0]['client_id'] == 'ClickHouse-instance-test-kafka'
-    # text_desc = kafka_cluster.exec_in_container(kafka_cluster.get_container_id('kafka1'),"kafka-consumer-groups --bootstrap-server localhost:{} --describe --members --group old --verbose".format(cluster.kafka_port)))
-
-
-def test_kafka_settings_new_syntax(kafka_cluster):
-    instance.query('''
-        CREATE TABLE test.kafka (key UInt64, value UInt64)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = '{kafka_broker}:19092',
-                     kafka_topic_list = '{kafka_topic_new}',
-                     kafka_group_name = '{kafka_group_name_new}',
-                     kafka_format = '{kafka_format_json_each_row}',
-                     kafka_row_delimiter = '\\n',
-                     kafka_client_id = '{kafka_client_id} test 1234',
-                     kafka_skip_broken_messages = 1;
-        ''')
-
-    messages = []
-    for i in range(25):
-        messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce(kafka_cluster, 'new', messages)
-
-    # Insert couple of malformed messages.
-    kafka_produce(kafka_cluster, 'new', ['}{very_broken_message,'])
-    kafka_produce(kafka_cluster, 'new', ['}another{very_broken_message,'])
-
-    messages = []
-    for i in range(25, 50):
-        messages.append(json.dumps({'key': i, 'value': i}))
-    kafka_produce(kafka_cluster, 'new', messages)
-
-    result = ''
-    while True:
-        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
-        if kafka_check_result(result):
-            break
-
-    kafka_check_result(result, True)
-
-    members = describe_consumer_group(kafka_cluster, 'new')
-    assert members[0]['client_id'] == 'instance test 1234'
-
-
 def test_kafka_issue11308(kafka_cluster):
     # Check that matview does respect Kafka SETTINGS
     kafka_produce(kafka_cluster, 'issue11308', ['{"t": 123, "e": {"x": "woof"} }', '{"t": 123, "e": {"x": "woof"} }',
@@ -1339,7 +1236,7 @@ def test_librdkafka_compression(kafka_cluster):
 
     Example of corruption:
 
-        2020.12.10 09:59:56.831507 [ 20 ] {} <Error> void DB::StorageKafka::threadFunc(size_t): Code: 27, e.displayText() = DB::Exception: Cannot parse input: expected '"' before: 'foo"}': (while reading the value of key value): (at row 1)
+        2020.12.10 09:59:56.831507 [ 20 ] {} <Error> void DB::StorageKafka::threadFunc(size_t): Code: 27. DB::Exception: Cannot parse input: expected '"' before: 'foo"}': (while reading the value of key value): (at row 1)
 
     To trigger this regression there should duplicated messages
 
@@ -1585,17 +1482,20 @@ def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
         messages.append(json.dumps({'key': i, 'value': i}))
     kafka_produce(kafka_cluster, 'virt2', messages, 0)
 
-    while True:
-        result = instance.query('SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view')
-        if kafka_check_result(result, False, 'test_kafka_virtual2.reference'):
-            break
+    sql = 'SELECT kafka_key, key, topic, value, offset, partition, timestamp FROM test.view ORDER BY kafka_key'
+    result = instance.query(sql)
+    iterations = 0
+    while not kafka_check_result(result, False, 'test_kafka_virtual2.reference') and iterations < 10:
+        time.sleep(3)
+        iterations += 1
+        result = instance.query(sql)
+
+    kafka_check_result(result, True, 'test_kafka_virtual2.reference')
 
     instance.query('''
         DROP TABLE test.consumer;
         DROP TABLE test.view;
     ''')
-
-    kafka_check_result(result, True, 'test_kafka_virtual2.reference')
 
 
 def test_kafka_insert(kafka_cluster):
@@ -2222,7 +2122,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
     # we have 0.25 (sleepEachRow) * 20 ( Rows ) = 5 sec window after "Polled batch of 20 messages"
     # while materialized view is working to inject zookeeper failure
     pm.drop_instance_zk_connections(instance)
-    instance.wait_for_log_line("Error.*(session has been expired|Connection loss).*while write prefix to view")
+    instance.wait_for_log_line("Error.*(session has been expired|Connection loss).*while writing suffix to view")
     pm.heal_all()
     instance.wait_for_log_line("Committed offset 22")
 
@@ -2853,7 +2753,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 "(0,'BAD','AM',0.5,1)",
             ],
-            'expected':r'''{"raw_message":"(0,'BAD','AM',0.5,1)","error":"Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero\/NULL instead of throwing exception.: while executing 'FUNCTION CAST(assumeNotNull(_dummy_0) :: 2, 'UInt16' :: 1) -> CAST(assumeNotNull(_dummy_0), 'UInt16') UInt16 : 4'"}''',
+            'expected':r'''{"raw_message":"(0,'BAD','AM',0.5,1)","error":"Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero\/NULL instead of throwing exception.: while executing 'FUNCTION _CAST(assumeNotNull(_dummy_0) :: 2, 'UInt16' :: 1) -> _CAST(assumeNotNull(_dummy_0), 'UInt16') UInt16 : 4'"}''',
             'supports_empty_value': True,
             'printable':True,
         },

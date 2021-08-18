@@ -81,6 +81,7 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
             else
                 ast->setAlias(*column_name);
 
+            data.changed = true;
             // revisit ast to track recursive alias columns
             Visitor(data).visit(ast);
         }

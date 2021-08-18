@@ -185,8 +185,8 @@ public:
 
         auto * denominator_type = toNativeType<Denominator>(b);
         static constexpr size_t denominator_offset = offsetof(Fraction, denominator);
-        auto * denominator_dst_ptr = b.CreatePointerCast(b.CreateConstGEP1_32(nullptr, aggregate_data_dst_ptr, denominator_offset), denominator_type->getPointerTo());
-        auto * denominator_src_ptr = b.CreatePointerCast(b.CreateConstGEP1_32(nullptr, aggregate_data_src_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * denominator_dst_ptr = b.CreatePointerCast(b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_dst_ptr, denominator_offset), denominator_type->getPointerTo());
+        auto * denominator_src_ptr = b.CreatePointerCast(b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_src_ptr, denominator_offset), denominator_type->getPointerTo());
 
         auto * denominator_dst_value = b.CreateLoad(denominator_type, denominator_dst_ptr);
         auto * denominator_src_value = b.CreateLoad(denominator_type, denominator_src_ptr);

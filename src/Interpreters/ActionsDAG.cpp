@@ -7,6 +7,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/materialize.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -26,6 +27,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int BAD_ARGUMENTS;
 }
 
 const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
@@ -202,6 +204,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     node.function_base = function->build(arguments);
     node.result_type = node.function_base->getResultType();
     node.function = node.function_base->prepare(arguments);
+    node.is_deterministic = node.function_base->isDeterministic();
 
     /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
     if (node.function_base->isSuitableForConstantFolding())
@@ -426,6 +429,16 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
         {
             /// Constant folding.
             node->type = ActionsDAG::ActionType::COLUMN;
+
+            for (const auto & child : node->children)
+            {
+                if (!child->is_deterministic)
+                {
+                    node->is_deterministic = false;
+                    break;
+                }
+            }
+
             node->children.clear();
         }
 
@@ -881,9 +894,9 @@ ActionsDAGPtr ActionsDAG::clone() const
 }
 
 #if USE_EMBEDDED_COMPILER
-void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression)
+void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
-    compileFunctions(min_count_to_compile_expression);
+    compileFunctions(min_count_to_compile_expression, lazy_executed_nodes);
     removeUnusedActions();
 }
 #endif
@@ -981,6 +994,14 @@ bool ActionsDAG::trivial() const
     return true;
 }
 
+void ActionsDAG::assertDeterministic() const
+{
+    for (const auto & node : nodes)
+        if (!node.is_deterministic)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expression must be deterministic but it contains non-deterministic part `{}`", node.result_name);
+}
+
 void ActionsDAG::addMaterializingOutputActions()
 {
     for (auto & node : index)
@@ -1049,8 +1070,10 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
                     if (ignore_constant_values && res_const)
                         src_node = dst_node = &actions_dag->addColumn(res_elem);
                     else
-                        throw Exception("Cannot find column " + backQuote(res_elem.name) + " in source stream",
-                                        ErrorCodes::THERE_IS_NO_COLUMN);
+                        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+                                        "Cannot find column `{}` in source stream, there are only columns: [{}]",
+                                        res_elem.name, Block(source).dumpNames());
+
                 }
                 else
                 {
@@ -1090,8 +1113,8 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             const auto * right_arg = &actions_dag->addColumn(std::move(column));
             const auto * left_arg = dst_node;
 
-            FunctionCast::Diagnostic diagnostic = {dst_node->result_name, res_elem.name};
-            FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false, std::move(diagnostic));
+            FunctionCastBase::Diagnostic diagnostic = {dst_node->result_name, res_elem.name};
+            FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(std::move(diagnostic));
 
             NodeRawConstPtrs children = { left_arg, right_arg };
             dst_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {});
@@ -1856,7 +1879,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                 predicate->children = {left_arg, right_arg};
                 auto arguments = prepareFunctionArguments(predicate->children);
 
-                FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<CastType::nonAccurate>::createImpl(false);
+                FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
 
                 predicate->function_builder = func_builder_cast;
                 predicate->function_base = predicate->function_builder->build(arguments);

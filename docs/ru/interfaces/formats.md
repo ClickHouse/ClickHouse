@@ -1165,12 +1165,14 @@ SELECT * FROM topic1_stream;
 | `DOUBLE`                      | [Float64](../sql-reference/data-types/float.md)           | `DOUBLE`                      |
 | `DATE32`                      | [Date](../sql-reference/data-types/date.md)               | `UINT16`                      |
 | `DATE64`, `TIMESTAMP`         | [DateTime](../sql-reference/data-types/datetime.md)       | `UINT32`                      |
-| `STRING`, `BINARY`            | [String](../sql-reference/data-types/string.md)           | `STRING`                      |
-| —                             | [FixedString](../sql-reference/data-types/fixedstring.md) | `STRING`                      |
+| `STRING`, `BINARY`            | [String](../sql-reference/data-types/string.md)           | `BINARY`                      |
+| —                             | [FixedString](../sql-reference/data-types/fixedstring.md) | `BINARY`                      |
 | `DECIMAL`                     | [Decimal](../sql-reference/data-types/decimal.md)         | `DECIMAL`                     |
 | `LIST`                        | [Array](../sql-reference/data-types/array.md)             | `LIST`                        |
+| `STRUCT`                      | [Tuple](../sql-reference/data-types/tuple.md)             | `STRUCT`                      |
+| `MAP`                         | [Map](../sql-reference/data-types/map.md)                 | `MAP`                         |
 
-Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`.
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Типы `Tuple` и `Map` также могут быть вложенными.
 
 ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
 
@@ -1218,12 +1220,17 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 | `DOUBLE`                    | [Float64](../sql-reference/data-types/float.md)     | `FLOAT64`                   |
 | `DATE32`                    | [Date](../sql-reference/data-types/date.md)         | `UINT16`                    |
 | `DATE64`, `TIMESTAMP`       | [DateTime](../sql-reference/data-types/datetime.md) | `UINT32`                    |
-| `STRING`, `BINARY`          | [String](../sql-reference/data-types/string.md)     | `UTF8`                      |
-| `STRING`, `BINARY`          | [FixedString](../sql-reference/data-types/fixedstring.md)   | `UTF8`                        |
+| `STRING`, `BINARY`          | [String](../sql-reference/data-types/string.md)     | `BINARY`                    |
+| `STRING`, `BINARY`          | [FixedString](../sql-reference/data-types/fixedstring.md)   | `BINARY`                        |
 | `DECIMAL`                   | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                   |
+| `DECIMAL256`                | [Decimal256](../sql-reference/data-types/decimal.md)| `DECIMAL256`                |
 | `LIST`                      | [Array](../sql-reference/data-types/array.md)       | `LIST`                      |
+| `STRUCT`                    | [Tuple](../sql-reference/data-types/tuple.md)       | `STRUCT`                    |
+| `MAP`                       | [Map](../sql-reference/data-types/map.md)           | `MAP`                       |
 
-Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`.
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Типы `Tuple` и `Map` также могут быть вложенными.
+
+Тип `DICTIONARY` поддерживается для запросов `INSERT`. Для запросов `SELECT` есть настройка [output_format_arrow_low_cardinality_as_dictionary](../operations/settings/settings.md#output-format-arrow-low-cardinality-as-dictionary), которая позволяет выводить тип [LowCardinality](../sql-reference/data-types/lowcardinality.md) как `DICTIONARY`.
 
 ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных Arrow `DECIMAL` как `Decimal128`.
 
@@ -1276,8 +1283,10 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 | `STRING`, `BINARY`        | [String](../sql-reference/data-types/string.md)     | `BINARY`                  |
 | `DECIMAL`                 | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                 |
 | `LIST`                    | [Array](../sql-reference/data-types/array.md)       | `LIST`                    |
+| `STRUCT`                  | [Tuple](../sql-reference/data-types/tuple.md)       | `STRUCT`                  |
+| `MAP`                     | [Map](../sql-reference/data-types/map.md)           | `MAP`                     |
 
-Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`.
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Типы `Tuple` и `Map` также могут быть вложенными.
 
 ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных ORC `DECIMAL` как `Decimal128`.
 

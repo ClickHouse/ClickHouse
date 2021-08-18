@@ -12,7 +12,6 @@
 #include <common/types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
-#include <Common/Stopwatch.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -74,6 +73,8 @@ class CrashLog;
 class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
+class QueryViewsLog;
+class ZooKeeperLog;
 
 
 class ISystemLog
@@ -110,6 +111,10 @@ struct SystemLogs
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
     /// OpenTelemetry trace spans.
     std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
+    /// Used to log queries of materialized and live views
+    std::shared_ptr<QueryViewsLog> query_views_log;
+    /// Used to log all actions of ZooKeeper client
+    std::shared_ptr<ZooKeeperLog> zookeeper_log;
 
     std::vector<ISystemLog *> logs;
 };

@@ -2,11 +2,15 @@
 
 #include <functional>
 #include <common/scope_guard.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPipeline.h>
+#include <DataStreams/formatBlock.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/copyData.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Common/ShellCommand.h>
 #include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
@@ -68,12 +72,12 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 {
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::loadAll()
+Pipe ExecutablePoolDictionarySource::loadAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::loadUpdatedAll()
+Pipe ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
 }
@@ -83,19 +87,19 @@ namespace
     /** A stream, that runs child process and sends data to its stdin in background thread,
       *  and receives data from its stdout.
       */
-    class PoolBlockInputStreamWithBackgroundThread final : public IBlockInputStream
+    class PoolSourceWithBackgroundThread final : public SourceWithProgress
     {
     public:
-        PoolBlockInputStreamWithBackgroundThread(
+        PoolSourceWithBackgroundThread(
             std::shared_ptr<ProcessPool> process_pool_,
             std::unique_ptr<ShellCommand> && command_,
-            BlockInputStreamPtr && stream_,
+            Pipe pipe,
             size_t read_rows_,
             Poco::Logger * log_,
             std::function<void(WriteBufferFromFile &)> && send_data_)
-            : process_pool(process_pool_)
+            : SourceWithProgress(pipe.getHeader())
+            , process_pool(process_pool_)
             , command(std::move(command_))
-            , stream(std::move(stream_))
             , rows_to_read(read_rows_)
             , log(log_)
             , send_data(std::move(send_data_))
@@ -111,9 +115,12 @@ namespace
                     exception_during_read = std::current_exception();
                 }
             })
-        {}
+        {
+            pipeline.init(std::move(pipe));
+            executor = std::make_unique<PullingPipelineExecutor>(pipeline);
+        }
 
-        ~PoolBlockInputStreamWithBackgroundThread() override
+        ~PoolSourceWithBackgroundThread() override
         {
             if (thread.joinable())
                 thread.join();
@@ -122,25 +129,22 @@ namespace
                 process_pool->returnObject(std::move(command));
         }
 
-        Block getHeader() const override
-        {
-            return stream->getHeader();
-        }
-
-    private:
-        Block readImpl() override
+    protected:
+        Chunk generate() override
         {
             rethrowExceptionDuringReadIfNeeded();
 
             if (current_read_rows == rows_to_read)
-                return Block();
+                return {};
 
-            Block block;
+            Chunk chunk;
 
             try
             {
-                block = stream->read();
-                current_read_rows += block.rows();
+                if (!executor->pull(chunk))
+                    return {};
+
+                current_read_rows += chunk.getNumRows();
             }
             catch (...)
             {
@@ -149,22 +153,23 @@ namespace
                 throw;
             }
 
-            return block;
+            return chunk;
         }
 
-        void readPrefix() override
+    public:
+        Status prepare() override
         {
-            rethrowExceptionDuringReadIfNeeded();
-            stream->readPrefix();
-        }
+            auto status = SourceWithProgress::prepare();
 
-        void readSuffix() override
-        {
-            if (thread.joinable())
-                thread.join();
+            if (status == Status::Finished)
+            {
+                if (thread.joinable())
+                    thread.join();
 
-            rethrowExceptionDuringReadIfNeeded();
-            stream->readSuffix();
+                rethrowExceptionDuringReadIfNeeded();
+            }
+
+            return status;
         }
 
         void rethrowExceptionDuringReadIfNeeded()
@@ -181,7 +186,8 @@ namespace
 
         std::shared_ptr<ProcessPool> process_pool;
         std::unique_ptr<ShellCommand> command;
-        BlockInputStreamPtr stream;
+        QueryPipeline pipeline;
+        std::unique_ptr<PullingPipelineExecutor> executor;
         size_t rows_to_read;
         Poco::Logger * log;
         std::function<void(WriteBufferFromFile &)> send_data;
@@ -193,7 +199,7 @@ namespace
 
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -201,7 +207,7 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::loadIds(const std::vector<UI
     return getStreamForBlock(block);
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -209,7 +215,7 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::loadKeys(const Columns & key
     return getStreamForBlock(block);
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
+Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 {
     std::unique_ptr<ShellCommand> process;
     bool result = process_pool->tryBorrowObject(process, [this]()
@@ -226,20 +232,20 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::getStreamForBlock(const Bloc
             configuration.max_command_execution_time);
 
     size_t rows_to_read = block.rows();
-    auto read_stream = context->getInputFormat(configuration.format, process->out, sample_block, rows_to_read);
+    auto format = FormatFactory::instance().getInput(configuration.format, process->out, sample_block, context, rows_to_read);
 
-    auto stream = std::make_unique<PoolBlockInputStreamWithBackgroundThread>(
-        process_pool, std::move(process), std::move(read_stream), rows_to_read, log,
+    Pipe pipe(std::make_unique<PoolSourceWithBackgroundThread>(
+        process_pool, std::move(process), Pipe(std::move(format)), rows_to_read, log,
         [block, this](WriteBufferFromFile & out) mutable
         {
             auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
             formatBlock(output_stream, block);
-        });
+        }));
 
     if (configuration.implicit_key)
-        return std::make_shared<BlockInputStreamWithAdditionalColumns>(block, std::move(stream));
-    else
-        return std::shared_ptr<PoolBlockInputStreamWithBackgroundThread>(stream.release());
+        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
+
+    return pipe;
 }
 
 bool ExecutablePoolDictionarySource::isModified() const
@@ -283,7 +289,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
-        if (created_from_ddl)
+        if (created_from_ddl && context->getApplicationType() != Context::ApplicationType::LOCAL)
             throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable pool dictionary source are not allowed to be created from DDL query");
 
         auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);

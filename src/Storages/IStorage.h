@@ -51,6 +51,9 @@ class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
+class SinkToStorage;
+using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
+
 class QueryPipeline;
 using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
@@ -261,7 +264,7 @@ public:
      *
      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
      */
-    virtual BlockInputStreams watch(
+    virtual Pipe watch(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,
@@ -271,6 +274,10 @@ public:
     {
         throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
+    /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
+    virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
@@ -322,7 +329,7 @@ public:
       * changed during lifetime of the returned streams, but the snapshot is
       * guaranteed to be immutable.
       */
-    virtual BlockOutputStreamPtr write(
+    virtual SinkToStoragePtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/)

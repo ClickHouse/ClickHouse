@@ -83,9 +83,10 @@ struct InputOrderInfo
 {
     SortDescription order_key_prefix_descr;
     int direction;
+    UInt64 limit;
 
-    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_)
-        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
+    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_, UInt64 limit_)
+        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_), limit(limit_) {}
 
     bool operator ==(const InputOrderInfo & other) const
     {
@@ -98,8 +99,6 @@ struct InputOrderInfo
 class IMergeTreeDataPart;
 
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
-
-struct MergeTreeDataSelectCache;
 
 // The projection selected to execute current query
 struct ProjectionCandidate
@@ -119,8 +118,6 @@ struct ProjectionCandidate
     ReadInOrderOptimizerPtr order_optimizer;
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
-    // std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_base_cache;
-    // std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_projection_cache;
 };
 
 /** Query along with some additional data,
@@ -160,7 +157,7 @@ struct SelectQueryInfo
     /// If not null, it means we choose a projection to execute current query.
     std::optional<ProjectionCandidate> projection;
     bool ignore_projections = false;
-    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_cache;
+    bool is_projection_query = false;
 };
 
 }

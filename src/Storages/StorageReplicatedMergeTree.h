@@ -116,7 +116,7 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -176,6 +176,7 @@ public:
         UInt8 active_replicas;
         /// If the error has happened fetching the info from ZooKeeper, this field will be set.
         String zookeeper_exception;
+        std::unordered_map<std::string, bool> replica_is_active;
     };
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
@@ -225,10 +226,10 @@ public:
     /// Fetch part only when it stored on shared storage like S3
     bool executeFetchShared(const String & source_replica, const String & new_part_name, const DiskPtr & disk, const String & path);
 
-    /// Lock part in zookeeper for use common S3 data in several nodes
+    /// Lock part in zookeeper for use shared data in several nodes
     void lockSharedData(const IMergeTreeDataPart & part) const override;
 
-    /// Unlock common S3 data part in zookeeper
+    /// Unlock shared data part in zookeeper
     /// Return true if data unlocked
     /// Return false if data is still used by another node
     bool unlockSharedData(const IMergeTreeDataPart & part) const override;
@@ -236,8 +237,8 @@ public:
     /// Fetch part only if some replica has it on shared storage like S3
     bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
-    /// Get best replica having this partition on S3
-    String getSharedDataReplica(const IMergeTreeDataPart & part) const;
+    /// Get best replica having this partition on a same type remote disk
+    String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType::Type disk_type) const;
 
     inline String getReplicaName() const { return replica_name; }
 
@@ -269,7 +270,7 @@ private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
 
-    friend class ReplicatedMergeTreeBlockOutputStream;
+    friend class ReplicatedMergeTreeSink;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
@@ -688,6 +689,24 @@ private:
         bool fetch_part,
         ContextPtr query_context) override;
 
+    /// NOTE: there are no guarantees for concurrent merges. Dropping part can
+    /// be concurrently merged into some covering part and dropPart will do
+    /// nothing. There are some fundamental problems with it. But this is OK
+    /// because:
+    ///
+    /// dropPart used in the following cases:
+    /// 1) Remove empty parts after TTL.
+    /// 2) Remove parts after move between shards.
+    /// 3) User queries: ALTER TABLE DROP PART 'part_name'.
+    ///
+    /// In the first case merge of empty part is even better than DROP. In the
+    /// second case part UUIDs used to forbid merges for moving parts so there
+    /// is no problem with concurrent merges. The third case is quite rare and
+    /// we give very weak guarantee: there will be no active part with this
+    /// name, but possibly it was merged to some other part.
+    ///
+    /// NOTE: don't rely on dropPart if you 100% need to remove non-empty part
+    /// and don't use any explicit locking mechanism for merges.
     bool dropPartImpl(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop);
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
@@ -701,6 +720,8 @@ private:
     MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
+
+    std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(

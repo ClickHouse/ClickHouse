@@ -1,4 +1,5 @@
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <chrono>
 
 /** Previously, these constants were located in one enum.
@@ -557,8 +558,17 @@
     M(587, CONCURRENT_ACCESS_NOT_SUPPORTED) \
     M(588, DISTRIBUTED_BROKEN_BATCH_INFO) \
     M(589, DISTRIBUTED_BROKEN_BATCH_FILES) \
-    M(590, LZ4_ENCODER_FAILED) \
-    M(591, LZ4_DECODER_FAILED) \
+    M(590, CANNOT_SYSCONF) \
+    M(591, SQLITE_ENGINE_ERROR) \
+    M(592, DATA_ENCRYPTION_ERROR) \
+    M(593, ZERO_COPY_REPLICATION_ERROR) \
+    M(594, BZIP2_STREAM_DECODER_FAILED) \
+    M(595, BZIP2_STREAM_ENCODER_FAILED) \
+    M(596, INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH) \
+    M(597, NO_SUCH_ERROR_CODE) \
+    M(598, LZ4_ENCODER_FAILED) \
+    M(599, LZ4_DECODER_FAILED) \
+    \
     M(998, POSTGRESQL_CONNECTION_FAILURE) \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
@@ -594,6 +604,21 @@ namespace ErrorCodes
         if (error_code < 0 || error_code >= END)
             return std::string_view();
         return error_codes_names.names[error_code];
+    }
+
+    ErrorCode getErrorCodeByName(std::string_view error_name)
+    {
+        for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+        {
+            std::string_view name = ErrorCodes::getName(i);
+
+            if (name.empty())
+                continue;
+
+            if (name == error_name)
+                return i;
+        }
+        throw Exception(NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
     }
 
     ErrorCode end() { return END + 1; }
