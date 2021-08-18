@@ -1,25 +1,22 @@
 # system.zookeeper_log {#system-zookeeper_log}
 
-This table contains information about the parameters of the request to the ZooKeeper client and the response from it.
+This table contains information about the parameters of the request to the ZooKeeper server and the response from it.
 
 For requests, only columns with request parameters are filled in, and the remaining columns are filled with default values (`0` or `NULL`). When the response arrives, the data from the response is added to the other columns.
-
-!!! info "Note"
-    The table does not exist if ZooKeeper is not configured.
 
 Columns with request parameters:
 
 -   `type` ([Enum](../../sql-reference/data-types/enum.md)) — Event type in the ZooKeeper client. Can have one of the following values:
-    -   `request` — The request has been sent.
-    -   `response` — The response was received.
-    -   `finalize` — The connection is lost, no response was received.
--   `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the request was completed.
--   `event_time` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — The date and time when the request was completed.
--   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address that was used to make the request.
--   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to make the request.
+    -   `Request` — The request has been sent.
+    -   `Response` — The response was received.
+    -   `Finalize` — The connection is lost, no response was received.
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the event happened.
+-   `event_time` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — The date and time when the event happened.
+-   `address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP address of ZooKeeper server that was used to make the request.
+-   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The port of ZooKeeper server that was used to make the request.
 -   `session_id` ([Int64](../../sql-reference/data-types/int-uint.md)) — The session ID that the ZooKeeper server sets for each connection.
--   `xid` ([Int32](../../sql-reference/data-types/int-uint.md)) — The ID of the request within the session. This is usually a sequential request number. It is the same for the request line and the paired `response`/`finalize` line.
--   `has_watch` ([UInt8](../../sql-reference/data-types/int-uint.md)) — The request whether the [watch](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) has been installed.
+-   `xid` ([Int32](../../sql-reference/data-types/int-uint.md)) — The ID of the request within the session. This is usually a sequential request number. It is the same for the request row and the paired `response`/`finalize` row.
+-   `has_watch` ([UInt8](../../sql-reference/data-types/int-uint.md)) — The request whether the [watch](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) has been set.
 -   `op_num` ([Enum](../../sql-reference/data-types/enum.md)) — The type of request or response.
 -   `path` ([String](../../sql-reference/data-types/string.md)) — The path to the ZooKeeper node specified in the request, or an empty string  if the request not requires specifying a path.
 -   `data` ([String](../../sql-reference/data-types/string.md)) — The data written to the ZooKeeper node (for the `SET` and `CREATE` requests — what the request wanted to write, for the response to the `GET` request — what was read) or an empty string.
@@ -32,8 +29,8 @@ Columns with request parameters:
 Columns with request response parameters:
 
 -   `zxid` ([Int64](../../sql-reference/data-types/int-uint.md)) — ZooKeeper transaction ID. The serial number issued by the ZooKeeper server in response to a successfully executed request (`0` if the request was not executed/returned an error/the client does not know whether the request was executed).
--   `error` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — Error code. Can have one of the following values:
-    -   `ZOK` — The response to the request was received.
+-   `error` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — Error code. Can have many values, here are just some of them:
+    -   `ZOK` — The request was executed seccessfully.
     -   `ZCONNECTIONLOSS` — The connection was lost.
     -   `ZOPERATIONTIMEOUT` — The request execution timeout has expired.
 	-   `ZSESSIONEXPIRED` — The session has expired.
