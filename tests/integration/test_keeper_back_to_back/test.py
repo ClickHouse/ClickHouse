@@ -113,7 +113,7 @@ def test_sequential_nodes(started_cluster):
             fake_throw = True
 
         assert genuine_throw == True
-        assert genuine_throw == fake_throw
+        assert fake_throw == True
 
         genuine_childs_1 = list(sorted(genuine_zk.get_children("/test_sequential_nodes_1")))
         fake_childs_1 = list(sorted(fake_zk.get_children("/test_sequential_nodes_1")))
