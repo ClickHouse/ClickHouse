@@ -337,7 +337,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     PullingAsyncPipelineExecutor executor(io.pipeline);
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
-    set->setHeader(executor.getHeader());
+    set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
 
     Block block;
     while (executor.pull(block))
@@ -346,7 +346,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
             continue;
 
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-        if (!set->insertFromBlock(block))
+        if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
             return;
     }
 
