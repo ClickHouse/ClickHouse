@@ -127,8 +127,14 @@ export PATH
 export REF_PR
 export REF_SHA
 
+# Try to collect some core dumps. I've seen two patterns in Sandbox:
+# 1) |/home/zomb-sandbox/venv/bin/python /home/zomb-sandbox/client/sandbox/bin/coredumper.py %e %p %g %u %s %P %c
+#    Not sure what this script does (puts them to sandbox resources, logs some messages?),
+#    and it's not accessible from inside docker anyway.
+# 2) something like %e.%p.core.dmp. The dump should end up in the workspace directory.
+# At least we remove the ulimit and then try to pack some common file names into output.
 ulimit -c unlimited
-
+cat /proc/sys/kernel/core_pattern
 
 # Start the main comparison script.
 { \
@@ -147,13 +153,11 @@ done
 
 dmesg -T > dmesg.log
 
-cat /proc/sys/kernel/core_pattern
-
 ls -lath
 
 7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} \
     {right,left}/{performance,scripts} {{right,left}/db,db0}/preprocessed_configs \
     report analyze benchmark metrics \
-    ./*.core.dmp
+    ./*.core.dmp ./*.core
 
 cp compare.log /output
