@@ -26,6 +26,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
+#include <Common/ShellCommand.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
@@ -39,6 +40,7 @@
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
 #include <IO/HTTPCommon.h>
+#include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -95,6 +97,9 @@
 #endif
 
 #if USE_SSL
+#    if USE_INTERNAL_SSL_LIBRARY  && !defined(ARCADIA_BUILD)
+#        include <Compression/CompressionCodecEncrypted.h>
+#    endif
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -107,6 +112,10 @@
 #   include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
+#if USE_BASE64
+#   include <turbob64.h>
+#endif
+
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
 #endif
@@ -117,6 +126,7 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
     extern const Metric MaxDDLEntryID;
+    extern const Metric MaxPushedDDLEntryID;
 }
 
 namespace fs = std::filesystem;
@@ -242,6 +252,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int INCORRECT_DATA;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int SYSTEM_ERROR;
     extern const int FAILED_TO_GETPWUID;
@@ -443,6 +454,39 @@ void checkForUsersNotInMainConfig(
             " Also note that you should place configuration changes to the appropriate *.d directory like 'users.d'.",
             users_config_path, config_path);
     }
+}
+
+static void loadEncryptionKey(const std::string & key_command [[maybe_unused]], Poco::Logger * log)
+{
+#if USE_BASE64 && USE_SSL && USE_INTERNAL_SSL_LIBRARY
+
+    auto process = ShellCommand::execute(key_command);
+
+    std::string b64_key;
+    readStringUntilEOF(b64_key, process->out);
+    process->wait();
+
+    // turbob64 doesn't like whitespace characters in input. Strip
+    // them before decoding.
+    std::erase_if(b64_key, [](char c)
+    {
+        return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+    });
+
+    std::vector<char> buf(b64_key.size());
+    const size_t key_size = tb64dec(reinterpret_cast<const unsigned char *>(b64_key.data()), b64_key.size(),
+                                    reinterpret_cast<unsigned char *>(buf.data()));
+    if (!key_size)
+        throw Exception("Failed to decode encryption key", ErrorCodes::INCORRECT_DATA);
+    else if (key_size < 16)
+        LOG_WARNING(log, "The encryption key should be at least 16 octets long.");
+
+    const std::string_view key = std::string_view(buf.data(), key_size);
+    CompressionCodecEncrypted::setMasterKey(key);
+
+#else
+    LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
+#endif
 }
 
 
@@ -916,6 +960,10 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
 
+    /// Set up encryption.
+    if (config().has("encryption.key_command"))
+        loadEncryptionKey(config().getString("encryption.key_command"), log);
+
     Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
     Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
@@ -1047,6 +1095,7 @@ if (ThreadFuzzer::instance().isEffective())
         loadMetadataSystem(global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
+        global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
@@ -1420,7 +1469,8 @@ if (ThreadFuzzer::instance().isEffective())
             if (pool_size < 1)
                 throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
-                                                                     "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
+                                                                     "distributed_ddl", "DDLWorker",
+                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
         }
 
         for (auto & server : *servers)

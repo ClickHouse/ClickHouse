@@ -133,7 +133,7 @@ and the table `t_2`:
 └────┴──────┴───────────────┴─────────────────┘
 ```
 
-The query 
+The query
 ```sql
 SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 ```

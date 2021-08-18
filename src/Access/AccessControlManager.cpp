@@ -489,10 +489,11 @@ std::shared_ptr<const EnabledSettings> AccessControlManager::getEnabledSettings(
     return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
 }
 
-std::shared_ptr<const SettingsChanges> AccessControlManager::getProfileSettings(const String & profile_name) const
+std::shared_ptr<const SettingsProfilesInfo> AccessControlManager::getSettingsProfileInfo(const UUID & profile_id)
 {
-    return settings_profiles_cache->getProfileSettings(profile_name);
+    return settings_profiles_cache->getSettingsProfileInfo(profile_id);
 }
+
 
 const ExternalAuthenticators & AccessControlManager::getExternalAuthenticators() const
 {

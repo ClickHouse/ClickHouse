@@ -1,26 +1,25 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/Kafka/StorageKafka.h>
 
 namespace DB
 {
 
-class KafkaBlockOutputStream : public IBlockOutputStream
+class KafkaSink : public SinkToStorage
 {
 public:
-    explicit KafkaBlockOutputStream(
+    explicit KafkaSink(
         StorageKafka & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::shared_ptr<const Context> & context_);
 
-    Block getHeader() const override;
+    void consume(Chunk chunk) override;
+    void onStart() override;
+    void onFinish() override;
+    String getName() const override { return "KafkaSink"; }
 
-    void writePrefix() override;
-    void write(const Block & block) override;
-    void writeSuffix() override;
-
-    void flush() override;
+    ///void flush() override;
 
 private:
     StorageKafka & storage;

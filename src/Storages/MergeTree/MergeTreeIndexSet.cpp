@@ -48,8 +48,7 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
 void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(
-            "Attempt to write empty set index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty set index {}.", backQuote(index_name));
 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
@@ -80,8 +79,11 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
-void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
+void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
+    if (version != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+
     block.clear();
 
     Field field_rows;

@@ -32,8 +32,7 @@ class RowPolicyCache;
 class EnabledQuota;
 class QuotaCache;
 struct QuotaUsage;
-struct SettingsProfile;
-using SettingsProfilePtr = std::shared_ptr<const SettingsProfile>;
+struct SettingsProfilesInfo;
 class EnabledSettings;
 class SettingsProfilesCache;
 class SettingsProfileElements;
@@ -145,7 +144,7 @@ public:
                                                               const boost::container::flat_set<UUID> & enabled_roles,
                                                               const SettingsProfileElements & settings_from_enabled_roles) const;
 
-    std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name) const;
+    std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfo(const UUID & profile_id);
 
     const ExternalAuthenticators & getExternalAuthenticators() const;
 

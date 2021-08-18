@@ -3,7 +3,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SortCursor.h>
-#include <DataStreams/BlocksListBlockInputStream.h>
 #include <DataStreams/TemporaryFileStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -12,10 +11,10 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/join_common.h>
 #include <Interpreters/sortBlock.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/Sources/BlocksListSource.h>
 #include <Processors/QueryPipeline.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 
 
 namespace DB
@@ -577,8 +576,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
     if (right_blocks.empty())
         return;
 
-    auto stream = std::make_shared<BlocksListBlockInputStream>(std::move(right_blocks.blocks));
-    Pipe source(std::make_shared<SourceFromInputStream>(std::move(stream)));
+    Pipe source(std::make_shared<BlocksListSource>(std::move(right_blocks.blocks)));
     right_blocks.clear();
 
     QueryPipeline pipeline;
@@ -1077,12 +1075,11 @@ private:
         if (!rows_added)
             return {};
 
-        correctLowcardAndNullability(columns_right);
-
         Block res = result_sample_block.cloneEmpty();
         addLeftColumns(res, rows_added);
         addRightColumns(res, columns_right);
         copySameKeys(res);
+        correctLowcardAndNullability(res);
         return res;
     }
 
