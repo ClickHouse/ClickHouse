@@ -178,6 +178,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         /// Start queue processing
         storage.background_executor.start();
+        storage.background_moves_executor.start();
 
         storage.queue_updating_task->activateAndSchedule();
         storage.mutations_updating_task->activateAndSchedule();
@@ -363,6 +364,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
         auto merge_lock = storage.merger_mutator.merges_blocker.cancel();
         auto move_lock = storage.parts_mover.moves_blocker.cancel();
         storage.background_executor.finish();
+        storage.background_moves_executor.finish();
     }
 
     LOG_TRACE(log, "Threads finished");

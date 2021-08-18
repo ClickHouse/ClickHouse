@@ -8,12 +8,13 @@
 namespace DB
 {
 
-BackgroundJobExecutor::BackgroundJobExecutor(MergeTreeData & data_, ContextPtr global_context_)
+BackgroundJobExecutor::BackgroundJobExecutor(MergeTreeData & data_, BackgroundJobExecutor::Type type_, ContextPtr global_context_)
     : WithContext(global_context_)
     , data(data_)
     , sleep_settings(global_context_->getBackgroundMoveTaskSchedulingSettings())
     , rng(randomSeed())
     , storage_id(data.getStorageID())
+    , type(type_)
 {
 }
 
@@ -137,10 +138,13 @@ BackgroundJobExecutor::~BackgroundJobExecutor()
 
 bool BackgroundJobExecutor::selectTaskAndExecute()
 {
-    if (counter % 2 == 0)
-        return data.scheduleDataProcessingJob(*this);
-    else
-        return data.scheduleDataMovingJob(*this);
+    switch (type)
+    {
+        case Type::DataProcessing:
+            return data.scheduleDataProcessingJob(*this);
+        case Type::Moving:
+            return data.scheduleDataMovingJob(*this);
+    }
 }
 
 

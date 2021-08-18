@@ -56,7 +56,8 @@ class BackgroundJobExecutor : protected WithContext
 {
 
 private:
-    [[ maybe_unused ]] UInt64 counter{0};
+
+
 
     MergeTreeData & data;
 
@@ -82,6 +83,15 @@ private:
     StorageID storage_id;
 
 public:
+
+    enum class Type
+    {
+        DataProcessing,
+        Moving
+    };
+
+    Type type{Type::DataProcessing};
+
     /// These three functions are thread safe
 
     /// Start background task and start to assign jobs
@@ -103,6 +113,7 @@ public:
 
     BackgroundJobExecutor(
         MergeTreeData & data_,
+        Type type,
         ContextPtr global_context_);
 
 private:

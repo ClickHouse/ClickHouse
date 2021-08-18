@@ -84,7 +84,8 @@ StorageMergeTree::StorageMergeTree(
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, getContext()->getSettingsRef().background_pool_size)
-    , background_executor(*this, getContext())
+    , background_executor(*this, BackgroundJobExecutor::Type::DataProcessing, getContext())
+    , background_moves_executor(*this, BackgroundJobExecutor::Type::Moving, getContext())
 
 {
     loadDataParts(has_force_restore_data_flag);
@@ -117,6 +118,7 @@ void StorageMergeTree::startup()
     try
     {
         background_executor.start();
+        background_moves_executor.start();
         startBackgroundMovesIfNeeded();
     }
     catch (...)
@@ -155,6 +157,7 @@ void StorageMergeTree::shutdown()
     parts_mover.moves_blocker.cancelForever();
 
     background_executor.finish();
+    background_moves_executor.finish();
 
     try
     {
@@ -1519,8 +1522,10 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 
 void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
 {
-    if (action_type == ActionLocks::PartsMerge ||  action_type == ActionLocks::PartsTTLMerge || action_type == ActionLocks::PartsMove)
+    if (action_type == ActionLocks::PartsMerge ||  action_type == ActionLocks::PartsTTLMerge)
         background_executor.triggerTask();
+    if (action_type == ActionLocks::PartsMove)
+        background_moves_executor.triggerTask();
 }
 
 CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
@@ -1591,8 +1596,8 @@ MutationCommands StorageMergeTree::getFirstAlterMutationCommandsForPart(const Da
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()
 {
-    // if (areBackgroundMovesNeeded())
-    //     background_moves_executor.start();
+    if (areBackgroundMovesNeeded())
+        background_moves_executor.start();
 }
 
 std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const

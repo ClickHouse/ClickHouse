@@ -107,6 +107,8 @@ public:
             background_executor.triggerTaskWithDelay();
         else
             background_executor.triggerTask();
+
+        background_moves_executor.triggerTask();
     }
 
 private:
@@ -146,6 +148,7 @@ private:
 
     /// Must be last fields to be destroyed first.
     BackgroundJobExecutor background_executor;
+    BackgroundJobExecutor background_moves_executor;
 
 
 private:

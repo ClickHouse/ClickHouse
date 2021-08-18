@@ -293,7 +293,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_fetches_pool_size(getContext()->getSettingsRef().background_fetches_pool_size)
     , replicated_fetches_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_fetches_network_bandwidth, getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_sends_network_bandwidth, getContext()->getReplicatedSendsThrottler()))
-    , background_executor(*this, getContext())
+    , background_executor(*this, BackgroundJobExecutor::Type::DataProcessing, getContext())
+    , background_moves_executor(*this, BackgroundJobExecutor::Type::Moving, getContext())
 {
     queue_updating_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
@@ -3967,6 +3968,7 @@ void StorageReplicatedMergeTree::startup()
         /// If we don't separate create/start steps, race condition will happen
         /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
         background_executor.start();
+        background_moves_executor.start();
         startBackgroundMovesIfNeeded();
 
         part_moves_between_shards_orchestrator.start();
@@ -4009,6 +4011,7 @@ void StorageReplicatedMergeTree::shutdown()
         /// MUTATE, etc. query.
         queue.pull_log_blocker.cancelForever();
     }
+    background_moves_executor.finish();
 
     auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
     if (data_parts_exchange_ptr)
@@ -6595,8 +6598,10 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
 {
     if (action_type == ActionLocks::PartsMerge || action_type == ActionLocks::PartsTTLMerge
         || action_type == ActionLocks::PartsFetch || action_type == ActionLocks::PartsSend
-        || action_type == ActionLocks::ReplicationQueue || action_type == ActionLocks::PartsMove)
+        || action_type == ActionLocks::ReplicationQueue)
         background_executor.triggerTask();
+    if (action_type == ActionLocks::PartsMove)
+        background_moves_executor.triggerTask();
 }
 
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
@@ -6609,6 +6614,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
     background_executor.triggerTask();
+    background_moves_executor.triggerTask();
 
     Poco::Event target_size_event;
     auto callback = [&target_size_event, queue_size] (size_t new_queue_size)
@@ -6842,8 +6848,8 @@ MutationCommands StorageReplicatedMergeTree::getFirstAlterMutationCommandsForPar
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()
 {
-    // if (areBackgroundMovesNeeded())
-    //     background_moves_executor.start();
+    if (areBackgroundMovesNeeded())
+        background_moves_executor.start();
 }
 
 std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSettings() const

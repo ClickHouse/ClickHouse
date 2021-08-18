@@ -270,6 +270,8 @@ public:
             background_executor.triggerTaskWithDelay();
         else
             background_executor.triggerTask();
+
+        background_moves_executor.triggerTask();
     }
 
 private:
@@ -619,6 +621,7 @@ private:
     /// Must be the last
     /// Move to MergeTreeData ?
     BackgroundJobExecutor background_executor;
+    BackgroundJobExecutor background_moves_executor;
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name, bool is_parallel);

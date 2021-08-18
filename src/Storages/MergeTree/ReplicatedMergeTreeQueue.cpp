@@ -618,6 +618,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
         }
 
         storage.background_executor.triggerTask();
+        storage.background_moves_executor.triggerTask();
     }
 
     return stat.version;
