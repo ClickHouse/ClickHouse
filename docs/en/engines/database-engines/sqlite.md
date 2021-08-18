@@ -20,10 +20,12 @@ The engine works with [SQLite](https://www.sqlite.org/index.html).
     
 ## Data Types Support {#data_types-support}
 
-|  EngineName           | ClickHouse                         |
-|-----------------------|------------------------------------|
-| NativeDataTypeName    | [ClickHouseDataTypeName](link#)    |
-
+|  EngineName   | ClickHouse                                              |
+|---------------|---------------------------------------------------------|
+| INTEGER       | [Int32](../../sql-reference/data-types/int-uint.md)     |
+| REAL          | [Float32](../../sql-reference/data-types/float.md)      |
+| TEXT          | [String](../../sql-reference/data-types/string.md)      |
+| BLOB          | [String](../../sql-reference/data-types/string.md)      |
 
 ## Specifics and recommendations {#specifics-and-recommendations}
 
@@ -32,21 +34,18 @@ SQLite does not require service management (such as startup scripts) or access c
 
 ## Usage Example {#usage-example}
 
-The example must show usage and use cases. The following text contains the recommended parts of this section.
-
-Input table:
-
-``` text
-```
-
-Query:
+Database in ClickHouse, exchanging data with the SQLite:
 
 ``` sql
+CREATE DATABASE sqlite_db ENGINE = SQLite('sqlite.db');
+SHOW TABLES FROM sqlite_db;
 ```
 
 Result:
 
 ``` text
+┌──name───┐
+│ table1  │
+│ table2  │  
+└─────────┘
 ```
-
-Follow up with any text to clarify the example.
