@@ -146,6 +146,7 @@ class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 
 public:
     static void initialize(size_t max_threads = 10000);
+    static void reset();
     static GlobalThreadPool & instance();
 };
 

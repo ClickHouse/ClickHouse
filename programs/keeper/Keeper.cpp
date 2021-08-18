@@ -329,6 +329,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     const Settings & settings = global_context->getSettingsRef();
 
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 100));
+    // Reset the thread pool at exit to ensure thread destructors are called while the subsystems (logging) are still alive
+    SCOPE_EXIT({ GlobalThreadPool::reset(); });
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);

@@ -547,6 +547,8 @@ if (ThreadFuzzer::instance().isEffective())
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
+    // Reset the thread pool at exit to ensure thread destructors are called while the subsystems (logging) are still alive
+    SCOPE_EXIT({ GlobalThreadPool::reset(); });
 
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 

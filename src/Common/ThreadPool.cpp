@@ -338,6 +338,11 @@ void GlobalThreadPool::initialize(size_t max_threads)
         false /*shutdown_on_exception*/));
 }
 
+void GlobalThreadPool::reset()
+{
+    the_instance.reset();
+}
+
 GlobalThreadPool & GlobalThreadPool::instance()
 {
     if (!the_instance)
