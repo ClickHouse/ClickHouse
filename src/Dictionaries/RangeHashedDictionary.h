@@ -32,8 +32,7 @@ template <DictionaryKeyType dictionary_key_type>
 class RangeHashedDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by hashed dictionary");
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     RangeHashedDictionary(
         const StorageID & dict_id_,
@@ -78,7 +77,9 @@ public:
         return dict_struct.getAttribute(attribute_name).injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::range; }
+    DictionaryKeyType getKeyType() const override { return dictionary_key_type; }
+
+    DictionarySpecialKeyType getSpecialKeyType() const override { return DictionarySpecialKeyType::Range;}
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -104,7 +105,7 @@ private:
 
     template <typename Value>
     using CollectionType = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::simple,
+        dictionary_key_type == DictionaryKeyType::Simple,
         HashMap<UInt64, Values<Value>>,
         HashMapWithSavedHash<StringRef, Values<Value>, DefaultHash<StringRef>>>;
 
