@@ -112,6 +112,7 @@ def test_sequential_nodes(started_cluster):
         except Exception as ex:
             fake_throw = True
 
+        assert genuine_throw == True
         assert genuine_throw == fake_throw
 
         genuine_childs_1 = list(sorted(genuine_zk.get_children("/test_sequential_nodes_1")))
