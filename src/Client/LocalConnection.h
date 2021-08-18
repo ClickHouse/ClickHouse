@@ -97,7 +97,7 @@ public:
 
     void sendCancel() override;
 
-    void sendData(const Block &, const String &, bool) override {}
+    void sendData(const Block &, const String &, bool) override;
 
     void sendExternalTablesData(ExternalTablesData &) override {}
 
@@ -156,5 +156,7 @@ private:
     void finishQuery();
 
     void updateProgress(const Progress & value);
+
+    void processInsertQuery();
 };
 }
