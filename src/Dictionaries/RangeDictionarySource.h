@@ -14,18 +14,12 @@
 namespace DB
 {
 
-enum class RangeDictionaryType
-{
-    simple,
-    complex
-};
-
-template <RangeDictionaryType range_dictionary_type, typename RangeType>
+template <DictionaryKeyType dictionary_key_type, typename RangeType>
 class RangeDictionarySourceData
 {
 public:
 
-    using KeyType = std::conditional_t<range_dictionary_type == RangeDictionaryType::simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     RangeDictionarySourceData(
         std::shared_ptr<const IDictionary> dictionary,
@@ -58,8 +52,8 @@ private:
 };
 
 
-template <RangeDictionaryType range_dictionary_type, typename RangeType>
-RangeDictionarySourceData<range_dictionary_type, RangeType>::RangeDictionarySourceData(
+template <DictionaryKeyType dictionary_key_type, typename RangeType>
+RangeDictionarySourceData<dictionary_key_type, RangeType>::RangeDictionarySourceData(
     std::shared_ptr<const IDictionary> dictionary_,
     const Names & column_names_,
     PaddedPODArray<KeyType> && keys,
@@ -73,8 +67,8 @@ RangeDictionarySourceData<range_dictionary_type, RangeType>::RangeDictionarySour
 {
 }
 
-template <RangeDictionaryType range_dictionary_type, typename RangeType>
-Block RangeDictionarySourceData<range_dictionary_type, RangeType>::getBlock(size_t start, size_t length) const
+template <DictionaryKeyType dictionary_key_type, typename RangeType>
+Block RangeDictionarySourceData<dictionary_key_type, RangeType>::getBlock(size_t start, size_t length) const
 {
     PaddedPODArray<KeyType> block_keys;
     PaddedPODArray<RangeType> block_start_dates;
@@ -93,8 +87,8 @@ Block RangeDictionarySourceData<range_dictionary_type, RangeType>::getBlock(size
     return fillBlock(block_keys, block_start_dates, block_end_dates, start, start + length);
 }
 
-template <RangeDictionaryType range_dictionary_type, typename RangeType>
-PaddedPODArray<Int64> RangeDictionarySourceData<range_dictionary_type, RangeType>::makeDateKeys(
+template <DictionaryKeyType dictionary_key_type, typename RangeType>
+PaddedPODArray<Int64> RangeDictionarySourceData<dictionary_key_type, RangeType>::makeDateKeys(
     const PaddedPODArray<RangeType> & block_start_dates,
     const PaddedPODArray<RangeType> & block_end_dates) const
 {
@@ -112,24 +106,14 @@ PaddedPODArray<Int64> RangeDictionarySourceData<range_dictionary_type, RangeType
 }
 
 
-template <RangeDictionaryType range_dictionary_type, typename RangeType>
-Block RangeDictionarySourceData<range_dictionary_type, RangeType>::fillBlock(
+template <DictionaryKeyType dictionary_key_type, typename RangeType>
+Block RangeDictionarySourceData<dictionary_key_type, RangeType>::fillBlock(
     const PaddedPODArray<KeyType> & keys_to_fill,
     const PaddedPODArray<RangeType> & block_start_dates,
     const PaddedPODArray<RangeType> & block_end_dates,
     size_t start,
     size_t end) const
 {
-    std::cerr << "RangeDictionarySourceData::fillBlock keys_to_fill " << keys_to_fill.size() << std::endl;
-
-    if constexpr (range_dictionary_type == RangeDictionaryType::simple)
-    {
-        for (auto & key : keys_to_fill)
-        {
-            std::cerr << key << std::endl;
-        }
-    }
-
     ColumnsWithTypeAndName columns;
     const DictionaryStructure & dictionary_structure = dictionary->getStructure();
 
@@ -137,7 +121,7 @@ Block RangeDictionarySourceData<range_dictionary_type, RangeType>::fillBlock(
     Columns keys_columns;
     Strings keys_names = dictionary_structure.getKeysNames();
 
-    if constexpr (range_dictionary_type == RangeDictionaryType::simple)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
         keys_columns = {getColumnFromPODArray(keys_to_fill)};
         keys_types = {std::make_shared<DataTypeUInt64>()};
@@ -153,9 +137,6 @@ Block RangeDictionarySourceData<range_dictionary_type, RangeType>::fillBlock(
     }
 
     size_t keys_size = keys_names.size();
-
-    std::cerr << "Keys size " << keys_size << " key columns size " << keys_columns.size();
-    std::cerr << " keys types size " << keys_types.size() << std::endl;
 
     assert(keys_columns.size() == keys_size);
     assert(keys_types.size() == keys_size);
@@ -204,51 +185,33 @@ Block RangeDictionarySourceData<range_dictionary_type, RangeType>::fillBlock(
         columns.emplace_back(std::move(column), attribute.type, attribute.name);
     }
 
-    auto result = Block(columns);
-
-    Field value;
-    std::cerr << "RangeDictionarySourceData::fillBlock result" << std::endl;
-    for (auto & block_column : result)
-    {
-        std::cerr << "Column name " << block_column.name << " type " << block_column.type->getName() << std::endl;
-
-        auto & column = block_column.column;
-        size_t column_size = column->size();
-
-        for (size_t i = 0; i < column_size; ++i)
-        {
-            column->get(i, value);
-            std::cerr << "Index " << i << " value " << value.dump() << std::endl;
-        }
-    }
-
     return Block(columns);
 }
 
-template <RangeDictionaryType range_dictionary_type, typename RangeType>
+template <DictionaryKeyType dictionary_key_type, typename RangeType>
 class RangeDictionarySource : public DictionarySourceBase
 {
 public:
 
-    RangeDictionarySource(RangeDictionarySourceData<range_dictionary_type, RangeType> data_, size_t max_block_size);
+    RangeDictionarySource(RangeDictionarySourceData<dictionary_key_type, RangeType> data_, size_t max_block_size);
 
     String getName() const override { return "RangeDictionarySource"; }
 
 protected:
     Block getBlock(size_t start, size_t length) const override;
 
-    RangeDictionarySourceData<range_dictionary_type, RangeType> data;
+    RangeDictionarySourceData<dictionary_key_type, RangeType> data;
 };
 
-template <RangeDictionaryType range_dictionary_type, typename RangeType>
-RangeDictionarySource<range_dictionary_type, RangeType>::RangeDictionarySource(RangeDictionarySourceData<range_dictionary_type, RangeType> data_, size_t max_block_size)
+template <DictionaryKeyType dictionary_key_type, typename RangeType>
+RangeDictionarySource<dictionary_key_type, RangeType>::RangeDictionarySource(RangeDictionarySourceData<dictionary_key_type, RangeType> data_, size_t max_block_size)
     : DictionarySourceBase(data_.getBlock(0, 0), data_.getNumRows(), max_block_size)
     , data(std::move(data_))
 {
 }
 
-template <RangeDictionaryType range_dictionary_type, typename RangeType>
-Block RangeDictionarySource<range_dictionary_type, RangeType>::getBlock(size_t start, size_t length) const
+template <DictionaryKeyType dictionary_key_type, typename RangeType>
+Block RangeDictionarySource<dictionary_key_type, RangeType>::getBlock(size_t start, size_t length) const
 {
     return data.getBlock(start, length);
 }

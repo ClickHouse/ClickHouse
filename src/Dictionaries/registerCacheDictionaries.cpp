@@ -157,24 +157,23 @@ DictionaryPtr createCacheDictionaryLayout(
     ContextPtr context [[maybe_unused]],
     bool created_from_ddl [[maybe_unused]])
 {
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionary");
-
     String layout_type;
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple && !ssd)
+
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple && !ssd)
         layout_type = "cache";
-    else if constexpr (dictionary_key_type == DictionaryKeyType::simple && ssd)
+    else if constexpr (dictionary_key_type == DictionaryKeyType::Simple && ssd)
         layout_type = "ssd_cache";
-    else if constexpr (dictionary_key_type == DictionaryKeyType::complex && !ssd)
+    else if constexpr (dictionary_key_type == DictionaryKeyType::Complex && !ssd)
         layout_type = "complex_key_cache";
-    else if constexpr (dictionary_key_type == DictionaryKeyType::complex && ssd)
+    else if constexpr (dictionary_key_type == DictionaryKeyType::Complex && ssd)
         layout_type = "complex_key_ssd_cache";
 
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
         if (dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: dictionary of layout '{}' 'key' is not supported", full_name, layout_type);
     }
-    else if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+    else if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
     {
         if (dict_struct.id)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: dictionary of layout '{}' 'id' is not supported", full_name, layout_type);
@@ -243,7 +242,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
                                           ContextPtr context,
                                           bool created_from_ddl) -> DictionaryPtr
     {
-        return createCacheDictionaryLayout<DictionaryKeyType::simple, false/* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), std::move(context), created_from_ddl);
+        return createCacheDictionaryLayout<DictionaryKeyType::Simple, false/* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), std::move(context), created_from_ddl);
     };
 
     factory.registerLayout("cache", create_simple_cache_layout, false);
@@ -256,7 +255,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
                                                ContextPtr context,
                                                bool created_from_ddl) -> DictionaryPtr
     {
-        return createCacheDictionaryLayout<DictionaryKeyType::complex, false /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), std::move(context), created_from_ddl);
+        return createCacheDictionaryLayout<DictionaryKeyType::Complex, false /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), std::move(context), created_from_ddl);
     };
 
     factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true);
@@ -271,7 +270,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
                                               ContextPtr context,
                                               bool created_from_ddl) -> DictionaryPtr
     {
-        return createCacheDictionaryLayout<DictionaryKeyType::simple, true /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), std::move(context), created_from_ddl);
+        return createCacheDictionaryLayout<DictionaryKeyType::Simple, true /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), std::move(context), created_from_ddl);
     };
 
     factory.registerLayout("ssd_cache", create_simple_ssd_cache_layout, false);
@@ -283,7 +282,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
                                                    DictionarySourcePtr source_ptr,
                                                    ContextPtr context,
                                                    bool created_from_ddl) -> DictionaryPtr {
-        return createCacheDictionaryLayout<DictionaryKeyType::complex, true /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), std::move(context), created_from_ddl);
+        return createCacheDictionaryLayout<DictionaryKeyType::Complex, true /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), std::move(context), created_from_ddl);
     };
 
     factory.registerLayout("complex_key_ssd_cache", create_complex_key_ssd_cache_layout, true);
