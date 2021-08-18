@@ -12,7 +12,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/ServerUUID.h>
+#include <Core/ServerUUID.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "Common/config_version.h"

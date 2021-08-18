@@ -17,7 +17,7 @@
 #include <Poco/Version.h>
 #include <Poco/Environment.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/ServerUUID.h>
+#include <Core/ServerUUID.h>
 #include <filesystem>
 #include <IO/UseSSL.h>
 
