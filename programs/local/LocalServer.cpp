@@ -381,7 +381,7 @@ void LocalServer::processQueries()
     context->makeSessionContext();
     context->makeQueryContext();
 
-    context->setUser("default", "", Poco::Net::SocketAddress{});
+    context->authenticate("default", "", Poco::Net::SocketAddress{});
     context->setCurrentQueryId("");
     applyCmdSettings(context);
 
