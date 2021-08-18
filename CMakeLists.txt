@@ -593,7 +593,7 @@ macro (add_executable target)
         # disabled for TSAN and gcc since libtsan.a provides overrides too
         if (TARGET clickhouse_new_delete)
             # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
         endif()
     endif()
 endmacro()
