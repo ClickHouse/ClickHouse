@@ -12,6 +12,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/Macros.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <common/range.h>
@@ -153,18 +154,14 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (arg_num < args.size())
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    /// ExpressionAnalyzer will be created in InterpreterSelectQuery that will meet these `Identifier` when processing the request.
-    /// We need to mark them as the name of the database or table, because the default value is column.
-    for (auto ast : args)
-        setIdentifierSpecial(ast);
-
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
+        String cluster_name_expanded = context->getMacros()->expand(cluster_name);
         if (name != "clusterAllReplicas")
-            cluster = context->getCluster(cluster_name);
+            cluster = context->getCluster(cluster_name_expanded);
         else
-            cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
+            cluster = context->getCluster(cluster_name_expanded)->getClusterWithReplicasAsShards(context->getSettings());
     }
     else
     {
@@ -197,13 +194,16 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             }
         }
 
+        bool treat_local_as_remote = false;
+        bool treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
         cluster = std::make_shared<Cluster>(
             context->getSettings(),
             names,
             username,
             password,
             (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
-            false,
+            treat_local_as_remote,
+            treat_local_port_as_remote,
             secure);
     }
 

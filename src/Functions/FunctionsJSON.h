@@ -287,6 +287,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -607,6 +608,8 @@ public:
     }
 };
 
+template <typename JSONParser>
+class JSONExtractRawImpl;
 
 /// Nodes of the extract tree. We need the extract tree to extract from JSON complex values containing array, tuples or nullables.
 template <typename JSONParser>
@@ -691,7 +694,10 @@ struct JSONExtractTree
     public:
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
+            if (element.isString())
+                return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
+            else
+                return JSONExtractRawImpl<JSONParser>::insertResultToColumn(dest, element, {});
         }
     };
 

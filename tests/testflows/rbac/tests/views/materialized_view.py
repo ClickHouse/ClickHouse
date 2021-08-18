@@ -2103,7 +2103,7 @@ def insert_on_source_table(self, grant_target_name, user_name, node=None):
             with When("I grant INSERT on the source table"):
                 node.query(f"GRANT INSERT ON {table1_name} TO {grant_target_name}")
             with Then("I attempt to insert into the source table"):
-                node.query(f"INSERT INTO {table1_name}(d) VALUES ('01-01-2020')", settings = [("user",f"{user_name}")])
+                node.query(f"INSERT INTO {table1_name}(d) VALUES ('2020-01-01')", settings = [("user",f"{user_name}")])
 
         finally:
             with Finally("I drop the view"):
@@ -2152,7 +2152,7 @@ def insert_with_insert_privilege(self, grant_target_name, user_name, node=None):
             with When("I grant INSERT on the view"):
                 node.query(f"GRANT INSERT ON {view_name} TO {grant_target_name}")
             with Then("I attempt to insert into the view"):
-                node.query(f"INSERT INTO {view_name}(d) VALUES ('01-01-2020')",
+                node.query(f"INSERT INTO {view_name}(d) VALUES ('2020-01-01')",
                     settings = [("user",f"{user_name}")])
 
         finally:
@@ -2201,7 +2201,7 @@ def insert_on_target_table(self, grant_target_name, user_name, node=None):
             with When("I grant INSERT on the target table"):
                 node.query(f"GRANT INSERT ON {table0_name} TO {grant_target_name}")
             with Then("I attempt to insert into the target table"):
-                node.query(f"INSERT INTO {table0_name}(d) VALUES ('01-01-2020')", settings = [("user",f"{user_name}")])
+                node.query(f"INSERT INTO {table0_name}(d) VALUES ('2020-01-01')", settings = [("user",f"{user_name}")])
 
         finally:
             with Finally("I drop the view"):
@@ -2248,7 +2248,7 @@ def insert_on_target_table(self, grant_target_name, user_name, node=None):
             with When("I grant INSERT on the target table"):
                 node.query(f"GRANT INSERT ON {implicit_table_name} TO {grant_target_name}")
             with Then("I attempt to insert into the target table"):
-                node.query(f"INSERT INTO {implicit_table_name}(d) VALUES ('01-01-2020')", settings = [("user",f"{user_name}")])
+                node.query(f"INSERT INTO {implicit_table_name}(d) VALUES ('2020-01-01')", settings = [("user",f"{user_name}")])
 
         finally:
             with Finally("I drop the view"):

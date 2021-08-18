@@ -1,17 +1,17 @@
 #include <Interpreters/TableJoin.h>
 
-#include <common/logger_useful.h>
-
-#include <Parsers/ASTExpressionList.h>
-
-#include <Core/Settings.h>
-#include <Core/Block.h>
-#include <Core/ColumnsWithTypeAndName.h>
-
 #include <Common/StringUtils/StringUtils.h>
 
+#include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
+
 #include <DataTypes/DataTypeNullable.h>
-#include <DataStreams/materializeBlock.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/queryToString.h>
+
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -132,6 +132,8 @@ ASTPtr TableJoin::leftKeysList() const
 {
     ASTPtr keys_list = std::make_shared<ASTExpressionList>();
     keys_list->children = key_asts_left;
+    if (ASTPtr extra_cond = joinConditionColumn(JoinTableSide::Left))
+        keys_list->children.push_back(extra_cond);
     return keys_list;
 }
 
@@ -140,6 +142,8 @@ ASTPtr TableJoin::rightKeysList() const
     ASTPtr keys_list = std::make_shared<ASTExpressionList>();
     if (hasOn())
         keys_list->children = key_asts_right;
+    if (ASTPtr extra_cond = joinConditionColumn(JoinTableSide::Right))
+        keys_list->children.push_back(extra_cond);
     return keys_list;
 }
 
@@ -174,22 +178,6 @@ NamesWithAliases TableJoin::getRequiredColumns(const Block & sample, const Names
             required_columns.insert(column);
 
     return getNamesWithAliases(required_columns);
-}
-
-void TableJoin::splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const
-{
-    block_others = materializeBlock(sample_block);
-
-    for (const String & column_name : key_names_right)
-    {
-        /// Extract right keys with correct keys order. There could be the same key names.
-        if (!block_keys.has(column_name))
-        {
-            auto & col = block_others.getByName(column_name);
-            block_keys.insert(col);
-            block_others.erase(column_name);
-        }
-    }
 }
 
 Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const
@@ -472,6 +460,50 @@ String TableJoin::renamedRightColumnName(const String & name) const
     if (const auto it = renames.find(name); it != renames.end())
         return it->second;
     return name;
+}
+
+void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
+{
+    LOG_TRACE(&Poco::Logger::get("TableJoin"), "Add join condition for {} table: {}", (is_left ? "left" : "right"), queryToString(ast));
+
+    if (is_left)
+        on_filter_condition_asts_left.push_back(ast);
+    else
+        on_filter_condition_asts_right.push_back(ast);
+}
+
+/// Returns all conditions related to one table joined with 'and' function
+static ASTPtr buildJoinConditionColumn(const ASTs & on_filter_condition_asts)
+{
+    if (on_filter_condition_asts.empty())
+        return nullptr;
+
+    if (on_filter_condition_asts.size() == 1)
+        return on_filter_condition_asts[0];
+
+    auto function = std::make_shared<ASTFunction>();
+    function->name = "and";
+    function->arguments = std::make_shared<ASTExpressionList>();
+    function->children.push_back(function->arguments);
+    function->arguments->children = on_filter_condition_asts;
+    return function;
+}
+
+ASTPtr TableJoin::joinConditionColumn(JoinTableSide side) const
+{
+    if (side == JoinTableSide::Left)
+        return buildJoinConditionColumn(on_filter_condition_asts_left);
+    return buildJoinConditionColumn(on_filter_condition_asts_right);
+}
+
+std::pair<String, String> TableJoin::joinConditionColumnNames() const
+{
+    std::pair<String, String> res;
+    if (auto cond_ast = joinConditionColumn(JoinTableSide::Left))
+        res.first = cond_ast->getColumnName();
+    if (auto cond_ast = joinConditionColumn(JoinTableSide::Right))
+        res.second = cond_ast->getColumnName();
+    return res;
 }
 
 }

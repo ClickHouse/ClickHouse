@@ -459,6 +459,8 @@ public:
     explicit FieldVisitorMax(const Field & rhs_) : rhs(rhs_) {}
 
     bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (NegativeInfinity &) const { throw Exception("Cannot compare -Inf", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (PositiveInfinity &) const { throw Exception("Cannot compare +Inf", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot compare AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }
@@ -494,6 +496,8 @@ public:
     explicit FieldVisitorMin(const Field & rhs_) : rhs(rhs_) {}
 
     bool operator() (Null &) const { throw Exception("Cannot compare Nulls", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (NegativeInfinity &) const { throw Exception("Cannot compare -Inf", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (PositiveInfinity &) const { throw Exception("Cannot compare +Inf", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 
     bool operator() (Array & x) const { return compareImpl<Array>(x); }

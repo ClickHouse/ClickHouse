@@ -33,7 +33,7 @@ public:
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     std::string getName() const override;
 private:

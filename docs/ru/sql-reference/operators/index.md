@@ -192,7 +192,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 Вы можете изменить дату, не используя синтаксис `INTERVAL`, а просто добавив или отняв секунды, минуты и часы. Например, чтобы передвинуть дату на один день вперед, можно прибавить к ней значение `60*60*24`.
 
 !!! note "Примечание"
-    Синтаксис `INTERVAL` или функция `addDays` предпочтительнее для работы с датами. Сложение с числом (например, синтаксис `now() + ...`) не учитывает региональные настройки времени, например, переход на летнее время. 
+    Синтаксис `INTERVAL` или функция `addDays` предпочтительнее для работы с датами. Сложение с числом (например, синтаксис `now() + ...`) не учитывает региональные настройки времени, например, переход на летнее время.
 
 Пример:
 
@@ -211,17 +211,17 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 6
 -   Тип данных [Interval](../../sql-reference/operators/index.md)
 -   Функции преобразования типов [toInterval](../../sql-reference/operators/index.md#function-tointerval)
 
-## Оператор логического отрицания {#operator-logicheskogo-otritsaniia}
+## Оператор логического "И" {#logical-and-operator}
 
-`NOT a` - функция `not(a)`
+Синтаксис `SELECT a AND b` — вычисляет логическую конъюнкцию между `a` и `b` функцией [and](../../sql-reference/functions/logical-functions.md#logical-and-function).
 
-## Оператор логического ‘И’ {#operator-logicheskogo-i}
+## Оператор логического "ИЛИ" {#logical-or-operator}
 
-`a AND b` - функция `and(a, b)`
+Синтаксис `SELECT a OR b` — вычисляет логическую дизъюнкцию между `a` и `b` функцией [or](../../sql-reference/functions/logical-functions.md#logical-or-function).
 
-## Оператор логического ‘ИЛИ’ {#operator-logicheskogo-ili}
+## Оператор логического отрицания {#logical-negation-operator}
 
-`a OR b` - функция `or(a, b)`
+Синтаксис `SELECT NOT a` — вычисляет логическое отрицание `a` функцией [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
 
 ## Условный оператор {#uslovnyi-operator}
 

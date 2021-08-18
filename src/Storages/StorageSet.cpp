@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Processors/Sinks/SinkToStorage.h>
 
 
 namespace DB
@@ -30,17 +31,17 @@ namespace ErrorCodes
 }
 
 
-class SetOrJoinBlockOutputStream : public IBlockOutputStream
+class SetOrJoinSink : public SinkToStorage
 {
 public:
-    SetOrJoinBlockOutputStream(
+    SetOrJoinSink(
         StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
         const String & backup_path_, const String & backup_tmp_path_,
         const String & backup_file_name_, bool persistent_);
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
-    void write(const Block & block) override;
-    void writeSuffix() override;
+    String getName() const override { return "SetOrJoinSink"; }
+    void consume(Chunk chunk) override;
+    void onFinish() override;
 
 private:
     StorageSetOrJoinBase & table;
@@ -55,14 +56,15 @@ private:
 };
 
 
-SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
+SetOrJoinSink::SetOrJoinSink(
     StorageSetOrJoinBase & table_,
     const StorageMetadataPtr & metadata_snapshot_,
     const String & backup_path_,
     const String & backup_tmp_path_,
     const String & backup_file_name_,
     bool persistent_)
-    : table(table_)
+    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    , table(table_)
     , metadata_snapshot(metadata_snapshot_)
     , backup_path(backup_path_)
     , backup_tmp_path(backup_tmp_path_)
@@ -74,17 +76,17 @@ SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
 {
 }
 
-void SetOrJoinBlockOutputStream::write(const Block & block)
+void SetOrJoinSink::consume(Chunk chunk)
 {
     /// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
-    Block sorted_block = block.sortColumns();
+    Block sorted_block = getPort().getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
 
     table.insertBlock(sorted_block);
     if (persistent)
         backup_stream.write(sorted_block);
 }
 
-void SetOrJoinBlockOutputStream::writeSuffix()
+void SetOrJoinSink::onFinish()
 {
     table.finishInsert();
     if (persistent)
@@ -99,10 +101,10 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 }
 
 
-BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", persistent);
+    return std::make_shared<SetOrJoinSink>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", persistent);
 }
 
 

@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
+#include <Storages/MergeTree/DropPartsRanges.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -99,6 +100,10 @@ private:
       * Used to determine which merges can be assigned (see ReplicatedMergeTreeMergePredicate)
       */
     ActiveDataPartSet virtual_parts;
+
+
+    /// Dropped ranges inserted into queue
+    DropPartsRanges drop_ranges;
 
     /// A set of mutations loaded from ZooKeeper.
     /// mutations_by_partition is an index partition ID -> block ID -> mutation into this set.
@@ -474,6 +479,8 @@ public:
 
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }
+
+    bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
 
 private:
     const ReplicatedMergeTreeQueue & queue;

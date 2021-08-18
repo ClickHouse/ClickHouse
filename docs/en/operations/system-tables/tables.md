@@ -1,24 +1,24 @@
 # system.tables {#system-tables}
 
-Contains metadata of each table that the server knows about. 
+Contains metadata of each table that the server knows about.
 
 [Detached](../../sql-reference/statements/detach.md) tables are not shown in `system.tables`.
 
-[Temporary tables](../../sql-reference/statements/create/table.md#temporary-tables) are visible in the `system.tables` only in those session where they have been created. They are shown with the empty `database` field and with the `is_temporary` flag switched on. 
+[Temporary tables](../../sql-reference/statements/create/table.md#temporary-tables) are visible in the `system.tables` only in those session where they have been created. They are shown with the empty `database` field and with the `is_temporary` flag switched on.
 
 Columns:
 
--   `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in. 
+-   `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 
--   `name` ([String](../../sql-reference/data-types/string.md)) — Table name. 
+-   `name` ([String](../../sql-reference/data-types/string.md)) — Table name.
 
--   `engine` ([String](../../sql-reference/data-types/string.md)) — Table engine name (without parameters). 
+-   `engine` ([String](../../sql-reference/data-types/string.md)) — Table engine name (without parameters).
 
--   `is_temporary` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag that indicates whether the table is temporary. 
+-   `is_temporary` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag that indicates whether the table is temporary.
 
--   `data_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table data in the file system. 
+-   `data_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table data in the file system.
 
--   `metadata_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table metadata in the file system. 
+-   `metadata_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table metadata in the file system.
 
 -   `metadata_modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) - Time of latest modification of the table metadata.
 
@@ -28,33 +28,33 @@ Columns:
 
 -   `create_table_query` ([String](../../sql-reference/data-types/string.md)) - The query that was used to create the table.
 
--   `engine_full` ([String](../../sql-reference/data-types/string.md)) - Parameters of the table engine. 
+-   `engine_full` ([String](../../sql-reference/data-types/string.md)) - Parameters of the table engine.
 
--   `partition_key` ([String](../../sql-reference/data-types/string.md)) - The partition key expression specified in the table. 
+-   `partition_key` ([String](../../sql-reference/data-types/string.md)) - The partition key expression specified in the table.
 
--   `sorting_key` ([String](../../sql-reference/data-types/string.md)) - The sorting key expression specified in the table. 
+-   `sorting_key` ([String](../../sql-reference/data-types/string.md)) - The sorting key expression specified in the table.
 
--   `primary_key` ([String](../../sql-reference/data-types/string.md)) - The primary key expression specified in the table. 
+-   `primary_key` ([String](../../sql-reference/data-types/string.md)) - The primary key expression specified in the table.
 
--   `sampling_key` ([String](../../sql-reference/data-types/string.md)) - The sampling key expression specified in the table. 
+-   `sampling_key` ([String](../../sql-reference/data-types/string.md)) - The sampling key expression specified in the table.
 
 -   `storage_policy` ([String](../../sql-reference/data-types/string.md)) - The storage policy:
 
     -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
     -   [Distributed](../../engines/table-engines/special/distributed.md#distributed)
 
--   `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `NULL` (including underying `Buffer` table). 
+-   `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `NULL` (including underying `Buffer` table).
 
--   `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `NULL` (does not includes any underlying storage). 
+-   `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `NULL` (does not includes any underlying storage).
 
     -   If the table stores data on disk, returns used space on disk (i.e. compressed).
     -   If the table stores data in memory, returns approximated number of used bytes in memory.
 
--   `lifetime_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows INSERTed since server start (only for `Buffer` tables). 
+-   `lifetime_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows INSERTed since server start (only for `Buffer` tables).
 
--   `lifetime_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes INSERTed since server start (only for `Buffer` tables). 
+-   `lifetime_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes INSERTed since server start (only for `Buffer` tables).
 
--   `comment` ([String](../../sql-reference/data-types/string.md)) - The comment for the table. 
+-   `comment` ([String](../../sql-reference/data-types/string.md)) - The comment for the table.
 
 
 The `system.tables` table is used in `SHOW TABLES` query implementation.

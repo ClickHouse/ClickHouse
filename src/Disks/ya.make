@@ -10,6 +10,7 @@ PEERDIR(
 SRCS(
     DiskCacheWrapper.cpp
     DiskDecorator.cpp
+    DiskEncrypted.cpp
     DiskFactory.cpp
     DiskLocal.cpp
     DiskMemory.cpp

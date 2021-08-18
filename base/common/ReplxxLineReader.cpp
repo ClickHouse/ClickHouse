@@ -69,7 +69,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
     }
 
     std::string line;
-    if (!getline(in, line).good())
+    if (getline(in, line).bad())
     {
         rx.print("Cannot read from %s (for conversion): %s\n",
             path.c_str(), errnoToString(errno).c_str());
@@ -78,7 +78,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 
     /// This is the marker of the date, no need to convert.
     static char const REPLXX_TIMESTAMP_PATTERN[] = "### dddd-dd-dd dd:dd:dd.ddd";
-    if (line.starts_with("### ") && line.size() == strlen(REPLXX_TIMESTAMP_PATTERN))
+    if (line.empty() || (line.starts_with("### ") && line.size() == strlen(REPLXX_TIMESTAMP_PATTERN)))
     {
         return;
     }

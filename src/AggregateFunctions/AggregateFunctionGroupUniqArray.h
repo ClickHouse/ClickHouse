@@ -48,9 +48,9 @@ private:
     using State = AggregateFunctionGroupUniqArrayData<T>;
 
 public:
-    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
         : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>,
-          AggregateFunctionGroupUniqArray<T, Tlimit_num_elem>>({argument_type}, {}),
+          AggregateFunctionGroupUniqArray<T, Tlimit_num_elem>>({argument_type}, parameters_),
           max_elems(max_elems_) {}
 
     String getName() const override { return "groupUniqArray"; }
@@ -152,8 +152,8 @@ class AggregateFunctionGroupUniqArrayGeneric
     using State = AggregateFunctionGroupUniqArrayGenericData;
 
 public:
-    AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type_}, {})
+    AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type_}, parameters_)
         , input_data_type(this->argument_types[0])
         , max_elems(max_elems_) {}
 

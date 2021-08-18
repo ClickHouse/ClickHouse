@@ -5,8 +5,10 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <Common/SettingsChanges.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Common/setThreadName.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -20,6 +22,10 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ParserQuery.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/QueryPipeline.h>
+#include <Formats/FormatFactory.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
@@ -475,6 +481,40 @@ namespace
     };
 
 
+    /// A boolean state protected by mutex able to wait until other thread sets it to a specific value.
+    class BoolState
+    {
+    public:
+        explicit BoolState(bool initial_value) : value(initial_value) {}
+
+        bool get() const
+        {
+            std::lock_guard lock{mutex};
+            return value;
+        }
+
+        void set(bool new_value)
+        {
+            std::lock_guard lock{mutex};
+            if (value == new_value)
+                return;
+            value = new_value;
+            changed.notify_all();
+        }
+
+        void wait(bool wanted_value) const
+        {
+            std::unique_lock lock{mutex};
+            changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
+        }
+
+    private:
+        bool value;
+        mutable std::mutex mutex;
+        mutable std::condition_variable changed;
+    };
+
+
     /// Handles a connection after a responder is started (i.e. after getting a new call).
     class Call
     {
@@ -547,7 +587,8 @@ namespace
 
         std::optional<ReadBufferFromCallback> read_buffer;
         std::optional<WriteBufferFromString> write_buffer;
-        BlockInputStreamPtr block_input_stream;
+        std::unique_ptr<QueryPipeline> pipeline;
+        std::unique_ptr<PullingPipelineExecutor> pipeline_executor;
         BlockOutputStreamPtr block_output_stream;
         bool need_input_data_from_insert_query = true;
         bool need_input_data_from_query_info = true;
@@ -558,18 +599,15 @@ namespace
         UInt64 waited_for_client_writing = 0;
 
         /// The following fields are accessed both from call_thread and queue_thread.
-        std::atomic<bool> reading_query_info = false;
+        BoolState reading_query_info{false};
         std::atomic<bool> failed_to_read_query_info = false;
         GRPCQueryInfo next_query_info_while_reading;
         std::atomic<bool> want_to_cancel = false;
         std::atomic<bool> check_query_info_contains_cancel_only = false;
-        std::atomic<bool> sending_result = false;
+        BoolState sending_result{false};
         std::atomic<bool> failed_to_send_result = false;
 
         ThreadFromGlobalPool call_thread;
-        std::condition_variable read_finished;
-        std::condition_variable write_finished;
-        std::mutex dummy_mutex; /// Doesn't protect anything.
     };
 
     Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_)
@@ -604,6 +642,7 @@ namespace
     {
         try
         {
+            setThreadName("GRPCServerCall");
             receiveQuery();
             executeQuery();
             processInput();
@@ -755,16 +794,16 @@ namespace
                 throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
             input_function_is_used = true;
             initializeBlockInputStream(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
-            block_input_stream->readPrefix();
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
         {
             if (context != query_context)
                 throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
-            auto block = block_input_stream->read();
-            if (!block)
-                block_input_stream->readSuffix();
+
+            Block block;
+            while (!block && pipeline_executor->pull(block));
+
             return block;
         });
 
@@ -797,13 +836,15 @@ namespace
         /// So we mustn't touch the input stream from other thread.
         initializeBlockInputStream(io.out->getHeader());
 
-        block_input_stream->readPrefix();
         io.out->writePrefix();
 
-        while (auto block = block_input_stream->read())
-            io.out->write(block);
+        Block block;
+        while (pipeline_executor->pull(block))
+        {
+            if (block)
+                io.out->write(block);
+        }
 
-        block_input_stream->readSuffix();
         io.out->writeSuffix();
     }
 
@@ -866,9 +907,11 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
-        assert(!block_input_stream);
-        block_input_stream = query_context->getInputFormat(
-            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
+        assert(!pipeline);
+        pipeline = std::make_unique<QueryPipeline>();
+        auto source = FormatFactory::instance().getInput(
+            input_format, *read_buffer, header, query_context, query_context->getSettings().max_insert_block_size);
+        pipeline->init(Pipe(source));
 
         /// Add default values if necessary.
         if (ast)
@@ -881,10 +924,17 @@ namespace
                     StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);
                     const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
                     if (!columns.empty())
-                        block_input_stream = std::make_shared<AddingDefaultsBlockInputStream>(block_input_stream, columns, query_context);
+                    {
+                        pipeline->addSimpleTransform([&](const Block & cur_header)
+                        {
+                            return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, query_context);
+                        });
+                    }
                 }
             }
         }
+
+        pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
     }
 
     void Call::createExternalTables()
@@ -927,7 +977,7 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    auto out_stream = storage->write(ASTPtr(), metadata_snapshot, query_context);
+                    auto out_stream = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
                     ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
                     String format = external_table.format();
                     if (format.empty())
@@ -1150,7 +1200,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", exception.code(), exception.displayText(), exception.getStackTraceString());
+        LOG_ERROR(log, getExceptionMessage(exception, true));
 
         if (responder && !responder_finished)
         {
@@ -1196,7 +1246,8 @@ namespace
     void Call::close()
     {
         responder.reset();
-        block_input_stream.reset();
+        pipeline_executor.reset();
+        pipeline.reset();
         block_output_stream.reset();
         read_buffer.reset();
         write_buffer.reset();
@@ -1212,8 +1263,7 @@ namespace
     {
         auto start_reading = [&]
         {
-            assert(!reading_query_info);
-            reading_query_info = true;
+            reading_query_info.set(true);
             responder->read(next_query_info_while_reading, [this](bool ok)
             {
                 /// Called on queue_thread.
@@ -1238,18 +1288,16 @@ namespace
                     /// on queue_thread.
                     failed_to_read_query_info = true;
                 }
-                reading_query_info = false;
-                read_finished.notify_one();
+                reading_query_info.set(false);
             });
         };
 
         auto finish_reading = [&]
         {
-            if (reading_query_info)
+            if (reading_query_info.get())
             {
                 Stopwatch client_writing_watch;
-                std::unique_lock lock{dummy_mutex};
-                read_finished.wait(lock, [this] { return !reading_query_info; });
+                reading_query_info.wait(false);
                 waited_for_client_writing += client_writing_watch.elapsedNanoseconds();
             }
             throwIfFailedToReadQueryInfo();
@@ -1412,11 +1460,10 @@ namespace
 
         /// Wait for previous write to finish.
         /// (gRPC doesn't allow to start sending another result while the previous is still being sending.)
-        if (sending_result)
+        if (sending_result.get())
         {
             Stopwatch client_reading_watch;
-            std::unique_lock lock{dummy_mutex};
-            write_finished.wait(lock, [this] { return !sending_result; });
+            sending_result.wait(false);
             waited_for_client_reading += client_reading_watch.elapsedNanoseconds();
         }
         throwIfFailedToSendResult();
@@ -1427,14 +1474,13 @@ namespace
         if (write_buffer)
             write_buffer->finalize();
 
-        sending_result = true;
+        sending_result.set(true);
         auto callback = [this](bool ok)
         {
             /// Called on queue_thread.
             if (!ok)
                 failed_to_send_result = true;
-            sending_result = false;
-            write_finished.notify_one();
+            sending_result.set(false);
         };
 
         Stopwatch client_reading_final_watch;
@@ -1454,8 +1500,7 @@ namespace
         if (send_final_message)
         {
             /// Wait until the result is actually sent.
-            std::unique_lock lock{dummy_mutex};
-            write_finished.wait(lock, [this] { return !sending_result; });
+            sending_result.wait(false);
             waited_for_client_reading += client_reading_final_watch.elapsedNanoseconds();
             throwIfFailedToSendResult();
             LOG_TRACE(log, "Final result has been sent to the client");
@@ -1566,7 +1611,7 @@ private:
     {
         /// Called on call_thread. That's why we can't destroy the `call` right now
         /// (thread can't join to itself). Thus here we only move the `call` from
-        /// `current_call` to `finished_calls` and run() will actually destroy the `call`.
+        /// `current_calls` to `finished_calls` and run() will actually destroy the `call`.
         std::lock_guard lock{mutex};
         auto it = current_calls.find(call);
         finished_calls.push_back(std::move(it->second));
@@ -1575,6 +1620,7 @@ private:
 
     void run()
     {
+        setThreadName("GRPCServerQueue");
         while (true)
         {
             {

@@ -7,7 +7,6 @@
 #if USE_LIBPQXX
 
 #include <Core/Block.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
 

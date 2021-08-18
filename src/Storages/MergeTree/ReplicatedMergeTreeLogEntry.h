@@ -143,6 +143,10 @@ struct ReplicatedMergeTreeLogEntryData
     /// Returns fake part for drop range (for DROP_RANGE and REPLACE_RANGE)
     std::optional<String> getDropRange(MergeTreeDataFormatVersion format_version) const;
 
+    /// This entry is DROP PART, not DROP PARTITION. They both have same
+    /// DROP_RANGE entry type, but differs in information about drop range.
+    bool isDropPart(MergeTreeDataFormatVersion format_version) const;
+
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.
     bool removed_by_other_entry = false;

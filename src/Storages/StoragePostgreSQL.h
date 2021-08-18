@@ -27,7 +27,6 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_,
         const std::string & remote_table_schema_ = "");
 
     String getName() const override { return "PostgreSQL"; }
@@ -41,14 +40,13 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 private:
     friend class PostgreSQLBlockOutputStream;
 
     String remote_table_name;
     String remote_table_schema;
-    ContextPtr global_context;
     postgres::PoolWithFailoverPtr pool;
 };
 

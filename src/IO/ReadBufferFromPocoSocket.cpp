@@ -5,11 +5,19 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 
 
 namespace ProfileEvents
 {
     extern const Event NetworkReceiveElapsedMicroseconds;
+    extern const Event NetworkReceiveBytes;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric NetworkReceive;
 }
 
 
@@ -31,6 +39,8 @@ bool ReadBufferFromPocoSocket::nextImpl()
     /// Add more details to exceptions.
     try
     {
+        CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkReceive);
+
         /// If async_callback is specified, and read will block, run async_callback and try again later.
         /// It is expected that file descriptor may be polled externally.
         /// Note that receive timeout is not checked here. External code should check it while polling.
@@ -57,6 +67,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
 
     /// NOTE: it is quite inaccurate on high loads since the thread could be replaced by another one
     ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
 
     if (bytes_read)
         working_buffer.resize(bytes_read);

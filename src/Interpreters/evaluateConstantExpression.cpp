@@ -39,7 +39,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     if (context->getSettingsRef().normalize_function_names)
         FunctionNameNormalizer().visit(ast.get());
 
-    String name = ast->getColumnName(context->getSettingsRef());
+    String name = ast->getColumnName();
     auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
 
@@ -101,6 +101,24 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr
             literal.value = current_database;
     }
     return res;
+}
+
+std::tuple<bool, ASTPtr> evaluateDatabaseNameForMergeEngine(const ASTPtr & node, ContextPtr context)
+{
+    if (const auto * func = node->as<ASTFunction>(); func && func->name == "REGEXP")
+    {
+        if (func->arguments->children.size() != 1)
+            throw Exception("Arguments for REGEXP in Merge ENGINE should be 1", ErrorCodes::BAD_ARGUMENTS);
+
+        auto * literal = func->arguments->children[0]->as<ASTLiteral>();
+        if (!literal || literal->value.safeGet<String>().empty())
+            throw Exception("Argument for REGEXP in Merge ENGINE should be a non empty String Literal", ErrorCodes::BAD_ARGUMENTS);
+
+        return std::tuple{true, func->arguments->children[0]};
+    }
+
+    auto ast = evaluateConstantExpressionForDatabaseName(node, context);
+    return std::tuple{false, ast};
 }
 
 namespace

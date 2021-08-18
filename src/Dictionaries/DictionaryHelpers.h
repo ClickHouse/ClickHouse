@@ -9,13 +9,15 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPipeline.h>
+
 
 namespace DB
 {
@@ -495,15 +497,29 @@ private:
     Arena * complex_key_arena;
 };
 
+/// Deserialize columns from keys array using dictionary structure
+MutableColumns deserializeColumnsFromKeys(
+    const DictionaryStructure & dictionary_structure,
+    const PaddedPODArray<StringRef> & keys,
+    size_t start,
+    size_t end);
+
+/// Deserialize columns with type and name from keys array using dictionary structure
+ColumnsWithTypeAndName deserializeColumnsWithTypeAndNameFromKeys(
+    const DictionaryStructure & dictionary_structure,
+    const PaddedPODArray<StringRef> & keys,
+    size_t start,
+    size_t end);
+
 /** Merge block with blocks from stream. If there are duplicate keys in block they are filtered out.
   * In result block_to_update will be merged with blocks from stream.
   * Note: readPrefix readImpl readSuffix will be called on stream object during function execution.
   */
 template <DictionaryKeyType dictionary_key_type>
-void mergeBlockWithStream(
+void mergeBlockWithPipe(
     size_t key_columns_size,
     Block & block_to_update,
-    BlockInputStreamPtr & stream)
+    Pipe pipe)
 {
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
     static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by updatePreviousyLoadedBlockWithStream");
@@ -554,9 +570,13 @@ void mergeBlockWithStream(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    stream->readPrefix();
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
-    while (Block block = stream->read())
+    PullingPipelineExecutor executor(pipeline);
+    Block block;
+
+    while (executor.pull(block))
     {
         Columns block_key_columns;
         block_key_columns.reserve(key_columns_size);
@@ -589,8 +609,6 @@ void mergeBlockWithStream(
             result_fetched_column->insertRangeFrom(*update_column, 0, rows);
         }
     }
-
-    stream->readSuffix();
 
     size_t result_fetched_rows = result_fetched_columns.front()->size();
     size_t filter_hint = filter.size() - indexes_to_remove_count;
@@ -644,4 +662,16 @@ static const PaddedPODArray<T> & getColumnVectorData(
     }
 }
 
+template <typename T>
+static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array)
+{
+    auto column_vector = ColumnVector<T>::create();
+    column_vector->getData().reserve(array.size());
+    column_vector->getData().insert(array.begin(), array.end());
+
+    return column_vector;
 }
+
+}
+
+

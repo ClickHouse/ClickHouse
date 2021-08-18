@@ -12,7 +12,6 @@
 #include <absl/container/flat_hash_set.h>
 
 #include <common/unaligned.h>
-#include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
@@ -26,8 +25,10 @@
 namespace ProfileEvents
 {
     extern const Event FileOpen;
-    extern const Event WriteBufferAIOWrite;
-    extern const Event WriteBufferAIOWriteBytes;
+    extern const Event AIOWrite;
+    extern const Event AIOWriteBytes;
+    extern const Event AIORead;
+    extern const Event AIOReadBytes;
 }
 
 namespace DB
@@ -531,8 +532,8 @@ public:
 
         auto bytes_written = eventResult(event);
 
-        ProfileEvents::increment(ProfileEvents::WriteBufferAIOWrite);
-        ProfileEvents::increment(ProfileEvents::WriteBufferAIOWriteBytes, bytes_written);
+        ProfileEvents::increment(ProfileEvents::AIOWrite);
+        ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
 
         if (bytes_written != static_cast<decltype(bytes_written)>(block_size * buffer_size_in_blocks))
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,
@@ -599,6 +600,9 @@ public:
                 file_path,
                 buffer_size_in_bytes,
                 read_bytes);
+
+        ProfileEvents::increment(ProfileEvents::AIORead);
+        ProfileEvents::increment(ProfileEvents::AIOReadBytes, read_bytes);
 
         SSDCacheBlock block(block_size);
 
@@ -686,6 +690,9 @@ public:
                 if (read_bytes != static_cast<ssize_t>(block_size))
                     throw Exception(ErrorCodes::AIO_READ_ERROR,
                         "GC: AIO failed to read file ({}). Expected bytes ({}). Actual bytes ({})", file_path, block_size, read_bytes);
+
+                ProfileEvents::increment(ProfileEvents::AIORead);
+                ProfileEvents::increment(ProfileEvents::AIOReadBytes, read_bytes);
 
                 char * request_buffer = getRequestBuffer(request);
 
