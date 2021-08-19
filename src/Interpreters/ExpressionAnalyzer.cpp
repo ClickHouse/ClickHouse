@@ -162,8 +162,10 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     analyzeAggregation();
 }
 
-static ASTPtr checkPositionalArgument(ASTPtr argument, const NamesAndTypesList & columns)
+static ASTPtr checkPositionalArgument(ASTPtr argument, const ASTSelectQuery * select_query, ASTSelectQuery::Expression expression)
 {
+    auto columns = select_query->select()->children;
+
     /// Case when GROUP BY element is position.
     /// Do not consider case when GROUP BY element is not a literal, but expression, even if all values are constants.
     if (auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get()))
@@ -174,9 +176,19 @@ static ASTPtr checkPositionalArgument(ASTPtr argument, const NamesAndTypesList &
             auto pos = ast_literal->value.get<UInt64>();
             if ((0 < pos) && (pos <= columns.size()))
             {
-                const auto & column_name = std::next(columns.begin(), pos - 1)->name;
-                return std::make_shared<ASTIdentifier>(column_name);
+                --pos;
+                const auto & column = columns[pos];
+                if (const auto * literal_ast = typeid_cast<const ASTIdentifier *>(column.get()))
+                {
+                    return std::make_shared<ASTIdentifier>(literal_ast->name());
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal value for positional argument in {}",
+                                    ASTSelectQuery::expressionToString(expression));
+                }
             }
+            /// Do not throw if out of bounds, see appendUnusedGroupByColumn.
         }
     }
     return nullptr;
@@ -257,7 +269,6 @@ void ExpressionAnalyzer::analyzeAggregation()
             {
                 NameSet unique_keys;
                 ASTs & group_asts = select_query->groupBy()->children;
-                const auto & columns = syntax->source_columns;
 
                 for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
                 {
@@ -266,7 +277,7 @@ void ExpressionAnalyzer::analyzeAggregation()
 
                     if (getContext()->getSettingsRef().enable_positional_arguments)
                     {
-                        auto new_argument = checkPositionalArgument(group_asts[i], columns);
+                        auto new_argument = checkPositionalArgument(group_asts[i], select_query, ASTSelectQuery::Expression::GROUP_BY);
                         if (new_argument)
                             group_asts[i] = new_argument;
                     }
@@ -1252,7 +1263,6 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
     bool with_fill = false;
     NameSet order_by_keys;
-    const auto & columns = syntax->source_columns;
 
     for (auto & child : select_query->orderBy()->children)
     {
@@ -1262,7 +1272,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
         if (getContext()->getSettingsRef().enable_positional_arguments)
         {
-            auto new_argument = checkPositionalArgument(ast->children.at(0), columns);
+            auto new_argument = checkPositionalArgument(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
             if (new_argument)
                 ast->children[0] = new_argument;
         }
@@ -1317,13 +1327,12 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     }
 
     auto & children = select_query->limitBy()->children;
-    const auto & columns = syntax->source_columns;
 
     for (size_t i = 0; i < children.size(); ++i)
     {
         if (getContext()->getSettingsRef().enable_positional_arguments)
         {
-            auto new_argument = checkPositionalArgument(children[i], columns);
+            auto new_argument = checkPositionalArgument(children[i], select_query, ASTSelectQuery::Expression::LIMIT_BY);
             if (new_argument)
                 children[i] = new_argument;
         }
