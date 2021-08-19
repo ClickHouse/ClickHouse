@@ -521,7 +521,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_PARSE_TEXT;
 }
 
 namespace S3
