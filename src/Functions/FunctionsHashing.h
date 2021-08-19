@@ -3,10 +3,9 @@
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
-#include <MurmurHash2.h>
-#include <MurmurHash3.h>
-
 #if !defined(ARCADIA_BUILD)
+#    include <murmurhash2.h>
+#    include <murmurhash3.h>
 #    include "config_functions.h"
 #    include "config_core.h"
 #endif
@@ -44,8 +43,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <common/range.h>
-#include <common/bit_cast.h>
+#include <ext/range.h>
+#include <ext/bit_cast.h>
 
 
 namespace DB
@@ -556,8 +555,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
@@ -662,8 +659,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = arguments[0].type.get();
@@ -687,8 +682,6 @@ public:
             return executeType<Int64>(arguments);
         else if (which.isDate())
             return executeType<UInt16>(arguments);
-        else if (which.isDate32())
-            return executeType<Int32>(arguments);
         else if (which.isDateTime())
             return executeType<UInt32>(arguments);
         else if (which.isDecimal32())
@@ -761,9 +754,9 @@ private:
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
                     if constexpr (std::is_same_v<ToType, UInt64>)
-                        h = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
+                        h = IntHash64Impl::apply(ext::bit_cast<UInt64>(vec_from[i]));
                     else
-                        h = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
+                        h = IntHash32Impl::apply(ext::bit_cast<UInt32>(vec_from[i]));
                 }
                 else
                 {
@@ -781,9 +774,9 @@ private:
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
             if constexpr (std::is_same_v<ToType, UInt64>)
-                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
+                hash = IntHash64Impl::apply(ext::bit_cast<UInt64>(value));
             else
-                hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
+                hash = IntHash32Impl::apply(ext::bit_cast<UInt32>(value));
 
             size_t size = vec_to.size();
             if constexpr (first)
@@ -992,7 +985,6 @@ private:
         else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
-        else if (which.isDate32()) executeIntType<Int32, first>(icolumn, vec_to);
         else if (which.isDateTime()) executeIntType<UInt32, first>(icolumn, vec_to);
         /// TODO: executeIntType() for Decimal32/64 leads to incompatible result
         else if (which.isDecimal32()) executeBigIntType<Decimal32, first>(icolumn, vec_to);
@@ -1050,7 +1042,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -1197,7 +1188,6 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

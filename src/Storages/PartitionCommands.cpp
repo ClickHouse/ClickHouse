@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
 std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * command_ast)
 {
     if (command_ast->type == ASTAlterCommand::DROP_PARTITION)
@@ -64,11 +65,8 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
                 res.to_database = command_ast->to_database;
                 res.to_table = command_ast->to_table;
                 break;
-            case DataDestinationType::SHARD:
-                res.move_destination_type = PartitionCommand::MoveDestinationType::SHARD;
+            default:
                 break;
-            case DataDestinationType::DELETE:
-                throw Exception("ALTER with this destination type is not handled. This is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
         if (res.move_destination_type != PartitionCommand::MoveDestinationType::TABLE)
             res.move_destination_name = command_ast->move_destination_name;

@@ -4,8 +4,8 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <common/map.h>
-#include <common/range.h>
+#include <ext/map.h>
+#include <ext/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -147,11 +147,6 @@ ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     auto filtered = nested->filter(filt, result_size_hint);
     return ColumnMap::create(filtered);
-}
-
-void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)
-{
-    nested->expand(mask, inverted);
 }
 
 ColumnPtr ColumnMap::permute(const Permutation & perm, size_t limit) const

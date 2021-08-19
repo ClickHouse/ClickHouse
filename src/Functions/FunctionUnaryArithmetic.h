@@ -120,7 +120,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return is_injective; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

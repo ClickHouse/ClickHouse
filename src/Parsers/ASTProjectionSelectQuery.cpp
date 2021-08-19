@@ -37,12 +37,20 @@ ASTPtr ASTProjectionSelectQuery::clone() const
         */
     CLONE(Expression::WITH);
     CLONE(Expression::SELECT);
+    CLONE(Expression::WHERE);
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::ORDER_BY);
 
 #undef CLONE
 
     return res;
+}
+
+
+void ASTProjectionSelectQuery::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(distinct);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 
@@ -59,9 +67,15 @@ void ASTProjectionSelectQuery::formatImpl(const FormatSettings & s, FormatState 
         s.ostr << s.nl_or_ws;
     }
 
-    s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (s.hilite ? hilite_none : "");
+    s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (distinct ? "DISTINCT " : "") << (s.hilite ? hilite_none : "");
 
     s.one_line ? select()->formatImpl(s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+
+    if (where())
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "WHERE " << (s.hilite ? hilite_none : "");
+        where()->formatImpl(s, state, frame);
+    }
 
     if (groupBy())
     {
@@ -115,9 +129,13 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
         select_query->setExpression(ASTSelectQuery::Expression::WITH, with()->clone());
     if (select())
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select()->clone());
+    if (where())
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, where()->clone());
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
     // Get rid of orderBy. It's used for projection definition only
+    if (orderBy())
+        select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, orderBy()->clone());
     return node;
 }
 

@@ -5,7 +5,7 @@ toc_title: DROP
 
 # DROP Statements {#drop}
 
-Deletes existing entity. If the `IF EXISTS` clause is specified, these queries do not return an error if the entity does not exist.
+Deletes existing entity. If the `IF EXISTS` clause is specified, these queries don’t return an error if the entity doesn’t exist.
 
 ## DROP DATABASE {#drop-database}
 

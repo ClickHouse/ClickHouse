@@ -290,8 +290,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     bool isVariadic() const override { return true; }
@@ -311,7 +309,7 @@ public:
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + " when arguments size is 1. Should be integer",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || isDate(arguments[0].type) || isDateTime(arguments[0].type) || isDateTime64(arguments[0].type)))
+            if (arguments.size() > 1 && !(isInteger(arguments[0].type) || WhichDataType(arguments[0].type).isDateOrDateTime()))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + " when arguments size is 2 or 3. Should be a integer or a date with time",
@@ -324,7 +322,7 @@ public:
                     "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
                         + ", should be 2 or 3",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!WhichDataType(arguments[0].type).isDateOrDateTime())
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -479,6 +477,8 @@ public:
             {
                 for (auto & instruction : instructions)
                 {
+                    // since right now LUT does not support Int64-values and not format instructions for subsecond parts,
+                    // treat DatTime64 values just as DateTime values by ignoring fractional and casting to UInt32.
                     const auto c = DecimalUtils::split(vec[i], scale);
                     instruction.perform(pos, static_cast<Int64>(c.whole), time_zone);
                 }
