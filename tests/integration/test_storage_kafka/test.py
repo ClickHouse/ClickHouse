@@ -283,6 +283,11 @@ def test_kafka_json_as_string(kafka_cluster):
     kafka_produce(kafka_cluster, 'kafka_json_as_string', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }',
                                            '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
 
+    # 'tombstone' record (null value) = marker of deleted record
+    producer = KafkaProducer(bootstrap_servers="localhost:{}".format(cluster.kafka_port), value_serializer=producer_serializer, key_serializer=producer_serializer)
+    producer.send(topic='kafka_json_as_string', key='xxx')
+    producer.flush()
+
     instance.query('''
         CREATE TABLE test.kafka (field String)
             ENGINE = Kafka
