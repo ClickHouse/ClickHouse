@@ -27,7 +27,7 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database.
 | TEXT          | [String](../../sql-reference/data-types/string.md)      |
 | BLOB          | [String](../../sql-reference/data-types/string.md)      |
 
-## Specifics and recommendations {#specifics-and-recommendations}
+## Specifics and Recommendations {#specifics-and-recommendations}
 
 SQLite stores the entire database (definitions, tables, indices, and the data itself) as a single cross-platform file on a host machine. It is locking the entire database file during writing. SQLite read operations can be multitasked, though writes can only be performed sequentially.
 SQLite does not require service management (such as startup scripts) or access control based on `GRANT` and passwords. Access control is handled by means of file-system permissions given to the database file itself.
