@@ -82,8 +82,6 @@ private:
     String session_id;
     std::shared_ptr<NamedSessionData> named_session;
     bool named_session_created = false;
-
-    static std::optional<NamedSessionsStorage> named_sessions;
 };
 
 }
