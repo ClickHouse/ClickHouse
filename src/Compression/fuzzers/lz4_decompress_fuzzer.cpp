@@ -22,7 +22,7 @@ try
     if (size < sizeof(AuxiliaryRandomData))
         return 0;
 
-    auto * p = reinterpret_cast<const AuxiliaryRandomData *>(data);
+    const auto * p = reinterpret_cast<const AuxiliaryRandomData *>(data);
     auto codec = DB::getCompressionCodecLZ4(p->level);
 
     size_t output_buffer_size = p->decompressed_size % 65536;
