@@ -5,7 +5,7 @@ toc_title: SQLite
 
 # SQLite {#sqlite}
 
-The engine provides to import and export data to SQLite and query SQLite tables directly in ClickHouse.
+The engine allows to import and export data to SQLite and supports queries to SQLite tables directly from ClickHouse.
 
 ## Creating a Table {#creating-a-table}
 
