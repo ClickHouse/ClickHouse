@@ -60,16 +60,19 @@ Rows are joined if the whole complex condition is met. If the conditions are not
 !!! note "Note"
     Combining conditions using the `OR` operator inside an `ON` section is not supported yet.
 
+!!! note "Note"
+    If a condition refers columns from different tables, then only the equality operator (`=`) is supported so far.
+
 **Example**
 
 Consider `table_1` and `table_2`:
 
 ```
-┌─Id─┬─name─┐      ┌─Id─┬─text───────────┐
-│  1 │ A    │      │  1 │ Text A         │
-│  2 │ B    │      │  1 │ Another text A │
-│  3 │ C    │      │  2 │ Text B         │
-└────┴──────┘      └────┴────────────────┘
+┌─Id─┬─name─┐     ┌─Id─┬─text───────────┬─scores─┐
+│  1 │ A    │     │  1 │ Text A         │     10 │
+│  2 │ B    │     │  1 │ Another text A │     12 │
+│  3 │ C    │     │  2 │ Text B         │     15 │
+└────┴──────┘     └────┴────────────────┴────────┘
 ```
 
 Query with one join key condition and an additional condition for `table_2`:
@@ -87,6 +90,21 @@ Note that the result contains the row with the name `C` and the empty text colum
 │ B    │ Text B │
 │ C    │        │
 └──────┴────────┘
+```
+
+Query with `INNER` type of a join and multiple conditions:
+
+``` sql
+SELECT name, text, scores FROM table_1 INNER JOIN table_2 
+    ON table_1.Id = table_2.Id AND table_2.scores > 10 AND startsWith(table_2.text, 'Text');
+```
+
+Result:
+
+```
+┌─name─┬─text───┬─scores─┐
+│ B    │ Text B │     15 │
+└──────┴────────┴────────┘
 ```
 
 ## ASOF JOIN Usage {#asof-join-usage}
