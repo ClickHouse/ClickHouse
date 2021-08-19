@@ -29,7 +29,7 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database.
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
-SQLite stores the entire database (definitions, tables, indices, and the data itself) as a single cross-platform file on a host machine. It is locking the entire database file during writing. SQLite read operations can be multitasked, though writes can only be performed sequentially.
+SQLite stores the entire database (definitions, tables, indices, and the data itself) as a single cross-platform file on a host machine. During writing SQLite locks the entire database file, therefore write operations are performed sequentially. Read operations can be multitasked.
 SQLite does not require service management (such as startup scripts) or access control based on `GRANT` and passwords. Access control is handled by means of file-system permissions given to the database file itself.
 
 ## Usage Example {#usage-example}
