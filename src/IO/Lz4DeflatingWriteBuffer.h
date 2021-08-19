@@ -32,21 +32,16 @@ private:
 
     std::unique_ptr<WriteBuffer> out;
 
-    bool finished = false;
-
-
-    void * in_buff;
-    void * out_buff;
-    size_t in_chunk_size;
-    size_t out_capacity;
-
+    LZ4F_preferences_t kPrefs;
     LZ4F_compressionContext_t ctx;
 
-    size_t compression_ctx;
+    void * in_data;
+    void * out_data;
 
-    uint64_t count_in;
-    uint64_t count_out;
+    size_t in_capacity;
+    size_t out_capacity;
 
-    LZ4F_preferences_t kPrefs;
+    bool first_time = true;
+    bool finished = false;
 };
 }
