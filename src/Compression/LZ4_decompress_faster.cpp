@@ -439,7 +439,7 @@ bool NO_INLINE decompressImpl(
             {
                 s = *ip++;
                 length += s;
-            } while (ip < input_end && unlikely(s == 255));
+            } while while (unlikely(s == 255 && ip < input_end));
         };
 
         /// Get literal length.
