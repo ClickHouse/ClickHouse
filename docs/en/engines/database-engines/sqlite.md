@@ -20,7 +20,7 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database.
     
 ## Data Types Support {#data_types-support}
 
-|  EngineName   | ClickHouse                                              |
+|  SQLite   | ClickHouse                                              |
 |---------------|---------------------------------------------------------|
 | INTEGER       | [Int32](../../sql-reference/data-types/int-uint.md)     |
 | REAL          | [Float32](../../sql-reference/data-types/float.md)      |
