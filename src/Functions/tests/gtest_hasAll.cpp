@@ -6,57 +6,58 @@ using namespace DB::GatherUtils;
 
 
 template<class T>
-void array_init(T* elements_to_have, size_t elements_to_have_count, T* set_elements, size_t set_size, bool expected_output) {
-    for (T i = 0; i < set_size; ++i)
+void arrayInit(T* elements_to_have, size_t nb_elements_to_have, T* array_elements, size_t array_size, bool all_elements_present) {
+    for (T i = 0; i < array_size; ++i)
     {
-        set_elements[i] = i;
+        array_elements[i] = i;
     }
-    for (T i = 0; i < elements_to_have_count; ++i)
+    for (T i = 0; i < nb_elements_to_have; ++i)
     {
-        elements_to_have[i] = set_elements[std::rand() % set_size];
+        elements_to_have[i] = array_elements[std::rand() % array_size];
     }
-    if (!expected_output)
+    if (!all_elements_present)
     {
-        // make one element to be searched for missing from the target set
-        elements_to_have[elements_to_have_count - 1] = set_size + 1;
+        /// make one element to be searched for missing from the target array
+        elements_to_have[nb_elements_to_have - 1] = array_size + 1;
     }
 }
 
-void null_map_init(UInt8 * null_map, size_t null_map_size, size_t null_elements_count)
+void nullMapInit(UInt8 * null_map, size_t null_map_size, size_t nb_null_elements)
 {
     for (int i = 0; i < null_map_size; ++i)
     {
         null_map[i] = 0;
     }
-    for (int i = 0; i < null_map_size - 1 && i < null_elements_count; ++i)
+    for (int i = 0; i < null_map_size - 1 && i < nb_null_elements; ++i)
     {
-        null_map[std::rand() % null_map_size - 1] = 1;
+        null_map[std::rand() % null_map_size] = 1;
     }
 }
 
 template<class T>
-bool testHasAll(size_t elements_to_have_count, size_t set_size, bool have_null_map, bool expected_output)
+bool testHasAll(size_t nb_elements_to_have, size_t array_size, bool with_null_maps, bool all_elements_present)
 {
-    T * set_elements = new T[set_size];
-    T * elements_to_have = new T[elements_to_have_count];
+    auto array_elements = std::make_unique<T[]>(array_size);
+    auto elements_to_have = std::make_unique<T[]>(nb_elements_to_have);
 
-    UInt8 * first_nm = nullptr, * second_nm = nullptr;
-    if (have_null_map)
+    std::unique_ptr<UInt8[]> first_nm = nullptr, second_nm = nullptr;
+    if (with_null_maps)
     {
-        first_nm = new UInt8[set_size];
-        second_nm = new UInt8[elements_to_have_count];
-        null_map_init(first_nm, set_size, 5);
-        null_map_init(second_nm, elements_to_have_count, 2);
+        first_nm = std::make_unique<UInt8[]>(array_size);
+        second_nm = std::make_unique<UInt8[]>(nb_elements_to_have);
+        /// add a null to elements to have, but not to the target array, making the answer negative
+        nullMapInit(first_nm.get(), array_size, 0);
+        nullMapInit(second_nm.get(), nb_elements_to_have, 1);
     }
 
-    array_init(elements_to_have, elements_to_have_count, set_elements, set_size, expected_output);
+    arrayInit(elements_to_have.get(), nb_elements_to_have, array_elements.get(), array_size, all_elements_present);
 
-    NumericArraySlice<T> first = {set_elements, set_size};
-    NumericArraySlice<T> second = {elements_to_have,  elements_to_have_count};
+    NumericArraySlice<T> first = {array_elements.get(), array_size};
+    NumericArraySlice<T> second = {elements_to_have.get(), nb_elements_to_have};
 
-    /// Check whether all elements of the second array are also elements of the first array, overloaded for various combinations of types.
+    /// check whether all elements of the second array are also elements of the first array, overloaded for various combinations of types.
     return sliceHasImplAnyAll<ArraySearchType::All, NumericArraySlice<T>, NumericArraySlice<T>, sliceEqualElements<T,T> >(
-        first, second, first_nm, second_nm);
+        first, second, first_nm.get(), second_nm.get());
 }
 
 TEST(HasAll, integer)
@@ -109,5 +110,18 @@ TEST(HasAll, int8)
     ASSERT_EQ(test1, true);
     ASSERT_EQ(test2, false);
     ASSERT_EQ(test3, true);
+    ASSERT_EQ(test4, false);
+}
+
+TEST(HasAllSingleNullElement, all)
+{
+    bool test1 = testHasAll<int>(4, 100, true, true);
+    bool test2 = testHasAll<int64_t>(4, 100, true, true);
+    bool test3 = testHasAll<int16_t>(4, 100, true, true);
+    bool test4 = testHasAll<int8_t>(4, 100, true, true);
+
+    ASSERT_EQ(test1, false);
+    ASSERT_EQ(test2, false);
+    ASSERT_EQ(test3, false);
     ASSERT_EQ(test4, false);
 }
