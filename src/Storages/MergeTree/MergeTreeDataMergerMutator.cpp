@@ -750,7 +750,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     bool need_remove_expired_values = false;
     bool force_ttl = false;
-    auto serialization_info_builder = std::make_shared<SerializationInfoBuilder>(data_settings->ratio_of_defaults_for_sparse_serialization);
+    SerializationInfoBuilder serialization_info_builder(data_settings->ratio_of_defaults_for_sparse_serialization);
 
     for (const auto & part : parts)
     {
@@ -765,10 +765,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             new_data_part->ttl_infos.update(part->ttl_infos);
         }
 
-        serialization_info_builder->add(*part->serialization_info);
+        serialization_info_builder.add(*part->serialization_info);
     }
 
-    auto input_serialization_info = serialization_info_builder->build();
+    auto input_serialization_info = std::move(serialization_info_builder).build();
 
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
     if (part_min_ttl && part_min_ttl <= time_of_merge)

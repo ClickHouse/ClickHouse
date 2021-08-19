@@ -28,6 +28,7 @@ public:
     size_t getNumberOfDefaultRows(const String & column_name) const;
     ISerialization::Kind getKind(const String & column_name) const;
 
+    bool empty() const { return !number_of_rows && columns.empty(); }
     size_t getNumberOfRows() const { return number_of_rows; }
 
     void readText(ReadBuffer & in);
@@ -76,12 +77,12 @@ public:
 
     /// Choose kind of serialization for every column
     /// according its content and return finalized SerializationInfo.
-    SerializationInfoPtr build();
+    SerializationInfoPtr build() &&;
 
     /// Create SerializationInfo from other.
     /// Respects kinds of serialization for columns, that exist in other SerializationInfo,
     /// but keeps information about content of column from current SerializationInfo.
-    SerializationInfoPtr buildFrom(const SerializationInfo & other);
+    SerializationInfoPtr buildFrom(const SerializationInfo & other) &&;
 
     double getRatioForSparseSerialization() const { return ratio_for_sparse_serialization; }
 
@@ -91,7 +92,5 @@ private:
 
     SerializationInfoPtr info;
 };
-
-using SerializationInfoBuilderPtr = std::shared_ptr<SerializationInfoBuilder>;
 
 }
