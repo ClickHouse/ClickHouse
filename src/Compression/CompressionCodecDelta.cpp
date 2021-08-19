@@ -209,4 +209,10 @@ void registerCodecDelta(CompressionCodecFactory & factory)
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
     });
 }
+
+CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size)
+{
+    return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
+}
+
 }
