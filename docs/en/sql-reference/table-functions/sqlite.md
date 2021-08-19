@@ -15,8 +15,8 @@ Allows to perform queries on a data stored in an [SQLite](../../engines/database
 
 **Arguments** 
 
--   `db_path` — Path to SQLite file with the database. [String](../../sql-reference/data-types/string.md).
--   `table_name` — The SQLite table name. [String](../../sql-reference/data-types/string.md).
+-   `db_path` — Path to a file with an SQLite database. [String](../../sql-reference/data-types/string.md).
+-   `table_name` — Name of a table in the SQLite database. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
