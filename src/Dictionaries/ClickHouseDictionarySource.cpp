@@ -255,7 +255,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
         if (configuration.is_local)
         {
-            context_copy->setUser(configuration.user, configuration.password, Poco::Net::SocketAddress("127.0.0.1", 0));
+            context_copy->authenticate(configuration.user, configuration.password, Poco::Net::SocketAddress("127.0.0.1", 0));
             context_copy = copyContextAndApplySettings(config_prefix, context_copy, config);
         }
 
