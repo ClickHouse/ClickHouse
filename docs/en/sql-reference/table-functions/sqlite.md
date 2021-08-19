@@ -5,7 +5,7 @@ toc_title: sqlite
 
 ## sqlite {#sqlite}
 
-Allows to performed queries on data that is stored in the `SQLite` database.
+Allows to perform queries on a data stored in an [SQLite](../../engines/database-engines/sqlite.md) database.
 
 **Syntax** 
 
