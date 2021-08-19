@@ -5,8 +5,8 @@ that involves several ClickHouse instances, custom configs, ZooKeeper, etc.
 
 ## Supported environment
 
-* [Ubuntu] 18.04
-* [Python 3] >= 3.6
+* [Ubuntu] 20.04
+* [Python 3] >= 3.8
 
 ## Prerequisites
 
