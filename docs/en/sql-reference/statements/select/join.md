@@ -114,7 +114,7 @@ Result:
 Algorithm requires the special column in tables. This column:
 
 -   Must contain an ordered sequence.
--   Can be one of the following types: [Int\*, UInt\*](../../../sql-reference/data-types/int-uint.md), [Float\*](../../../sql-reference/data-types/float.md), [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md), [Decimal\*](../../../sql-reference/data-types/decimal.md).
+-   Can be one of the following types: [Int, UInt](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md), [Decimal](../../../sql-reference/data-types/decimal.md).
 -   Can’t be the only column in the `JOIN` clause.
 
 Syntax `ASOF JOIN ... ON`:
