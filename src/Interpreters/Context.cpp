@@ -100,7 +100,6 @@ namespace CurrentMetrics
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
 }
 
-
 namespace DB
 {
 
@@ -115,186 +114,8 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
-    extern const int SESSION_NOT_FOUND;
-    extern const int SESSION_IS_LOCKED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-}
-
-
-class NamedSessions
-{
-public:
-    using Key = NamedSessionKey;
-
-    ~NamedSessions()
-    {
-        try
-        {
-            {
-                std::lock_guard lock{mutex};
-                quit = true;
-            }
-
-            cond.notify_one();
-            thread.join();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    /// Find existing session or create a new.
-    std::shared_ptr<NamedSession> acquireSession(
-        const String & session_id,
-        ContextMutablePtr context,
-        std::chrono::steady_clock::duration timeout,
-        bool throw_if_not_found)
-    {
-        std::unique_lock lock(mutex);
-
-        auto & user_name = context->client_info.current_user;
-
-        if (user_name.empty())
-            throw Exception("Empty user name.", ErrorCodes::LOGICAL_ERROR);
-
-        Key key(user_name, session_id);
-
-        auto it = sessions.find(key);
-        if (it == sessions.end())
-        {
-            if (throw_if_not_found)
-                throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
-
-            /// Create a new session from current context.
-            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSession>(key, context, timeout, *this))).first;
-        }
-        else if (it->second->key.first != context->client_info.current_user)
-        {
-            throw Exception("Session belongs to a different user", ErrorCodes::SESSION_IS_LOCKED);
-        }
-
-        /// Use existing session.
-        const auto & session = it->second;
-
-        if (!session.unique())
-            throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
-
-        session->context->client_info = context->client_info;
-
-        return session;
-    }
-
-    void releaseSession(NamedSession & session)
-    {
-        std::unique_lock lock(mutex);
-        scheduleCloseSession(session, lock);
-    }
-
-private:
-    class SessionKeyHash
-    {
-    public:
-        size_t operator()(const Key & key) const
-        {
-            SipHash hash;
-            hash.update(key.first);
-            hash.update(key.second);
-            return hash.get64();
-        }
-    };
-
-    /// TODO it's very complicated. Make simple std::map with time_t or boost::multi_index.
-    using Container = std::unordered_map<Key, std::shared_ptr<NamedSession>, SessionKeyHash>;
-    using CloseTimes = std::deque<std::vector<Key>>;
-    Container sessions;
-    CloseTimes close_times;
-    std::chrono::steady_clock::duration close_interval = std::chrono::seconds(1);
-    std::chrono::steady_clock::time_point close_cycle_time = std::chrono::steady_clock::now();
-    UInt64 close_cycle = 0;
-
-    void scheduleCloseSession(NamedSession & session, std::unique_lock<std::mutex> &)
-    {
-        /// Push it on a queue of sessions to close, on a position corresponding to the timeout.
-        /// (timeout is measured from current moment of time)
-
-        const UInt64 close_index = session.timeout / close_interval + 1;
-        const auto new_close_cycle = close_cycle + close_index;
-
-        if (session.close_cycle != new_close_cycle)
-        {
-            session.close_cycle = new_close_cycle;
-            if (close_times.size() < close_index + 1)
-                close_times.resize(close_index + 1);
-            close_times[close_index].emplace_back(session.key);
-        }
-    }
-
-    void cleanThread()
-    {
-        setThreadName("SessionCleaner");
-        std::unique_lock lock{mutex};
-
-        while (true)
-        {
-            auto interval = closeSessions(lock);
-
-            if (cond.wait_for(lock, interval, [this]() -> bool { return quit; }))
-                break;
-        }
-    }
-
-    /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
-    std::chrono::steady_clock::duration closeSessions(std::unique_lock<std::mutex> & lock)
-    {
-        const auto now = std::chrono::steady_clock::now();
-
-        /// The time to close the next session did not come
-        if (now < close_cycle_time)
-            return close_cycle_time - now;  /// Will sleep until it comes.
-
-        const auto current_cycle = close_cycle;
-
-        ++close_cycle;
-        close_cycle_time = now + close_interval;
-
-        if (close_times.empty())
-            return close_interval;
-
-        auto & sessions_to_close = close_times.front();
-
-        for (const auto & key : sessions_to_close)
-        {
-            const auto session = sessions.find(key);
-
-            if (session != sessions.end() && session->second->close_cycle <= current_cycle)
-            {
-                if (!session->second.unique())
-                {
-                    /// Skip but move it to close on the next cycle.
-                    session->second->timeout = std::chrono::steady_clock::duration{0};
-                    scheduleCloseSession(*session->second, lock);
-                }
-                else
-                    sessions.erase(session);
-            }
-        }
-
-        close_times.pop_front();
-        return close_interval;
-    }
-
-    std::mutex mutex;
-    std::condition_variable cond;
-    std::atomic<bool> quit{false};
-    ThreadFromGlobalPool thread{&NamedSessions::cleanThread, this};
-};
-
-
-void NamedSession::release()
-{
-    parent.releaseSession(*this);
 }
 
 
@@ -359,7 +180,7 @@ struct ContextSharedPart
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
     String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
-    AccessControlManager access_control_manager;
+    std::unique_ptr<AccessControlManager> access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -399,7 +220,6 @@ struct ContextSharedPart
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
     std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
-    std::optional<NamedSessions> named_sessions;        /// Controls named HTTP sessions.
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -419,7 +239,7 @@ struct ContextSharedPart
     Context::ConfigReloadCallback config_reload_callback;
 
     ContextSharedPart()
-        : macros(std::make_unique<Macros>())
+        : access_control_manager(std::make_unique<AccessControlManager>()), macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -498,6 +318,7 @@ struct ContextSharedPart
             distributed_schedule_pool.reset();
             message_broker_schedule_pool.reset();
             ddl_worker.reset();
+            access_control_manager.reset();
 
             /// Stop trace collector if any
             trace_collector.reset();
@@ -587,7 +408,6 @@ void Context::copyFrom(const ContextPtr & other)
 
 Context::~Context() = default;
 
-
 InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
 
 std::unique_lock<std::recursive_mutex> Context::getLock() const
@@ -603,21 +423,6 @@ MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
 ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
 const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
-
-
-void Context::enableNamedSessions()
-{
-    shared->named_sessions.emplace();
-}
-
-std::shared_ptr<NamedSession>
-Context::acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check)
-{
-    if (!shared->named_sessions)
-        throw Exception("Support for named sessions is not enabled", ErrorCodes::NOT_IMPLEMENTED);
-
-    return shared->named_sessions->acquireSession(session_id, shared_from_this(), timeout, session_check);
-}
 
 String Context::resolveDatabase(const String & database_name) const
 {
@@ -738,7 +543,7 @@ void Context::setConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->config = config;
-    shared->access_control_manager.setExternalAuthenticatorsConfig(*shared->config);
+    shared->access_control_manager->setExternalAuthenticatorsConfig(*shared->config);
 }
 
 const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
@@ -750,31 +555,31 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 
 AccessControlManager & Context::getAccessControlManager()
 {
-    return shared->access_control_manager;
+    return *shared->access_control_manager;
 }
 
 const AccessControlManager & Context::getAccessControlManager() const
 {
-    return shared->access_control_manager;
+    return *shared->access_control_manager;
 }
 
 void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = getLock();
-    shared->access_control_manager.setExternalAuthenticatorsConfig(config);
+    shared->access_control_manager->setExternalAuthenticatorsConfig(config);
 }
 
 std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
 {
     auto lock = getLock();
-    return std::make_unique<GSSAcceptorContext>(shared->access_control_manager.getExternalAuthenticators().getKerberosParams());
+    return std::make_unique<GSSAcceptorContext>(shared->access_control_manager->getExternalAuthenticators().getKerberosParams());
 }
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->access_control_manager.setUsersConfig(*shared->users_config);
+    shared->access_control_manager->setUsersConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -784,59 +589,50 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address)
+void Context::authenticate(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
-    auto lock = getLock();
+    authenticate(BasicCredentials(name, password), address);
+}
+
+void Context::authenticate(const Credentials & credentials, const Poco::Net::SocketAddress & address)
+{
+    auto authenticated_user_id = getAccessControlManager().login(credentials, address.host());
 
     client_info.current_user = credentials.getUserName();
     client_info.current_address = address;
 
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
-    client_info.current_password.clear();
     if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
         client_info.current_password = basic_credentials->getPassword();
 #endif
 
-    /// Find a user with such name and check the credentials.
-    auto new_user_id = getAccessControlManager().login(credentials, address.host());
-    auto new_access = getAccessControlManager().getContextAccess(
-        new_user_id, /* current_roles = */ {}, /* use_default_roles = */ true,
-        settings, current_database, client_info);
+    setUser(authenticated_user_id);
+}
 
-    user_id = new_user_id;
-    access = std::move(new_access);
+void Context::setUser(const UUID & user_id_)
+{
+    auto lock = getLock();
+
+    user_id = user_id_;
+
+    access = getAccessControlManager().getContextAccess(
+        user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
 
     auto user = access->getUser();
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
-    if (!user->default_database.empty())
-        setCurrentDatabase(user->default_database);
-
     auto default_profile_info = access->getDefaultProfileInfo();
     settings_constraints_and_current_profiles = default_profile_info->getConstraintsAndProfileIDs();
     applySettingsChanges(default_profile_info->settings);
-}
 
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
-{
-    setUser(BasicCredentials(name, password), address);
-}
-
-void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
-{
-    setUser(AlwaysAllowCredentials(name), address);
+    if (!user->default_database.empty())
+        setCurrentDatabase(user->default_database);
 }
 
 std::shared_ptr<const User> Context::getUser() const
 {
     return getAccess()->getUser();
-}
-
-void Context::setQuotaKey(String quota_key_)
-{
-    auto lock = getLock();
-    client_info.quota_key = std::move(quota_key_);
 }
 
 String Context::getUserName() const
@@ -848,6 +644,13 @@ std::optional<UUID> Context::getUserID() const
 {
     auto lock = getLock();
     return user_id;
+}
+
+
+void Context::setQuotaKey(String quota_key_)
+{
+    auto lock = getLock();
+    client_info.quota_key = std::move(quota_key_);
 }
 
 
@@ -932,10 +735,13 @@ ASTPtr Context::getRowPolicyCondition(const String & database, const String & ta
 void Context::setInitialRowPolicy()
 {
     auto lock = getLock();
-    auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
     initial_row_policy = nullptr;
-    if (initial_user_id)
-        initial_row_policy = getAccessControlManager().getEnabledRowPolicies(*initial_user_id, {});
+    if (client_info.initial_user == client_info.current_user)
+        return;
+    auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
+    if (!initial_user_id)
+        return;
+    initial_row_policy = getAccessControlManager().getEnabledRowPolicies(*initial_user_id, {});
 }
 
 
@@ -1088,7 +894,11 @@ bool Context::hasScalar(const String & name) const
 
 
 void Context::addQueryAccessInfo(
-    const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names, const String & projection_name)
+    const String & quoted_database_name,
+    const String & full_quoted_table_name,
+    const Names & column_names,
+    const String & projection_name,
+    const String & view_name)
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
@@ -1098,6 +908,8 @@ void Context::addQueryAccessInfo(
         query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
     if (!projection_name.empty())
         query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
+    if (!view_name.empty())
+        query_access_info.views.emplace(view_name);
 }
 
 
@@ -1370,6 +1182,9 @@ void Context::setCurrentQueryId(const String & query_id)
     }
 
     client_info.current_query_id = query_id_to_set;
+
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        client_info.initial_query_id = client_info.current_query_id;
 }
 
 void Context::killCurrentQuery()
@@ -1731,7 +1546,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     if (!shared->message_broker_schedule_pool)
         shared->message_broker_schedule_pool.emplace(
             settings.background_message_broker_schedule_pool_size,
-            CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             "BgMBSchPool");
     return *shared->message_broker_schedule_pool;
 }
@@ -2118,7 +1933,6 @@ std::shared_ptr<QueryLog> Context::getQueryLog() const
     return shared->system_logs->query_log;
 }
 
-
 std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 {
     auto lock = getLock();
@@ -2129,6 +1943,15 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
     return shared->system_logs->query_thread_log;
 }
 
+std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->query_views_log;
+}
 
 std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
 {
@@ -2794,6 +2617,13 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
 {
     assert(!metadata_transaction || hasQueryContext());
     return metadata_transaction;
+}
+
+void Context::resetZooKeeperMetadataTransaction()
+{
+    assert(metadata_transaction);
+    assert(hasQueryContext());
+    metadata_transaction = nullptr;
 }
 
 PartUUIDsPtr Context::getPartUUIDs() const

@@ -21,7 +21,7 @@ struct PostgreSQLTableStructure
 
 using PostgreSQLTableStructurePtr = std::unique_ptr<PostgreSQLTableStructure>;
 
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection);
+std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection, const String & postgres_schema);
 
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     pqxx::connection & connection, const String & postgres_table_name, bool use_nulls = true);
@@ -32,7 +32,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     bool with_primary_key = false, bool with_replica_identity_index = false);
 
 template<typename T>
-std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx);
+std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema);
 
 }
 
