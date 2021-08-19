@@ -34,7 +34,7 @@ SQLite does not require service management (such as startup scripts) or access c
 
 ## Usage Example {#usage-example}
 
-Database in ClickHouse, exchanging data with the SQLite:
+Database in ClickHouse, connected to the SQLite:
 
 ``` sql
 CREATE DATABASE sqlite_db ENGINE = SQLite('sqlite.db');
