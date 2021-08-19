@@ -131,7 +131,8 @@ bool symlinkStartsWith(const std::filesystem::path & path, const std::filesystem
 
     auto absolute_path = std::filesystem::absolute(path);
     absolute_path = absolute_path.lexically_normal(); /// Normalize path.
-    auto absolute_prefix_path = std::filesystem::weakly_canonical(prefix_path);
+    auto absolute_prefix_path = std::filesystem::absolute(prefix_path);
+    absolute_pefix_path = absolute_prefix_path.lexically_normal(); /// Normalize path.
 
     auto [_, prefix_path_mismatch_it] = std::mismatch(absolute_path.begin(), absolute_path.end(), absolute_prefix_path.begin(), absolute_prefix_path.end());
 
