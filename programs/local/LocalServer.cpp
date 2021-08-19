@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 
@@ -310,45 +311,55 @@ void LocalServer::setupUsers()
 // }
 
 
-// void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
-// {
-//     // ReadBufferFromString read_buf(query_to_execute);
-//     // WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
-//
-//     cancelled = false;
-//
-//     /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
-//     /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
-//     /// first exception or whether we need to even rethrow it because there is --ignore-error.
-//     if (!ignore_error)
-//         local_server_exception.reset();
-//
-//     auto process_error = [&]()
-//     {
-//         if (!ignore_error)
-//             throw;
-//
-//         local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-//         have_error = true;
-//     };
-//
-//     try
-//     {
-//         processOrdinaryQuery(query_to_execute, parsed_query);
-//     }
-//     catch (const Exception & e)
-//     {
-//         if (is_interactive && e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
-//             std::cout << "Query was cancelled." << std::endl;
-//         else
-//             process_error();
-//     }
-//     catch (...)
-//     {
-//         process_error();
-//     }
-//     onEndOfStream();
-// }
+void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
+{
+    cancelled = false;
+
+    /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
+    /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
+    /// first exception or whether we need to even rethrow it because there is --ignore-error.
+    if (!ignore_error)
+        server_exception.reset();
+
+    auto process_error = [&]()
+    {
+        if (!ignore_error)
+            throw;
+
+        server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+        have_error = true;
+    };
+
+    try
+    {
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
+        ASTPtr input_function;
+        if (insert && insert->select)
+            insert->tryFindInputFunction(input_function);
+
+        /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
+        if (insert && (!insert->select || input_function) && !insert->watch)
+        {
+            if (input_function && insert->format.empty())
+                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
+
+            processInsertQuery(query_to_execute, parsed_query);
+        }
+        else
+            processOrdinaryQuery(query_to_execute, parsed_query);
+    }
+    catch (const Exception & e)
+    {
+        if (is_interactive && e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+            std::cout << "Query was cancelled." << std::endl;
+        else
+            process_error();
+    }
+    catch (...)
+    {
+        process_error();
+    }
+}
 
 
 String LocalServer::getQueryTextPrefix()
@@ -357,7 +368,7 @@ String LocalServer::getQueryTextPrefix()
 }
 
 
-void LocalServer::reportQueryError(const String & query) const
+void LocalServer::processError(const String & query) const
 {
     /// For non-interactive mode process exception only when all queries were executed.
     if (server_exception && is_interactive)
@@ -388,10 +399,11 @@ try
 
     processConfig();
 
-    query_context = Context::createCopy(global_context);
-    applyCmdSettings(query_context);
+    applyCmdSettings(global_context);
+    // query_context->makeSessionContext();
+    // query_context->authenticate("default", "", Poco::Net::SocketAddress{});
+
     /// Use the same query_id (and thread group) for all queries
-    CurrentThread::QueryScope query_scope_holder(query_context);
 
     connect();
 

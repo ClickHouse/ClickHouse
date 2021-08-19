@@ -11,7 +11,6 @@ class ReadBuffer;
 class WriteBuffer;
 
 using SetResultDetailsFunc = std::function<void(const String &, const String &, const String &, const String &)>;
-using FlushBufferFunc = std::function<void(WriteBuffer & out, size_t num_rows)>;
 
 /// Parse and execute a query.
 void executeQuery(
@@ -20,8 +19,7 @@ void executeQuery(
     bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
     ContextMutablePtr context,          /// DB, tables, data types, storage engines, functions, aggregate functions...
     SetResultDetailsFunc set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone.
-    const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
-    FlushBufferFunc flush_buffer_func = {}
+    const std::optional<FormatSettings> & output_format_settings = std::nullopt /// Format settings for output format, will be calculated from the context if not set.
 );
 
 

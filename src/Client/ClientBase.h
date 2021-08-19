@@ -31,89 +31,46 @@ public:
     using Arguments = std::vector<String>;
 
     void init(int argc, char ** argv);
-
     int main(const std::vector<String> & /*args*/) override;
 
 protected:
-    /*
-     * Run interactive or non-interactive mode. Depends on:
-     *  - processSingleQuery
-     *  - processMultiQuery
-     *  - processWithFuzzing
-     */
-    void runNonInteractive();
     void runInteractive();
+    void runNonInteractive();
 
+
+    /// Initialize `connection` object with `Connection` or `LocalConnection`.
+    virtual void connect() = 0;
+    /// Process single query. Can use processOrdinaryQuery(), processInsertQuery().
+    virtual void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) = 0;
+
+
+    void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
+    void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
     virtual bool processWithFuzzing(const String &)
     {
         throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual void processError(const String & query) const = 0;
+    virtual void loadSuggestionData(Suggest &) = 0;
 
-    void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
-    void receiveResult(ASTPtr parsed_query);
-    bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
-    void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
-    void initLogsOutputStream();
-    void sendExternalTables(ASTPtr parsed_query);
-    virtual void connect() = 0;
-    void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query);
-    void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
-    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
-    void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
-    void sendDataFrom(ReadBuffer & buf, Block & sample,
-                      const ColumnsDescription & columns_description, ASTPtr parsed_query);
-    bool receiveEndOfQuery();
-    void receiveLogs(ASTPtr parsed_query);
-    void writeFinalProgress();
-    void processSingleQuery(const String & full_query);
-    bool processMultiQuery(const String & all_queries_text);
-
-
-    /*
-     * Process multiquery - several queries separated by ';'. Depends on executeSingleQuery().
-     * Also in case of clickhouse-server:
-     * - INSERT data is ended by the end of line, not ';'.
-     * - An exception is VALUES format where we also support semicolon in addition to end of line.
-    **/
     bool processMultiQueryImpl(const String & all_queries_text,
                                std::function<void(const String & full_query, const String & query_to_execute, ASTPtr parsed_query)> execute_single_query,
                                std::function<void(const String &, Exception &)> process_parse_query_error = {});
 
-    /*
-     * Process parsed single query. Depends on executeSingleQuery().
-    **/
-    void processSingleQueryImpl(const String & query, const String & query_to_execute, ASTPtr parsed_query,
+    void processParsedSingleQuery(const String & query, const String & query_to_execute, ASTPtr parsed_query,
                                 std::optional<bool> echo_query_ = {}, bool report_error = false);
-
-    virtual void reportQueryError(const String & query) const = 0;
 
     /// For non-interactive multi-query mode get queries text prefix.
     virtual String getQueryTextPrefix() { return ""; }
 
-    virtual void loadSuggestionData(Suggest &) = 0;
-
-    void onData(Block & block, ASTPtr parsed_query);
-    void onLogData(Block & block);
-    void onTotals(Block & block, ASTPtr parsed_query);
-    void onExtremes(Block & block, ASTPtr parsed_query);
-    void onReceiveExceptionFromServer(std::unique_ptr<Exception> && e);
-    void onProfileInfo(const BlockStreamProfileInfo & profile_info);
 
     void resetOutput();
 
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
 
-    void onProgress(const Progress & value);
-
-    void onEndOfStream();
-
-
     /// Prepare for and call either runInteractive() or runNonInteractive().
     virtual int mainImpl() = 0;
-
-    virtual void readArguments(int argc, char ** argv,
-                               Arguments & common_arguments, std::vector<Arguments> &) = 0;
 
     using ProgramOptionsDescription = boost::program_options::options_description;
     using CommandLineOptions = boost::program_options::variables_map;
@@ -125,26 +82,50 @@ protected:
     };
 
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
-
+    virtual void readArguments(int argc, char ** argv,
+                               Arguments & common_arguments, std::vector<Arguments> &) = 0;
     virtual void addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments) = 0;
-
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
-
     virtual void processConfig() = 0;
 
 private:
+    bool processQueryText(const String & text);
+    void processTextAsSingleQuery(const String & full_query);
+    bool processMultiQuery(const String & all_queries_text);
+
+    void receiveResult(ASTPtr parsed_query);
+    bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
+    void receiveLogs(ASTPtr parsed_query);
+    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
+    bool receiveEndOfQuery();
+
+    void onProgress(const Progress & value);
+    void onData(Block & block, ASTPtr parsed_query);
+    void onLogData(Block & block);
+    void onTotals(Block & block, ASTPtr parsed_query);
+    void onExtremes(Block & block, ASTPtr parsed_query);
+    void onReceiveExceptionFromServer(std::unique_ptr<Exception> && e);
+    void onProfileInfo(const BlockStreamProfileInfo & profile_info);
+    void onEndOfStream();
+
+    void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
+
+    void sendDataFrom(ReadBuffer & buf, Block & sample,
+                      const ColumnsDescription & columns_description, ASTPtr parsed_query);
+
+    void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
+    void initLogsOutputStream();
+
+    void sendExternalTables(ASTPtr parsed_query);
+
     inline String prompt() const
     {
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
     }
 
     void outputQueryInfo(bool echo_query_);
-
-    /// Process query text (multiquery or single query) according to options.
-    bool processQueryText(const String & text);
-
 
 protected:
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
@@ -228,6 +209,9 @@ protected:
     String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
+
+    UInt64 server_revision = 0;
+    String server_version;
 
 };
 

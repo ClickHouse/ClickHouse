@@ -67,8 +67,6 @@ public:
     /// Passed value are delta, that must be summarized.
     virtual void onProgress(const Progress & /*progress*/) {}
 
-    void setFlushBufferCallback(std::function<void(WriteBuffer & out, size_t result_rows)> callback) { flush_callback = callback; }
-
     /// Content-Type to set when sending HTTP response.
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
 
@@ -93,7 +91,5 @@ private:
     size_t result_bytes = 0;
 
     bool prefix_written = false;
-
-    std::function<void(WriteBuffer & out, size_t result_rows)> flush_callback;
 };
 }
