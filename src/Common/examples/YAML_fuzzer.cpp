@@ -5,6 +5,8 @@
 #include <time.h>
 #include <filesystem>
 
+#include <Common/Config/YAMLParser.h>
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
     /// How to test:
@@ -18,7 +20,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         return 1;
     }
     std::string input = std::string(reinterpret_cast<const char*>(data), size);
-    DB::YAMLParser parser;
 
     {
         std::ofstream temp_file(file_name);
@@ -27,11 +28,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
     try
     {
-        DB::YAMLParser::parse(std::string(file_name));
+        DB::YAMLParserImpl::parse(std::string(file_name));
     }
     catch (...)
     {
-        std::cerr << "YAML_fuzzer failed: " << getCurrentExceptionMessage() << std::endl;
+        std::cerr << "YAML_fuzzer failed: " << DB::getCurrentExceptionMessage(__PRETTY_FUNCTION__) << std::endl;
         return 1;
     }
     return 0;
