@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 
 #include <Columns/ColumnString.h>
+#include <Common/isValidUTF8.h>
 
 #include <Functions/FunctionsConversion.h>
 
@@ -391,7 +392,6 @@ public:
         for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
             auto value = column->getDataAt(row);
-            validatePartitionKey(value);
             auto [it, inserted] = sub_chunks_indices.emplace(value, sub_chunks_indices.size());
             selector.push_back(it->second);
         }
@@ -457,10 +457,10 @@ private:
         if (it == sinks.end())
         {
             auto partition_bucket = replaceWildcards(bucket, partition_id);
-            S3::URI::validateBucket(partition_bucket);
+            validateBucket(partition_bucket);
 
             auto partition_key = replaceWildcards(key, partition_id);
-            S3::URI::validateKey(partition_key);
+            validateKey(partition_key);
 
             std::tie(it, std::ignore) = sinks.emplace(partition_id, std::make_shared<StorageS3Sink>(
                 format,
@@ -478,18 +478,48 @@ private:
         return it->second;
     }
 
-    static void validatePartitionKey(const StringRef & str)
+    static void validateBucket(const StringRef & str)
+    {
+        /// See:
+        /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
+        /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#createbucket
+
+        if (str.size < 3 || 222 < str.size)
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
+                            "Bucket name length is out of bounds in virtual hosted style S3 URI: {}", quoteString(str));
+
+        if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data), str.size))
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in bucket name");
+
+        validatePartitionKey(str, false);
+    }
+
+    static void validateKey(const StringRef & str)
+    {
+        /// See:
+        /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
+        /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#putobject
+
+        if (str.size < 1 || 1024 < str.size)
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect key length (min - 2, max - 1023 characters), got: {}", str.size);
+
+        if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data), str.size))
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in key");
+
+        validatePartitionKey(str, true);
+    }
+
+    static void validatePartitionKey(const StringRef & str, bool allow_slash)
     {
         for (const char * i = str.data; i != str.data + str.size; ++i)
         {
-            if (static_cast<UInt8>(*i) < 0x20 || *i == '{' || *i == '}' || *i == '*' || *i == '?')
+            if (static_cast<UInt8>(*i) < 0x20 || *i == '{' || *i == '}' || *i == '*' || *i == '?' || (!allow_slash && *i == '/'))
             {
                 /// Need to convert to UInt32 because UInt8 can't be passed to format due to "mixing character types is disallowed".
                 UInt32 invalid_char_byte = static_cast<UInt32>(static_cast<UInt8>(*i));
-                throw DB::Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                        "Illegal character '\\x{:02x}' in partition key starting with '{}'",
-                        invalid_char_byte,
-                        StringRef(str.data, i - str.data));
+                throw DB::Exception(
+                    ErrorCodes::CANNOT_PARSE_TEXT, "Illegal character '\\x{:02x}' in partition id starting with '{}'",
+                    invalid_char_byte, StringRef(str.data, i - str.data));
             }
         }
     }
