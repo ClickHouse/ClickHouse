@@ -45,7 +45,7 @@ protected:
 
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
     SerializationInfoPtr input_serialization_info;
-    SerializationInfoBuilderPtr new_serialization_info;
+    SerializationInfoBuilder new_serialization_info;
 };
 
 }

@@ -7489,8 +7489,8 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     new_data_part->is_temp = true;
 
     /// Create empty serialization_info.
-    auto serialization_info_builder = std::make_shared<SerializationInfoBuilder>(getSettings()->ratio_of_defaults_for_sparse_serialization);
-    new_data_part->serialization_info = serialization_info_builder->build();
+    auto ratio = getSettings()->ratio_of_defaults_for_sparse_serialization;
+    new_data_part->serialization_info = SerializationInfoBuilder(ratio).build();
 
     SyncGuardPtr sync_guard;
     if (new_data_part->isStoredOnDisk())

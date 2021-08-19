@@ -72,7 +72,7 @@ void SerializationInfoBuilder::add(const SerializationInfo & other)
         info->columns[name].num_defaults += column_info.num_defaults;
 }
 
-SerializationInfoPtr SerializationInfoBuilder::build()
+SerializationInfoPtr SerializationInfoBuilder::build() &&
 {
     size_t total_rows = info->number_of_rows;
     for (auto & [_, column_info] : info->columns)
@@ -85,7 +85,7 @@ SerializationInfoPtr SerializationInfoBuilder::build()
     return info;
 }
 
-SerializationInfoPtr SerializationInfoBuilder::buildFrom(const SerializationInfo & other)
+SerializationInfoPtr SerializationInfoBuilder::buildFrom(const SerializationInfo & other) &&
 {
     for (const auto & [name, column_info] : other.columns)
     {
