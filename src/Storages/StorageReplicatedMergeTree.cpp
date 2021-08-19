@@ -141,6 +141,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_DATA_PART;
     extern const int BAD_ARGUMENTS;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
+    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 namespace ActionLocks
@@ -1314,32 +1315,35 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         }
 
         ReplicatedMergeTreePartHeader replica_part_header;
-        if (!part_zk_str.empty())
-            replica_part_header = ReplicatedMergeTreePartHeader::fromString(part_zk_str);
-        else
+        if (part_zk_str.empty())
         {
-            Coordination::Stat columns_stat_before, columns_stat_after;
             String columns_str;
             String checksums_str;
-            /// Let's check that the node's version with the columns did not change while we were reading the checksums.
-            /// This ensures that the columns and the checksum refer to the same
-            if (!zookeeper->tryGet(fs::path(current_part_path) / "columns", columns_str, &columns_stat_before) ||
-                !zookeeper->tryGet(fs::path(current_part_path) / "checksums", checksums_str) ||
-                !zookeeper->exists(fs::path(current_part_path) / "columns", &columns_stat_after) ||
-                columns_stat_before.version != columns_stat_after.version)
+            if (zookeeper->tryGet(fs::path(current_part_path) / "columns", columns_str) &&
+                zookeeper->tryGet(fs::path(current_part_path) / "checksums", checksums_str))
             {
-                LOG_INFO(log, "Not checking checksums of part {} with replica {} because part changed while we were reading its checksums", part_name, replica);
+                replica_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(columns_str, checksums_str);
+            }
+            else
+            {
+                if (zookeeper->exists(current_part_path))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has empty header and does not have columns and checksums. "
+                                                               "Looks like a bug.", current_part_path);
+                LOG_INFO(log, "Not checking checksums of part {} with replica {} because part was removed from ZooKeeper", part_name, replica);
                 continue;
             }
-
-            replica_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(
-                columns_str, checksums_str);
+        }
+        else
+        {
+            replica_part_header = ReplicatedMergeTreePartHeader::fromString(part_zk_str);
         }
 
         if (replica_part_header.getColumnsHash() != local_part_header.getColumnsHash())
         {
-            LOG_INFO(log, "Not checking checksums of part {} with replica {} because columns are different", part_name, replica);
-            continue;
+            /// Either it's a bug or ZooKeeper contains broken data.
+            /// TODO Fix KILL MUTATION and replace CHECKSUM_DOESNT_MATCH with LOGICAL_ERROR
+            /// (some replicas may skip killed mutation even if it was executed on other replicas)
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Part {} from {} has different columns hash", part_name, replica);
         }
 
         replica_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
@@ -2137,6 +2141,8 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
             if (!parts_for_merge.empty() && replica.empty())
             {
                 LOG_INFO(log, "No active replica has part {}. Will fetch merged part instead.", entry.new_part_name);
+                /// We should enqueue it for check, because merged part may never appear if source part is lost
+                enqueuePartForCheck(entry.new_part_name);
                 return false;
             }
 
@@ -3083,7 +3089,7 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
     }
     try
     {
-        queue.pullLogsToQueue(getZooKeeper(), queue_updating_task->getWatchCallback());
+        queue.pullLogsToQueue(getZooKeeper(), queue_updating_task->getWatchCallback(), ReplicatedMergeTreeQueue::UPDATE);
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
     }
@@ -4321,9 +4327,6 @@ void StorageReplicatedMergeTree::startup()
         /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attempt to do it
         startup_event.wait();
 
-        /// If we don't separate create/start steps, race condition will happen
-        /// between the assignment of queue_task_handle and queueTask that use the queue_task_handle.
-        background_executor.start();
         startBackgroundMovesIfNeeded();
 
         part_moves_between_shards_orchestrator.start();
@@ -5460,9 +5463,9 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
 
     const auto & stop_waiting = [&]()
     {
-        bool stop_waiting_itself = waiting_itself && (partial_shutdown_called || is_dropped);
+        bool stop_waiting_itself = waiting_itself && partial_shutdown_called;
         bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active");
-        return stop_waiting_itself || stop_waiting_non_active;
+        return is_dropped || stop_waiting_itself || stop_waiting_non_active;
     };
 
     /// Don't recheck ZooKeeper too often
@@ -6058,7 +6061,7 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
 
-    LOG_TRACE(log, "Killing mutation {}", mutation_id);
+    LOG_INFO(log, "Killing mutation {}", mutation_id);
 
     auto mutation_entry = queue.removeMutation(zookeeper, mutation_id);
     if (!mutation_entry)
@@ -6964,7 +6967,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     Stopwatch watch;
 
     /// Let's fetch new log entries firstly
-    queue.pullLogsToQueue(getZooKeeper());
+    queue.pullLogsToQueue(getZooKeeper(), {}, ReplicatedMergeTreeQueue::SYNC);
 
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
