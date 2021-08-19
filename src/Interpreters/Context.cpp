@@ -589,27 +589,6 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::authenticate(const String & name, const String & password, const Poco::Net::SocketAddress & address)
-{
-    authenticate(BasicCredentials(name, password), address);
-}
-
-void Context::authenticate(const Credentials & credentials, const Poco::Net::SocketAddress & address)
-{
-    auto authenticated_user_id = getAccessControlManager().login(credentials, address.host());
-
-    client_info.current_user = credentials.getUserName();
-    client_info.current_address = address;
-
-#if defined(ARCADIA_BUILD)
-    /// This is harmful field that is used only in foreign "Arcadia" build.
-    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
-        client_info.current_password = basic_credentials->getPassword();
-#endif
-
-    setUser(authenticated_user_id);
-}
-
 void Context::setUser(const UUID & user_id_)
 {
     auto lock = getLock();
