@@ -26,7 +26,7 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
     data.resize(mask.size());
     while (index >= 0)
     {
-        if (mask[index] ^ inverted)
+        if (!!mask[index] ^ inverted)
         {
             if (from < 0)
                 throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
