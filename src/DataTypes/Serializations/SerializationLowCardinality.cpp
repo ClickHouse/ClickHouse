@@ -134,7 +134,7 @@ struct IndexesSerializationType
 
         if (settings.native_format)
         {
-            if (!has_additional_keys || need_global_dictionary || need_update_dictionary)
+            if (need_global_dictionary)
                 throw Exception(ErrorCodes::INVALID_BINARY_DATA,
                                 "LowCardinality indexes serialization type for Native format "
                                 "cannot use global dictionary");

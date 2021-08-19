@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import socket
+import os
 
-HOST = '127.0.0.1'
-PORT = 9000
+CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
+CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT', '9000'))
 
 
 def writeVarUInt(x, ba):
@@ -192,7 +193,7 @@ def readException(s):
 
 def insertValidLowCardinalityRow():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((HOST, PORT))
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
         sendQuery(s, 'insert into tab format TSV')
@@ -227,7 +228,7 @@ def insertValidLowCardinalityRow():
 
 def insertLowCardinalityRowWithIndexOverflow():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((HOST, PORT))
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
         sendQuery(s, 'insert into tab format TSV')
@@ -259,7 +260,7 @@ def insertLowCardinalityRowWithIndexOverflow():
 
 def insertLowCardinalityRowWithIncorrectDictType():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((HOST, PORT))
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
         sendQuery(s, 'insert into tab format TSV')
