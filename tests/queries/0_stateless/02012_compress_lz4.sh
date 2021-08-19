@@ -11,7 +11,6 @@ rm -rf "${WORKING_FOLDER_02012}"
 mkdir "${WORKING_FOLDER_02012}"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM (SELECT 'Hello, World!' as String) INTO OUTFILE '${WORKING_FOLDER_02012}/lz4_compression.lz4'"
-lz4 -t -q ${WORKING_FOLDER_02012}/lz4_compression.lz4
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM file('${WORKING_FOLDER_02012}/lz4_compression.lz4', 'TabSeparated', 'col String')"
 
 rm -rf "${WORKING_FOLDER_02012}"
