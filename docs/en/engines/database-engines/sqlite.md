@@ -5,7 +5,7 @@ toc_title: SQLite
 
 # SQLite {#sqlite}
 
-The engine works with [SQLite](https://www.sqlite.org/index.html). 
+Allows to connect to [SQLite](https://www.sqlite.org/index.html) database. 
 
 ## Creating a Database {#creating-a-database}
 
