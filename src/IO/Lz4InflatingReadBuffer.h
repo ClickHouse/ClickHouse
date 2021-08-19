@@ -30,22 +30,15 @@ private:
 
     std::unique_ptr<ReadBuffer> in;
 
-    size_t ret;
+    LZ4F_dctx* dctx;
 
-    void * src;
-    void * dst;
-
-    size_t src_capacity;
-    size_t dst_capacity;
+    void * in_data;
+    void * out_data;
 
     size_t in_available;
-
-    LZ4F_dctx* dctx;
-    size_t dctx_status;
-
+    size_t out_available;
 
     bool eof = false;
-
 };
 
 }
