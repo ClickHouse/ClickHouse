@@ -6,7 +6,7 @@ import os
 
 CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
 CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT_TCP', '900000'))
-
+CLICKHOUSE_DATABASE = os.environ.get('CLICKHOUSE_DATABASE', 'default')
 
 def writeVarUInt(x, ba):
     for _ in range(0, 9):
@@ -197,7 +197,7 @@ def insertValidLowCardinalityRow():
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
-        sendQuery(s, 'insert into tab format TSV')
+        sendQuery(s, 'insert into {}.tab format TSV'.format(CLICKHOUSE_DATABASE))
 
         # external tables
         sendEmptyBlock(s)
@@ -233,7 +233,7 @@ def insertLowCardinalityRowWithIndexOverflow():
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
-        sendQuery(s, 'insert into tab format TSV')
+        sendQuery(s, 'insert into {}.tab format TSV'.format(CLICKHOUSE_DATABASE))
 
         # external tables
         sendEmptyBlock(s)
@@ -266,7 +266,7 @@ def insertLowCardinalityRowWithIncorrectDictType():
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
-        sendQuery(s, 'insert into tab format TSV')
+        sendQuery(s, 'insert into {}.tab format TSV'.format(CLICKHOUSE_DATABASE))
 
         # external tables
         sendEmptyBlock(s)
