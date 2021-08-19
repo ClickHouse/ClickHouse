@@ -20,7 +20,7 @@ The engine allows to import and export data to SQLite and supports queries to SQ
 **Engine Parameters**
 
 -   `db_path` — Path to SQLite file with a database.
--   `table` — The SQLite table name.
+-   `table` — Name of a table in the SQLite database.
 
 ## Usage Example {#usage-example}
 
