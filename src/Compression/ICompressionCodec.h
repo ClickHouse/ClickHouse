@@ -86,7 +86,7 @@ public:
     virtual bool isNone() const { return false; }
 
 protected:
-
+    /// This is used for fuzz testing
     friend int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
     /// Return size of compressed data without header

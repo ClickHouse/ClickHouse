@@ -6,12 +6,12 @@
 
 namespace DB
 {
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
+    CompressionCodecPtr getCompressionCodecZSTD(int level);
 }
 
 struct AuxiliaryRandomData
 {
-    UInt8 delta_size_bytes;
+    int level;
     size_t decompressed_size;
 };
 
@@ -22,7 +22,7 @@ try
         return 0;
 
     const auto * p = reinterpret_cast<const AuxiliaryRandomData *>(data);
-    auto codec = DB::getCompressionCodecDelta(p->delta_size_bytes);
+    auto codec = DB::getCompressionCodecZSTD(p->level);
 
     size_t output_buffer_size = p->decompressed_size % 65536;
     size -= sizeof(AuxiliaryRandomData);
