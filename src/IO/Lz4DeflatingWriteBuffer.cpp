@@ -12,7 +12,12 @@ namespace ErrorCodes
 
 Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
     std::unique_ptr<WriteBuffer> out_, int /*compression_level*/, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(std::move(out_))
+    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment)
+    , out(std::move(out_))
+    , in_chunk_size(0)
+    , out_capacity(0)
+    , count_in(0)
+    , count_out(0)
 {
     count_in = 0;
     kPrefs = {
@@ -146,7 +151,7 @@ void Lz4DeflatingWriteBuffer::finishImpl()
             ErrorCodes::LZ4_ENCODER_FAILED);
     }
     count_out += end_size;
-    out->position() = out->buffer().end() - count_out;
+    out->position() = out->buffer().begin() + count_out;
 }
 
 }
