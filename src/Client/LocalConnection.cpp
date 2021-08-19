@@ -10,6 +10,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_)
@@ -68,121 +69,121 @@ void LocalConnection::sendQuery(
 {
     query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
-    query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    // query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
     query_context->setCurrentQueryId("");
+    // applyCmdSettings(query_context);
     CurrentThread::QueryScope query_scope_holder(query_context);
 
     /// query_context->setCurrentDatabase(default_database);
 
-    /// Send structure of columns to client for function input()
-    // query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
-    // {
-    //     if (context != query_context)
-    //         throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
+    state.reset();
+    state.emplace();
 
-    //     auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
-    //     state.need_receive_data_for_input = true;
+    state->query_id = query_id_;
+    state->query = query_;
 
-    //     /// Send ColumnsDescription for input storage.
-    //     // if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
-    //     //     && query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
-    //     // {
-    //     //     sendTableColumns(metadata_snapshot->getColumns());
-    //     // }
-
-    //     /// Send block to the client - input storage structure.
-    //     state.input_header = metadata_snapshot->getSampleBlock();
-    //     next_packet_type = Protocol::Server::Data;
-    //     state.block = state.input_header;
-    // });
-
-    state.query_id = query_id_;
-    state.query = query_;
-
-    state.io = executeQuery(state.query, query_context, false, state.stage, true);
-    if (state.io.out)
+    try
     {
-        state.need_receive_data_for_insert = true;
-        processInsertQuery();
+        state->io = executeQuery(state->query, query_context, false, state->stage, true);
+        if (state->io.out)
+        {
+            state->need_receive_data_for_insert = true;
+            processInsertQuery();
+        }
+        else if (state->io.pipeline.initialized())
+        {
+            state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
+        }
+        else if (state->io.in)
+        {
+            state->async_in = std::make_unique<AsynchronousBlockInputStream>(state->io.in);
+            state->async_in->readPrefix();
+        }
     }
-    else if (state.io.pipeline.initialized())
+    catch (const Exception & e)
     {
-        state.executor = std::make_unique<PullingAsyncPipelineExecutor>(state.io.pipeline);
+        state->io.onException();
+        state->exception.emplace(e);
     }
-    else if (state.io.in)
+    catch (const std::exception & e)
     {
-        state.async_in = std::make_unique<AsynchronousBlockInputStream>(state.io.in);
-        state.async_in->readPrefix();
+        state->io.onException();
+        state->exception.emplace(Exception::CreateFromSTDTag{}, e);
+    }
+    catch (...)
+    {
+        state->io.onException();
+        state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
     }
 }
 
 void LocalConnection::processInsertQuery()
 {
-    state.io.out->writePrefix();
+    state->io.out->writePrefix();
     next_packet_type = Protocol::Server::Data;
-    state.block = state.io.out->getHeader();
+    state->block = state->io.out->getHeader();
 }
-
 
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
     if (block)
     {
-        if (state.need_receive_data_for_input)
+        if (state->need_receive_data_for_input)
         {
             /// 'input' table function.
-            state.block_for_input = block;
+            state->block_for_input = block;
         }
         else
         {
             /// INSERT query.
-            state.io.out->write(block);
+            state->io.out->write(block);
         }
     }
 }
 
-
 void LocalConnection::sendCancel()
 {
-    if (state.async_in)
+    if (state->async_in)
     {
-        state.async_in->cancel(false);
+        state->async_in->cancel(false);
     }
-    else if (state.executor)
+    else if (state->executor)
     {
-        state.executor->cancel();
+        state->executor->cancel();
     }
 }
 
-Block LocalConnection::pullBlock()
+bool LocalConnection::pullBlock(Block & block)
 {
-    Block block;
-    if (state.async_in)
+    if (state->async_in)
     {
-        if (state.async_in->poll(query_context->getSettingsRef().interactive_delay / 1000))
-            return state.async_in->read();
+        if (state->async_in->poll(interactive_delay / 1000))
+            block = state->async_in->read();
+
+        if (block)
+            return true;
     }
-    else if (state.executor)
+    else if (state->executor)
     {
-        state.executor->pull(block, query_context->getSettingsRef().interactive_delay / 1000);
+        return state->executor->pull(block, interactive_delay / 1000);
     }
-    return block;
+
+    return false;
 }
 
 void LocalConnection::finishQuery()
 {
-    if (state.async_in)
+    if (state->async_in)
     {
-        state.async_in->readSuffix();
-        state.async_in.reset();
+        state->async_in->readSuffix();
+        state->async_in.reset();
     }
-    else if (state.executor)
+    else if (state->executor)
     {
-        state.executor.reset();
+        state->executor.reset();
     }
 
-    // sendProgress();
-    state.io.onFinish();
+    state->io.onFinish();
     query_context.reset();
 }
 
@@ -192,25 +193,103 @@ bool LocalConnection::poll(size_t)
     {
         after_send_progress.restart();
         next_packet_type = Protocol::Server::Progress;
-
         return true;
     }
 
-    auto block = pullBlock();
-    if (block)
+    try
+    {
+        pollImpl();
+    }
+    catch (const Exception & e)
+    {
+        state->io.onException();
+        state->exception.emplace(e);
+    }
+    catch (const std::exception & e)
+    {
+        state->io.onException();
+        state->exception.emplace(Exception::CreateFromSTDTag{}, e);
+    }
+    catch (...)
+    {
+        state->io.onException();
+        state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+    }
+
+    if (state->exception)
+    {
+        next_packet_type = Protocol::Server::Exception;
+        return true;
+    }
+
+    if (state->is_finished && !state->sent_totals)
+    {
+        state->sent_totals = true;
+        Block totals;
+
+        if (state->io.in)
+            totals = state->io.in->getTotals();
+        else if (state->executor)
+            totals = state->executor->getTotalsBlock();
+
+        if (totals)
+        {
+            next_packet_type = Protocol::Server::Totals;
+            state->block.emplace(totals);
+            return true;
+        }
+    }
+
+    if (state->is_finished && !state->sent_extremes)
+    {
+        state->sent_extremes = true;
+        Block extremes;
+
+        if (state->io.in)
+            extremes = state->io.in->getExtremes();
+        else if (state->executor)
+            extremes = state->executor->getExtremesBlock();
+
+        if (extremes)
+        {
+            next_packet_type = Protocol::Server::Extremes;
+            state->block.emplace(extremes);
+            return true;
+        }
+    }
+
+    if (state->is_finished)
+    {
+        finishQuery();
+        next_packet_type = Protocol::Server::EndOfStream;
+        return true;
+    }
+
+    if (state->block)
     {
         next_packet_type = Protocol::Server::Data;
+        return true;
+    }
 
-        if (state.io.null_format)
-            state.block.emplace();
-        else
-            state.block.emplace(block);
-    }
-    else
+    return false;
+}
+
+bool LocalConnection::pollImpl()
+{
+    Block block;
+    auto next_read = pullBlock(block);
+    if (block)
     {
-        state.is_finished = true;
-        next_packet_type = Protocol::Server::EndOfStream;
+        if (state->io.null_format)
+            state->block.emplace();
+        else
+            state->block.emplace(block);
     }
+    else if (!next_read)
+    {
+        state->is_finished = true;
+    }
+
     return true;
 }
 
@@ -221,25 +300,30 @@ Packet LocalConnection::receivePacket()
     packet.type = next_packet_type.value();
     switch (next_packet_type.value())
     {
+        case Protocol::Server::Totals: [[fallthrough]];
+        case Protocol::Server::Extremes: [[fallthrough]];
         case Protocol::Server::Data:
         {
-            if (state.block)
+            if (state->block)
             {
-                packet.block = std::move(*state.block);
-                state.block.reset();
+                packet.block = std::move(*state->block);
+                state->block.reset();
             }
-
+            break;
+        }
+        case Protocol::Server::Exception:
+        {
+            packet.exception = std::make_unique<Exception>(*state->exception);
             break;
         }
         case Protocol::Server::Progress:
         {
-            packet.progress = std::move(state.progress);
-            state.progress.reset();
+            packet.progress = std::move(state->progress);
+            state->progress.reset();
             break;
         }
         case Protocol::Server::EndOfStream:
         {
-            finishQuery();
             break;
         }
         default:
@@ -251,7 +335,7 @@ Packet LocalConnection::receivePacket()
 
 bool LocalConnection::hasReadPendingData() const
 {
-    return !state.is_finished;
+    return !state->is_finished;
 }
 
 std::optional<UInt64> LocalConnection::checkPacket(size_t)
@@ -261,7 +345,7 @@ std::optional<UInt64> LocalConnection::checkPacket(size_t)
 
 void LocalConnection::updateProgress(const Progress & value)
 {
-    state.progress.incrementPiecewiseAtomically(value);
+    state->progress.incrementPiecewiseAtomically(value);
 }
 
 }
