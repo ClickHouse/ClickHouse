@@ -500,8 +500,6 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
     , saved_block_sample(filler->getEmptyBlock())
     , result_sample_block(materializeBlock(result_sample_block_))
 {
-    LOG_DEBUG(&Poco::Logger::get("NotJoinedBlocks"), "saved_block_sample {}",saved_block_sample.dumpStructure());
-    LOG_DEBUG(&Poco::Logger::get("NotJoinedBlocks"), "result_sample_block {}",result_sample_block.dumpStructure());
 
     for (size_t left_pos = 0; left_pos < left_columns_count; ++left_pos)
     {
