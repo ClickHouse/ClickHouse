@@ -19,8 +19,6 @@ The engine allows to import and export data to SQLite and supports queries to SQ
 
 **Engine Parameters**
 
--   `name1, name2, ...` — The column names.
--   `type1, type2, ...` — The column types.
 -   `db_path` — Path to SQLite file with the database.
 -   `table` — The SQLite table name.
 
