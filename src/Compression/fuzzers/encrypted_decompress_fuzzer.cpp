@@ -6,12 +6,14 @@
 
 namespace DB
 {
-    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
+    CompressionCodecPtr getCompressionCodecEncrypted(const std::string_view & master_key);
 }
+
+constexpr size_t key_size = 20;
 
 struct AuxiliaryRandomData
 {
-    UInt8 delta_size_bytes;
+    char key[key_size];
     size_t decompressed_size;
 };
 
@@ -22,7 +24,9 @@ try
         return 0;
 
     const auto * p = reinterpret_cast<const AuxiliaryRandomData *>(data);
-    auto codec = DB::getCompressionCodecDelta(p->delta_size_bytes);
+
+    std::string key = std::string(p->key, key_size);
+    auto codec = DB::getCompressionCodecEncrypted(key);
 
     size_t output_buffer_size = p->decompressed_size % 65536;
     size -= sizeof(AuxiliaryRandomData);

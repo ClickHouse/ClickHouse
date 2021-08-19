@@ -544,4 +544,9 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
     });
 }
 
+CompressionCodecPtr getCompressionCodecDoubleDelta(UInt8 data_bytes_size)
+{
+    return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
+}
+
 }
