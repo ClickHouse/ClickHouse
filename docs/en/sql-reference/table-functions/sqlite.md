@@ -20,7 +20,7 @@ Allows to perform queries on a data stored in an [SQLite](../../engines/database
 
 **Returned value**
 
--   A table object with the same columns as the original `SQLite` table.
+-   A table object with the same columns as in the original `SQLite` table.
 
 **Example**
 
