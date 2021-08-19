@@ -424,7 +424,7 @@ void Client::connect()
 }
 
 
-void Client::reportQueryError(const String & query) const
+void Client::processError(const String & query) const
 {
     if (server_exception)
     {
@@ -468,6 +468,80 @@ void Client::printChangedSettings() const
     else
     {
         fmt::print(stderr, "No changed settings.\n");
+    }
+}
+
+
+void Client::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
+{
+    client_exception.reset();
+    server_exception.reset();
+
+    {
+        /// Temporarily apply query settings to context.
+        std::optional<Settings> old_settings;
+        SCOPE_EXIT_SAFE({
+            if (old_settings)
+                global_context->setSettings(*old_settings);
+        });
+
+        auto apply_query_settings = [&](const IAST & settings_ast)
+        {
+            if (!old_settings)
+                old_settings.emplace(global_context->getSettingsRef());
+            global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
+        };
+
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
+        if (insert && insert->settings_ast)
+            apply_query_settings(*insert->settings_ast);
+
+        /// FIXME: try to prettify this cast using `as<>()`
+        const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
+        if (with_output && with_output->settings_ast)
+            apply_query_settings(*with_output->settings_ast);
+
+        if (!connection->checkConnected())
+            connect();
+
+        ASTPtr input_function;
+        if (insert && insert->select)
+            insert->tryFindInputFunction(input_function);
+
+        /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
+        if (insert && (!insert->select || input_function) && !insert->watch)
+        {
+            if (input_function && insert->format.empty())
+                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
+
+            processInsertQuery(query_to_execute, parsed_query);
+        }
+        else
+            processOrdinaryQuery(query_to_execute, parsed_query);
+    }
+
+    /// Do not change context (current DB, settings) in case of an exception.
+    if (!have_error)
+    {
+        if (const auto * set_query = parsed_query->as<ASTSetQuery>())
+        {
+            /// Save all changes in settings to avoid losing them if the connection is lost.
+            for (const auto & change : set_query->changes)
+            {
+                if (change.name == "profile")
+                    current_profile = change.value.safeGet<String>();
+                else
+                    global_context->applySettingChange(change);
+            }
+        }
+        if (const auto * use_query = parsed_query->as<ASTUseQuery>())
+        {
+            const String & new_database = use_query->database;
+            /// If the client initiates the reconnection, it takes the settings from the config.
+            config().setString("database", new_database);
+            /// If the connection initiates the reconnection, it uses its variable.
+            connection->setDefaultDatabase(new_database);
+        }
     }
 }
 
@@ -574,7 +648,7 @@ bool Client::processWithFuzzing(const String & full_query)
 
             parsed_query = ast_to_process;
             query_to_execute = parsed_query->formatForErrorMessage();
-            processSingleQueryImpl(full_query, query_to_execute, parsed_query);
+            processParsedSingleQuery(full_query, query_to_execute, parsed_query);
         }
         catch (...)
         {

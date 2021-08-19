@@ -970,8 +970,7 @@ void executeQuery(
     bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
-    const std::optional<FormatSettings> & output_format_settings,
-    FlushBufferFunc flush_buffer_func)
+    const std::optional<FormatSettings> & output_format_settings)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1129,9 +1128,6 @@ void executeQuery(
                         previous_progress_callback(progress);
                     out->onProgress(progress);
                 });
-
-                if (flush_buffer_func)
-                    out->setFlushBufferCallback(flush_buffer_func);
 
                 if (set_result_details)
                     set_result_details(

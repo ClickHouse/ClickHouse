@@ -348,7 +348,7 @@ void ClientBase::initLogsOutputStream()
 }
 
 
-void ClientBase::processSingleQuery(const String & full_query)
+void ClientBase::processTextAsSingleQuery(const String & full_query)
 {
     /// Some parts of a query (result output and formatting) are executed
     /// client-side. Thus we need to parse the query.
@@ -368,10 +368,10 @@ void ClientBase::processSingleQuery(const String & full_query)
     else
         query_to_execute = full_query;
 
-    processSingleQueryImpl(full_query, query_to_execute, parsed_query);
+    processParsedSingleQuery(full_query, query_to_execute, parsed_query);
 
     if (have_error)
-        reportQueryError(full_query);
+        processError(full_query);
 }
 
 
@@ -692,6 +692,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
     if (!parsed_insert_query)
         return;
+
     if (parsed_insert_query->infile)
     {
         const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
@@ -860,81 +861,7 @@ bool ClientBase::receiveEndOfQuery()
 
 
 
-void ClientBase::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
-{
-    client_exception.reset();
-    server_exception.reset();
-
-    {
-        /// Temporarily apply query settings to context.
-        std::optional<Settings> old_settings;
-        SCOPE_EXIT_SAFE({
-            if (old_settings)
-                global_context->setSettings(*old_settings);
-        });
-
-        auto apply_query_settings = [&](const IAST & settings_ast)
-        {
-            if (!old_settings)
-                old_settings.emplace(global_context->getSettingsRef());
-            global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-        };
-
-        const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (insert && insert->settings_ast)
-            apply_query_settings(*insert->settings_ast);
-
-        /// FIXME: try to prettify this cast using `as<>()`
-        const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
-        if (with_output && with_output->settings_ast)
-            apply_query_settings(*with_output->settings_ast);
-
-        if (!connection->checkConnected())
-            connect();
-
-        ASTPtr input_function;
-        if (insert && insert->select)
-            insert->tryFindInputFunction(input_function);
-
-        /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !insert->watch)
-        {
-            if (input_function && insert->format.empty())
-                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
-
-            processInsertQuery(query_to_execute, parsed_query);
-        }
-        else
-            processOrdinaryQuery(query_to_execute, parsed_query);
-    }
-
-    /// Do not change context (current DB, settings) in case of an exception.
-    if (!have_error)
-    {
-        if (const auto * set_query = parsed_query->as<ASTSetQuery>())
-        {
-            /// Save all changes in settings to avoid losing them if the connection is lost.
-            for (const auto & change : set_query->changes)
-            {
-                if (change.name == "profile")
-                    current_profile = change.value.safeGet<String>();
-                else
-                    global_context->applySettingChange(change);
-            }
-        }
-        if (const auto * use_query = parsed_query->as<ASTUseQuery>())
-        {
-            const String & new_database = use_query->database;
-            /// If the client initiates the reconnection, it takes the settings from the config.
-            config().setString("database", new_database);
-            /// If the connection initiates the reconnection, it uses its variable.
-            connection->setDefaultDatabase(new_database);
-        }
-    }
-}
-
-
-void ClientBase::processSingleQueryImpl(const String & full_query, const String & query_to_execute,
+void ClientBase::processParsedSingleQuery(const String & full_query, const String & query_to_execute,
         ASTPtr parsed_query, std::optional<bool> echo_query_, bool report_error)
 {
     resetOutput();
@@ -947,18 +874,18 @@ void ClientBase::processSingleQueryImpl(const String & full_query, const String 
         std_out.next();
     }
 
-    global_context->setCurrentQueryId("");
-    if (is_interactive)
-    {
-        // Generate a new query_id
-        for (const auto & query_id_format : query_id_formats)
-        {
-            writeString(query_id_format.first, std_out);
-            writeString(fmt::format(query_id_format.second, fmt::arg("query_id", global_context->getCurrentQueryId())), std_out);
-            writeChar('\n', std_out);
-            std_out.next();
-        }
-    }
+    // if (is_interactive)
+    // {
+    //     global_context->setCurrentQueryId("");
+    //     // Generate a new query_id
+    //     for (const auto & query_id_format : query_id_formats)
+    //     {
+    //         writeString(query_id_format.first, std_out);
+    //         writeString(fmt::format(query_id_format.second, fmt::arg("query_id", global_context->getCurrentQueryId())), std_out);
+    //         writeChar('\n', std_out);
+    //         std_out.next();
+    //     }
+    // }
 
     processed_rows = 0;
     written_first_block = false;
@@ -978,7 +905,7 @@ void ClientBase::processSingleQueryImpl(const String & full_query, const String 
     }
 
     if (have_error && report_error)
-        reportQueryError(full_query);
+        processError(full_query);
 }
 
 
@@ -1110,7 +1037,7 @@ bool ClientBase::processMultiQueryImpl(const String & all_queries_text,
 
         // Report error.
         if (have_error)
-            reportQueryError(full_query);
+            processError(full_query);
 
         // Stop processing queries if needed.
         if (have_error && !ignore_error)
@@ -1135,7 +1062,7 @@ bool ClientBase::processQueryText(const String & text)
     if (!is_multiquery)
     {
         assert(!query_fuzzer_runs);
-        processSingleQuery(text);
+        processTextAsSingleQuery(text);
 
         return true;
     }
@@ -1160,7 +1087,7 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
         /// disable logs if expects errors
         TestHint test_hint(test_mode, all_queries_text);
         if (test_hint.clientError() || test_hint.serverError())
-            processSingleQuery("SET send_logs_level = 'fatal'");
+            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
     }
 
     bool echo_query = echo_queries;
@@ -1177,7 +1104,7 @@ bool ClientBase::processMultiQuery(const String & all_queries_text)
         echo_query = test_hint.echoQueries().value_or(echo_query);
         try
         {
-            processSingleQueryImpl(full_query, query_to_execute, parsed_query, echo_query, false);
+            processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
         }
         catch (...)
         {

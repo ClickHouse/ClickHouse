@@ -10,15 +10,13 @@ class Client : public ClientBase
 {
 public:
     Client() = default;
-
     void initialize(Poco::Util::Application & self) override;
 
 protected:
+    void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
     bool processWithFuzzing(const String & full_query) override;
 
-
-    void reportQueryError(const String & query) const override;
-
+    void processError(const String & query) const override;
     void loadSuggestionData(Suggest & suggest) override;
 
 
@@ -38,9 +36,6 @@ protected:
     void processConfig() override;
 
 private:
-    UInt64 server_revision = 0;
-    String server_version;
-
     void connect() override;
     void printChangedSettings() const;
 

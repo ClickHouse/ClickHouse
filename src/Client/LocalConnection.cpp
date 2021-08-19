@@ -67,35 +67,34 @@ void LocalConnection::sendQuery(
     bool)
 {
     query_context = Context::createCopy(getContext());
-    query_context->makeSessionContext();
     query_context->makeQueryContext();
-    query_context->setUser("default", "", Poco::Net::SocketAddress{});
-    query_context->setCurrentQueryId("");
     query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    query_context->setCurrentQueryId("");
+    CurrentThread::QueryScope query_scope_holder(query_context);
 
     /// query_context->setCurrentDatabase(default_database);
 
     /// Send structure of columns to client for function input()
-    query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
-    {
-        if (context != query_context)
-            throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
+    // query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
+    // {
+    //     if (context != query_context)
+    //         throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
 
-        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
-        state.need_receive_data_for_input = true;
+    //     auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
+    //     state.need_receive_data_for_input = true;
 
-        /// Send ColumnsDescription for input storage.
-        // if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
-        //     && query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
-        // {
-        //     sendTableColumns(metadata_snapshot->getColumns());
-        // }
+    //     /// Send ColumnsDescription for input storage.
+    //     // if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
+    //     //     && query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+    //     // {
+    //     //     sendTableColumns(metadata_snapshot->getColumns());
+    //     // }
 
-        /// Send block to the client - input storage structure.
-        state.input_header = metadata_snapshot->getSampleBlock();
-        next_packet_type = Protocol::Server::Data;
-        state.block = state.input_header;
-    });
+    //     /// Send block to the client - input storage structure.
+    //     state.input_header = metadata_snapshot->getSampleBlock();
+    //     next_packet_type = Protocol::Server::Data;
+    //     state.block = state.input_header;
+    // });
 
     state.query_id = query_id_;
     state.query = query_;
@@ -185,7 +184,6 @@ void LocalConnection::finishQuery()
     // sendProgress();
     state.io.onFinish();
     query_context.reset();
-    // state.reset();
 }
 
 bool LocalConnection::poll(size_t)

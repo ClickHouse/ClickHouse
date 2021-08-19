@@ -105,10 +105,7 @@ void IOutputFormat::work()
 
 void IOutputFormat::flush()
 {
-    if (flush_callback)
-        flush_callback(out, result_rows);
-    else
-        out.next();
+    out.next();
 }
 
 void IOutputFormat::write(const Block & block)

@@ -35,30 +35,25 @@ public:
     }
 
 protected:
+    void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
+
     void connect() override
     {
         connection_parameters = ConnectionParameters(config());
         /// Using query context withcmd settings.
-        connection = std::make_unique<LocalConnection>(query_context);
+        connection = std::make_unique<LocalConnection>(global_context);
     }
 
-    void reportQueryError(const String & query) const override;
-
-    String getQueryTextPrefix() override;
-
+    void processError(const String & query) const override;
     void loadSuggestionData(Suggest &) override;
-
-
-    void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &) override;
-
+    String getQueryTextPrefix() override;
     void printHelpMessage(const OptionsDescription & options_description) override;
 
+    void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &) override;
     void addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments) override;
-
     void processOptions(const OptionsDescription & options_description,
                         const CommandLineOptions & options,
                         const std::vector<Arguments> &) override;
-
     void processConfig() override;
 
     int mainImpl() override;
@@ -71,20 +66,11 @@ private:
     std::string getInitialCreateTableQuery();
 
     void tryInitPath();
-
-    void applyCmdOptions(ContextMutablePtr context);
-
-    void applyCmdSettings(ContextMutablePtr context);
-
-    void processQueries();
-
     void setupUsers();
-
     void cleanup();
 
-    void checkInterruptListener();
-
-    ContextMutablePtr query_context;
+    void applyCmdOptions(ContextMutablePtr context);
+    void applyCmdSettings(ContextMutablePtr context);
 
     std::optional<StatusFile> status;
 
