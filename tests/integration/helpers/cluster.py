@@ -1836,6 +1836,10 @@ class ClickHouseInstance:
         build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
         return "-fsanitize={}".format(sanitizer_name) in build_opts
 
+    def is_debug_build(self):
+        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+        return 'NDEBUG' not in build_opts
+
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer('thread')
 
