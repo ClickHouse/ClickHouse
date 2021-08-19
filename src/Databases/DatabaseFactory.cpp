@@ -103,9 +103,11 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;
 
-    bool engine_may_have_arguments = engine_name == "MySQL" || engine_name == "MaterializeMySQL" || engine_name == "MaterializedMySQL" ||
-                                     engine_name == "Lazy" || engine_name == "Replicated" || engine_name == "PostgreSQL" ||
-                                     engine_name == "MaterializedPostgreSQL" || engine_name == "SQLite";
+    static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
+        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
+
+    bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
+
     if (engine_define->engine->arguments && !engine_may_have_arguments)
         throw Exception("Database engine " + engine_name + " cannot have arguments", ErrorCodes::BAD_ARGUMENTS);
 
@@ -113,6 +115,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                                   engine_define->primary_key || engine_define->order_by ||
                                   engine_define->sample_by;
     bool may_have_settings = endsWith(engine_name, "MySQL") || engine_name == "Replicated" || engine_name == "MaterializedPostgreSQL";
+
     if (has_unexpected_element || (!may_have_settings && engine_define->settings))
         throw Exception("Database engine " + engine_name + " cannot have parameters, primary_key, order_by, sample_by, settings",
                         ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
@@ -233,11 +236,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     {
         const ASTFunction * engine = engine_define->engine;
 
-        if (!engine->arguments || engine->arguments->children.size() < 4 || engine->arguments->children.size() > 5)
-            throw Exception(fmt::format(
-                        "{} Database require host:port, database_name, username, password arguments "
-                        "[, use_table_cache = 0].", engine_name),
-                ErrorCodes::BAD_ARGUMENTS);
+        if (!engine->arguments || engine->arguments->children.size() < 4 || engine->arguments->children.size() > 6)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "{} Database require `host:port`, `database_name`, `username`, `password` [, `schema` = "", `use_table_cache` = 0].",
+                            engine_name);
 
         ASTs & engine_args = engine->arguments->children;
 
@@ -249,9 +251,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const auto & username = safeGetLiteralValue<String>(engine_args[2], engine_name);
         const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
 
+        String schema;
+        if (engine->arguments->children.size() >= 5)
+            schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
+
         auto use_table_cache = 0;
-        if (engine->arguments->children.size() == 5)
-            use_table_cache = safeGetLiteralValue<UInt64>(engine_args[4], engine_name);
+        if (engine->arguments->children.size() >= 6)
+            use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
 
         /// Split into replicas if needed.
         size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
@@ -266,7 +272,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return std::make_shared<DatabasePostgreSQL>(
-            context, metadata_path, engine_define, database_name, postgres_database_name, connection_pool, use_table_cache);
+            context, metadata_path, engine_define, database_name, postgres_database_name, schema, connection_pool, use_table_cache);
     }
     else if (engine_name == "MaterializedPostgreSQL")
     {
@@ -274,9 +280,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (!engine->arguments || engine->arguments->children.size() != 4)
         {
-            throw Exception(
-                    fmt::format("{} Database require host:port, database_name, username, password arguments ", engine_name),
-                    ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "{} Database require `host:port`, `database_name`, `username`, `password`.",
+                            engine_name);
         }
 
         ASTs & engine_args = engine->arguments->children;

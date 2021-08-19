@@ -1122,7 +1122,7 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool no_more_keys, bool use_compiled_expressions, typename Method>
+    template <bool no_more_keys, bool use_compiled_functions, typename Method>
     void executeImplBatch(
         Method & method,
         typename Method::State & state,
@@ -1132,7 +1132,8 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// For case when there are no keys (all aggregate into one row).
-    static void executeWithoutKeyImpl(
+    template <bool use_compiled_functions>
+    void executeWithoutKeyImpl(
         AggregatedDataWithoutKey & res,
         size_t rows,
         AggregateFunctionInstruction * aggregate_instructions,

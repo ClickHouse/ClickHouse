@@ -88,6 +88,7 @@ public:
 
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t) const override;
+    void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -178,6 +179,7 @@ public:
         bool ALWAYS_INLINE isDefault() const { return current_offset == offsets.size() || current_row != offsets[current_offset]; }
         size_t ALWAYS_INLINE getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
         size_t ALWAYS_INLINE getCurrentRow() const { return current_row; }
+        size_t ALWAYS_INLINE getCurrentOffset() const { return current_offset; }
 
         bool operator==(const Iterator & other) const
         {

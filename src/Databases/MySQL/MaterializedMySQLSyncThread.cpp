@@ -9,12 +9,14 @@
 #    include <random>
 #    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnDecimal.h>
+#    include <Processors/QueryPipeline.h>
+#    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <DataStreams/CountingBlockOutputStream.h>
 #    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
-#    include <Formats/MySQLBlockInputStream.h>
+#    include <Formats/MySQLSource.h>
 #    include <IO/ReadBufferFromString.h>
 #    include <Interpreters/Context.h>
 #    include <Interpreters/executeQuery.h>
@@ -100,7 +102,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
     const String & check_query = "SHOW VARIABLES;";
 
     StreamSettings mysql_input_stream_settings(settings, false, true);
-    MySQLBlockInputStream variables_input(connection, check_query, variables_header, mysql_input_stream_settings);
+    auto variables_input = std::make_unique<MySQLSource>(connection, check_query, variables_header, mysql_input_stream_settings);
 
     std::unordered_map<String, String> variables_error_message{
         {"log_bin", "ON"},
@@ -110,7 +112,12 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
         {"log_bin_use_v1_row_events", "OFF"}
     };
 
-    while (Block variables_block = variables_input.read())
+    QueryPipeline pipeline;
+    pipeline.init(Pipe(std::move(variables_input)));
+
+    PullingPipelineExecutor executor(pipeline);
+    Block variables_block;
+    while (executor.pull(variables_block))
     {
         ColumnPtr variable_name_column = variables_block.getByName("Variable_name").column;
         ColumnPtr variable_value_column = variables_block.getByName("Value").column;
@@ -327,12 +334,22 @@ static inline void dumpDataForTables(
 
             auto out = std::make_shared<CountingBlockOutputStream>(getTableOutput(database_name, table_name, query_context));
             StreamSettings mysql_input_stream_settings(context->getSettingsRef());
-            MySQLBlockInputStream input(
+            auto input = std::make_unique<MySQLSource>(
                 connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
                 out->getHeader(), mysql_input_stream_settings);
 
+            QueryPipeline pipeline;
+            pipeline.init(Pipe(std::move(input)));
+            PullingPipelineExecutor executor(pipeline);
+
             Stopwatch watch;
-            copyData(input, *out, is_cancelled);
+
+            out->writePrefix();
+            Block block;
+            while (executor.pull(block))
+                out->write(block);
+            out->writeSuffix();
+
             const Progress & progress = out->getProgress();
             LOG_INFO(&Poco::Logger::get("MaterializedMySQLSyncThread(" + database_name + ")"),
                 "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."

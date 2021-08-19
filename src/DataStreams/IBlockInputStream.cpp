@@ -207,7 +207,7 @@ void IBlockInputStream::updateExtremes(Block & block)
 
 bool IBlockInputStream::checkTimeLimit() const
 {
-    return limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode);
+    return limits.speed_limits.checkTimeLimit(info.total_stopwatch, limits.timeout_overflow_mode);
 }
 
 

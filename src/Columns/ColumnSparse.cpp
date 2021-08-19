@@ -310,6 +310,32 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     return this->create(std::move(res_values), std::move(res_offsets), res_offset);
 }
 
+void ColumnSparse::expand(const Filter & mask, bool inverted)
+{
+    if (mask.size() < _size)
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+
+    auto res_offsets = offsets->cloneEmpty();
+    auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
+
+    auto it = begin();
+    for (size_t i = 0; i < mask.size(); ++i)
+    {
+        if (!!mask[i] ^ inverted)
+        {
+            if (it.getCurrentRow() == _size)
+                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+
+            if (!it.isDefault())
+                res_offsets_data[it.getCurrentOffset()] = i;
+
+            ++it;
+        }
+    }
+
+    _size = mask.size();
+}
+
 ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
 {
     limit = limit ? std::min(limit, _size) : _size;
