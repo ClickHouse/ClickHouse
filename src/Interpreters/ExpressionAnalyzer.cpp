@@ -174,10 +174,9 @@ static ASTPtr checkPositionalArgument(ASTPtr argument, const ASTSelectQuery * se
         if (which == Field::Types::UInt64)
         {
             auto pos = ast_literal->value.get<UInt64>();
-            if ((0 < pos) && (pos <= columns.size()))
+            if (pos > 0 && pos <= columns.size())
             {
-                --pos;
-                const auto & column = columns[pos];
+                const auto & column = columns[--pos];
                 if (const auto * literal_ast = typeid_cast<const ASTIdentifier *>(column.get()))
                 {
                     return std::make_shared<ASTIdentifier>(literal_ast->name());
