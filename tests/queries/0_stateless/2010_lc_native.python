@@ -5,7 +5,7 @@ import socket
 import os
 
 CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
-CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT', '9000'))
+CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT_TCP', '900000'))
 
 
 def writeVarUInt(x, ba):
@@ -193,6 +193,7 @@ def readException(s):
 
 def insertValidLowCardinalityRow():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
@@ -228,6 +229,7 @@ def insertValidLowCardinalityRow():
 
 def insertLowCardinalityRowWithIndexOverflow():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
@@ -260,6 +262,7 @@ def insertLowCardinalityRowWithIndexOverflow():
 
 def insertLowCardinalityRowWithIncorrectDictType():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         sendHello(s)
         receiveHello(s)
