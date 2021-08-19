@@ -8,7 +8,11 @@ namespace ErrorCodes
 }
 
 Lz4InflatingReadBuffer::Lz4InflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_))
+    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
+    , in(std::move(in_))
+    , src_capacity(0)
+    , dst_capacity(0)
+    , in_available(0)
 {
     ret = 1;
 
@@ -44,24 +48,11 @@ bool Lz4InflatingReadBuffer::nextImpl()
     }
 
 
-    src_capacity = internal_buffer.size();
+    src_capacity = in_available;
+    dst_capacity = internal_buffer.size();
     dst = reinterpret_cast<void *>(internal_buffer.begin());
 
-
-    LZ4F_frameInfo_t info;
-    size_t consumed_size = src_capacity;
-    {   size_t const frame_info_res = LZ4F_getFrameInfo(dctx, &info, &src, &consumed_size);
-        if (LZ4F_isError(frame_info_res)) {
-            throw Exception(
-                ErrorCodes::LZ4_DECODER_FAILED,
-                "LZ4 failed to fetch get info LZ4F_getFrameInfo. LZ4F version: {}. Error: {}",
-                LZ4F_VERSION,
-                LZ4F_getErrorName(frame_info_res),
-                ErrorCodes::LZ4_DECODER_FAILED);
-        }
-    }
-
-    ret = LZ4F_decompress(dctx, dst, &dst_capacity, &src, &src_capacity, /* LZ4F_decompressOptions_t */ nullptr);
+    ret = LZ4F_decompress(dctx, dst, &dst_capacity, src, &src_capacity, /* LZ4F_decompressOptions_t */ nullptr);
     if (LZ4F_isError(ret)) {
         printf("Decompression error: %s\n", LZ4F_getErrorName(ret));
         throw Exception(
@@ -72,9 +63,10 @@ bool Lz4InflatingReadBuffer::nextImpl()
             ErrorCodes::LZ4_DECODER_FAILED);
     }
 
-    in->position() = in->buffer().end() - in_available;
-    working_buffer.resize(internal_buffer.size() - src_capacity);
+    in->position() = in->buffer().begin() + src_capacity;
+    working_buffer.resize(dst_capacity);
 
+    in_available -= src_capacity;
 
     if (in->eof())
     {
