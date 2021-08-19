@@ -1,32 +1,26 @@
--- { echo }
 set enable_positional_arguments = 1;
 
 drop table if exists test;
-create table test (col1 Int32, col2 Int32, col3 Int32) engine = Memory();
+create table test(x1 Int, x2 Int, x3 Int) engine=Memory();
+insert into test values (1, 10, 100), (10, 1, 10), (100, 100, 1);
 
-insert into test select number, number, 5 from numbers(2);
-insert into test select number, number, 4 from numbers(2);
-insert into test select number, number, 3 from numbers(2);
-insert into test select number, number, 2 from numbers(2);
-insert into test select number, number, 1 from numbers(2);
+-- { echo }
+select x3, x2, x1 from test order by 1;
+select x3, x2, x1 from test order by x3;
 
-select * from test where col1 = 1 order by 3 desc;
-select * from test where col2 = 1 order by 3 asc;
+select x3, x2, x1 from test order by 1 desc;
+select x3, x2, x1 from test order by x3 desc;
 
-insert into test select number, number+1, 1 from numbers(2);
-insert into test select number, number+1, 2 from numbers(2);
-insert into test select number, number+1, 3 from numbers(2);
-insert into test select number, number+1, 4 from numbers(2);
-insert into test select number, number+1, 5 from numbers(2);
+insert into test values (1, 10, 200), (10, 1, 200), (100, 100, 1);
+select x3, x2 from test group by x3, x2;
+select x3, x2 from test group by 1, 2;
 
-select * from test order by col1, col2, col3 asc limit 2 by col2;
-select * from test order by 1, 2, 3 asc limit 2 by 2;
+select x1, x2, x3 from test order by x3 limit 1 by x3;
+select x1, x2, x3 from test order by 3 limit 1 by 3;
+select x1, x2, x3 from test order by x3 limit 1 by x1;
+select x1, x2, x3 from test order by 3 limit 1 by 1;
 
-select col1, col2 from test group by col1, col2 order by col1, col2;
-select col1, col2 from test group by 1, 2 order by 1, 2;
+select max(x3), max(x2), max(x1) from test group by 1; -- { serverError 43 }
+select max(x1) from test order by 1; -- { serverError 43 }
 
-select col2, col3 from test group by col3, col2 order by col3, col2;
-select col2, col3 from test group by 3, 2 order by 3, 2;
 
-select col2 from test group by 2 order by 2;
-select col2 + 100 from test group by 2 order by 2;
