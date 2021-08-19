@@ -188,40 +188,22 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 └─────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
-You can work with dates without using `INTERVAL`, just by adding or subtracting seconds, minutes, and hours. For example, an interval of one day can be set by adding `60*60*24`.
-
-!!! note "Note"
-    The `INTERVAL` syntax or `addDays` function are always preferred. Simple addition or subtraction (syntax like `now() + ...`) doesn't consider time settings. For example, daylight saving time.
-
-
-Examples:
-
-``` sql
-SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
-```
-
-``` text
-┌────────────────time─┬──time_plus_24_hours─┬─────time_plus_1_day─┐
-│ 2014-10-26 00:00:00 │ 2014-10-26 23:00:00 │ 2014-10-27 00:00:00 │
-└─────────────────────┴─────────────────────┴─────────────────────┘
-```
-
 **See Also**
 
 -   [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
 -   [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions
 
+## Logical Negation Operator {#logical-negation-operator}
+
+`NOT a` – The `not(a)` function.
+
 ## Logical AND Operator {#logical-and-operator}
 
-Syntax `SELECT a AND b` — calculates logical conjunction of `a` and `b` with the function [and](../../sql-reference/functions/logical-functions.md#logical-and-function).
+`a AND b` – The`and(a, b)` function.
 
 ## Logical OR Operator {#logical-or-operator}
 
-Syntax `SELECT a OR b` — calculates logical disjunction of `a` and `b` with the function [or](../../sql-reference/functions/logical-functions.md#logical-or-function).
-
-## Logical Negation Operator {#logical-negation-operator}
-
-Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
+`a OR b` – The `or(a, b)` function.
 
 ## Conditional Operator {#conditional-operator}
 
@@ -268,7 +250,7 @@ The following operators do not have a priority since they are brackets:
 ## Associativity {#associativity}
 
 All binary operators have left associativity. For example, `1 + 2 + 3` is transformed to `plus(plus(1, 2), 3)`.
-Sometimes this does not work the way you expect. For example, `SELECT 4 > 2 > 3` will result in 0.
+Sometimes this doesn’t work the way you expect. For example, `SELECT 4 > 2 > 3` will result in 0.
 
 For efficiency, the `and` and `or` functions accept any number of arguments. The corresponding chains of `AND` and `OR` operators are transformed into a single call of these functions.
 
@@ -282,8 +264,6 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
     -   `1`, if the value is `NULL`.
     -   `0` otherwise.
 -   For other values, the `IS NULL` operator always returns `0`.
-
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
 
 <!-- -->
 
@@ -316,4 +296,4 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.
+[Original article](https://clickhouse.tech/docs/en/query_language/operators/) <!--hide-->

@@ -87,11 +87,11 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const SelectQueryInfo & info_, ContextPtr context_, const Block & header_, size_t hash_functions_)
-    : WithContext(context_), header(header_), query_info(info_), hash_functions(hash_functions_)
+    const SelectQueryInfo & info_, const Context & context_, const Block & header_, size_t hash_functions_)
+    : header(header_), context(context_), query_info(info_), hash_functions(hash_functions_)
 {
-    auto atom_from_ast = [this](auto & node, auto, auto & constants, auto & out) { return traverseAtomAST(node, constants, out); };
-    rpn = std::move(RPNBuilder<RPNElement>(info_, getContext(), atom_from_ast).extractRPN());
+    auto atom_from_ast = [this](auto & node, auto &, auto & constants, auto & out) { return traverseAtomAST(node, constants, out); };
+    rpn = std::move(RPNBuilder<RPNElement>(info_, context, atom_from_ast).extractRPN());
 }
 
 bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
@@ -108,7 +108,6 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
         else if (element.function == RPNElement::FUNCTION_EQUALS
             || element.function == RPNElement::FUNCTION_NOT_EQUALS
             || element.function == RPNElement::FUNCTION_HAS
-            || element.function == RPNElement::FUNCTION_HAS_ANY
             || element.function == RPNElement::FUNCTION_IN
             || element.function == RPNElement::FUNCTION_NOT_IN
             || element.function == RPNElement::ALWAYS_FALSE)
@@ -155,8 +154,7 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
             || element.function == RPNElement::FUNCTION_NOT_IN
             || element.function == RPNElement::FUNCTION_EQUALS
             || element.function == RPNElement::FUNCTION_NOT_EQUALS
-            || element.function == RPNElement::FUNCTION_HAS
-            || element.function == RPNElement::FUNCTION_HAS_ANY)
+            || element.function == RPNElement::FUNCTION_HAS)
         {
             bool match_rows = true;
             const auto & predicate = element.predicate;
@@ -219,7 +217,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseAtomAST(const ASTPtr & node, Bl
                 const_value.getType() == Field::Types::Float64)
             {
                 /// Zero in all types is represented in memory the same way as in UInt64.
-                out.function = const_value.reinterpret<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -234,9 +232,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
 
     if (const auto * function = node->as<ASTFunction>())
     {
-        if (!function->arguments)
-            return false;
-
         const ASTs & arguments = function->arguments->children;
         for (const auto & arg : arguments)
         {
@@ -255,7 +250,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
                     maybe_useful = true;
             }
         }
-        else if (function->name == "equals" || function->name  == "notEquals" || function->name == "has" || function->name == "indexOf" || function->name == "hasAny")
+        else if (function->name == "equals" || function->name  == "notEquals" || function->name == "has" || function->name == "indexOf")
         {
             Field const_value;
             DataTypePtr const_type;
@@ -412,38 +407,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
             }
         }
-        else if (function_name == "hasAny")
-        {
-            if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
-
-            if (value_field.getType() != Field::Types::Array)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an array.", function_name);
-
-            const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-            ColumnPtr column;
-            {
-                const bool is_nullable = actual_type->isNullable();
-                auto mutable_column = actual_type->createColumn();
-
-                for (const auto & f : value_field.get<Array>())
-                {
-                    if ((f.isNull() && !is_nullable) || f.IsDecimal(f.getType()))
-                        return false;
-
-                    mutable_column->insert(convertFieldToType(f, *actual_type, value_type.get()));
-                }
-
-                column = std::move(mutable_column);
-            }
-
-            out.function = RPNElement::FUNCTION_HAS_ANY;
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
-        }
         else
         {
             if (array_type)
-                throw Exception("An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception("An array type of bloom_filter supports only has() and indexOf() function.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);

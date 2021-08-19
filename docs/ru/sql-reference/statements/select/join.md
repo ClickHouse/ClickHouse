@@ -4,7 +4,7 @@ toc_title: JOIN
 
 # Секция JOIN {#select-join}
 
-`JOIN` создаёт новую таблицу путем объединения столбцов из одной или нескольких таблиц с использованием общих для каждой из них значений. Это обычная операция в базах данных с поддержкой SQL, которая соответствует join из [реляционной алгебры](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators). Частный случай соединения одной таблицы часто называют self-join.
+Join создаёт новую таблицу путем объединения столбцов из одной или нескольких таблиц с использованием общих для каждой из них значений. Это обычная операция в базах данных с поддержкой SQL, которая соответствует join из [реляционной алгебры](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators). Частный случай соединения одной таблицы часто называют «self-join».
 
 Синтаксис:
 
@@ -38,21 +38,12 @@ FROM <left_table>
 
 ## Настройки {#join-settings}
 
-Значение строгости по умолчанию может быть переопределено с помощью настройки [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
+!!! note "Примечание"
+    Значение строгости по умолчанию может быть переопределено с помощью настройки [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
 
 Поведение сервера ClickHouse для операций `ANY JOIN` зависит от параметра [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys).
 
-**См. также**
-
-- [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm)
-- [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
-- [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
-- [partial_merge_join_optimizations](../../../operations/settings/settings.md#partial_merge_join_optimizations)
-- [partial_merge_join_rows_in_right_blocks](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
-- [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
-- [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
-
-## Использование ASOF JOIN {#asof-join-usage}
+### Использование ASOF JOIN {#asof-join-usage}
 
 `ASOF JOIN` применим в том случае, когда необходимо объединять записи, которые не имеют точного совпадения.
 
@@ -104,50 +95,14 @@ USING (equi_column1, ... equi_columnN, asof_column)
 
 Чтобы задать значение строгости по умолчанию, используйте сессионный параметр [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness).
 
-## Распределённый JOIN {#global-join}
+#### Распределённый join {#global-join}
 
 Есть два пути для выполнения соединения с участием распределённых таблиц:
 
 -   При использовании обычного `JOIN` , запрос отправляется на удалённые серверы. На каждом из них выполняются подзапросы для формирования «правой» таблицы, и с этой таблицей выполняется соединение. То есть, «правая» таблица формируется на каждом сервере отдельно.
 -   При использовании `GLOBAL ... JOIN`, сначала сервер-инициатор запроса запускает подзапрос для вычисления правой таблицы. Эта временная таблица передаётся на каждый удалённый сервер, и на них выполняются запросы с использованием переданных временных данных.
 
-Будьте аккуратны при использовании `GLOBAL`. За дополнительной информацией обращайтесь в раздел [Распределенные подзапросы](../../../sql-reference/operators/in.md#select-distributed-subqueries).
-
-## Неявные преобразования типов {#implicit-type-conversion}
-
-Запросы `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN` и `FULL JOIN` поддерживают неявные преобразования типов для ключей соединения. Однако запрос не может быть выполнен, если не существует типа, к которому можно привести значения ключей с обеих сторон (например, нет типа, который бы одновременно вмещал в себя значения `UInt64` и `Int64`, или `String` и `Int32`).
-
-**Пример**
-
-Рассмотрим таблицу `t_1`:
-```text
-┌─a─┬─b─┬─toTypeName(a)─┬─toTypeName(b)─┐
-│ 1 │ 1 │ UInt16        │ UInt8         │
-│ 2 │ 2 │ UInt16        │ UInt8         │
-└───┴───┴───────────────┴───────────────┘
-```
-и таблицу `t_2`:
-```text
-┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
-│ -1 │    1 │ Int16         │ Nullable(Int64) │
-│  1 │   -1 │ Int16         │ Nullable(Int64) │
-│  1 │    1 │ Int16         │ Nullable(Int64) │
-└────┴──────┴───────────────┴─────────────────┘
-```
-
-Запрос
-```sql
-SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
-```
-вернёт результат:
-```text
-┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
-│  1 │    1 │ Int32         │ Nullable(Int64) │
-│  2 │    2 │ Int32         │ Nullable(Int64) │
-│ -1 │    1 │ Int32         │ Nullable(Int64) │
-│  1 │   -1 │ Int32         │ Nullable(Int64) │
-└────┴──────┴───────────────┴─────────────────┘
-```
+Будьте аккуратны при использовании `GLOBAL`. За дополнительной информацией обращайтесь в раздел [Распределенные подзапросы](#select-distributed-subqueries).
 
 ## Рекомендации по использованию {#usage-recommendations}
 
@@ -187,14 +142,12 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 
 ### Ограничения по памяти {#memory-limitations}
 
-По умолчанию ClickHouse использует алгоритм [hash join](https://ru.wikipedia.org/wiki/Алгоритм_соединения_хешированием). ClickHouse берет правую таблицу и создает для нее хеш-таблицу в оперативной памяти. При включённой настройке `join_algorithm = 'auto'`, после некоторого порога потребления памяти ClickHouse переходит к алгоритму [merge join](https://ru.wikipedia.org/wiki/Алгоритм_соединения_слиянием_сортированных_списков). Описание алгоритмов `JOIN` см. в настройке [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm).
+По умолчанию ClickHouse использует алгоритм [hash join](https://en.wikipedia.org/wiki/Hash_join). ClickHouse берет `<right_table>` и создает для него хэш-таблицу в оперативной памяти. После некоторого порога потребления памяти ClickHouse переходит к алгоритму merge join.
 
-Если вы хотите ограничить потребление памяти во время выполнения операции `JOIN`, используйте настройки:
+-   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — ограничивает количество строк в хэш-таблице.
+-   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — ограничивает размер хэш-таблицы.
 
--   [max_rows_in_join](../../../operations/settings/query-complexity.md#settings-max_rows_in_join) — ограничивает количество строк в хеш-таблице.
--   [max_bytes_in_join](../../../operations/settings/query-complexity.md#settings-max_bytes_in_join) — ограничивает размер хеш-таблицы.
-
-По достижении любого из этих ограничений ClickHouse действует в соответствии с настройкой [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode).
+По достижении любого из этих ограничений, ClickHouse действует в соответствии с настройкой [join_overflow_mode](../../../operations/settings/query-complexity.md#settings-join_overflow_mode).
 
 ## Примеры {#examples}
 

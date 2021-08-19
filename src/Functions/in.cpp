@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -54,7 +54,7 @@ public:
     /// It is needed to perform type analysis without creation of set.
     static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIn>();
     }
@@ -87,8 +87,6 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, [[maybe_unused]] size_t input_rows_count) const override
     {

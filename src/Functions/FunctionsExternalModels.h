@@ -1,12 +1,11 @@
 #pragma once
-
-#include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
+#include <Functions/IFunctionImpl.h>
 
 namespace DB
 {
 
 class ExternalModelsLoader;
+class Context;
 
 /// Evaluate external model.
 /// First argument - model name, the others - model arguments.
@@ -17,15 +16,13 @@ class FunctionModelEvaluate final : public IFunction
 public:
     static constexpr auto name = "modelEvaluate";
 
-    static FunctionPtr create(ContextPtr context);
+    static FunctionPtr create(const Context & context);
 
     explicit FunctionModelEvaluate(const ExternalModelsLoader & models_loader_) : models_loader(models_loader_) {}
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool isDeterministic() const override { return false; }
 

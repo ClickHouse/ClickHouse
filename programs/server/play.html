@@ -9,7 +9,7 @@
     Do not use any JavaScript or CSS frameworks or preprocessors.
     This HTML page should not require any build systems (node.js, npm, gulp, etc.)
     This HTML page should not be minified, instead it should be reasonably minimalistic by itself.
-    This HTML page should not load any external resources on load.
+    This HTML page should not load any external resources
     (CSS and JavaScript must be embedded directly to the page. No external fonts or images should be loaded).
     This UI should look as lightweight, clean and fast as possible.
     All UI elements must be aligned in pixel-perfect way.
@@ -44,7 +44,6 @@
             --table-header-color: #F8F8F8;
             --table-hover-color: #FFF8EF;
             --null-color: #A88;
-            --link-color: #06D;
         }
 
         [data-theme="dark"] {
@@ -62,13 +61,12 @@
             --table-header-color: #102020;
             --table-hover-color: #003333;
             --null-color: #A88;
-            --link-color: #4BDAF7;
         }
 
         html, body
         {
             /* Personal choice. */
-            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
+            font-family: Sans-Serif;
             background: var(--background-color);
             color: var(--text-color);
         }
@@ -96,14 +94,9 @@
         .monospace
         {
             /* Prefer fonts that have full hinting info. This is important for non-retina displays.
-               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant). */
+               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant).
+            */
             font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, Monospace;
-        }
-
-        .monospace-table
-        {
-            /* Liberation is worse than DejaVu for block drawing characters. */
-            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, Monospace;
         }
 
         .shadow
@@ -282,35 +275,6 @@
             font-size: 110%;
             color: #080;
         }
-
-        a, a:visited
-        {
-            color: var(--link-color);
-            text-decoration: none;
-        }
-
-        /* This is for graph in svg */
-        text
-        {
-            font-size: 14px;
-            fill: var(--text-color);
-        }
-
-        .node rect
-        {
-            fill: var(--element-background-color);
-            filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
-        }
-
-        .edgePath path
-        {
-            stroke: var(--text-color);
-        }
-
-        marker
-        {
-            fill: var(--text-color);
-        }
     </style>
 </head>
 
@@ -330,10 +294,9 @@
         <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
     </div>
     <div id="data_div">
-        <table class="monospace-table shadow" id="data-table"></table>
-        <pre class="monospace-table shadow" id="data-unparsed"></pre>
+        <table class="monospace shadow" id="data-table"></table>
+        <pre class="monospace shadow" id="data-unparsed"></pre>
     </div>
-    <svg id="graph" fill="none"></svg>
     <p id="error" class="monospace shadow">
     </p>
 </body>
@@ -343,45 +306,39 @@
     /// Incremental request number. When response is received,
     /// if it's request number does not equal to the current request number, response will be ignored.
     /// This is to avoid race conditions.
-    let request_num = 0;
+    var request_num = 0;
 
     /// Save query in history only if it is different.
-    let previous_query = '';
+    var previous_query = '';
 
-    const current_url = new URL(window.location);
-
-    const server_address = current_url.searchParams.get('url');
-    if (server_address) {
-        document.getElementById('url').value = server_address;
-    } else if (location.protocol != 'file:') {
-        /// Substitute the address of the server where the page is served.
+    /// Substitute the address of the server where the page is served.
+    if (location.protocol != 'file:') {
         document.getElementById('url').value = location.origin;
     }
 
     /// Substitute user name if it's specified in the query string
-    const user_from_url = current_url.searchParams.get('user');
+    var user_from_url = (new URL(window.location)).searchParams.get('user');
     if (user_from_url) {
         document.getElementById('user').value = user_from_url;
     }
 
     function postImpl(posted_request_num, query)
     {
-        const user = document.getElementById('user').value;
-        const password = document.getElementById('password').value;
+        /// TODO: Check if URL already contains query string (append parameters).
 
-        const server_address = document.getElementById('url').value;
+        var user = document.getElementById('user').value;
+        var password = document.getElementById('password').value;
 
-        const url = server_address +
-            (server_address.indexOf('?') >= 0 ? '&' : '?') +
+        var url = document.getElementById('url').value +
             /// Ask server to allow cross-domain requests.
-            'add_http_cors_header=1' +
+            '?add_http_cors_header=1' +
             '&user=' + encodeURIComponent(user) +
             '&password=' + encodeURIComponent(password) +
             '&default_format=JSONCompact' +
             /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
-        const xhr = new XMLHttpRequest;
+        var xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
 
@@ -395,24 +352,17 @@
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
                 if (query != previous_query) {
-                    const state = {
+                    var state = {
                         query: query,
                         status: this.status,
                         response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
                     };
-                    const title = "ClickHouse Query: " + query;
-
-                    let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
-                    if (server_address != location.origin) {
-                        /// Save server's address in URL if it's not identical to the address of the play UI.
-                        history_url += '&url=' + encodeURIComponent(server_address);
-                    }
-                    history_url += '#' + window.btoa(query);
-
+                    var title = "ClickHouse Query: " + query;
+                    var url = window.location.pathname + '?user=' + encodeURIComponent(user) + '#' + window.btoa(query);
                     if (previous_query == '') {
-                        history.replaceState(state, title, history_url);
+                        history.replaceState(state, title, url);
                     } else {
-                        history.pushState(state, title, history_url);
+                        history.pushState(state, title, url);
                     }
                     document.title = title;
                     previous_query = query;
@@ -432,7 +382,7 @@
         document.getElementById('hourglass').style.display = 'none';
 
         if (status === 200) {
-            let json;
+            var json;
             try { json = JSON.parse(response); } catch (e) {}
             if (json !== undefined && json.statistics !== undefined) {
                 renderResult(json);
@@ -465,7 +415,7 @@
     function post()
     {
         ++request_num;
-        let query = document.getElementById('query').value;
+        var query = document.getElementById('query').value;
         postImpl(request_num, query);
     }
 
@@ -484,16 +434,10 @@
 
     function clear()
     {
-        let table = document.getElementById('data-table');
+        var table = document.getElementById('data-table');
         while (table.firstChild) {
             table.removeChild(table.lastChild);
         }
-
-        let graph = document.getElementById('graph');
-        while (graph.firstChild) {
-            graph.removeChild(graph.lastChild);
-        }
-        graph.style.display = 'none';
 
         document.getElementById('data-unparsed').innerText = '';
         document.getElementById('data-unparsed').style.display = 'none';
@@ -509,72 +453,36 @@
 
     function renderResult(response)
     {
+        //console.log(response);
         clear();
 
-        let stats = document.getElementById('stats');
+        var stats = document.getElementById('stats');
         stats.innerText = 'Elapsed: ' + response.statistics.elapsed.toFixed(3) + " sec, read " + response.statistics.rows_read + " rows.";
 
-        /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1.
-        if (response.data.length > 3 && response.data[0][0] === "digraph" && document.getElementById('query').value.match(/^\s*EXPLAIN/i)) {
-            renderGraph(response);
-        } else {
-            renderTable(response);
-        }
-    }
-
-    function renderTable(response)
-    {
-        let thead = document.createElement('thead');
-        for (let idx in response.meta) {
-            let th = document.createElement('th');
-            let name = document.createTextNode(response.meta[idx].name);
+        var thead = document.createElement('thead');
+        for (var idx in response.meta) {
+            var th = document.createElement('th');
+            var name = document.createTextNode(response.meta[idx].name);
             th.appendChild(name);
             thead.appendChild(th);
         }
 
         /// To prevent hanging the browser, limit the number of cells in a table.
         /// It's important to have the limit on number of cells, not just rows, because tables may be wide or narrow.
-        let max_rows = 10000 / response.meta.length;
-        let row_num = 0;
+        var max_rows = 10000 / response.meta.length;
+        var row_num = 0;
 
-        let column_classes = response.meta.map(elem => elem.type.match(/^(U?Int|Decimal|Float)/) ? 'right' : 'left');
-
-        let tbody = document.createElement('tbody');
-        for (let row_idx in response.data) {
-            let tr = document.createElement('tr');
-            for (let col_idx in response.data[row_idx]) {
-                let td = document.createElement('td');
-                let cell = response.data[row_idx][col_idx];
-
-                let is_null = (cell === null);
-                let is_link = false;
-
-                /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
-                let text;
-                if (is_null) {
-                    text = 'ᴺᵁᴸᴸ';
-                } else if (typeof(cell) === 'object') {
-                    text = JSON.stringify(cell);
-                } else {
-                    text = cell;
-
-                    /// If it looks like URL, create a link. This is for convenience.
-                    if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
-                        is_link = true;
-                    }
-                }
-
-                let node = document.createTextNode(text);
-                if (is_link) {
-                    let link = document.createElement('a');
-                    link.appendChild(node);
-                    link.href = text;
-                    link.setAttribute('target', '_blank');
-                    node = link;
-                }
-
-                td.appendChild(node);
-                td.className = column_classes[col_idx];
+        var tbody = document.createElement('tbody');
+        for (var row_idx in response.data) {
+            var tr = document.createElement('tr');
+            for (var col_idx in response.data[row_idx]) {
+                var td = document.createElement('td');
+                var cell = response.data[row_idx][col_idx];
+                var is_null = (cell === null);
+                var content = document.createTextNode(is_null ? 'ᴺᵁᴸᴸ' : cell);
+                td.appendChild(content);
+                /// TODO: Execute regexp only once for each column.
+                td.className = response.meta[col_idx].type.match(/^(U?Int|Decimal|Float)/) ? 'right' : 'left';
                 if (is_null) {
                     td.className += ' null';
                 }
@@ -588,7 +496,7 @@
             }
         }
 
-        let table = document.getElementById('data-table');
+        var table = document.getElementById('data-table');
         table.appendChild(thead);
         table.appendChild(tbody);
     }
@@ -597,7 +505,7 @@
     function renderUnparsedResult(response)
     {
         clear();
-        let data = document.getElementById('data-unparsed')
+        var data = document.getElementById('data-unparsed')
 
         if (response === '') {
             /// TODO: Fade or remove previous result when new request will be performed.
@@ -616,61 +524,6 @@
         document.getElementById('error').style.display = 'block';
     }
 
-    /// Huge JS libraries should be loaded only if needed.
-    function loadJS(src, integrity) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = src;
-            if (integrity) {
-                script.crossOrigin = 'anonymous';
-                script.integrity = integrity;
-            } else {
-                console.warn('no integrity for', src)
-            }
-            script.addEventListener('load', function() { resolve(true); });
-            document.head.appendChild(script);
-        });
-    }
-
-    let load_dagre_promise;
-    function loadDagre() {
-        if (load_dagre_promise) { return load_dagre_promise; }
-
-        load_dagre_promise = Promise.all([
-            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
-                   'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
-            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
-                   'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
-            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
-                   'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
-            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
-                   'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
-        ]);
-
-        return load_dagre_promise;
-    }
-
-    async function renderGraph(response)
-    {
-        await loadDagre();
-
-        /// https://github.com/dagrejs/dagre-d3/issues/131
-        const dot = response.data.reduce((acc, row) => acc + '\n' + row[0].replace(/shape\s*=\s*box/g, 'shape=rect'));
-
-        let graph = graphlibDot.read(dot);
-        graph.graph().rankdir = 'TB';
-
-        let render = new dagreD3.render();
-
-        let svg = document.getElementById('graph');
-        svg.style.display = 'block';
-
-        render(d3.select("#graph"), graph);
-
-        svg.style.width = graph.graph().width;
-        svg.style.height = graph.graph().height;
-    }
-
     function setColorTheme(theme)
     {
         window.localStorage.setItem('theme', theme);
@@ -678,12 +531,12 @@
     }
 
     /// The choice of color theme is saved in browser.
-    let theme = window.localStorage.getItem('theme');
+    var theme = window.localStorage.getItem('theme');
     if (theme) {
         setColorTheme(theme);
     } else {
         /// Obtain system-level user preference
-        let media_query_list = window.matchMedia('prefers-color-scheme: dark')
+        var media_query_list = window.matchMedia('prefers-color-scheme: dark')
 
         if (media_query_list.matches) {
             /// Set without saving to localstorage
