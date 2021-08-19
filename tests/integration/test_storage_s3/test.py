@@ -169,7 +169,7 @@ def test_partition_by_string_column(started_cluster):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "col_num UInt32, col_str String"
     partition_by = "col_str"
-    values = "(1, 'foo'), (3, 'йцук'), (78, '你好')"
+    values = "(1, 'foo/bar'), (3, 'йцук'), (78, '你好')"
     filename = "test_{_partition_id}.csv"
     put_query = f"""INSERT INTO TABLE FUNCTION
         s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'CSV', '{table_format}')
@@ -177,7 +177,7 @@ def test_partition_by_string_column(started_cluster):
 
     run_query(instance, put_query)
 
-    assert '1,"foo"\n' == get_s3_file_content(started_cluster, bucket, "test_foo.csv")
+    assert '1,"foo/bar"\n' == get_s3_file_content(started_cluster, bucket, "test_foo/bar.csv")
     assert '3,"йцук"\n' == get_s3_file_content(started_cluster, bucket, "test_йцук.csv")
     assert '78,"你好"\n' == get_s3_file_content(started_cluster, bucket, "test_你好.csv")
 
