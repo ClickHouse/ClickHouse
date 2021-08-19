@@ -31,6 +31,8 @@ struct LocalQueryState
     std::unique_ptr<AsynchronousBlockInputStream> async_in;
     std::unique_ptr<PullingAsyncPipelineExecutor> executor;
 
+    std::optional<Exception> exception;
+
     /// Last polled block.
     std::optional<Block> block;
 
@@ -38,18 +40,12 @@ struct LocalQueryState
     bool is_cancelled = false;
     /// Is query finished == !has_pending_data
     bool is_finished = false;
-    /// empty or not
-    bool is_empty = true;
-    /// Data was sent.
-    bool sent_all_data = false;
+
+    bool sent_totals = false;
+    bool sent_extremes = false;
+
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
-    /// Temporary tables read
-    bool temporary_tables_read = false;
-
-    /// A state got uuids to exclude from a query
-    bool part_uuids = false;
-
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
     /// temporary place for incoming data block for input()
@@ -69,7 +65,6 @@ class LocalConnection : public IServerConnection, WithContext
 {
 public:
     explicit LocalConnection(ContextPtr context_);
-
     void setDefaultDatabase(const String & database) override;
 
     void getServerVersion(const ConnectionTimeouts & timeouts,
@@ -133,8 +128,10 @@ private:
     String server_display_name;
     String default_database;
 
+    UInt64 interactive_delay = 100000;
+
     /// At the moment, only one ongoing query in the connection is supported at a time.
-    LocalQueryState state;
+    std::optional<LocalQueryState> state;
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;
@@ -151,12 +148,14 @@ private:
 
     void updateState();
 
-    Block pullBlock();
+    bool pullBlock(Block & block);
 
     void finishQuery();
 
     void updateProgress(const Progress & value);
 
     void processInsertQuery();
+
+    bool pollImpl();
 };
 }
