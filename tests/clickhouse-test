@@ -44,10 +44,11 @@ DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_tim
 
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
-    "DB::Exception: Connection loss",
     "Coordination::Exception: Session expired",
     "Coordination::Exception: Connection loss",
     "Coordination::Exception: Operation timeout",
+    "DB::Exception: Session expired",
+    "DB::Exception: Connection loss",
     "DB::Exception: Operation timeout",
     "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",
