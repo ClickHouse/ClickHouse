@@ -39,6 +39,8 @@ PEERDIR(
 
 SRCS(
     CRC.cpp
+    CastOverloadResolver.cpp
+    DateOrDateTimeFunctionsConvertion.cpp
     FunctionChar.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
@@ -312,6 +314,7 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
+    hyperscanRegexpChecker.cpp
     hypot.cpp
     identity.cpp
     if.cpp
@@ -564,6 +567,7 @@ SRCS(
     tuple.cpp
     tupleElement.cpp
     tupleHammingDistance.cpp
+    tupleToNameValuePairs.cpp
     upper.cpp
     upperUTF8.cpp
     uptime.cpp

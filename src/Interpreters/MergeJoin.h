@@ -32,11 +32,13 @@ public:
 
     size_t getTotalRowCount() const override { return right_blocks.row_count; }
     size_t getTotalByteCount() const override { return right_blocks.bytes; }
+    /// Has to be called only after setTotals()/mergeRightBlocks()
+    bool alwaysReturnsEmptySet() const override { return (is_right || is_inner) && min_max_right_blocks.empty(); }
 
-    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
+    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & result_sample_block, UInt64 max_block_size) const override;
 
 private:
-    friend class NonMergeJoinedBlockInputStream;
+    friend class NotJoinedMerge;
 
     struct NotProcessed : public ExtraBlock
     {
@@ -76,6 +78,7 @@ private:
     SortDescription right_merge_description;
     Block right_sample_block;
     Block right_table_keys;
+    /// Columns from right side of join, both key and additional
     Block right_columns_to_add;
     SortedBlocksWriter::Blocks right_blocks;
 
