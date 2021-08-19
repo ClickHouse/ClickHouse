@@ -486,7 +486,7 @@ Parameter substitutions for replicated tables.
 
 Can be omitted if replicated tables are not used.
 
-For more information, see the section “[Creating replicated tables](../../engines/table-engines/mergetree-family/replication.md)”.
+For more information, see the section [Creating replicated tables](../../engines/table-engines/mergetree-family/replication.md#creating-replicated-tables).
 
 **Example**
 
