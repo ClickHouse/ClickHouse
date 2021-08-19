@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int ABORTED;
+    extern const int READONLY;
 }
 
 
@@ -468,9 +469,15 @@ bool ReplicatedMergeTreeQueue::removeFailedQuorumPart(const MergeTreePartInfo & 
     return virtual_parts.remove(part_info);
 }
 
-int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
+int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback, PullLogsReason reason)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
+    if (storage.is_readonly && reason == SYNC)
+    {
+        throw Exception(ErrorCodes::READONLY, "Cannot SYNC REPLICA, because replica is readonly");
+        /// TODO throw logical error for other reasons (except LOAD)
+    }
+
     if (pull_log_blocker.isCancelled())
         throw Exception("Log pulling is cancelled", ErrorCodes::ABORTED);
 
@@ -710,13 +717,22 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 
         std::vector<std::future<Coordination::GetResponse>> futures;
         for (const String & entry : entries_to_load)
-            futures.emplace_back(zookeeper->asyncGet(zookeeper_path + "/mutations/" + entry));
+            futures.emplace_back(zookeeper->asyncTryGet(zookeeper_path + "/mutations/" + entry));
 
         std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
+            auto maybe_response = futures[i].get();
+            if (maybe_response.error != Coordination::Error::ZOK)
+            {
+                assert(maybe_response.error == Coordination::Error::ZNONODE);
+                /// It's ok if it happened on server startup or table creation and replica loads all mutation entries.
+                /// It's also ok if mutation was killed.
+                LOG_WARNING(log, "Cannot get mutation node {} ({}), probably it was concurrently removed", entries_to_load[i], maybe_response.error);
+                continue;
+            }
             new_mutations.push_back(std::make_shared<ReplicatedMergeTreeMutationEntry>(
-                ReplicatedMergeTreeMutationEntry::parse(futures[i].get().data, entries_to_load[i])));
+                ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i])));
         }
 
         bool some_mutations_are_probably_done = false;
@@ -1466,6 +1482,9 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     /// to allow recovering from a mutation that cannot be executed. This way you can delete the mutation entry
     /// from /mutations in ZK and the replicas will simply skip the mutation.
 
+    /// NOTE: However, it's quite dangerous to skip MUTATE_PART. Replicas may diverge if one of them have executed part mutation,
+    /// and then mutation was killed before execution of MUTATE_PART on remaining replicas.
+
     if (part->info.getDataVersion() > desired_mutation_version)
     {
         LOG_WARNING(log, "Data version of part {} is already greater than desired mutation version {}", part->name, desired_mutation_version);
@@ -1793,7 +1812,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         }
     }
 
-    merges_version = queue_.pullLogsToQueue(zookeeper);
+    merges_version = queue_.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
 
     Coordination::GetResponse quorum_status_response = quorum_status_future.get();
     if (quorum_status_response.error == Coordination::Error::ZOK)
