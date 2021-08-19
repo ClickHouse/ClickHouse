@@ -6,7 +6,8 @@ using namespace DB::GatherUtils;
 
 
 template<class T>
-void arrayInit(T* elements_to_have, size_t nb_elements_to_have, T* array_elements, size_t array_size, bool all_elements_present) {
+void arrayInit(T* elements_to_have, size_t nb_elements_to_have, T* array_elements, size_t array_size, bool all_elements_present)
+{
     for (T i = 0; i < array_size; ++i)
     {
         array_elements[i] = i;
