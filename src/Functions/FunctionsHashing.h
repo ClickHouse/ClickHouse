@@ -197,7 +197,7 @@ struct SHA256Impl
 struct SHA512Impl
 {
     static constexpr auto name = "SHA512";
-    enum { length = 32 };
+    enum { length = 64 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
