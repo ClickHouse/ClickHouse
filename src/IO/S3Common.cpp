@@ -5,7 +5,6 @@
 #    include <IO/S3Common.h>
 
 #    include <Common/quoteString.h>
-#    include <Common/isValidUTF8.h>
 
 #    include <IO/WriteBufferFromString.h>
 #    include <Storages/StorageS3Settings.h>
@@ -659,41 +658,11 @@ namespace S3
             }
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
-            /// TODO: perform `validateBucket(bucket)` and `validateKey(key)` ?
         }
         catch (const Exception & e)
         {
             throw Exception(e.code(), "{} ({})", e.message(), uri.toString());
         }
-    }
-
-    void URI::validateBucket(const String & bucket)
-    {
-        /// See:
-        /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
-        /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#createbucket
-
-        if (bucket.length() < 3 || 222 < bucket.length())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                "Bucket name length is out of bounds in virtual hosted style S3 URI: {}", quoteString(bucket));
-
-        if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(bucket.data()), bucket.size()))
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in bucket name");
-
-    }
-
-    void URI::validateKey(const String & key)
-    {
-        /// See:
-        /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
-        /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#putobject
-
-        if (key.length() < 1 || 1024 < key.length())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect key length (min - 2, max - 1023 characters), got: {}", key.length());
-
-        if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(key.data()), key.size()))
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in key");
-
     }
 }
 
