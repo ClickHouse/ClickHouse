@@ -5,6 +5,7 @@
 #    include <IO/S3Common.h>
 
 #    include <Common/quoteString.h>
+#    include <Common/isValidUTF8.h>
 
 #    include <IO/WriteBufferFromString.h>
 #    include <Storages/StorageS3Settings.h>
@@ -521,6 +522,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 namespace S3
@@ -657,9 +659,7 @@ namespace S3
             }
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
-
-            validateBucket(bucket);
-            validateKey(key);
+            /// TODO: perform `validateBucket(bucket)` and `validateKey(key)` ?
         }
         catch (const Exception & e)
         {
@@ -673,30 +673,27 @@ namespace S3
         /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
         /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#createbucket
 
-        if (bucket.length() < 3 || bucket.length() > 222)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        if (bucket.length() < 3 || 222 < bucket.length())
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
                 "Bucket name length is out of bounds in virtual hosted style S3 URI: {}", quoteString(bucket));
+
+        if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(bucket.data()), bucket.size()))
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in bucket name");
+
     }
 
-    void URI::validateKey(const String & /*key*/)
+    void URI::validateKey(const String & key)
     {
         /// See:
         /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
         /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#putobject
 
-#if 0
-        /// The following is valid for AWS S3:
-        if (key.length() > 1024)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name is too long (showing first 1024 characters): {}", quoteString(key.substr(0, 1024) + "..."));
-        if (!ValidUTF8Impl::isValidUTF8(reinterpret_cast<const UInt8 *>(key.data()), key.size()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name must be valid UTF-8 string: {}", quoteString(key));
-#endif
+        if (key.length() < 1 || 1024 < key.length())
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect key length (min - 2, max - 1023 characters), got: {}", key.length());
 
-#if 0
-        /// The following is valid for IBM COS:
-        if (key.length() < 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key name is too short (0 bytes long)");
-#endif
+        if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(key.data()), key.size()))
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in key");
+
     }
 }
 

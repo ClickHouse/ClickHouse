@@ -316,11 +316,6 @@ public:
         writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
-    // void flush() override
-    // {
-    //     writer->flush();
-    // }
-
     void onFinish() override
     {
         try
