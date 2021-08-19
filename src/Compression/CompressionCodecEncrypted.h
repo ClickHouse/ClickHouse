@@ -100,7 +100,7 @@ namespace DB
         static inline std::optional<KeyHolder> keys;
     };
 
-    CompressionCodecPtr getCompressionCodecEncrypted(const std::string_view & master_key)
+    inline CompressionCodecPtr getCompressionCodecEncrypted(const std::string_view & master_key)
     {
         return std::make_shared<CompressionCodecEncrypted>(master_key);
     }
