@@ -24,7 +24,7 @@ The engine allows to import and export data to SQLite and supports queries to SQ
 
 ## Usage Example {#usage-example}
 
-Show query creating the SQLite table:
+Shows a query creating the SQLite table:
 
 ```sql
 SHOW CREATE TABLE sqlite_db.table2;
