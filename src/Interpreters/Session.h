@@ -28,9 +28,8 @@ using UserPtr = std::shared_ptr<const User>;
 class Session
 {
 public:
-    /// Allow to use named sessions. The thread will be run to cleanup sessions after timeout has expired.
-    /// The method must be called at the server startup.
-    static void startupNamedSessions();
+    /// Stops using named sessions. The method must be called at the server shutdown.
+    static void shutdownNamedSessions();
 
     Session(const ContextPtr & global_context_, ClientInfo::Interface interface_);
     Session(Session &&);
