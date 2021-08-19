@@ -543,4 +543,5 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
         return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
     });
 }
+
 }
