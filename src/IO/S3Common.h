@@ -75,8 +75,7 @@ struct URI
 
     explicit URI(const Poco::URI & uri_);
 
-    static void validateBucket(const String & bucket);
-    static void validateKey(const String & bucket);
+    static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
 
 }
