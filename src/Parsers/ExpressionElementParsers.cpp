@@ -1811,20 +1811,47 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             with_open_round_bracket = true;
         }
 
+        ASTPtr lambda;
+        String lambda_arg;
         ASTPtr func_name;
-        if (!ParserIdentifier().parse(pos, func_name, expected))
-            return false;
-
         ASTPtr expr_list_args;
-        if (pos->type == TokenType::OpeningRoundBracket)
+        auto opos = pos;
+        if (ParserLambdaExpression().parse(pos, lambda, expected))
         {
-            ++pos;
-            if (!ParserExpressionList(false).parse(pos, expr_list_args, expected))
+            if (const auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
+            {
+                const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
+                const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
+                if (lambda_arg_asts.size() != 1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "APPLY column transformer can only accept lambda with one argument");
+
+                if (auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[0]); opt_arg_name)
+                    lambda_arg = *opt_arg_name;
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "lambda argument declarations must be identifiers");
+            }
+            else
+            {
+                lambda = nullptr;
+                pos = opos;
+            }
+        }
+
+        if (!lambda)
+        {
+            if (!ParserIdentifier().parse(pos, func_name, expected))
                 return false;
 
-            if (pos->type != TokenType::ClosingRoundBracket)
-                return false;
-            ++pos;
+            if (pos->type == TokenType::OpeningRoundBracket)
+            {
+                ++pos;
+                if (!ParserExpressionList(false).parse(pos, expr_list_args, expected))
+                    return false;
+
+                if (pos->type != TokenType::ClosingRoundBracket)
+                    return false;
+                ++pos;
+            }
         }
 
         String column_name_prefix;
@@ -1848,8 +1875,16 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         }
 
         auto res = std::make_shared<ASTColumnsApplyTransformer>();
-        res->func_name = getIdentifierName(func_name);
-        res->parameters = expr_list_args;
+        if (lambda)
+        {
+            res->lambda = lambda;
+            res->lambda_arg = lambda_arg;
+        }
+        else
+        {
+            res->func_name = getIdentifierName(func_name);
+            res->parameters = expr_list_args;
+        }
         res->column_name_prefix = column_name_prefix;
         node = std::move(res);
         return true;
