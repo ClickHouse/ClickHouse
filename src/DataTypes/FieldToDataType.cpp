@@ -1,6 +1,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -124,7 +125,6 @@ DataTypePtr FieldToDataType::operator() (const Array & x) const
     return std::make_shared<DataTypeArray>(getLeastSupertype(element_types, allow_convertion_to_string));
 }
 
-
 DataTypePtr FieldToDataType::operator() (const Tuple & tuple) const
 {
     if (tuple.empty())
@@ -157,6 +157,12 @@ DataTypePtr FieldToDataType::operator() (const Map & map) const
     return std::make_shared<DataTypeMap>(
         getLeastSupertype(key_types, allow_convertion_to_string),
         getLeastSupertype(value_types, allow_convertion_to_string));
+}
+
+DataTypePtr FieldToDataType::operator() (const Object &) const
+{
+    /// TODO: Do we need different parameters for type Object?
+    return std::make_shared<DataTypeObject>("json", false);
 }
 
 DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) const

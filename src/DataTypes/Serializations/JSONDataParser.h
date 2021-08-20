@@ -2,6 +2,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -74,6 +75,8 @@ public:
 private:
     void traverse(const Element & element, String current_path, ParseResult & result)
     {
+        checkStackSize();
+
         if (element.isObject())
         {
             auto object = element.getObject();

@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Common/HashTable/HashSet.h>
 
 
 namespace DB
@@ -214,7 +215,7 @@ void ColumnObject::Subcolumn::checkTypes() const
     }
 }
 
-void ColumnObject::Subcolumn::insert(Field && field)
+void ColumnObject::Subcolumn::insert(Field field)
 {
     auto value_dim = applyVisitor(FieldVisitorToNumberOfDimensions(), field);
     auto column_dim = getNumberOfDimensions(*least_common_type);
@@ -297,7 +298,7 @@ void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t star
     }
     else
     {
-        auto new_least_common_type = getLeastSupertype(DataTypes{least_common_type, src_type});
+        auto new_least_common_type = getLeastSupertype(DataTypes{least_common_type, src_type}, true);
         auto casted_column = castColumn({src_column, src_type, ""}, new_least_common_type);
 
         if (!least_common_type->equals(*new_least_common_type))
@@ -448,10 +449,65 @@ size_t ColumnObject::allocatedBytes() const
     return res;
 }
 
-void ColumnObject::forEachSubcolumn(ColumnCallback)
+void ColumnObject::forEachSubcolumn(ColumnCallback callback)
 {
-    // for (auto & [_, column] : subcolumns)
-    //     callback(column.data);
+    if (!isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot iterate over non-finalized ColumnObject");
+
+    for (auto & [_, column] : subcolumns)
+        callback(column.data.back());
+}
+
+void ColumnObject::insert(const Field & field)
+{
+    const auto & object = field.get<Object>();
+
+    HashSet<StringRef, StringRefHash> inserted;
+    size_t old_size = size();
+    for (const auto & [key, value] : object)
+    {
+        inserted.insert(key);
+        if (!hasSubcolumn(key))
+            addSubcolumn(key, old_size);
+
+        auto & subcolumn = getSubcolumn(key);
+        subcolumn.insert(value);
+    }
+
+    for (auto & [key, subcolumn] : subcolumns)
+        if (!inserted.has(key))
+            subcolumn.insertDefault();
+}
+
+void ColumnObject::insertDefault()
+{
+    for (auto & [_, subcolumn] : subcolumns)
+        subcolumn.insertDefault();
+}
+
+Field ColumnObject::operator[](size_t n) const
+{
+    if (!isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get Field from non-finalized ColumnObject");
+
+    Object object;
+    for (const auto & [key, subcolumn] : subcolumns)
+        object[key] = (*subcolumn.data.back())[n];
+
+    return object;
+}
+
+void ColumnObject::get(size_t n, Field & res) const
+{
+    if (!isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get Field from non-finalized ColumnObject");
+
+    auto & object = res.get<Object &>();
+    for (const auto & [key, subcolumn] : subcolumns)
+    {
+        auto it = object.try_emplace(key).first;
+        subcolumn.data.back()->get(n, it->second);
+    }
 }
 
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -467,6 +523,27 @@ void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t len
     }
 
     finalize();
+}
+
+ColumnPtr ColumnObject::replicate(const Offsets & offsets) const
+{
+    if (!isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replicate non-finalized ColumnObject");
+
+    auto res_column = ColumnObject::create(is_nullable);
+    for (auto & [key, subcolumn] : subcolumns)
+        res_column->addSubcolumn(key, Subcolumn(subcolumn.data.back()->replicate(offsets)->assumeMutable()));
+
+    return res_column;
+}
+
+void ColumnObject::popBack(size_t length)
+{
+    if (!isFinalized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot popBack from non-finalized ColumnObject");
+
+    for (auto & [_, subcolumn] : subcolumns)
+        subcolumn.data.back()->popBack(length);
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const String & key) const
@@ -515,6 +592,7 @@ void ColumnObject::addSubcolumn(const String & key, Subcolumn && subcolumn, bool
             "Cannot add subcolumn '{}' with {} rows to ColumnObject with {} rows",
             key, subcolumn.size(), size());
 
+    subcolumn.setNullable(is_nullable);
     subcolumns[key] = std::move(subcolumn);
 }
 
