@@ -544,10 +544,12 @@ bool ParserUnaryMinusExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     if (pos->type == TokenType::Minus)
     {
-        ParserLiteral lit_p;
         Pos begin = pos;
+        if (ParserCastOperator().parse(pos, node, expected))
+            return true;
 
-        if (lit_p.parse(pos, node, expected))
+        pos = begin;
+        if (ParserLiteral().parse(pos, node, expected))
             return true;
 
         pos = begin;
