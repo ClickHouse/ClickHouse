@@ -54,11 +54,11 @@ The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_
 
 ## ON Section Conditions {on-section-conditions}
 
-An `ON` section can contain several conditions combined using the `AND` operator. Conditions specifying join keys must refer both left and right tables and must use the equality operator. Other conditions may use other logical operators but they must refer either left or right table of a query.
+An `ON` section can contain several conditions combined using the `AND` operator. Conditions specifying join keys must refer both left and right tables and must use the equality operator. Other conditions may use other logical operators but they must refer either the left or the right table of a query.
 Rows are joined if the whole complex condition is met. If the conditions are not met, still rows may be included in the result depending on the `JOIN` type. Note that if the same conditions are placed in a `WHERE` section and they are not met, then rows are always filtered out from the result.
 
 !!! note "Note"
-    Combining conditions using the `OR` operator inside an `ON` section is not supported yet.
+    The `OR` operator inside an `ON` section is not supported yet.
 
 !!! note "Note"
     If a condition refers columns from different tables, then only the equality operator (`=`) is supported so far.
