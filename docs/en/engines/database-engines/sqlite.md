@@ -39,6 +39,8 @@ Database in ClickHouse, connected to the SQLite:
 ``` sql
 CREATE DATABASE sqlite_db ENGINE = SQLite('sqlite.db');
 SHOW TABLES FROM sqlite_db;
+SELECT * FROM sqlite_db.table1;
+INSERT INTO sqlite_db.table1 SELECT * FROM clickhouse_table;
 ```
 
 ``` text
