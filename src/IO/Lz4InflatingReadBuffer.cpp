@@ -22,8 +22,7 @@ Lz4InflatingReadBuffer::Lz4InflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, 
             ErrorCodes::LZ4_DECODER_FAILED,
             "LZ4 failed create decompression context LZ4F_dctx. LZ4F version: {}. Error: {}",
             LZ4F_VERSION,
-            LZ4F_getErrorName(ret),
-            ErrorCodes::LZ4_DECODER_FAILED);
+            LZ4F_getErrorName(ret));
 }
 
 Lz4InflatingReadBuffer::~Lz4InflatingReadBuffer()
@@ -40,11 +39,12 @@ bool Lz4InflatingReadBuffer::nextImpl()
     {
         in->nextIfAtEnd();
         in_available = in->buffer().end() - in->position();
-        in_data = reinterpret_cast<void *>(in->position());
     }
 
-    out_available = internal_buffer.size();
+    in_data = reinterpret_cast<void *>(in->position());
     out_data = reinterpret_cast<void *>(internal_buffer.begin());
+
+    out_available = internal_buffer.size();
 
     size_t bytes_read = in_available;
     size_t bytes_written = out_available;
@@ -62,8 +62,7 @@ bool Lz4InflatingReadBuffer::nextImpl()
             ErrorCodes::LZ4_DECODER_FAILED,
             "LZ4 decompression failed. LZ4F version: {}. Error: {}",
             LZ4F_VERSION,
-            LZ4F_getErrorName(ret),
-            ErrorCodes::LZ4_DECODER_FAILED);
+            LZ4F_getErrorName(ret));
 
     if (in->eof())
     {
