@@ -22,6 +22,8 @@ using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 using CodecNameWithLevel = std::pair<String, std::optional<int>>;
 
+static constexpr auto DEFAULT_CODEC_NAME = "Default";
+
 /** Creates a codec object by name of compression algorithm family and parameters.
  */
 class CompressionCodecFactory final : private boost::noncopyable

@@ -2,6 +2,7 @@
 #include <string>
 
 #include <Compression/ICompressionCodec.h>
+#include <Compression/CompressionCodecEncrypted.h>
 #include <IO/BufferWithOwnMemory.h>
 
 namespace DB
