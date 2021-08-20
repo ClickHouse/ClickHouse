@@ -174,8 +174,9 @@ private:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
     ClusterPtr getOptimizedCluster(ContextPtr, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const;
-    ClusterPtr
-    skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
+
+    ClusterPtr skipUnusedShards(
+        ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
 
     /// This method returns optimal query processing stage.
     ///

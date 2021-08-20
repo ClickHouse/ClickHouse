@@ -486,7 +486,7 @@ Parameter substitutions for replicated tables.
 
 Can be omitted if replicated tables are not used.
 
-For more information, see the section “[Creating replicated tables](../../engines/table-engines/mergetree-family/replication.md)”.
+For more information, see the section [Creating replicated tables](../../engines/table-engines/mergetree-family/replication.md#creating-replicated-tables).
 
 **Example**
 
@@ -1247,6 +1247,7 @@ Default value: `/var/lib/clickhouse/access/`.
 Section of the configuration file that contains settings:
 -   Path to configuration file with predefined users.
 -   Path to folder where users created by SQL commands are stored.
+-   ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
 
 If this section is specified, the path from [users_config](../../operations/server-configuration-parameters/settings.md#users-config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
 
@@ -1262,6 +1263,9 @@ The `user_directories` section can contain any number of items, the order of the
     <local_directory>
         <path>/var/lib/clickhouse/access/</path>
     </local_directory>
+    <replicated>
+        <zookeeper_path>/clickhouse/access/</zookeeper_path>
+    </replicated>
 </user_directories>
 ```
 

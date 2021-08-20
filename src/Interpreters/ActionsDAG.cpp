@@ -894,9 +894,9 @@ ActionsDAGPtr ActionsDAG::clone() const
 }
 
 #if USE_EMBEDDED_COMPILER
-void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression)
+void ActionsDAG::compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
-    compileFunctions(min_count_to_compile_expression);
+    compileFunctions(min_count_to_compile_expression, lazy_executed_nodes);
     removeUnusedActions();
 }
 #endif
