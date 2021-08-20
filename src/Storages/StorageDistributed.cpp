@@ -327,11 +327,13 @@ StorageDistributed::StorageDistributed(
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
     bool attach_,
-    ClusterPtr owned_cluster_)
+    ClusterPtr owned_cluster_,
+    ASTPtr remote_table_function_ptr_)
     : IStorage(id_)
     , WithContext(context_->getGlobalContext())
     , remote_database(remote_database_)
     , remote_table(remote_table_)
+    , remote_table_function_ptr(remote_table_function_ptr_)
     , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
@@ -402,9 +404,9 @@ StorageDistributed::StorageDistributed(
         relative_data_path_,
         distributed_settings_,
         attach,
-        std::move(owned_cluster_))
+        std::move(owned_cluster_),
+        remote_table_function_ptr_)
 {
-    remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
