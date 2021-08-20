@@ -44,6 +44,7 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/randomSeed.h>
+#include <Interpreters/Session.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -401,6 +402,11 @@ try
     processConfig();
 
     applyCmdSettings(global_context);
+
+    connection_parameters = ConnectionParameters(config());
+    /// Using query context withcmd settings.
+    connection = std::make_unique<LocalConnection>(global_context);
+
     // query_context->makeSessionContext();
     // query_context->authenticate("default", "", Poco::Net::SocketAddress{});
 
@@ -471,24 +477,6 @@ void LocalServer::processConfig()
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
 
-    const auto & settings = global_context->getSettingsRef();
-
-    std::vector<String> queries;
-    auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
-
-    if (!parse_res.second)
-        throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
-
-    /// Authenticate and create a context to execute queries.
-    Session session{global_context, ClientInfo::Interface::TCP};
-    session.authenticate("default", "", Poco::Net::SocketAddress{});
-
-    /// Use the same context for all queries.
-    auto context = session.makeQueryContext();
-    context->makeSessionContext(); /// initial_create_query requires a session context to be set.
-    context->setCurrentQueryId("");
-    applyCmdSettings(context);
-
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
 
@@ -500,12 +488,7 @@ void LocalServer::processConfig()
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
-    is_default_format = !config().has("vertical") && !config().has("format");
-    if (config().has("vertical"))
-        format = config().getString("format", "Vertical");
-    else
-        format = config().getString("format", is_interactive ? "PrettyCompact" : "TabSeparated");
-
+    format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV"));
     insert_format = "Values";
     /// Setting value from cmd arg overrides one from config
     if (global_context->getSettingsRef().max_insert_block_size.changed)

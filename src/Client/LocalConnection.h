@@ -4,10 +4,12 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <IO/TimeoutSetter.h>
+#include <Interpreters/Session.h>
 
 
 namespace DB
 {
+
 
 /// State of query processing.
 struct LocalQueryState
@@ -116,6 +118,7 @@ public:
 
 private:
     ContextMutablePtr query_context;
+    Session session;
 
     String description;
 

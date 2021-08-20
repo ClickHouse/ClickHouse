@@ -30,6 +30,7 @@ public:
 
     ~LocalServer() override
     {
+        connection.reset();
         if (global_context)
             global_context->shutdown(); /// required for properly exception handling
     }
@@ -39,9 +40,6 @@ protected:
 
     void connect() override
     {
-        connection_parameters = ConnectionParameters(config());
-        /// Using query context withcmd settings.
-        connection = std::make_unique<LocalConnection>(global_context);
     }
 
     void processError(const String & query) const override;
