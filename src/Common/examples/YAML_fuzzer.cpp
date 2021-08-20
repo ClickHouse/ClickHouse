@@ -28,7 +28,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
     try
     {
-        DB::YAMLParserImpl::parse(std::string(file_name));
+        DB::YAMLParser::parse(std::string(file_name));
     }
     catch (...)
     {
@@ -37,4 +37,3 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     }
     return 0;
 }
-
