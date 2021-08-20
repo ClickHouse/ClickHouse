@@ -672,9 +672,6 @@ def describe_consumer_group(kafka_cluster, name):
 def kafka_cluster():
     try:
         cluster.start()
-        if instance.is_debug_build():
-            # https://github.com/ClickHouse/ClickHouse/issues/26547
-            pytest.skip("~WriteBufferToKafkaProducer(): Assertion `rows == 0 && chunks.empty()' failed.")
         kafka_id = instance.cluster.kafka_docker_id
         print(("kafka_id is {}".format(kafka_id)))
         yield cluster
