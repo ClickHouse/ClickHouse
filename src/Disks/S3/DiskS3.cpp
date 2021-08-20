@@ -36,6 +36,7 @@
 #include <aws/s3/model/CreateMultipartUploadRequest.h> // Y_IGNORE
 #include <aws/s3/model/CompleteMultipartUploadRequest.h> // Y_IGNORE
 #include <aws/s3/model/UploadPartCopyRequest.h> // Y_IGNORE
+#include <aws/s3/model/AbortMultipartUploadRequest.h> // Y_IGNORE
 
 
 namespace DB
@@ -641,6 +642,15 @@ void DiskS3::copyObjectMultipartImpl(const String & src_bucket, const String & s
         part_request.SetCopySourceRange(fmt::format("bytes={}-{}", position, std::min(size, position + upload_part_size) - 1));
 
         auto outcome = settings->client->UploadPartCopy(part_request);
+        if (!outcome.IsSuccess())
+        {
+            Aws::S3::Model::AbortMultipartUploadRequest abort_request;
+            abort_request.SetBucket(dst_bucket);
+            abort_request.SetKey(dst_key);
+            abort_request.SetUploadId(multipart_upload_id);
+            settings->client->AbortMultipartUpload(abort_request);
+            // In error case we throw exception later with first error from UploadPartCopy
+        }
         throwIfError(outcome);
 
         auto etag = outcome.GetResult().GetCopyPartResult().GetETag();
