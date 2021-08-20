@@ -150,7 +150,7 @@ private:
     /// Loop through the entire events_list, update the event timestamp value
     /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
     /// If found, returns the max event level, else return 0.
-    /// The Algorithm complexity is O(n).
+    /// The algorithm works in O(n * log(n)) time.
     UInt8 getEventLevel(Data & data) const
     {
         if (data.size() == 0)
@@ -232,12 +232,14 @@ public:
         for (size_t i = 1; i < params.size(); ++i)
         {
             String option = params.at(i).safeGet<String>();
-            if (option == "strict" || option == "strict_deduplication")
+            if (option == "strict_deduplication")
                 strict_deduplication = true;
             else if (option == "strict_order")
                 strict_order = true;
             else if (option == "strict_increase")
                 strict_increase = true;
+            else if (option == "strict")
+                throw Exception{"strict is replaced with strict_deduplication in Aggregate function " + getName(), ErrorCodes::BAD_ARGUMENTS};
             else
                 throw Exception{"Aggregate function " + getName() + " doesn't support a parameter: " + option, ErrorCodes::BAD_ARGUMENTS};
         }
