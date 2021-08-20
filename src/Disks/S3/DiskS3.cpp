@@ -605,13 +605,6 @@ void DiskS3::copyObjectMultipartImpl(const String & src_bucket, const String & s
 
     size_t size = head->GetContentLength();
 
-    if (size < 5_MiB)
-    {
-        LOG_ERROR(log, "Can't use multipart copy upload for object with size less than 5 Mb. Bucket: {}, Key: {}, Size: {}",
-            src_bucket, src_key, size);
-        throw Exception("Can't use multipart copy upload for object with size less than 5 Mb.", ErrorCodes::S3_ERROR);
-    }
-
     String multipart_upload_id;
 
     {
