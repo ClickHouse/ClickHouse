@@ -59,6 +59,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/Session.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -272,6 +273,8 @@ struct ContextSharedPart
         if (shutdown_called)
             return;
         shutdown_called = true;
+
+        Session::shutdownNamedSessions();
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
@@ -588,27 +591,6 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-
-void Context::authenticate(const String & name, const String & password, const Poco::Net::SocketAddress & address)
-{
-    authenticate(BasicCredentials(name, password), address);
-}
-
-void Context::authenticate(const Credentials & credentials, const Poco::Net::SocketAddress & address)
-{
-    auto authenticated_user_id = getAccessControlManager().login(credentials, address.host());
-
-    client_info.current_user = credentials.getUserName();
-    client_info.current_address = address;
-
-#if defined(ARCADIA_BUILD)
-    /// This is harmful field that is used only in foreign "Arcadia" build.
-    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
-        client_info.current_password = basic_credentials->getPassword();
-#endif
-
-    setUser(authenticated_user_id);
-}
 
 void Context::setUser(const UUID & user_id_)
 {
