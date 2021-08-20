@@ -223,7 +223,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     if (create.storage->engine->name == "MaterializedPostgreSQL" && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql && !internal)
     {
         throw Exception("MaterializedPostgreSQL is an experimental database engine. "
-                        "Enable allow_experimental_database_postgresql_replica to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+                        "Enable allow_experimental_database_materialized_postgresql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", getContext());

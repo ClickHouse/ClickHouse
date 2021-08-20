@@ -12,6 +12,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Core/ServerUUID.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "Common/config_version.h"
@@ -37,6 +38,13 @@ void setExtras()
 {
     if (!anonymize)
         sentry_set_extra("server_name", sentry_value_new_string(getFQDNOrHostName().c_str()));
+
+    DB::UUID server_uuid = DB::ServerUUID::get();
+    if (server_uuid != DB::UUIDHelpers::Nil)
+    {
+        std::string server_uuid_str = DB::toString(server_uuid);
+        sentry_set_extra("server_uuid", sentry_value_new_string(server_uuid_str.c_str()));
+    }
 
     sentry_set_tag("version", VERSION_STRING);
     sentry_set_extra("version_githash", sentry_value_new_string(VERSION_GITHASH));
