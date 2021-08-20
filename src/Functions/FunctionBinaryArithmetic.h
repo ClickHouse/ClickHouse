@@ -648,7 +648,6 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        std::cout << "Into getFunctionForTupleArithmetic" << std::endl;
         if (!isTuple(type0) || !isTuple(type1))
             return {};
 
