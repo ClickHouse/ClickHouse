@@ -18,7 +18,7 @@ enum class AccessType
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
 /// aliases is a string containing comma-separated list;
-/// node_type either specifies access type's level (GLOBAL/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
+/// node_type either specifies access type's level (GLOBAL/DATABASE/TABLE/DICTIONARY/VIEW/COLUMN),
 /// or specifies that the access type is a GROUP of other access types;
 /// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
 #define APPLY_FOR_ACCESS_TYPES(M) \
@@ -34,8 +34,9 @@ enum class AccessType
     \
     M(SELECT, "", COLUMN, ALL) \
     M(INSERT, "", COLUMN, ALL) \
-    M(ALTER_UPDATE, "UPDATE", COLUMN, ALTER_TABLE) /* allows to execute ALTER UPDATE */\
-    M(ALTER_DELETE, "DELETE", COLUMN, ALTER_TABLE) /* allows to execute ALTER DELETE */\
+    M(DELETE, "", COLUMN, ALL) \
+    M(ALTER_UPDATE, "", COLUMN, ALTER_TABLE) /* allows to execute ALTER UPDATE */\
+    M(ALTER_DELETE, "", COLUMN, ALTER_TABLE) /* allows to execute ALTER DELETE */\
     \
     M(ALTER_ADD_COLUMN, "ADD COLUMN", COLUMN, ALTER_COLUMN) \
     M(ALTER_MODIFY_COLUMN, "MODIFY COLUMN", COLUMN, ALTER_COLUMN) \

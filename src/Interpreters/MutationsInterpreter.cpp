@@ -222,8 +222,7 @@ bool isStorageTouchedByMutations(
     if (!block.rows())
         return false;
     else if (block.rows() != 1)
-        throw Exception("count() expression returned " + toString(block.rows()) + " rows, not 1",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "count() expression returned {} instead of 1", block.rows());
 
     auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
@@ -277,6 +276,26 @@ MutationsInterpreter::MutationsInterpreter(
     , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits())
 {
     mutation_ast = prepare(!can_execute);
+}
+
+MutationsInterpreter::MutationsInterpreter(
+    StoragePtr storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
+    const ASTPtr& point_delete_predicate,
+    ContextPtr context_)
+    : storage(std::move(storage_))
+    , metadata_snapshot(metadata_snapshot_)
+    , context(context_)
+    , select_limits(SelectQueryOptions().analyze(true).ignoreLimits())
+    , stages({ Stage{context} })
+{
+    mutation_kind.set(MutationKind::MUTATE_OTHER);
+
+    stages[0].filters.push_back(makeASTFunction("isZeroOrNull", point_delete_predicate->clone()));
+
+    is_prepared = true;
+
+    mutation_ast = prepareInterpreterSelectQuery(stages, true);
 }
 
 static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot)
@@ -383,10 +402,10 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
 ASTPtr MutationsInterpreter::prepare(bool dry_run)
 {
     if (is_prepared)
-        throw Exception("MutationsInterpreter is already prepared. It is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MutationsInterpreter is already prepared");
 
     if (commands.empty())
-        throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty mutation commands list");
 
 
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
@@ -395,13 +414,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;
+
     for (const MutationCommand & command : commands)
-    {
-        for (const auto & kv : command.column_to_update_expression)
-        {
-            updated_columns.insert(kv.first);
-        }
-    }
+        for (const auto & [column_name, update_ast] : command.column_to_update_expression)
+            updated_columns.insert(column_name);
 
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
     /// and projections to recalculate them if dependencies are updated.
@@ -425,7 +441,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(storage, metadata_snapshot, updated_columns, column_to_affected_materialized);
     }
 
-    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
+    /// Columns that we need to read for calculation of skip indices, projections or TTL expressions.
     auto dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
     /// First, break a sequence of commands into stages.
@@ -622,7 +638,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             stages.back().column_to_updated.emplace(command.column_name, std::make_shared<ASTIdentifier>(command.column_name));
         }
         else
-            throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
+            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND,
+                "Unknown mutation command type: {}", static_cast<int>(command.type));
     }
 
     /// We care about affected indices and projections because we also need to rewrite them
@@ -727,8 +744,8 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         for (const auto & ast : stage.filters)
             all_asts->children.push_back(ast);
 
-        for (const auto & kv : stage.column_to_updated)
-            all_asts->children.push_back(kv.second);
+        for (const auto & [column_name, updated_ast] : stage.column_to_updated)
+            all_asts->children.push_back(updated_ast);
 
         /// Add all output columns to prevent ExpressionAnalyzer from deleting them from source columns.
         for (const String & column : stage.output_columns)
@@ -791,12 +808,15 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     auto select = std::make_shared<ASTSelectQuery>();
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+
+    ASTs & children = select->select()->children;
+
     for (const auto & column_name : prepared_stages[0].output_columns)
-        select->select()->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+        children.push_back(std::make_shared<ASTIdentifier>(column_name));
 
     /// Don't let select list be empty.
-    if (select->select()->children.empty())
-        select->select()->children.push_back(std::make_shared<ASTLiteral>(Field(0)));
+    if (children.empty())
+        children.push_back(std::make_shared<ASTLiteral>(Field(0)));
 
     if (!prepared_stages[0].filters.empty())
     {
@@ -864,7 +884,8 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
 void MutationsInterpreter::validate()
 {
     if (!select_interpreter)
-        select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
+        select_interpreter = std::make_unique<InterpreterSelectQuery>(
+            mutation_ast, context, storage, metadata_snapshot, select_limits);
 
     const Settings & settings = context->getSettingsRef();
 
@@ -876,10 +897,10 @@ void MutationsInterpreter::validate()
         {
             const auto nondeterministic_func_name = findFirstNonDeterministicFunctionName(command, context);
             if (nondeterministic_func_name)
-                throw Exception(
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ALTER UPDATE/ALTER DELETE statements must use only deterministic functions! "
-                    "Function '" + *nondeterministic_func_name + "' is non-deterministic",
-                    ErrorCodes::BAD_ARGUMENTS);
+                    "Function '{}' is non-deterministic",
+                    *nondeterministic_func_name);
         }
     }
 
@@ -975,5 +996,4 @@ void MutationsInterpreter::MutationKind::set(const MutationKindEnum & kind)
     if (mutation_kind < kind)
         mutation_kind = kind;
 }
-
 }

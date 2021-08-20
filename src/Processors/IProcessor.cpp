@@ -39,6 +39,4 @@ std::string IProcessor::statusToName(Status status)
 
     __builtin_unreachable();
 }
-
 }
-

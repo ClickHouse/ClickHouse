@@ -11,9 +11,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/** Has one input and one output.
-  * Simply pull a block from input, transform it, and push it to output.
-  */
+/// Has one input and one output. Pulls a block from input, transforms it, and pushes it to output.
 class ISimpleTransform : public IProcessor
 {
 protected:

@@ -39,9 +39,9 @@ namespace JSONBuilder
 
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
-/// Node of DAG describe calculation of a single column with known type, name, and constant value (if applicable).
+/// Node of DAG describes calculation of a single column with known type, name, and constant value (if applicable).
 ///
-/// DAG representation is useful in case we need to know explicit dependencies between actions.
+/// DAG representation is useful if we need to know explicit dependencies between actions.
 /// It is helpful when it is needed to optimize actions, remove unused expressions, compile subexpressions,
 /// split or merge parts of graph, calculate expressions on partial input.
 ///

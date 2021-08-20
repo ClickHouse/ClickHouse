@@ -1177,8 +1177,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     checkOperationIsNotCanceled(merge_entry);
 
     if (future_part.parts.size() != 1)
-        throw Exception("Trying to mutate " + toString(future_part.parts.size()) + " parts, not one. "
-            "This is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Trying to mutate {} parts, not one", future_part.parts.size());
 
     CurrentMetrics::Increment num_mutations{CurrentMetrics::PartMutation};
     const auto & source_part = future_part.parts[0];
@@ -1232,7 +1232,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     if (!for_interpreter.empty())
     {
         interpreter = std::make_unique<MutationsInterpreter>(
-            storage_from_source_part, metadata_snapshot, for_interpreter, context_for_reading, true);
+           storage_from_source_part, metadata_snapshot, for_interpreter, context_for_reading, true);
         materialized_indices = interpreter->grabMaterializedIndices();
         materialized_projections = interpreter->grabMaterializedProjections();
         mutation_kind = interpreter->getMutationKind();

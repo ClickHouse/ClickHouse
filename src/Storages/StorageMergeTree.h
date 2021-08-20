@@ -76,6 +76,9 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
+    // TODO virtual for replicated solutions
+    void pointDelete(const ASTPtr & predicate, ContextPtr context);
+
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
 

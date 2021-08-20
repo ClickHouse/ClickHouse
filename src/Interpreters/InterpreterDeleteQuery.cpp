@@ -1,37 +1,53 @@
 #include <Interpreters/InterpreterDeleteQuery.h>
 #include <Access/ContextAccess.h>
 #include "Interpreters/Context.h"
-#include "Storages/StorageMergeTree.h"
-
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include <Storages/StorageMergeTree.h>
+#include <Interpreters/MutationsInterpreter.h>
 
 namespace DB::ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB
 {
 InterpreterDeleteQuery::InterpreterDeleteQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
-    : WithMutableContext(context_), query_ptr(query_ptr_)
-{ }
+    : WithMutableContext(context_), query_ptr(query_ptr_) { }
 
 BlockIO InterpreterDeleteQuery::execute()
 {
-    auto & query = query_ptr->as<ASTDeleteQuery&>();
+    ASTDeleteQuery & query = query_ptr->as<ASTDeleteQuery &>();
 
-    const StorageID table_id = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary);
+    const StorageID table_id = getContext()->resolveStorageID(query, Context::ResolveOrdinary);
 
-    getContext()->checkAccess(AccessType::DELETE_FROM_TABLE, table_id);
+    getContext()->checkAccess(AccessType::DELETE, table_id);
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
-    StorageMergeTree * const ptr = dynamic_cast<StorageMergeTree*>(table.get());
+    StorageMergeTree * const ptr = typeid_cast<StorageMergeTree *>(table.get());
 
     if (ptr == nullptr)
-        throw Exception("Only MergeTree tables are supported", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only MergeTree tables are supported");
+
+    // TODO
+    auto alter_lock = table->lockForAlter(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+
+    // TODO
+    /// Add default database to table identifiers that we can encounter in e.g. default expressions,
+    /// mutation expression, etc.
+    //AddDefaultDatabaseVisitor visitor(table_id.getDatabaseName());
+    //ASTPtr command_list_ptr = alter.command_list->ptr();
+    //visitor.visit(command_list_ptr);
+
+    auto & predicate = query.predicate;
+
+    /// Useless check for non-replicated tables
+    /// table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
+
+    MutationsInterpreter(table, metadata_snapshot, predicate, getContext()).validate();
+
+    ptr->pointDelete(predicate, getContext());
 
     return {};
 }

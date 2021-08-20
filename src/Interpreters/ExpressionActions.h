@@ -150,10 +150,13 @@ struct ExpressionActionsChain : WithContext
 
         /// Columns were added to the block before current step in addition to prev step output.
         NameSet additional_input;
+
         /// Columns which are required in the result of current step.
         /// Flag is true if column from required_output is needed only for current step and not used in next actions
-        /// (and can be removed from block). Example: filter column for where actions.
+        /// (and can be removed from block).
         /// If not empty, has the same size with required_output; is filled in finalize().
+        ///
+        /// Example: filter column for WHERE actions, see FilterTransform.h
         std::unordered_map<std::string, bool> required_output;
 
         void addRequiredOutput(const std::string & name) { required_output[name] = true; }

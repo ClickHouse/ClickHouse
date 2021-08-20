@@ -52,7 +52,7 @@ public:
     OutputPort * getTotalsPort() const { return totals_port; }
     OutputPort * getExtremesPort() const { return extremes_port; }
 
-    /// Add processor to list, add it output ports to output_ports.
+    /// Add processor to list, add its output ports to output_ports.
     /// Processor shouldn't have input ports, output ports shouldn't be connected.
     /// Output headers should have same structure and be compatible with current header (if not empty()).
     void addSource(ProcessorPtr source);
@@ -97,8 +97,9 @@ public:
     /// Unite several pipes together. They should have same header.
     static Pipe unitePipes(Pipes pipes);
 
-    /// Get processors from Pipe. Use it with cautious, it is easy to loss totals and extremes ports.
+    /// Get processors from Pipe. Use it with caution, it is easy to loss totals and extremes ports.
     static Processors detachProcessors(Pipe pipe) { return std::move(pipe.processors); }
+
     /// Get processors from Pipe w/o destroying pipe (used for EXPLAIN to keep QueryPlan).
     const Processors & getProcessors() const { return processors; }
 
@@ -109,10 +110,12 @@ public:
 
     /// Do not allow to change the table while the processors of pipe are alive.
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
+
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
     void addInterpreterContext(std::shared_ptr<const Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void addQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { holder.query_id_holder = std::move(query_id_holder); }
+
     /// For queries with nested interpreters (i.e. StorageDistributed)
     void addQueryPlan(std::unique_ptr<QueryPlan> plan) { holder.query_plans.emplace_back(std::move(plan)); }
 
@@ -151,7 +154,7 @@ private:
     /// Usually, it's the same as the number of output ports.
     size_t max_parallel_streams = 0;
 
-    /// If is set, all newly created processors will be added to this too.
+    /// If set, all newly created processors will be added to this too.
     /// It is needed for debug. See QueryPipelineProcessorsCollector.
     Processors * collected_processors = nullptr;
 

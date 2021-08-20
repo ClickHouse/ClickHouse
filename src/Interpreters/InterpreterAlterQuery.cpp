@@ -78,6 +78,7 @@ BlockIO InterpreterAlterQuery::execute()
     for (const auto & child : alter.command_list->children)
     {
         auto * command_ast = child->as<ASTAlterCommand>();
+
         if (auto alter_command = AlterCommand::parse(command_ast))
             alter_commands.emplace_back(std::move(*alter_command));
         else if (auto partition_command = PartitionCommand::parse(command_ast))
@@ -87,8 +88,9 @@ BlockIO InterpreterAlterQuery::execute()
         else if (auto mut_command = MutationCommand::parse(command_ast))
         {
             if (mut_command->type == MutationCommand::MATERIALIZE_TTL && !metadata_snapshot->hasAnyTTL())
-                throw Exception("Cannot MATERIALIZE TTL as there is no TTL set for table "
-                    + table->getStorageID().getNameForLogs(), ErrorCodes::INCORRECT_QUERY);
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "Cannot MATERIALIZE TTL as there is no TTL set for table {}",
+                    table->getStorageID().getNameForLogs());
 
             mutation_commands.emplace_back(std::move(*mut_command));
         }
@@ -101,9 +103,10 @@ BlockIO InterpreterAlterQuery::execute()
     if (typeid_cast<DatabaseReplicated *>(database.get()))
     {
         int command_types_count = !mutation_commands.empty() + !partition_commands.empty() + !live_view_commands.empty() + !alter_commands.empty();
+
         if (1 < command_types_count)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "For Replicated databases it's not allowed "
-                                                         "to execute ALTERs of different types in single query");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "For Replicated databases it's not allowed to execute ALTERs of different types in single query");
     }
 
     if (!mutation_commands.empty())

@@ -70,6 +70,8 @@ struct MutationCommand
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
+    using std::vector<MutationCommand>::vector;
+
     std::shared_ptr<ASTExpressionList> ast() const;
 
     void writeText(WriteBuffer & out) const;

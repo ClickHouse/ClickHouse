@@ -14,8 +14,6 @@ ISimpleTransform::ISimpleTransform(Block input_header_, Block output_header_, bo
 
 ISimpleTransform::Status ISimpleTransform::prepare()
 {
-    /// Check can output.
-
     if (output.isFinished())
     {
         input.close();
@@ -28,7 +26,6 @@ ISimpleTransform::Status ISimpleTransform::prepare()
         return Status::PortFull;
     }
 
-    /// Output if has data.
     if (has_output)
     {
         output.pushData(std::move(output_data));
@@ -39,7 +36,6 @@ ISimpleTransform::Status ISimpleTransform::prepare()
 
     }
 
-    /// Stop if don't need more data.
     if (no_more_data_needed)
     {
         input.close();
@@ -47,7 +43,6 @@ ISimpleTransform::Status ISimpleTransform::prepare()
         return Status::Finished;
     }
 
-    /// Check can input.
     if (!has_input)
     {
         if (input.isFinished())
@@ -69,7 +64,6 @@ ISimpleTransform::Status ISimpleTransform::prepare()
             input.setNotNeeded();
     }
 
-    /// Now transform.
     return Status::Ready;
 }
 

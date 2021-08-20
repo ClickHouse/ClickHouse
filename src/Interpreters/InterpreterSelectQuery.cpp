@@ -1811,12 +1811,11 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
 
     /// Limitation on the number of columns to read.
-    /// It's not applied in 'only_analyze' mode, because the query could be analyzed without removal of unnecessary columns.
+    /// It's not applied in 'only_analyze' mode because the query could be analyzed without removal of unnecessary columns.
     if (!options.only_analyze && settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
-        throw Exception("Limit for number of columns to read exceeded. "
-            "Requested: " + toString(required_columns.size())
-            + ", maximum: " + settings.max_columns_to_read.toString(),
-            ErrorCodes::TOO_MANY_COLUMNS);
+        throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
+            "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
+            required_columns.size(), settings.max_columns_to_read.toString());
 
     /// General limit for the number of threads.
     size_t max_threads_execute_query = settings.max_threads;
@@ -1832,7 +1831,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     if (storage && storage->isRemote())
     {
         is_remote = true;
-        max_threads_execute_query = max_streams = settings.max_distributed_connections;
+        max_threads_execute_query = settings.max_distributed_connections;
+        max_streams = settings.max_distributed_connections;
     }
 
     UInt64 max_block_size = settings.max_block_size;

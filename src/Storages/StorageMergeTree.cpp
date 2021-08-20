@@ -400,15 +400,21 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
         std::lock_guard lock(currently_processing_in_background_mutex);
 
         MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get());
+
         version = increment.get();
+
         entry.commit(version);
+
         mutation_file_name = entry.file_name;
-        auto insertion = current_mutations_by_id.emplace(mutation_file_name, std::move(entry));
-        current_mutations_by_version.emplace(version, insertion.first->second);
+
+        auto [iter, emplaced] = current_mutations_by_id.emplace(mutation_file_name, std::move(entry));
+        current_mutations_by_version.emplace(version, iter->second);
 
         LOG_INFO(log, "Added mutation: {}", mutation_file_name);
     }
+
     background_executor.triggerTask();
+
     return version;
 }
 
@@ -493,6 +499,17 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     if (query_context->getSettingsRef().mutations_sync > 0)
         waitForMutation(version, mutation_file_name);
+}
+
+
+void StorageMergeTree::pointDelete(const ASTPtr & predicate, ContextPtr context)
+{
+    // Point deletes should be consistent with ALTER DELETEs, so
+    // we process them as ordinary mutations.
+    // Code processing mutation checks if MutationCommands looks like we created it here and
+    // dispatches work for DELETE on check success.
+    // NOTE: .ast is empty for our command
+    mutate({{.type=MutationCommand::DELETE, .predicate = predicate}}, context);
 }
 
 namespace
@@ -1015,7 +1032,9 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob() //-V657
     std::shared_ptr<MergeMutateSelectedEntry> merge_entry, mutate_entry;
 
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+
     merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock);
+
     if (!merge_entry)
         mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
 
@@ -1033,7 +1052,7 @@ std::optional<JobAndPool> StorageMergeTree::getDataProcessingJob() //-V657
     }
     else if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
     {
-        return JobAndPool{[this, share_lock] ()
+        return JobAndPool{[this, share_lock]
         {
             /// All use relative_data_path which changes during rename
             /// so execute under share lock.
