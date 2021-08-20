@@ -1,7 +1,14 @@
+#pragma once
+
 #include <Functions/IFunction.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 class TupleIFunction : public IFunction
 {
 public:
