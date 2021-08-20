@@ -6,7 +6,7 @@ toc_title: "Используемые сторонние библиотеки"
 
 # Используемые сторонние библиотеки {#ispolzuemye-storonnie-biblioteki}
 
-| Библиотека | Лиценцензии |
+| Библиотека | Тип лицензии |
 |:-|:-|
 | abseil-cpp | [Apache](https://github.com/ClickHouse-Extras/abseil-cpp/blob/4f3b686f86c3ebaba7e4e926e62a79cb1c659a54/LICENSE) |
 | AMQP-CPP | [Apache](https://github.com/ClickHouse-Extras/AMQP-CPP/blob/1a6c51f4ac51ac56610fa95081bd2f349911375a/LICENSE) |
@@ -84,7 +84,7 @@ toc_title: "Используемые сторонние библиотеки"
 | zlib-ng | [zLib](https://github.com/ClickHouse-Extras/zlib-ng/blob/6a5e93b9007782115f7f7e5235dedc81c4f1facb/LICENSE.md) |
 | zstd | [BSD](https://github.com/facebook/zstd/blob/a488ba114ec17ea1054b9057c26a046fc122b3b6/LICENSE) |
 
-Список всех сторонних библиотек можно получить запросом:
+Список всех сторонних библиотек можно получить с помощью запроса:
 
 ``` sql
 SELECT library_name, license_type, license_path FROM system.licenses ORDER BY library_name COLLATE 'en';
