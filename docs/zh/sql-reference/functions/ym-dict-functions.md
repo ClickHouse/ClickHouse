@@ -135,7 +135,7 @@ regionToTopContinent(id[, geobase])
 
 ### regionToName(id\[, lang\]) {#regiontonameid-lang}
 
-从 Yandex gebase 接收一个 UInt32 数字类型的 region ID。带有语言名称的字符串可以作为第二个参数传递。支持的语言有:ru, en, ua, uk, by, kz, tr。如果省略第二个参数，则使用' ru '语言。如果不支持该语言，则抛出异常。返回一个字符串-对应语言的区域名称。如果指定ID的区域不存在，则返回一个空字符串。
+从 Yandex geobase 接收一个 UInt32 数字类型的 region ID。带有语言名称的字符串可以作为第二个参数传递。支持的语言有:ru, en, ua, uk, by, kz, tr。如果省略第二个参数，则使用' ru '语言。如果不支持该语言，则抛出异常。返回一个字符串-对应语言的区域名称。如果指定ID的区域不存在，则返回一个空字符串。
 
 `ua` 和 `uk` 都意味着乌克兰。
 
