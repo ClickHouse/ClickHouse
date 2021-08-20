@@ -2,7 +2,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Storages/IStorage.h>
 
-
 namespace DB
 {
 
@@ -15,7 +14,10 @@ namespace ErrorCodes
 
 LocalConnection::LocalConnection(ContextPtr context_)
     : WithContext(context_)
+    , session(getContext(), ClientInfo::Interface::TCP)
 {
+    /// Authenticate and create a context to execute queries.
+    session.authenticate("default", "", Poco::Net::SocketAddress{});
 }
 
 void LocalConnection::setDefaultDatabase(const String & database)
@@ -67,12 +69,8 @@ void LocalConnection::sendQuery(
     const ClientInfo *,
     bool)
 {
-    query_context = Context::createCopy(getContext());
-    query_context->makeQueryContext();
-    // query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
-    query_context->setCurrentQueryId("");
+    /// Use the same context for all queries.
     // applyCmdSettings(query_context);
-    CurrentThread::QueryScope query_scope_holder(query_context);
 
     /// query_context->setCurrentDatabase(default_database);
 
@@ -81,6 +79,11 @@ void LocalConnection::sendQuery(
 
     state->query_id = query_id_;
     state->query = query_;
+
+    query_context = session.makeQueryContext();
+    query_context->makeSessionContext(); /// initial_create_query requires a session context to be set.
+    query_context->setCurrentQueryId("");
+    CurrentThread::QueryScope query_scope_holder(query_context);
 
     try
     {
@@ -184,6 +187,7 @@ void LocalConnection::finishQuery()
     }
 
     state->io.onFinish();
+    state.reset();
     query_context.reset();
 }
 
