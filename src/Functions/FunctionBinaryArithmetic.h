@@ -645,6 +645,36 @@ class FunctionBinaryArithmetic : public IFunction
         return FunctionFactory::instance().get(function_name, context);
     }
 
+    static FunctionOverloadResolverPtr
+    getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    {
+        std::cout << "Into getFunctionForTupleArithmetic" << std::endl;
+        if (!isTuple(type0) || !isTuple(type1))
+            return {};
+
+        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
+        /// We construct another function (example: tuplePlus) and call it.
+
+        if constexpr (!is_plus && !is_minus && !is_multiply)
+            return {};
+
+        std::string function_name;
+        if (is_plus)
+        {
+            function_name = "tuplePlus";
+        }
+        else if (is_minus)
+        {
+            function_name = "tupleMinus";
+        }
+        else
+        {
+            function_name = "tupleMultiply";
+        }
+
+        return FunctionFactory::instance().get(function_name, context);
+    }
+
     static bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1)
     {
         if constexpr (!is_multiply)
@@ -999,6 +1029,20 @@ public:
             return function->getResultType();
         }
 
+        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], arguments[1], context))
+        {
+            std::cerr << "Tuple op" << std::endl;
+            ColumnsWithTypeAndName new_arguments(2);
+
+            for (size_t i = 0; i < 2; ++i)
+                new_arguments[i].type = arguments[i];
+
+            auto function = function_builder->build(new_arguments);
+            return function->getResultType();
+        }
+
+        std::cerr << "Wow, it's here!" << std::endl;
         DataTypePtr type_res;
 
         const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
@@ -1268,6 +1312,13 @@ public:
             = getFunctionForIntervalArithmetic(arguments[0].type, arguments[1].type, context))
         {
             return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, function_builder);
+        }
+
+        /// Special case when the function is plus, minus or multiply, both arguments are tuples.
+        if (auto function_builder
+            = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
+        {
+            return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
         }
 
         const auto & left_argument = arguments[0];
