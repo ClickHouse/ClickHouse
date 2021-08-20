@@ -14,21 +14,16 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/ThreadPool.h>
 #include <common/types.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
 #endif
 
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <thread>
 
 
 namespace Poco::Net { class IPAddress; }
@@ -67,9 +62,11 @@ class ProcessList;
 class QueryStatus;
 class Macros;
 struct Progress;
+struct FileProgress;
 class Clusters;
 class QueryLog;
 class QueryThreadLog;
+class QueryViewsLog;
 class PartLog;
 class TextLog;
 class TraceLog;
@@ -106,6 +103,7 @@ using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperStorageDispatcher;
+class Session;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -219,6 +217,7 @@ private:
             tables = rhs.tables;
             columns = rhs.columns;
             projections = rhs.projections;
+            views = rhs.views;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -235,6 +234,7 @@ private:
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
             std::swap(projections, rhs.projections);
+            std::swap(views, rhs.views);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -242,7 +242,8 @@ private:
         std::set<std::string> databases{};
         std::set<std::string> tables{};
         std::set<std::string> columns{};
-        std::set<std::string> projections;
+        std::set<std::string> projections{};
+        std::set<std::string> views{};
     };
 
     QueryAccessInfo query_access_info;
@@ -283,8 +284,6 @@ public:
     OpenTelemetryTraceContext query_trace_context;
 
 private:
-    friend class NamedSessions;
-
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
 
@@ -363,22 +362,20 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user, checks the credentials and that the specified host is allowed.
-    /// Must be called before getClientInfo() can be called.
-    void setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address);
-    void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
+    /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
+    /// The function throws an exception if there is no such user or password is wrong.
+    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
+    void authenticate(const Credentials & credentials, const Poco::Net::SocketAddress & address);
 
-    /// Sets the current user, *does not check the password/credentials and that the specified host is allowed*.
-    /// Must be called before getClientInfo.
-    ///
-    /// (Used only internally in cluster, if the secret matches)
-    void setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address);
-
-    void setQuotaKey(String quota_key_);
+    /// Sets the current user assuming that he/she is already authenticated.
+    /// WARNING: This function doesn't check password! Don't use until it's necessary!
+    void setUser(const UUID & user_id_);
 
     UserPtr getUser() const;
     String getUserName() const;
     std::optional<UUID> getUserID() const;
+
+    void setQuotaKey(String quota_key_);
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
@@ -469,7 +466,8 @@ public:
         const String & quoted_database_name,
         const String & full_quoted_table_name,
         const Names & column_names,
-        const String & projection_name = {});
+        const String & projection_name = {},
+        const String & view_name = {});
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories
@@ -585,12 +583,6 @@ public:
     UInt16 getTCPPort() const;
 
     std::optional<UInt16> getTCPPortSecure() const;
-
-    /// Allow to use named sessions. The thread will be run to cleanup sessions after timeout has expired.
-    /// The method must be called at the server startup.
-    void enableNamedSessions();
-
-    std::shared_ptr<NamedSession> acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check);
 
     /// For methods below you may need to acquire the context lock by yourself.
 
@@ -730,6 +722,7 @@ public:
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog() const;
     std::shared_ptr<QueryThreadLog> getQueryThreadLog() const;
+    std::shared_ptr<QueryViewsLog> getQueryViewsLog() const;
     std::shared_ptr<TraceLog> getTraceLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
@@ -819,6 +812,8 @@ public:
     void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
+    /// Removes context of current distributed DDL.
+    void resetZooKeeperMetadataTransaction();
 
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
@@ -844,32 +839,6 @@ private:
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
-
-    /// If the password is not set, the password will not be checked
-    void setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address);
-};
-
-
-class NamedSessions;
-
-/// User name and session identifier. Named sessions are local to users.
-using NamedSessionKey = std::pair<String, String>;
-
-/// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
-struct NamedSession
-{
-    NamedSessionKey key;
-    UInt64 close_cycle = 0;
-    ContextMutablePtr context;
-    std::chrono::steady_clock::duration timeout;
-    NamedSessions & parent;
-
-    NamedSession(NamedSessionKey key_, ContextPtr context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
-        : key(key_), context(Context::createCopy(context_)), timeout(timeout_), parent(parent_)
-    {
-    }
-
-    void release();
 };
 
 }

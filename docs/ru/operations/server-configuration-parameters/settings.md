@@ -134,6 +134,25 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <default_profile>default</default_profile>
 ```
 
+## default_replica_path {#default_replica_path}
+
+Путь к таблице в ZooKeeper.
+
+**Пример**
+
+``` xml
+<default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
+```
+## default_replica_name {#default_replica_name}
+
+Имя реплики в ZooKeeper.
+
+**Пример**
+
+``` xml
+<default_replica_name>{replica}</default_replica_name>
+```
+
 ## dictionaries_config {#server_configuration_parameters-dictionaries_config}
 
 Путь к конфигурации внешних словарей.
@@ -446,9 +465,9 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 Подстановки параметров реплицируемых таблиц.
 
-Можно не указывать, если реплицируемых таблицы не используются.
+Можно не указывать, если реплицируемые таблицы не используются.
 
-Подробнее смотрите в разделе «[Создание реплицируемых таблиц](../../engines/table-engines/mergetree-family/replication.md)».
+Подробнее смотрите в разделе [Создание реплицируемых таблиц](../../engines/table-engines/mergetree-family/replication.md#creating-replicated-tables).
 
 **Пример**
 

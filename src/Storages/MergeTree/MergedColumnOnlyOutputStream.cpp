@@ -53,7 +53,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         return;
 
     writer->write(block, nullptr);
-    new_serialization_info->add(block);
+    new_serialization_info.add(block);
 }
 
 void MergedColumnOnlyOutputStream::writeSuffix()
@@ -85,7 +85,7 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
             all_checksums.files.erase(removed_file);
 
     new_part->setColumns(columns);
-    new_part->serialization_info = new_serialization_info->buildFrom(*input_serialization_info);
+    new_part->serialization_info = std::move(new_serialization_info).buildFrom(*input_serialization_info);
     return checksums;
 }
 

@@ -113,6 +113,7 @@ public:
     void updateWeakHash32(WeakHash32 &) const override { throwMustBeConcrete(); }
     void updateHashFast(SipHash &) const override { throwMustBeConcrete(); }
     ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeConcrete(); }
+    void expand(const Filter &, bool) override { throwMustBeConcrete(); }
     ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeConcrete(); }
     ColumnPtr index(const IColumn &, size_t) const override { throwMustBeConcrete(); }
     int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeConcrete(); }

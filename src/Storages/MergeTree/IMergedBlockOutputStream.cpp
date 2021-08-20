@@ -14,8 +14,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , volume(data_part->volume)
     , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
     , input_serialization_info(input_serialization_info_)
-    , new_serialization_info(std::make_shared<SerializationInfoBuilder>(
-        data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization))
+    , new_serialization_info(data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization)
 {
 }
 

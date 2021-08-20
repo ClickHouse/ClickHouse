@@ -1076,12 +1076,11 @@ private:
         if (!rows_added)
             return {};
 
-        correctLowcardAndNullability(columns_right);
-
         Block res = result_sample_block.cloneEmpty();
         addLeftColumns(res, rows_added);
         addRightColumns(res, columns_right);
         copySameKeys(res);
+        correctLowcardAndNullability(res);
         return res;
     }
 

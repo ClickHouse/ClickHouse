@@ -69,6 +69,7 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
+<!--
 ## encryption {#server-settings-encryption}
 
 Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). The command, or a shell script, is expected to write a Base64-encoded key of any length to the stdout.
@@ -90,7 +91,7 @@ For other systems:
     <key_command><![CDATA[IFS=; echo -n >/dev/tty "Enter the ClickHouse encryption passphrase: "; stty=`stty -F /dev/tty -g`; stty -F /dev/tty -echo; read k </dev/tty; stty -F /dev/tty "$stty"; echo -n $k | base64]]></key_command>
 </encryption>
 ```
-
+-->
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
 List of prefixes for [custom settings](../../operations/settings/index.md#custom_settings). The prefixes must be separated with commas.
@@ -485,7 +486,7 @@ Parameter substitutions for replicated tables.
 
 Can be omitted if replicated tables are not used.
 
-For more information, see the section “[Creating replicated tables](../../engines/table-engines/mergetree-family/replication.md)”.
+For more information, see the section [Creating replicated tables](../../engines/table-engines/mergetree-family/replication.md#creating-replicated-tables).
 
 **Example**
 
@@ -891,6 +892,33 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_thread_log>
 ```
 
+## query_views_log {#server_configuration_parameters-query_views_log}
+
+Setting for logging views dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
+
+Queries are logged in the [system.query_views_log](../../operations/system-tables/query_thread_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+
+Use the following parameters to configure logging:
+
+-   `database` – Name of the database.
+-   `table` – Name of the system table the queries will be logged in.
+-   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+-   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+-   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+
+If the table does not exist, ClickHouse will create it. If the structure of the query views log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
+
+**Example**
+
+``` xml
+<query_views_log>
+    <database>system</database>
+    <table>query_views_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</query_views_log>
+```
+
 ## text_log {#server_configuration_parameters-text_log}
 
 Settings for the [text_log](../../operations/system-tables/text_log.md#system_tables-text_log) system table for logging text messages.
@@ -1219,6 +1247,7 @@ Default value: `/var/lib/clickhouse/access/`.
 Section of the configuration file that contains settings:
 -   Path to configuration file with predefined users.
 -   Path to folder where users created by SQL commands are stored.
+-   ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
 
 If this section is specified, the path from [users_config](../../operations/server-configuration-parameters/settings.md#users-config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
 
@@ -1234,6 +1263,9 @@ The `user_directories` section can contain any number of items, the order of the
     <local_directory>
         <path>/var/lib/clickhouse/access/</path>
     </local_directory>
+    <replicated>
+        <zookeeper_path>/clickhouse/access/</zookeeper_path>
+    </replicated>
 </user_directories>
 ```
 

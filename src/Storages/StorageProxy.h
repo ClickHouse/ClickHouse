@@ -41,7 +41,7 @@ public:
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata), info);
     }
 
-    BlockInputStreams watch(
+    Pipe watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         ContextPtr context,

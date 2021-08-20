@@ -84,7 +84,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     else
         part_columns = *total_columns_list;
 
-    new_part->serialization_info = new_serialization_info->buildFrom(*input_serialization_info);
+    new_part->serialization_info = std::move(new_serialization_info).buildFrom(*input_serialization_info);
 
     if (new_part->isStoredOnDisk())
         finalizePartOnDisk(new_part, part_columns, checksums, sync);
@@ -224,7 +224,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation);
-    new_serialization_info->add(block);
+    new_serialization_info.add(block);
 
     rows_count += rows;
 }

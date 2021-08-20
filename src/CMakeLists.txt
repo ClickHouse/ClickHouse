@@ -158,6 +158,8 @@ else()
     target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
 endif()
 
+target_link_libraries (clickhouse_common_io PRIVATE jemalloc)
+
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
 
@@ -297,10 +299,11 @@ target_link_libraries(clickhouse_common_io
             ${ZLIB_LIBRARIES}
             pcg_random
             Poco::Foundation
-            roaring
 )
 
-
+# Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
+# That way we we can redirect malloc/free functions avoiding circular dependencies
+dbms_target_link_libraries(PUBLIC roaring)
 
 if (USE_RDKAFKA)
     dbms_target_link_libraries(PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
@@ -485,6 +488,11 @@ if (USE_NLP)
     dbms_target_link_libraries (PUBLIC stemmer)
     dbms_target_link_libraries (PUBLIC wnb)
     dbms_target_link_libraries (PUBLIC lemmagen)
+endif()
+
+if (USE_BZIP2)
+    target_link_libraries (clickhouse_common_io PRIVATE ${BZIP2_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BZIP2_INCLUDE_DIR})
 endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
