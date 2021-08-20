@@ -142,7 +142,8 @@ private:
         if ((diff_x + 1) <= width)
         {
             Y min_y = data.min_y;
-            Float64 diff_y = data.max_y - min_y;
+            Y max_y = data.max_y;
+            Float64 diff_y = max_y - min_y;
 
             if (diff_y)
             {
