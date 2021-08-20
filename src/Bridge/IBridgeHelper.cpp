@@ -5,6 +5,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
 #include <filesystem>
+#include <thread>
 
 namespace fs = std::filesystem;
 

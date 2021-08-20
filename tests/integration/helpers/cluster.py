@@ -474,6 +474,11 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
+    def copy_file_from_container_to_container(self, src_node, src_path, dst_node, dst_path):
+        fname = os.path.basename(src_path)
+        run_and_check([f"docker cp {src_node.docker_id}:{src_path} {self.instances_dir}"], shell=True)
+        run_and_check([f"docker cp {self.instances_dir}/{fname} {dst_node.docker_id}:{dst_path}"], shell=True)
+
     def setup_zookeeper_secure_cmd(self, instance, env_variables, docker_compose_yml_dir):
         logging.debug('Setup ZooKeeper Secure')
         zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_zookeeper_secure.yml')
