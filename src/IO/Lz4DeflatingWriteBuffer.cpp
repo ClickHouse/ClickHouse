@@ -11,7 +11,7 @@ namespace ErrorCodes
 }
 
 Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
-    std::unique_ptr<WriteBuffer> out_, int /*compression_level*/, size_t buf_size, char * existing_memory, size_t alignment)
+    std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
     : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment)
     , out(std::move(out_))
     , in_data(nullptr)
@@ -27,7 +27,7 @@ Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
          0 /* unknown content size */,
          0 /* no dictID */,
          LZ4F_noBlockChecksum},
-        0, /* compression level; 0 == default */
+        compression_level, /* compression level; 0 == default */
         0, /* autoflush */
         0, /* favor decompression speed */
         {0, 0, 0}, /* reserved, must be set to 0 */
@@ -75,8 +75,7 @@ void Lz4DeflatingWriteBuffer::nextImpl()
                 throw Exception(
                     ErrorCodes::LZ4_ENCODER_FAILED,
                     "LZ4 failed to start stream encoding. LZ4F version: {}",
-                    LZ4F_VERSION,
-                    ErrorCodes::LZ4_ENCODER_FAILED);
+                    LZ4F_VERSION);
 
             out_capacity -= header_size;
             out->position() = out->buffer().end() - out_capacity;
@@ -85,10 +84,14 @@ void Lz4DeflatingWriteBuffer::nextImpl()
 
         do
         {
-            out->nextIfAtEnd();
+            /// Ensure that there is enough space for compressed block of minimal size
+            if (out_capacity < LZ4F_compressBound(0, &kPrefs))
+            {
+                out->next();
+                out_capacity = out->buffer().end() - out->position();
+            }
 
             out_data = reinterpret_cast<void *>(out->position());
-            out_capacity = out->buffer().end() - out->position();
 
             /// LZ4F_compressUpdate compresses whole input buffer at once so we need to shink it manually
             size_t cur_buffer_size = in_capacity;
@@ -101,12 +104,12 @@ void Lz4DeflatingWriteBuffer::nextImpl()
                 throw Exception(
                     ErrorCodes::LZ4_ENCODER_FAILED,
                     "LZ4 failed to encode stream. LZ4F version: {}",
-                    LZ4F_VERSION,
-                    ErrorCodes::LZ4_ENCODER_FAILED);
+                    LZ4F_VERSION);
 
             out_capacity -= compressed_size;
             in_capacity -= cur_buffer_size;
 
+            in_data = reinterpret_cast<void *>(working_buffer.end() - in_capacity);
             out->position() = out->buffer().end() - out_capacity;
         }
         while (in_capacity > 0);
@@ -145,6 +148,9 @@ void Lz4DeflatingWriteBuffer::finishImpl()
     out_data = reinterpret_cast<void *>(out->position());
     out_capacity = out->buffer().end() - out->position();
 
+    // LOG_FATAL(&Poco::Logger::root(), "Already leaving?");
+    // if (out_capacity < LZ4F_compressBound(0, &kPrefs))
+        // LOG_FATAL(&Poco::Logger::root(), "Ebal konya?");
     /// compression end
     size_t end_size = LZ4F_compressEnd(ctx, out_data, out_capacity, nullptr);
 
@@ -152,8 +158,7 @@ void Lz4DeflatingWriteBuffer::finishImpl()
         throw Exception(
             ErrorCodes::LZ4_ENCODER_FAILED,
             "LZ4 failed to end stream encoding. LZ4F version: {}",
-            LZ4F_VERSION,
-            ErrorCodes::LZ4_ENCODER_FAILED);
+            LZ4F_VERSION);
 
     out_capacity -= end_size;
     out->position() = out->buffer().end() - out_capacity;
