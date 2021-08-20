@@ -53,7 +53,6 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/Session.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -1429,7 +1428,6 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
-        Session::startupNamedSessions();
 
         {
             String level_str = config().getString("text_log.level", "");
