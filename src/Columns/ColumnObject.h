@@ -36,16 +36,19 @@ public:
         const DataTypePtr & getLeastCommonType() const { return least_common_type; }
         void checkTypes() const;
 
-        void insert(Field && field);
+        void insert(Field field);
         void insertDefault();
         void insertManyDefaults(size_t length);
         void insertRangeFrom(const Subcolumn & src, size_t start, size_t length);
 
         void finalize();
+        void setNullable(bool value) { is_nullable = value; }
 
         IColumn & getFinalizedColumn();
         const IColumn & getFinalizedColumn() const;
         const ColumnPtr & getFinalizedColumnPtr() const;
+
+        friend class ColumnObject;
 
     private:
         DataTypePtr least_common_type;
@@ -86,26 +89,27 @@ public:
     /// Part of interface
 
     const char * getFamilyName() const override { return "Object"; }
+    TypeIndex getDataType() const override { return TypeIndex::Object; }
 
     size_t size() const override;
     MutableColumnPtr cloneResized(size_t new_size) const override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
+    void insert(const Field & field) override;
+    void insertDefault() override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    ColumnPtr replicate(const Offsets & offsets) const override;
+    void popBack(size_t length) override;
+    Field operator[](size_t n) const override;
+    void get(size_t n, Field & res) const override;
 
     /// All other methods throw exception.
 
     ColumnPtr decompress() const override { throwMustBeConcrete(); }
-    TypeIndex getDataType() const override { throwMustBeConcrete(); }
-    Field operator[](size_t) const override { throwMustBeConcrete(); }
-    void get(size_t, Field &) const override { throwMustBeConcrete(); }
     StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
     bool isDefaultAt(size_t) const override { throwMustBeConcrete(); }
-    void insert(const Field &) override { throwMustBeConcrete(); }
     void insertData(const char *, size_t) override { throwMustBeConcrete(); }
-    void insertDefault() override { throwMustBeConcrete(); }
-    void popBack(size_t) override { throwMustBeConcrete(); }
     StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeConcrete(); }
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeConcrete(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeConcrete(); }
@@ -121,7 +125,6 @@ public:
     bool hasEqualValues() const override { throwMustBeConcrete(); }
     void getPermutation(bool, size_t, int, Permutation &) const override { throwMustBeConcrete(); }
     void updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const override { throwMustBeConcrete(); }
-    ColumnPtr replicate(const Offsets &) const override { throwMustBeConcrete(); }
     MutableColumns scatter(ColumnIndex, const Selector &) const override { throwMustBeConcrete(); }
     void gather(ColumnGathererStream &) override { throwMustBeConcrete(); }
     void getExtremes(Field &, Field &) const override { throwMustBeConcrete(); }

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -357,6 +358,46 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             throw Exception("Cannot convert " + name + " to " + agg_func_type->getName(), ErrorCodes::TYPE_MISMATCH);
 
         return src;
+    }
+    else if (const auto * object_type = typeid_cast<const DataTypeObject *>(&type))
+    {
+        const auto * from_type_tuple = typeid_cast<const DataTypeTuple *>(from_type_hint);
+        if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->haveExplicitNames())
+        {
+            const auto & names = from_type_tuple->getElementNames();
+            const auto & tuple = src.get<const Tuple &>();
+
+            if (names.size() != tuple.size())
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Bad size of tuple in IN or VALUES section (while converting to Object). Expected size: {}, actual size: {}",
+                        names.size(), tuple.size());
+
+            Object object;
+            for (size_t i = 0; i < names.size(); ++i)
+                object[names[i]] = tuple[i];
+
+            return object;
+        }
+
+        if (src.getType() == Field::Types::Map)
+        {
+            Object object;
+            const auto & map = src.get<const Map &>();
+            for (size_t i = 0; i < map.size(); ++i)
+            {
+                const auto & map_entry = map[i].get<Tuple>();
+                const auto & key = map_entry[0];
+                const auto & value = map_entry[1];
+
+                if (key.getType() != Field::Types::String)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH,
+                        "Cannot convert from Map with key of type {} to Object", key.getTypeName());
+
+                object[key.get<const String &>()] = value;
+            }
+
+            return object;
+        }
     }
 
     /// Conversion from string by parsing.
