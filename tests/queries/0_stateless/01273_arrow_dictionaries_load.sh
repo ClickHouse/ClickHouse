@@ -20,5 +20,7 @@ ${CLICKHOUSE_CLIENT} --query="SELECT * FROM arrow_dicts FORMAT Arrow SETTINGS ou
 
 cat "${CLICKHOUSE_TMP}"/dicts.arrow | ${CLICKHOUSE_CLIENT} -q "INSERT INTO arrow_dicts FORMAT Arrow"
 
+${CLICKHOUSE_CLIENT} --query="SELECT count() FROM arrow_dicts"
+
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE arrow_dicts"
 

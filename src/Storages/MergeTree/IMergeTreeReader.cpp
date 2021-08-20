@@ -48,9 +48,8 @@ IMergeTreeReader::IMergeTreeReader(
         part_columns = Nested::collect(part_columns);
     }
 
-    columns_from_part.set_empty_key(StringRef());
     for (const auto & column_from_part : part_columns)
-        columns_from_part.emplace(column_from_part.name, &column_from_part.type);
+        columns_from_part[column_from_part.name] = &column_from_part.type;
 }
 
 IMergeTreeReader::~IMergeTreeReader() = default;
@@ -213,7 +212,7 @@ NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & requ
 {
     auto name_in_storage = required_column.getNameInStorage();
 
-    decltype(columns_from_part.begin()) it;
+    ColumnsFromPart::ConstLookupResult it;
     if (alter_conversions.isColumnRenamed(name_in_storage))
     {
         String old_name = alter_conversions.getColumnOldName(name_in_storage);
@@ -227,7 +226,7 @@ NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & requ
     if (it == columns_from_part.end())
         return required_column;
 
-    const auto & type = *it->second;
+    const DataTypePtr & type = *it->getMapped();
     if (required_column.isSubcolumn())
     {
         auto subcolumn_name = required_column.getSubcolumnName();
@@ -236,10 +235,10 @@ NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & requ
         if (!subcolumn_type)
             return {required_column.name, required_column.type};
 
-        return {String(it->first), subcolumn_name, type, subcolumn_type};
+        return {String(it->getKey()), subcolumn_name, type, subcolumn_type};
     }
 
-    return {String(it->first), type};
+    return {String(it->getKey()), type};
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns)

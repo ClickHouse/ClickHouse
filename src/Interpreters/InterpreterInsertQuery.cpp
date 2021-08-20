@@ -262,7 +262,6 @@ BlockIO InterpreterInsertQuery::execute()
         {
             InterpreterWatchQuery interpreter_watch{ query.watch, getContext() };
             res = interpreter_watch.execute();
-            res.pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(std::move(res.in))));
         }
 
         for (size_t i = 0; i < out_streams_size; i++)

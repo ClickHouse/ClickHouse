@@ -1071,6 +1071,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1218,17 +1220,36 @@ public:
         {
             return res;
         }
-        else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
-                 // Comparing Date and DateTime64 requires implicit conversion,
-                 // otherwise Date is treated as number.
-                 && !(date_and_datetime && (isDate(left_type) || isDate(right_type))))
+        else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
-            // compare
-            if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
-                throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            // Comparing Date and DateTime64 requires implicit conversion,
+            if (date_and_datetime && (isDate(left_type) || isDate(right_type)))
+            {
+                DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
+                ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
+                ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
+                return executeDecimal({c0_converted, common_type, "left"}, {c1_converted, common_type, "right"});
+            }
+            else
+            {
+                // compare
+                if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
+                    throw Exception(
+                        "No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
+            }
 
-            return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
+        }
+        else if (date_and_datetime)
+        {
+            DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
+            ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
+            ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
+            if (!((res = executeNumLeftType<UInt32>(c0_converted.get(), c1_converted.get()))
+                  || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))))
+                throw Exception("Date related common types can only be UInt32 or UInt64", ErrorCodes::LOGICAL_ERROR);
+            return res;
         }
         else if (left_type->equals(*right_type))
         {

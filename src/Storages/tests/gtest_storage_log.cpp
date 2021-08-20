@@ -129,6 +129,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     {
         ColumnWithTypeAndName col;
         col.type = std::make_shared<DataTypeUInt64>();
+        col.name = "a";
         sample.insert(std::move(col));
     }
 

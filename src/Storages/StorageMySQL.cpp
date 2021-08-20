@@ -4,7 +4,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Formats/MySQLBlockInputStream.h>
+#include <Formats/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -104,8 +104,7 @@ Pipe StorageMySQL::read(
 
     StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
         mysql_settings.connection_auto_close);
-    return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MySQLWithFailoverBlockInputStream>(pool, query, sample_block, mysql_input_stream_settings)));
+    return Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query, sample_block, mysql_input_stream_settings));
 }
 
 
