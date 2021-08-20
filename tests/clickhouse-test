@@ -44,15 +44,17 @@ DISTRIBUTED_DDL_TIMEOUT_MSG = "is executing longer than distributed_ddl_task_tim
 
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
-    "DB::Exception: Connection loss",
     "Coordination::Exception: Session expired",
     "Coordination::Exception: Connection loss",
     "Coordination::Exception: Operation timeout",
+    "DB::Exception: Session expired",
+    "DB::Exception: Connection loss",
     "DB::Exception: Operation timeout",
     "Operation timed out",
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
+    "DB::Exception: Cannot enqueue query",
     "Shutdown is called for table", # It happens in SYSTEM SYNC REPLICA query if session with ZooKeeper is being reinitialized.
     DISTRIBUTED_DDL_TIMEOUT_MSG  # FIXME
 ]

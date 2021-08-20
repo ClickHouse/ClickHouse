@@ -26,6 +26,8 @@ protected:
     String user_name;
 };
 
+/// Does not check the password/credentials and that the specified host is allowed.
+/// (Used only internally in cluster, if the secret matches)
 class AlwaysAllowCredentials
     : public Credentials
 {
