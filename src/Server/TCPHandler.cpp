@@ -49,27 +49,6 @@
 namespace DB
 {
 
-namespace
-{
-std::string formatHTTPErrorResponse(const Poco::Util::AbstractConfiguration& config)
-{
-    std::string result = fmt::format(
-        "HTTP/1.0 400 Bad Request\r\n\r\n"
-        "Port {} is for clickhouse-client program\r\n",
-        config.getString("tcp_port"));
-
-    if (config.has("http_port"))
-    {
-        result += fmt::format(
-            "You must use port {} for HTTP.\r\n",
-            config.getString("http_port"));
-    }
-
-    return result;
-}
-}
-
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -925,6 +904,29 @@ bool TCPHandler::receiveProxyHeader()
 }
 
 
+namespace
+{
+
+std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Util::AbstractConfiguration& config)
+{
+    std::string result = fmt::format(
+        "HTTP/1.0 400 Bad Request\r\n\r\n"
+        "Port {} is for clickhouse-client program\r\n",
+        config.getString("tcp_port"));
+
+    if (config.has("http_port"))
+    {
+        result += fmt::format(
+            "You must use port {} for HTTP.\r\n",
+            config.getString("http_port"));
+    }
+
+    return result;
+}
+
+}
+
+
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
@@ -940,9 +942,7 @@ void TCPHandler::receiveHello()
           */
         if (packet_type == 'G' || packet_type == 'P')
         {
-            writeString(formatHTTPErrorResponse(server.config()),
-                        *out);
-
+            writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
             throw Exception("Client has connected to wrong port", ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT);
         }
         else
