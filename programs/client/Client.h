@@ -37,6 +37,7 @@ protected:
 
 private:
     void connect() override;
+
     void printChangedSettings() const;
 
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);

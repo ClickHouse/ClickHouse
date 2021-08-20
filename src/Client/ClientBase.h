@@ -14,15 +14,11 @@ namespace po = boost::program_options;
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-}
-
-
-namespace DB
-{
 
 class ClientBase : public Poco::Util::Application
 {
@@ -37,29 +33,39 @@ protected:
     void runInteractive();
     void runNonInteractive();
 
-
-    /// Initialize `connection` object with `Connection` or `LocalConnection`.
-    virtual void connect() = 0;
-    /// Process single query. Can use processOrdinaryQuery(), processInsertQuery().
-    virtual void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) = 0;
-
-
-    void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
-    void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
     virtual bool processWithFuzzing(const String &)
     {
         throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Process single query.
+    virtual void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) = 0;
+
+    /// Methods, which can be called from executeSingleQuery.
+    void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
+    void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
+
+    void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
+        ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
+
     virtual void processError(const String & query) const = 0;
     virtual void loadSuggestionData(Suggest &) = 0;
 
-    bool processMultiQueryImpl(const String & all_queries_text,
-                               std::function<void(const String & full_query, const String & query_to_execute, ASTPtr parsed_query)> execute_single_query,
-                               std::function<void(const String &, Exception &)> process_parse_query_error = {});
+    enum MultiQueryProcessingStage
+    {
+        QUERIES_END,
+        PARSING_EXCEPTION,
+        CONTINUE_PARSING,
+        EXECUTE_QUERY,
+        PARSING_FAILED,
+    };
 
-    void processParsedSingleQuery(const String & query, const String & query_to_execute, ASTPtr parsed_query,
-                                std::optional<bool> echo_query_ = {}, bool report_error = false);
+    virtual void connect() {}
+
+    MultiQueryProcessingStage analyzeMultiQueryText(
+        const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
+        String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
+        std::optional<Exception> & current_exception);
 
     /// For non-interactive multi-query mode get queries text prefix.
     virtual String getQueryTextPrefix() { return ""; }

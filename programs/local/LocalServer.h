@@ -37,11 +37,6 @@ public:
 
 protected:
     void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
-
-    void connect() override
-    {
-    }
-
     void processError(const String & query) const override;
     void loadSuggestionData(Suggest &) override;
     String getQueryTextPrefix() override;
