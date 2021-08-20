@@ -20,13 +20,13 @@ ClickHouse支持同时使用多个备选地理基（区域层次结构），以�
 所有处理区域的函数都在末尾有一个可选参数—字典键。它被称为地基。
 示例:
 
-    regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-    regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-    regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
+    regionToCountry(RegionID) – 使用默认路径: /opt/geo/regions_hierarchy.txt
+    regionToCountry(RegionID, '') – 使用默认路径: /opt/geo/regions_hierarchy.txt
+    regionToCountry(RegionID, 'ua') – 使用字典中的'ua' 键: /opt/geo/regions_hierarchy_ua.txt
 
 ### regionToCity(id[, geobase]) {#regiontocityid-geobase}
 
-从 Yandex gebase 接收一个 UInt32 数字类型的 region ID 。如果该区域是一个城市或城市的一部分，它将返回相应城市的区域ID。否则,返回0。
+从 Yandex gebase 接收一个 UInt32 数字类型的区域ID 。如果该区域是一个城市或城市的一部分，它将返回相应城市的区域ID。否则,返回0。
 
 ### regionToArea(id[, geobase]) {#regiontoareaid-geobase}
 
@@ -106,13 +106,13 @@ regionToTopContinent(id[, geobase])
 
 **参数**
 
--   `id` — Region ID from the Yandex geobase. [UInt32](../../sql-reference/data-types/int-uint.md).
--   `geobase` — Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). Optional.
+-   `id` — Yandex geobase 的区域 ID. [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `geobase` — 字典的建. 参阅 [Multiple Geobases](#multiple-geobases). [String](../../sql-reference/data-types/string.md). 可选.
 
 **返回值**
 
--   Identifier of the top level continent (the latter when you climb the hierarchy of regions).
--   0, if there is none.
+-   顶级大陆的标识符(当您在区域层次结构中攀爬时，是后者)。
+-   0，如果没有。
 
 类型: `UInt32`.
 
@@ -130,12 +130,12 @@ regionToTopContinent(id[, geobase])
 
 ### regionHierarchy(id\[, geobase\]) {#regionhierarchyid-geobase}
 
-从 Yandex geobase 接收一个 UInt32 数字类型的 region ID 。返回一个区域id数组，由传递的区域和链上的所有父节点组成。
+从 Yandex geobase 接收一个 UInt32 数字类型的区域ID。返回一个区域ID数组，由传递的区域和链上的所有父节点组成。
 示例: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 
 ### regionToName(id\[, lang\]) {#regiontonameid-lang}
 
-从 Yandex geobase 接收一个 UInt32 数字类型的 region ID。带有语言名称的字符串可以作为第二个参数传递。支持的语言有:ru, en, ua, uk, by, kz, tr。如果省略第二个参数，则使用' ru '语言。如果不支持该语言，则抛出异常。返回一个字符串-对应语言的区域名称。如果指定ID的区域不存在，则返回一个空字符串。
+从 Yandex geobase 接收一个 UInt32 数字类型的区域ID。带有语言名称的字符串可以作为第二个参数传递。支持的语言有:ru, en, ua, uk, by, kz, tr。如果省略第二个参数，则使用' ru '语言。如果不支持该语言，则抛出异常。返回一个字符串-对应语言的区域名称。如果指定ID的区域不存在，则返回一个空字符串。
 
 `ua` 和 `uk` 都意味着乌克兰。
 
