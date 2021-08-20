@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <common/getFQDNOrHostName.h>
 #include <common/scope_guard_safe.h>
+#include <Interpreters/Session.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -469,6 +470,24 @@ void LocalServer::processConfig()
 
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
+
+    const auto & settings = global_context->getSettingsRef();
+
+    std::vector<String> queries;
+    auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
+
+    if (!parse_res.second)
+        throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
+
+    /// Authenticate and create a context to execute queries.
+    Session session{global_context, ClientInfo::Interface::TCP};
+    session.authenticate("default", "", Poco::Net::SocketAddress{});
+
+    /// Use the same context for all queries.
+    auto context = session.makeQueryContext();
+    context->makeSessionContext(); /// initial_create_query requires a session context to be set.
+    context->setCurrentQueryId("");
+    applyCmdSettings(context);
 
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
