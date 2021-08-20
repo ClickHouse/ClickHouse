@@ -168,7 +168,7 @@ static ASTPtr checkPositionalArgument(ASTPtr argument, const ASTSelectQuery * se
 
     /// Case when GROUP BY element is position.
     /// Do not consider case when GROUP BY element is not a literal, but expression, even if all values are constants.
-    if (auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get()))
+    if (const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get()))
     {
         auto which = ast_literal->value.getType();
         if (which == Field::Types::UInt64)
@@ -1326,17 +1326,16 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
     }
 
     auto & children = select_query->limitBy()->children;
-
-    for (size_t i = 0; i < children.size(); ++i)
+    for (auto & child : children)
     {
         if (getContext()->getSettingsRef().enable_positional_arguments)
         {
-            auto new_argument = checkPositionalArgument(children[i], select_query, ASTSelectQuery::Expression::LIMIT_BY);
+            auto new_argument = checkPositionalArgument(child, select_query, ASTSelectQuery::Expression::LIMIT_BY);
             if (new_argument)
-                children[i] = new_argument;
+                child = new_argument;
         }
 
-        auto child_name = children[i]->getColumnName();
+        auto child_name = child->getColumnName();
         if (!aggregated_names.count(child_name))
             step.addRequiredOutput(std::move(child_name));
     }

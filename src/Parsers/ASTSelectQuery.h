@@ -70,6 +70,7 @@ public:
             case Expression::SETTINGS:
                 return "SETTINGS";
         }
+        return "";
     }
 
     /** Get the text that identifies this element. */

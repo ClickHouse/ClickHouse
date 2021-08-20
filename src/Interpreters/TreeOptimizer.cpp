@@ -173,7 +173,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
             bool keep_position = false;
             if (settings.enable_positional_arguments)
             {
-                const auto & value = group_exprs[i]->as <ASTLiteral>()->value;
+                const auto & value = group_exprs[i]->as<ASTLiteral>()->value;
                 if (value.getType() == Field::Types::UInt64)
                 {
                     auto pos = value.get<UInt64>();
