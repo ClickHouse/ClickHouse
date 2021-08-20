@@ -1038,7 +1038,6 @@ public:
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
         if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], arguments[1], context))
         {
-            std::cerr << "Tuple op" << std::endl;
             ColumnsWithTypeAndName new_arguments(2);
 
             for (size_t i = 0; i < 2; ++i)
@@ -1048,7 +1047,6 @@ public:
             return function->getResultType();
         }
 
-        std::cerr << "Wow, it's here!" << std::endl;
         DataTypePtr type_res;
 
         const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
