@@ -617,51 +617,55 @@ namespace S3
         uri = uri_;
         storage_name = S3;
 
-        try
+        if (uri.getHost().empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
+
+        String name;
+        String endpoint_authority_from_uri;
+
+        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
         {
-            if (uri.getHost().empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
+            is_virtual_hosted_style = true;
+            endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
+            validateBucket(bucket, uri);
 
-            String name;
-            String endpoint_authority_from_uri;
-
-            if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
+            if (!uri.getPath().empty())
             {
-                is_virtual_hosted_style = true;
-                endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
-
-                if (!uri.getPath().empty())
-                {
-                    /// Remove leading '/' from path to extract key.
-                    key = uri.getPath().substr(1);
-                }
-
-                boost::to_upper(name);
-                if (name != S3 && name != COS)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
-                }
-                if (name == S3)
-                {
-                    storage_name = name;
-                }
-                else
-                {
-                    storage_name = COSN;
-                }
+                /// Remove leading '/' from path to extract key.
+                key = uri.getPath().substr(1);
             }
-            else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
+
+            boost::to_upper(name);
+            if (name != S3 && name != COS)
             {
-                is_virtual_hosted_style = false;
-                endpoint = uri.getScheme() + "://" + uri.getAuthority();
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
+            }
+            if (name == S3)
+            {
+                storage_name = name;
             }
             else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
+            {
+                storage_name = COSN;
+            }
         }
-        catch (const Exception & e)
+        else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
         {
-            throw Exception(e.code(), "{} ({})", e.message(), uri.toString());
+            is_virtual_hosted_style = false;
+            endpoint = uri.getScheme() + "://" + uri.getAuthority();
+            validateBucket(bucket, uri);
         }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
+    }
+
+    void URI::validateBucket(const String & bucket, const Poco::URI & uri)
+    {
+        /// S3 specification requires at least 3 and at most 63 characters in bucket name.
+        /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
+        if (bucket.length() < 3 || bucket.length() > 63)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI:     {}{}",
+                            quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
     }
 }
 

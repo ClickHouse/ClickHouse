@@ -68,6 +68,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int S3_ERROR;
     extern const int UNEXPECTED_EXPRESSION;
@@ -478,32 +479,26 @@ private:
         return it->second;
     }
 
-    static void validateBucket(const StringRef & str)
+    static void validateBucket(const String & str)
     {
-        /// See:
-        /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html
-        /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#createbucket
+        S3::URI::validateBucket(str, {});
 
-        if (str.size < 3 || 222 < str.size)
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
-                            "Bucket name length is out of bounds in virtual hosted style S3 URI: {}", quoteString(str));
-
-        if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data), str.size))
+        if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in bucket name");
 
         validatePartitionKey(str, false);
     }
 
-    static void validateKey(const StringRef & str)
+    static void validateKey(const String & str)
     {
         /// See:
         /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
         /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#putobject
 
-        if (str.size < 1 || 1024 < str.size)
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect key length (min - 2, max - 1023 characters), got: {}", str.size);
+        if (str.empty() || str.size() > 1024)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect key length (not empty, max 1023 characters), got: {}", str.size());
 
-        if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data), str.size))
+        if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in key");
 
         validatePartitionKey(str, true);
