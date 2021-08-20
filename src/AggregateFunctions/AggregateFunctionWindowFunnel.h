@@ -150,7 +150,7 @@ private:
     /// Loop through the entire events_list, update the event timestamp value
     /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
     /// If found, returns the max event level, else return 0.
-    /// The algorithm works in O(n * log(n)) time.
+    /// The algorithm works in O(n) time, but the overall function works in O(n * log(n)) due to sorting.
     UInt8 getEventLevel(Data & data) const
     {
         if (data.size() == 0)
