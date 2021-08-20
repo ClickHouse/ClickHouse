@@ -142,8 +142,7 @@ private:
         if ((diff_x + 1) <= width)
         {
             Y min_y = data.min_y;
-            Y max_y = data.max_y;
-            Float64 diff_y = max_y - min_y;
+            Float64 diff_y = data.max_y - min_y;
 
             if (diff_y)
             {
@@ -169,7 +168,7 @@ private:
             std::optional<Float64> max_y;
 
             std::optional<Float64> new_y;
-            std::map<size_t, std::optional<Float64>> newPoints;
+            std::vector<std::optional<Float64>> newPoints;
 
             std::pair<size_t, Float64> bound{0, 0.0};
             size_t cur_bucket_num = 0;
@@ -194,7 +193,8 @@ private:
                     {
                         Float64 avg_y = new_y.value() / multiple_d;
 
-                        newPoints.template emplace(cur_bucket_num, avg_y);
+                        newPoints.template emplace_back(avg_y);
+                        // If min_y has no value, or if the avg_y of the current bucket is less than min_y, update it.
                         if (!min_y || avg_y < min_y)
                             min_y = avg_y;
                         if (!max_y || avg_y > max_y)
@@ -202,7 +202,7 @@ private:
                     }
                     else
                     {
-                        newPoints.template emplace(cur_bucket_num, std::optional<Float64>());
+                        newPoints.template emplace_back(std::optional<Float64>());
                     }
 
                     // next bucket
@@ -217,18 +217,18 @@ private:
                 }
             }
 
-            if (!min_y || !max_y)
+            if (!min_y || !max_y) // No value is set
                 return {};
 
             Float64 diff_y = max_y.value() - min_y.value();
 
-            auto getBars = [&] (const std::pair<size_t, std::optional<Float64>> & point)
+            auto getBars = [&] (const std::optional<Float64> & point_y)
             {
-                value += getBar(point.second ? std::round(((point.second.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
+                value += getBar(point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
             };
-            auto getBarsForConstant = [&] (const std::pair<size_t, std::optional<Float64>> & point)
+            auto getBarsForConstant = [&] (const std::optional<Float64> & point_y)
             {
-                value += getBar(point.second ? 1 : 0);
+                value += getBar(point_y ? 1 : 0);
             };
 
             if (diff_y)
