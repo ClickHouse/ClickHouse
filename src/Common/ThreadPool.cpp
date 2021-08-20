@@ -191,6 +191,10 @@ void ThreadPoolImpl<Thread>::wait()
 template <typename Thread>
 ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 {
+    /// Note: should not use logger from here,
+    /// because it can be an instance of GlobalThreadPool that is a global variable
+    /// and the destruction order of global variables is unspecified.
+
     finalize();
 }
 

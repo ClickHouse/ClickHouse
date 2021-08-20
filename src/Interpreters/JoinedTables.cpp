@@ -5,6 +5,8 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getTableExpressions.h>
+
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
@@ -12,8 +14,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/parseQuery.h>
+
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDictionary.h>
@@ -33,6 +34,23 @@ namespace ErrorCodes
 namespace
 {
 
+template <typename T, typename ... Args>
+std::shared_ptr<T> addASTChildrenTo(IAST & node, ASTPtr & children, Args && ... args)
+{
+    auto new_children = std::make_shared<T>(std::forward<Args>(args)...);
+    children = new_children;
+    node.children.push_back(children);
+    return new_children;
+}
+
+template <typename T>
+std::shared_ptr<T> addASTChildren(IAST & node)
+{
+    auto children = std::make_shared<T>();
+    node.children.push_back(children);
+    return children;
+}
+
 void replaceJoinedTable(const ASTSelectQuery & select_query)
 {
     const ASTTablesInSelectQueryElement * join = select_query.join();
@@ -48,15 +66,30 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
     if (table_expr.database_and_table_name)
     {
         const auto & table_id = table_expr.database_and_table_name->as<ASTTableIdentifier &>();
-        String expr = "(select * from " + table_id.name() + ") as " + table_id.shortName();
-
+        String table_name = table_id.name();
+        String table_short_name = table_id.shortName();
         // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
         //        we can't replace aliased tables.
         // FIXME: long table names include database name, which we can't save within alias.
         if (table_id.alias.empty() && table_id.isShort())
         {
-            ParserTableExpression parser;
-            table_expr = parseQuery(parser, expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH)->as<ASTTableExpression &>();
+            /// Build query of form '(SELECT * FROM table_name) AS table_short_name'
+            table_expr = ASTTableExpression();
+
+            auto subquery = addASTChildrenTo<ASTSubquery>(table_expr, table_expr.subquery);
+            subquery->setAlias(table_short_name);
+
+            auto sub_select_with_union = addASTChildren<ASTSelectWithUnionQuery>(*subquery);
+            auto list_of_selects = addASTChildrenTo<ASTExpressionList>(*sub_select_with_union, sub_select_with_union->list_of_selects);
+
+            auto new_select = addASTChildren<ASTSelectQuery>(*list_of_selects);
+            new_select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+            addASTChildren<ASTAsterisk>(*new_select->select());
+            new_select->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+
+            auto tables_elem = addASTChildren<ASTTablesInSelectQueryElement>(*new_select->tables());
+            auto sub_table_expr = addASTChildrenTo<ASTTableExpression>(*tables_elem, tables_elem->table_expression);
+            addASTChildrenTo<ASTTableIdentifier>(*sub_table_expr, sub_table_expr->database_and_table_name, table_name);
         }
     }
 }
@@ -128,9 +161,10 @@ using RenameQualifiedIdentifiersVisitor = InDepthNodeVisitor<RenameQualifiedIden
 
 }
 
-JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query)
+JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query, bool include_all_columns_)
     : context(context_)
     , table_expressions(getTableExpressions(select_query))
+    , include_all_columns(include_all_columns_)
     , left_table_expression(extractTableExpression(select_query, 0))
     , left_db_and_table(getDatabaseAndTable(select_query, 0))
 {}
@@ -187,11 +221,13 @@ StoragePtr JoinedTables::getLeftTableStorage()
 
 bool JoinedTables::resolveTables()
 {
-    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context);
+    const auto & settings = context->getSettingsRef();
+    bool include_alias_cols = include_all_columns || settings.asterisk_include_alias_columns;
+    bool include_materialized_cols = include_all_columns || settings.asterisk_include_materialized_columns;
+    tables_with_columns = getDatabaseAndTablesWithColumns(table_expressions, context, include_alias_cols, include_materialized_cols);
     if (tables_with_columns.size() != table_expressions.size())
         throw Exception("Unexpected tables count", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & settings = context->getSettingsRef();
     if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
     {
         for (size_t i = 0; i < tables_with_columns.size(); ++i)
@@ -277,6 +313,13 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         replaceJoinedTable(select_query);
 
     return table_join;
+}
+
+void JoinedTables::reset(const ASTSelectQuery & select_query)
+{
+    table_expressions = getTableExpressions(select_query);
+    left_table_expression = extractTableExpression(select_query, 0);
+    left_db_and_table = getDatabaseAndTable(select_query, 0);
 }
 
 }

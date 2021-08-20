@@ -29,6 +29,7 @@ set max_rows_to_read=0;
 select count() from system.query_log where
     current_database = currentDatabase() and
     query like 'select \'01231_log_queries_min_type w/ Settings/EXCEPTION_WHILE_PROCESSING%' and
+    query not like '%system.query_log%' and
     event_date >= yesterday() and
     type = 'ExceptionWhileProcessing' and
-    has(Settings.Names, 'max_rows_to_read');
+    Settings['max_rows_to_read'] != '';

@@ -61,7 +61,7 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     /** Perform the next step in combining the parts.
       */
@@ -94,7 +94,7 @@ public:
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
-    std::optional<JobAndPool> getDataProcessingJob() override;
+    bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 private:
@@ -114,8 +114,10 @@ private:
     /// For block numbers.
     SimpleIncrement increment;
 
-    /// For clearOldParts, clearOldTemporaryDirectories.
-    AtomicStopwatch time_after_previous_cleanup;
+    /// For clearOldParts
+    AtomicStopwatch time_after_previous_cleanup_parts;
+    /// For clearOldTemporaryDirectories.
+    AtomicStopwatch time_after_previous_cleanup_temporary_directories;
 
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.
@@ -196,6 +198,7 @@ private:
         bool final,
         String * disable_reason,
         TableLockHolder & table_lock_holder,
+        std::unique_lock<std::mutex> & lock,
         bool optimize_skip_merged_partitions = false,
         SelectPartsDecision * select_decision_out = nullptr);
 
@@ -235,8 +238,10 @@ private:
 
     void startBackgroundMovesIfNeeded() override;
 
+    std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
+
     friend class MergeTreeProjectionBlockOutputStream;
-    friend class MergeTreeBlockOutputStream;
+    friend class MergeTreeSink;
     friend class MergeTreeData;
 
 

@@ -1,6 +1,8 @@
+#include <Interpreters/IdentifierSemantic.h>
+
 #include <Common/typeid_cast.h>
 
-#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 
 #include <Parsers/ASTFunction.h>
@@ -280,7 +282,10 @@ IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuer
         QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
     QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
 
-    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context);
+    const auto & settings = context->getSettingsRef();
+    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context,
+                                             settings.asterisk_include_alias_columns,
+                                             settings.asterisk_include_materialized_columns);
 }
 
 std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr ast) const

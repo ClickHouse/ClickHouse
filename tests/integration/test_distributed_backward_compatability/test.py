@@ -5,8 +5,8 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node_old = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], image='yandex/clickhouse-server',
-                                tag='19.17.8.54', stay_alive=True, with_installed_binary=True)
-node_new = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'])
+                                tag='20.8.9.6', stay_alive=True, with_installed_binary=True)
+node_new = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], user_configs=['configs/legacy.xml'])
 
 
 @pytest.fixture(scope="module")

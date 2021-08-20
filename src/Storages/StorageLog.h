@@ -19,7 +19,7 @@ namespace DB
 class StorageLog final : public shared_ptr_helper<StorageLog>, public IStorage
 {
     friend class LogSource;
-    friend class LogBlockOutputStream;
+    friend class LogSink;
     friend struct shared_ptr_helper<StorageLog>;
 
 public:
@@ -34,7 +34,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
@@ -45,6 +45,7 @@ public:
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
     bool supportsSubcolumns() const override { return true; }
+    ColumnSizeByName getColumnSizes() const override;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
@@ -87,7 +88,7 @@ private:
     DiskPtr disk;
     String table_path;
 
-    std::shared_timed_mutex rwlock;
+    mutable std::shared_timed_mutex rwlock;
 
     Files files;
 

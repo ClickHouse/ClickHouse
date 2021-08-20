@@ -37,6 +37,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         {
             if (it != parameters->children.begin())
                 writeCString(", ", ostr);
+
             (*it)->appendColumnName(ostr);
         }
         writeChar(')', ostr);
@@ -44,12 +45,16 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
     writeChar('(', ostr);
     if (arguments)
+    {
         for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
         {
             if (it != arguments->children.begin())
                 writeCString(", ", ostr);
+
             (*it)->appendColumnName(ostr);
         }
+    }
+
     writeChar(')', ostr);
 
     if (is_window_function)
@@ -61,11 +66,11 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         }
         else
         {
-            FormatSettings settings{ostr, true /* one_line */};
+            FormatSettings format_settings{ostr, true /* one_line */};
             FormatState state;
             FormatStateStacked frame;
             writeCString("(", ostr);
-            window_definition->formatImpl(settings, state, frame);
+            window_definition->formatImpl(format_settings, state, frame);
             writeCString(")", ostr);
         }
     }
@@ -349,7 +354,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
-                // fuzzer sometimes may inserts tupleElement() created from ASTLiteral:
+                // fuzzer sometimes may insert tupleElement() created from ASTLiteral:
                 //
                 //     Function_tupleElement, 0xx
                 //     -ExpressionList_, 0xx

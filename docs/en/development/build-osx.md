@@ -33,7 +33,7 @@ Reboot.
 
 ``` bash
 brew update
-brew install cmake ninja libtool gettext llvm gcc
+brew install cmake ninja libtool gettext llvm gcc binutils
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}

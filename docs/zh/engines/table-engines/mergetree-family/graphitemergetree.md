@@ -70,7 +70,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 除了`config_section`，其它所有参数和`MergeTree`的相应参数一样.
 
--   `config_section` —配置文件中设置汇总规则的节点 
+-   `config_section` —配置文件中设置汇总规则的节点
 
 </details>
 

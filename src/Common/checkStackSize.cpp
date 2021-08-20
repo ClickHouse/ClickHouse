@@ -44,7 +44,7 @@ size_t getStackSize(void ** out_address)
     size = pthread_main_np() ? (8 * 1024 * 1024) : pthread_get_stacksize_np(thread);
 
     // stack address points to the start of the stack, not the end how it's returned by pthread_get_stackaddr_np
-    address = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread)) - max_stack_size);
+    address = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread)) - size);
 #else
     pthread_attr_t attr;
 #   if defined(__FreeBSD__) || defined(OS_SUNOS)

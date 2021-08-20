@@ -14,6 +14,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -78,6 +79,12 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
         Field max_val;
         serialization->deserializeBinary(max_val, *file);
 
+        // NULL_LAST
+        if (min_val.isNull())
+            min_val = PositiveInfinity();
+        if (max_val.isNull())
+            max_val = PositiveInfinity();
+
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
     initialized = true;
@@ -132,14 +139,19 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & 
         FieldRef min_value;
         FieldRef max_value;
         const ColumnWithTypeAndName & column = block.getByName(column_names[i]);
-        column.column->getExtremes(min_value, max_value);
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
+            column_nullable->getExtremesNullLast(min_value, max_value);
+        else
+            column.column->getExtremes(min_value, max_value);
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
         else
         {
-            hyperrectangle[i].left = std::min(hyperrectangle[i].left, min_value);
-            hyperrectangle[i].right = std::max(hyperrectangle[i].right, max_value);
+            hyperrectangle[i].left
+                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].left, min_value) ? hyperrectangle[i].left : min_value;
+            hyperrectangle[i].right
+                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].right, max_value) ? max_value : hyperrectangle[i].right;
         }
     }
 
@@ -1103,7 +1115,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
 
 std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 {
-    /// NOTE: It's needed for S3 zero-copy replication
+    /// NOTE: It's needed for zero-copy replication
     if (force_keep_shared_data)
         return true;
 
@@ -1310,6 +1322,9 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
 {
     /// Do not allow underscores in the prefix because they are used as separators.
     assert(prefix.find_first_of('_') == String::npos);
+    assert(prefix.empty() || std::find(DetachedPartInfo::DETACH_REASONS.begin(),
+                                       DetachedPartInfo::DETACH_REASONS.end(),
+                                       prefix) != DetachedPartInfo::DETACH_REASONS.end());
     return "detached/" + getRelativePathForPrefix(prefix);
 }
 
@@ -1501,16 +1516,11 @@ SerializationPtr IMergeTreeDataPart::getSerializationForColumn(const NameAndType
 
 String IMergeTreeDataPart::getUniqueId() const
 {
-    String id;
-
     auto disk = volume->getDisk();
+    if (!disk->supportZeroCopyReplication())
+        throw Exception(fmt::format("Disk {} doesn't support zero-copy replication", disk->getName()), ErrorCodes::LOGICAL_ERROR);
 
-    if (disk->getType() == DB::DiskType::Type::S3)
-        id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
-
-    if (id.empty())
-        throw Exception("Can't get unique S3 object", ErrorCodes::LOGICAL_ERROR);
-
+    String id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
     return id;
 }
 

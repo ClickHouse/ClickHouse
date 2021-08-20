@@ -36,6 +36,7 @@ public:
         MODIFY_TTL,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
+        RESET_SETTING,
         MODIFY_QUERY,
         REMOVE_TTL,
 
@@ -141,6 +142,9 @@ public:
     /// FOR MODIFY_SETTING
     ASTPtr settings_changes;
 
+    /// FOR RESET_SETTING
+    ASTPtr settings_resets;
+
     /// For MODIFY_QUERY
     ASTPtr select;
 
@@ -220,6 +224,8 @@ public:
     {
         return removeOnCluster<ASTAlterQuery>(clone(), new_database);
     }
+
+    const char * getQueryKindString() const override { return "Alter"; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
