@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -29,9 +30,62 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+bool isNullableOrLcNullable(DataTypePtr type)
+{
+    if (type->isNullable())
+        return true;
+
+    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return lc_type->getDictionaryType()->isNullable();
+
+    return false;
+}
+
+/// Returns `true` if there are nullable column in src but corresponding column in dst is not
+bool changedNullabilityOneWay(const Block & src_block, const Block & dst_block)
+{
+    std::unordered_map<String, bool> src_nullable;
+    for (const auto & col : src_block)
+        src_nullable[col.name] = isNullableOrLcNullable(col.type);
+
+    for (const auto & col : dst_block)
+    {
+        if (!isNullableOrLcNullable(col.type) && src_nullable[col.name])
+            return true;
+    }
+    return false;
+}
+
+bool hasJoin(const ASTSelectQuery & select)
+{
+    const auto & tables = select.tables();
+    if (!tables || tables->children.size() < 2)
+        return false;
+
+    const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
+    return joined_table.table_join != nullptr;
+}
+
+bool hasJoin(const ASTSelectWithUnionQuery & ast)
+{
+    for (const auto & child : ast.list_of_selects->children)
+    {
+        if (const auto * select = child->as<ASTSelectQuery>(); select && hasJoin(*select))
+            return true;
+    }
+    return false;
+}
+
+}
 
 StorageView::StorageView(
-    const StorageID & table_id_, const ASTCreateQuery & query, const ColumnsDescription & columns_, const String & comment)
+    const StorageID & table_id_,
+    const ASTCreateQuery & query,
+    const ColumnsDescription & columns_,
+    const String & comment)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -40,7 +94,6 @@ StorageView::StorageView(
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
-
     SelectQueryDescription description;
 
     description.inner_query = query.select->ptr();
@@ -97,10 +150,22 @@ void StorageView::read(
     query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
-    auto header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    const auto & expected_header = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    const auto & header = query_plan.getCurrentDataStream().header;
+
+    const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
+    if (select_with_union && hasJoin(*select_with_union) && changedNullabilityOneWay(header, expected_header))
+    {
+        throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Query from view {} returned Nullable column having not Nullable type in structure. "
+                            "If query from view has JOIN, it may be cause by different values of 'json_use_nulls' setting. "
+                            "You may explicitly specify 'json_use_nulls' in 'CREATE VIEW' query to avoid this error",
+                            getStorageID().getFullTableName());
+    }
+
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
             header.getColumnsWithTypeAndName(),
+            expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
 
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), convert_actions_dag);

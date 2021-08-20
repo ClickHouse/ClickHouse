@@ -99,6 +99,10 @@ namespace
             node.acl_id = acl_map.convertACLs(acls);
         }
 
+        /// Some strange ACLID during deserialization from ZooKeeper
+        if (node.acl_id == std::numeric_limits<uint64_t>::max())
+            node.acl_id = 0;
+
         acl_map.addUsage(node.acl_id);
 
         readBinary(node.is_sequental, in);
@@ -217,12 +221,14 @@ SnapshotMetadataPtr KeeperStorageSnapshot::deserialize(KeeperStorage & storage, 
     if (current_version >= SnapshotVersion::V1)
     {
         size_t acls_map_size;
+
         readBinary(acls_map_size, in);
         size_t current_map_size = 0;
         while (current_map_size < acls_map_size)
         {
             uint64_t acl_id;
             readBinary(acl_id, in);
+
             size_t acls_size;
             readBinary(acls_size, in);
             Coordination::ACLs acls;
@@ -345,11 +351,23 @@ KeeperSnapshotManager::KeeperSnapshotManager(const std::string & snapshots_path_
 
     for (const auto & p : fs::directory_iterator(snapshots_path))
     {
-        if (startsWith(p.path(), "tmp_")) /// Unfinished tmp files
+        const auto & path = p.path();
+
+        if (!path.has_filename())
+            continue;
+
+        if (startsWith(path.filename(), "tmp_")) /// Unfinished tmp files
         {
             std::filesystem::remove(p);
             continue;
         }
+
+        /// Not snapshot file
+        if (!startsWith(path.filename(), "snapshot_"))
+        {
+            continue;
+        }
+
         size_t snapshot_up_to = getSnapshotPathUpToLogIdx(p.path());
         existing_snapshots[snapshot_up_to] = p.path();
     }

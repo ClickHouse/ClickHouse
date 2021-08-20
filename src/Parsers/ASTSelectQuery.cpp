@@ -438,4 +438,19 @@ ASTPtr & ASTSelectQuery::getExpression(Expression expr)
     return children[positions[expr]];
 }
 
+void ASTSelectQuery::setFinal() // NOLINT method can be made const
+{
+    auto & tables_in_select_query = tables()->as<ASTTablesInSelectQuery &>();
+
+    if (tables_in_select_query.children.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables list is empty, it's a bug");
+
+    auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
+
+    if (!tables_element.table_expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no table expression, it's a bug");
+
+    tables_element.table_expression->as<ASTTableExpression &>().final = true;
+}
+
 }

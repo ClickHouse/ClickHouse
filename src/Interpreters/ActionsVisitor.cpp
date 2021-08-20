@@ -374,8 +374,8 @@ SetPtr makeExplicitSet(
 
     SetPtr set
         = std::make_shared<Set>(size_limits, create_ordered_set, context->getSettingsRef().transform_null_in);
-    set->setHeader(block.cloneEmpty());
-    set->insertFromBlock(block);
+    set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
+    set->insertFromBlock(block.getColumnsWithTypeAndName());
     set->finishInsert();
 
     prepared_sets[set_key] = set;
@@ -686,7 +686,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
     ASTs columns;
     size_t tid = 0;
-    for (const auto & name : tuple_type->getElementNames())
+    for (const auto & name [[maybe_unused]] : tuple_type->getElementNames())
     {
         auto tuple_ast = function->arguments->children[0];
         if (tid != 0)
@@ -696,11 +696,6 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         visit(*literal, literal, data);
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
-
-        if (tuple_type->haveExplicitNames())
-            func->setAlias(name);
-        else
-            func->setAlias(data.getUniqueName("_ut_" + name));
 
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
@@ -740,6 +735,7 @@ void ActionsMatcher::visit(ASTExpressionList & expression_list, const ASTPtr &, 
 
 void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Data & data)
 {
+
     auto column_name = identifier.getColumnName();
     if (data.hasColumn(column_name))
         return;

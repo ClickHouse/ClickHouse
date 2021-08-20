@@ -33,7 +33,7 @@ SELECTS_SQL = {
                "ORDER BY node"),
 }
 
-EXCEPTION_NETWORK = 'e.displayText() = DB::NetException: '
+EXCEPTION_NETWORK = 'DB::NetException: '
 EXCEPTION_TIMEOUT = 'Timeout exceeded while reading from socket ('
 EXCEPTION_CONNECT = 'Timeout: connect timed out: '
 
@@ -57,7 +57,7 @@ TIMEOUT_DIFF_UPPER_BOUND = {
     },
     'ready_to_wait': {
         'distributed': 3,
-        'remote': 1.5,
+        'remote': 2.0,
     },
 }
 
@@ -76,13 +76,13 @@ def _check_exception(exception, expected_tries=3):
 
     for i, line in enumerate(lines[3:3 + expected_tries]):
         expected_lines = (
-            'Code: 209, ' + EXCEPTION_NETWORK + EXCEPTION_TIMEOUT,
-            'Code: 209, ' + EXCEPTION_NETWORK + EXCEPTION_CONNECT,
+            'Code: 209. ' + EXCEPTION_NETWORK + EXCEPTION_TIMEOUT,
+            'Code: 209. ' + EXCEPTION_NETWORK + EXCEPTION_CONNECT,
             EXCEPTION_TIMEOUT,
         )
 
         assert any(line.startswith(expected) for expected in expected_lines), \
-            'Unexpected exception at one of the connection attempts'
+            'Unexpected exception "{}" at one of the connection attempts'.format(line)
 
     assert lines[3 + expected_tries] == '', 'Wrong number of connect attempts'
 

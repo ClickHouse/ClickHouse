@@ -27,7 +27,7 @@ RUN apt-get update \
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
+RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
@@ -65,7 +65,7 @@ RUN apt-get update \
         unixodbc \
        --yes --no-install-recommends
 
-RUN pip3 install numpy scipy pandas
+RUN pip3 install numpy scipy pandas Jinja2
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld

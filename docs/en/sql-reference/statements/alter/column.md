@@ -20,12 +20,11 @@ The following actions are supported:
 
 -   [ADD COLUMN](#alter_add-column) — Adds a new column to the table.
 -   [DROP COLUMN](#alter_drop-column) — Deletes the column.
--   [RENAME COLUMN](#alter_rename-column) — Renames the column.
+-   [RENAME COLUMN](#alter_rename-column) — Renames an existing column.
 -   [CLEAR COLUMN](#alter_clear-column) — Resets column values.
 -   [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
 -   [MODIFY COLUMN](#alter_modify-column) — Changes column’s type, default expression and TTL.
 -   [MODIFY COLUMN REMOVE](#modify-remove) — Removes one of the column properties.
--   [RENAME COLUMN](#alter_rename-column) — Renames an existing column.
 
 These actions are described in detail below.
 
@@ -35,7 +34,7 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](../../../sql-reference/statements/create/table.md#codecs) and `default_expr` (see the section [Default expressions](../../../sql-reference/statements/create/table.md#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md#codecs) and `default_expr` (see the section [Default expressions](../../../sql-reference/statements/create/table.md#create-default-values)).
 
 If the `IF NOT EXISTS` clause is included, the query won’t return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -64,6 +63,7 @@ Added2  UInt32
 ToDrop  UInt32
 Added3  UInt32
 ```
+
 ## DROP COLUMN {#alter_drop-column}
 
 ``` sql
@@ -91,7 +91,7 @@ RENAME COLUMN [IF EXISTS] name to new_name
 
 Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
 
-**NOTE**: Columns specified in the key expression of the table (either with `ORDER BY` or `PRIMARY KEY`) cannot be renamed. Trying to change these columns will produce `SQL Error [524]`. 
+**NOTE**: Columns specified in the key expression of the table (either with `ORDER BY` or `PRIMARY KEY`) cannot be renamed. Trying to change these columns will produce `SQL Error [524]`.
 
 Example:
 
@@ -118,7 +118,7 @@ ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ## COMMENT COLUMN {#alter_comment-column}
 
 ``` sql
-COMMENT COLUMN [IF EXISTS] name 'comment'
+COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ```
 
 Adds a comment to the column. If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
@@ -136,7 +136,7 @@ ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for 
 ## MODIFY COLUMN {#alter_modify-column}
 
 ``` sql
-MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL] [AFTER name_after | FIRST]
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
 ```
 
 This query changes the `name` column properties:
@@ -145,7 +145,11 @@ This query changes the `name` column properties:
 
 -   Default expression
 
+-   Compression Codec
+
 -   TTL
+
+For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md#codecs).
 
 For examples of columns TTL modifying, see [Column TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
 
@@ -179,6 +183,8 @@ ALTER TABLE table_name MODIFY column_name REMOVE property;
 
 **Example**
 
+Remove TTL:
+
 ```sql
 ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 ```
@@ -186,22 +192,6 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 **See Also**
 
 - [REMOVE TTL](ttl.md).
-
-## RENAME COLUMN {#alter_rename-column}
-
-Renames an existing column.
-
-Syntax:
-
-```sql
-ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name
-```
-
-**Example**
-
-```sql
-ALTER TABLE table_with_ttl RENAME COLUMN column_ttl TO column_ttl_new;
-```
 
 ## Limitations {#alter-query-limitations}
 
@@ -213,4 +203,4 @@ If the `ALTER` query is not sufficient to make the table changes you need, you c
 
 The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
 
-For tables that do not store data themselves (such as `Merge` and `Distributed`), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.
+For tables that do not store data themselves (such as [Merge](../../../sql-reference/statements/alter/index.md) and [Distributed](../../../sql-reference/statements/alter/index.md)), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.

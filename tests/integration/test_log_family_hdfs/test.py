@@ -12,7 +12,7 @@ def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("node",
-                             main_configs=["configs/storage_conf.xml", "configs/config.d/log_conf.xml"],
+                             main_configs=["configs/storage_conf.xml"],
                              with_hdfs=True)
         logging.info("Starting cluster...")
         cluster.start()

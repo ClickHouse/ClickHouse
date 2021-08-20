@@ -60,7 +60,8 @@ struct ThreadStack
     void * getData() const { return data; }
 
 private:
-    static constexpr size_t size = 16 << 10; /// 16 KiB - not too big but enough to handle error.
+    /// 16 KiB - not too big but enough to handle error.
+    static constexpr size_t size = std::max<size_t>(16 << 10, MINSIGSTKSZ);
     void * data;
 };
 
@@ -148,7 +149,11 @@ ThreadStatus::~ThreadStatus()
 
     if (deleter)
         deleter();
-    current_thread = nullptr;
+
+    /// Only change current_thread if it's currently being used by this ThreadStatus
+    /// For example, PushingToViewsBlockOutputStream creates and deletes ThreadStatus instances while running in the main query thread
+    if (current_thread == this)
+        current_thread = nullptr;
 }
 
 void ThreadStatus::updatePerformanceCounters()
