@@ -152,6 +152,13 @@ Alias: `DATE`.
 
 ## toDateTimeOrNull {#todatetimeornull}
 
+## toDate32 {#toDate32}
+
+
+## toDate32OrZero {#toDate32OrZero}
+
+## toDate32OrNull {#todate32OrNull}
+
 ## toDecimal(32\|64\|128\|256) {#todecimal3264128256}
 
 Converts `value` to the [Decimal](../../sql-reference/data-types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
