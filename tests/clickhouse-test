@@ -265,6 +265,7 @@ class FailureReason(enum.Enum):
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     BUILD = "not running for current build"
+    BACKWARD_INCOMPATIBLE = "test is backward incompatible"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -401,6 +402,9 @@ class TestCase:
 
         elif tags and ('no-replicated-database' in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
+
+        elif tags and ('backward-incompatible' in tags) and args.backward_compatibility_check:
+            return FailureReason.BACKWARD_INCOMPATIBLE
 
         elif tags:
             for build_flag in args.build_flags:
@@ -1384,6 +1388,7 @@ if __name__ == '__main__':
     group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 
+    group.add_argument('--backward-compatibility-check', action='store_true', default=False, help='Ignore all drop queries in tests')
     args = parser.parse_args()
 
     if args.queries and not os.path.isdir(args.queries):
@@ -1441,6 +1446,9 @@ if __name__ == '__main__':
 
         if os.getenv("CLICKHOUSE_DATABASE"):
             args.client += ' --database=' + os.getenv("CLICKHOUSE_DATABASE")
+
+    if args.backward_compatibility_check:
+        args.client += ' --fake-drop'
 
     if args.client_option:
         # Set options for client
