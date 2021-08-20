@@ -607,38 +607,22 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
 
 void LocalServer::addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
-    options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
     options_description.main_description->add_options()
-        ("help", "produce help message")
-        ("config-file,c", po::value<std::string>(), "config-file path")
-        ("query,q", po::value<std::string>(), "query")
-        ("queries-file, qf", po::value<std::string>(), "file path with queries to execute")
         ("database,d", po::value<std::string>(), "database")
-
         ("table,N", po::value<std::string>(), "name of the initial table")
+
         /// If structure argument is omitted then initial query is not generated
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
         ("file,f", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
+
         ("input-format", po::value<std::string>(), "input format of the initial table data")
-        ("format,f", po::value<std::string>(), "default output format (clickhouse-client compatibility)")
         ("output-format", po::value<std::string>(), "default output format")
 
-        ("stacktrace", "print stack traces of exceptions")
-        ("echo", "print query before execution")
-        ("verbose", "print query and other debugging info")
         ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
-        ("ignore-error", "do not stop processing if a query failed")
+
         ("no-system-tables", "do not attach system tables (better startup time)")
-        ("version,V", "print version information and exit")
-        ("progress", "print progress of queries execution")
-
-        ("multiline,m", "multiline")
-        ("multiquery,n", "multiquery")
-        ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
-
-        ("disable_suggestion,A", "Disable loading suggestion data. Shorthand option -A is for those who get used to mysql client.")
         ;
 
     cmd_settings.addProgramOptions(options_description.main_description.value());
@@ -669,55 +653,26 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & arguments, s
 
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &)
 {
-    /// Save received data into the internal config.
-    if (options.count("config-file"))
-        config().setString("config-file", options["config-file"].as<std::string>());
-    if (options.count("query"))
-        config().setString("query", options["query"].as<std::string>());
-    if (options.count("queries-file"))
-        config().setString("queries-file", options["queries-file"].as<std::string>());
-    if (options.count("database"))
-        config().setString("default_database", options["database"].as<std::string>());
-
     if (options.count("table"))
         config().setString("table-name", options["table"].as<std::string>());
     if (options.count("file"))
         config().setString("table-file", options["file"].as<std::string>());
     if (options.count("structure"))
         config().setString("table-structure", options["structure"].as<std::string>());
+    if (options.count("no-system-tables"))
+        config().setBool("no-system-tables", true);
+
     if (options.count("input-format"))
         config().setString("table-data-format", options["input-format"].as<std::string>());
-    if (options.count("format"))
-        config().setString("format", options["format"].as<std::string>());
     if (options.count("output-format"))
         config().setString("output-format", options["output-format"].as<std::string>());
 
-    if (options.count("stacktrace"))
-        config().setBool("stacktrace", true);
-    if (options.count("progress"))
-        config().setBool("progress", true);
-    if (options.count("echo"))
-        config().setBool("echo", true);
-    if (options.count("verbose"))
-        config().setBool("verbose", true);
     if (options.count("logger.console"))
         config().setBool("logger.console", options["logger.console"].as<bool>());
     if (options.count("logger.log"))
         config().setString("logger.log", options["logger.log"].as<std::string>());
     if (options.count("logger.level"))
         config().setString("logger.level", options["logger.level"].as<std::string>());
-    if (options.count("ignore-error"))
-        config().setBool("ignore-error", true);
-    if (options.count("no-system-tables"))
-        config().setBool("no-system-tables", true);
-
-    if (options.count("queries-file"))
-        queries_files.emplace_back(config().getString("queries-file"));
-
-    if (options.count("multiline"))
-        config().setBool("multiline", true);
-    if (options.count("multiquery"))
-        config().setBool("multiquery", true);
 }
 
 }

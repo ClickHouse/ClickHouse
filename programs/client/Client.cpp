@@ -910,11 +910,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
 void Client::addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
-
-    options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
     options_description.main_description->add_options()
-        ("help", "produce help message")
-        ("config-file,C", po::value<std::string>(), "config-file path")
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
         ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
         ("port", po::value<int>()->default_value(9000), "server port")
@@ -929,39 +925,25 @@ void Client::addAndCheckOptions(OptionsDescription & options_description, po::va
         ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
         ("ask-password", "ask-password")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
-        ("query_id", po::value<std::string>(), "query_id")
-        ("query,q", po::value<std::string>(), "query")
-        ("database,d", po::value<std::string>(), "database")
         ("pager", po::value<std::string>(), "pager")
-        ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
+        ("testmode,T", "enable test hints in comments")
+
         ("suggestion_limit", po::value<int>()->default_value(10000),
             "Suggestion limit for how many databases, tables and columns to fetch.")
-        ("multiline,m", "multiline")
-        ("multiquery,n", "multiquery")
-        ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
-            "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
-        ("format,f", po::value<std::string>(), "default output format")
-        ("testmode,T", "enable test hints in comments")
-        ("ignore-error", "do not stop processing in multiquery mode")
-        ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
-        ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
-        ("stacktrace", "print stack traces of exceptions")
-        ("progress", "print progress even in non-interactive mode")
-        ("version,V", "print version information and exit")
-        ("version-clean", "print version in machine-readable format and exit")
-        ("echo", "in batch mode, print query before execution")
+
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
         ("compression", po::value<bool>(), "enable or disable compression")
-        ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
+
         ("log-level", po::value<std::string>(), "client log level")
         ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
+
         ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
         ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
             "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
+
         ("opentelemetry-traceparent", po::value<std::string>(), "OpenTelemetry traceparent header as described by W3C Trace Context recommendation")
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
-        ("history_file", po::value<std::string>(), "path to history file")
+
         ("no-warnings", "disable warnings when client connects to server")
         ("max_memory_usage_in_client", po::value<int>(), "sets memory limit in client")
     ;
@@ -1053,23 +1035,12 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
 
-    /// Save received data into the internal config.
-    if (options.count("config-file"))
-        config().setString("config-file", options["config-file"].as<std::string>());
     if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
     if (options.count("host") && !options["host"].defaulted())
         config().setString("host", options["host"].as<std::string>());
-    if (options.count("query_id"))
-        config().setString("query_id", options["query_id"].as<std::string>());
-    if (options.count("query"))
-        config().setString("query", options["query"].as<std::string>());
-    if (options.count("queries-file"))
-        queries_files = options["queries-file"].as<std::vector<std::string>>();
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
-    if (options.count("database"))
-        config().setString("database", options["database"].as<std::string>());
     if (options.count("pager"))
         config().setString("pager", options["pager"].as<std::string>());
     if (options.count("port") && !options["port"].defaulted())
@@ -1084,40 +1055,14 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("ask-password", true);
     if (options.count("quota_key"))
         config().setString("quota_key", options["quota_key"].as<std::string>());
-    if (options.count("multiline"))
-        config().setBool("multiline", true);
-    if (options.count("multiquery"))
-        config().setBool("multiquery", true);
     if (options.count("testmode"))
         config().setBool("testmode", true);
-    if (options.count("ignore-error"))
-        config().setBool("ignore-error", true);
-    if (options.count("format"))
-        config().setString("format", options["format"].as<std::string>());
-    if (options.count("vertical"))
-        config().setBool("vertical", true);
-    if (options.count("stacktrace"))
-        config().setBool("stacktrace", true);
-    if (options.count("progress"))
-        config().setBool("progress", true);
-    if (options.count("echo"))
-        config().setBool("echo", true);
-    if (options.count("time"))
-        print_time_to_stderr = true;
     if (options.count("max_client_network_bandwidth"))
         max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
     if (options.count("compression"))
         config().setBool("compression", options["compression"].as<bool>());
     if (options.count("server_logs_file"))
         server_logs_file = options["server_logs_file"].as<std::string>();
-    if (options.count("disable_suggestion"))
-        config().setBool("disable_suggestion", true);
-    if (options.count("suggestion_limit"))
-        config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
-    if (options.count("highlight"))
-        config().setBool("highlight", options["highlight"].as<bool>());
-    if (options.count("history_file"))
-        config().setString("history_file", options["history_file"].as<std::string>());
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
 
@@ -1125,7 +1070,6 @@ void Client::processOptions(const OptionsDescription & options_description,
     {
         // Fuzzer implies multiquery.
         config().setBool("multiquery", true);
-
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
         ignore_error = true;

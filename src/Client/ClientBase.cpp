@@ -1454,6 +1454,41 @@ void ClientBase::init(int argc, char ** argv)
 
     po::variables_map options;
     OptionsDescription options_description;
+    options_description.main_description.emplace(createOptionsDescription("Main options", terminal_width));
+
+    /// Common options for clickhouse-client and clickhouse-local.
+    options_description.main_description->add_options()
+        ("help", "produce help message")
+        ("version,V", "print version information and exit")
+        ("version-clean", "print version in machine-readable format and exit")
+
+        ("config-file,c", po::value<std::string>(), "config-file path")
+        ("queries-file", po::value<std::vector<std::string>>()->multitoken(),
+            "file path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
+        ("database,d", po::value<std::string>(), "database")
+        ("history_file", po::value<std::string>(), "path to history file")
+
+        ("query,q", po::value<std::string>(), "query")
+        ("stage", po::value<std::string>()->default_value("complete"), "Request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
+        ("query_id", po::value<std::string>(), "query_id")
+        ("progress", "print progress of queries execution")
+
+        ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
+        ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
+        ("echo", "in batch mode, print query before execution")
+        ("verbose", "print query and other debugging info")
+
+        ("multiline,m", "multiline")
+        ("multiquery,n", "multiquery")
+
+        ("format,f", po::value<std::string>(), "default output format")
+        ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
+        ("highlight", po::value<bool>()->default_value(true), "enable or disable basic syntax highlight in interactive command line")
+
+        ("ignore-error", "do not stop processing in multiquery mode")
+        ("stacktrace", "print stack traces of exceptions")
+    ;
+
     addAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
@@ -1477,6 +1512,45 @@ void ClientBase::init(int argc, char ** argv)
         exit(0);
     }
 
+    /// Common options for clickhouse-client and clickhouse-local.
+    if (options.count("time"))
+        print_time_to_stderr = true;
+    if (options.count("query"))
+        config().setString("query", options["query"].as<std::string>());
+    if (options.count("query_id"))
+        config().setString("query_id", options["query_id"].as<std::string>());
+    if (options.count("database"))
+        config().setString("database", options["database"].as<std::string>());
+    if (options.count("config-file"))
+        config().setString("config-file", options["config-file"].as<std::string>());
+    if (options.count("queries-file"))
+        queries_files = options["queries-file"].as<std::vector<std::string>>();
+    if (options.count("multiline"))
+        config().setBool("multiline", true);
+    if (options.count("multiquery"))
+        config().setBool("multiquery", true);
+    if (options.count("ignore-error"))
+        config().setBool("ignore-error", true);
+    if (options.count("format"))
+        config().setString("format", options["format"].as<std::string>());
+    if (options.count("vertical"))
+        config().setBool("vertical", true);
+    if (options.count("stacktrace"))
+        config().setBool("stacktrace", true);
+    if (options.count("progress"))
+        config().setBool("progress", true);
+    if (options.count("echo"))
+        config().setBool("echo", true);
+    if (options.count("disable_suggestion"))
+        config().setBool("disable_suggestion", true);
+    if (options.count("suggestion_limit"))
+        config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
+    if (options.count("highlight"))
+        config().setBool("highlight", options["highlight"].as<bool>());
+    if (options.count("history_file"))
+        config().setString("history_file", options["history_file"].as<std::string>());
+    if (options.count("verbose"))
+        config().setBool("verbose", true);
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
 
