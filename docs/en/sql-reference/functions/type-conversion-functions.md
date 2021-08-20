@@ -1339,3 +1339,149 @@ Result:
 │ 2,"good"                                  │
 └───────────────────────────────────────────┘
 ```
+
+## snowflakeToDateTime {#snowflakeToDateTime}
+
+Extract time from snowflake id as DateTime format.
+
+**Syntax**
+
+``` sql
+snowflakeToDateTime(value [, time_zone])
+```
+
+**Parameters**
+
+-   `value` — `snowflake id`, Int64 value.
+-   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-  value converted to the `DateTime` data type.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
+```
+
+Result:
+
+``` text
+
+┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
+│                                              2021-08-15 10:57:56 │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## snowflakeToDateTime64 {#snowflakeToDateTime64}
+
+Extract time from snowflake id as DateTime64 format.
+
+**Syntax**
+
+``` sql
+snowflakeToDateTime64(value [, time_zone])
+```
+
+**Parameters**
+
+-   `value` — `snowflake id`, Int64 value.
+-   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-  value converted to the `DateTime64` data type.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
+```
+
+Result:
+
+``` text
+
+┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
+│                                            2021-08-15 10:58:19.841 │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+## dateTimeToSnowflake {#dateTimeToSnowflake}
+
+Convert DateTime to the first snowflake id at the giving time.
+
+**Syntax**
+
+``` sql
+dateTimeToSnowflake(value)
+```
+
+**Parameters**
+
+-   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md).
+
+
+**Returned value**
+
+-   `value` converted to the `Int64` data type as the first snowflake id at that time.
+
+**Example**
+
+Query:
+
+``` sql
+WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt
+SELECT dateTimeToSnowflake(dt);
+```
+
+Result:
+
+``` text
+
+┌─dateTimeToSnowflake(dt)─┐
+│     1426860702823350272 │
+└─────────────────────────┘
+```
+
+
+## dateTime64ToSnowflake {#dateTime64ToSnowflake}
+
+Convert DateTime64 to the first snowflake id at the giving time.
+
+**Syntax**
+
+``` sql
+dateTime64ToSnowflake(value)
+```
+
+**Parameters**
+
+-   `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+
+**Returned value**
+
+-   `value` converted to the `Int64` data type as the first snowflake id at that time.
+
+**Example**
+
+Query:
+
+``` sql
+WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64
+SELECT dateTime64ToSnowflake(dt64);
+```
+
+Result:
+
+``` text
+┌─dateTime64ToSnowflake(dt64)─┐
+│         1426860704886947840 │
+└─────────────────────────────┘
+```

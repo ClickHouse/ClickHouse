@@ -289,8 +289,8 @@ void FlatDictionary::blockToAttributes(const Block & block)
 {
     const auto keys_column = block.safeGetByPosition(0).column;
 
-    DictionaryKeysArenaHolder<DictionaryKeyType::simple> arena_holder;
-    DictionaryKeysExtractor<DictionaryKeyType::simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
+    DictionaryKeysArenaHolder<DictionaryKeyType::Simple> arena_holder;
+    DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
     auto keys = keys_extractor.extractAllKeys();
 
     HashSet<UInt64> already_processed_keys;
@@ -344,7 +344,7 @@ void FlatDictionary::updateData()
     else
     {
         Pipe pipe(source_ptr->loadUpdatedAll());
-        mergeBlockWithPipe<DictionaryKeyType::simple>(
+        mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
             std::move(pipe));
@@ -557,7 +557,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
                             const Poco::Util::AbstractConfiguration & config,
                             const std::string & config_prefix,
                             DictionarySourcePtr source_ptr,
-                            ContextPtr /* context */,
+                            ContextPtr /* global_context */,
                             bool /* created_from_ddl */) -> DictionaryPtr
     {
         if (dict_struct.key)
