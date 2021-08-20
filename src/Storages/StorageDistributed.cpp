@@ -363,10 +363,13 @@ StorageDistributed::StorageDistributed(
     }
 
     /// Sanity check. Skip check if the table is already created to allow the server to start.
-    if (!attach_ && !cluster_name.empty())
+    if (!attach_)
     {
-        size_t num_local_shards = getContext()->getCluster(cluster_name)->getLocalShardCount();
-        if (num_local_shards && remote_database == id_.database_name && remote_table == id_.table_name)
+        if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
+            LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
+
+        size_t num_local_shards = getCluster()->getLocalShardCount();
+        if (num_local_shards && (remote_database.empty() || remote_database == id_.database_name) && remote_table == id_.table_name)
             throw Exception("Distributed table " + id_.table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
 }
@@ -810,9 +813,6 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
 
 void StorageDistributed::startup()
 {
-    if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
-        LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
-
     if (!storage_policy)
         return;
 
