@@ -6,20 +6,28 @@
 #include <bitset>
 #include <random>
 #include <utility>
-#include <IO/ReadBufferFromString.h>
-#include <Interpreters/Context.h>
-#include <IO/ReadBufferFromS3.h>
+
+#include <boost/algorithm/string.hpp>
+
+#include <common/unit.h>
+
+#include <Common/checkStackSize.h>
+#include <Common/createHardLink.h>
+#include <Common/quoteString.h>
+#include <Common/thread_local_rng.h>
+
 #include <Disks/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/WriteIndirectBufferFromRemoteFS.h>
+
+#include <Interpreters/Context.h>
+
+#include <IO/ReadBufferFromS3.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
-#include <Common/createHardLink.h>
-#include <Common/quoteString.h>
-#include <Common/thread_local_rng.h>
-#include <Common/checkStackSize.h>
-#include <boost/algorithm/string.hpp>
+
 #include <aws/s3/model/CopyObjectRequest.h> // Y_IGNORE
 #include <aws/s3/model/DeleteObjectsRequest.h> // Y_IGNORE
 #include <aws/s3/model/GetObjectRequest.h> // Y_IGNORE
@@ -550,7 +558,7 @@ void DiskS3::listObjects(const String & source_bucket, const String & source_pat
 void DiskS3::copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
     std::optional<Aws::S3::Model::HeadObjectResult> head) const
 {
-    if (head && (head->GetContentLength() >= 5LL * 1024 * 1024 * 1024))
+    if (head && (head->GetContentLength() >= static_cast<Int64>(5_GiB)))
         copyObjectMultipartImpl(src_bucket, src_key, dst_bucket, dst_key, head);
     else
         copyObjectImpl(src_bucket, src_key, dst_bucket, dst_key);
@@ -596,7 +604,7 @@ void DiskS3::copyObjectMultipartImpl(const String & src_bucket, const String & s
 
     size_t size = head->GetContentLength();
 
-    if (size < 5 * 1024 * 1024)
+    if (size < 5_MiB)
     {
         LOG_ERROR(log, "Can't use multipart copy upload for object with size less than 5 Mb. Bucket: {}, Key: {}, Size: {}",
             src_bucket, src_key, size);
