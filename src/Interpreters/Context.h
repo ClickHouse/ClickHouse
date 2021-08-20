@@ -362,13 +362,9 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
-    /// The function throws an exception if there is no such user or password is wrong.
-    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
-    void authenticate(const Credentials & credentials, const Poco::Net::SocketAddress & address);
-
     /// Sets the current user assuming that he/she is already authenticated.
-    /// WARNING: This function doesn't check password! Don't use until it's necessary!
+    /// WARNING: This function doesn't check password!
+    /// Normally you shouldn't call this function. Use the Session class to do authentication instead.
     void setUser(const UUID & user_id_);
 
     UserPtr getUser() const;

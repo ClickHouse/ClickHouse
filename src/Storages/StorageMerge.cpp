@@ -435,11 +435,17 @@ Pipe StorageMerge::createSources(
     if (!pipe.empty())
     {
         if (concat_streams && pipe.numOutputPorts() > 1)
+        {
             // It's possible to have many tables read from merge, resize(1) might open too many files at the same time.
             // Using concat instead.
             pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
+        }
 
-        if (has_database_virtual_column)
+        /// Add virtual columns if we don't already have them.
+
+        Block pipe_header = pipe.getHeader();
+
+        if (has_database_virtual_column && !pipe_header.has("_database"))
         {
             ColumnWithTypeAndName column;
             column.name = "_database";
@@ -457,7 +463,7 @@ Pipe StorageMerge::createSources(
             });
         }
 
-        if (has_table_virtual_column)
+        if (has_table_virtual_column && !pipe_header.has("_table"))
         {
             ColumnWithTypeAndName column;
             column.name = "_table";
