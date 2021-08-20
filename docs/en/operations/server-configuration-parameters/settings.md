@@ -82,7 +82,7 @@ Load from config:
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <key>...</key>
+        <key>12345567812345678</key>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -95,7 +95,7 @@ Load from config, when key is in hex:
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <key_hex>...</key_hex>
+        <key_hex>00112233445566778899aabbccddeeff</key_hex>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -117,22 +117,21 @@ All this methods can be applied for multiple keys:
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <key_hex id="0">...</key_hex>
+        <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
         <key_hex id="1" from_env=".."></key_hex>
-        <key_hex id="2">...</key_hex>
-        <current_key_id>2</current_key_id>
+        <current_key_id>1</current_key_id>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
 
 Where `current_key_id` shows current key for encryption.
 
-Also user can add nonce (by default encryption and decryption will use nonce consisting of zero bytes):
+Also user can add nonce that must be 12 bytes long (by default encryption and decryption will use nonce consisting of zero bytes):
 
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <nonce>...</nonce>
+        <nonce>0123456789101</nonce>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -142,10 +141,12 @@ Or it can be set in hex:
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <nonce_hex>...</nonce_hex>
+        <nonce_hex>abcdefabcdef</nonce_hex>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
+
+Everything above can be applied for `aes_256_gcm_siv` (but key must be 32 bytes length).
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 

@@ -54,7 +54,37 @@ public:
         * Note that the key is currently not guarded by a
         * mutex. This method should be invoked no more than once.
         */
-    CompressionCodecEncrypted();
+    explicit CompressionCodecEncrypted(CompressionMethodByte Algorithm);
+
+    /**
+        * This is utility class. It holds information about encryption configuration.
+        */
+    class Configuration
+    {
+    public:
+        static Configuration & instance();
+
+        void load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+        String getKey(UInt64 id) const;
+        String getCurrentKey() const;
+        UInt64 getCurrentKeyID() const;
+        String getNonce() const;
+        CompressionMethodByte getAlgorithmByte() const;
+
+    private:
+        struct Params
+        {
+            std::unordered_map<UInt64, String> keys_storage;
+            UInt64 current_key_id;
+            String nonce;
+            CompressionMethodByte algorithm; 
+        };
+
+        // used to read data from config and create Params
+        static Params loadImpl(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+        MultiVersion<Params> params;
+    };
 
     uint8_t getMethodByte() const override;
     void updateHash(SipHash & hash) const override;
@@ -69,48 +99,15 @@ public:
         return false;
     }
 
-    bool isPostProcessing() const override
+    bool isEncryption() const override
     {
         return true;
     }
-    static void updateEncryptionKeys(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-
 protected:
-    static bool tryLoadEncryptionKey(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
-
-private:
-    static std::string lastErrorString();
-    static void encrypt(const std::string_view & plaintext, char * ciphertext_and_tag);
-    static void decrypt(const std::string_view & ciphertext_and_tag, char * plaintext, UInt64 key_id);
-
-    /**
-        * This is utility class. It holds information about encryption configuration.
-        */
-    class Configuration
-    {
-    public:
-        static Configuration & instance();
-
-        void load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-        String getKey(UInt64 id) const;
-        String getCurrentKey() const;
-        UInt64 getCurrentID() const;
-        String getNonce() const;
-
-    private:
-        struct Params
-        {
-            std::unordered_map<UInt64, String> keys_storage;
-            UInt64 current_key_id;
-            String nonce;
-        };
-        MultiVersion<Params> params;
-    };
 };
 }
 
