@@ -33,15 +33,20 @@ using DictionaryPtr = std::unique_ptr<IDictionary>;
   * Simple is for dictionaries that support UInt64 key column.
   *
   * Complex is for dictionaries that support any combination of key columns.
-  *
-  * Range is for dictionary that support combination of UInt64 key column,
-  * and numeric representable range key column.
   */
 enum class DictionaryKeyType
 {
-    simple,
-    complex,
-    range
+    Simple,
+    Complex
+};
+
+/** DictionarySpecialKeyType provides IDictionary client information about
+  * which special key type is supported by dictionary.
+  */
+enum class DictionarySpecialKeyType
+{
+    None,
+    Range
 };
 
 /**
@@ -56,6 +61,7 @@ struct IDictionary : public IExternalLoadable
     }
 
     const std::string & getFullName() const{ return full_name; }
+
     StorageID getDictionaryID() const
     {
         std::lock_guard lock{name_mutex};
@@ -108,6 +114,8 @@ struct IDictionary : public IExternalLoadable
       * Client will use that key type to provide valid key columns for `getColumn` and `has` functions.
       */
     virtual DictionaryKeyType getKeyType() const = 0;
+
+    virtual DictionarySpecialKeyType getSpecialKeyType() const { return DictionarySpecialKeyType::None;}
 
     /** Subclass must validate key columns and keys types
       * and return column representation of dictionary attribute.
