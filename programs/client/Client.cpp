@@ -1028,6 +1028,7 @@ void Client::addAndCheckOptions(OptionsDescription & options_description, po::va
 
         ("no-warnings", "disable warnings when client connects to server")
         ("max_memory_usage_in_client", po::value<int>(), "sets memory limit in client")
+        ("fake-drop", "Ignore all DROP queries")
     ;
 
     /// Commandline options related to external tables.
@@ -1148,6 +1149,8 @@ void Client::processOptions(const OptionsDescription & options_description,
         server_logs_file = options["server_logs_file"].as<std::string>();
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
+    if (options.count("fake-drop"))
+        fake_drop = true;
 
     if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
     {
