@@ -26,7 +26,7 @@ ClickHouse支持同时使用多个备选地理基（区域层次结构），以�
 
 ### regionToCity(id[, geobase]) {#regiontocityid-geobase}
 
-从 Yandex gebase 接收一个 UInt32 数字类型的区域ID 。如果该区域是一个城市或城市的一部分，它将返回相应城市的区域ID。否则,返回0。
+从 Yandex geobase 接收一个 UInt32 数字类型的区域ID 。如果该区域是一个城市或城市的一部分，它将返回相应城市的区域ID。否则,返回0。
 
 ### regionToArea(id[, geobase]) {#regiontoareaid-geobase}
 
