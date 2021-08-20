@@ -1,20 +1,29 @@
+#include <random>
 #include <gtest/gtest.h>
-
 #include <Functions/GatherUtils/Algorithms.h>
 
 using namespace DB::GatherUtils;
 
 
+auto uni_int_dist(int min, int max)
+{
+    std::random_device rd;
+    std::mt19937 mt(rd());
+    std::uniform_int_distribution<> dist(min, max);
+    return std::make_pair(dist, mt);
+}
+
 template<class T>
 void arrayInit(T* elements_to_have, size_t nb_elements_to_have, T* array_elements, size_t array_size, bool all_elements_present)
 {
-    for (T i = 0; i < array_size; ++i)
+    for (size_t i = 0; i < array_size; ++i)
     {
         array_elements[i] = i;
     }
-    for (T i = 0; i < nb_elements_to_have; ++i)
+    auto [dist, gen] = uni_int_dist(0, array_size - 1);
+    for (size_t i = 0; i < nb_elements_to_have; ++i)
     {
-        elements_to_have[i] = array_elements[std::rand() % array_size];
+        elements_to_have[i] = array_elements[dist(gen)];
     }
     if (!all_elements_present)
     {
@@ -25,13 +34,15 @@ void arrayInit(T* elements_to_have, size_t nb_elements_to_have, T* array_element
 
 void nullMapInit(UInt8 * null_map, size_t null_map_size, size_t nb_null_elements)
 {
-    for (int i = 0; i < null_map_size; ++i)
+    /// -2 to keep the last element of the array non-null
+    auto [dist, gen] = uni_int_dist(0, null_map_size - 2);
+    for (size_t i = 0; i < null_map_size; ++i)
     {
         null_map[i] = 0;
     }
-    for (int i = 0; i < null_map_size - 1 && i < nb_null_elements; ++i)
+    for (size_t i = 0; i < null_map_size - 1 && i < nb_null_elements; ++i)
     {
-        null_map[std::rand() % null_map_size] = 1;
+        null_map[dist(gen)] = 1;
     }
 }
 
