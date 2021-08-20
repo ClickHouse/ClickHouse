@@ -77,7 +77,7 @@ public:
             std::unordered_map<UInt64, String> keys_storage;
             UInt64 current_key_id;
             String nonce;
-            CompressionMethodByte algorithm; 
+            CompressionMethodByte algorithm;
         };
 
         // used to read data from config and create Params
