@@ -208,7 +208,15 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    bool is_live_view{false}; /// true for ALTER LIVE VIEW
+    enum class AlterObjectType
+    {
+        TABLE,
+        DATABASE,
+        LIVE_VIEW
+    };
+
+    // bool is_live_view{false}; /// true for ALTER LIVE VIEW
+    AlterObjectType alter_object = AlterObjectType::TABLE;
 
     ASTExpressionList * command_list = nullptr;
 

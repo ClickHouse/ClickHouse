@@ -461,11 +461,22 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
     frame.need_parens = false;
 
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
 
-    if (is_live_view)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER LIVE VIEW " << (settings.hilite ? hilite_none : "");
-    else
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
+    switch (alter_object)
+    {
+        case AlterObjectType::TABLE:
+            settings.ostr << "ALTER TABLE ";
+            break;
+        case AlterObjectType::DATABASE:
+            settings.ostr << "ALTER DATABASE ";
+            break;
+        case AlterObjectType::LIVE_VIEW:
+            settings.ostr << "ALTER LIVE VIEW ";
+            break;
+    }
+
+    settings.ostr << (settings.hilite ? hilite_none : "");
 
     if (!table.empty())
     {
