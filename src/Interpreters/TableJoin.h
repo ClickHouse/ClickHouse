@@ -123,6 +123,11 @@ private:
     bool inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right);
 
     NamesAndTypesList correctedColumnsAddedByJoin() const;
+    void leftToRightKeyRemap(
+        const Names & left_keys,
+        const Names & right_keys,
+        const NameSet & required_right_keys,
+        std::unordered_map<String, String> & key_map) const;
 
 public:
     TableJoin()
