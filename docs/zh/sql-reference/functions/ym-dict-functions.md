@@ -130,7 +130,7 @@ regionToTopContinent(id[, geobase])
 
 ### regionHierarchy(id\[, geobase\]) {#regionhierarchyid-geobase}
 
-从 Yandex gebase 接收一个 UInt32 数字类型的 region ID 。返回一个区域id数组，由传递的区域和链上的所有父节点组成。
+从 Yandex geobase 接收一个 UInt32 数字类型的 region ID 。返回一个区域id数组，由传递的区域和链上的所有父节点组成。
 示例: `regionHierarchy(toUInt32(213)) = [213,1,3,225,10001,10000]`.
 
 ### regionToName(id\[, lang\]) {#regiontonameid-lang}
