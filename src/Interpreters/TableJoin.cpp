@@ -582,6 +582,25 @@ void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
         on_filter_condition_asts_right[disjunct_num].push_back(ast);
 }
 
+void TableJoin::leftToRightKeyRemap(
+    const Names & left_keys,
+    const Names & right_keys,
+    const NameSet & required_right_keys,
+    std::unordered_map<String, String> & key_map) const
+{
+    if (hasUsing())
+    {
+        for (size_t i = 0; i < left_keys.size(); ++i)
+        {
+            const String & left_key_name = left_keys[i];
+            const String & right_key_name = right_keys[i];
+
+            if (!required_right_keys.contains(right_key_name))
+                key_map[left_key_name] = right_key_name;
+        }
+    }
+}
+
 std::unordered_map<String, String> TableJoin::leftToRightKeyRemap() const
 {
     std::unordered_map<String, String> left_to_right_key_remap;
@@ -589,13 +608,7 @@ std::unordered_map<String, String> TableJoin::leftToRightKeyRemap() const
     {
         const auto & required_right_keys = requiredRightKeys();
         for (size_t i = 0; i < key_names_left.size(); ++i)
-        {
-            const String & left_key_name = key_names_left[i];
-            const String & right_key_name = key_names_right[i];
-
-            if (!required_right_keys.contains(right_key_name))
-                left_to_right_key_remap[left_key_name] = right_key_name;
-        }
+            TableJoin::leftToRightKeyRemap(key_names_left[i], key_names_right[i], required_right_keys, left_to_right_key_remap);
     }
     return left_to_right_key_remap;
 }
