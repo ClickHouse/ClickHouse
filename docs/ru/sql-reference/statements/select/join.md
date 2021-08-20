@@ -19,7 +19,7 @@ FROM <left_table>
 
 ## Поддерживаемые типы соединения {#select-join-types}
 
-Все типы из стандартого [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) поддерживаются:
+Все типы из стандартного [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) поддерживаются:
 
 -   `INNER JOIN`, возвращаются только совпадающие строки.
 -   `LEFT OUTER JOIN`, не совпадающие строки из левой таблицы возвращаются в дополнение к совпадающим строкам.
@@ -33,7 +33,7 @@ FROM <left_table>
 
 -   `LEFT SEMI JOIN` и `RIGHT SEMI JOIN`, белый список по ключам соединения, не производит декартово произведение.
 -   `LEFT ANTI JOIN` и `RIGHT ANTI JOIN`, черный список по ключам соединения, не производит декартово произведение.
--   `LEFT ANY JOIN`, `RIGHT ANY JOIN` и `INNER ANY JOIN`, Частично (для противоположных сторон `LEFT` и `RIGHT`) или полностью (для `INNER` и `FULL`) отключает декартово произведение для стандартых видов `JOIN`.
+-   `LEFT ANY JOIN`, `RIGHT ANY JOIN` и `INNER ANY JOIN`, Частично (для противоположных сторон `LEFT` и `RIGHT`) или полностью (для `INNER` и `FULL`) отключает декартово произведение для стандартных видов `JOIN`.
 -   `ASOF JOIN` и `LEFT ASOF JOIN`, Для соединения последовательностей по нечеткому совпадению. Использование `ASOF JOIN` описано ниже.
 
 ## Настройки {#join-settings}
