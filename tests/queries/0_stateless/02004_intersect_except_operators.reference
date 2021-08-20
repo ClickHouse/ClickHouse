@@ -84,6 +84,13 @@ select count() from (select number from numbers(100) intersect select number fro
 30
 select count() from (select number from numbers(1000000) intersect select number from numbers(200000, 600000) except select number from numbers(300000, 200000) except select number from numbers(600000, 200000));
 200000
+select count() from (select 1 intersect select 1) limit 100;
+1
+select count() from (select 1 except select 2) limit 100;
+1
+with (select count() from (select 1 union distinct select 2 except select 1)) as max
+select count() from (select 1 union all select max) limit 100;
+2
 select 1 union all select 1 intersect select 1;
 1
 1

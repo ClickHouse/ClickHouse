@@ -232,6 +232,12 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
     return ColumnTuple::create(new_columns);
 }
 
+void ColumnTuple::expand(const Filter & mask, bool inverted)
+{
+    for (auto & column : columns)
+        column->expand(mask, inverted);
+}
+
 ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     const size_t tuple_size = columns.size();

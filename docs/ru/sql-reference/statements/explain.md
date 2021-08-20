@@ -385,4 +385,32 @@ ExpressionTransform
             NumbersMt × 2 0 → 1
 ```
 
+### EXPLAIN ESTIMATE {#explain-estimate}
+
+ Отображает оценки числа строк, засечек и кусков, которые будут прочитаны при выполнении запроса. Применяется для таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree). 
+
+**Пример**
+
+Создадим таблицу:
+
+```sql
+CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
+INSERT INTO ttt SELECT number FROM numbers(128);
+OPTIMIZE TABLE ttt;
+```
+
+Запрос:
+
+```sql
+EXPLAIN ESTIMATE SELECT * FROM ttt;
+```
+
+Результат:
+
+```text
+┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
+│ default  │ ttt   │     1 │  128 │     8 │
+└──────────┴───────┴───────┴──────┴───────┘
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/explain/) <!--hide-->
