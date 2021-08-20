@@ -2,6 +2,7 @@
 #include "Common/MemoryTracker.h"
 #include "Columns/ColumnsNumber.h"
 #include "ConnectionParameters.h"
+#include "IO/CompressionMethod.h"
 #include "QueryFuzzer.h"
 #include "Suggest.h"
 #include "TestHint.h"
@@ -1823,7 +1824,7 @@ private:
     void processInsertQuery()
     {
         const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
-        if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
+        if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
         connection->sendQuery(
@@ -1894,7 +1895,24 @@ private:
         if (!parsed_insert_query)
             return;
 
-        if (parsed_insert_query->data)
+        if (parsed_insert_query->infile)
+        {
+            const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
+            const auto in_file = in_file_node.value.safeGet<std::string>();
+
+            auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, ""));
+
+            try
+            {
+                sendDataFrom(*in_buffer, sample, columns_description);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("data for INSERT was parsed from file");
+                throw;
+            }
+        }
+        else if (parsed_insert_query->data)
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);

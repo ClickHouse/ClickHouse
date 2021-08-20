@@ -8,6 +8,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -878,15 +879,38 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     {
         if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
         {
-            /// NOTE: Child of subquery can be ASTSelectWithUnionQuery or ASTSelectQuery,
-            /// and after normalization, the height of the AST tree is at most 2
             for (const auto & elem : ast_union->list_of_selects->children)
             {
+                /// After normalization for union child node the height of the AST tree is at most 2.
                 if (const auto * child_union = elem->as<ASTSelectWithUnionQuery>())
                 {
                     for (const auto & child_elem : child_union->list_of_selects->children)
                         if (hasWithTotalsInAnySubqueryInFromClause(child_elem->as<ASTSelectQuery &>()))
                             return true;
+                }
+                /// After normalization in case there are intersect or except nodes, the height of
+                /// the AST tree can have any depth (each intersect/except adds a level), but the
+                /// number of children in those nodes is always 2.
+                else if (elem->as<ASTSelectIntersectExceptQuery>())
+                {
+                    std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
+                    {
+                        if (const auto * child = child_ast->as <ASTSelectQuery>())
+                            return hasWithTotalsInAnySubqueryInFromClause(child->as<ASTSelectQuery &>());
+
+                        if (const auto * child = child_ast->as<ASTSelectWithUnionQuery>())
+                            for (const auto & subchild : child->list_of_selects->children)
+                                if (traverse_recursively(subchild))
+                                    return true;
+
+                        if (const auto * child = child_ast->as<ASTSelectIntersectExceptQuery>())
+                            for (const auto & subchild : child->children)
+                                if (traverse_recursively(subchild))
+                                    return true;
+                        return false;
+                    };
+                    if (traverse_recursively(elem))
+                        return true;
                 }
                 else
                 {
