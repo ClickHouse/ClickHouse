@@ -14,7 +14,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -32,6 +31,7 @@
 #include "StorageLogSettings.h"
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
 
 #include <cassert>
@@ -154,12 +154,13 @@ private:
 };
 
 
-class StripeLogBlockOutputStream final : public IBlockOutputStream
+class StripeLogSink final : public SinkToStorage
 {
 public:
-    explicit StripeLogBlockOutputStream(
+    explicit StripeLogSink(
         StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, std::unique_lock<std::shared_timed_mutex> && lock_)
-        : storage(storage_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
         , data_out_file(storage.table_path + "data.bin")
@@ -182,7 +183,9 @@ public:
         }
     }
 
-    ~StripeLogBlockOutputStream() override
+    String getName() const override { return "StripeLogSink"; }
+
+    ~StripeLogSink() override
     {
         try
         {
@@ -203,14 +206,12 @@ public:
         }
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
-
-    void write(const Block & block) override
+    void consume(Chunk chunk) override
     {
-        block_out.write(block);
+        block_out.write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
-    void writeSuffix() override
+    void onFinish() override
     {
         if (done)
             return;
@@ -369,13 +370,13 @@ Pipe StorageStripeLog::read(
 }
 
 
-BlockOutputStreamPtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::unique_lock lock(rwlock, getLockTimeout(context));
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
-    return std::make_shared<StripeLogBlockOutputStream>(*this, metadata_snapshot, std::move(lock));
+    return std::make_shared<StripeLogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
 

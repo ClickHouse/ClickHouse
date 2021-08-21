@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
+#include <Storages/MergeTree/DropPartsRanges.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -99,6 +100,10 @@ private:
       * Used to determine which merges can be assigned (see ReplicatedMergeTreeMergePredicate)
       */
     ActiveDataPartSet virtual_parts;
+
+
+    /// Dropped ranges inserted into queue
+    DropPartsRanges drop_ranges;
 
     /// A set of mutations loaded from ZooKeeper.
     /// mutations_by_partition is an index partition ID -> block ID -> mutation into this set.
@@ -281,11 +286,6 @@ public:
       */
     void insert(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
-    /** Delete the action with the specified part (as new_part_name) from the queue.
-      * Called for unreachable actions in the queue - old lost parts.
-      */
-    bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
-
     /** Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
       * If queue was not empty load() would not load duplicate records.
       * return true, if we update queue.
@@ -294,13 +294,22 @@ public:
 
     bool removeFailedQuorumPart(const MergeTreePartInfo & part_info);
 
+    enum PullLogsReason
+    {
+        LOAD,
+        UPDATE,
+        MERGE_PREDICATE,
+        SYNC,
+        OTHER,
+    };
+
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
       * If watch_callback is not empty, will call it when new entries appear in the log.
       * If there were new entries, notifies storage.queue_task_handle.
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       * Return the version of "logs" node (that is updated for every merge/mutation/... added to the log)
       */
-    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
+    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
@@ -377,6 +386,11 @@ public:
 
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
+
+    /// Check that part produced by some entry in queue and get source parts for it.
+    /// If there are several entries return largest source_parts set. This rarely possible
+    /// for example after replica clone.
+    bool checkPartInQueueAndGetSourceParts(const String & part_name, Strings & source_parts) const;
 
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
     /// Locks queue's mutex.
@@ -474,6 +488,8 @@ public:
 
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }
+
+    bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
 
 private:
     const ReplicatedMergeTreeQueue & queue;

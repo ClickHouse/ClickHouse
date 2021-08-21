@@ -742,19 +742,11 @@ CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2
 
 ## 库 {#ku}
 
-**1.** 使用C++20标准库（允许实验性功能），以及 `boost` 和 `Poco` 框架。
+**1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
-**2.** 如有必要，您可以使用 OS 包中提供的任何已知库。
+**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse.
 
-如果有一个好的解决方案已经可用，那就使用它，即使这意味着你必须安装另一个库。
-
-（但要准备从代码中删除不好的库）
-
-**3.** 如果软件包没有您需要的软件包或者有过时的版本或错误的编译类型，则可以安装不在软件包中的库。
-
-**4.** 如果库很小并且没有自己的复杂构建系统，请将源文件放在 `contrib` 文件夹中。
-
-**5.** 始终优先考虑已经使用的库。
+**3.** Preference is always given to libraries that are already in use.
 
 ## 一般建议 {#yi-ban-jian-yi-1}
 

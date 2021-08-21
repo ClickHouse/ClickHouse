@@ -626,6 +626,82 @@ def role_not_present(self, ldap_server, ldap_user):
 
 @TestScenario
 @Requirements(
+    RQ_SRS_014_LDAP_RoleMapping_RBAC_Role_NotPresent("1.0")
+)
+def add_new_role_not_present(self, ldap_server, ldap_user):
+    """Check that LDAP user can still authenticate when the LDAP
+    user is added to a new LDAP group that does not match any existing
+    RBAC roles while having other role being already mapped.
+    """
+    uid = getuid()
+    role_name = f"role_{uid}"
+
+    role_mappings = [
+        {
+            "base_dn": "ou=groups,dc=company,dc=com",
+            "attribute": "cn",
+            "search_filter": "(&(objectClass=groupOfUniqueNames)(uniquemember={bind_dn}))",
+            "prefix": "clickhouse_"
+        }
+    ]
+
+    with Given("I add LDAP group"):
+        groups = add_ldap_groups(groups=({"cn": "clickhouse_" + role_name},))
+
+    with And("I add LDAP user to the group"):
+        add_user_to_group_in_ldap(user=ldap_user, group=groups[0])
+
+    with And("I add matching RBAC role"):
+        roles = add_rbac_roles(roles=(f"{role_name}",))
+
+    with And("I add LDAP external user directory configuration"):
+        add_ldap_external_user_directory(server=ldap_server,
+            role_mappings=role_mappings, restart=True)
+
+    with When(f"I login as an LDAP user"):
+        r = self.context.node.query(f"SHOW GRANTS", settings=[
+            ("user", ldap_user["username"]), ("password", ldap_user["password"])], no_checks=True)
+
+        with Then("I expect the login to succeed"):
+            assert r.exitcode == 0, error()
+
+        with And("the user should have the mapped LDAP role"):
+            assert f"{role_name}" in r.output, error()
+
+    with When("I add LDAP group that maps to unknown role"):
+        unknown_groups = add_ldap_groups(groups=({"cn": "clickhouse_" + role_name + "_unknown"},))
+
+    with And("I add LDAP user to the group that maps to unknown role"):
+        add_user_to_group_in_ldap(user=ldap_user, group=unknown_groups[0])
+
+    with And(f"I again login as an LDAP user"):
+        r = self.context.node.query(f"SHOW GRANTS", settings=[
+            ("user", ldap_user["username"]), ("password", ldap_user["password"])], no_checks=True)
+
+        with Then("I expect the login to succeed"):
+            assert r.exitcode == 0, error()
+
+        with And("the user should still have the present mapped LDAP role"):
+            assert f"{role_name}" in r.output, error()
+
+    with When("I add matching previously unknown RBAC role"):
+        unknown_roles = add_rbac_roles(roles=(f"{role_name}_unknown",))
+
+    with And(f"I again login as an LDAP user after previously unknown RBAC role has been added"):
+        r = self.context.node.query(f"SHOW GRANTS", settings=[
+            ("user", ldap_user["username"]), ("password", ldap_user["password"])], no_checks=True)
+
+        with Then("I expect the login to succeed"):
+            assert r.exitcode == 0, error()
+
+        with And("the user should still have the first mapped LDAP role"):
+            assert f"{role_name}" in r.output, error()
+
+        with And("the user should have the previously unknown mapped LDAP role"):
+            assert f"{role_name}_unknown" in r.output, error()
+
+@TestScenario
+@Requirements(
     RQ_SRS_014_LDAP_RoleMapping_RBAC_Role_Removed("1.0"),
     RQ_SRS_014_LDAP_RoleMapping_RBAC_Role_Readded("1.0")
 )

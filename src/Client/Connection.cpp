@@ -580,6 +580,12 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 
 void Connection::sendScalarsData(Scalars & data)
 {
+    /// Avoid sending scalars to old servers. Note that this isn't a full fix. We didn't introduce a
+    /// dedicated revision after introducing scalars, so this will still break some versions with
+    /// revision 54428.
+    if (server_revision < DBMS_MIN_REVISION_WITH_SCALARS)
+        return;
+
     if (data.empty())
         return;
 

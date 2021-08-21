@@ -10,16 +10,16 @@ def subquery_expr_preceding(self):
     expected = convert_output("""
      sum | unique1
     -----+---------
-       0 |       0
-       1 |       1
-       3 |       2
-       5 |       3
-       7 |       4
-       9 |       5
-      11 |       6
-      13 |       7
-      15 |       8
-      17 |       9
+       0 |   0
+       1 |   1
+       3 |   2
+       5 |   3
+       7 |   4
+       9 |   5
+      11 |   6
+      13 |   7
+      15 |   8
+      17 |   9
     """)
 
     execute_query(
@@ -272,7 +272,7 @@ def windows_with_same_partitioning_but_different_ordering(self):
     but different ordering.
     """
     expected = convert_output("""
-    first |     last
+    first | last
     ------+-----
     7     | 7
     7     | 9
@@ -367,16 +367,16 @@ def in_view(self):
     expected = convert_output("""
      number  | sum_rows
     ---------+----------
-      1 |        3
-      2 |        6
-      3 |        9
-      4 |       12
-      5 |       15
-      6 |       18
-      7 |       21
-      8 |       24
-      9 |       27
-     10 |       19
+      1      |   3
+      2      |   6
+      3      |   9
+      4      |  12
+      5      |  15
+      6      |  18
+      7      |  21
+      8      |  24
+      9      |  27
+     10      |  19
     """)
 
     execute_query(

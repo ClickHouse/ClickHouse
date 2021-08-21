@@ -21,10 +21,9 @@ import socket
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
+                                main_configs=['configs/kafka.xml'],
                                 with_kerberized_kafka=True,
-                                clickhouse_path_dir="clickhouse_path"
-                                )
+                                clickhouse_path_dir="clickhouse_path")
 
 def producer_serializer(x):
     return x.encode() if isinstance(x, str) else x

@@ -57,7 +57,7 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]na
 Недоработано выполнение запросов `ALTER` над материализованными представлениями, поэтому они могут быть неудобными для использования. Если материализованное представление использует конструкцию `TO [db.]name`, то можно выполнить `DETACH` представления, `ALTER` для целевой таблицы и последующий `ATTACH` ранее отсоединенного (`DETACH`) представления.
 
 Обратите внимание, что работа материализованного представления находится под влиянием настройки [optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert). Перед вставкой данных в таблицу происходит их слияние.
- 
+
 Представления выглядят так же, как обычные таблицы. Например, они перечисляются в результате запроса `SHOW TABLES`.
 
 Чтобы удалить представление, следует использовать [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Впрочем, `DROP TABLE` тоже работает для представлений.
@@ -65,8 +65,8 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]na
 ## LIVE-представления {#live-view}
 
 !!! important "Важно"
-   Представления `LIVE VIEW` являются экспериментальной возможностью. Их использование может повлечь потерю совместимости в будущих версиях. 
-   Чтобы использовать `LIVE VIEW` и запросы `WATCH`, включите настройку [allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view). 
+   Представления `LIVE VIEW` являются экспериментальной возможностью. Их использование может повлечь потерю совместимости в будущих версиях.
+   Чтобы использовать `LIVE VIEW` и запросы `WATCH`, включите настройку [allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view).
 
 ```sql
 CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
@@ -154,7 +154,7 @@ SELECT * FROM [db.]live_view WHERE ...
 
 ### Секция WITH TIMEOUT {#live-view-with-timeout}
 
-LIVE-представление, созданное с параметром `WITH TIMEOUT`, будет автоматически удалено через определенное количество секунд с момента предыдущего запроса [WATCH](../../../sql-reference/statements/watch.md), примененного к данному LIVE-представлению. 
+LIVE-представление, созданное с параметром `WITH TIMEOUT`, будет автоматически удалено через определенное количество секунд с момента предыдущего запроса [WATCH](../../../sql-reference/statements/watch.md), примененного к данному LIVE-представлению.
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
@@ -198,7 +198,7 @@ WATCH lv;
 └─────────────────────┴──────────┘
 ```
 
-Параметры `WITH TIMEOUT` и `WITH REFRESH` можно сочетать с помощью `AND`. 
+Параметры `WITH TIMEOUT` и `WITH REFRESH` можно сочетать с помощью `AND`.
 
 ```sql
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AND REFRESH [value_in_sec] AS SELECT ...
@@ -217,7 +217,7 @@ WATCH lv;
 ```
 
 ```
-Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv doesn't exist.. 
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv doesn't exist..
 ```
 
 ### Использование {#live-view-usage}

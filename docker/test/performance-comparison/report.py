@@ -489,7 +489,7 @@ if args.report == 'main':
         text = tableStart('Test Times')
         text += tableHeader(columns, attrs)
 
-        allowed_average_run_time = 1.6 # 30 seconds per test at 7 runs
+        allowed_average_run_time = 3.75 # 60 seconds per test at (7 + 1) * 2 runs
         for r in rows:
             anchor = f'{currentTableAnchor()}.{r[0]}'
             total_runs = (int(r[7]) + 1) * 2  # one prewarm run, two servers
@@ -561,7 +561,7 @@ if args.report == 'main':
     # Don't show mildly unstable queries, only the very unstable ones we
     # treat as errors.
     if very_unstable_queries:
-        if very_unstable_queries > 3:
+        if very_unstable_queries > 5:
             error_tests += very_unstable_queries
             status = 'failure'
         message_array.append(str(very_unstable_queries) + ' unstable')

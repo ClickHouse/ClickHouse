@@ -39,7 +39,7 @@ public:
         const String & path,
         size_t buf_size,
         size_t estimated_size,
-        size_t aio_threshold,
+        size_t direct_io_threshold,
         size_t mmap_threshold,
         MMappedFileCache * mmap_cache) const override;
 
@@ -65,11 +65,12 @@ public:
     String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     DiskType::Type getType() const override { return delegate->getType(); }
+    bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;
     void startup() override;
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
 protected:
     Executor & getExecutor() override;

@@ -31,6 +31,8 @@ ClickHouse поддерживает синтаксис `COUNT(DISTINCT ...)`. П
 
 Запрос `SELECT count() FROM table` не оптимизирован, поскольку количество записей в таблице не хранится отдельно. Он выбирает небольшой столбец из таблицы и подсчитывает количество значений в нём.
 
+При этом запрос `SELECT count(nullable_column) FROM table` может быть оптимизирован включением настройки [optimize_functions_to_subcolumns](../../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [null](../../../sql-reference/data-types/nullable.md#finding-null) вместо чтения всех данных столбца. Запрос `SELECT count(n) FROM table` преобразуется к запросу `SELECT sum(NOT n.null) FROM table`.
+
 **Примеры**
 
 Пример 1:
@@ -68,4 +70,3 @@ SELECT count(DISTINCT num) FROM t
 ```
 
 Этот пример показывает, что `count(DISTINCT num)` выполняется с помощью функции `uniqExact` в соответствии со значением настройки `count_distinct_implementation`.
-

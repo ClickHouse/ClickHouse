@@ -115,7 +115,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
     auto hdfs_path = remote_fs_root_path + file_name;
 
     LOG_DEBUG(log, "{} to file by path: {}. HDFS path: {}", mode == WriteMode::Rewrite ? "Write" : "Append",
-              backQuote(metadata_path + path), remote_fs_root_path + hdfs_path);
+              backQuote(metadata_path + path), hdfs_path);
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(hdfs_path,
@@ -153,6 +153,14 @@ void DiskHDFS::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
         });
 }
 
+bool DiskHDFS::checkUniqueId(const String & hdfs_uri) const
+{
+    if (!boost::algorithm::starts_with(hdfs_uri, remote_fs_root_path))
+        return false;
+    const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
+    const String remote_fs_object_path = hdfs_uri.substr(begin_of_path);
+    return (0 == hdfsExists(hdfs_fs.get(), remote_fs_object_path.c_str()));
+}
 
 namespace
 {
@@ -170,7 +178,8 @@ void registerDiskHDFS(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      ContextPtr context_) -> DiskPtr
+                      ContextPtr context_,
+                      const DisksMap & /*map*/) -> DiskPtr
     {
         fs::path disk = fs::path(context_->getPath()) / "disks" / name;
         fs::create_directories(disk);

@@ -30,6 +30,7 @@ def started_cluster():
 
 def test_chroot_with_same_root(started_cluster):
     for i, node in enumerate([node1, node2]):
+        node.query('DROP TABLE IF EXISTS simple SYNC')
         node.query('''
         CREATE TABLE simple (date Date, id UInt32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
@@ -44,6 +45,7 @@ def test_chroot_with_same_root(started_cluster):
 
 def test_chroot_with_different_root(started_cluster):
     for i, node in [(1, node1), (3, node3)]:
+        node.query('DROP TABLE IF EXISTS simple_different SYNC')
         node.query('''
         CREATE TABLE simple_different (date Date, id UInt32)
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple_different', '{replica}', date, id, 8192);

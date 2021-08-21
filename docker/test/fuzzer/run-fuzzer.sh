@@ -103,6 +103,7 @@ function fuzz
     kill -0 $server_pid
 
     echo "
+set follow-fork-mode child
 handle all noprint
 handle SIGSEGV stop print
 handle SIGBUS stop print
@@ -193,6 +194,10 @@ continue
     jobs
     pstree -aspgT
 
+    server_exit_code=0
+    wait $server_pid || server_exit_code=$?
+    echo "Server exit code is $server_exit_code"
+
     # Make files with status and description we'll show for this check on Github.
     task_exit_code=$fuzzer_exit_code
     if [ "$server_died" == 1 ]
@@ -200,7 +205,7 @@ continue
         # The server has died.
         task_exit_code=210
         echo "failure" > status.txt
-        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
+        if ! grep --text -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi
@@ -220,8 +225,8 @@ continue
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
-        { grep -o "Found error:.*" fuzzer.log \
-            || grep -o "Exception.*" fuzzer.log \
+        { grep --text -o "Found error:.*" fuzzer.log \
+            || grep --text -ao "Exception:.*" fuzzer.log \
             || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <optional>
 #include <Storages/IStorage.h>
 
@@ -23,9 +23,9 @@ class Context;
   *  In multithreaded case, if even_distributed is False, implementation with atomic is used,
   *     and result is always in [0 ... limit - 1] range.
   */
-class StorageSystemNumbers final : public ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
+class StorageSystemNumbers final : public shared_ptr_helper<StorageSystemNumbers>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageSystemNumbers>;
+    friend struct shared_ptr_helper<StorageSystemNumbers>;
 public:
     std::string getName() const override { return "SystemNumbers"; }
 

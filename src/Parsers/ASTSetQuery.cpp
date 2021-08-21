@@ -1,6 +1,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/formatSettingName.h>
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
 
 

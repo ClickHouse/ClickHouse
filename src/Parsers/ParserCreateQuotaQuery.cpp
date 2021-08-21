@@ -9,7 +9,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <ext/range.h>
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <common/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 
@@ -62,7 +63,7 @@ namespace
             boost::to_lower(name);
             boost::replace_all(name, " ", "_");
 
-            for (auto kt : ext::range(Quota::KeyType::MAX))
+            for (auto kt : collections::range(Quota::KeyType::MAX))
             {
                 if (KeyTypeInfo::get(kt).name == name)
                 {
@@ -72,7 +73,7 @@ namespace
             }
 
             String all_types_str;
-            for (auto kt : ext::range(Quota::KeyType::MAX))
+            for (auto kt : collections::range(Quota::KeyType::MAX))
                 all_types_str += String(all_types_str.empty() ? "" : ", ") + "'" + KeyTypeInfo::get(kt).name + "'";
             String msg = "Quota cannot be keyed by '" + name + "'. Expected one of the following identifiers: " + all_types_str;
             throw Exception(msg, ErrorCodes::SYNTAX_ERROR);
@@ -84,7 +85,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            for (auto rt : ext::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto rt : collections::range(Quota::MAX_RESOURCE_TYPE))
             {
                 if (ParserKeyword{ResourceTypeInfo::get(rt).keyword.c_str()}.ignore(pos, expected))
                 {
@@ -98,7 +99,7 @@ namespace
                 return false;
 
             String name = getIdentifierName(ast);
-            for (auto rt : ext::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto rt : collections::range(Quota::MAX_RESOURCE_TYPE))
             {
                 if (ResourceTypeInfo::get(rt).name == name)
                 {

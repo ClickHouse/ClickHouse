@@ -73,3 +73,8 @@ services:
         condition: service_healthy
       kerberos:
         condition: service_healthy
+
+networks:
+  default:
+    name: krbnet
+    driver: bridge

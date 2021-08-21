@@ -50,7 +50,7 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
 
 void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    HTMLForm params(request);
+    HTMLForm params(getContext()->getSettingsRef(), request);
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     if (mode == "read")

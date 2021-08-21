@@ -61,4 +61,4 @@ SELECT * FROM system.dictionaries
 └──────────┴──────┴────────┴─────────────┴──────┴────────┴──────────────────────────────────────┴─────────────────────┴─────────────────┴─────────────┴──────────┴───────────────┴───────────────────────┴────────────────────────────┴──────────────┴──────────────┴─────────────────────┴──────────────────────────────┘───────────────────────┴────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/dictionaries) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/dictionaries) <!--hide-->
