@@ -57,6 +57,9 @@ struct LocalQueryState
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
+    /// Time after the last check to stop the request and send the progress.
+    Stopwatch after_send_progress;
+    Stopwatch query_execution_time;
 
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
@@ -67,6 +70,8 @@ class LocalConnection : public IServerConnection, WithContext
 {
 public:
     explicit LocalConnection(ContextPtr context_);
+    ~LocalConnection() override;
+
     void setDefaultDatabase(const String & database) override;
 
     void getServerVersion(const ConnectionTimeouts & timeouts,
@@ -131,17 +136,11 @@ private:
     String server_display_name;
     String default_database;
 
-    UInt64 interactive_delay = 100000;
-
     /// At the moment, only one ongoing query in the connection is supported at a time.
     std::optional<LocalQueryState> state;
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;
-
-    /// Time after the last check to stop the request and send the progress.
-    Stopwatch after_check_cancelled;
-    Stopwatch after_send_progress;
 
     void initBlockInput();
 
@@ -156,8 +155,6 @@ private:
     void finishQuery();
 
     void updateProgress(const Progress & value);
-
-    void processInsertQuery();
 
     bool pollImpl();
 };

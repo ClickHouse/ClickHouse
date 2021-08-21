@@ -22,7 +22,6 @@
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
 #endif
-#include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
@@ -30,18 +29,13 @@
 #include <Common/PODArray.h>
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
-#include <Common/InterruptListener.h>
 #include "Common/MemoryTracker.h"
 
 #include <Core/QueryProcessingStage.h>
-#include <Client/Connection.h>
+#include <Client/TestHint.h>
 #include <Columns/ColumnString.h>
 #include "Columns/ColumnsNumber.h"
 #include <Poco/Util/Application.h>
-
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -101,30 +95,298 @@ namespace ErrorCodes
 }
 
 
-static bool queryHasWithClause(const IAST * ast)
+void Client::processError(const String & query) const
 {
-    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(ast); select && select->with())
+    if (server_exception)
     {
-        return true;
+        bool print_stack_trace = config().getBool("stacktrace", false);
+        std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
+                  << getExceptionMessage(*server_exception, print_stack_trace, true) << std::endl;
+        if (is_interactive)
+            std::cerr << std::endl;
     }
 
-    // This full recursive walk is somewhat excessive, because most of the
-    // children are not queries, but on the other hand it will let us to avoid
-    // breakage when the AST structure changes and some new variant of query
-    // nesting is added. This function is used in fuzzer, so it's better to be
-    // defensive and avoid weird unexpected errors.
-    // clang-tidy is confused by this function: it thinks that if `select` is
-    // nullptr, `ast` is also nullptr, and complains about nullptr dereference.
-    // NOLINTNEXTLINE
-    for (const auto & child : ast->children)
+    if (client_exception)
     {
-        if (queryHasWithClause(child.get()))
+        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, client_exception->message());
+        if (is_interactive)
+            fmt::print(stderr, "\n");
+    }
+
+    // A debug check -- at least some exception must be set, if the error
+    // flag is set, and vice versa.
+    assert(have_error == (client_exception || server_exception));
+}
+
+
+void Client::processSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
+{
+    client_exception.reset();
+    server_exception.reset();
+
+    {
+        /// Temporarily apply query settings to context.
+        std::optional<Settings> old_settings;
+        SCOPE_EXIT_SAFE({
+            if (old_settings)
+                global_context->setSettings(*old_settings);
+        });
+
+        auto apply_query_settings = [&](const IAST & settings_ast)
         {
-            return true;
+            if (!old_settings)
+                old_settings.emplace(global_context->getSettingsRef());
+            global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
+        };
+
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
+        if (insert && insert->settings_ast)
+            apply_query_settings(*insert->settings_ast);
+
+        /// FIXME: try to prettify this cast using `as<>()`
+        const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
+        if (with_output && with_output->settings_ast)
+            apply_query_settings(*with_output->settings_ast);
+
+        if (!connection->checkConnected())
+            connect();
+
+        ASTPtr input_function;
+        if (insert && insert->select)
+            insert->tryFindInputFunction(input_function);
+
+        /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
+        if (insert && (!insert->select || input_function) && !insert->watch)
+        {
+            if (input_function && insert->format.empty())
+                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
+
+            processInsertQuery(query_to_execute, parsed_query);
+        }
+        else
+            processOrdinaryQuery(query_to_execute, parsed_query);
+    }
+
+    /// Do not change context (current DB, settings) in case of an exception.
+    if (!have_error)
+    {
+        if (const auto * set_query = parsed_query->as<ASTSetQuery>())
+        {
+            /// Save all changes in settings to avoid losing them if the connection is lost.
+            for (const auto & change : set_query->changes)
+            {
+                if (change.name == "profile")
+                    current_profile = change.value.safeGet<String>();
+                else
+                    global_context->applySettingChange(change);
+            }
+        }
+        if (const auto * use_query = parsed_query->as<ASTUseQuery>())
+        {
+            const String & new_database = use_query->database;
+            /// If the client initiates the reconnection, it takes the settings from the config.
+            config().setString("database", new_database);
+            /// If the connection initiates the reconnection, it uses its variable.
+            connection->setDefaultDatabase(new_database);
         }
     }
+}
 
-    return false;
+
+bool Client::processMultiQuery(const String & all_queries_text)
+{
+    // It makes sense not to base any control flow on this, so that it is
+    // the same in tests and in normal usage. The only difference is that in
+    // normal mode we ignore the test hints.
+    const bool test_mode = config().has("testmode");
+    if (test_mode)
+    {
+        /// disable logs if expects errors
+        TestHint test_hint(test_mode, all_queries_text);
+        if (test_hint.clientError() || test_hint.serverError())
+            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
+    }
+
+    bool echo_query = echo_queries;
+
+    /// Several queries separated by ';'.
+    /// INSERT data is ended by the end of line, not ';'.
+    /// An exception is VALUES format where we also support semicolon in
+    /// addition to end of line.
+    const char * this_query_begin = all_queries_text.data();
+    const char * this_query_end;
+    const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
+
+    String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
+    String query_to_execute;
+    ASTPtr parsed_query;
+    std::optional<Exception> current_exception;
+
+    while (true)
+    {
+        auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
+                                           query_to_execute, parsed_query, all_queries_text, current_exception);
+        switch (stage)
+        {
+            case MultiQueryProcessingStage::QUERIES_END:
+            case MultiQueryProcessingStage::PARSING_FAILED:
+            {
+                return true;
+            }
+            case MultiQueryProcessingStage::CONTINUE_PARSING:
+            {
+                continue;
+            }
+            case MultiQueryProcessingStage::PARSING_EXCEPTION:
+            {
+                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
+
+                // Try to find test hint for syntax error. We don't know where
+                // the query ends because we failed to parse it, so we consume
+                // the entire line.
+                TestHint hint(test_mode, String(this_query_begin, this_query_end - this_query_begin));
+                if (hint.serverError())
+                {
+                    // Syntax errors are considered as client errors
+                    current_exception->addMessage("\nExpected server error '{}'.", hint.serverError());
+                    current_exception->rethrow();
+                }
+
+                if (hint.clientError() != current_exception->code())
+                {
+                    if (hint.clientError())
+                        current_exception->addMessage("\nExpected client error: " + std::to_string(hint.clientError()));
+                    current_exception->rethrow();
+                }
+
+                /// It's expected syntax error, skip the line
+                this_query_begin = this_query_end;
+                current_exception.reset();
+
+                continue;
+            }
+            case MultiQueryProcessingStage::EXECUTE_QUERY:
+            {
+                full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+                if (query_fuzzer_runs)
+                {
+                    if (!processWithFuzzing(full_query))
+                        return false;
+                    this_query_begin = this_query_end;
+                    continue;
+                }
+
+                // Now we know for sure where the query ends.
+                // Look for the hint in the text of query + insert data + trailing
+                // comments,
+                // e.g. insert into t format CSV 'a' -- { serverError 123 }.
+                // Use the updated query boundaries we just calculated.
+                TestHint test_hint(test_mode, full_query);
+                // Echo all queries if asked; makes for a more readable reference
+                // file.
+                echo_query = test_hint.echoQueries().value_or(echo_query);
+                try
+                {
+                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
+                }
+                catch (...)
+                {
+                    // Surprisingly, this is a client error. A server error would
+                    // have been reported w/o throwing (see onReceiveSeverException()).
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    have_error = true;
+                }
+                // Check whether the error (or its absence) matches the test hints
+                // (or their absence).
+                bool error_matches_hint = true;
+                if (have_error)
+                {
+                    if (test_hint.serverError())
+                    {
+                        if (!server_exception)
+                        {
+                            error_matches_hint = false;
+                            fmt::print(stderr, "Expected server error code '{}' but got no server error.\n", test_hint.serverError());
+                        }
+                        else if (server_exception->code() != test_hint.serverError())
+                        {
+                            error_matches_hint = false;
+                            std::cerr << "Expected server error code: " << test_hint.serverError() << " but got: " << server_exception->code()
+                                        << "." << std::endl;
+                        }
+                    }
+                    if (test_hint.clientError())
+                    {
+                        if (!client_exception)
+                        {
+                            error_matches_hint = false;
+                            fmt::print(stderr, "Expected client error code '{}' but got no client error.\n", test_hint.clientError());
+                        }
+                        else if (client_exception->code() != test_hint.clientError())
+                        {
+                            error_matches_hint = false;
+                            fmt::print(
+                                stderr, "Expected client error code '{}' but got '{}'.\n", test_hint.clientError(), client_exception->code());
+                        }
+                    }
+                    if (!test_hint.clientError() && !test_hint.serverError())
+                    {
+                        // No error was expected but it still occurred. This is the
+                        // default case w/o test hint, doesn't need additional
+                        // diagnostics.
+                        error_matches_hint = false;
+                    }
+                }
+                else
+                {
+                    if (test_hint.clientError())
+                    {
+                        fmt::print(stderr, "The query succeeded but the client error '{}' was expected.\n", test_hint.clientError());
+                        error_matches_hint = false;
+                    }
+                    if (test_hint.serverError())
+                    {
+                        fmt::print(stderr, "The query succeeded but the server error '{}' was expected.\n", test_hint.serverError());
+                        error_matches_hint = false;
+                    }
+                }
+                // If the error is expected, force reconnect and ignore it.
+                if (have_error && error_matches_hint)
+                {
+                    client_exception.reset();
+                    server_exception.reset();
+                    have_error = false;
+
+                    if (!connection->checkConnected())
+                        connect();
+                }
+
+                // For INSERTs with inline data: use the end of inline data as
+                // reported by the format parser (it is saved in sendData()).
+                // This allows us to handle queries like:
+                //   insert into t values (1); select 1
+                // , where the inline data is delimited by semicolon and not by a
+                // newline.
+                auto * insert_ast = parsed_query->as<ASTInsertQuery>();
+                if (insert_ast && insert_ast->data)
+                {
+                    this_query_end = insert_ast->end;
+                    adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
+                }
+
+                // Report error.
+                if (have_error)
+                    processError(full_query);
+
+                // Stop processing queries if needed.
+                if (have_error && !ignore_error)
+                    return is_interactive;
+
+                this_query_begin = this_query_end;
+                break;
+            }
+        }
+    }
 }
 
 
@@ -424,30 +686,6 @@ void Client::connect()
 }
 
 
-void Client::processError(const String & query) const
-{
-    if (server_exception)
-    {
-        bool print_stack_trace = config().getBool("stacktrace", false);
-        std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
-                  << getExceptionMessage(*server_exception, print_stack_trace, true) << std::endl;
-        if (is_interactive)
-            std::cerr << std::endl;
-    }
-
-    if (client_exception)
-    {
-        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, client_exception->message());
-        if (is_interactive)
-            fmt::print(stderr, "\n");
-    }
-
-    // A debug check -- at least some exception must be set, if the error
-    // flag is set, and vice versa.
-    assert(have_error == (client_exception || server_exception));
-}
-
-
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
 void Client::printChangedSettings() const
 {
@@ -472,77 +710,30 @@ void Client::printChangedSettings() const
 }
 
 
-void Client::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
+static bool queryHasWithClause(const IAST * ast)
 {
-    client_exception.reset();
-    server_exception.reset();
-
+    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(ast); select && select->with())
     {
-        /// Temporarily apply query settings to context.
-        std::optional<Settings> old_settings;
-        SCOPE_EXIT_SAFE({
-            if (old_settings)
-                global_context->setSettings(*old_settings);
-        });
-
-        auto apply_query_settings = [&](const IAST & settings_ast)
-        {
-            if (!old_settings)
-                old_settings.emplace(global_context->getSettingsRef());
-            global_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
-        };
-
-        const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (insert && insert->settings_ast)
-            apply_query_settings(*insert->settings_ast);
-
-        /// FIXME: try to prettify this cast using `as<>()`
-        const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
-        if (with_output && with_output->settings_ast)
-            apply_query_settings(*with_output->settings_ast);
-
-        if (!connection->checkConnected())
-            connect();
-
-        ASTPtr input_function;
-        if (insert && insert->select)
-            insert->tryFindInputFunction(input_function);
-
-        /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !insert->watch)
-        {
-            if (input_function && insert->format.empty())
-                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
-
-            processInsertQuery(query_to_execute, parsed_query);
-        }
-        else
-            processOrdinaryQuery(query_to_execute, parsed_query);
+        return true;
     }
 
-    /// Do not change context (current DB, settings) in case of an exception.
-    if (!have_error)
+    // This full recursive walk is somewhat excessive, because most of the
+    // children are not queries, but on the other hand it will let us to avoid
+    // breakage when the AST structure changes and some new variant of query
+    // nesting is added. This function is used in fuzzer, so it's better to be
+    // defensive and avoid weird unexpected errors.
+    // clang-tidy is confused by this function: it thinks that if `select` is
+    // nullptr, `ast` is also nullptr, and complains about nullptr dereference.
+    // NOLINTNEXTLINE
+    for (const auto & child : ast->children)
     {
-        if (const auto * set_query = parsed_query->as<ASTSetQuery>())
+        if (queryHasWithClause(child.get()))
         {
-            /// Save all changes in settings to avoid losing them if the connection is lost.
-            for (const auto & change : set_query->changes)
-            {
-                if (change.name == "profile")
-                    current_profile = change.value.safeGet<String>();
-                else
-                    global_context->applySettingChange(change);
-            }
-        }
-        if (const auto * use_query = parsed_query->as<ASTUseQuery>())
-        {
-            const String & new_database = use_query->database;
-            /// If the client initiates the reconnection, it takes the settings from the config.
-            config().setString("database", new_database);
-            /// If the connection initiates the reconnection, it uses its variable.
-            connection->setDefaultDatabase(new_database);
+            return true;
         }
     }
+
+    return false;
 }
 
 

@@ -20,6 +20,15 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+enum MultiQueryProcessingStage
+{
+    QUERIES_END,
+    PARSING_EXCEPTION,
+    CONTINUE_PARSING,
+    EXECUTE_QUERY,
+    PARSING_FAILED,
+};
+
 class ClientBase : public Poco::Util::Application
 {
 
@@ -33,34 +42,31 @@ protected:
     void runInteractive();
     void runNonInteractive();
 
+    /// Prepare for and call either runInteractive() or runNonInteractive().
+    virtual int mainImpl() = 0;
+
     virtual bool processWithFuzzing(const String &)
     {
         throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /// Process single query.
-    virtual void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) = 0;
+    virtual void connect() {}
 
-    /// Methods, which can be called from executeSingleQuery.
-    void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
-    void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
-
-    void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
-        ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
+    virtual void processSingleQuery(const String & query_to_execute, ASTPtr parsed_query) = 0;
+    virtual bool processMultiQuery(const String & all_queries_text) = 0;
 
     virtual void processError(const String & query) const = 0;
     virtual void loadSuggestionData(Suggest &) = 0;
 
-    enum MultiQueryProcessingStage
-    {
-        QUERIES_END,
-        PARSING_EXCEPTION,
-        CONTINUE_PARSING,
-        EXECUTE_QUERY,
-        PARSING_FAILED,
-    };
+    void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
+    void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
 
-    virtual void connect() {}
+    void processTextAsSingleQuery(const String & full_query);
+    void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
+        ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
+
+    static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth);
+    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
 
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
@@ -69,14 +75,6 @@ protected:
 
     /// For non-interactive multi-query mode get queries text prefix.
     virtual String getQueryTextPrefix() { return ""; }
-
-
-    void resetOutput();
-
-    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
-
-    /// Prepare for and call either runInteractive() or runNonInteractive().
-    virtual int mainImpl() = 0;
 
     using ProgramOptionsDescription = boost::program_options::options_description;
     using CommandLineOptions = boost::program_options::variables_map;
@@ -98,8 +96,6 @@ protected:
 
 private:
     bool processQueryText(const String & text);
-    void processTextAsSingleQuery(const String & full_query);
-    bool processMultiQuery(const String & all_queries_text);
 
     void receiveResult(ASTPtr parsed_query);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
@@ -117,20 +113,19 @@ private:
     void onEndOfStream();
 
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
-
     void sendDataFrom(ReadBuffer & buf, Block & sample,
                       const ColumnsDescription & columns_description, ASTPtr parsed_query);
+    void sendExternalTables(ASTPtr parsed_query);
 
     void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
-
-    void sendExternalTables(ASTPtr parsed_query);
 
     inline String prompt() const
     {
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
     }
 
+    void resetOutput();
     void outputQueryInfo(bool echo_query_);
 
 protected:

@@ -28,15 +28,10 @@ public:
 
     void initialize(Poco::Util::Application & self) override;
 
-    ~LocalServer() override
-    {
-        connection.reset();
-        if (global_context)
-            global_context->shutdown(); /// required for properly exception handling
-    }
-
 protected:
-    void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
+    void processSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
+    bool processMultiQuery(const String & all_queries_text) override;
+
     void processError(const String & query) const override;
     void loadSuggestionData(Suggest &) override;
     String getQueryTextPrefix() override;

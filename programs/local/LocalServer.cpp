@@ -63,6 +63,158 @@ namespace ErrorCodes
 }
 
 
+void LocalServer::processError(const String & query) const
+{
+    /// For non-interactive mode process exception only when all queries were executed.
+    if (server_exception)
+    {
+        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, server_exception->message());
+        fmt::print(stderr, "\n");
+    }
+    if (client_exception)
+    {
+        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, client_exception->message());
+        fmt::print(stderr, "\n");
+    }
+}
+
+
+void LocalServer::processSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
+{
+    cancelled = false;
+
+    /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
+    /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
+    /// first exception or whether we need to even rethrow it because there is --ignore-error.
+    if (!ignore_error)
+        server_exception.reset();
+
+    auto process_error = [&]()
+    {
+        if (!ignore_error)
+            throw;
+
+        server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+        have_error = true;
+    };
+
+    try
+    {
+        const auto * insert = parsed_query->as<ASTInsertQuery>();
+        ASTPtr input_function;
+        if (insert && insert->select)
+            insert->tryFindInputFunction(input_function);
+
+        /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
+        if (insert && (!insert->select || input_function) && !insert->watch)
+        {
+            if (input_function && insert->format.empty())
+                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
+
+            processInsertQuery(query_to_execute, parsed_query);
+        }
+        else
+            processOrdinaryQuery(query_to_execute, parsed_query);
+    }
+    catch (const Exception & e)
+    {
+        if (is_interactive && e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
+            std::cout << "Query was cancelled." << std::endl;
+        else
+            process_error();
+    }
+    catch (...)
+    {
+        process_error();
+    }
+}
+
+
+bool LocalServer::processMultiQuery(const String & all_queries_text)
+{
+    bool echo_query = echo_queries;
+
+    /// Several queries separated by ';'.
+    /// INSERT data is ended by the end of line, not ';'.
+    /// An exception is VALUES format where we also support semicolon in
+    /// addition to end of line.
+    const char * this_query_begin = all_queries_text.data();
+    const char * this_query_end;
+    const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
+
+    String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
+    String query_to_execute;
+    ASTPtr parsed_query;
+    std::optional<Exception> current_exception;
+
+    while (true)
+    {
+        auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
+                                           query_to_execute, parsed_query, all_queries_text, current_exception);
+        switch (stage)
+        {
+            case MultiQueryProcessingStage::QUERIES_END:
+            case MultiQueryProcessingStage::PARSING_FAILED:
+            {
+                std::cerr << "return 2\n";
+                return true;
+            }
+            case MultiQueryProcessingStage::CONTINUE_PARSING:
+            {
+                continue;
+            }
+            case MultiQueryProcessingStage::PARSING_EXCEPTION:
+            {
+                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
+                this_query_begin = this_query_end; /// It's expected syntax error, skip the line
+                current_exception.reset();
+                continue;
+            }
+            case MultiQueryProcessingStage::EXECUTE_QUERY:
+            {
+                full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
+
+                try
+                {
+                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
+                }
+                catch (...)
+                {
+                    // Surprisingly, this is a client error. A server error would
+                    // have been reported w/o throwing (see onReceiveSeverException()).
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    have_error = true;
+                }
+
+                // For INSERTs with inline data: use the end of inline data as
+                // reported by the format parser (it is saved in sendData()).
+                // This allows us to handle queries like:
+                //   insert into t values (1); select 1
+                // , where the inline data is delimited by semicolon and not by a
+                // newline.
+                auto * insert_ast = parsed_query->as<ASTInsertQuery>();
+                if (insert_ast && insert_ast->data)
+                {
+                    this_query_end = insert_ast->end;
+                    adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
+                }
+
+                // Report error.
+                if (have_error)
+                    processError(full_query);
+
+                // Stop processing queries if needed.
+                if (have_error && !ignore_error)
+                    return is_interactive;
+
+                this_query_begin = this_query_end;
+                break;
+            }
+        }
+    }
+}
+
+
 void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
@@ -281,103 +433,9 @@ void LocalServer::setupUsers()
 }
 
 
-// bool LocalServer::processMultiQuery(const String & all_queries_text)
-// {
-//     auto process_single_query = [&](const String & query_to_execute, const String &, ASTPtr)
-//     {
-//         try
-//         {
-//             processSingleQueryImpl(query_to_execute, query_to_execute, nullptr, echo_queries, false);
-//         }
-//         catch (...)
-//         {
-//             local_server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(false), getCurrentExceptionCode());
-//             have_error = true;
-//         }
-//     };
-//
-//     return processMultiQueryImpl(all_queries_text, process_single_query);
-// }
-
-
-// void LocalServer::processSingleQuery(const String & full_query)
-// {
-//     ASTPtr parsed_query;
-//     if (is_interactive)
-//     {
-//         const auto * this_query_begin = full_query.data();
-//         parsed_query = parseQuery(this_query_begin, full_query.data() + full_query.size(), false);
-//     }
-//
-//     processSingleQueryImpl(full_query, full_query, parsed_query, echo_queries);
-// }
-
-
-void LocalServer::executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
-{
-    cancelled = false;
-
-    /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
-    /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
-    /// first exception or whether we need to even rethrow it because there is --ignore-error.
-    if (!ignore_error)
-        server_exception.reset();
-
-    auto process_error = [&]()
-    {
-        if (!ignore_error)
-            throw;
-
-        server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-        have_error = true;
-    };
-
-    try
-    {
-        const auto * insert = parsed_query->as<ASTInsertQuery>();
-        ASTPtr input_function;
-        if (insert && insert->select)
-            insert->tryFindInputFunction(input_function);
-
-        /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !insert->watch)
-        {
-            if (input_function && insert->format.empty())
-                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
-
-            processInsertQuery(query_to_execute, parsed_query);
-        }
-        else
-            processOrdinaryQuery(query_to_execute, parsed_query);
-    }
-    catch (const Exception & e)
-    {
-        if (is_interactive && e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
-            std::cout << "Query was cancelled." << std::endl;
-        else
-            process_error();
-    }
-    catch (...)
-    {
-        process_error();
-    }
-}
-
-
 String LocalServer::getQueryTextPrefix()
 {
     return getInitialCreateTableQuery();
-}
-
-
-void LocalServer::processError(const String & query) const
-{
-    /// For non-interactive mode process exception only when all queries were executed.
-    if (server_exception && is_interactive)
-    {
-        fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, server_exception->message());
-        fmt::print(stderr, "\n");
-    }
 }
 
 
@@ -404,12 +462,7 @@ try
     applyCmdSettings(global_context);
 
     connection_parameters = ConnectionParameters(config());
-    /// Using query context withcmd settings.
     connection = std::make_unique<LocalConnection>(global_context);
-
-    // query_context->makeSessionContext();
-    // query_context->authenticate("default", "", Poco::Net::SocketAddress{});
-
     /// Use the same query_id (and thread group) for all queries
 
     connect();
@@ -427,6 +480,7 @@ try
             server_exception->rethrow();
     }
 
+    connection.reset();
     global_context->shutdown();
     global_context.reset();
 
