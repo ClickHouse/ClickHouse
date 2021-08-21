@@ -2236,3 +2236,34 @@ defaultRoles()
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
+## queryID {#query-id}
+
+Returns the ID of the current query, which can be used instantly in other queries. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `query_id`.
+
+**Syntax**
+
+``` sql
+queryID()
+```
+
+**Returned value**
+
+-   The ID of the current query.
+
+Type: [String](../../sql-reference/data-types/string.md)
+
+## initialQueryID {#initial-query-id}
+
+Returns the ID of the initial current query, which can be used instantly in other queries. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `initial_query_id`.
+
+**Syntax**
+
+``` sql
+initialQueryID()
+```
+
+**Returned value**
+
+-   The ID of the initial current query.
+
+Type: [String](../../sql-reference/data-types/string.md)
