@@ -52,6 +52,11 @@ ASTPtr ASTAlterCommand::clone() const
         res->settings_changes = settings_changes->clone();
         res->children.push_back(res->settings_changes);
     }
+    if (settings_resets)
+    {
+        res->settings_resets = settings_resets->clone();
+        res->children.push_back(res->settings_resets);
+    }
     if (values)
     {
         res->values = values->clone();
@@ -137,8 +142,9 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD INDEX " << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
         index_decl->formatImpl(settings, state, frame);
 
-        /// AFTER
-        if (index)
+        if (first)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " FIRST " << (settings.hilite ? hilite_none : "");
+        else if (index)    /// AFTER
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
             index->formatImpl(settings, state, frame);
@@ -377,6 +383,11 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY SETTING " << (settings.hilite ? hilite_none : "");
         settings_changes->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::RESET_SETTING)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "RESET SETTING " << (settings.hilite ? hilite_none : "");
+        settings_resets->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {

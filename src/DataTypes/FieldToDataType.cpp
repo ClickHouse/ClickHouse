@@ -11,7 +11,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
-#include <ext/size.h>
 
 
 namespace DB
@@ -20,12 +19,23 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EMPTY_DATA_PASSED;
+    extern const int LOGICAL_ERROR;
 }
 
 
 DataTypePtr FieldToDataType::operator() (const Null &) const
 {
     return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+}
+
+DataTypePtr FieldToDataType::operator() (const NegativeInfinity &) const
+{
+    throw Exception("It's invalid to have -inf literals in SQL", ErrorCodes::LOGICAL_ERROR);
+}
+
+DataTypePtr FieldToDataType::operator() (const PositiveInfinity &) const
+{
+    throw Exception("It's invalid to have +inf literals in SQL", ErrorCodes::LOGICAL_ERROR);
 }
 
 DataTypePtr FieldToDataType::operator() (const UInt64 & x) const
@@ -121,7 +131,7 @@ DataTypePtr FieldToDataType::operator() (const Tuple & tuple) const
         throw Exception("Cannot infer type of an empty tuple", ErrorCodes::EMPTY_DATA_PASSED);
 
     DataTypes element_types;
-    element_types.reserve(ext::size(tuple));
+    element_types.reserve(tuple.size());
 
     for (const auto & element : tuple)
         element_types.push_back(applyVisitor(FieldToDataType(), element));

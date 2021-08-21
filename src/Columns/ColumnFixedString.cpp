@@ -12,7 +12,7 @@
 #include <Common/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 #include <common/sort.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -342,6 +342,32 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     }
 
     return res;
+}
+
+void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
+{
+    if (mask.size() < size())
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+
+    int index = mask.size() - 1;
+    int from = size() - 1;
+    chars.resize_fill(mask.size() * n, 0);
+    while (index >= 0)
+    {
+        if (!!mask[index] ^ inverted)
+        {
+            if (from < 0)
+                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+
+            memcpy(&chars[index * n], &chars[from * n], n);
+            --from;
+        }
+
+        --index;
+    }
+
+    if (from != -1)
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
 }
 
 ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const

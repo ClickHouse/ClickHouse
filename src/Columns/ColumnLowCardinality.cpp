@@ -8,7 +8,7 @@
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <common/sort.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 
 namespace DB

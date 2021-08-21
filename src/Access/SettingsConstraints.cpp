@@ -1,7 +1,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/AccessControlManager.h>
 #include <Core/Settings.h>
-#include <Common/FieldVisitors.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>

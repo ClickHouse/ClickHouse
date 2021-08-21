@@ -31,6 +31,11 @@ struct TreeRewriterResult
     NameSet source_columns_set; /// Set of names of source_columns.
     /// Set of columns that are enough to read from the table to evaluate the expression. It does not include joined columns.
     NamesAndTypesList required_source_columns;
+    /// Same as above but also record alias columns which are expanded. This is for RBAC access check.
+    Names required_source_columns_before_expanding_alias_columns;
+
+    /// Set of alias columns that are expanded to their alias expressions. We still need the original columns to check access permission.
+    NameSet expanded_aliases;
 
     Aliases aliases;
     std::vector<const ASTFunction *> aggregates;
@@ -77,7 +82,9 @@ struct TreeRewriterResult
     void collectSourceColumns(bool add_special);
     void collectUsedColumns(const ASTPtr & query, bool is_select);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
+    const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
     NameSet getArrayJoinSourceNameSet() const;
+    Names getExpandedAliases() const { return {expanded_aliases.begin(), expanded_aliases.end()}; }
     const Scalars & getScalars() const { return scalars; }
 };
 

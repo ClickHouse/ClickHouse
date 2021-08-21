@@ -24,5 +24,5 @@ Columns:
 
 -   [SHOW QUOTAS](../../sql-reference/statements/show.md#show-quotas-statement)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/quotas) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/quotas) <!--hide-->
 

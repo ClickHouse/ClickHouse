@@ -373,7 +373,7 @@ This function accepts a number or date or date with time, and returns a FixedStr
 
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-Accepts 16 bytes string and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+Accepts 16 bytes string and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored.
 
 **Syntax**
 
@@ -439,8 +439,8 @@ reinterpret(x, type)
 
 **Arguments**
 
--   `x` — Any type. 
--   `type` — Destination type. [String](../../sql-reference/data-types/string.md). 
+-   `x` — Any type.
+-   `type` — Destination type. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -465,27 +465,29 @@ Result:
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Converts input value `x` to the `T` data type. Unlike to `reinterpret` function, type conversion is performed in a natural way.
-
-The syntax `CAST(x AS t)` is also supported.
-
-!!! note "Note"
-    If value `x` does not fit the bounds of type `T`, the function overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
+Converts an input value to the specified data type. Unlike the [reinterpret](#type_conversion_function-reinterpret) function, `CAST` tries to present the same value using the new data type. If the conversion can not be done then an exception is raised.
+Several syntax variants are supported.
 
 **Syntax**
 
 ``` sql
 CAST(x, T)
+CAST(x AS t)
+x::t
 ```
 
 **Arguments**
 
--   `x` — Any type. 
--   `T` — Destination type. [String](../../sql-reference/data-types/string.md).  
+-   `x` — A value to convert. May be of any type.
+-   `T` — The name of the target data type. [String](../../sql-reference/data-types/string.md).
+-   `t` — The target data type.
 
 **Returned value**
 
--   Destination type value.
+-    Converted value.
+
+!!! note "Note"
+    If the input value does not fit the bounds of the target type, the result overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
 
 **Examples**
 
@@ -494,16 +496,16 @@ Query:
 ```sql
 SELECT
     CAST(toInt8(-1), 'UInt8') AS cast_int_to_uint,
-    CAST(toInt8(1), 'Float32') AS cast_int_to_float,
-    CAST('1', 'UInt32') AS cast_string_to_int;
+    CAST(1.5 AS Decimal(3,2)) AS cast_float_to_decimal,
+    '1'::Int32 AS cast_string_to_int;
 ```
 
 Result:
 
 ```
-┌─cast_int_to_uint─┬─cast_int_to_float─┬─cast_string_to_int─┐
-│              255 │                 1 │                  1 │
-└──────────────────┴───────────────────┴────────────────────┘
+┌─cast_int_to_uint─┬─cast_float_to_decimal─┬─cast_string_to_int─┐
+│              255 │                  1.50 │                  1 │
+└──────────────────┴───────────────────────┴────────────────────┘
 ```
 
 Query:
@@ -527,7 +529,7 @@ Result:
 
 Conversion to FixedString(N) only works for arguments of type [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 
-Type conversion to [Nullable](../../sql-reference/data-types/nullable.md) and back is supported. 
+Type conversion to [Nullable](../../sql-reference/data-types/nullable.md) and back is supported.
 
 **Example**
 
@@ -567,7 +569,7 @@ Result:
 
 ## accurateCast(x, T) {#type_conversion_function-accurate-cast}
 
-Converts `x` to the `T` data type. 
+Converts `x` to the `T` data type.
 
 The difference from [cast(x, T)](#type_conversion_function-cast) is that `accurateCast` does not allow overflow of numeric types during cast if type value `x` does not fit the bounds of type `T`. For example, `accurateCast(-1, 'UInt8')` throws an exception.
 
@@ -1168,7 +1170,7 @@ Result:
 
 ## toUnixTimestamp64Nano {#tounixtimestamp64nano}
 
-Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision. 
+Converts a `DateTime64` to a `Int64` value with fixed sub-second precision. Input value is scaled up or down appropriately depending on it precision.
 
 !!! info "Note"
     The output value is a timestamp in UTC, not in the timezone of `DateTime64`.
@@ -1204,7 +1206,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-Query: 
+Query:
 
 ``` sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
@@ -1336,4 +1338,150 @@ Result:
 │ 1,"good"                                  │
 │ 2,"good"                                  │
 └───────────────────────────────────────────┘
+```
+
+## snowflakeToDateTime {#snowflakeToDateTime}
+
+Extract time from snowflake id as DateTime format.
+
+**Syntax**
+
+``` sql
+snowflakeToDateTime(value [, time_zone])
+```
+
+**Parameters**
+
+-   `value` — `snowflake id`, Int64 value.
+-   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-  value converted to the `DateTime` data type.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
+```
+
+Result:
+
+``` text
+
+┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
+│                                              2021-08-15 10:57:56 │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## snowflakeToDateTime64 {#snowflakeToDateTime64}
+
+Extract time from snowflake id as DateTime64 format.
+
+**Syntax**
+
+``` sql
+snowflakeToDateTime64(value [, time_zone])
+```
+
+**Parameters**
+
+-   `value` — `snowflake id`, Int64 value.
+-   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-  value converted to the `DateTime64` data type.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
+```
+
+Result:
+
+``` text
+
+┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
+│                                            2021-08-15 10:58:19.841 │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+## dateTimeToSnowflake {#dateTimeToSnowflake}
+
+Convert DateTime to the first snowflake id at the giving time.
+
+**Syntax**
+
+``` sql
+dateTimeToSnowflake(value)
+```
+
+**Parameters**
+
+-   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md).
+
+
+**Returned value**
+
+-   `value` converted to the `Int64` data type as the first snowflake id at that time.
+
+**Example**
+
+Query:
+
+``` sql
+WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt
+SELECT dateTimeToSnowflake(dt);
+```
+
+Result:
+
+``` text
+
+┌─dateTimeToSnowflake(dt)─┐
+│     1426860702823350272 │
+└─────────────────────────┘
+```
+
+
+## dateTime64ToSnowflake {#dateTime64ToSnowflake}
+
+Convert DateTime64 to the first snowflake id at the giving time.
+
+**Syntax**
+
+``` sql
+dateTime64ToSnowflake(value)
+```
+
+**Parameters**
+
+-   `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+
+**Returned value**
+
+-   `value` converted to the `Int64` data type as the first snowflake id at that time.
+
+**Example**
+
+Query:
+
+``` sql
+WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64
+SELECT dateTime64ToSnowflake(dt64);
+```
+
+Result:
+
+``` text
+┌─dateTime64ToSnowflake(dt64)─┐
+│         1426860704886947840 │
+└─────────────────────────────┘
 ```

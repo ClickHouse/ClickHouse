@@ -12,7 +12,6 @@
 #include <Poco/Net/IPAddress.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
-#include <ext/range.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -65,10 +64,10 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
+        return dict_struct.getAttribute(attribute_name).injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -79,7 +78,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size) const override;
 
 private:
 

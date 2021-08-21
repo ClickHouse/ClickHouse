@@ -1,7 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Core/Block.h>
 #include <common/types.h>
 #include <Core/NamesAndTypes.h>
@@ -18,6 +16,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <shared_mutex>
+
 
 namespace zkutil
 {
@@ -126,9 +125,9 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
-    void remove(bool keep_s3 = false) const;
+    void remove() const;
 
-    void projectionRemove(const String & parent_to, bool keep_s3 = false) const;
+    void projectionRemove(const String & parent_to, bool keep_shared_data = false) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -198,7 +197,7 @@ public:
     mutable std::atomic<bool> is_frozen {false};
 
     /// Flag for keep S3 data when zero-copy replication over S3 turned on.
-    mutable bool keep_s3_on_delete = false;
+    mutable bool force_keep_shared_data = false;
 
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
@@ -221,6 +220,12 @@ public:
         Outdated,        /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
         Deleting,        /// not active data part with identity refcounter, it is deleting right now by a cleaner
         DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
+    };
+
+    static constexpr auto all_part_states =
+    {
+        State::Temporary, State::PreCommitted, State::Committed, State::Outdated, State::Deleting,
+        State::DeleteOnDestroy
     };
 
     using TTLInfo = MergeTreeDataPartTTLInfo;
@@ -368,7 +373,7 @@ public:
 
     void loadProjections(bool require_columns_checksums, bool check_consistency);
 
-    /// Return set of metadat file names without checksums. For example,
+    /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
 
@@ -424,6 +429,8 @@ protected:
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
     String getRelativePathForDetachedPart(const String & prefix) const;
+
+    std::optional<bool> keepSharedDataInDecoupledStorage() const;
 
 private:
     /// In compact parts order of columns is necessary
