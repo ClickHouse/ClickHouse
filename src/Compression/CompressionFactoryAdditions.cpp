@@ -26,6 +26,8 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int UNKNOWN_CODEC;
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -48,6 +50,7 @@ void CompressionCodecFactory::validateCodec(
             {}, sanity_check, allow_experimental_codecs);
     }
 }
+
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
     const ASTPtr & ast, const IDataType * column_type, bool sanity_check, bool allow_experimental_codecs) const
@@ -206,7 +209,6 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 
     throw Exception("Unknown codec family: " + queryToString(ast), ErrorCodes::UNKNOWN_CODEC);
 }
-
 
 
 }
