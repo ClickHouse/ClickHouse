@@ -162,6 +162,36 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     analyzeAggregation();
 }
 
+static ASTPtr checkPositionalArgument(ASTPtr argument, const ASTSelectQuery * select_query, ASTSelectQuery::Expression expression)
+{
+    auto columns = select_query->select()->children;
+
+    /// Case when GROUP BY element is position.
+    /// Do not consider case when GROUP BY element is not a literal, but expression, even if all values are constants.
+    if (const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get()))
+    {
+        auto which = ast_literal->value.getType();
+        if (which == Field::Types::UInt64)
+        {
+            auto pos = ast_literal->value.get<UInt64>();
+            if (pos > 0 && pos <= columns.size())
+            {
+                const auto & column = columns[--pos];
+                if (const auto * literal_ast = typeid_cast<const ASTIdentifier *>(column.get()))
+                {
+                    return std::make_shared<ASTIdentifier>(literal_ast->name());
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal value for positional argument in {}",
+                                    ASTSelectQuery::expressionToString(expression));
+                }
+            }
+            /// Do not throw if out of bounds, see appendUnusedGroupByColumn.
+        }
+    }
+    return nullptr;
+}
 
 void ExpressionAnalyzer::analyzeAggregation()
 {
@@ -216,7 +246,7 @@ void ExpressionAnalyzer::analyzeAggregation()
         if (join)
         {
             getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
-            auto sample_columns = temp_actions->getResultColumns();
+            auto sample_columns = temp_actions->getNamesAndTypesList();
             analyzedJoin().addJoinedColumnsAndCorrectTypes(sample_columns);
             temp_actions = std::make_shared<ActionsDAG>(sample_columns);
         }
@@ -238,13 +268,22 @@ void ExpressionAnalyzer::analyzeAggregation()
             {
                 NameSet unique_keys;
                 ASTs & group_asts = select_query->groupBy()->children;
+
                 for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
                 {
                     ssize_t size = group_asts.size();
                     getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
+                    if (getContext()->getSettingsRef().enable_positional_arguments)
+                    {
+                        auto new_argument = checkPositionalArgument(group_asts[i], select_query, ASTSelectQuery::Expression::GROUP_BY);
+                        if (new_argument)
+                            group_asts[i] = new_argument;
+                    }
+
                     const auto & column_name = group_asts[i]->getColumnName();
                     const auto * node = temp_actions->tryFindInIndex(column_name);
+
                     if (!node)
                         throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
@@ -337,7 +376,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     PullingAsyncPipelineExecutor executor(io.pipeline);
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
-    set->setHeader(executor.getHeader());
+    set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
 
     Block block;
     while (executor.pull(block))
@@ -346,7 +385,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
             continue;
 
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-        if (!set->insertFromBlock(block))
+        if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
             return;
     }
 
@@ -1206,7 +1245,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
-                                                  ManyExpressionActions & order_by_elements_actions)
+                                                           ManyExpressionActions & order_by_elements_actions)
 {
     const auto * select_query = getSelectQuery();
 
@@ -1223,11 +1262,20 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
     bool with_fill = false;
     NameSet order_by_keys;
+
     for (auto & child : select_query->orderBy()->children)
     {
-        const auto * ast = child->as<ASTOrderByElement>();
+        auto * ast = child->as<ASTOrderByElement>();
         if (!ast || ast->children.empty())
             throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+
+        if (getContext()->getSettingsRef().enable_positional_arguments)
+        {
+            auto new_argument = checkPositionalArgument(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
+            if (new_argument)
+                ast->children[0] = new_argument;
+        }
+
         ASTPtr order_expression = ast->children.at(0);
         step.addRequiredOutput(order_expression->getColumnName());
 
@@ -1277,8 +1325,16 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
         aggregated_names.insert(column.name);
     }
 
-    for (const auto & child : select_query->limitBy()->children)
+    auto & children = select_query->limitBy()->children;
+    for (auto & child : children)
     {
+        if (getContext()->getSettingsRef().enable_positional_arguments)
+        {
+            auto new_argument = checkPositionalArgument(child, select_query, ASTSelectQuery::Expression::LIMIT_BY);
+            if (new_argument)
+                child = new_argument;
+        }
+
         auto child_name = child->getColumnName();
         if (!aggregated_names.count(child_name))
             step.addRequiredOutput(std::move(child_name));

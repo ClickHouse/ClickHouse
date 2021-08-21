@@ -65,6 +65,12 @@ struct MergeTreePartInfo
             && mutation >= rhs.mutation;
     }
 
+    /// Return part mutation version, if part wasn't mutated return zero
+    Int64 getMutationVersion() const
+    {
+        return mutation ? mutation : 0;
+    }
+
     /// True if parts do not intersect in any way.
     bool isDisjoint(const MergeTreePartInfo & rhs) const
     {
