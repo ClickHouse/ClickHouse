@@ -71,6 +71,7 @@ void registerFunctionHasThreadFuzzer(FunctionFactory &);
 void registerFunctionInitializeAggregation(FunctionFactory &);
 void registerFunctionErrorCodeToName(FunctionFactory &);
 void registerFunctionTcpPort(FunctionFactory &);
+void registerFunctionGetServerPort(FunctionFactory &);
 void registerFunctionByteSize(FunctionFactory &);
 void registerFunctionFile(FunctionFactory & factory);
 void registerFunctionConnectionId(FunctionFactory & factory);
@@ -150,6 +151,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionInitializeAggregation(factory);
     registerFunctionErrorCodeToName(factory);
     registerFunctionTcpPort(factory);
+    registerFunctionGetServerPort(factory);
     registerFunctionByteSize(factory);
     registerFunctionFile(factory);
     registerFunctionConnectionId(factory);
