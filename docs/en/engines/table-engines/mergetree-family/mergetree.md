@@ -396,7 +396,8 @@ Projections are an experimental feature. To enable them you must set the [allow_
 Projections are not supported in the `SELECT` statements with [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
 
 ### Projection Query {#projection-query}
-A projection query is what defines a projection. It implicitly selects data from the parent table. It has the following syntax:
+A projection query is what defines a projection. It implicitly selects data from the parent table. 
+**Syntax**
 
 ```sql
 SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
