@@ -450,7 +450,11 @@ bool NO_INLINE decompressImpl(
         const unsigned token = *ip++;
         length = token >> 4;
         if (length == 0x0F)
+        {
+            if (unlikely(ip + 1 >= input_end))
+                return false;
             continue_read_length();
+        }
 
         /// Copy literals.
 
@@ -468,6 +472,9 @@ bool NO_INLINE decompressImpl(
         ///                  ^-op (we will overwrite excessive bytes on next iteration)
 
         if (unlikely(copy_end > output_end))
+            return false;
+
+        if (unlikely(ip + std::max(copy_amount, static_cast<size_t>(std::ceil(static_cast<double>(length) / copy_amount) * copy_amount)) >= input_end))
             return false;
 
         wildCopy<copy_amount>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
@@ -494,7 +501,11 @@ bool NO_INLINE decompressImpl(
 
         length = token & 0x0F;
         if (length == 0x0F)
+        {
+            if (unlikely(ip + 1 >= input_end))
+                return false;
             continue_read_length();
+        }
         length += 4;
 
         /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
