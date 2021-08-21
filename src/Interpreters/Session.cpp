@@ -54,22 +54,36 @@ class NamedSessionsStorage
 public:
     using Key = NamedSessionKey;
 
+    static NamedSessionsStorage & instance()
+    {
+        static NamedSessionsStorage the_instance;
+        return the_instance;
+    }
+
     ~NamedSessionsStorage()
     {
         try
         {
-            {
-                std::lock_guard lock{mutex};
-                quit = true;
-            }
-
-            cond.notify_one();
-            thread.join();
+            shutdown();
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+    }
+
+    void shutdown()
+    {
+        {
+            std::lock_guard lock{mutex};
+            sessions.clear();
+            if (!thread.joinable())
+                return;
+            quit = true;
+        }
+
+        cond.notify_one();
+        thread.join();
     }
 
     /// Find existing session or create a new.
@@ -94,6 +108,10 @@ public:
             auto context = Context::createCopy(global_context);
             it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, context, timeout, *this))).first;
             const auto & session = it->second;
+
+            if (!thread.joinable())
+                thread = ThreadFromGlobalPool{&NamedSessionsStorage::cleanThread, this};
+
             return {session, true};
         }
         else
@@ -156,11 +174,9 @@ private:
     {
         setThreadName("SessionCleaner");
         std::unique_lock lock{mutex};
-
-        while (true)
+        while (!quit)
         {
             auto interval = closeSessions(lock);
-
             if (cond.wait_for(lock, interval, [this]() -> bool { return quit; }))
                 break;
         }
@@ -208,8 +224,8 @@ private:
 
     std::mutex mutex;
     std::condition_variable cond;
-    std::atomic<bool> quit{false};
-    ThreadFromGlobalPool thread{&NamedSessionsStorage::cleanThread, this};
+    ThreadFromGlobalPool thread;
+    bool quit = false;
 };
 
 
@@ -218,12 +234,11 @@ void NamedSessionData::release()
     parent.releaseSession(*this);
 }
 
-std::optional<NamedSessionsStorage> Session::named_sessions = std::nullopt;
-
-void Session::startupNamedSessions()
+void Session::shutdownNamedSessions()
 {
-    named_sessions.emplace();
+    NamedSessionsStorage::instance().shutdown();
 }
+
 
 Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_)
     : global_context(global_context_)
@@ -317,15 +332,13 @@ ContextMutablePtr Session::makeSessionContext(const String & session_id_, std::c
         throw Exception("Session context already exists", ErrorCodes::LOGICAL_ERROR);
     if (query_context_created)
         throw Exception("Session context must be created before any query context", ErrorCodes::LOGICAL_ERROR);
-    if (!named_sessions)
-        throw Exception("Support for named sessions is not enabled", ErrorCodes::LOGICAL_ERROR);
 
     /// Make a new session context OR
     /// if the `session_id` and `user_id` were used before then just get a previously created session context.
     std::shared_ptr<NamedSessionData> new_named_session;
     bool new_named_session_created = false;
     std::tie(new_named_session, new_named_session_created)
-        = named_sessions->acquireSession(global_context, user_id.value_or(UUID{}), session_id_, timeout_, session_check_);
+        = NamedSessionsStorage::instance().acquireSession(global_context, user_id.value_or(UUID{}), session_id_, timeout_, session_check_);
 
     auto new_session_context = new_named_session->context;
     new_session_context->makeSessionContext();

@@ -304,7 +304,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
     if (x.getType() == Field::Types::Null)
         return getNullValueIndex();
 
-    if (isNumeric())
+    if (valuesHaveFixedSize())
         return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
 
     auto & val = x.get<String>();
