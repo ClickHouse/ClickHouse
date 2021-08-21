@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Interpreters/StorageID.h>
+#include "Parsers/IAST_fwd.h"
 
 namespace DB
 {
@@ -16,6 +17,7 @@ public:
     ASTPtr columns;
     String format;
     ASTPtr select;
+    ASTPtr infile;
     ASTPtr watch;
     ASTPtr table_function;
     ASTPtr settings_ast;

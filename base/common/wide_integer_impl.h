@@ -152,7 +152,7 @@ namespace wide
 template <size_t Bits, typename Signed>
 struct integer<Bits, Signed>::_impl
 {
-    static constexpr size_t _Bits = Bits;
+    static constexpr size_t _bits = Bits;
     static constexpr const unsigned byte_count = Bits / 8;
     static constexpr const unsigned item_count = byte_count / sizeof(base_type);
     static constexpr const unsigned base_bits = sizeof(base_type) * 8;
@@ -614,8 +614,8 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::_impl::operator_plus(
-                integer<T::_impl::_Bits, Signed>(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::_impl::operator_plus(
+                integer<T::_impl::_bits, Signed>(lhs), rhs);
         }
     }
 
@@ -632,8 +632,8 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::_impl::operator_minus(
-                integer<T::_impl::_Bits, Signed>(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::_impl::operator_minus(
+                integer<T::_impl::_bits, Signed>(lhs), rhs);
         }
     }
 
@@ -857,7 +857,7 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::operator_slash(T(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::operator_slash(T(lhs), rhs);
         }
     }
 
@@ -877,7 +877,7 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::operator_percent(T(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::operator_percent(T(lhs), rhs);
         }
     }
 

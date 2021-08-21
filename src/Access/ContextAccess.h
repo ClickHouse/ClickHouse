@@ -70,6 +70,7 @@ public:
     /// Returns the current user. The function can return nullptr.
     UserPtr getUser() const;
     String getUserName() const;
+    std::optional<UUID> getUserID() const { return getParams().user_id; }
 
     /// Returns information about current and enabled roles.
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;

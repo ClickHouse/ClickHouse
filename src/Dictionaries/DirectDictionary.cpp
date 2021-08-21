@@ -40,7 +40,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     const DataTypes & key_types [[maybe_unused]],
     const Columns & default_values_columns) const
 {
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
@@ -161,7 +161,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     const Columns & key_columns,
     const DataTypes & key_types [[maybe_unused]]) const
 {
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
@@ -230,7 +230,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getHierarchy(
     ColumnPtr key_column,
     const DataTypePtr & key_type) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
+    if (dictionary_key_type == DictionaryKeyType::Simple)
     {
         size_t keys_found;
         auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
@@ -248,7 +248,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
     ColumnPtr in_key_column,
     const DataTypePtr & key_type) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
+    if (dictionary_key_type == DictionaryKeyType::Simple)
     {
         size_t keys_found = 0;
         auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
@@ -269,7 +269,7 @@ Pipe DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
 
     Pipe pipe;
 
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
         std::vector<UInt64> ids;
         ids.reserve(requested_keys_size);
@@ -307,12 +307,12 @@ namespace
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         DictionarySourcePtr source_ptr,
-        ContextPtr /* context */,
+        ContextPtr /* global_context */,
         bool /* created_from_ddl */)
     {
-        const auto * layout_name = dictionary_key_type == DictionaryKeyType::simple ? "direct" : "complex_key_direct";
+        const auto * layout_name = dictionary_key_type == DictionaryKeyType::Simple ? "direct" : "complex_key_direct";
 
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
         {
             if (dict_struct.key)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -344,13 +344,13 @@ namespace
     }
 }
 
-template class DirectDictionary<DictionaryKeyType::simple>;
-template class DirectDictionary<DictionaryKeyType::complex>;
+template class DirectDictionary<DictionaryKeyType::Simple>;
+template class DirectDictionary<DictionaryKeyType::Complex>;
 
 void registerDictionaryDirect(DictionaryFactory & factory)
 {
-    factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::simple>, false);
-    factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::complex>, true);
+    factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::Simple>, false);
+    factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::Complex>, true);
 }
 
 
