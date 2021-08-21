@@ -954,7 +954,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr,
-                             ContextPtr /* context */,
+                             ContextPtr /* global_context */,
                              bool /*created_from_ddl*/) -> DictionaryPtr
     {
         if (!dict_struct.key || dict_struct.key->size() != 1)

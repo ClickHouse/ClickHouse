@@ -1037,12 +1037,15 @@ ExpressionActionsChain::JoinStep::JoinStep(
     : Step({})
     , analyzed_join(std::move(analyzed_join_))
     , join(std::move(join_))
-    , result_columns(std::move(required_columns_))
 {
-    for (const auto & column : result_columns)
+    for (const auto & column : required_columns_)
         required_columns.emplace_back(column.name, column.type);
 
-    analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns);
+    NamesAndTypesList result_names_and_types = required_columns;
+    analyzed_join->addJoinedColumnsAndCorrectTypes(result_names_and_types);
+    for (const auto & [name, type] : result_names_and_types)
+        /// `column` is `nullptr` because we don't care on constness here, it may be changed in join
+        result_columns.emplace_back(nullptr, type, name);
 }
 
 void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
