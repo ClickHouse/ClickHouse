@@ -2,7 +2,7 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/RolesOrUsersSet.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/lexical_cast.hpp>
 #include <chrono>
@@ -219,7 +219,7 @@ inline const Quota::KeyTypeInfo & Quota::KeyTypeInfo::get(KeyType type)
         {
             for (const auto & token : tokens)
             {
-                for (auto kt : ext::range(KeyType::MAX))
+                for (auto kt : collections::range(KeyType::MAX))
                 {
                     if (KeyTypeInfo::get(kt).name == token)
                     {

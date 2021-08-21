@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int FILE_ALREADY_EXISTS;
     extern const int INCORRECT_QUERY;
+    extern const int ABORTED;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
@@ -108,12 +109,11 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
 {
-    if (auto * mv = dynamic_cast<StorageMaterializedView *>(tryGetTable(table_name, local_context).get()))
-    {
-        /// Remove the inner table (if any) to avoid deadlock
-        /// (due to attempt to execute DROP from the worker thread)
-        mv->dropInnerTable(no_delay, local_context);
-    }
+    auto storage = tryGetTable(table_name, local_context);
+    /// Remove the inner table (if any) to avoid deadlock
+    /// (due to attempt to execute DROP from the worker thread)
+    if (storage)
+        storage->dropInnerTableIfAny(no_delay, local_context);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
@@ -210,7 +210,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     std::unique_lock<std::mutex> other_db_lock;
     if (inside_database)
         db_lock = std::unique_lock{mutex};
-    else  if (this < &other_db)
+    else if (this < &other_db)
     {
         db_lock = std::unique_lock{mutex};
         other_db_lock = std::unique_lock{other_db.mutex};
@@ -420,7 +420,18 @@ void DatabaseAtomic::loadStoredObjects(ContextMutablePtr local_context, bool has
 {
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
     if (has_force_restore_data_flag)
-        fs::remove_all(path_to_table_symlinks);
+    {
+        for (const auto & table_path : fs::directory_iterator(path_to_table_symlinks))
+        {
+            if (!fs::is_symlink(table_path))
+            {
+                throw Exception(ErrorCodes::ABORTED,
+                    "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path.path()));
+            }
+
+            fs::remove(table_path);
+        }
+    }
 
     DatabaseOrdinary::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
 
@@ -556,4 +567,3 @@ void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)
 }
 
 }
-

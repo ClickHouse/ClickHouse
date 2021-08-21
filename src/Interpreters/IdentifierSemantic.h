@@ -1,14 +1,11 @@
 #pragma once
 
-#include <optional>
-
 #include <Interpreters/Aliases.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
-
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 
@@ -44,9 +41,6 @@ struct IdentifierSemantic
     static std::optional<String> getColumnName(const ASTPtr & ast);
 
     /// @returns name for 'not a column' identifiers
-    static std::optional<String> getTableName(const ASTIdentifier & node);
-    static std::optional<String> getTableName(const ASTPtr & ast);
-    static StorageID extractDatabaseAndTable(const ASTIdentifier & identifier);
     static std::optional<String> extractNestedName(const ASTIdentifier & identifier, const String & table_name);
 
     static ColumnMatch canReferColumnToTable(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
@@ -83,8 +77,8 @@ private:
 class IdentifiersCollector
 {
 public:
-    using ASTIdentPtr = const ASTIdentifier *;
-    using ASTIdentifiers = std::vector<ASTIdentPtr>;
+    using ASTIdentifierPtr = const ASTIdentifier *;
+    using ASTIdentifiers = std::vector<ASTIdentifierPtr>;
     struct Data
     {
         ASTIdentifiers idents;

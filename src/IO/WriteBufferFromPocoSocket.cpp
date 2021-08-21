@@ -6,11 +6,19 @@
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 
 
 namespace ProfileEvents
 {
     extern const Event NetworkSendElapsedMicroseconds;
+    extern const Event NetworkSendBytes;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric NetworkSend;
 }
 
 
@@ -40,6 +48,7 @@ void WriteBufferFromPocoSocket::nextImpl()
         /// Add more details to exceptions.
         try
         {
+            CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkSend);
             res = socket.impl()->sendBytes(working_buffer.begin() + bytes_written, offset() - bytes_written);
         }
         catch (const Poco::Net::NetException & e)
@@ -62,6 +71,7 @@ void WriteBufferFromPocoSocket::nextImpl()
     }
 
     ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
 }
 
 WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)

@@ -130,7 +130,7 @@ CatBoost集成到ClickHouse步骤:
 
 **1.** 构建评估库。
 
-评估CatBoost模型的最快方法是编译 `libcatboostmodel.<so|dll|dylib>` 库文件. 
+评估CatBoost模型的最快方法是编译 `libcatboostmodel.<so|dll|dylib>` 库文件.
 
 有关如何构建库文件的详细信息，请参阅 [CatBoost文件](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
 
@@ -186,7 +186,7 @@ CatBoost集成到ClickHouse步骤:
     ACTION AS target
 FROM amazon_train
 LIMIT 10
-``` 
+```
 
 !!! note "注"
     函数 [modelEvaluate](../sql-reference/functions/other-functions.md#function-modelevaluate) 返回带有多类模型的每类原始预测的元组。

@@ -23,6 +23,7 @@
 
             <!-- disable jit for perf tests -->
             <compile_expressions>0</compile_expressions>
+            <compile_aggregate_expressions>0</compile_aggregate_expressions>
         </default>
     </profiles>
     <users>

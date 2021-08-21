@@ -5,7 +5,7 @@
     <openSSL>
         <client>
             <invalidCertificateHandler replace="replace">
-                <name>AcceptCertificateHandler</name>  <!-- For tests only-->
+                <name>AcceptCertificateHandler</name>  <!-- For tests only -->
             </invalidCertificateHandler>
         </client>
     </openSSL>

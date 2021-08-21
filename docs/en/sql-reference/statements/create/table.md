@@ -189,7 +189,7 @@ CREATE TABLE codec_example
     dt Date CODEC(ZSTD),
     ts DateTime CODEC(LZ4HC),
     float_value Float32 CODEC(NONE),
-    double_value Float64 CODEC(LZ4HC(9))
+    double_value Float64 CODEC(LZ4HC(9)),
     value Float32 CODEC(Delta, ZSTD)
 )
 ENGINE = <Engine>
@@ -254,6 +254,21 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
+<!--
+### Encryption Codecs {#create-query-encryption-codecs}
+
+These codecs don't actually compress data, but instead encrypt data on disk. These are only available when an encryption key is specified by [encryption](../../../operations/server-configuration-parameters/settings.md#server-settings-encryption) settings. Note that encryption only makes sense at the end of codec pipelines, because encrypted data usually can't be compressed in any meaningful way.
+
+Encryption codecs:
+
+-   `Encrypted('AES-128-GCM-SIV')` — Encrypts data with AES-128 in [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV mode. This codec uses a fixed nonce and encryption is therefore deterministic. This makes it compatible with deduplicating engines such as [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md) but has a weakness: when the same data block is encrypted twice, the resulting ciphertext will be exactly the same so an adversary who can read the disk can see this equivalence (although only the equivalence).
+
+!!! attention "Attention"
+    Most engines including the "*MergeTree" family create index files on disk without applying codecs. This means plaintext will appear on disk if an encrypted column is indexed.
+
+!!! attention "Attention"
+    If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
+-->
 ## Temporary Tables {#temporary-tables}
 
 ClickHouse supports temporary tables which have the following characteristics:
@@ -361,7 +376,7 @@ You can add a comment to the table when you creating it.
 
 !!!note "Note"
     The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
-	
+
 
 **Syntax**
 
@@ -373,7 +388,7 @@ CREATE TABLE db.table_name
 ENGINE = engine
 COMMENT 'Comment'
 ```
-	
+
 **Example**
 
 Query:

@@ -12,8 +12,11 @@ size_t EnabledRowPolicies::Hash::operator()(const MixedConditionKey & key) const
 }
 
 
-EnabledRowPolicies::EnabledRowPolicies(const Params & params_)
-    : params(params_)
+EnabledRowPolicies::EnabledRowPolicies() : params()
+{
+}
+
+EnabledRowPolicies::EnabledRowPolicies(const Params & params_) : params(params_)
 {
 }
 

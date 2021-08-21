@@ -1,6 +1,6 @@
 import os
-import sys
 import re
+import sys
 
 import pytest
 
@@ -10,9 +10,7 @@ from .server import ServerThread
 # Command-line arguments
 
 def pytest_addoption(parser):
-    parser.addoption(
-        "--builddir", action="store", default=None, help="Path to build directory to use binaries from",
-    )
+    parser.addoption("--builddir", action="store", default=None, help="Path to build directory to use binaries from")
 
 
 # HTML report hooks
@@ -33,7 +31,7 @@ def pytest_itemcollected(item):
 @pytest.fixture(scope='module')
 def cmdopts(request):
     return {
-        'builddir': request.config.getoption("--builddir"),
+        'builddir': request.config.getoption("--builddir")
     }
 
 

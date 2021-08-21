@@ -12,6 +12,7 @@ SKIP_LIST = [
     # these couple of tests hangs everything
     "00600_replace_running_query",
     "00987_distributed_stack_overflow",
+    "01954_clickhouse_benchmark_multiple_long",
 
     # just fail
     "00133_long_shard_memory_tracker_and_exception_safety",
@@ -74,6 +75,8 @@ SKIP_LIST = [
     "01300_client_save_history_when_terminated",  # expect-test
     "01304_direct_io",
     "01306_benchmark_json",
+    "01035_lc_empty_part_bug",  # FLAKY
+    "01175_distributed_ddl_output_mode_long",  # tcp port in reference
     "01320_create_sync_race_condition_zookeeper",
     "01355_CSV_input_format_allow_errors",
     "01370_client_autocomplete_word_break_characters",  # expect-test
@@ -114,7 +117,7 @@ SKIP_LIST = [
     "01685_ssd_cache_dictionary_complex_key",
     "01737_clickhouse_server_wait_server_pool_long",
     "01746_executable_pool_dictionary",
-    "01747_executable_pool_dictionary_implicit_key",
+    "01747_executable_pool_dictionary_implicit_key.sql",
     "01747_join_view_filter_dictionary",
     "01748_dictionary_table_dot",
     "01754_cluster_all_replicas_shard_num",
@@ -155,8 +158,8 @@ def check_result(result, error, return_code, reference, replace_map):
 
 def run_client(bin_prefix, port, database, query, reference, replace_map=None):
     # We can't use `text=True` since some tests may return binary data
-    client = subprocess.Popen([bin_prefix + '-client', '--port', str(port), '-d', database, '-m', '-n', '--testmode'],
-                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    cmd = [bin_prefix + '-client', '--port', str(port), '-d', database, '-m', '-n', '--testmode']
+    client = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = client.communicate(query.encode('utf-8'))
     assert client.returncode is not None, "Client should exit after processing all queries"
 
@@ -174,7 +177,8 @@ def run_shell(bin_prefix, server, database, path, reference, replace_map=None):
         'CLICKHOUSE_PORT_INTERSERVER': str(server.inter_port),
         'CLICKHOUSE_PORT_POSTGRESQL': str(server.postgresql_port),
         'CLICKHOUSE_TMP': server.tmp_dir,
-        'CLICKHOUSE_CONFIG_CLIENT': server.client_config
+        'CLICKHOUSE_CONFIG_CLIENT': server.client_config,
+        'PROTOC_BINARY': os.path.abspath(os.path.join(os.path.dirname(bin_prefix), '..', 'contrib', 'protobuf', 'protoc')),  # FIXME: adhoc solution
     }
     shell = subprocess.Popen([path], env=env, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = shell.communicate()

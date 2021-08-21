@@ -1,8 +1,8 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/join_common.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <DataTypes/DataTypesNumber.h>
+
 
 namespace DB
 {
@@ -113,7 +113,7 @@ void JoiningTransform::work()
     }
     else
     {
-        if (!non_joined_stream)
+        if (!non_joined_blocks)
         {
             if (!finish_counter || !finish_counter->isLast())
             {
@@ -121,15 +121,15 @@ void JoiningTransform::work()
                 return;
             }
 
-            non_joined_stream = join->createStreamWithNonJoinedRows(outputs.front().getHeader(), max_block_size);
-            if (!non_joined_stream)
+            non_joined_blocks = join->getNonJoinedBlocks(outputs.front().getHeader(), max_block_size);
+            if (!non_joined_blocks)
             {
                 process_non_joined = false;
                 return;
             }
         }
 
-        auto block = non_joined_stream->read();
+        Block block = non_joined_blocks->read();
         if (!block)
         {
             process_non_joined = false;
@@ -159,19 +159,16 @@ void JoiningTransform::transform(Chunk & chunk)
     Block block;
     if (on_totals)
     {
-        /// We have to make chunk empty before return
-        /// In case of using `arrayJoin` we can get more or less rows than one
-        auto cols = chunk.detachColumns();
-        for (auto & col : cols)
-            col = col->cloneResized(1);
-        block = inputs.front().getHeader().cloneWithColumns(std::move(cols));
+        const auto & left_totals = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+        const auto & right_totals = join->getTotals();
 
         /// Drop totals if both out stream and joined stream doesn't have ones.
         /// See comment in ExpressionTransform.h
-        if (default_totals && !join->hasTotals())
+        if (default_totals && !right_totals)
             return;
 
-        join->joinTotals(block);
+        block = outputs.front().getHeader().cloneEmpty();
+        JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), block);
     }
     else
         block = readExecute(chunk);
@@ -183,11 +180,9 @@ void JoiningTransform::transform(Chunk & chunk)
 Block JoiningTransform::readExecute(Chunk & chunk)
 {
     Block res;
-    // std::cerr << "=== Chunk rows " << chunk.getNumRows() << " cols " << chunk.getNumColumns() << std::endl;
 
     if (!not_processed)
     {
-        // std::cerr << "!not_processed " << std::endl;
         if (chunk.hasColumns())
             res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -196,7 +191,6 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
     else if (not_processed->empty()) /// There's not processed data inside expression.
     {
-        // std::cerr << "not_processed->empty() " << std::endl;
         if (chunk.hasColumns())
             res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -205,12 +199,10 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
     else
     {
-        // std::cerr << "not not_processed->empty() " << std::endl;
         res = std::move(not_processed->block);
         join->joinBlock(res, not_processed);
     }
 
-    // std::cerr << "Res block rows " << res.rows() << " cols " << res.columns() << std::endl;
     return res;
 }
 

@@ -1,4 +1,4 @@
-# QA-SRS020 ClickHouse Extended Precision Data Types
+# SRS020 ClickHouse Extended Precision Data Types
 # Software Requirements Specification
 
 ## Table of Contents
