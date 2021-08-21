@@ -1,0 +1,8 @@
+<yandex>
+    <openSSL>
+        <client>
+            <!-- For self-signed certificate -->
+            <verificationMode>none</verificationMode>
+        </client>
+    </openSSL>
+</yandex>

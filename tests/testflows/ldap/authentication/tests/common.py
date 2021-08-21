@@ -153,7 +153,10 @@ def add_config(config, timeout=300, restart=False, modify=False):
 
             with node.cluster.shell(node.name) as bash:
                 bash.expect(bash.prompt)
-                bash.send("tail -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
+                bash.send("tail -v -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
+                # make sure tail process is launched and started to follow the file
+                bash.expect("<==")
+                bash.expect("\n")
 
                 with When("I add the config", description=config.path):
                     command = f"cat <<HEREDOC > {config.path}\n{config.content}\nHEREDOC"
@@ -170,7 +173,10 @@ def add_config(config, timeout=300, restart=False, modify=False):
             with Finally(f"I remove {config.name}"):
                 with node.cluster.shell(node.name) as bash:
                     bash.expect(bash.prompt)
-                    bash.send("tail -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
+                    bash.send("tail -v -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
+                    # make sure tail process is launched and started to follow the file
+                    bash.expect("<==")
+                    bash.expect("\n")
 
                     with By("removing the config file", description=config.path):
                         node.command(f"rm -rf {config.path}", exitcode=0)

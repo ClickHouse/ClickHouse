@@ -152,7 +152,7 @@ namespace wide
 template <size_t Bits, typename Signed>
 struct integer<Bits, Signed>::_impl
 {
-    static constexpr size_t _Bits = Bits;
+    static constexpr size_t _bits = Bits;
     static constexpr const unsigned byte_count = Bits / 8;
     static constexpr const unsigned item_count = byte_count / sizeof(base_type);
     static constexpr const unsigned base_bits = sizeof(base_type) * 8;
@@ -255,13 +255,13 @@ struct integer<Bits, Signed>::_impl
             set_multiplier<double>(self, alpha);
 
         self *= max_int;
-        self += static_cast<uint64_t>(t - alpha * static_cast<T>(max_int)); // += b_i
+        self += static_cast<uint64_t>(t - floor(alpha) * static_cast<T>(max_int)); // += b_i
     }
 
-    constexpr static void wide_integer_from_builtin(integer<Bits, Signed>& self, double rhs) noexcept
+    constexpr static void wide_integer_from_builtin(integer<Bits, Signed> & self, double rhs) noexcept
     {
         constexpr int64_t max_int = std::numeric_limits<int64_t>::max();
-        constexpr int64_t min_int = std::numeric_limits<int64_t>::min();
+        constexpr int64_t min_int = std::numeric_limits<int64_t>::lowest();
 
         /// There are values in int64 that have more than 53 significant bits (in terms of double
         /// representation). Such values, being promoted to double, are rounded up or down. If they are rounded up,
@@ -271,14 +271,14 @@ struct integer<Bits, Signed>::_impl
         /// The necessary check here is that long double has enough significant (mantissa) bits to store the
         /// int64_t max value precisely.
 
-        //TODO Be compatible with Apple aarch64
+        // TODO Be compatible with Apple aarch64
 #if not (defined(__APPLE__) && defined(__aarch64__))
         static_assert(LDBL_MANT_DIG >= 64,
-            "On your system long double has less than 64 precision bits,"
+            "On your system long double has less than 64 precision bits, "
             "which may result in UB when initializing double from int64_t");
 #endif
 
-        if ((rhs > 0 && rhs < static_cast<long double>(max_int)) || (rhs < 0 && rhs > static_cast<long double>(min_int)))
+        if (rhs > static_cast<long double>(min_int) && rhs < static_cast<long double>(max_int))
         {
             self = static_cast<int64_t>(rhs);
             return;
@@ -614,8 +614,8 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::_impl::operator_plus(
-                integer<T::_impl::_Bits, Signed>(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::_impl::operator_plus(
+                integer<T::_impl::_bits, Signed>(lhs), rhs);
         }
     }
 
@@ -632,8 +632,8 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::_impl::operator_minus(
-                integer<T::_impl::_Bits, Signed>(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::_impl::operator_minus(
+                integer<T::_impl::_bits, Signed>(lhs), rhs);
         }
     }
 
@@ -857,7 +857,7 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::operator_slash(T(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::operator_slash(T(lhs), rhs);
         }
     }
 
@@ -877,7 +877,7 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::operator_percent(T(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::operator_percent(T(lhs), rhs);
         }
     }
 

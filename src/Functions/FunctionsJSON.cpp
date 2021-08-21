@@ -14,7 +14,7 @@ std::vector<FunctionJSONHelpers::Move> FunctionJSONHelpers::prepareMoves(const c
 {
     std::vector<Move> moves;
     moves.reserve(num_index_arguments);
-    for (const auto i : ext::range(first_index_argument, first_index_argument + num_index_arguments))
+    for (const auto i : collections::range(first_index_argument, first_index_argument + num_index_arguments))
     {
         const auto & column = columns[i];
         if (!isString(column.type) && !isInteger(column.type))
@@ -44,7 +44,7 @@ std::vector<FunctionJSONHelpers::Move> FunctionJSONHelpers::prepareMoves(const c
 size_t FunctionJSONHelpers::calculateMaxSize(const ColumnString::Offsets & offsets)
 {
     size_t max_size = 0;
-    for (const auto i : ext::range(0, offsets.size()))
+    for (const auto i : collections::range(0, offsets.size()))
     {
         size_t size = offsets[i] - offsets[i - 1];
         if (max_size < size)

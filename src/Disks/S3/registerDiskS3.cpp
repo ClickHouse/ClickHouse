@@ -56,11 +56,12 @@ std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(
     if (proxy_scheme != "http" && proxy_scheme != "https")
         throw Exception("Only HTTP/HTTPS schemas allowed in proxy resolver config: " + proxy_scheme, ErrorCodes::BAD_ARGUMENTS);
     auto proxy_port = proxy_resolver_config.getUInt(prefix + ".proxy_port");
+    auto cache_ttl = proxy_resolver_config.getUInt(prefix + ".proxy_cache_time", 10);
 
     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy resolver: {}, Scheme: {}, Port: {}",
         endpoint.toString(), proxy_scheme, proxy_port);
 
-    return std::make_shared<S3::ProxyResolverConfiguration>(endpoint, proxy_scheme, proxy_port);
+    return std::make_shared<S3::ProxyResolverConfiguration>(endpoint, proxy_scheme, proxy_port, cache_ttl);
 }
 
 std::shared_ptr<S3::ProxyListConfiguration> getProxyListConfiguration(
@@ -128,8 +129,12 @@ getClient(const Poco::Util::AbstractConfiguration & config, const String & confi
 
     auto proxy_config = getProxyConfiguration(config_prefix, config);
     if (proxy_config)
+    {
         client_configuration.perRequestConfiguration
             = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
+        client_configuration.error_report
+            = [proxy_config](const auto & request_config) { proxy_config->errorReport(request_config); };
+    }
 
     client_configuration.retryStrategy
         = std::make_shared<Aws::Client::DefaultRetryStrategy>(config.getUInt(config_prefix + ".retry_attempts", 10));
@@ -167,7 +172,8 @@ void registerDiskS3(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      ContextPtr context) -> DiskPtr {
+                      ContextPtr context,
+                      const DisksMap & /*map*/) -> DiskPtr {
         S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
         if (uri.key.back() != '/')
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);

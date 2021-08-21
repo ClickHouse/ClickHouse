@@ -22,7 +22,7 @@
 #include <Common/IO.h>
 
 #include <common/phdr_cache.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications
@@ -58,6 +58,9 @@ int mainEntryClickHouseGitImport(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeper(int argc, char ** argv);
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER
+int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
@@ -118,6 +121,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER
     {"keeper", mainEntryClickHouseKeeper},
+#endif
+#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
+    {"keeper-converter", mainEntryClickHouseKeeperConverter},
 #endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
@@ -316,7 +322,7 @@ struct Checker
     {
         checkRequiredInstructions();
     }
-} checker;
+} checker __attribute__((init_priority(101)));  /// Run before other static initializers.
 
 }
 

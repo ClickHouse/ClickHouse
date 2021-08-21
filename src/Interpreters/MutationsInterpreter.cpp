@@ -17,7 +17,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
-#include <DataStreams/CheckSortedBlockInputStream.h>
+#include <Processors/Transforms/CheckSortedTransform.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -272,7 +272,7 @@ MutationsInterpreter::MutationsInterpreter(
     : storage(std::move(storage_))
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
-    , context(context_)
+    , context(Context::createCopy(context_))
     , can_execute(can_execute_)
     , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits())
 {
@@ -388,7 +388,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     if (commands.empty())
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
-
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
@@ -425,8 +424,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(storage, metadata_snapshot, updated_columns, column_to_affected_materialized);
     }
 
-    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
-    auto dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
+    dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
     /// First, break a sequence of commands into stages.
     for (auto & command : commands)
@@ -505,10 +503,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     }
                 }
 
-                auto updated_column = makeASTFunction("CAST",
+                auto updated_column = makeASTFunction("_CAST",
                     makeASTFunction("if",
                         condition,
-                        makeASTFunction("CAST",
+                        makeASTFunction("_CAST",
                             update_expr->clone(),
                             type_literal),
                         std::make_shared<ASTIdentifier>(column)),
@@ -849,8 +847,11 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
         }
     }
 
+    QueryPlanOptimizationSettings do_not_optimize_plan;
+    do_not_optimize_plan.optimize_plan = false;
+
     auto pipeline = plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
+        do_not_optimize_plan,
         BuildQueryPipelineSettings::fromContext(context));
 
     pipeline->addSimpleTransform([&](const Block & header)
@@ -900,12 +901,18 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     select_interpreter->buildQueryPlan(plan);
 
     auto pipeline = addStreamsForLaterStages(stages, plan);
-    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(result_stream->getHeader()))
-        result_stream = std::make_shared<CheckSortedBlockInputStream>(result_stream, *sort_desc);
+    if (auto sort_desc = getStorageSortDescriptionIfPossible(pipeline->getHeader()))
+    {
+        pipeline->addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<CheckSortedTransform>(header, *sort_desc);
+        });
+    }
+
+    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
 
     if (!updated_header)
         updated_header = std::make_unique<Block>(result_stream->getHeader());
@@ -913,11 +920,16 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     return result_stream;
 }
 
-const Block & MutationsInterpreter::getUpdatedHeader() const
+Block MutationsInterpreter::getUpdatedHeader() const
 {
-    return *updated_header;
+    // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
+    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : *updated_header;
 }
 
+const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const
+{
+    return dependencies;
+}
 
 size_t MutationsInterpreter::evaluateCommandsSize()
 {

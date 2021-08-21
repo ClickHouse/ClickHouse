@@ -17,9 +17,27 @@ n1 = cluster.add_instance('n1', main_configs=['configs/remote_servers.xml'], use
 # n2 -- distributed_directory_monitor_batch_inserts=0
 n2 = cluster.add_instance('n2', main_configs=['configs/remote_servers.xml'], user_configs=['configs/users.d/no_batch.xml'])
 
+# n3 -- distributed_directory_monitor_batch_inserts=1/distributed_directory_monitor_split_batch_on_failure=1
+n3 = cluster.add_instance('n3', main_configs=['configs/remote_servers_split.xml'], user_configs=[
+    'configs/users.d/batch.xml',
+    'configs/users.d/split.xml',
+])
+# n4 -- distributed_directory_monitor_batch_inserts=0/distributed_directory_monitor_split_batch_on_failure=1
+n4 = cluster.add_instance('n4', main_configs=['configs/remote_servers_split.xml'], user_configs=[
+    'configs/users.d/no_batch.xml',
+    'configs/users.d/split.xml',
+])
+
 batch_params = pytest.mark.parametrize('batch', [
     (1),
     (0),
+])
+
+batch_and_split_params = pytest.mark.parametrize('batch,split', [
+    (1, 0),
+    (0, 0),
+    (1, 1),
+    (0, 1),
 ])
 
 @pytest.fixture(scope='module', autouse=True)
@@ -62,15 +80,19 @@ def insert_data(node):
     assert size > 1<<16
     return size
 
-def get_node(batch):
+def get_node(batch, split=None):
+    if split:
+        if batch:
+            return n3
+        return n4
     if batch:
         return n1
     return n2
 
-def bootstrap(batch):
+def bootstrap(batch, split=None):
     drop_tables()
     create_tables('insert_distributed_async_send_cluster_two_replicas')
-    return insert_data(get_node(batch))
+    return insert_data(get_node(batch, split))
 
 def get_path_to_dist_batch(file='2.bin'):
     # There are:
@@ -80,8 +102,8 @@ def get_path_to_dist_batch(file='2.bin'):
     # @return the file for the n2 shard
     return f'/var/lib/clickhouse/data/default/dist/shard1_replica2/{file}'
 
-def check_dist_after_corruption(truncate, batch):
-    node = get_node(batch)
+def check_dist_after_corruption(truncate, batch, split=None):
+    node = get_node(batch, split)
 
     if batch:
         # In batch mode errors are ignored
@@ -102,8 +124,12 @@ def check_dist_after_corruption(truncate, batch):
     broken = get_path_to_dist_batch('broken')
     node.exec_in_container(['bash', '-c', f'ls {broken}/2.bin'])
 
-    assert int(n1.query('SELECT count() FROM data')) == 10000
-    assert int(n2.query('SELECT count() FROM data')) == 0
+    if split:
+        assert int(n3.query('SELECT count() FROM data')) == 10000
+        assert int(n4.query('SELECT count() FROM data')) == 0
+    else:
+        assert int(n1.query('SELECT count() FROM data')) == 10000
+        assert int(n2.query('SELECT count() FROM data')) == 0
 
 
 @batch_params
@@ -114,17 +140,17 @@ def test_insert_distributed_async_send_success(batch):
     assert int(n1.query('SELECT count() FROM data')) == 10000
     assert int(n2.query('SELECT count() FROM data')) == 10000
 
-@batch_params
-def test_insert_distributed_async_send_truncated_1(batch):
-    size = bootstrap(batch)
+@batch_and_split_params
+def test_insert_distributed_async_send_truncated_1(batch, split):
+    size = bootstrap(batch, split)
     path = get_path_to_dist_batch()
-    node = get_node(batch)
+    node = get_node(batch, split)
 
     new_size = size - 10
     # we cannot use truncate, due to hardlinks
     node.exec_in_container(['bash', '-c', f'mv {path} /tmp/bin && head -c {new_size} /tmp/bin > {path}'])
 
-    check_dist_after_corruption(True, batch)
+    check_dist_after_corruption(True, batch, split)
 
 @batch_params
 def test_insert_distributed_async_send_truncated_2(batch):

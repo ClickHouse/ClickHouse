@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/convertMySQLDataType.h>
-#include <Formats/MySQLBlockInputStream.h>
+#include <Formats/MySQLSource.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -24,7 +24,7 @@
 #include <Common/quoteString.h>
 #include "registerTableFunctions.h"
 
-#include <Databases/MySQL/DatabaseConnectionMySQL.h> // for fetchTablesColumnsList
+#include <Databases/MySQL/DatabaseMySQL.h> // for fetchTablesColumnsList
 #include <Common/parseRemoteDescription.h>
 
 
@@ -87,7 +87,7 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr contex
         throw Exception("MySQL table " + (remote_database_name.empty() ? "" : (backQuote(remote_database_name) + "."))
             + backQuote(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-    return ColumnsDescription{columns->second};
+    return columns->second;
 }
 
 StoragePtr TableFunctionMySQL::executeImpl(

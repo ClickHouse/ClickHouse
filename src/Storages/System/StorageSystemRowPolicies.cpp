@@ -13,7 +13,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/RowPolicy.h>
 #include <Access/AccessFlags.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 
@@ -34,7 +34,7 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
         {"storage", std::make_shared<DataTypeString>()},
     };
 
-    for (auto type : ext::range(MAX_CONDITION_TYPE))
+    for (auto type : collections::range(MAX_CONDITION_TYPE))
     {
         const String & column_name = ConditionTypeInfo::get(type).name;
         names_and_types.push_back({column_name, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
@@ -68,7 +68,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
 
     ColumnString * column_condition[MAX_CONDITION_TYPE];
     NullMap * column_condition_null_map[MAX_CONDITION_TYPE];
-    for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
+    for (auto condition_type : collections::range(MAX_CONDITION_TYPE))
     {
         column_condition[condition_type] = &assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
         column_condition_null_map[condition_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
@@ -96,7 +96,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
 
-        for (auto condition_type : ext::range(MAX_CONDITION_TYPE))
+        for (auto condition_type : collections::range(MAX_CONDITION_TYPE))
         {
             const String & condition = conditions[condition_type];
             if (condition.empty())

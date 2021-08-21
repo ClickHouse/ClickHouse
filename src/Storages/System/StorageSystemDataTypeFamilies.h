@@ -1,15 +1,15 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
 
-class StorageSystemDataTypeFamilies final : public ext::shared_ptr_helper<StorageSystemDataTypeFamilies>,
+class StorageSystemDataTypeFamilies final : public shared_ptr_helper<StorageSystemDataTypeFamilies>,
                                       public IStorageSystemOneBlock<StorageSystemDataTypeFamilies>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemDataTypeFamilies>;
+    friend struct shared_ptr_helper<StorageSystemDataTypeFamilies>;
 protected:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 

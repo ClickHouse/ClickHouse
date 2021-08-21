@@ -3,7 +3,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <common/types.h>
-#include <ext/bit_cast.h>
+#include <common/bit_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

@@ -7,7 +7,7 @@
 #include <Interpreters/Context.h>
 #include <loggers/Loggers.h>
 #include <Poco/Util/Application.h>
-#include <Common/ProgressBar.h>
+#include <Common/ProgressIndication.h>
 
 namespace DB
 {
@@ -49,9 +49,12 @@ protected:
 
     /// Settings specified via command line args
     Settings cmd_settings;
-    ProgressBar progress_bar;
-    Progress progress;
-    Stopwatch watch;
+
+    bool need_render_progress = false;
+
+    bool written_first_block = false;
+
+    ProgressIndication progress_indication;
 
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 };

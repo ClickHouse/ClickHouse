@@ -17,9 +17,12 @@
 #endif
 
 #if USE_MYSQL
-#   include <Databases/MySQL/DatabaseMaterializeMySQL.h>
+#   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #endif
 
+#if USE_LIBPQXX
+#   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
+#endif
 
 namespace DB
 {
@@ -130,7 +133,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         /// Prevents recursive drop from drop database query. The original query must specify a table.
         bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->table.empty();
         bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
-                                       getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY &&
+                                       !getContext()->getClientInfo().is_replicated_database_internal &&
                                        !is_drop_or_detach_database;
 
         AccessFlags drop_storage;
@@ -312,11 +315,15 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 throw Exception("DETACH PERMANENTLY is not implemented for databases", ErrorCodes::NOT_IMPLEMENTED);
 
 #if USE_MYSQL
-            if (database->getEngineName() == "MaterializeMySQL")
+            if (database->getEngineName() == "MaterializedMySQL")
                 stopDatabaseSynchronization(database);
 #endif
             if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
                 replicated->stopReplication();
+#if USE_LIBPQXX
+            if (auto * materialize_postgresql = typeid_cast<DatabaseMaterializedPostgreSQL *>(database.get()))
+                materialize_postgresql->stopReplication();
+#endif
 
             if (database->shouldBeEmptyOnDetach())
             {
@@ -328,7 +335,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
                 /// Flush should not be done if shouldBeEmptyOnDetach() == false,
                 /// since in this case getTablesIterator() may do some additional work,
-                /// see DatabaseMaterializeMySQL<>::getTablesIterator()
+                /// see DatabaseMaterializedMySQL<>::getTablesIterator()
                 for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
                 {
                     iterator->table()->flush();
@@ -396,6 +403,36 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 void InterpreterDropQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
 {
     elem.query_kind = "Drop";
+}
+
+void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool no_delay)
+{
+    if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
+    {
+        /// We create and execute `drop` query for internal table.
+        auto drop_query = std::make_shared<ASTDropQuery>();
+        drop_query->database = target_table_id.database_name;
+        drop_query->table = target_table_id.table_name;
+        drop_query->kind = kind;
+        drop_query->no_delay = no_delay;
+        drop_query->if_exists = true;
+        ASTPtr ast_drop_query = drop_query;
+        /// FIXME We have to use global context to execute DROP query for inner table
+        /// to avoid "Not enough privileges" error if current user has only DROP VIEW ON mat_view_name privilege
+        /// and not allowed to drop inner table explicitly. Allowing to drop inner table without explicit grant
+        /// looks like expected behaviour and we have tests for it.
+        auto drop_context = Context::createCopy(global_context);
+        drop_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        if (auto txn = current_context->getZooKeeperMetadataTransaction())
+        {
+            /// For Replicated database
+            drop_context->getClientInfo().is_replicated_database_internal = true;
+            drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+            drop_context->initZooKeeperMetadataTransaction(txn, true);
+        }
+        InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
+        drop_interpreter.execute();
+    }
 }
 
 }
