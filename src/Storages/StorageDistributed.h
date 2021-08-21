@@ -135,7 +135,8 @@ private:
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
         bool attach_,
-        ClusterPtr owned_cluster_ = {});
+        ClusterPtr owned_cluster_ = {},
+        ASTPtr remote_table_function_ptr_ = {});
 
     StorageDistributed(
         const StorageID & id_,
