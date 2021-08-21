@@ -65,6 +65,9 @@ namespace ErrorCodes
 
 void LocalServer::processError(const String & query) const
 {
+    if (!is_interactive)
+        return;
+
     /// For non-interactive mode process exception only when all queries were executed.
     if (server_exception)
     {
@@ -156,7 +159,6 @@ bool LocalServer::processMultiQuery(const String & all_queries_text)
             case MultiQueryProcessingStage::QUERIES_END:
             case MultiQueryProcessingStage::PARSING_FAILED:
             {
-                std::cerr << "return 2\n";
                 return true;
             }
             case MultiQueryProcessingStage::CONTINUE_PARSING:

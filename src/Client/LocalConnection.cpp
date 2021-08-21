@@ -106,16 +106,15 @@ void LocalConnection::sendQuery(
     query_context->makeSessionContext(); /// initial_create_query requires a session context to be set.
     query_context->setCurrentQueryId("");
     CurrentThread::QueryScope query_scope_holder(query_context);
+
     state->after_send_progress.restart();
     state->query_execution_time.restart();
 
     try
     {
-        std::cerr << "query: " << state->query << std::endl;
         state->io = executeQuery(state->query, query_context, false, state->stage, true);
         if (state->io.out)
         {
-            std::cerr << "state io out\n";
             state->need_receive_data_for_insert = true;
             state->io.out->writePrefix();
             next_packet_type = Protocol::Server::Data;
@@ -123,17 +122,13 @@ void LocalConnection::sendQuery(
         }
         else if (state->io.pipeline.initialized())
         {
-            std::cerr << "pipeline processing\n";
             state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
         }
         else if (state->io.in)
         {
-            std::cerr << "sream processing\n";
             state->async_in = std::make_unique<AsynchronousBlockInputStream>(state->io.in);
             state->async_in->readPrefix();
         }
-        else
-            std::cerr << "\n\nanother FFFFFFFFFFFFFFFFF\n\n";
     }
     catch (const Exception & e)
     {
@@ -162,7 +157,6 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
     else
     {
         state->io.out->writeSuffix();
-        finishQuery();
     }
 }
 
@@ -230,35 +224,31 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    if (state->is_finished)
+    if (!state->is_finished)
     {
-        finishQuery();
-        return true;
-    }
-
-    try
-    {
-        pollImpl();
-    }
-    catch (const Exception & e)
-    {
-        state->io.onException();
-        state->exception.emplace(e);
-    }
-    catch (const std::exception & e)
-    {
-        state->io.onException();
-        state->exception.emplace(Exception::CreateFromSTDTag{}, e);
-    }
-    catch (...)
-    {
-        state->io.onException();
-        state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+        try
+        {
+            pollImpl();
+        }
+        catch (const Exception & e)
+        {
+            state->io.onException();
+            state->exception.emplace(e);
+        }
+        catch (const std::exception & e)
+        {
+            state->io.onException();
+            state->exception.emplace(Exception::CreateFromSTDTag{}, e);
+        }
+        catch (...)
+        {
+            state->io.onException();
+            state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+        }
     }
 
     if (state->exception)
     {
-        finishQuery();
         next_packet_type = Protocol::Server::Exception;
         return true;
     }
@@ -336,9 +326,11 @@ bool LocalConnection::pollImpl()
 Packet LocalConnection::receivePacket()
 {
     Packet packet;
-
-    if (!next_packet_type)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No packet");
+    if (!next_packet_type || !state)
+    {
+        packet.type = Protocol::Server::EndOfStream;
+        return packet;
+    }
 
     packet.type = next_packet_type.value();
     switch (next_packet_type.value())
@@ -374,8 +366,8 @@ Packet LocalConnection::receivePacket()
                 + " from server " + getDescription(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     }
 
-    if (state && state->query_execution_time.elapsed() > static_cast<Float64>(query_context->getSettingsRef().max_execution_time.totalMilliseconds()))
-        state->is_finished = true;
+    // if (state && state->query_execution_time.elapsed() > static_cast<Float64>(query_context->getSettingsRef().max_execution_time.totalMilliseconds()))
+    //     state->is_finished = true;
 
     next_packet_type.reset();
     return packet;
