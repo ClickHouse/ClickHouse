@@ -694,7 +694,6 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
     if (parsed_insert_query->infile)
     {
-        std::cerr << "sending fata for infile\n";
         const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
 
