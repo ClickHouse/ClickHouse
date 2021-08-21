@@ -66,10 +66,9 @@ void * getSymbolFromVirtualDynamicSharedObject(const char * version_name, const 
     using Verdef = Elf64_Verdef;
     using Verdaux = Elf64_Verdaux;
 
-    /// One of the auxv contains pointer to ELF header loaded into memory.
+    /// One of the auxv contains pointer to ELF header of the 'vdso' library loaded into memory.
     /// It allows us to locate "program headers" and iterate over them
-    /// locating shared libraries loaded in memory.
-    /// And then we are iterating over every symbol in every shared library
+    /// And then we are iterating over every symbol in the library
     /// looking for our needed symbol.
 
     const Ehdr * elf_header = reinterpret_cast<Ehdr *>(getAuxiliaryValue(AT_SYSINFO_EHDR));
@@ -104,8 +103,8 @@ void * getSymbolFromVirtualDynamicSharedObject(const char * version_name, const 
     const char * strings = nullptr;
     const Sym * syms = nullptr;
     const Elf_Symndx * hash_table = nullptr;
-    const uint16_t * versym = 0;
-    const Verdef * verdef = 0;
+    const uint16_t * versym = nullptr;
+    const Verdef * verdef = nullptr;
 
     for (size_t i = 0; dynv[i]; i += 2)
     {
