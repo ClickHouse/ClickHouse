@@ -695,6 +695,8 @@ struct JSONExtractTree
         {
             if (element.isString())
                 return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
+            else if (element.isNull())
+                return false;
             else
                 return JSONExtractRawImpl<JSONParser>::insertResultToColumn(dest, element, {});
         }
