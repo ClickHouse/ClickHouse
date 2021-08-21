@@ -1764,21 +1764,21 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
-        }, properties});
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
 
     factory.registerFunction("dense_rank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
-        }, properties});
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
 
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
-        }, properties});
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
 
     factory.registerFunction("lagInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -1799,7 +1799,7 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionNthValue>(
                 name, argument_types, parameters);
-        }, properties});
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }
