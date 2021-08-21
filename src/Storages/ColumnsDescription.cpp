@@ -1,7 +1,5 @@
 #include <Storages/ColumnsDescription.h>
 
-#include <Compression/CompressionFactory.h>
-
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -689,6 +687,5 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
         throw;
     }
 }
-
 
 }
