@@ -127,11 +127,6 @@ namespace DB
             return true;
         }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-        {
-            return true;
-        }
-
         bool hasInformationAboutMonotonicity() const override
         {
             return true;

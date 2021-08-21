@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/TreeRewriter.h>
@@ -31,6 +32,7 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <Storages/IStorage.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -508,10 +510,14 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 }
 
 /// Find the columns that are obtained by JOIN.
-void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_join,
+void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & select_query,
                           const TablesWithColumns & tables, const Aliases & aliases)
 {
-    assert(tables.size() >= 2);
+    const ASTTablesInSelectQueryElement * node = select_query.join();
+    if (!node || tables.size() < 2)
+        return;
+
+    const auto & table_join = node->table_join->as<ASTTableJoin &>();
 
     if (table_join.using_expression_list)
     {
@@ -532,12 +538,9 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-        if (analyzed_join.keyNamesLeft().empty())
-        {
+        if (!data.has_some)
             throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
-        }
-
         if (is_asof)
             data.asofToJoinKeys();
     }
@@ -607,27 +610,6 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
     }
 
     return data.window_functions;
-}
-
-class MarkTupleLiteralsAsLegacyData
-{
-public:
-    using TypeToVisit = ASTLiteral;
-
-    static void visit(ASTLiteral & literal, ASTPtr &)
-    {
-        if (literal.value.getType() == Field::Types::Tuple)
-            literal.use_legacy_column_name_of_tuple = true;
-    }
-};
-
-using MarkTupleLiteralsAsLegacyMatcher = OneTypeMatcher<MarkTupleLiteralsAsLegacyData>;
-using MarkTupleLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkTupleLiteralsAsLegacyMatcher, true>;
-
-void markTupleLiteralsAsLegacy(ASTPtr & query)
-{
-    MarkTupleLiteralsAsLegacyVisitor::Data data;
-    MarkTupleLiteralsAsLegacyVisitor(data).visit(query);
 }
 
 }
@@ -760,7 +742,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (!columns.empty())
             required.insert(std::min_element(columns.begin(), columns.end())->name);
-        else if (!source_columns.empty())
+        else
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
             required.insert(ExpressionActions::getSmallestColumn(source_columns));
     }
@@ -914,15 +896,9 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     if (tables_with_columns.size() > 1)
     {
-        const auto & right_table = tables_with_columns[1];
-        auto & cols_from_joined = result.analyzed_join->columns_from_joined_table;
-        cols_from_joined = right_table.columns;
-        /// query can use materialized or aliased columns from right joined table,
-        /// we want to request it for right table
-        cols_from_joined.insert(cols_from_joined.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
-
+        result.analyzed_join->columns_from_joined_table = tables_with_columns[1].columns;
         result.analyzed_join->deduplicateAndQualifyColumnNames(
-            source_columns_set, right_table.table.getQualifiedNamePrefix());
+            source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
@@ -948,46 +924,25 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, select_options.only_analyze);
 
-    if (settings.legacy_column_name_of_tuple_literal)
-        markTupleLiteralsAsLegacy(query);
-
-    TreeOptimizer::apply(query, result, tables_with_columns, getContext());
+    TreeOptimizer::apply(
+        query, result.aliases, source_columns_set, tables_with_columns, getContext(), result.metadata_snapshot, result.rewrite_subqueries);
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
-    setJoinStrictness(
-        *select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys, result.analyzed_join->table_join);
+    setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
+                        result.analyzed_join->table_join);
+    collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
 
-    if (const auto * join_ast = select_query->join(); join_ast && tables_with_columns.size() >= 2)
+    /// rewrite filters for select query, must go after getArrayJoinedColumns
+    if (settings.optimize_respect_aliases && result.metadata_snapshot)
     {
-        auto & table_join_ast = join_ast->table_join->as<ASTTableJoin &>();
-        if (table_join_ast.using_expression_list && result.metadata_snapshot)
-            replaceAliasColumnsInQuery(table_join_ast.using_expression_list, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
-        if (table_join_ast.on_expression && result.metadata_snapshot)
-            replaceAliasColumnsInQuery(table_join_ast.on_expression, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext());
-
-        collectJoinedColumns(*result.analyzed_join, table_join_ast, tables_with_columns, result.aliases);
+        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.getArrayJoinSourceNameSet(), getContext());
     }
 
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);
     result.collectUsedColumns(query, true);
-    result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
-
-    /// rewrite filters for select query, must go after getArrayJoinedColumns
-    bool is_initiator = getContext()->getClientInfo().distributed_depth == 0;
-    if (settings.optimize_respect_aliases && result.metadata_snapshot && is_initiator)
-    {
-        /// If query is changed, we need to redo some work to correct name resolution.
-        if (replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext()))
-        {
-            result.aggregates = getAggregates(query, *select_query);
-            result.window_function_asts = getWindowFunctions(query, *select_query);
-            result.collectUsedColumns(query, true);
-        }
-    }
-
     result.ast_join = select_query->join();
 
     if (result.optimize_trivial_count)
@@ -1018,9 +973,6 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, getContext(), 0, result.scalars, false);
-
-    if (settings.legacy_column_name_of_tuple_literal)
-        markTupleLiteralsAsLegacy(query);
 
     TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 

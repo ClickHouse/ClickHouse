@@ -87,8 +87,6 @@ Result:
 └───────┴───────┘
 ```
 
-Note: the names are implementation specific and are subject to change. You should not assume specific names of the columns after application of the `untuple`.
-
 Example of using an `EXCEPT` expression:
 
 Query:
@@ -155,7 +153,7 @@ Result:
 Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
 
 ``` sql
-SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) as HammingDistance FROM (SELECT 'ClickHouse is a column-oriented database management system for online analytical processing of queries.' AS string);
+SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) as HammingDistance FROM (SELECT 'Clickhouse is a column-oriented database management system for online analytical processing of queries.' AS string);
 ```
 
 Result:

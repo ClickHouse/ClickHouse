@@ -23,11 +23,6 @@ public:
         return name;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return false;
-    }
-
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
@@ -47,7 +42,7 @@ public:
         return type.createColumnConst(input_rows_count, type.getDefault());
     }
 
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & arguments) const override
     {
         const IDataType & type = *arguments[0].type;
         return type.createColumnConst(1, type.getDefault());

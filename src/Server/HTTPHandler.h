@@ -18,10 +18,8 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-class Session;
 class Credentials;
 class IServer;
-struct Settings;
 class WriteBufferFromHTTPServerResponse;
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
@@ -35,11 +33,11 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */) {}
+    virtual void customizeContext(HTTPServerRequest & /* request */, ContextPtr /* context */) {}
 
-    virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
+    virtual bool customizeQueryParam(ContextPtr context, const std::string & key, const std::string & value) = 0;
 
-    virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) = 0;
+    virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextPtr context) = 0;
 
 private:
     struct Output
@@ -73,30 +71,25 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
 
-    /// Reference to the immutable settings in the global context.
-    /// Those settings are used only to extract a http request's parameters.
-    /// See settings http_max_fields, http_max_field_name_size, http_max_field_value_size in HTMLForm.
-    const Settings & default_settings;
-
-    // session is reset at the end of each request/response.
-    std::unique_ptr<Session> session;
-
-    // The request_credential instance may outlive a single request/response loop.
+    // The request_context and the request_credentials instances may outlive a single request/response loop.
     // This happens only when the authentication mechanism requires more than a single request/response exchange (e.g., SPNEGO).
+    ContextPtr request_context;
     std::unique_ptr<Credentials> request_credentials;
 
     // Returns true when the user successfully authenticated,
-    //  the session instance will be configured accordingly, and the request_credentials instance will be dropped.
+    //  the request_context instance will be configured accordingly, and the request_credentials instance will be dropped.
     // Returns false when the user is not authenticated yet, and the 'Negotiate' response is sent,
-    //  the session and request_credentials instances are preserved.
+    //  the request_context and request_credentials instances are preserved.
     // Throws an exception if authentication failed.
     bool authenticateUser(
+        ContextPtr context,
         HTTPServerRequest & request,
         HTMLForm & params,
         HTTPServerResponse & response);
 
     /// Also initializes 'used_output'.
     void processQuery(
+        ContextPtr context,
         HTTPServerRequest & request,
         HTMLForm & params,
         HTTPServerResponse & response,
@@ -120,9 +113,9 @@ private:
 public:
     explicit DynamicQueryHandler(IServer & server_, const std::string & param_name_ = "query");
 
-    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
+    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextPtr context) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) override;
+    bool customizeQueryParam(ContextPtr context, const std::string &key, const std::string &value) override;
 };
 
 class PredefinedQueryHandler : public HTTPHandler
@@ -137,11 +130,11 @@ public:
         IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
         , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_);
 
-    virtual void customizeContext(HTTPServerRequest & request, ContextMutablePtr context) override;
+    virtual void customizeContext(HTTPServerRequest & request, ContextPtr context) override;
 
-    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
+    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextPtr context) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) override;
+    bool customizeQueryParam(ContextPtr context, const std::string & key, const std::string & value) override;
 };
 
 }

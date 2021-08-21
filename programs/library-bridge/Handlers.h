@@ -22,7 +22,8 @@ class LibraryRequestHandler : public HTTPRequestHandler, WithContext
 public:
 
     LibraryRequestHandler(
-        size_t keep_alive_timeout_, ContextPtr context_)
+        size_t keep_alive_timeout_,
+        ContextPtr context_)
         : WithContext(context_)
         , log(&Poco::Logger::get("LibraryRequestHandler"))
         , keep_alive_timeout(keep_alive_timeout_)
@@ -34,18 +35,18 @@ public:
 private:
     static constexpr inline auto FORMAT = "RowBinary";
 
+    void processError(HTTPServerResponse & response, const std::string & message);
+
     Poco::Logger * log;
     size_t keep_alive_timeout;
 };
 
 
-class LibraryExistsHandler : public HTTPRequestHandler, WithContext
+class PingHandler : public HTTPRequestHandler
 {
 public:
-    explicit LibraryExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
-        : WithContext(context_)
-        , keep_alive_timeout(keep_alive_timeout_)
-        , log(&Poco::Logger::get("LibraryRequestHandler"))
+    explicit PingHandler(size_t keep_alive_timeout_)
+        : keep_alive_timeout(keep_alive_timeout_)
     {
     }
 
@@ -53,8 +54,6 @@ public:
 
 private:
     const size_t keep_alive_timeout;
-    Poco::Logger * log;
-
 };
 
 }

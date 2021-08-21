@@ -14,7 +14,6 @@
 
 namespace DB
 {
-struct Settings;
 
 /** Calculates Shannon Entropy, using HashMap and computing empirical distribution function.
   * Entropy is measured in bits (base-2 logarithm is used).

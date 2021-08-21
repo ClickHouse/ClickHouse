@@ -23,7 +23,6 @@ extern "C"
 
 namespace DB
 {
-struct Settings;
 
 class ReadBuffer;
 class WriteBuffer;

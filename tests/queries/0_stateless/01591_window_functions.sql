@@ -1,5 +1,7 @@
 -- { echo }
 
+set allow_experimental_window_functions = 1;
+
 -- just something basic
 select number, count() over (partition by intDiv(number, 3) order by number rows unbounded preceding) from numbers(10);
 
@@ -374,23 +376,6 @@ order by number
 settings max_block_size = 3;
 ;
 
--- careful with auto-application of Null combinator
-select lagInFrame(toNullable(1)) over ();
-select lagInFrameOrNull(1) over (); -- { serverError 36 }
--- this is the same as `select max(Null::Nullable(Nothing))`
-select intDiv(1, NULL) x, toTypeName(x), max(x) over ();
--- to make lagInFrame return null for out-of-frame rows, cast the argument to
--- Nullable; otherwise, it returns default values.
-SELECT
-    number,
-    lagInFrame(toNullable(number), 1) OVER w,
-    lagInFrame(toNullable(number), 2) OVER w,
-    lagInFrame(number, 1) OVER w,
-    lagInFrame(number, 2) OVER w
-FROM numbers(4)
-WINDOW w AS (ORDER BY number ASC)
-;
-
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select
     number,
@@ -401,40 +386,6 @@ window w as (order by number range between 1 preceding and 1 following)
 order by number
 ;
 
--- nth_value without specific frame range given
-select
-    number,
-    nth_value(number, 1) over w as firstValue,
-    nth_value(number, 2) over w as secondValue,
-    nth_value(number, 3) over w as thirdValue,
-    nth_value(number, 4) over w as fourthValue
-from numbers(10)
-window w as (order by number)
-order by number
-;
-
--- nth_value with frame range specified
-select
-    number,
-    nth_value(number, 1) over w as firstValue,
-    nth_value(number, 2) over w as secondValue,
-    nth_value(number, 3) over w as thirdValue,
-    nth_value(number, 4) over w as fourthValue
-from numbers(10)
-window w as (order by number range between 1 preceding and 1 following)
-order by number
-;
-
--- to make nth_value return null for out-of-frame rows, cast the argument to
--- Nullable; otherwise, it returns default values.
-SELECT
-    number,
-    nth_value(toNullable(number), 1) OVER w as firstValue,
-    nth_value(toNullable(number), 3) OVER w as thridValue
-FROM numbers(5)
-WINDOW w AS (ORDER BY number ASC)
-;
-    
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.
 select count() over () from numbers(4) where number < 2;
@@ -471,26 +422,3 @@ select count() over (rows between 2147483648 preceding and 2147493648 following)
 select count() over () from (select 1 a) l inner join (select 2 a) r using a;
 -- This case works as expected, one empty input chunk marked as input end.
 select count() over () where null;
-
--- Inheriting another window.
-select number, count() over (w1 rows unbounded preceding) from numbers(10)
-window
-    w0 as (partition by intDiv(number, 5) as p),
-    w1 as (w0 order by mod(number, 3) as o)
-order by p, o, number
-;
-
--- can't redefine PARTITION BY
-select count() over (w partition by number) from numbers(1) window w as (partition by intDiv(number, 5)); -- { serverError 36 }
-
--- can't redefine existing ORDER BY
-select count() over (w order by number) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3)); -- { serverError 36 }
-
--- parent window can't have frame
-select count() over (w range unbounded preceding) from numbers(1) window w as (partition by intDiv(number, 5) order by mod(number, 3) rows unbounded preceding); -- { serverError 36 }
-
--- looks weird but probably should work -- this is a window that inherits and changes nothing
-select count() over (w) from numbers(1) window w as ();
-
--- nonexistent parent window
-select count() over (w2 rows unbounded preceding); -- { serverError 36 }

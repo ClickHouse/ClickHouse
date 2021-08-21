@@ -25,8 +25,6 @@ public:
 
     bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     bool isDeterministic() const override { return false; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
