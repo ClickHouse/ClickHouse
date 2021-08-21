@@ -3044,7 +3044,10 @@ private:
         {
             return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t /*input_rows_count*/)
             {
-                return ConvertImplGenericFromString::execute(arguments, result_type);
+                auto res = ConvertImplGenericFromString::execute(arguments, result_type);
+                auto & res_object = assert_cast<ColumnObject &>(res->assumeMutableRef());
+                res_object.finalize();
+                return res;
             };
         }
 

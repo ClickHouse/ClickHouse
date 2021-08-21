@@ -1,0 +1,5 @@
+{"a.c":2,"a.b":1}
+{"s":{"a.c":2,"a.b":1}}
+1		[22,33]
+2	qqq	[44]
+Tuple(k1 Int8, `k2.k3` String, `k2.k4` Array(Int8))

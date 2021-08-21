@@ -121,7 +121,7 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
 
             if (!column_object.isFinalized())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cannot convert to tuple column '{}' from type {}. Column should be finalized firts",
+                    "Cannot convert to tuple column '{}' from type {}. Column should be finalized first",
                     name_type.name, name_type.type->getName());
 
             std::vector<std::tuple<String, DataTypePtr, ColumnPtr>> tuple_elements;

@@ -156,7 +156,7 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
         settings.path.back() = Substream::ObjectStructure;
         settings.path.back().object_key_name = key;
 
-        auto type = getDataTypeByColumn(subcolumn.getFinalizedColumn());
+        const auto & type = subcolumn.getLeastCommonType();
         if (auto * stream = settings.getter(settings.path))
         {
             writeStringBinary(key, *stream);
@@ -264,34 +264,63 @@ void SerializationObject<Parser>::deserializeBinary(IColumn &, ReadBuffer &) con
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
 }
 
+/// TODO: use format different of JSON in serializations.
+
 template <typename Parser>
-void SerializationObject<Parser>::serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+void SerializationObject<Parser>::serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+    const auto & column_object = assert_cast<const ColumnObject &>(column);
+    const auto & subcolumns = column_object.getSubcolumns();
+
+    writeChar('{', ostr);
+    for (auto it = subcolumns.begin(); it != subcolumns.end(); ++it)
+    {
+        if (it != subcolumns.begin())
+            writeCString(",", ostr);
+
+        writeDoubleQuoted(it->first, ostr);
+        writeChar(':', ostr);
+
+        auto serialization = it->second.getLeastCommonType()->getDefaultSerialization();
+        serialization->serializeTextJSON(it->second.getFinalizedColumn(), row_num, ostr, settings);
+    }
+    writeChar('}', ostr);
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeTextEscaped(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+void SerializationObject<Parser>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+    serializeTextImpl(column, row_num, ostr, settings);
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeTextQuoted(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+void SerializationObject<Parser>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+    WriteBufferFromOwnString ostr_str;
+    serializeTextImpl(column, row_num, ostr_str, settings);
+    writeEscapedString(ostr_str.str(), ostr);
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeTextJSON(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+void SerializationObject<Parser>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+    WriteBufferFromOwnString ostr_str;
+    serializeTextImpl(column, row_num, ostr_str, settings);
+    writeQuotedString(ostr_str.str(), ostr);
 }
 
 template <typename Parser>
-void SerializationObject<Parser>::serializeTextCSV(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+void SerializationObject<Parser>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for SerializationObject");
+    serializeTextImpl(column, row_num, ostr, settings);
+}
+
+template <typename Parser>
+void SerializationObject<Parser>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    WriteBufferFromOwnString ostr_str;
+    serializeTextImpl(column, row_num, ostr_str, settings);
+    writeCSVString(ostr_str.str(), ostr);
 }
 
 SerializationPtr getObjectSerialization(const String & schema_format)

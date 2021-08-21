@@ -40,7 +40,7 @@ public:
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
 
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
@@ -58,6 +58,8 @@ private:
 
     template <typename Reader>
     void deserializeTextImpl(IColumn & column, Reader && reader) const;
+
+    void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
     mutable Parser parser;
 };
