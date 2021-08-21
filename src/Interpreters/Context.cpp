@@ -59,6 +59,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/Session.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -272,6 +273,8 @@ struct ContextSharedPart
         if (shutdown_called)
             return;
         shutdown_called = true;
+
+        Session::shutdownNamedSessions();
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
