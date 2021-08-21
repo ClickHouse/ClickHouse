@@ -657,10 +657,10 @@ def table_map_queries(self, type, data, select, filter, exitcode, message, order
 )
 @Examples("type exitcode message", [
     ("Nullable(Map(String, String))",
-        43, "DB::Exception: Nested type Map(String,String) cannot be inside Nullable type",
+        43, "DB::Exception: Nested type Map(String, String) cannot be inside Nullable type",
         Name("nullable map")),
     ("Map(Nothing, Nothing)",
-        37, "DB::Exception: Column `m` with type Map(Nothing,Nothing) is not allowed in key expression, it's not comparable",
+        37, "DB::Exception: Column `m` with type Map(Nothing, Nothing) is not allowed in key expression, it's not comparable",
         Name("map with nothing type for key and value"))
 ])
 def table_map_unsupported_types(self, type, exitcode, message):
