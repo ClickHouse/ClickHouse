@@ -29,11 +29,8 @@ try
     size -= sizeof(AuxiliaryRandomData);
     data += sizeof(AuxiliaryRandomData) / sizeof(uint8_t);
 
-    std::string input = std::string(reinterpret_cast<const char*>(data), size);
-    fmt::print(stderr, "Using input {} of size {}, output size is {}. \n", input, size, output_buffer_size);
-
-    if (output_buffer_size < size)
-        return 0;
+    // std::string input = std::string(reinterpret_cast<const char*>(data), size);
+    // fmt::print(stderr, "Using input {} of size {}, output size is {}. \n", input, size, output_buffer_size);
 
     DB::Memory<> memory;
     memory.resize(output_buffer_size + codec->getAdditionalSizeAtTheEndOfBuffer());
