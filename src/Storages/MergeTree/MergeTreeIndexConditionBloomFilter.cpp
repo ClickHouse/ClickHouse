@@ -84,6 +84,32 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
     }
 }
 
+bool hasAllMaybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & bloom_filter, size_t hash_functions)
+{
+    const auto * non_const_column = typeid_cast<const ColumnUInt64 *>(hash_column);
+
+    if (!non_const_column)
+        throw Exception("LOGICAL ERROR: hash column must be Const Column or UInt64 Column.", ErrorCodes::LOGICAL_ERROR);
+
+
+
+    const ColumnUInt64::Container & hash_rows = non_const_column->getData();
+
+    const auto hash_row_matches_granule = [&](const auto &hash_row)
+    {
+        return std::all_of(BloomFilterHash::bf_hash_seed,
+                           BloomFilterHash::bf_hash_seed + hash_functions,
+                           [&](const auto &hash_seed)
+                           {
+                               return bloom_filter->findHashWithSeed(hash_row,
+                                                                     hash_seed);
+                           });
+    };
+
+    return std::all_of(hash_rows.begin(),
+                       hash_rows.end(),
+                       hash_row_matches_granule);
+}
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
@@ -109,6 +135,7 @@ bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
             || element.function == RPNElement::FUNCTION_NOT_EQUALS
             || element.function == RPNElement::FUNCTION_HAS
             || element.function == RPNElement::FUNCTION_HAS_ANY
+            || element.function == RPNElement::FUNCTION_HAS_ALL
             || element.function == RPNElement::FUNCTION_IN
             || element.function == RPNElement::FUNCTION_NOT_IN
             || element.function == RPNElement::ALWAYS_FALSE)
@@ -156,7 +183,8 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
             || element.function == RPNElement::FUNCTION_EQUALS
             || element.function == RPNElement::FUNCTION_NOT_EQUALS
             || element.function == RPNElement::FUNCTION_HAS
-            || element.function == RPNElement::FUNCTION_HAS_ANY)
+            || element.function == RPNElement::FUNCTION_HAS_ANY
+            || element.function == RPNElement::FUNCTION_HAS_ALL)
         {
             bool match_rows = true;
             const auto & predicate = element.predicate;
@@ -165,7 +193,12 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
                 const auto & query_index_hash = predicate[index];
                 const auto & filter = filters[query_index_hash.first];
                 const ColumnPtr & hash_column = query_index_hash.second;
-                match_rows = maybeTrueOnBloomFilter(&*hash_column, filter, hash_functions);
+
+                if (element.function == RPNElement::FUNCTION_HAS_ALL) {
+                    match_rows = hasAllMaybeTrueOnBloomFilter(&*hash_column, filter, hash_functions);          
+                } else {
+                    match_rows = maybeTrueOnBloomFilter(&*hash_column, filter, hash_functions);
+                }
             }
 
             rpn_stack.emplace_back(match_rows, true);
@@ -255,7 +288,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
                     maybe_useful = true;
             }
         }
-        else if (function->name == "equals" || function->name  == "notEquals" || function->name == "has" || function->name == "indexOf" || function->name == "hasAny")
+        else if (function->name == "equals" || function->name  == "notEquals" || function->name == "has" || function->name == "indexOf" || function->name == "hasAny" || function->name == "hasAll")
         {
             Field const_value;
             DataTypePtr const_type;
@@ -412,7 +445,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
             }
         }
-        else if (function_name == "hasAny")
+        else if (function_name == "hasAny" || function_name == "hasAll")
         {
             if (!array_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
@@ -437,7 +470,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 column = std::move(mutable_column);
             }
 
-            out.function = RPNElement::FUNCTION_HAS_ANY;
+            out.function = function_name == "hasAny" ?
+                RPNElement::FUNCTION_HAS_ANY :
+                RPNElement::FUNCTION_HAS_ALL;
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
         }
         else
