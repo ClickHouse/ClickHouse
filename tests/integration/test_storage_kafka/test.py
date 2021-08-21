@@ -180,28 +180,6 @@ def avro_confluent_message(schema_registry_client, value):
     })
     return serializer.encode_record_with_schema('test_subject', schema, value)
 
-# Fixtures
-
-@pytest.fixture(scope="module")
-def kafka_cluster():
-    try:
-        global kafka_id
-        cluster.start()
-        kafka_id = instance.cluster.kafka_docker_id
-        print(("kafka_id is {}".format(kafka_id)))
-        yield cluster
-
-    finally:
-        cluster.shutdown()
-
-@pytest.fixture(autouse=True)
-def kafka_setup_teardown():
-    instance.query('DROP DATABASE IF EXISTS test; CREATE DATABASE test;')
-    wait_kafka_is_available() # ensure kafka is alive
-    kafka_producer_send_heartbeat_msg() # ensure python kafka client is ok
-    # print("kafka is available - running test")
-    yield  # run test
-
 # Tests
 
 def test_kafka_settings_old_syntax(kafka_cluster):
@@ -699,6 +677,8 @@ def describe_consumer_group(kafka_cluster, name):
 def kafka_cluster():
     try:
         cluster.start()
+        kafka_id = instance.cluster.kafka_docker_id
+        print(("kafka_id is {}".format(kafka_id)))
         yield cluster
     finally:
         cluster.shutdown()
@@ -1129,6 +1109,7 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
 
 
 def test_kafka_materialized_view(kafka_cluster):
+
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
