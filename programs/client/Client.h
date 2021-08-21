@@ -13,7 +13,8 @@ public:
     void initialize(Poco::Util::Application & self) override;
 
 protected:
-    void executeSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
+    void processSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
+    bool processMultiQuery(const String & all_queries_text) override;
     bool processWithFuzzing(const String & full_query) override;
 
     void processError(const String & query) const override;
