@@ -151,7 +151,7 @@ private:
                 {
                     auto it = data.points.find(local_min_x + i);
                     bool found = it != data.points.end();
-                    value += getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0);
+                    value += getBar(found ? static_cast<UInt8>(std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1) : 0);
                 }
             }
             else
@@ -225,7 +225,7 @@ private:
 
             auto getBars = [&] (const std::optional<Float64> & point_y)
             {
-                value += getBar(point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
+                value += getBar(point_y ? static_cast<UInt8>(std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1) : 0);
             };
             auto getBarsForConstant = [&] (const std::optional<Float64> & point_y)
             {
