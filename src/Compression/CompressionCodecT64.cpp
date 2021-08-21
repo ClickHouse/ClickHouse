@@ -728,8 +728,7 @@ void registerCodecT64(CompressionCodecFactory & factory)
 
         auto type_idx = typeIdx(type);
         if (type && type_idx == TypeIndex::Nothing)
-            throw Exception("T64 codec is not supported for specified type ", ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
-
+            throw Exception("T64 codec is not supported for specified type " + type->getName(), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
         return std::make_shared<CompressionCodecT64>(type_idx, variant);
     };
 
