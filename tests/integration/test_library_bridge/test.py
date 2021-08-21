@@ -9,8 +9,10 @@ from helpers.cluster import ClickHouseCluster, run_and_check
 cluster = ClickHouseCluster(__file__)
 
 instance = cluster.add_instance('instance',
-        dictionaries=['configs/dictionaries/dict1.xml'], main_configs=['configs/config.d/config.xml'], stay_alive=True)
-
+        dictionaries=['configs/dictionaries/dict1.xml'],
+        main_configs=[
+            'configs/config.d/config.xml',
+            'configs/log_conf.xml'], stay_alive=True)
 
 def create_dict_simple():
     instance.query('DROP DICTIONARY IF EXISTS lib_dict_c')
@@ -25,7 +27,6 @@ def create_dict_simple():
         MAX_STORED_KEYS 1048576))
         LIFETIME(2) ;
     ''')
-
 
 @pytest.fixture(scope="module")
 def ch_cluster():
@@ -44,11 +45,6 @@ def ch_cluster():
                 '/usr/bin/g++ -shared -o /etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so -fPIC /etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.cpp'],
                 user='root')
 
-        instance.exec_in_container(
-                ['bash', '-c',
-                '/usr/bin/g++ -shared -o /dict_lib_copy.so -fPIC /etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.cpp'], user='root')
-        instance.exec_in_container(['bash', '-c', 'ln -s /dict_lib_copy.so /etc/clickhouse-server/config.d/dictionaries_lib/dict_lib_symlink.so'])
-
         yield cluster
 
     finally:
@@ -64,7 +60,6 @@ def test_load_all(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    instance.query('DROP DICTIONARY IF EXISTS lib_dict')
     instance.query('''
         CREATE DICTIONARY lib_dict (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
         PRIMARY KEY key
@@ -106,7 +101,6 @@ def test_load_ids(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    instance.query('DROP DICTIONARY IF EXISTS lib_dict_c')
     instance.query('''
         CREATE DICTIONARY lib_dict_c (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
         PRIMARY KEY key SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'))
@@ -134,7 +128,6 @@ def test_load_keys(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
-    instance.query('DROP DICTIONARY IF EXISTS lib_dict_ckc')
     instance.query('''
         CREATE DICTIONARY lib_dict_ckc (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
         PRIMARY KEY key
@@ -155,7 +148,6 @@ def test_load_all_many_rows(ch_cluster):
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
     num_rows = [1000, 10000, 100000, 1000000]
-    instance.query('DROP DICTIONARY IF EXISTS lib_dict')
     for num in num_rows:
         instance.query('''
             CREATE DICTIONARY lib_dict (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
@@ -272,43 +264,6 @@ def test_bridge_dies_with_parent(ch_cluster):
     assert clickhouse_pid is None
     assert bridge_pid is None
     instance.start_clickhouse(20)
-    instance.query('DROP DICTIONARY lib_dict_c')
-
-
-def test_path_validation(ch_cluster):
-    if instance.is_built_with_memory_sanitizer():
-        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
-
-    instance.query('DROP DICTIONARY IF EXISTS lib_dict_c')
-    instance.query('''
-        CREATE DICTIONARY lib_dict_c (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
-        PRIMARY KEY key SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib_symlink.so'))
-        LAYOUT(CACHE(
-        SIZE_IN_CELLS 10000000
-        BLOCK_SIZE 4096
-        FILE_SIZE 16777216
-        READ_BUFFER_SIZE 1048576
-        MAX_STORED_KEYS 1048576))
-        LIFETIME(2) ;
-    ''')
-
-    result = instance.query('''select dictGet(lib_dict_c, 'value1', toUInt64(1));''')
-    assert(result.strip() == '101')
-
-    instance.query('DROP DICTIONARY IF EXISTS lib_dict_c')
-    instance.query('''
-        CREATE DICTIONARY lib_dict_c (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
-        PRIMARY KEY key SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/../../../../dict_lib_copy.so'))
-        LAYOUT(CACHE(
-        SIZE_IN_CELLS 10000000
-        BLOCK_SIZE 4096
-        FILE_SIZE 16777216
-        READ_BUFFER_SIZE 1048576
-        MAX_STORED_KEYS 1048576))
-        LIFETIME(2) ;
-    ''')
-    result = instance.query_and_get_error('''select dictGet(lib_dict_c, 'value1', toUInt64(1));''')
-    assert('DB::Exception: File path /etc/clickhouse-server/config.d/dictionaries_lib/../../../../dict_lib_copy.so is not inside /etc/clickhouse-server/config.d/dictionaries_lib' in result)
 
 
 if __name__ == '__main__':

@@ -24,12 +24,8 @@
 #endif
 
 #if USE_MYSQL
-#    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
-#    include <Storages/StorageMaterializedMySQL.h>
-#endif
-
-#if USE_LIBPQXX
-#    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#    include <Storages/StorageMaterializeMySQL.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -238,24 +234,16 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             return {};
         }
 
-#if USE_LIBPQXX
-        if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
-        {
-            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext());
-        }
-#endif
-
 #if USE_MYSQL
-        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
-        if (db_and_table.first->getEngineName() == "MaterializedMySQL")
+        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializeMySQL::tryGetTable(...)
+        if (db_and_table.first->getEngineName() == "MaterializeMySQL")
         {
-            if (!MaterializedMySQLSyncThread::isMySQLSyncThread())
-                db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
+            if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
+                db_and_table.second = std::make_shared<StorageMaterializeMySQL>(std::move(db_and_table.second), db_and_table.first.get());
         }
 #endif
         return db_and_table;
     }
-
 
     if (table_id.database_name == TEMPORARY_DATABASE)
     {

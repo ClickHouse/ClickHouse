@@ -16,8 +16,6 @@ public:
     FieldVisitorHash(SipHash & hash_);
 
     void operator() (const Null & x) const;
-    void operator() (const NegativeInfinity & x) const;
-    void operator() (const PositiveInfinity & x) const;
     void operator() (const UInt64 & x) const;
     void operator() (const UInt128 & x) const;
     void operator() (const UInt256 & x) const;

@@ -752,15 +752,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     bool force_ttl = false;
     for (const auto & part : parts)
     {
+        new_data_part->ttl_infos.update(part->ttl_infos);
         if (metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(metadata_snapshot))
         {
             LOG_INFO(log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
             need_remove_expired_values = true;
             force_ttl = true;
-        }
-        else
-        {
-            new_data_part->ttl_infos.update(part->ttl_infos);
         }
     }
 
@@ -828,7 +825,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     UInt64 watch_prev_elapsed = 0;
 
     /// We count total amount of bytes in parts
-    /// and use direct_io if there is more than min_merge_bytes_to_use_direct_io
+    /// and use direct_io + aio if there is more than min_merge_bytes_to_use_direct_io
     bool read_with_direct_io = false;
     if (data_settings->min_merge_bytes_to_use_direct_io != 0)
     {
@@ -894,7 +891,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_transform = std::make_unique<MergingSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size, 0, false, rows_sources_write_buf.get(), true, blocks_are_granules_size);
+                header, pipes.size(), sort_description, merge_block_size, 0, rows_sources_write_buf.get(), true, blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:
@@ -942,10 +939,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, sort_description, SizeLimits(), 0 /*limit_hint*/, deduplicate_by_columns);
 
     if (need_remove_expired_values)
-    {
-        LOG_DEBUG(log, "Outdated rows found in source parts, TTLs processing enabled for merge");
         merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, metadata_snapshot, new_data_part, time_of_merge, force_ttl);
-    }
 
     if (metadata_snapshot->hasSecondaryIndices())
     {
@@ -970,12 +964,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     size_t rows_written = 0;
     const size_t initial_reservation = space_reservation ? space_reservation->getSize() : 0;
 
-    auto is_cancelled = [&]()
-    {
-        return merges_blocker.isCancelled()
-            || (need_remove_expired_values && ttl_merges_blocker.isCancelled())
-            || merge_entry->is_cancelled.load(std::memory_order_relaxed);
-    };
+    auto is_cancelled = [&]() { return merges_blocker.isCancelled()
+        || (need_remove_expired_values && ttl_merges_blocker.isCancelled()); };
 
     Block block;
     while (!is_cancelled() && (block = merged_stream->read()))
@@ -1659,12 +1649,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx2"))
-            {
-                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + ".idx2", "");
-                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
-            }
-            else if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
+            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
             {
                 rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
                 rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
@@ -1750,7 +1735,6 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
     for (const auto & index : indices_to_recalc)
     {
         files_to_skip.insert(index->getFileName() + ".idx");
-        files_to_skip.insert(index->getFileName() + ".idx2");
         files_to_skip.insert(index->getFileName() + mrk_extension);
     }
     for (const auto & projection : projections_to_recalc)
@@ -1895,11 +1879,8 @@ std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     {
         const auto & index = indices[i];
 
-        bool has_index =
-            source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") ||
-            source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx2");
         // If we ask to materialize and it already exists
-        if (!has_index && materialized_indices.count(index.name))
+        if (!source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") && materialized_indices.count(index.name))
         {
             if (indices_to_recalc.insert(index_factory.get(index)).second)
             {

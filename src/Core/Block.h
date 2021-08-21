@@ -39,11 +39,14 @@ public:
     Block(const ColumnsWithTypeAndName & data_);
 
     /// insert the column at the specified position
-    void insert(size_t position, ColumnWithTypeAndName elem);
+    void insert(size_t position, const ColumnWithTypeAndName & elem);
+    void insert(size_t position, ColumnWithTypeAndName && elem);
     /// insert the column to the end
-    void insert(ColumnWithTypeAndName elem);
+    void insert(const ColumnWithTypeAndName & elem);
+    void insert(ColumnWithTypeAndName && elem);
     /// insert the column to the end, if there is no column with that name yet
-    void insertUnique(ColumnWithTypeAndName elem);
+    void insertUnique(const ColumnWithTypeAndName & elem);
+    void insertUnique(ColumnWithTypeAndName && elem);
     /// remove the column at the specified position
     void erase(size_t position);
     /// remove the columns at the specified positions
@@ -122,7 +125,7 @@ public:
 
     Columns getColumns() const;
     void setColumns(const Columns & columns);
-    void setColumn(size_t position, ColumnWithTypeAndName column);
+    void setColumn(size_t position, ColumnWithTypeAndName && column);
     Block cloneWithColumns(const Columns & columns) const;
     Block cloneWithoutColumns() const;
     Block cloneWithCutColumns(size_t start, size_t length) const;
@@ -152,7 +155,6 @@ public:
 private:
     void eraseImpl(size_t position);
     void initializeIndexByName();
-    void reserve(size_t count);
 
     /// This is needed to allow function execution over data.
     /// It is safe because functions does not change column names, so index is unaffected.
