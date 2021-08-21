@@ -26,23 +26,6 @@ namespace ErrorCodes
 
 IDataType::~IDataType() = default;
 
-String IDataType::getName() const
-{
-    if (custom_name)
-    {
-        return custom_name->getName();
-    }
-    else
-    {
-        return doGetName();
-    }
-}
-
-String IDataType::doGetName() const
-{
-    return getFamilyName();
-}
-
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {
     /// Update the average value size hint if amount of read rows isn't too small
