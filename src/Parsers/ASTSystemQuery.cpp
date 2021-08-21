@@ -30,6 +30,10 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "DROP MARK CACHE";
         case Type::DROP_UNCOMPRESSED_CACHE:
             return "DROP UNCOMPRESSED CACHE";
+        case Type::DROP_INDEX_MARK_CACHE:
+            return "DROP INDEX MARK CACHE";
+        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
+            return "DROP INDEX UNCOMPRESSED CACHE";
         case Type::DROP_MMAP_CACHE:
             return "DROP MMAP CACHE";
 #if USE_EMBEDDED_COMPILER
