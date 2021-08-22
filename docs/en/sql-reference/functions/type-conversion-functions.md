@@ -1342,7 +1342,7 @@ Result:
 
 ## snowflakeToDateTime {#snowflakeToDateTime}
 
-Extract time from snowflake id as DateTime format.
+Extracts time from Snowflake ID as [DateTime](../data-types/datetime.md) format.
 
 **Syntax**
 
@@ -1352,12 +1352,12 @@ snowflakeToDateTime(value [, time_zone])
 
 **Parameters**
 
--   `value` — `snowflake id`, Int64 value.
+-   `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
 -   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--  value converted to the `DateTime` data type.
+-  Value converted to the [DateTime](../data-types/datetime.md) data type.
 
 **Example**
 
@@ -1378,7 +1378,7 @@ Result:
 
 ## snowflakeToDateTime64 {#snowflakeToDateTime64}
 
-Extract time from snowflake id as DateTime64 format.
+Extracts time from Snowflake ID as [DateTime64](../data-types/datetime64.md) format.
 
 **Syntax**
 
@@ -1388,12 +1388,12 @@ snowflakeToDateTime64(value [, time_zone])
 
 **Parameters**
 
--   `value` — `snowflake id`, Int64 value.
+-   `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
 -   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--  value converted to the `DateTime64` data type.
+-  Value converted to the [DateTime64](../data-types/datetime64.md) data type.
 
 **Example**
 
@@ -1414,7 +1414,7 @@ Result:
 
 ## dateTimeToSnowflake {#dateTimeToSnowflake}
 
-Convert DateTime to the first snowflake id at the giving time.
+Converts [DateTime](../data-types/datetime.md) value to the first Snowflake ID at the giving time.
 
 **Syntax**
 
@@ -1426,33 +1426,29 @@ dateTimeToSnowflake(value)
 
 -   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md).
 
-
 **Returned value**
 
--   `value` converted to the `Int64` data type as the first snowflake id at that time.
+-   `value` converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
 
 **Example**
 
 Query:
 
 ``` sql
-WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt
-SELECT dateTimeToSnowflake(dt);
+WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
 ```
 
 Result:
 
 ``` text
-
 ┌─dateTimeToSnowflake(dt)─┐
 │     1426860702823350272 │
 └─────────────────────────┘
 ```
 
-
 ## dateTime64ToSnowflake {#dateTime64ToSnowflake}
 
-Convert DateTime64 to the first snowflake id at the giving time.
+Convert [DateTime64](../data-types/datetime64.md) to the first Snowflake ID at the giving time.
 
 **Syntax**
 
@@ -1464,18 +1460,16 @@ dateTime64ToSnowflake(value)
 
 -   `value` — Date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
 
-
 **Returned value**
 
--   `value` converted to the `Int64` data type as the first snowflake id at that time.
+-   `value` converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
 
 **Example**
 
 Query:
 
 ``` sql
-WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64
-SELECT dateTime64ToSnowflake(dt64);
+WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
 ```
 
 Result:
