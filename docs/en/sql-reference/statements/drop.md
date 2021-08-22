@@ -111,9 +111,6 @@ DROP FUNCTION [IF EXISTS] function_name
 **Example**
 
 ``` sql
-CREATE FUNCTION plus_one as (a) -> a + 1;
-DROP FUNCTION plus_one;
+CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
+DROP FUNCTION linear_equation;
 ```
-
-
-
