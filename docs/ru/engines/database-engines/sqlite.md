@@ -5,7 +5,7 @@ toc_title: SQLite
 
 # SQLite {#sqlite}
 
-Движок баз данных позволяет подключаться к базе [SQLite](https://www.sqlite.org/index.html). 
+Движок баз данных позволяет подключаться к базе [SQLite](https://www.sqlite.org/index.html) и выполнять запросы `INSERT` и `SELECT` для обмена данными между ClickHouse и SQLite.
 
 ## Создание базы данных {#creating-a-database}
 
@@ -46,4 +46,34 @@ SHOW TABLES FROM sqlite_db;
 │ table1  │
 │ table2  │  
 └─────────┘
+```
+Отобразим содержимое таблицы:
+
+``` sql
+SELECT * FROM sqlite_db.table1;
+```
+
+``` text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+Вставим данные в таблицу SQLite из таблицы ClickHouse:
+
+``` sql
+CREATE TABLE clickhouse_table(`col1` String,`col2` Int16) ENGINE = MergeTree() ORDER BY col2;
+INSERT INTO clickhouse_table VALUES ('text',10);
+INSERT INTO sqlite_db.table1 SELECT * FROM clickhouse_table;
+SELECT * FROM sqlite_db.table1;
+```
+
+``` text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+│ text  │   10 │
+└───────┴──────┘
 ```
