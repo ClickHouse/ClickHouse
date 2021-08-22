@@ -126,12 +126,13 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-# Implies ${WITH_COVERAGE}
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
 
 if (ENABLE_FUZZING)
+    # Also set WITH_COVERAGE=1 for better fuzzing process
+    # By default this is disabled, because fuzzers are built in CI with the clickhouse itself.
+    # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
-    set (WITH_COVERAGE ON)
     set (FUZZER "libfuzzer")
 endif()
 

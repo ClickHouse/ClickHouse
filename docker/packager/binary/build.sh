@@ -35,6 +35,22 @@ ninja $NINJA_FLAGS clickhouse-bundle
 ccache --show-config ||:
 ccache --show-stats ||:
 
+# Also build fuzzers if any
+FUZZER_TARGETS=$(find ../src -name '*_fuzzer.cpp' -execdir basename {} .cpp ';' | tr '\n' ' ')
+
+mkdir -p /output/fuzzers
+for FUZZER_TARGET in $FUZZER_TARGETS
+do
+    ninja $NINJA_FLAGS $FUZZER_TARGET
+    # Find this binary in build directory and strip it
+    FUZZER_PATH=$(find ./src -name $FUZZER_TARGET)
+    strip --strip-unneeded $FUZZER_PATH
+    mv $FUZZER_PATH /output/fuzzers
+done
+
+tar -zcvf /output/fuzzers.tar.gz /output/fuzzers
+rm -rf /output/fuzzers
+
 mv ./programs/clickhouse* /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 find . -name '*.so' -print -exec mv '{}' /output \;
@@ -95,4 +111,3 @@ then
     # files in place, and will fail because this directory is not writable.
     tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
 fi
-
