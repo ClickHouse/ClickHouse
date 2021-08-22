@@ -5,6 +5,8 @@ toc_title: Third-Party Libraries Used
 
 # Third-Party Libraries Used {#third-party-libraries-used}
 
+The list of third-party libraries:
+
 | Library name | License type |
 |:-|:-|
 | abseil-cpp | [Apache](https://github.com/ClickHouse-Extras/abseil-cpp/blob/4f3b686f86c3ebaba7e4e926e62a79cb1c659a54/LICENSE) |

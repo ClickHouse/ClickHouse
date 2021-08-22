@@ -6,6 +6,8 @@ toc_title: "Используемые сторонние библиотеки"
 
 # Используемые сторонние библиотеки {#third-party-libraries-used}
 
+Список сторонних библиотек:
+
 | Библиотека | Тип лицензии |
 |:-|:-|
 | abseil-cpp | [Apache](https://github.com/ClickHouse-Extras/abseil-cpp/blob/4f3b686f86c3ebaba7e4e926e62a79cb1c659a54/LICENSE) |
