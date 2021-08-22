@@ -3,6 +3,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 
+#include <Poco/Environment.h>
+
 #include <optional>
 #include <string_view>
 
@@ -278,7 +280,7 @@ TEST(AsynchronousUnwinding, Test)
 {
     using namespace DB;
 
+    std::cerr << "OS version is " << Poco::Environment::osVersion() << "\n";
     loop(10);
-
     std::cerr << counter << "\n";
 }
