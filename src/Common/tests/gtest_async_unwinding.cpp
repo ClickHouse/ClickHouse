@@ -31,6 +31,12 @@ namespace ErrorCodes
 /// Auxiliary values are the values provided by Linux kernel that are needed for program
 /// to run and to introspect something about itself and the system.
 /// It can be imagined as a special hidden part of program arguments.
+
+/// The typical contents of auxv can be introspected as following:
+/// LD_SHOW_AUXV=1 /usr/bin/true
+
+/// The description is at 'man getauxval'.
+
 size_t getAuxiliaryValue(size_t type)
 {
     /// The table with auxiliary values (also known as 'auxv')
@@ -59,7 +65,20 @@ static const Res * shift(const Src * ptr, size_t bytes)
 
 /// Virtual dynamic shared object, also known as 'vdso'.
 /// It is a small dynamic library that is provided by Linux kernel to every program
+/// (along with a separate data page that is also mapped by Linux kernel at program startup)
 /// and contains helpers to implement some functions (notably 'clock_gettime' and 'getcpu') avoiding system calls.
+
+/// The description is at 'man vdso'
+/// You can dump this library as a file with https://github.com/mattkeenan/dump-vdso/blob/master/dump-vdso
+/// And introspect as following:
+/// readelf -a vdso.elf
+/// readelf --debug-dump=frames vdso.elf
+
+/// The source code of vdso is located here:
+/// https://github.com/torvalds/linux/blob/master/arch/x86/entry/vdso/vclock_gettime.c
+/// https://github.com/torvalds/linux/blob/master/arch/x86/include/asm/vdso/gettimeofday.h
+/// https://github.com/torvalds/linux/blob/5bfc75d92efd494db37f5c4c173d3639d4772966/include/vdso/datapage.h
+
 void * getSymbolFromVirtualDynamicSharedObject(const char * version_name, const char * symbol_name)
 {
     using Ehdr = Elf64_Ehdr;
