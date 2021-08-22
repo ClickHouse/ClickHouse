@@ -1357,7 +1357,7 @@ snowflakeToDateTime(value [, time_zone])
 
 **Returned value**
 
--  Value converted to the [DateTime](../data-types/datetime.md) data type.
+-  Input value converted to the [DateTime](../data-types/datetime.md) data type.
 
 **Example**
 
@@ -1393,7 +1393,7 @@ snowflakeToDateTime64(value [, time_zone])
 
 **Returned value**
 
--  Value converted to the [DateTime64](../data-types/datetime64.md) data type.
+-  Input value converted to the [DateTime64](../data-types/datetime64.md) data type.
 
 **Example**
 
@@ -1428,7 +1428,7 @@ dateTimeToSnowflake(value)
 
 **Returned value**
 
--   `value` converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
+-   Input value converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
 
 **Example**
 
@@ -1462,7 +1462,7 @@ dateTime64ToSnowflake(value)
 
 **Returned value**
 
--   `value` converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
+-   Input value converted to the [Int64](../data-types/int-uint.md) data type as the first Snowflake ID at that time.
 
 **Example**
 
