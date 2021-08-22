@@ -101,7 +101,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
         <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     -   `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with delete TTL. Default value: `4*3600` seconds.
     -   `merge_with_recompression_ttl_timeout` — Minimum delay in seconds before repeating a merge with recompression TTL. Default value: `4*3600` seconds.    
-    -   `try_fetch_recompressed_part_timeout` — Timeout (in seconds) before starting merge with recompression. During this time ClickHouse tries to fetch recompressed part from replica which assigned this merge with recompression. This setting is useful because recompression works slowly in most cases. Default value: `7200` seconds.    
+    -   `try_fetch_recompressed_part_timeout` — Timeout (in seconds) before starting merge with recompression. During this time ClickHouse tries to fetch recompressed part from replica which assigned this merge with recompression. Default value: `7200` seconds.    
     -   `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don’t turn it off.
     -   `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
     -   `storage_policy` — Storage policy. See [Using Multiple Block Devices for Data Storage](#table_engine-mergetree-multiple-volumes).
@@ -418,7 +418,7 @@ Reading from a table is automatically parallelized.
 
 Determines the lifetime of values.
 
-The `TTL` clause can be set for the whole table and for each individual column. Table-level `TTL` can also specify the logic of automatic moving of data between disks and volumes, or recompression of parts where all the data has been expired.
+The `TTL` clause can be set for the whole table and for each individual column. Table-level `TTL` can also specify the logic of automatic moving data between disks and volumes, or recompressing parts where all the data has been expired.
 
 Expressions must evaluate to [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md) data type.
 
