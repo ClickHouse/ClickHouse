@@ -215,7 +215,8 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
     fs::create_directories(table_dir_path);
     paths = {getTablePath(table_dir_path, format_name)};
-    total_bytes_to_read = fs::file_size(paths[0]);
+    if (fs::exists(paths[0]))
+        total_bytes_to_read = fs::file_size(paths[0]);
 }
 
 StorageFile::StorageFile(CommonArguments args)
