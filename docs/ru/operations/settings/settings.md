@@ -1865,10 +1865,25 @@ ClickHouse генерирует исключение
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
--   Тип: bool
--   Значение по умолчанию: True
+Включает или отключает режим, при котором входящие данные разбираются параллельно, но с сохранением исходного порядка следования. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
-Включает режим, при котором входящие данные парсятся параллельно, но с сохранением исходного порядка следования. Поддерживается только для форматов TSV, TKSV, CSV и JSONEachRow.
+Возможные значения:
+
+-   1 — включен режим параллельного разбора.
+-   0 — отключен режим параллельного разбора.
+
+Значение по умолчанию: `0`.
+
+## output_format_parallel_formatting {#output-format-parallel-formatting}
+
+Включает или отключает режим, при котором исходящие данные форматируются параллельно, но с сохранением начального порядка следования. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+
+Возможные значения:
+
+-   1 — включен режим параллельного форматирования.
+-   0 — отключен режим параллельного форматирования.
+
+Значение по умолчанию: `0`.
 
 ## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 
