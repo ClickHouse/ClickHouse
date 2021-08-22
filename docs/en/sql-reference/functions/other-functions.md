@@ -2236,3 +2236,38 @@ defaultRoles()
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
+## getServerPort {#getserverport}
+
+Returns the number of the server port. When the port is not used by the server, throw an exception.
+
+**Syntax**
+
+``` sql
+getServerPort(port_name)
+```
+
+**Arguments**
+
+-   `port_name` — The name of the server port. [String](../../sql-reference/data-types/string.md#string).
+
+**Returned value**
+
+-   The number of the server port.
+
+Type: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT getServerPort('tcp_port');
+```
+
+Result:
+
+``` text
+┌─getServerPort('tcp_port')─┐
+│ 9000                      │
+└───────────────────────────┘
+```
