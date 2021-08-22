@@ -16,7 +16,7 @@ Creating a table with a `Date`-type column and inserting data into it:
 ``` sql
 CREATE TABLE dt
 (
-    `timestamp` Date32,
+    `timestamp` Date,
     `event_id` UInt8
 )
 ENGINE = TinyLog;

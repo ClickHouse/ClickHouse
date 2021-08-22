@@ -166,7 +166,7 @@ toDate32(expr)
 
 -   `expr` — The value. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) or [Date](../../sql-reference/data-types/string.md).
 
-**Returned value(s)**
+**Returned value**
 
 -   A calendar date.
 
@@ -212,7 +212,7 @@ SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
 
 ## toDate32OrZero {#toDate32OrZero}
 
-The same as `toDate32` but returns the min value of [Date32](../../sql-reference/data-types/date32.md) if a zero value is received.
+The same as `toDate32` but returns the min value of [Date32](../../sql-reference/data-types/date32.md) if a zero argument is received.
 
 **Example**
 
@@ -232,7 +232,7 @@ Result:
 
 ## toDate32OrNull {#todate32OrNull}
 
-The same as `toDate32` but returns `NULL` if a zero value is received.
+The same as `toDate32` but returns `NULL` if a zero argument is received.
 
 **Example**
 
