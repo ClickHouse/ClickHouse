@@ -5,38 +5,54 @@ toc_title: FUNCTION
 
 # CREATE FUNCTION {#create-function}
 
-Creates a user defined function from a lambda expression.
+Creates a user defined function from a lambda expression. The expression must consist of function parameters, constants, operators or other function calls.
 
 **Syntax**
 
 ```sql
-CREATE FUNCTION {function_name} as ({parameters}) -> {function core}
+CREATE FUNCTION name AS (parameter0, ...) -> expression
 ```
+A function can have an arbitrary number of parameters.
+There are a few restrictions.
 
-Errors are caused by
+-   The name of a function must be unique among user defined and system functions.
+-   Recursive functions are not allowed.
+-   All variables used by a function must be specified in its parameter list.
 
--   Creating a function with a name that already exists;
--   Recursive function.
--   An identifier not listed in function parameters is used inside a function.
+If any restriction is violated then an exception is raised.
 
 **Example**
-
 
 Query:
 
 ```sql
-CREATE FUNCTION plus_one as (a) -> a + 1;
-SELECT number, plus_one(number) FROM numbers(3);
+CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
+SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
 ```
 
 Result:
 
 ``` text
-┌─number─┬─plus_one─┐
-│      0 │        1 │
-│      1 │        2 │
-│      2 │        3 │
-└────────┴──────────┘
+┌─number─┬─linear_equation(number, 2, 1)─┐
+│      0 │                             1 │
+│      1 │                             3 │
+│      2 │                             5 │
+└────────┴───────────────────────────────┘
 ```
 
--   [DROP](../../../sql-reference/statements/drop.md#drop-function)
+A [conditional function](../../../sql-reference/functions/conditional-functions.md) is called in a user defined function in the following query:
+
+```sql
+CREATE FUNCTION parity AS (n) -> if(number % 2, 'odd', 'even');
+SELECT number, parity(number) FROM numbers(3);
+```
+
+Result:
+
+``` text
+┌─number─┬─parity(number)─┐
+│      0 │ even           │
+│      1 │ odd            │
+│      2 │ even           │
+└────────┴────────────────┘
+```
