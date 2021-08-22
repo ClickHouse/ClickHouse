@@ -17,3 +17,9 @@ void updatePHDRCache();
   * to determine if some features like Query Profiler can be used.
   */
 bool hasPHDRCache();
+
+/** Add new entry to the cache.
+  * Not thread-safe.
+  */
+struct dl_phdr_info;
+void pushPHDRCache(dl_phdr_info * info);

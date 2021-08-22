@@ -111,6 +111,12 @@ void updatePHDRCache()
 }
 
 
+void pushPHDRCache(dl_phdr_info * info)
+{
+    phdr_cache.load()->push_back(*info);
+}
+
+
 bool hasPHDRCache()
 {
     return phdr_cache.load() != nullptr;
@@ -120,5 +126,6 @@ bool hasPHDRCache()
 
 void updatePHDRCache() {}
 bool hasPHDRCache() { return false; }
+void pushPHDRCache(dl_phdr_info * info) {}
 
 #endif
