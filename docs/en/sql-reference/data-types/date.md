@@ -9,21 +9,21 @@ The date. Stored in two bytes as the number of days since 1970-01-01 (unsigned).
 
 The date value is stored without the time zone.
 
-## Examples {#examples}
+**Examples**
 
-Creating a table with a `DateTime`-type column and inserting data into it:
+Creating a table with a `Date`-type column and inserting data into it:
 
 ``` sql
 CREATE TABLE dt
 (
-    `timestamp` Date,
+    `timestamp` Date32,
     `event_id` UInt8
 )
 ENGINE = TinyLog;
 ```
 
 ``` sql
-INSERT INTO dt Values (1546300800, 1), ('2019-01-01', 2);
+INSERT INTO dt VALUES (1546300800, 1), ('2019-01-01', 2);
 ```
 
 ``` sql

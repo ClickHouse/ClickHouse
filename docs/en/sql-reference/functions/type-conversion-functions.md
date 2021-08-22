@@ -159,12 +159,12 @@ Converts the argument to the [Date32](../../sql-reference/data-types/date32.md) 
 **Syntax** 
 
 ``` sql
- toDate32(expr)
+toDate32(expr)
 ```
 
 **Arguments** 
 
--   `expr` — The value. [String](../../sql-reference/data-types/string.md) or [Date](../../sql-reference/data-types/string.md).
+-   `expr` — The value. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) or [Date](../../sql-reference/data-types/string.md).
 
 **Returned value(s)**
 
