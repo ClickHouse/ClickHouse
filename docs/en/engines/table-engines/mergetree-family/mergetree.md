@@ -418,7 +418,7 @@ Reading from a table is automatically parallelized.
 
 Determines the lifetime of values.
 
-The `TTL` clause can be set for the whole table and for each individual column. Table-level `TTL` can also specify the logic of automatic move of data between disks and volumes, or recompression of parts where all the data has been expired.
+The `TTL` clause can be set for the whole table and for each individual column. Table-level `TTL` can also specify the logic of automatic moving of data between disks and volumes, or recompression of parts where all the data has been expired.
 
 Expressions must evaluate to [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md) data type.
 
