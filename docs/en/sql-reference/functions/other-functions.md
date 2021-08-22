@@ -2248,7 +2248,18 @@ getServerPort(port_name)
 
 **Arguments**
 
--   `port_name` — The name of the server port. [String](../../sql-reference/data-types/string.md#string).
+-   `port_name` — The name of the server port. [String](../../sql-reference/data-types/string.md#string). Possible values:
+
+    -   'tcp_port'
+    -   'tcp_port_secure'
+    -   'http_port'
+    -   'https_port'
+    -   'interserver_http_port'
+    -   'interserver_https_port'
+    -   'mysql_port'
+    -   'postgresql_port'
+    -   'grpc_port'
+    -   'prometheus.port'
 
 **Returned value**
 

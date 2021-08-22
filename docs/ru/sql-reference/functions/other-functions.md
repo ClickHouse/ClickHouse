@@ -2185,3 +2185,50 @@ defaultRoles()
 -   Список ролей по умолчанию. 
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## getServerPort {#getserverport}
+
+Возвращает номер порта сервера. Если порт не используется сервером, будет исключение.
+
+**Синтаксис**
+
+``` sql
+getServerPort(port_name)
+```
+
+**Аргументы**
+
+-   `port_name` — имя порта сервера. [String](../../sql-reference/data-types/string.md#string). Возможные значения:
+
+    -   'tcp_port'
+    -   'tcp_port_secure'
+    -   'http_port'
+    -   'https_port'
+    -   'interserver_http_port'
+    -   'interserver_https_port'
+    -   'mysql_port'
+    -   'postgresql_port'
+    -   'grpc_port'
+    -   'prometheus.port'
+
+**Возвращаемое значение**
+
+-   Номер порта сервера.
+
+Тип: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT getServerPort('tcp_port');
+```
+
+Результат:
+
+``` text
+┌─getServerPort('tcp_port')─┐
+│ 9000                      │
+└───────────────────────────┘
+```
