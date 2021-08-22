@@ -5,7 +5,7 @@ toc_title: SQLite
 
 # SQLite {#sqlite}
 
-Allows to connect to [SQLite](https://www.sqlite.org/index.html) database. 
+Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and SQLite. 
 
 ## Creating a Database {#creating-a-database}
 
