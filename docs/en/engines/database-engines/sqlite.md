@@ -39,8 +39,6 @@ Database in ClickHouse, connected to the SQLite:
 ``` sql
 CREATE DATABASE sqlite_db ENGINE = SQLite('sqlite.db');
 SHOW TABLES FROM sqlite_db;
-SELECT * FROM sqlite_db.table1;
-INSERT INTO sqlite_db.table1 SELECT * FROM clickhouse_table;
 ```
 
 ``` text
@@ -48,4 +46,35 @@ INSERT INTO sqlite_db.table1 SELECT * FROM clickhouse_table;
 │ table1  │
 │ table2  │  
 └─────────┘
+```
+
+Shows the tables:
+
+``` sql
+SELECT * FROM sqlite_db.table1;
+```
+
+``` text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+Inserting data into SQLite table from ClickHouse table:
+
+``` sql
+CREATE TABLE clickhouse_table(`col1` String,`col2` Int16) ENGINE = MergeTree() ORDER BY col2;
+INSERT INTO clickhouse_table VALUES ('text',10);
+INSERT INTO sqlite_db.table1 SELECT * FROM clickhouse_table;
+SELECT * FROM sqlite_db.table1;
+```
+
+``` text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+│ text  │   10 │
+└───────┴──────┘
 ```
