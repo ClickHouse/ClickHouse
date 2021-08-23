@@ -43,8 +43,6 @@ struct MutationCommand
     /// WHERE part of mutation
     ASTPtr predicate;
 
-    bool materialize_column_final = false;
-
     /// Columns with corresponding actions
     std::unordered_map<String, ASTPtr> column_to_update_expression;
 
