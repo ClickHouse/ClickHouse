@@ -13,7 +13,7 @@ Creates a user defined function from a lambda expression. The expression must co
 CREATE FUNCTION name AS (parameter0, ...) -> expression
 ```
 A function can have an arbitrary number of parameters.
-There are a few restrictions.
+There are a few restrictions:
 
 -   The name of a function must be unique among user defined and system functions.
 -   Recursive functions are not allowed.
