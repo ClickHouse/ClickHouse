@@ -24,18 +24,24 @@ then
   mkdir /output/binary ||: # if exists
   mv /build/obj-*/programs/clickhouse* /output/binary
 
-  # Copy all fuzzers
+  # Copy all fuzzers if any
   FUZZER_TARGETS=$(find /build/obj-*/src -name '*_fuzzer' -execdir basename {} ';' | tr '\n' ' ')
-  mkdir -p /output/fuzzers ||: # if exists
-  for FUZZER_TARGET in $FUZZER_TARGETS
-  do
-      FUZZER_PATH=$(find /build/obj-*/src -name "$FUZZER_TARGET")
-      strip --strip-unneeded "$FUZZER_PATH"
-      mv "$FUZZER_PATH" /output/fuzzers ||: # if exists
-  done
 
-  tar -zcvf /output/fuzzers.tar.gz /output/fuzzers
-  rm -rf /output/fuzzers
+  if [[ $FUZZER_TARGETS != "" ]]; then
+
+    mkdir -p /output/fuzzers ||: # if exists
+    for FUZZER_TARGET in $FUZZER_TARGETS
+    do
+        FUZZER_PATH=$(find /build/obj-*/src -name "$FUZZER_TARGET")
+        strip --strip-unneeded "$FUZZER_PATH"
+        mv "$FUZZER_PATH" /output/fuzzers ||: # if exists
+    done
+
+
+    tar -zcvf /output/fuzzers.tar.gz /output/fuzzers
+    rm -rf /output/fuzzers
+
+  fi
 
   if [ "$BINARY_OUTPUT" = "tests" ]
   then
