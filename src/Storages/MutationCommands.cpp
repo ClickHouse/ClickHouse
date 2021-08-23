@@ -82,7 +82,6 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MATERIALIZE_COLUMN;
         res.partition = command->partition;
         res.column_name = getIdentifierName(command->column);
-        res.materialize_column_final = command->materialize_column_final;
         return res;
     }
     else if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN)
