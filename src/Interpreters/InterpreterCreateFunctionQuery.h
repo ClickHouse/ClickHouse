@@ -1,12 +1,11 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
+
 
 namespace DB
 {
 
-class ASTCreateFunctionQuery;
 class Context;
 
 class InterpreterCreateFunctionQuery : public IInterpreter, WithContext
