@@ -120,10 +120,6 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
 
     if sanitizer:
         result.append("SANITIZER={}".format(sanitizer))
-        # Build fuzzers only with sanitizers
-        # This is needed to check necessity particularly in build script
-        result.append("FUZZER=TRUE")
-        cmake_flags.append('-DENABLE_FUZZING=1')
     if build_type:
         result.append("BUILD_TYPE={}".format(build_type))
 
