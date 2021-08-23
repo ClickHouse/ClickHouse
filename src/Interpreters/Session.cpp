@@ -276,10 +276,14 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     if (session_context)
         throw Exception("If there is a session context it must be created after authentication", ErrorCodes::LOGICAL_ERROR);
 
-    user_id = global_context->getAccessControlManager().login(credentials_, address_.host());
+    auto address = address_;
+    if ((address == Poco::Net::SocketAddress{}) && (prepared_client_info->interface == ClientInfo::Interface::LOCAL))
+        address = Poco::Net::SocketAddress{"127.0.0.1", 0};
+
+    user_id = global_context->getAccessControlManager().login(credentials_, address.host());
 
     prepared_client_info->current_user = credentials_.getUserName();
-    prepared_client_info->current_address = address_;
+    prepared_client_info->current_address = address;
 
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
