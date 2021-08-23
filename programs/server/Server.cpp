@@ -55,7 +55,6 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/Session.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -359,6 +358,7 @@ void Server::createServer(const std::string & listen_host, const char * port_nam
     try
     {
         func(port);
+        global_context->registerServerPort(port_name, port);
     }
     catch (const Poco::Exception &)
     {
@@ -1445,7 +1445,6 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
-        Session::startupNamedSessions();
 
         {
             String level_str = config().getString("text_log.level", "");
