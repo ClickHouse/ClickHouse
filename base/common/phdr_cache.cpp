@@ -82,9 +82,9 @@ int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * da
 extern "C"
 {
 #ifdef ADDRESS_SANITIZER
-void __lsan_ignore_object(const void *);
+void lsan_ignore_object(const void *);
 #else
-void __lsan_ignore_object(const void *) {} // NOLINT
+void lsan_ignore_object(const void *) {} // NOLINT
 #endif
 }
 
@@ -107,7 +107,7 @@ void updatePHDRCache()
     phdr_cache.store(new_phdr_cache);
 
     /// Memory is intentionally leaked.
-    __lsan_ignore_object(new_phdr_cache);
+    lsan_ignore_object(new_phdr_cache);
 }
 
 
