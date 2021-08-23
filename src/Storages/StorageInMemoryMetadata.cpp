@@ -5,6 +5,7 @@
 #include <Common/quoteString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -493,6 +494,15 @@ namespace
 
         return res;
     }
+
+    bool isEnumSubset(const IDataType* lhs, const DataTypePtr& rhs)
+    {
+        const WhichDataType & which = WhichDataType{lhs};
+        if (!which.isEnum())
+            return false;
+        IDataTypeEnum const* enum_type = dynamic_cast<IDataTypeEnum const*>(lhs);
+        return enum_type->contains(*rhs);
+    }
 }
 
 void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
@@ -544,12 +554,13 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
                 column.name,
                 listOfColumns(available_columns));
 
-        if (!column.type->equals(*it->getMapped()))
+        auto const mappedType = it->getMapped();
+        if (!column.type->equals(*mappedType) && !isEnumSubset(mappedType, column.type))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {}. Column has type {}, got type {}",
                 column.name,
-                it->getMapped()->getName(),
+                mappedType->getName(),
                 column.type->getName());
 
         if (unique_names.end() != unique_names.find(column.name))
