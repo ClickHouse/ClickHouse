@@ -6,6 +6,7 @@
 #include <Storages/IStorage.h>
 #include <Common/Stopwatch.h>
 #include <Processors/Drain.h>
+#include <Processors/ISimpleTransform.h>
 
 namespace Poco
 {
@@ -20,8 +21,14 @@ class ReplicatedMergeTreeSink;
 struct ViewRuntimeData
 {
     const ASTPtr query;
+    Block sample_block;
+
     StorageID table_id;
-    Drain out;
+    StoragePtr storage;
+    StorageMetadataPtr metadata_snapshot;
+
+    ContextPtr context;
+
     std::exception_ptr exception;
     QueryViewsLogElement::ViewRuntimeStats runtime_stats;
 
@@ -71,5 +78,22 @@ private:
     void logQueryViews();
 };
 
+class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
+{
+public:
+    ExecutingInnerQueryFromViewTransform(const Block & header, ViewRuntimeData view_data)
+        : ExceptionKeepingTransform(header, view_data.sample_block)
+        , view(std::move(view_data))
+    {
+    }
+
+    String getName() const override { return "ExecutingInnerQueryFromView"; }
+
+protected:
+    void transform(Chunk & chunk) override;
+
+private:
+    ViewRuntimeData view;
+};
 
 }
