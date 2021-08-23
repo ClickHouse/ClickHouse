@@ -2240,7 +2240,8 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 Returns the ID of the current query, which can be used instantly in other queries. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `query_id`.
 
-In contrast to [initialQueryID](#initial-query-id) function `queryID` can return different results on shards (see example). And then the server will argue that constant column has different values.
+!!! warning "Warning"
+    In contrast to [initialQueryID](#initial-query-id) function `queryID` can return different results on shards (see example). And then the server will argue that constant column has different values.
 
 **Syntax**
 
@@ -2256,12 +2257,18 @@ Type: [String](../../sql-reference/data-types/string.md)
 
 **Example**
 
-In this example the result of the query will be three different values, one of which will match the `initial_query_id` for this query.
-
 Query:
 
 ``` sql
-SELECT queryID() FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp');
+SELECT count(DISTINCT t) FROM (SELECT queryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
+```
+
+Result:
+
+``` text
+┌─count()─┐
+│ 3       │
+└─────────┘
 ```
 
 ## initialQueryID {#initial-query-id}
@@ -2284,10 +2291,16 @@ Type: [String](../../sql-reference/data-types/string.md)
 
 **Example**
 
-In this example the result of the query will be three same values.
-
 Query:
 
 ``` sql
-SELECT initialQueryID() FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp');
+SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
+```
+
+Result:
+
+``` text
+┌─count()─┐
+│ 1       │
+└─────────┘
 ```
