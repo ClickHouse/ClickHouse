@@ -50,8 +50,6 @@ protected:
         const String & compression_method_);
 
 private:
-    /// Connections from initiator to other nodes
-    std::vector<std::shared_ptr<Connection>> connections;
     StorageS3::ClientAuthentication client_auth;
 
     String filename;

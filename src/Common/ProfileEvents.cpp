@@ -224,7 +224,7 @@
     M(PerfLocalMemoryReferences, "Local NUMA node memory reads") \
     M(PerfLocalMemoryMisses, "Local NUMA node memory read misses") \
     \
-    M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
+    M(CreatedHTTPConnections, "Total amount of created HTTP connections (counter increase every time connection is created).") \
     \
     M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
     M(QueryProfilerSignalOverruns, "Number of times we drop processing of a signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
@@ -248,6 +248,9 @@
     M(S3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
+    \
+    M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
+    M(SleepFunctionMicroseconds, "Time spent sleeping due to a sleep function call.") \
 
 
 namespace ProfileEvents

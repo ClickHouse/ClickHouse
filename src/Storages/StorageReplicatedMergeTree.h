@@ -116,7 +116,7 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -174,8 +174,10 @@ public:
         UInt64 absolute_delay;
         UInt8 total_replicas;
         UInt8 active_replicas;
+        String last_queue_update_exception;
         /// If the error has happened fetching the info from ZooKeeper, this field will be set.
         String zookeeper_exception;
+        std::unordered_map<std::string, bool> replica_is_active;
     };
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
@@ -269,7 +271,7 @@ private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
 
-    friend class ReplicatedMergeTreeBlockOutputStream;
+    friend class ReplicatedMergeTreeSink;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
@@ -329,6 +331,10 @@ private:
     ReplicatedMergeTreeQueue queue;
     std::atomic<time_t> last_queue_update_start_time{0};
     std::atomic<time_t> last_queue_update_finish_time{0};
+
+    mutable std::mutex last_queue_update_exception_lock;
+    String last_queue_update_exception;
+    String getLastQueueUpdateException() const;
 
     DataPartsExchange::Fetcher fetcher;
 

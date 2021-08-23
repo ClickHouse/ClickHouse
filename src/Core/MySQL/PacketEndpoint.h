@@ -58,14 +58,4 @@ using PacketEndpointPtr = std::shared_ptr<PacketEndpoint>;
 
 }
 
-struct MySQLWireContext
-{
-    uint8_t sequence_id = 0;
-    uint32_t client_capabilities = 0;
-    size_t max_packet_size = 0;
-
-    MySQLProtocol::PacketEndpointPtr makeEndpoint(WriteBuffer & out);
-    MySQLProtocol::PacketEndpointPtr makeEndpoint(ReadBuffer & in, WriteBuffer & out);
-};
-
 }

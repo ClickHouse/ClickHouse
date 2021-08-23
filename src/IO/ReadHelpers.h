@@ -403,7 +403,6 @@ bool tryReadIntText(T & x, ReadBuffer & buf)  // -V1071
   * Differs in following:
   * - for numbers starting with zero, parsed only zero;
   * - symbol '+' before number is not supported;
-  * - symbols :;<=>? are parsed as some numbers.
   */
 template <typename T, bool throw_on_error = true>
 void readIntTextUnsafe(T & x, ReadBuffer & buf)
@@ -437,15 +436,12 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        /// This check is suddenly faster than
-        ///  unsigned char c = *buf.position() - '0';
-        ///  if (c < 10)
-        /// for unknown reason on Xeon E5645.
+        unsigned char value = *buf.position() - '0';
 
-        if ((*buf.position() & 0xF0) == 0x30) /// It makes sense to have this condition inside loop.
+        if (value < 10)
         {
             res *= 10;
-            res += *buf.position() & 0x0F;
+            res += value;
             ++buf.position();
         }
         else
@@ -644,7 +640,7 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf)
     else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
     /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
-    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day(), -DateLUT::instance().getDayNumOffsetEpoch());
+    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()));
     return ReturnType(true);
 }
 

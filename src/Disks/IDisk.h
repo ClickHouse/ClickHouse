@@ -13,9 +13,9 @@
 #include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
+#include "Poco/Util/AbstractConfiguration.h"
 #include <Poco/Timestamp.h>
 #include <filesystem>
-#include "Poco/Util/AbstractConfiguration.h"
 
 namespace fs = std::filesystem;
 
@@ -245,6 +245,11 @@ protected:
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
+
+    /// Base implementation of the function copy().
+    /// It just opens two files, reads data by portions from the first file, and writes it to the second one.
+    /// A derived class may override copy() to provide a faster implementation.
+    void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path);
 
 private:
     std::unique_ptr<Executor> executor;

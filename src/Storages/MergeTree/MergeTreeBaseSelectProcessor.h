@@ -1,11 +1,11 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
+
 
 namespace DB
 {
@@ -36,6 +36,11 @@ public:
 
     static Block transformHeader(
         Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns);
+
+    static std::unique_ptr<MergeTreeBlockSizePredictor> getSizePredictor(
+        const MergeTreeData::DataPartPtr & data_part,
+        const MergeTreeReadTaskColumns & task_columns,
+        const Block & sample_block);
 
 protected:
     Chunk generate() final;

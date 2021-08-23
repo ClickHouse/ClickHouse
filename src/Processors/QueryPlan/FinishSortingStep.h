@@ -13,8 +13,9 @@ public:
         const DataStream & input_stream_,
         SortDescription prefix_description_,
         SortDescription result_description_,
-        size_t max_block_size,
-        UInt64 limit);
+        size_t max_block_size_,
+        UInt64 limit_,
+        bool has_filtration_);
 
     String getName() const override { return "FinishSorting"; }
 
@@ -31,6 +32,7 @@ private:
     SortDescription result_description;
     size_t max_block_size;
     UInt64 limit;
+    bool has_filtration;
 };
 
 }

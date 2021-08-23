@@ -75,7 +75,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         /// Attempt to open a file with O_DIRECT
         try
         {
-            auto res = std::make_unique<ReadBufferFromFile>(
+            auto res = std::make_unique<ReadBufferFromFilePReadWithCache>(
                 filename, buffer_size, (flags == -1 ? O_RDONLY | O_CLOEXEC : flags) | O_DIRECT, existing_memory, alignment);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
             return res;
@@ -92,7 +92,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 #endif
 
     ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-    return std::make_unique<ReadBufferFromFile>(filename, buffer_size, flags, existing_memory, alignment);
+    return std::make_unique<ReadBufferFromFilePReadWithCache>(filename, buffer_size, flags, existing_memory, alignment);
 }
 
 }

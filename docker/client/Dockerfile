@@ -1,7 +1,9 @@
 FROM ubuntu:18.04
 
 ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=21.9.1.*
+ARG version=21.10.1.*
+
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \

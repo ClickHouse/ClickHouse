@@ -1,7 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Core/Block.h>
 #include <common/types.h>
 #include <Core/NamesAndTypes.h>
@@ -18,6 +16,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <shared_mutex>
+
 
 namespace zkutil
 {

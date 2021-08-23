@@ -17,7 +17,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
-#include <DataStreams/CheckSortedBlockInputStream.h>
+#include <Processors/Transforms/CheckSortedTransform.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -503,10 +503,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     }
                 }
 
-                auto updated_column = makeASTFunction("CAST",
+                auto updated_column = makeASTFunction("_CAST",
                     makeASTFunction("if",
                         condition,
-                        makeASTFunction("CAST",
+                        makeASTFunction("_CAST",
                             update_expr->clone(),
                             type_literal),
                         std::make_shared<ASTIdentifier>(column)),
@@ -901,12 +901,18 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     select_interpreter->buildQueryPlan(plan);
 
     auto pipeline = addStreamsForLaterStages(stages, plan);
-    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(result_stream->getHeader()))
-        result_stream = std::make_shared<CheckSortedBlockInputStream>(result_stream, *sort_desc);
+    if (auto sort_desc = getStorageSortDescriptionIfPossible(pipeline->getHeader()))
+    {
+        pipeline->addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<CheckSortedTransform>(header, *sort_desc);
+        });
+    }
+
+    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
 
     if (!updated_header)
         updated_header = std::make_unique<Block>(result_stream->getHeader());
@@ -914,9 +920,10 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     return result_stream;
 }
 
-const Block & MutationsInterpreter::getUpdatedHeader() const
+Block MutationsInterpreter::getUpdatedHeader() const
 {
-    return *updated_header;
+    // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
+    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const

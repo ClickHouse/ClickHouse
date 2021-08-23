@@ -10,6 +10,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageSQLite.h>
+#include <Databases/SQLite/SQLiteUtils.h>
 
 
 namespace DB
@@ -24,23 +25,15 @@ namespace ErrorCodes
 DatabaseSQLite::DatabaseSQLite(
         ContextPtr context_,
         const ASTStorage * database_engine_define_,
+        bool is_attach_,
         const String & database_path_)
     : IDatabase("SQLite")
     , WithContext(context_->getGlobalContext())
     , database_engine_define(database_engine_define_->clone())
+    , database_path(database_path_)
     , log(&Poco::Logger::get("DatabaseSQLite"))
 {
-    sqlite3 * tmp_sqlite_db = nullptr;
-    int status = sqlite3_open(database_path_.c_str(), &tmp_sqlite_db);
-
-    if (status != SQLITE_OK)
-    {
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                        "Cannot access sqlite database. Error status: {}. Message: {}",
-                        status, sqlite3_errstr(status));
-    }
-
-    sqlite_db = std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
+    sqlite_db = openSQLiteDB(database_path_, context_, !is_attach_);
 }
 
 
@@ -66,6 +59,9 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
 
 std::unordered_set<std::string> DatabaseSQLite::fetchTablesList() const
 {
+    if (!sqlite_db)
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+
     std::unordered_set<String> tables;
     std::string query = "SELECT name FROM sqlite_master "
                         "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'";
@@ -94,6 +90,9 @@ std::unordered_set<std::string> DatabaseSQLite::fetchTablesList() const
 
 bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
 {
+    if (!sqlite_db)
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+
     const String query = fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';", table_name);
 
     auto callback_get_data = [](void * res, int, char **, char **) -> int
@@ -134,6 +133,9 @@ StoragePtr DatabaseSQLite::tryGetTable(const String & table_name, ContextPtr loc
 
 StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr local_context, bool table_checked) const
 {
+    if (!sqlite_db)
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+
     if (!table_checked && !checkSQLiteTable(table_name))
         return StoragePtr{};
 
@@ -145,6 +147,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
     auto storage = StorageSQLite::create(
         StorageID(database_name, table_name),
         sqlite_db,
+        database_path,
         table_name,
         ColumnsDescription{*columns},
         ConstraintsDescription{},

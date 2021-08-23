@@ -256,6 +256,12 @@ NamesAndTypesList StorageMaterializedPostgreSQL::getVirtuals() const
 }
 
 
+bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & column_names) const
+{
+    return needRewriteQueryWithFinalForStorage(column_names, getNested());
+}
+
+
 Pipe StorageMaterializedPostgreSQL::read(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,

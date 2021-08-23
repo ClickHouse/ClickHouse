@@ -42,10 +42,10 @@ public:
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
       */
-    void setHeader(const Block & header);
+    void setHeader(const ColumnsWithTypeAndName & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromBlock(const Block & block);
+    bool insertFromBlock(const ColumnsWithTypeAndName & columns);
     /// Call after all blocks were inserted. To get the information that set is already created.
     void finishInsert() { is_created = true; }
 
@@ -54,7 +54,7 @@ public:
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
-    ColumnPtr execute(const Block & block, bool negative) const;
+    ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const;
 
     bool empty() const;
     size_t getTotalRowCount() const;
@@ -178,29 +178,19 @@ using FunctionPtr = std::shared_ptr<IFunction>;
   * Single field is stored in column for more optimal inplace comparisons with other regular columns.
   * Extracting fields from columns and further their comparison is suboptimal and requires extra copying.
   */
-class ValueWithInfinity
+struct FieldValue
 {
-public:
-    enum Type
-    {
-        MINUS_INFINITY = -1,
-        NORMAL = 0,
-        PLUS_INFINITY = 1
-    };
-
-    ValueWithInfinity(MutableColumnPtr && column_)
-        : column(std::move(column_)), type(NORMAL) {}
-
+    FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
     void update(const Field & x);
-    void update(Type type_) { type = type_; }
 
-    const IColumn & getColumnIfFinite() const;
+    bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
+    bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
+    bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
 
-    Type getType() const { return type; }
+    Field value; // Null, -Inf, +Inf
 
-private:
+    // If value is Null, uses the actual value in column
     MutableColumnPtr column;
-    Type type;
 };
 
 
@@ -230,7 +220,7 @@ private:
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 
-    using ColumnsWithInfinity = std::vector<ValueWithInfinity>;
+    using FieldValues = std::vector<FieldValue>;
 };
 
 }

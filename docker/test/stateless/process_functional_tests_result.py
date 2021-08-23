@@ -12,7 +12,7 @@ UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
 HUNG_SIGN = "Found hung queries in processlist"
 
-NO_TASK_TIMEOUT_SIGN = "All tests have finished"
+NO_TASK_TIMEOUT_SIGNS = ["All tests have finished", "No tests were run"]
 
 RETRIES_SIGN = "Some tests were restarted"
 
@@ -29,7 +29,7 @@ def process_test_log(log_path):
     with open(log_path, 'r') as test_file:
         for line in test_file:
             line = line.strip()
-            if NO_TASK_TIMEOUT_SIGN in line:
+            if any(s in line for s in NO_TASK_TIMEOUT_SIGNS):
                 task_timeout = False
             if HUNG_SIGN in line:
                 hung = True
@@ -80,6 +80,7 @@ def process_result(result_path):
     if result_path and os.path.exists(result_path):
         total, skipped, unknown, failed, success, hung, task_timeout, retries, test_results = process_test_log(result_path)
         is_flacky_check = 1 < int(os.environ.get('NUM_TRIES', 1))
+        logging.info("Is flacky check: %s", is_flacky_check)
         # If no tests were run (success == 0) it indicates an error (e.g. server did not start or crashed immediately)
         # But it's Ok for "flaky checks" - they can contain just one test for check which is marked as skipped.
         if failed != 0 or unknown != 0 or (success == 0 and (not is_flacky_check)):

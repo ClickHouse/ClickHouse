@@ -51,6 +51,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -156,6 +157,16 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
             "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
             + ". Must be one unsigned integer type",
             ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+}
+
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
 MergeTreeData::MergeTreeData(
@@ -1246,7 +1257,11 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         PartLogElement part_log_elem;
 
         part_log_elem.event_type = PartLogElement::REMOVE_PART;
-        part_log_elem.event_time = time(nullptr);
+
+        const auto time_now = std::chrono::system_clock::now();
+        part_log_elem.event_time = time_in_seconds(time_now);
+        part_log_elem.event_time_microseconds = time_in_microseconds(time_now);
+
         part_log_elem.duration_ms = 0; //-V1048
 
         part_log_elem.database_name = table_id.database_name;
@@ -2381,7 +2396,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         /// It's a DROP PART and it's already executed by fetching some covering part
         bool is_drop_part = !drop_range.isFakeDropRangePart() && drop_range.min_block;
 
-        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block))
+        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block || part->info.getMutationVersion() != drop_range.getMutationVersion()))
         {
             /// Why we check only min and max blocks here without checking merge
             /// level? It's a tricky situation which can happen on a stale
@@ -2398,9 +2413,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             /// So here we just check that all_1_3_1 covers blocks from drop
             /// all_2_2_2.
             ///
-            /// NOTE: this helps only to avoid logical error during drop part.
-            /// We still get intersecting "parts" in queue.
-            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block;
+            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block && part->info.getMutationVersion() >= drop_range.getMutationVersion();
             if (is_covered_by_min_max_block)
             {
                 LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartName(), part->name);
@@ -3200,7 +3213,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     const auto & partition_ast = ast->as<ASTPartition &>();
 
     if (!partition_ast.value)
+    {
+        MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
         return partition_ast.id;
+    }
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -3209,10 +3225,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         if (partition_lit && partition_lit->value.getType() == Field::Types::String)
         {
             String partition_id = partition_lit->value.get<String>();
-            if (partition_id.size() != 6 || !std::all_of(partition_id.begin(), partition_id.end(), isNumericASCII))
-                throw Exception(
-                    "Invalid partition format: " + partition_id + ". Partition should consist of 6 digits: YYYYMM",
-                    ErrorCodes::INVALID_PARTITION_VALUE);
+            MergeTreePartInfo::validatePartitionID(partition_id, format_version);
             return partition_id;
         }
     }
@@ -3226,6 +3239,21 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
             ", must be: " + toString(fields_count),
             ErrorCodes::INVALID_PARTITION_VALUE);
+
+    if (auto * f = partition_ast.value->as<ASTFunction>())
+    {
+        assert(f->name == "tuple");
+        if (f->arguments && !f->arguments->as<ASTExpressionList>()->children.empty())
+        {
+            ASTPtr query = partition_ast.value->clone();
+            auto syntax_analyzer_result
+                = TreeRewriter(local_context)
+                      .analyze(query, metadata_snapshot->getPartitionKey().sample_block.getNamesAndTypesList(), {}, {}, false, false);
+            auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, local_context).getActions(true);
+            if (actions->hasArrayJoin())
+                throw Exception("The partition expression cannot contain array joins", ErrorCodes::INVALID_PARTITION_VALUE);
+        }
+    }
 
     const FormatSettings format_settings;
     Row partition_row(fields_count);
@@ -3854,16 +3882,20 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
                 if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(item))
                     return true;
-            if (metadata_snapshot->selected_projection
-                && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
-                return true;
+            for (const auto & projection : metadata_snapshot->getProjections())
+            {
+                if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(item))
+                    return true;
+            }
         }
         /// The tuple itself may be part of the primary key, so check that as a last resort.
         if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot))
             return true;
-        if (metadata_snapshot->selected_projection
-            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
-            return true;
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+                return true;
+        }
         return false;
     }
     else
@@ -3872,10 +3904,11 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
             if (index_wrapper_factory.get(index)->mayBenefitFromIndexForIn(left_in_operand))
                 return true;
 
-        if (metadata_snapshot->selected_projection
-            && metadata_snapshot->selected_projection->isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
-            return true;
-
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (projection.isPrimaryKeyColumnPossiblyWrappedInFunctions(left_in_operand))
+                return true;
+        }
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand, metadata_snapshot);
     }
 }
@@ -3910,16 +3943,20 @@ static void selectBestProjection(
     if (projection_parts.empty())
         return;
 
-    auto sum_marks = reader.estimateNumMarksToRead(
+    auto projection_result_ptr = reader.estimateNumMarksToRead(
         projection_parts,
         candidate.required_columns,
         metadata_snapshot,
         candidate.desc->metadata,
-        query_info, // TODO syntax_analysis_result set in index
+        query_info,
         query_context,
         settings.max_threads,
         max_added_blocks);
 
+    if (projection_result_ptr->error())
+        return;
+
+    auto sum_marks = projection_result_ptr->marks();
     if (normal_parts.empty())
     {
         // All parts are projection parts which allows us to use in_order_optimization.
@@ -3928,16 +3965,23 @@ static void selectBestProjection(
     }
     else
     {
-        sum_marks += reader.estimateNumMarksToRead(
+        auto normal_result_ptr = reader.estimateNumMarksToRead(
             normal_parts,
             required_columns,
             metadata_snapshot,
             metadata_snapshot,
-            query_info, // TODO syntax_analysis_result set in index
+            query_info,
             query_context,
             settings.max_threads,
             max_added_blocks);
+
+        if (normal_result_ptr->error())
+            return;
+
+        sum_marks += normal_result_ptr->marks();
+        candidate.merge_tree_normal_select_result_ptr = normal_result_ptr;
     }
+    candidate.merge_tree_projection_select_result_ptr = projection_result_ptr;
 
     // We choose the projection with least sum_marks to read.
     if (sum_marks < min_sum_marks)
@@ -4103,7 +4147,8 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             candidate.before_aggregation = analysis_result.before_aggregation->clone();
             auto required_columns = candidate.before_aggregation->foldActionsByProjection(keys, projection.sample_block_for_keys);
 
-            if (required_columns.empty() && !keys.empty())
+            // TODO Let's find out the exact required_columns for keys.
+            if (required_columns.empty() && (!keys.empty() && !candidate.before_aggregation->getRequiredColumns().empty()))
                 continue;
 
             if (analysis_result.optimize_aggregation_in_order)
@@ -4157,10 +4202,25 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
         auto parts = getDataPartsVector();
         MergeTreeDataSelectExecutor reader(*this);
+        query_info.merge_tree_select_result_ptr = reader.estimateNumMarksToRead(
+            parts,
+            analysis_result.required_columns,
+            metadata_snapshot,
+            metadata_snapshot,
+            query_info,
+            query_context,
+            settings.max_threads,
+            max_added_blocks);
+
+        size_t min_sum_marks = std::numeric_limits<size_t>::max();
+        if (!query_info.merge_tree_select_result_ptr->error())
+        {
+            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
+            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
+            min_sum_marks = query_info.merge_tree_select_result_ptr->marks() + 1;
+        }
 
         ProjectionCandidate * selected_candidate = nullptr;
-        size_t min_sum_marks = std::numeric_limits<size_t>::max();
-        bool has_ordinary_projection = false;
         /// Favor aggregate projections
         for (auto & candidate : candidates)
         {
@@ -4179,44 +4239,25 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     selected_candidate,
                     min_sum_marks);
             }
-            else
-                has_ordinary_projection = true;
         }
 
-        /// Select the best normal projection if no aggregate projection is available
-        if (!selected_candidate && has_ordinary_projection)
+        /// Select the best normal projection.
+        for (auto & candidate : candidates)
         {
-            min_sum_marks = reader.estimateNumMarksToRead(
-                parts,
-                analysis_result.required_columns,
-                metadata_snapshot,
-                metadata_snapshot,
-                query_info, // TODO syntax_analysis_result set in index
-                query_context,
-                settings.max_threads,
-                max_added_blocks);
-
-            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
-            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
-            min_sum_marks += 1;
-
-            for (auto & candidate : candidates)
+            if (candidate.desc->type == ProjectionDescription::Type::Normal)
             {
-                if (candidate.desc->type == ProjectionDescription::Type::Normal)
-                {
-                    selectBestProjection(
-                        reader,
-                        metadata_snapshot,
-                        query_info,
-                        analysis_result.required_columns,
-                        candidate,
-                        query_context,
-                        max_added_blocks,
-                        settings,
-                        parts,
-                        selected_candidate,
-                        min_sum_marks);
-                }
+                selectBestProjection(
+                    reader,
+                    metadata_snapshot,
+                    query_info,
+                    analysis_result.required_columns,
+                    candidate,
+                    query_context,
+                    max_added_blocks,
+                    settings,
+                    parts,
+                    selected_candidate,
+                    min_sum_marks);
             }
         }
 
@@ -4230,7 +4271,6 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         }
 
         query_info.projection = std::move(*selected_candidate);
-
         return true;
     }
     return false;
@@ -4572,17 +4612,6 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
             return false;
     }
     return true;
-}
-
-inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
-}
-
-
-inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
-{
-    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
 }
 
 void MergeTreeData::writePartLog(

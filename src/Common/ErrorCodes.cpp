@@ -1,4 +1,5 @@
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <chrono>
 
 /** Previously, these constants were located in one enum.
@@ -561,10 +562,14 @@
     M(591, SQLITE_ENGINE_ERROR) \
     M(592, DATA_ENCRYPTION_ERROR) \
     M(593, ZERO_COPY_REPLICATION_ERROR) \
-    M(594, TYPE_ALREADY_EXISTS) \
-    M(595, CANNOT_DROP_SYSTEM_TYPE) \
-    M(596, TYPE_ALREADY_STORED_ON_DISK) \
-    M(597, TYPE_WAS_NOT_STORED_ON_DISK) \
+    M(594, BZIP2_STREAM_DECODER_FAILED) \
+    M(595, BZIP2_STREAM_ENCODER_FAILED) \
+    M(596, INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH) \
+    M(597, NO_SUCH_ERROR_CODE) \
+    M(598, TYPE_ALREADY_EXISTS) \
+    M(599, CANNOT_DROP_SYSTEM_TYPE) \
+    M(600, TYPE_ALREADY_STORED_ON_DISK) \
+    M(601, TYPE_WAS_NOT_STORED_ON_DISK) \
     \
     M(998, POSTGRESQL_CONNECTION_FAILURE) \
     M(999, KEEPER_EXCEPTION) \
@@ -601,6 +606,21 @@ namespace ErrorCodes
         if (error_code < 0 || error_code >= END)
             return std::string_view();
         return error_codes_names.names[error_code];
+    }
+
+    ErrorCode getErrorCodeByName(std::string_view error_name)
+    {
+        for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+        {
+            std::string_view name = ErrorCodes::getName(i);
+
+            if (name.empty())
+                continue;
+
+            if (name == error_name)
+                return i;
+        }
+        throw Exception(NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
     }
 
     ErrorCode end() { return END + 1; }

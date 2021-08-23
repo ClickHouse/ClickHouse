@@ -12,6 +12,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Session.h>
 #include <Interpreters/UserDefinedObjectsOnDisk.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -380,14 +381,13 @@ void LocalServer::processQueries()
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
-    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
-    /// so we can't reuse it safely as a query context and need a copy here
-    auto context = Context::createCopy(global_context);
+    /// Authenticate and create a context to execute queries.
+    Session session{global_context, ClientInfo::Interface::LOCAL};
+    session.authenticate("default", "", {});
 
-    context->makeSessionContext();
-    context->makeQueryContext();
-
-    context->setUser("default", "", Poco::Net::SocketAddress{});
+    /// Use the same context for all queries.
+    auto context = session.makeQueryContext();
+    context->makeSessionContext(); /// initial_create_query requires a session context to be set.
     context->setCurrentQueryId("");
     applyCmdSettings(context);
 
@@ -439,7 +439,7 @@ void LocalServer::processQueries()
 
         try
         {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {}, finalize_progress);
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {}, {}, finalize_progress);
         }
         catch (...)
         {

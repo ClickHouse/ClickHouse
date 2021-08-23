@@ -42,7 +42,8 @@
 #include <Access/User.h>
 #include <Access/Credentials.h>
 #include <Access/SettingsProfile.h>
-#include <Access/SettingsConstraints.h>
+#include <Access/SettingsProfilesInfo.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
@@ -58,6 +59,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/Session.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -76,6 +78,8 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Interpreters/SynonymsExtensions.h>
+#include <Interpreters/Lemmatizers.h>
 #include <filesystem>
 
 
@@ -97,7 +101,6 @@ namespace CurrentMetrics
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
 }
 
-
 namespace DB
 {
 
@@ -112,186 +115,8 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
-    extern const int SESSION_NOT_FOUND;
-    extern const int SESSION_IS_LOCKED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-}
-
-
-class NamedSessions
-{
-public:
-    using Key = NamedSessionKey;
-
-    ~NamedSessions()
-    {
-        try
-        {
-            {
-                std::lock_guard lock{mutex};
-                quit = true;
-            }
-
-            cond.notify_one();
-            thread.join();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    /// Find existing session or create a new.
-    std::shared_ptr<NamedSession> acquireSession(
-        const String & session_id,
-        ContextMutablePtr context,
-        std::chrono::steady_clock::duration timeout,
-        bool throw_if_not_found)
-    {
-        std::unique_lock lock(mutex);
-
-        auto & user_name = context->client_info.current_user;
-
-        if (user_name.empty())
-            throw Exception("Empty user name.", ErrorCodes::LOGICAL_ERROR);
-
-        Key key(user_name, session_id);
-
-        auto it = sessions.find(key);
-        if (it == sessions.end())
-        {
-            if (throw_if_not_found)
-                throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
-
-            /// Create a new session from current context.
-            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSession>(key, context, timeout, *this))).first;
-        }
-        else if (it->second->key.first != context->client_info.current_user)
-        {
-            throw Exception("Session belongs to a different user", ErrorCodes::SESSION_IS_LOCKED);
-        }
-
-        /// Use existing session.
-        const auto & session = it->second;
-
-        if (!session.unique())
-            throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
-
-        session->context->client_info = context->client_info;
-
-        return session;
-    }
-
-    void releaseSession(NamedSession & session)
-    {
-        std::unique_lock lock(mutex);
-        scheduleCloseSession(session, lock);
-    }
-
-private:
-    class SessionKeyHash
-    {
-    public:
-        size_t operator()(const Key & key) const
-        {
-            SipHash hash;
-            hash.update(key.first);
-            hash.update(key.second);
-            return hash.get64();
-        }
-    };
-
-    /// TODO it's very complicated. Make simple std::map with time_t or boost::multi_index.
-    using Container = std::unordered_map<Key, std::shared_ptr<NamedSession>, SessionKeyHash>;
-    using CloseTimes = std::deque<std::vector<Key>>;
-    Container sessions;
-    CloseTimes close_times;
-    std::chrono::steady_clock::duration close_interval = std::chrono::seconds(1);
-    std::chrono::steady_clock::time_point close_cycle_time = std::chrono::steady_clock::now();
-    UInt64 close_cycle = 0;
-
-    void scheduleCloseSession(NamedSession & session, std::unique_lock<std::mutex> &)
-    {
-        /// Push it on a queue of sessions to close, on a position corresponding to the timeout.
-        /// (timeout is measured from current moment of time)
-
-        const UInt64 close_index = session.timeout / close_interval + 1;
-        const auto new_close_cycle = close_cycle + close_index;
-
-        if (session.close_cycle != new_close_cycle)
-        {
-            session.close_cycle = new_close_cycle;
-            if (close_times.size() < close_index + 1)
-                close_times.resize(close_index + 1);
-            close_times[close_index].emplace_back(session.key);
-        }
-    }
-
-    void cleanThread()
-    {
-        setThreadName("SessionCleaner");
-        std::unique_lock lock{mutex};
-
-        while (true)
-        {
-            auto interval = closeSessions(lock);
-
-            if (cond.wait_for(lock, interval, [this]() -> bool { return quit; }))
-                break;
-        }
-    }
-
-    /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
-    std::chrono::steady_clock::duration closeSessions(std::unique_lock<std::mutex> & lock)
-    {
-        const auto now = std::chrono::steady_clock::now();
-
-        /// The time to close the next session did not come
-        if (now < close_cycle_time)
-            return close_cycle_time - now;  /// Will sleep until it comes.
-
-        const auto current_cycle = close_cycle;
-
-        ++close_cycle;
-        close_cycle_time = now + close_interval;
-
-        if (close_times.empty())
-            return close_interval;
-
-        auto & sessions_to_close = close_times.front();
-
-        for (const auto & key : sessions_to_close)
-        {
-            const auto session = sessions.find(key);
-
-            if (session != sessions.end() && session->second->close_cycle <= current_cycle)
-            {
-                if (!session->second.unique())
-                {
-                    /// Skip but move it to close on the next cycle.
-                    session->second->timeout = std::chrono::steady_clock::duration{0};
-                    scheduleCloseSession(*session->second, lock);
-                }
-                else
-                    sessions.erase(session);
-            }
-        }
-
-        close_times.pop_front();
-        return close_interval;
-    }
-
-    std::mutex mutex;
-    std::condition_variable cond;
-    std::atomic<bool> quit{false};
-    ThreadFromGlobalPool thread{&NamedSessions::cleanThread, this};
-};
-
-
-void NamedSession::release()
-{
-    parent.releaseSession(*this);
 }
 
 
@@ -348,10 +173,15 @@ struct ContextSharedPart
 
     scope_guard dictionaries_xmls;
 
+#if USE_NLP
+    mutable std::optional<SynonymsExtensions> synonyms_extensions;
+    mutable std::optional<Lemmatizers> lemmatizers;
+#endif
+
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
     String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
-    AccessControlManager access_control_manager;
+    std::unique_ptr<AccessControlManager> access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -391,13 +221,14 @@ struct ContextSharedPart
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
     std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
-    std::optional<NamedSessions> named_sessions;        /// Controls named HTTP sessions.
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
     std::shared_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
+
+    std::map<String, UInt16> server_ports;
 
     bool shutdown_called = false;
 
@@ -411,7 +242,7 @@ struct ContextSharedPart
     Context::ConfigReloadCallback config_reload_callback;
 
     ContextSharedPart()
-        : macros(std::make_unique<Macros>())
+        : access_control_manager(std::make_unique<AccessControlManager>()), macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -444,6 +275,8 @@ struct ContextSharedPart
         if (shutdown_called)
             return;
         shutdown_called = true;
+
+        Session::shutdownNamedSessions();
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
@@ -490,6 +323,7 @@ struct ContextSharedPart
             distributed_schedule_pool.reset();
             message_broker_schedule_pool.reset();
             ddl_worker.reset();
+            access_control_manager.reset();
 
             /// Stop trace collector if any
             trace_collector.reset();
@@ -579,7 +413,6 @@ void Context::copyFrom(const ContextPtr & other)
 
 Context::~Context() = default;
 
-
 InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
 
 std::unique_lock<std::recursive_mutex> Context::getLock() const
@@ -595,21 +428,6 @@ MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
 ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
 const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
-
-
-void Context::enableNamedSessions()
-{
-    shared->named_sessions.emplace();
-}
-
-std::shared_ptr<NamedSession>
-Context::acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check)
-{
-    if (!shared->named_sessions)
-        throw Exception("Support for named sessions is not enabled", ErrorCodes::NOT_IMPLEMENTED);
-
-    return shared->named_sessions->acquireSession(session_id, shared_from_this(), timeout, session_check);
-}
 
 String Context::resolveDatabase(const String & database_name) const
 {
@@ -730,7 +548,7 @@ void Context::setConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->config = config;
-    shared->access_control_manager.setExternalAuthenticatorsConfig(*shared->config);
+    shared->access_control_manager->setExternalAuthenticatorsConfig(*shared->config);
 }
 
 const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
@@ -742,31 +560,31 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 
 AccessControlManager & Context::getAccessControlManager()
 {
-    return shared->access_control_manager;
+    return *shared->access_control_manager;
 }
 
 const AccessControlManager & Context::getAccessControlManager() const
 {
-    return shared->access_control_manager;
+    return *shared->access_control_manager;
 }
 
 void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = getLock();
-    shared->access_control_manager.setExternalAuthenticatorsConfig(config);
+    shared->access_control_manager->setExternalAuthenticatorsConfig(config);
 }
 
 std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
 {
     auto lock = getLock();
-    return std::make_unique<GSSAcceptorContext>(shared->access_control_manager.getExternalAuthenticators().getKerberosParams());
+    return std::make_unique<GSSAcceptorContext>(shared->access_control_manager->getExternalAuthenticators().getKerberosParams());
 }
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->access_control_manager.setUsersConfig(*shared->users_config);
+    shared->access_control_manager->setUsersConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -776,53 +594,29 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address)
+void Context::setUser(const UUID & user_id_)
 {
     auto lock = getLock();
 
-    client_info.current_user = credentials.getUserName();
-    client_info.current_address = address;
+    user_id = user_id_;
 
-#if defined(ARCADIA_BUILD)
-    /// This is harmful field that is used only in foreign "Arcadia" build.
-    client_info.current_password.clear();
-    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
-        client_info.current_password = basic_credentials->getPassword();
-#endif
+    access = getAccessControlManager().getContextAccess(
+        user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
 
-    /// Find a user with such name and check the credentials.
-    auto new_user_id = getAccessControlManager().login(credentials, address.host());
-    auto new_access = getAccessControlManager().getContextAccess(
-        new_user_id, /* current_roles = */ {}, /* use_default_roles = */ true,
-        settings, current_database, client_info);
+    auto user = access->getUser();
+    current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
 
-    user_id = new_user_id;
-    access = std::move(new_access);
-    current_roles.clear();
-    use_default_roles = true;
+    auto default_profile_info = access->getDefaultProfileInfo();
+    settings_constraints_and_current_profiles = default_profile_info->getConstraintsAndProfileIDs();
+    applySettingsChanges(default_profile_info->settings);
 
-    setSettings(*access->getDefaultSettings());
-}
-
-void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
-{
-    setUser(BasicCredentials(name, password), address);
-}
-
-void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
-{
-    setUser(AlwaysAllowCredentials(name), address);
+    if (!user->default_database.empty())
+        setCurrentDatabase(user->default_database);
 }
 
 std::shared_ptr<const User> Context::getUser() const
 {
     return getAccess()->getUser();
-}
-
-void Context::setQuotaKey(String quota_key_)
-{
-    auto lock = getLock();
-    client_info.quota_key = std::move(quota_key_);
 }
 
 String Context::getUserName() const
@@ -837,24 +631,26 @@ std::optional<UUID> Context::getUserID() const
 }
 
 
+void Context::setQuotaKey(String quota_key_)
+{
+    auto lock = getLock();
+    client_info.quota_key = std::move(quota_key_);
+}
+
+
 void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
 {
     auto lock = getLock();
-    if (current_roles == current_roles_ && !use_default_roles)
-        return;
-    current_roles = current_roles_;
-    use_default_roles = false;
+    if (current_roles ? (*current_roles == current_roles_) : current_roles_.empty())
+       return;
+    current_roles = std::make_shared<std::vector<UUID>>(current_roles_);
     calculateAccessRights();
 }
 
 void Context::setCurrentRolesDefault()
 {
-    auto lock = getLock();
-    if (use_default_roles)
-        return;
-    current_roles.clear();
-    use_default_roles = true;
-    calculateAccessRights();
+    auto user = getUser();
+    setCurrentRoles(user->granted_roles.findGranted(user->default_roles));
 }
 
 boost::container::flat_set<UUID> Context::getCurrentRoles() const
@@ -877,7 +673,13 @@ void Context::calculateAccessRights()
 {
     auto lock = getLock();
     if (user_id)
-        access = getAccessControlManager().getContextAccess(*user_id, current_roles, use_default_roles, settings, current_database, client_info);
+        access = getAccessControlManager().getContextAccess(
+            *user_id,
+            current_roles ? *current_roles : std::vector<UUID>{},
+            /* use_default_roles = */ false,
+            settings,
+            current_database,
+            client_info);
 }
 
 
@@ -917,10 +719,13 @@ ASTPtr Context::getRowPolicyCondition(const String & database, const String & ta
 void Context::setInitialRowPolicy()
 {
     auto lock = getLock();
-    auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
     initial_row_policy = nullptr;
-    if (initial_user_id)
-        initial_row_policy = getAccessControlManager().getEnabledRowPolicies(*initial_user_id, {});
+    if (client_info.initial_user == client_info.current_user)
+        return;
+    auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
+    if (!initial_user_id)
+        return;
+    initial_row_policy = getAccessControlManager().getEnabledRowPolicies(*initial_user_id, {});
 }
 
 
@@ -936,19 +741,41 @@ std::optional<QuotaUsage> Context::getQuotaUsage() const
 }
 
 
-void Context::setProfile(const String & profile_name)
+void Context::setCurrentProfile(const String & profile_name)
 {
-    SettingsChanges profile_settings_changes = *getAccessControlManager().getProfileSettings(profile_name);
+    auto lock = getLock();
     try
     {
-        checkSettingsConstraints(profile_settings_changes);
+        UUID profile_id = getAccessControlManager().getID<SettingsProfile>(profile_name);
+        setCurrentProfile(profile_id);
     }
     catch (Exception & e)
     {
         e.addMessage(", while trying to set settings profile {}", profile_name);
         throw;
     }
-    applySettingsChanges(profile_settings_changes);
+}
+
+void Context::setCurrentProfile(const UUID & profile_id)
+{
+    auto lock = getLock();
+    auto profile_info = getAccessControlManager().getSettingsProfileInfo(profile_id);
+    checkSettingsConstraints(profile_info->settings);
+    applySettingsChanges(profile_info->settings);
+    settings_constraints_and_current_profiles = profile_info->getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
+}
+
+
+std::vector<UUID> Context::getCurrentProfiles() const
+{
+    auto lock = getLock();
+    return settings_constraints_and_current_profiles->current_profiles;
+}
+
+std::vector<UUID> Context::getEnabledProfiles() const
+{
+    auto lock = getLock();
+    return settings_constraints_and_current_profiles->enabled_profiles;
 }
 
 
@@ -970,6 +797,13 @@ const Block & Context::getScalar(const String & name) const
     return it->second;
 }
 
+const Block * Context::tryGetLocalScalar(const String & name) const
+{
+    auto it = local_scalars.find(name);
+    if (local_scalars.end() == it)
+        return nullptr;
+    return &it->second;
+}
 
 Tables Context::getExternalTables() const
 {
@@ -1029,6 +863,13 @@ void Context::addScalar(const String & name, const Block & block)
 }
 
 
+void Context::addLocalScalar(const String & name, const Block & block)
+{
+    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    local_scalars[name] = block;
+}
+
+
 bool Context::hasScalar(const String & name) const
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
@@ -1037,7 +878,11 @@ bool Context::hasScalar(const String & name) const
 
 
 void Context::addQueryAccessInfo(
-    const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names, const String & projection_name)
+    const String & quoted_database_name,
+    const String & full_quoted_table_name,
+    const Names & column_names,
+    const String & projection_name,
+    const String & view_name)
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
@@ -1047,6 +892,8 @@ void Context::addQueryAccessInfo(
         query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
     if (!projection_name.empty())
         query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
+    if (!view_name.empty())
+        query_access_info.views.emplace(view_name);
 }
 
 
@@ -1147,7 +994,7 @@ void Context::setSetting(const StringRef & name, const String & value)
     auto lock = getLock();
     if (name == "profile")
     {
-        setProfile(value);
+        setCurrentProfile(value);
         return;
     }
     settings.set(std::string_view{name}, value);
@@ -1162,7 +1009,7 @@ void Context::setSetting(const StringRef & name, const Field & value)
     auto lock = getLock();
     if (name == "profile")
     {
-        setProfile(value.safeGet<String>());
+        setCurrentProfile(value.safeGet<String>());
         return;
     }
     settings.set(std::string_view{name}, value);
@@ -1198,31 +1045,31 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraints(const SettingChange & change) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->check(settings, change);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, change);
 }
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->check(settings, changes);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes);
 }
 
 void Context::checkSettingsConstraints(SettingsChanges & changes) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->check(settings, changes);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.check(settings, changes);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 {
-    if (auto settings_constraints = getSettingsConstraints())
-        settings_constraints->clamp(settings, changes);
+    getSettingsConstraintsAndCurrentProfiles()->constraints.clamp(settings, changes);
 }
 
-std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
+std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfiles() const
 {
-    return getAccess()->getSettingsConstraints();
+    auto lock = getLock();
+    if (settings_constraints_and_current_profiles)
+        return settings_constraints_and_current_profiles;
+    static auto no_constraints_or_profiles = std::make_shared<SettingsConstraintsAndProfileIDs>(getAccessControlManager());
+    return no_constraints_or_profiles;
 }
 
 
@@ -1319,6 +1166,9 @@ void Context::setCurrentQueryId(const String & query_id)
     }
 
     client_info.current_query_id = query_id_to_set;
+
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        client_info.initial_query_id = client_info.current_query_id;
 }
 
 void Context::killCurrentQuery()
@@ -1474,6 +1324,29 @@ void Context::loadDictionaries(const Poco::Util::AbstractConfiguration & config)
     shared->dictionaries_xmls = getExternalDictionariesLoader().addConfigRepository(
         std::make_unique<ExternalLoaderXMLConfigRepository>(config, "dictionaries_config"));
 }
+
+#if USE_NLP
+
+SynonymsExtensions & Context::getSynonymsExtensions() const
+{
+    auto lock = getLock();
+
+    if (!shared->synonyms_extensions)
+        shared->synonyms_extensions.emplace(getConfigRef());
+
+    return *shared->synonyms_extensions;
+}
+
+Lemmatizers & Context::getLemmatizers() const
+{
+    auto lock = getLock();
+
+    if (!shared->lemmatizers)
+        shared->lemmatizers.emplace(getConfigRef());
+
+    return *shared->lemmatizers;
+}
+#endif
 
 void Context::setProgressCallback(ProgressCallback callback)
 {
@@ -1657,7 +1530,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     if (!shared->message_broker_schedule_pool)
         shared->message_broker_schedule_pool.emplace(
             settings.background_message_broker_schedule_pool_size,
-            CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             "BgMBSchPool");
     return *shared->message_broker_schedule_pool;
 }
@@ -1718,13 +1591,31 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
     if (!shared->zookeeper)
-        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper");
+        shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(config, "zookeeper", getZooKeeperLog());
     else if (shared->zookeeper->expired())
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
 }
 
+void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
+{
+    /// It can be nearly impossible to understand in which order global objects are initialized on server startup.
+    /// If getZooKeeper() is called before initializeSystemLogs(), then zkutil::ZooKeeper gets nullptr
+    /// instead of pointer to system table and it logs nothing.
+    /// This method explicitly sets correct pointer to system log after its initialization.
+    /// TODO get rid of this if possible
+
+    std::lock_guard lock(shared->zookeeper_mutex);
+    if (!shared->system_logs || !shared->system_logs->zookeeper_log)
+        return;
+
+    if (shared->zookeeper)
+        shared->zookeeper->setZooKeeperLog(shared->system_logs->zookeeper_log);
+
+    for (auto & zk : shared->auxiliary_zookeepers)
+        zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
+}
 
 void Context::initializeKeeperStorageDispatcher() const
 {
@@ -1782,8 +1673,8 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
                 "config.xml",
                 name);
 
-        zookeeper
-            = shared->auxiliary_zookeepers.emplace(name, std::make_shared<zkutil::ZooKeeper>(config, "auxiliary_zookeepers." + name)).first;
+        zookeeper = shared->auxiliary_zookeepers.emplace(name,
+                        std::make_shared<zkutil::ZooKeeper>(config, "auxiliary_zookeepers." + name, getZooKeeperLog())).first;
     }
     else if (zookeeper->second->expired())
         zookeeper->second = zookeeper->second->startNewSession();
@@ -1797,14 +1688,15 @@ void Context::resetZooKeeper() const
     shared->zookeeper.reset();
 }
 
-static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const std::string & config_name, zkutil::ZooKeeperPtr & zk)
+static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const std::string & config_name, zkutil::ZooKeeperPtr & zk,
+                                         std::shared_ptr<ZooKeeperLog> zk_log)
 {
     if (!zk || zk->configChanged(*config, config_name))
     {
         if (zk)
             zk->finalize();
 
-        zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name);
+        zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name, std::move(zk_log));
     }
 }
 
@@ -1812,7 +1704,7 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
     shared->zookeeper_config = config;
-    reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper);
+    reloadZooKeeperIfChangedImpl(config, "zookeeper", shared->zookeeper, getZooKeeperLog());
 }
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
@@ -1827,7 +1719,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
             it = shared->auxiliary_zookeepers.erase(it);
         else
         {
-            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second);
+            reloadZooKeeperIfChangedImpl(config, "auxiliary_zookeepers." + it->first, it->second, getZooKeeperLog());
             ++it;
         }
     }
@@ -1908,13 +1800,27 @@ std::optional<UInt16> Context::getTCPPortSecure() const
     return {};
 }
 
+void Context::registerServerPort(String port_name, UInt16 port)
+{
+    shared->server_ports.emplace(std::move(port_name), port);
+}
+
+UInt16 Context::getServerPort(const String & port_name) const
+{
+    auto it = shared->server_ports.find(port_name);
+    if (it == shared->server_ports.end())
+        throw Exception(ErrorCodes::BAD_GET, "There is no port named {}", port_name);
+    else
+        return it->second;
+}
+
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     auto res = getClusters()->getCluster(cluster_name);
     if (res)
         return res;
-
-    res = tryGetReplicatedDatabaseCluster(cluster_name);
+    if (!cluster_name.empty())
+        res = tryGetReplicatedDatabaseCluster(cluster_name);
     if (res)
         return res;
 
@@ -2025,7 +1931,6 @@ std::shared_ptr<QueryLog> Context::getQueryLog() const
     return shared->system_logs->query_log;
 }
 
-
 std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
 {
     auto lock = getLock();
@@ -2036,6 +1941,15 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
     return shared->system_logs->query_thread_log;
 }
 
+std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->query_views_log;
+}
 
 std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
 {
@@ -2107,6 +2021,17 @@ std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog() const
         return {};
 
     return shared->system_logs->opentelemetry_span_log;
+}
+
+
+std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
+{
+    auto lock = getLock();
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->zookeeper_log;
 }
 
 
@@ -2413,13 +2338,13 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     getAccessControlManager().setDefaultProfileName(shared->default_profile_name);
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
-    setProfile(shared->system_profile_name);
+    setCurrentProfile(shared->system_profile_name);
 
     applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = Context::createCopy(shared_from_this());
-    buffer_context->setProfile(shared->buffer_profile_name);
+    buffer_context->setCurrentProfile(shared->buffer_profile_name);
 }
 
 String Context::getDefaultProfileName() const
@@ -2692,6 +2617,13 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
     return metadata_transaction;
 }
 
+void Context::resetZooKeeperMetadataTransaction()
+{
+    assert(metadata_transaction);
+    assert(hasQueryContext());
+    metadata_transaction = nullptr;
+}
+
 PartUUIDsPtr Context::getPartUUIDs() const
 {
     auto lock = getLock();
@@ -2725,20 +2657,6 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
         const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
-}
-
-void Context::setMySQLProtocolContext(MySQLWireContext * mysql_context)
-{
-    assert(session_context.lock().get() == this);
-    assert(!mysql_protocol_context);
-    assert(mysql_context);
-    mysql_protocol_context = mysql_context;
-}
-
-MySQLWireContext * Context::getMySQLProtocolContext() const
-{
-    assert(!mysql_protocol_context || session_context.lock().get());
-    return mysql_protocol_context;
 }
 
 }

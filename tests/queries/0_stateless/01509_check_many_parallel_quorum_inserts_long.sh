@@ -16,13 +16,20 @@ for i in $(seq 1 $NUM_REPLICAS); do
 done
 
 function thread {
-    $CLICKHOUSE_CLIENT --insert_quorum 5 --insert_quorum_parallel 1 --query "INSERT INTO r$1 SELECT $2"
+    while true
+    do
+        $CLICKHOUSE_CLIENT --insert_quorum 5 --insert_quorum_parallel 1 --query "INSERT INTO r$1 SELECT $2" && break
+        sleep 0.1
+    done
 }
 
 for i in $(seq 1 $NUM_REPLICAS); do
     for j in {0..9}; do
         a=$((($i - 1) * 10 + $j))
-        thread $i $a &
+
+        # Note: making 100 connections simultaneously is a mini-DoS when server is build with sanitizers and CI environment is overloaded.
+        # That's why we repeat "socket timeout" errors.
+        thread $i $a 2>&1 | grep -v -P 'SOCKET_TIMEOUT|NETWORK_ERROR|^$' &
     done
 done
 
