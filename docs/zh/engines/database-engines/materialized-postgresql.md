@@ -3,39 +3,48 @@ toc_priority: 30
 toc_title: MaterializedPostgreSQL
 ---
 
-# MaterializedPostgreSQL {#materialize-postgresql}
+# [experimental] MaterializedPostgreSQL {#materialize-postgresql}
+
+使用PostgreSQL数据库表的初始数据转储创建ClickHouse数据库，并启动复制过程，即执行后台作业，以便在远程PostgreSQL数据库中的PostgreSQL数据库表上发生新更改时应用这些更改。
+
+ClickHouse服务器作为PostgreSQL副本工作。它读取WAL并执行DML查询。DDL不是复制的，但可以处理（如下所述）。
 
 ## 创建数据库 {#creating-a-database}
 
 ``` sql
-CREATE DATABASE test_database
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
-
-SELECT * FROM test_database.postgres_table;
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
 ```
+
+**Engine参数**
+
+-   `host:port` — PostgreSQL服务地址
+-   `database` — PostgreSQL数据库名
+-   `user` — PostgreSQL用户名
+-   `password` — 用户密码
 
 ## 设置 {#settings}
 
-1. `materialized_postgresql_max_block_size` - 在将数据刷新到表中之前收集的行数。默认值: `65536`.
+-   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
 
-2. `materialized_postgresql_tables_list` - 物化PostgreSQL数据库引擎的表列表。默认： `whole database`.
+-   [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list)
 
-3. `materialized_postgresql_allow_automatic_update` - 当检测到模式更改时，允许在后台重新加载表。默认值: `0` (`false`).
+-   [materialized_postgresql_allow_automatic_update](../../operations/settings/settings.md#materialized-postgresql-allow-automatic-update)
 
 ``` sql
-CREATE DATABASE test_database
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
 SETTINGS materialized_postgresql_max_block_size = 65536,
          materialized_postgresql_tables_list = 'table1,table2,table3';
 
-SELECT * FROM test_database.table1;
+SELECT * FROM database1.table1;
 ```
 
 ## 必备条件 {#requirements}
 
-- 在postgresql配置文件中将`wal_level`设置为`logical`，将`max_replication_slots`设置为`2`。
+- 在postgresql配置文件中将[wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html)设置为`logical`，将`max_replication_slots`设置为`2`。
 
-- 每个复制表必须具有以下一个**replica identity**:
+- 每个复制表必须具有以下一个[replica identity](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY):
 
 1. **default** (主键)
 
@@ -62,8 +71,15 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-
 ## 注意 {#warning}
 
-1. **TOAST** 不支持值转换。将使用数据类型的默认值。
-   
+1. [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html)不支持值转换。将使用数据类型的默认值。
+
+## 使用示例 {#example-of-use}
+
+``` sql
+CREATE DATABASE postgresql_db
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
+
+SELECT * FROM postgresql_db.postgres_table;
+```

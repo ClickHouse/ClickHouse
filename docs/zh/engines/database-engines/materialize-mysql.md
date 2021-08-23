@@ -1,9 +1,9 @@
 ---
 toc_priority: 29
-toc_title: MaterializeMySQL
+toc_title: "[experimental] MaterializedMySQL"
 ---
 
-# MaterializeMySQL {#materialize-mysql}
+# [experimental] MaterializedMySQL {#materialized-mysql}
 
 **这是一个实验性的特性，不应该在生产中使用。**
 
