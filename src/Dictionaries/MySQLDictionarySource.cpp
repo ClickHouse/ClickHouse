@@ -22,6 +22,7 @@ static const size_t default_num_tries_on_connection_loss = 3;
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
@@ -30,22 +31,30 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
-                                   [[maybe_unused]] ContextPtr context,
+                                   [[maybe_unused]] ContextPtr global_context,
                                  const std::string & /* default_database */,
                                  bool /* created_from_ddl */) -> DictionarySourcePtr {
 #if USE_MYSQL
-        StreamSettings mysql_input_stream_settings(context->getSettingsRef()
+        StreamSettings mysql_input_stream_settings(global_context->getSettingsRef()
             , config.getBool(config_prefix + ".mysql.close_connection", false) || config.getBool(config_prefix + ".mysql.share_connection", false)
             , false
             , config.getBool(config_prefix + ".mysql.fail_on_connection_loss", false) ? 1 : default_num_tries_on_connection_loss);
 
         auto settings_config_prefix = config_prefix + ".mysql";
 
+        auto table = config.getString(settings_config_prefix + ".table", "");
+        auto where = config.getString(settings_config_prefix + ".where", "");
+        auto query = config.getString(settings_config_prefix + ".query", "");
+
+        if (query.empty() && table.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL dictionary source configuration must contain table or query field");
+
         MySQLDictionarySource::Configuration configuration
         {
             .db = config.getString(settings_config_prefix + ".db", ""),
-            .table = config.getString(settings_config_prefix + ".table"),
-            .where = config.getString(settings_config_prefix + ".where", ""),
+            .table = table,
+            .query = query,
+            .where = where,
             .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
@@ -94,7 +103,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , sample_block(sample_block_)
-    , query_builder(dict_struct, configuration.db, "", configuration.table, configuration.where, IdentifierQuotingStyle::Backticks)
+    , query_builder(dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks)
     , load_all_query(query_builder.composeLoadAllQuery())
     , settings(settings_)
 {
@@ -108,7 +117,7 @@ MySQLDictionarySource::MySQLDictionarySource(const MySQLDictionarySource & other
     , configuration(other.configuration)
     , pool(other.pool)
     , sample_block(other.sample_block)
-    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.where, IdentifierQuotingStyle::Backticks}
+    , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::Backticks}
     , load_all_query{other.load_all_query}
     , last_modification{other.last_modification}
     , invalidate_query_response{other.invalidate_query_response}
@@ -128,7 +137,7 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
     else
     {
         update_time = std::chrono::system_clock::now();
-        return query_builder.composeLoadAllQuery();
+        return load_all_query;
     }
 }
 

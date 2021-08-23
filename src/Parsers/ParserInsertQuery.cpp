@@ -11,6 +11,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
+#include "Parsers/IAST_fwd.h"
 
 
 namespace DB
@@ -25,6 +26,7 @@ namespace ErrorCodes
 bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_insert_into("INSERT INTO");
+    ParserKeyword s_from_infile("FROM INFILE");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_function("FUNCTION");
     ParserToken s_dot(TokenType::Dot);
@@ -39,9 +41,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier name_p;
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
+    ParserStringLiteral infile_name_p;
 
     ASTPtr database;
     ASTPtr table;
+    ASTPtr infile;
     ASTPtr columns;
     ASTPtr format;
     ASTPtr select;
@@ -86,8 +90,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     Pos before_values = pos;
 
-    /// VALUES or FORMAT or SELECT
-    if (s_values.ignore(pos, expected))
+    if (s_from_infile.ignore(pos, expected))
+    {
+        if (!infile_name_p.parse(pos, infile, expected))
+            return false;
+    }
+
+    /// VALUES or FROM INFILE or FORMAT or SELECT
+    if (!infile && s_values.ignore(pos, expected))
     {
         data = pos->begin;
     }
@@ -136,7 +146,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
 
-    if (format)
+    if (format && !infile)
     {
         Pos last_token = pos;
         --last_token;
@@ -166,6 +176,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto query = std::make_shared<ASTInsertQuery>();
     node = query;
+
+    if (infile)
+        query->infile = infile;
 
     if (table_function)
     {

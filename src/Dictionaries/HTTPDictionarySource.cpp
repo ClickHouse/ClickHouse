@@ -213,13 +213,13 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
-                                   ContextPtr context,
+                                   ContextPtr global_context,
                                    const std::string & /* default_database */,
                                    bool created_from_ddl) -> DictionarySourcePtr {
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `http` does not support attribute expressions");
 
-        auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 
         const auto & settings_config_prefix = config_prefix + ".http";
         const auto & credentials_prefix = settings_config_prefix + ".credentials";
@@ -258,7 +258,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             .header_entries = std::move(header_entries)
         };
 
-        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context_local_copy, created_from_ddl);
+        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context, created_from_ddl);
     };
     factory.registerSource("http", create_table_source);
 }
