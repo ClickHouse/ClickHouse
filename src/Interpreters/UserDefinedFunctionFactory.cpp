@@ -40,12 +40,13 @@ void UserDefinedFunctionFactory::unregisterFunction(const String & function_name
         AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_SYSTEM_FUNCTION, "Cannot drop system function '{}'", function_name);
 
-
     auto it = function_name_to_create_query.find(function_name);
     if (it == function_name_to_create_query.end())
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
             "The function name '{}' is not registered",
             function_name);
+
+    function_name_to_create_query.erase(it);
 }
 
 ASTPtr UserDefinedFunctionFactory::get(const String & function_name) const

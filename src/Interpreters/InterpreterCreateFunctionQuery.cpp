@@ -1,4 +1,6 @@
 #include <Access/ContextAccess.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -6,7 +8,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/UserDefinedFunctionFactory.h>
-#include <Parsers/ASTIdentifier.h>
+
 
 namespace DB
 {
@@ -20,7 +22,9 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateFunctionQuery::execute()
 {
-    getContext()->checkAccess(AccessType::CREATE_FUNCTION);
+    auto context = getContext();
+    context->checkAccess(AccessType::CREATE_FUNCTION);
+
     FunctionNameNormalizer().visit(query_ptr.get());
     auto * create_function_query = query_ptr->as<ASTCreateFunctionQuery>();
 
@@ -34,15 +38,14 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
     if (!is_internal)
     {
-
         try
         {
-            UserDefinedObjectsLoader::instance().storeObject(getContext(), UserDefinedObjectType::Function, function_name, *query_ptr);
+            UserDefinedObjectsLoader::instance().storeObject(context, UserDefinedObjectType::Function, function_name, *query_ptr);
         }
-        catch (Exception & e)
+        catch (Exception & exception)
         {
             UserDefinedFunctionFactory::instance().unregisterFunction(function_name);
-            e.addMessage(fmt::format("while storing user defined function {} on disk", backQuote(function_name)));
+            exception.addMessage(fmt::format("while storing user defined function {} on disk", backQuote(function_name)));
             throw;
         }
     }

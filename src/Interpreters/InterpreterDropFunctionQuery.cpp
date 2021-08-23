@@ -12,11 +12,14 @@ namespace DB
 
 BlockIO InterpreterDropFunctionQuery::execute()
 {
-    getContext()->checkAccess(AccessType::DROP_FUNCTION);
+    auto context = getContext();
+    context->checkAccess(AccessType::DROP_FUNCTION);
+
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & drop_function_query = query_ptr->as<ASTDropFunctionQuery &>();
+
     UserDefinedFunctionFactory::instance().unregisterFunction(drop_function_query.function_name);
-    UserDefinedObjectsLoader::instance().removeObject(getContext(), UserDefinedObjectType::Function, drop_function_query.function_name);
+    UserDefinedObjectsLoader::instance().removeObject(context, UserDefinedObjectType::Function, drop_function_query.function_name);
 
     return {};
 }

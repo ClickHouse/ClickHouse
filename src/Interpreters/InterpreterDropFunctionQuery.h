@@ -5,7 +5,6 @@
 namespace DB
 {
 
-class ASTDropFunctionQuery;
 class Context;
 
 class InterpreterDropFunctionQuery : public IInterpreter, WithMutableContext

@@ -6,6 +6,7 @@
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTCreateUserQuery.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropQuery.h>
