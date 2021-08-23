@@ -3079,6 +3079,12 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     zookeeper->set(fs::path(replica_path) / "is_lost", "0");
 }
 
+String StorageReplicatedMergeTree::getLastQueueUpdateException() const
+{
+    std::unique_lock lock(last_queue_update_exception_lock);
+    return last_queue_update_exception;
+}
+
 
 void StorageReplicatedMergeTree::queueUpdatingTask()
 {
@@ -3097,6 +3103,9 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
+        std::unique_lock lock(last_queue_update_exception_lock);
+        last_queue_update_exception = getCurrentExceptionMessage(false);
+
         if (e.code == Coordination::Error::ZSESSIONEXPIRED)
         {
             restarting_thread.wakeup();
@@ -3108,6 +3117,10 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+        std::unique_lock lock(last_queue_update_exception_lock);
+        last_queue_update_exception = getCurrentExceptionMessage(false);
+
         queue_updating_task->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
     }
 }
@@ -5565,6 +5578,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     res.log_pointer = 0;
     res.total_replicas = 0;
     res.active_replicas = 0;
+    res.last_queue_update_exception = getLastQueueUpdateException();
 
     if (with_zk_fields && !res.is_session_expired)
     {
