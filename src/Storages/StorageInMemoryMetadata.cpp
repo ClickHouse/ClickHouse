@@ -501,7 +501,9 @@ namespace
         if (!which.isEnum())
             return false;
         IDataTypeEnum const* enum_type = dynamic_cast<IDataTypeEnum const*>(lhs);
-        return enum_type->contains(*rhs);
+        if (!enum_type->contains(*rhs))
+            return false;
+        return enum_type->getMaximumSizeOfValueInMemory() == rhs->getMaximumSizeOfValueInMemory();
     }
 }
 
