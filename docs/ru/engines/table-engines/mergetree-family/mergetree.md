@@ -378,7 +378,7 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 ## Проекции {#projections}
 Проекции похожи на [материализованные представления](../../../sql-reference/statements/create/view.md#materialized), но определяются на уровне кусков данных. Это обеспечивает гарантии согласованности данных наряду с автоматическим использованием в запросах.
 
-Проекции это экспериментальная возможность. Чтобы включить поддержку проекций, установите настройку [allow_experimental_projection_optimization](../../../operations/settings/settings.md#allow-experimental-projection-optimization) в значение `1`. См. также настройку [force_optimize_projection ](../../../operations/settings/settings.md#force-optimize-projection).
+Проекции — это экспериментальная возможность. Чтобы включить поддержку проекций, установите настройку [allow_experimental_projection_optimization](../../../operations/settings/settings.md#allow-experimental-projection-optimization) в значение `1`. См. также настройку [force_optimize_projection ](../../../operations/settings/settings.md#force-optimize-projection).
 
 Проекции не поддерживаются для запросов `SELECT` с модификатором [FINAL](../../../sql-reference/statements/select/from.md#select-from-final).
 
@@ -401,7 +401,7 @@ SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 ### Анализ запросов {#projection-query-analysis}
 1. Проверьте, можно ли использовать проекцию в данном запросе, то есть, что с ней получается тот же результат, что и с запросом к базовой таблице.
 2. Выберите наиболее подходящее совпадение, содержащее наименьшее количество гранул для чтения.
-3. План запроса, который использует проекции, отличается от того, который использует исходные куски данных. При отсутствии проекции в некоторых кусках можно расширить план, чтобы «проецировать» на лету.
+3. План запроса, который использует проекции, отличается от того, который использует исходные куски данных. Если в некоторых кусках проекции отсутствуют, можно расширить план, чтобы «проецировать» на лету.
 
 ## Конкурентный доступ к данным {#concurrent-data-access}
 
