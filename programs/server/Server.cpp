@@ -668,9 +668,7 @@ if (ThreadFuzzer::instance().isEffective())
 
     global_context->setRemoteHostFilter(config());
 
-    std::string 
-      
-      = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
+    std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     fs::path path = path_str;
     std::string default_database = config().getString("default_database", "default");
 
