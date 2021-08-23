@@ -35,7 +35,6 @@ SRCS(
     CompressionFactoryAdditions.cpp
     ICompressionCodec.cpp
     LZ4_decompress_faster.cpp
-    fuzzers/compressed_buffer_fuzzer.cpp
     getCompressionCodecForFile.cpp
 
 )
