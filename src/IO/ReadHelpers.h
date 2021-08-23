@@ -334,9 +334,8 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                     if (buf.count() - initial_pos + 1 >= std::numeric_limits<T>::max_digits10)
                     {
                         T signed_res = negative ? -res : res;
-                        if (common::mulOverflow<T>(signed_res, 10, signed_res)
-                            || (negative ? common::subOverflow<T>(signed_res, (*buf.position() - '0'), signed_res) : 
-                                common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res)))
+                        if (common::mulOverflow<T>(signed_res, 10, signed_res) || (negative ? common::subOverflow<T>(signed_res, (*buf.position() - '0'), signed_res) : 
+                            common::addOverflow<T>(signed_res, (*buf.position() - '0'), signed_res)))
                             return ReturnType(false);
 
                         res = negative ? -signed_res : signed_res;
