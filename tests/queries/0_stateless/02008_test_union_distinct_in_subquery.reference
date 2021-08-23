@@ -1,0 +1,16 @@
+-- { echo }
+select count() from (select * from test union distinct select * from test);
+5
+select count() from (select * from test union distinct select * from test union all select * from test);
+10
+select uuid from test union distinct select uuid from test;
+00000000-0000-0000-0000-000000000000
+select uuid from test union distinct select uuid from test union all select uuid from test where name = '1';
+00000000-0000-0000-0000-000000000000
+00000000-0000-0000-0000-000000000000
+select uuid from (select * from test union distinct select * from test);
+00000000-0000-0000-0000-000000000000
+00000000-0000-0000-0000-000000000000
+00000000-0000-0000-0000-000000000000
+00000000-0000-0000-0000-000000000000
+00000000-0000-0000-0000-000000000000

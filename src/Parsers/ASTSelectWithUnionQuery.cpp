@@ -20,6 +20,7 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
     res->union_mode = union_mode;
 
     res->list_of_modes = list_of_modes;
+    res->set_of_modes = set_of_modes;
 
     cloneOutputOptions(*res);
     return res;
@@ -69,6 +70,12 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
             (*it)->formatImpl(settings, state, frame);
         }
     }
+}
+
+
+bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
+{
+    return set_of_modes.contains(Mode::DISTINCT);
 }
 
 }
