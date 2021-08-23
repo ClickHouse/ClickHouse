@@ -391,7 +391,7 @@ Pipe StorageMerge::createSources(
     if (!modified_select.final() && storage->needRewriteQueryWithFinal(real_column_names))
     {
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
-        /// However, it's needed for MaterializedMySQL and it's unlikely that someone will use it with Merge tables.
+        /// However, it's needed for MaterializeMySQL and it's unlikely that someone will use it with Merge tables.
         modified_select.setFinal();
     }
 
@@ -435,17 +435,11 @@ Pipe StorageMerge::createSources(
     if (!pipe.empty())
     {
         if (concat_streams && pipe.numOutputPorts() > 1)
-        {
             // It's possible to have many tables read from merge, resize(1) might open too many files at the same time.
             // Using concat instead.
             pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
-        }
 
-        /// Add virtual columns if we don't already have them.
-
-        Block pipe_header = pipe.getHeader();
-
-        if (has_database_virtual_column && !pipe_header.has("_database"))
+        if (has_database_virtual_column)
         {
             ColumnWithTypeAndName column;
             column.name = "_database";
@@ -463,7 +457,7 @@ Pipe StorageMerge::createSources(
             });
         }
 
-        if (has_table_virtual_column && !pipe_header.has("_table"))
+        if (has_table_virtual_column)
         {
             ColumnWithTypeAndName column;
             column.name = "_table";
@@ -689,15 +683,13 @@ void StorageMerge::convertingSourceStream(
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(pipe.getHeader().getColumnsWithTypeAndName(),
                                                                      header.getColumnsWithTypeAndName(),
                                                                      ActionsDAG::MatchColumnsMode::Name);
-        auto actions = std::make_shared<ExpressionActions>(
-            convert_actions_dag,
-            ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
-
+        auto actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
         });
     }
+
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
 
@@ -733,10 +725,10 @@ void StorageMerge::convertingSourceStream(
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
 {
 
-    auto first_materialized_mysql = getFirstTable([](const StoragePtr & table) { return table && table->getName() == "MaterializedMySQL"; });
-    if (!first_materialized_mysql)
+    auto first_materialize_mysql = getFirstTable([](const StoragePtr & table) { return table && table->getName() == "MaterializeMySQL"; });
+    if (!first_materialize_mysql)
         return {};
-    return first_materialized_mysql->getColumnSizes();
+    return first_materialize_mysql->getColumnSizes();
 }
 
 void registerStorageMerge(StorageFactory & factory)

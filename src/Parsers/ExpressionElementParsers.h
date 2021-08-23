@@ -308,7 +308,6 @@ protected:
 
 
 /** String in single quotes.
-  * String in heredoc $here$txt$here$ equivalent to 'txt'.
   */
 class ParserStringLiteral : public IParserBase
 {

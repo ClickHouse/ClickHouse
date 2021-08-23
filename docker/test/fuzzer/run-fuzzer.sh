@@ -194,10 +194,6 @@ continue
     jobs
     pstree -aspgT
 
-    server_exit_code=0
-    wait $server_pid || server_exit_code=$?
-    echo "Server exit code is $server_exit_code"
-
     # Make files with status and description we'll show for this check on Github.
     task_exit_code=$fuzzer_exit_code
     if [ "$server_died" == 1 ]
@@ -226,7 +222,7 @@ continue
         task_exit_code=$fuzzer_exit_code
         echo "failure" > status.txt
         { grep --text -o "Found error:.*" fuzzer.log \
-            || grep --text -ao "Exception:.*" fuzzer.log \
+            || grep --text -o "Exception.*" fuzzer.log \
             || echo "Fuzzer failed ($fuzzer_exit_code). See the logs." ; } \
             | tail -1 > description.txt
     fi

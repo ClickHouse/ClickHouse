@@ -1,7 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTFunctionHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <IO/WriteHelpers.h>
@@ -30,7 +29,7 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
     /// cast of numeric constant in condition to UInt8
     if (const auto * function = condition->as<ASTFunction>())
     {
-        if (isFunctionCast(function))
+        if (function->name == "CAST")
         {
             if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
             {

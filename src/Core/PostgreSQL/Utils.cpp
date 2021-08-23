@@ -1,7 +1,4 @@
 #include "Utils.h"
-
-#if USE_LIBPQXX
-
 #include <IO/Operators.h>
 
 namespace postgres
@@ -20,5 +17,3 @@ ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, S
 }
 
 }
-
-#endif

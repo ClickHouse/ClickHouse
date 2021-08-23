@@ -145,7 +145,6 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
 
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
                 {
-                    /// FIXME It may never appear
                     LOG_WARNING(log, "Found parts with the same min block and with the same max block as the missing part {}. Hoping that it will eventually appear as a result of a merge.", part_name);
                     return MissingPartSearchResult::FoundAndDontNeedFetch;
                 }

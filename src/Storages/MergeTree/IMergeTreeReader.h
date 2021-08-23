@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <sparsehash/dense_hash_map>
 
 namespace DB
 {
@@ -94,9 +94,7 @@ private:
     MergeTreeData::AlterConversions alter_conversions;
 
     /// Actual data type of columns in part
-
-    using ColumnsFromPart = HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash>;
-    ColumnsFromPart columns_from_part;
+    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> columns_from_part;
 };
 
 }
