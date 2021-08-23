@@ -129,7 +129,7 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 
 ## Исполняемый пул {#dicts-external_dicts_dict_sources-executable_pool}
 
-Исполняемый пул позволяет загружать данные из пула процессов. Этот источник не работает со словарями, которые требуют загрузки всех данных из источника. Исполняемый пул работает словарями, которые размещаются [следующими способами](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory): `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct`. 
+Исполняемый пул позволяет загружать данные из пула процессов. Этот источник не работает со словарями, которые требуют загрузки всех данных из источника. Исполняемый пул работает словарями, которые размещаются [следующими способами](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory): `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct`.
 
 Исполняемый пул генерирует пул процессов с помощью указанной команды и оставляет их активными, пока они не завершатся. Программа считывает данные из потока STDIN пока он доступен и выводит результат в поток STDOUT, а затем ожидает следующего блока данных из STDIN. ClickHouse не закрывает поток STDIN после обработки блока данных и отправляет в него следующую порцию данных, когда это требуется. Исполняемый скрипт должен быть готов к такому способу обработки данных — он должен заранее опрашивать STDIN и отправлять данные в STDOUT.
 
@@ -581,6 +581,7 @@ SOURCE(MYSQL(
         <db>default</db>
         <table>ids</table>
         <where>id=10</where>
+        <secure>1</secure>
     </clickhouse>
 </source>
 ```
@@ -596,7 +597,8 @@ SOURCE(CLICKHOUSE(
     db 'default'
     table 'ids'
     where 'id=10'
-))
+    secure 1
+));
 ```
 
 Поля настройки:
@@ -609,6 +611,7 @@ SOURCE(CLICKHOUSE(
 -   `table` — имя таблицы.
 -   `where` — условие выбора. Может отсутствовать.
 -   `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external-dicts-dict-lifetime.md).
+-   `secure` - флаг, разрешающий или не разрешающий защищённое SSL-соединение.
 
 ### MongoDB {#dicts-external_dicts_dict_sources-mongodb}
 
@@ -769,4 +772,3 @@ Setting fields:
 -   `table` – Имя таблицы.
 -   `where` – Условие выборки. Синтаксис для условий такой же как для `WHERE` выражения в PostgreSQL, для примера, `id > 10 AND id < 20`. Необязательный параметр.
 -   `invalidate_query` – Запрос для проверки условия загрузки словаря. Необязательный параметр. Читайте больше в разделе [Обновление словарей](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
-

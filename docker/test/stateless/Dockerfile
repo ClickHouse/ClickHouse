@@ -29,9 +29,10 @@ RUN apt-get update -y \
             unixodbc \
             wget \
             mysql-client=5.7* \
-            postgresql-client
+            postgresql-client \
+            sqlite3
 
-RUN pip3 install numpy scipy pandas
+RUN pip3 install numpy scipy pandas Jinja2
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \

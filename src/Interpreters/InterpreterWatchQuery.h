@@ -13,7 +13,6 @@ limitations under the License. */
 
 #include <Core/QueryProcessingStage.h>
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>

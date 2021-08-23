@@ -305,12 +305,12 @@ void DatabaseLazy::clearExpiredTables() const
 
 
 DatabaseLazyIterator::DatabaseLazyIterator(DatabaseLazy & database_, Strings && table_names_)
-    : database(database_)
+    : IDatabaseTablesIterator(database_.database_name)
+    , database(database_)
     , table_names(std::move(table_names_))
     , iterator(table_names.begin())
     , current_storage(nullptr)
 {
-    database_name = database.database_name;
 }
 
 void DatabaseLazyIterator::next()

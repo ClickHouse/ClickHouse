@@ -93,6 +93,8 @@
 01138_join_on_distributed_and_tmp
 01153_attach_mv_uuid
 01155_rename_move_materialized_view
+01157_replace_table
+01185_create_or_replace_table
 01191_rename_dictionary
 01200_mutations_memory_consumption
 01211_optimize_skip_unused_shards_type_mismatch
@@ -215,6 +217,7 @@
 01747_join_view_filter_dictionary
 01748_dictionary_table_dot
 01755_client_highlight_multi_line_comment_regression
+01756_optimize_skip_unused_shards_rewrite_in
 00950_dict_get
 01683_flat_dictionary
 01681_cache_dictionary_simple_key
@@ -251,6 +254,16 @@
 01924_argmax_bitmap_state
 01914_exchange_dictionaries
 01923_different_expression_name_alias
+01930_optimize_skip_unused_shards_rewrite_in
 01932_null_valid_identifier
 00918_json_functions
 01889_sql_json_functions
+01849_geoToS2
+01851_s2_to_geo
+01852_s2_get_neighbours
+01853_s2_cells_intersect
+01854_s2_cap_contains
+01854_s2_cap_union
+01428_h3_range_check
+01442_h3kring_range_check
+01906_h3_to_geo

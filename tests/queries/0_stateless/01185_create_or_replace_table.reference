@@ -1,8 +1,8 @@
 t1
-CREATE TABLE test_01185.t1\n(\n    `n` UInt64,\n    `s` String\n)\nENGINE = MergeTree\nORDER BY n\nSETTINGS index_granularity = 8192
+CREATE TABLE default.t1\n(\n    `n` UInt64,\n    `s` String\n)\nENGINE = MergeTree\nORDER BY n\nSETTINGS index_granularity = 8192
 t1
-CREATE TABLE test_01185.t1\n(\n    `n` UInt64,\n    `s` Nullable(String)\n)\nENGINE = MergeTree\nORDER BY n\nSETTINGS index_granularity = 8192
+CREATE TABLE default.t1\n(\n    `n` UInt64,\n    `s` Nullable(String)\n)\nENGINE = MergeTree\nORDER BY n\nSETTINGS index_granularity = 8192
 2	\N
 t1
-CREATE TABLE test_01185.t1\n(\n    `n` UInt64\n)\nENGINE = MergeTree\nORDER BY n\nSETTINGS index_granularity = 8192
+CREATE TABLE default.t1\n(\n    `n` UInt64\n)\nENGINE = MergeTree\nORDER BY n\nSETTINGS index_granularity = 8192
 3
