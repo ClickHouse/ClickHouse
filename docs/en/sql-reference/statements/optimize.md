@@ -37,7 +37,7 @@ If you want to perform deduplication on custom set of columns rather than on all
 **Syntax**
 
 ``` sql
-OPTIMIZE TABLE table DEDUPLICATE; -- all columns 
+OPTIMIZE TABLE table DEDUPLICATE; -- all columns
 OPTIMIZE TABLE table DEDUPLICATE BY *; -- excludes MATERIALIZED and ALIAS columns
 OPTIMIZE TABLE table DEDUPLICATE BY colX,colY,colZ;
 OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT colX;
@@ -65,7 +65,7 @@ PARTITION BY partition_key
 ORDER BY (primary_key, secondary_key);
 ```
 ``` sql
-INSERT INTO example (primary_key, secondary_key, value, partition_key) 
+INSERT INTO example (primary_key, secondary_key, value, partition_key)
 VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
 ```
 ``` sql

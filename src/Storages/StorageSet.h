@@ -18,12 +18,12 @@ using SetPtr = std::shared_ptr<Set>;
   */
 class StorageSetOrJoinBase : public IStorage
 {
-    friend class SetOrJoinBlockOutputStream;
+    friend class SetOrJoinSink;
 
 public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }

@@ -320,7 +320,7 @@
          The amount of data in mapped files can be monitored
          in system.metrics, system.metric_log by the MMappedFiles, MMappedFileBytes metrics
          and in system.asynchronous_metrics, system.asynchronous_metrics_log by the MMapCacheCells metric,
-         and also in system.events, system.processes, system.query_log, system.query_thread_log by the
+         and also in system.events, system.processes, system.query_log, system.query_thread_log, system.query_views_log by the
          CreatedReadBufferMMap, CreatedReadBufferMMapFailed, MMappedFileCacheHits, MMappedFileCacheMisses events.
          Note that the amount of data in mapped files does not consume memory directly and is not accounted
          in query or server memory usage - because this memory can be discarded similar to OS page cache.
@@ -878,14 +878,23 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_thread_log>
 
+    <!-- Query views log. Has information about all dependent views associated with a query.
+         Used only for queries with setting log_query_views = 1. -->
+    <query_views_log>
+        <database>system</database>
+        <table>query_views_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_views_log>
+
     <!-- Uncomment if use part log.
-         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).
+         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).-->
     <part_log>
         <database>system</database>
         <table>part_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </part_log>
-    -->
 
     <!-- Uncomment to write text log into table.
          Text log contains all information from usual server log but stores it in structured and efficient way.
@@ -955,6 +964,7 @@
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
     </crash_log>
 
+
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
     -->
@@ -1001,6 +1011,16 @@
         </case>
     </compression>
     -->
+
+    <!-- Configuration of encryption. The server executes a command to
+         obtain an encryption key at startup if such a command is
+         defined, or encryption codecs will be disabled otherwise. The
+         command is executed through /bin/sh and is expected to write
+         a Base64-encoded key to the stdout. -->
+    <encryption>
+        <!-- <key_command>/usr/bin/systemd-ask-password &#45;&#45;id="clickhouse-server" &#45;&#45;timeout=0 "Enter the ClickHouse encryption passphrase:" | base64</key_command> -->
+        <!-- <key_command><![CDATA[IFS=; echo -n >/dev/tty "Enter the ClickHouse encryption passphrase: "; stty=`stty -F /dev/tty -g`; stty -F /dev/tty -echo; read k </dev/tty; stty -F /dev/tty "$stty"; echo -n $k | base64]]></key_command> -->
+    </encryption>
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
          Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
@@ -1156,4 +1176,27 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
+
+    <!-- You can also configure rocksdb like this: -->
+    <!--
+    <rocksdb>
+        <options>
+            <max_background_jobs>8</max_background_jobs>
+        </options>
+        <column_family_options>
+            <num_levels>2</num_levels>
+        </column_family_options>
+        <tables>
+            <table>
+                <name>TABLE</name>
+                <options>
+                    <max_background_jobs>8</max_background_jobs>
+                </options>
+                <column_family_options>
+                    <num_levels>2</num_levels>
+                </column_family_options>
+            </table>
+        </tables>
+    </rocksdb>
+    -->
 </yandex>

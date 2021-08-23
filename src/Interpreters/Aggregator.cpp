@@ -293,14 +293,14 @@ Aggregator::Aggregator(const Params & params_)
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
-    compileAggregateFunctions();
+    compileAggregateFunctionsIfNeeded();
 #endif
 
 }
 
 #if USE_EMBEDDED_COMPILER
 
-void Aggregator::compileAggregateFunctions()
+void Aggregator::compileAggregateFunctionsIfNeeded()
 {
     static std::unordered_map<UInt128, UInt64, UInt128Hash> aggregate_functions_description_to_count;
     static std::mutex mtx;
@@ -362,7 +362,7 @@ void Aggregator::compileAggregateFunctions()
             {
                 LOG_TRACE(log, "Compile expression {}", functions_description);
 
-                auto compiled_aggregate_functions = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_description);
+                auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
                 return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
             });
 
@@ -371,7 +371,7 @@ void Aggregator::compileAggregateFunctions()
         else
         {
             LOG_TRACE(log, "Compile expression {}", functions_description);
-            auto compiled_aggregate_functions = compileAggregateFunctons(getJITInstance(), functions_to_compile, functions_description);
+            auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
             compiled_aggregate_functions_holder = std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
         }
     }
@@ -781,15 +781,62 @@ void NO_INLINE Aggregator::executeImplBatch(
 }
 
 
+template <bool use_compiled_functions>
 void NO_INLINE Aggregator::executeWithoutKeyImpl(
     AggregatedDataWithoutKey & res,
     size_t rows,
     AggregateFunctionInstruction * aggregate_instructions,
     Arena * arena)
 {
-    /// Adding values
-    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+#if USE_EMBEDDED_COMPILER
+    if constexpr (use_compiled_functions)
     {
+        std::vector<ColumnData> columns_data;
+
+        for (size_t i = 0; i < aggregate_functions.size(); ++i)
+        {
+            if (!is_aggregate_function_compiled[i])
+                continue;
+
+            AggregateFunctionInstruction * inst = aggregate_instructions + i;
+            size_t arguments_size = inst->that->getArgumentTypes().size();
+
+            for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
+            {
+                columns_data.emplace_back(getColumnData(inst->batch_arguments[argument_index]));
+            }
+        }
+
+        auto add_into_aggregate_states_function_single_place = compiled_aggregate_functions_holder->compiled_aggregate_functions.add_into_aggregate_states_function_single_place;
+        add_into_aggregate_states_function_single_place(rows, columns_data.data(), res);
+
+#if defined(MEMORY_SANITIZER)
+
+        /// We compile only functions that do not allocate some data in Arena. Only store necessary state in AggregateData place.
+        for (size_t aggregate_function_index = 0; aggregate_function_index < aggregate_functions.size(); ++aggregate_function_index)
+        {
+            if (!is_aggregate_function_compiled[aggregate_function_index])
+                continue;
+
+            auto aggregate_data_with_offset = res + offsets_of_aggregate_states[aggregate_function_index];
+            auto data_size = params.aggregates[aggregate_function_index].function->sizeOfData();
+            __msan_unpoison(aggregate_data_with_offset, data_size);
+        }
+#endif
+    }
+#endif
+
+    /// Adding values
+    for (size_t i = 0; i < aggregate_functions.size(); ++i)
+    {
+        AggregateFunctionInstruction * inst = aggregate_instructions + i;
+
+#if USE_EMBEDDED_COMPILER
+        if constexpr (use_compiled_functions)
+            if (is_aggregate_function_compiled[i])
+                continue;
+#endif
+
         if (inst->offsets)
             inst->batch_that->addBatchSinglePlace(
                 inst->offsets[static_cast<ssize_t>(rows - 1)], res + inst->state_offset, inst->batch_arguments, arena);
@@ -930,7 +977,17 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     /// For the case when there are no keys (all aggregate into one row).
     if (result.type == AggregatedDataVariants::Type::without_key)
     {
-        executeWithoutKeyImpl(result.without_key, num_rows, aggregate_functions_instructions.data(), result.aggregates_pool);
+        /// TODO: Enable compilation after investigation
+// #if USE_EMBEDDED_COMPILER
+//         if (compiled_aggregate_functions_holder)
+//         {
+//             executeWithoutKeyImpl<true>(result.without_key, num_rows, aggregate_functions_instructions.data(), result.aggregates_pool);
+//         }
+//         else
+// #endif
+        {
+            executeWithoutKeyImpl<false>(result.without_key, num_rows, aggregate_functions_instructions.data(), result.aggregates_pool);
+        }
     }
     else
     {
@@ -1193,6 +1250,9 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
         }
     }
 
+    /// Some aggregate functions cannot throw exceptions on allocations (e.g. from C malloc)
+    /// but still tracks memory. Check it here.
+    CurrentMemoryTracker::check();
     return true;
 }
 

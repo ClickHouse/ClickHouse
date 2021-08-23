@@ -6,12 +6,12 @@ toc_title: Atomic
 
 # Atomic {#atomic}
 
-It is supports non-blocking `DROP` and `RENAME TABLE` queries and atomic `EXCHANGE TABLES t1 AND t2` queries. Atomic database engine is used by default.
+它支持非阻塞 DROP 和 RENAME TABLE 查询以及原子 EXCHANGE TABLES t1 AND t2 查询。默认情况下使用Atomic数据库引擎。
 
-## Creating a Database {#creating-a-database}
+## 创建数据库 {#creating-a-database}
 
 ```sql
 CREATE DATABASE test ENGINE = Atomic;
 ```
 
-[Original article](https://clickhouse.tech/docs/en/engines/database_engines/atomic/) <!--hide-->
+[原文](https://clickhouse.tech/docs/en/engines/database_engines/atomic/) <!--hide-->

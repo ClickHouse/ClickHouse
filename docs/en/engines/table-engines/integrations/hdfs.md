@@ -50,11 +50,11 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Implementation Details {#implementation-details}
 
--   Reads and writes can be parallel
+-   Reads and writes can be parallel.
+-   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is supported.  
 -   Not supported:
     -   `ALTER` and `SELECT...SAMPLE` operations.
     -   Indexes.
-    -   Replication.
 
 **Globs in path**
 
@@ -71,12 +71,12 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 1.  Suppose we have several files in TSV format with the following URIs on HDFS:
 
--   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
--   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
+-   'hdfs://hdfs1:9000/some_dir/some_file_1'
+-   'hdfs://hdfs1:9000/some_dir/some_file_2'
+-   'hdfs://hdfs1:9000/some_dir/some_file_3'
+-   'hdfs://hdfs1:9000/another_dir/some_file_1'
+-   'hdfs://hdfs1:9000/another_dir/some_file_2'
+-   'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 1.  There are several ways to make a table consisting of all six files:
 
@@ -126,8 +126,9 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
   </hdfs_root>
 ```
 
-### List of possible configuration options with default values
-#### Supported by libhdfs3
+### Configuration Options {#configuration-options}
+
+#### Supported by libhdfs3 {#supported-by-libhdfs3}
 
 
 | **parameter**                                         | **default value**       |
@@ -184,7 +185,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 |hadoop\_kerberos\_principal                            | ""                      |
 |hadoop\_kerberos\_kinit\_command                       | kinit                   |
 
-#### Limitations {#limitations}
+### Limitations {#limitations}
   * hadoop\_security\_kerberos\_ticket\_cache\_path can be global only, not user specific
 
 ## Kerberos support {#kerberos-support}
