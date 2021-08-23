@@ -495,9 +495,15 @@ namespace
         return res;
     }
 
-    bool isEnumSubset(const IDataType* lhs, const DataTypePtr& rhs)
+    /*
+     * This function checks compatibility of enums. It returns true if:
+     * 1. Both types are enums.
+     * 2. The first type can represent all possible values of the second one.
+     * 3. Both types require the same amount of memory.
+     */
+    bool isCompatibleEnumTypes(const IDataType* lhs, const DataTypePtr& rhs)
     {
-        const WhichDataType & which = WhichDataType{lhs};
+        WhichDataType which{lhs};
         if (!which.isEnum())
             return false;
         IDataTypeEnum const* enum_type = dynamic_cast<IDataTypeEnum const*>(lhs);
@@ -556,13 +562,13 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
                 column.name,
                 listOfColumns(available_columns));
 
-        auto const mappedType = it->getMapped();
-        if (!column.type->equals(*mappedType) && !isEnumSubset(mappedType, column.type))
+        auto const mapped_type = it->getMapped();
+        if (!column.type->equals(*mapped_type) && !isCompatibleEnumTypes(mapped_type, column.type))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {}. Column has type {}, got type {}",
                 column.name,
-                mappedType->getName(),
+                mapped_type->getName(),
                 column.type->getName());
 
         if (unique_names.end() != unique_names.find(column.name))
