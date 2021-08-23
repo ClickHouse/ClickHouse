@@ -701,8 +701,9 @@ namespace
 
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 {
+    bool multiple_disjuncts = key_names_right.size() > 1;
     /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
-    bool save_key_columns = !table_join->forceHashJoin() || isRightOrFull(kind) || key_names_right.size() > 1;
+    bool save_key_columns = !table_join->forceHashJoin() || isRightOrFull(kind) || multiple_disjuncts;
     if (save_key_columns)
     {
         saved_block_sample = right_table_keys.cloneEmpty();
@@ -724,7 +725,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 
     if (nullable_right_side)
     {
-        JoinCommon::convertColumnsToNullable(saved_block_sample, (isFull(kind) ? right_table_keys.columns() : 0));
+        JoinCommon::convertColumnsToNullable(saved_block_sample, (isFull(kind) && !multiple_disjuncts ? right_table_keys.columns() : 0));
     }
 
 }
