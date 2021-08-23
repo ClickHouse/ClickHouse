@@ -15,8 +15,6 @@
 namespace DB
 {
 
-class UserDefinedFunction;
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FUNCTION;

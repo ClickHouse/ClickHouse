@@ -4,11 +4,9 @@
 #include <Common/IFactoryWithAliases.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
 
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -41,10 +39,6 @@ public:
         else
             registerFunction(name, &Function::create, case_sensitiveness);
     }
-
-    void registerUserDefinedFunction(const ASTCreateFunctionQuery & create_function_query);
-
-    void unregisterUserDefinedFunction(const String & function_name);
 
     /// This function is used by YQL - internal Yandex product that depends on ClickHouse by source code.
     std::vector<std::string> getAllNames() const;

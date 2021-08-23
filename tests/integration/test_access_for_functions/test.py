@@ -14,16 +14,6 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
-@pytest.fixture(autouse=True)
-def cleanup_after_test():
-    try:
-        yield
-    finally:
-        instance.query("DROP USER IF EXISTS A")
-        instance.query("DROP USER IF EXISTS B")
-
-
 def test_access_rights_for_funtion():
     create_function_query = "CREATE FUNCTION MySum AS (a, b) -> a + b"
 
@@ -32,7 +22,7 @@ def test_access_rights_for_funtion():
     assert "it's necessary to have grant CREATE FUNCTION ON *.*" in instance.query_and_get_error(create_function_query, user = 'A')
 
     instance.query("GRANT CREATE FUNCTION on *.* TO A")
-    
+
     instance.query(create_function_query, user = 'A')
     assert instance.query("SELECT MySum(1, 2)") == "3\n"
 
@@ -44,3 +34,6 @@ def test_access_rights_for_funtion():
 
     instance.query("REVOKE CREATE FUNCTION ON *.* FROM A")
     assert "it's necessary to have grant CREATE FUNCTION ON *.*" in instance.query_and_get_error(create_function_query, user = 'A')
+
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("DROP USER IF EXISTS B")
