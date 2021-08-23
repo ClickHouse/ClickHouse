@@ -178,8 +178,6 @@ struct IDiskRemote::Metadata : RemoteMetadata
     static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
     static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
 
-    using PathAndSize = std::pair<String, size_t>;
-
     /// Disk path.
     const String & disk_path;
 

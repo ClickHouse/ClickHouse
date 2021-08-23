@@ -2,7 +2,7 @@
 
 #include <IO/ReadBufferFromS3.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
-#include <IO/ReadIndirectBufferFromWebServer.h>
+#include <Disks/ReadIndirectBufferFromWebServer.h>
 
 
 namespace DB

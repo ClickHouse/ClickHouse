@@ -60,3 +60,25 @@ def test_usage(cluster):
         node2.query("DROP TABLE test{}".format(i))
         print(f"Ok {i}")
 
+
+def test_incorrect_usage(cluster):
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+    global uuids
+    node2.query("""
+        ATTACH TABLE test0 UUID '{}'
+        (id Int32) ENGINE = MergeTree() ORDER BY id
+        SETTINGS storage_policy = 'web';
+    """.format(uuids[0]))
+
+    result = node2.query("SELECT count() FROM test0")
+    assert(int(result) == 500000)
+
+    result = node2.query_and_get_error("ALTER TABLE test0 ADD COLUMN col1 Int32 first")
+    assert("Table is read-only" in result)
+
+    result = node2.query_and_get_error("TRUNCATE TABLE test0")
+    assert("Table is read-only" in result)
+
+    node2.query("DROP TABLE test0")
+

@@ -93,6 +93,8 @@ public:
 
     const String & getPath() const final override { return metadata_path; }
 
+    bool isReadOnly() const override { return true; }
+
     UInt64 getTotalSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
     UInt64 getAvailableSpace() const final override { return std::numeric_limits<UInt64>::max(); }
