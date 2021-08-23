@@ -159,12 +159,12 @@ Cиноним: `DATE`.
 **Синтаксис** 
 
 ``` sql
-toDate32(expr)
+toDate32(value)
 ```
 
 **Аргументы** 
 
--   `expr` — Значение даты. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) или [Date](../../sql-reference/data-types/string.md).
+-   `value` — Значение даты. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) или [Date](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
@@ -212,7 +212,7 @@ SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
 
 ## toDate32OrZero {#toDate32OrZero}
 
-То же самое, что и `toDate32` но возвращает минимальное значение типа [Date32](../../sql-reference/data-types/date32.md) если получен недопустимый аргумент.
+То же самое, что и `toDate32` но возвращает минимальное значение типа [Date32](../../sql-reference/data-types/date32.md), если получен недопустимый аргумент.
 
 **Пример**
 
@@ -232,7 +232,7 @@ SELECT toDate32OrZero('1924-01-01'), toDate32OrZero('');
 
 ## toDate32OrNull {#todate32OrNull}
 
-То же самое, что и `toDate32` но возвращает `NULL` если получен недопустимый аргумент.
+То же самое, что и `toDate32` но возвращает `NULL`, если получен недопустимый аргумент.
 
 **Пример**
 
