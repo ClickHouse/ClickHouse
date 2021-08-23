@@ -477,12 +477,6 @@ ALTER TABLE example_table
     c String TTL d + INTERVAL 1 MONTH;
 ```
 
-Recompress separate columns: 
-
-```sql
-ALTER TABLE ... MODIFY COLUMN blob_content String RECOMPRESS event_date + INTERVAL 1 WEEK LZHC
-``` 
-
 ### Table TTL {#mergetree-table-ttl}
 
 Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving or recompressing, all rows of a part must satisfy the `TTL` expression criteria.
