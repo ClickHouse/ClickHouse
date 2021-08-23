@@ -1865,7 +1865,7 @@ ClickHouse генерирует исключение
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
-Включает или отключает режим, при котором входящие данные разбираются параллельно, но с сохранением исходного порядка следования. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+Включает или отключает режим, при котором входящие данные разбиваются на части, парсинг каждой из которых осуществляется параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
 Возможные значения:
 
