@@ -30,7 +30,10 @@ BlockIO InterpreterDeleteQuery::execute()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only MergeTree tables are supported");
 
     // TODO
-    auto alter_lock = table->lockForAlter(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+    auto alter_lock = table->lockForAlter(
+        getContext()->getCurrentQueryId(),
+        getContext()->getSettingsRef().lock_acquire_timeout);
+
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     // TODO
@@ -42,10 +45,11 @@ BlockIO InterpreterDeleteQuery::execute()
 
     auto & predicate = query.predicate;
 
-    /// Useless check for non-replicated tables
+    // TODO no check for non-replicated tables
     /// table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
 
-    MutationsInterpreter(table, metadata_snapshot, predicate, getContext()).validate();
+    // TODO no validation required for non-replicated tables
+    //MutationsInterpreter(table, metadata_snapshot, predicate, getContext()).validate();
 
     ptr->pointDelete(predicate, getContext());
 

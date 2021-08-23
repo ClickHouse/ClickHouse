@@ -291,11 +291,24 @@ MutationsInterpreter::MutationsInterpreter(
 {
     mutation_kind.set(MutationKind::MUTATE_OTHER);
 
-    stages[0].filters.push_back(makeASTFunction("isZeroOrNull", point_delete_predicate->clone()));
+    stages[0].filters = { makeASTFunction("isZeroOrNull", point_delete_predicate->clone()) };
 
     is_prepared = true;
 
-    mutation_ast = prepareInterpreterSelectQuery(stages, true);
+    mutation_ast = std::make_shared<ASTSelectQuery>();
+
+    auto & select = mutation_ast->as<ASTSelectQuery&>();
+    ASTs & children = select.select()->children;
+
+    for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+    {
+        stages[0].output_columns.insert(column.name);
+        children.push_back(std::make_shared<ASTIdentifier>(column.name));
+    }
+
+    ASTPtr where = stages[0].filters[0];
+    select.setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+    select.setExpression(ASTSelectQuery::Expression::WHERE, std::move(where));
 }
 
 static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot)
@@ -804,7 +817,6 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     }
 
     /// Execute first stage as a SELECT statement.
-
     auto select = std::make_shared<ASTSelectQuery>();
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
@@ -821,6 +833,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     if (!prepared_stages[0].filters.empty())
     {
         ASTPtr where_expression;
+
         if (prepared_stages[0].filters.size() == 1)
             where_expression = prepared_stages[0].filters[0];
         else
