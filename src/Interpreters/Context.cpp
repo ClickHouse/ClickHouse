@@ -228,6 +228,8 @@ struct ContextSharedPart
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
 
+    std::map<String, UInt16> server_ports;
+
     bool shutdown_called = false;
 
     Stopwatch uptime_watch;
@@ -1798,13 +1800,27 @@ std::optional<UInt16> Context::getTCPPortSecure() const
     return {};
 }
 
+void Context::registerServerPort(String port_name, UInt16 port)
+{
+    shared->server_ports.emplace(std::move(port_name), port);
+}
+
+UInt16 Context::getServerPort(const String & port_name) const
+{
+    auto it = shared->server_ports.find(port_name);
+    if (it == shared->server_ports.end())
+        throw Exception(ErrorCodes::BAD_GET, "There is no port named {}", port_name);
+    else
+        return it->second;
+}
+
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     auto res = getClusters()->getCluster(cluster_name);
     if (res)
         return res;
-
-    res = tryGetReplicatedDatabaseCluster(cluster_name);
+    if (!cluster_name.empty())
+        res = tryGetReplicatedDatabaseCluster(cluster_name);
     if (res)
         return res;
 
