@@ -101,7 +101,7 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 
-    assert(rows == 0 && chunks.empty());
+    assert(rows == 0);
 }
 
 

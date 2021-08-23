@@ -22,12 +22,9 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_CODEC;
-    extern const int BAD_ARGUMENTS;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
 }
-
-static constexpr auto DEFAULT_CODEC_NAME = "Default";
 
 CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
 {
@@ -46,26 +43,6 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     {
         auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
         return get(makeASTFunction("CODEC", identifier), {});
-    }
-}
-
-void CompressionCodecFactory::validateCodec(
-    const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const
-{
-    if (family_name.empty())
-        throw Exception("Compression codec name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
-
-    if (level)
-    {
-        auto literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), literal)),
-            {}, sanity_check, allow_experimental_codecs);
-    }
-    else
-    {
-        auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
-        validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
-            {}, sanity_check, allow_experimental_codecs);
     }
 }
 
