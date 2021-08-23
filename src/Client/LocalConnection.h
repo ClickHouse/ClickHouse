@@ -1,3 +1,5 @@
+#pragma once
+
 #include "Connection.h"
 #include <Interpreters/Context.h>
 #include <DataStreams/BlockIO.h>
@@ -16,14 +18,7 @@ struct LocalQueryState
 {
     /// Identifier of the query.
     String query_id;
-
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
-
-    /// A queue with internal logs that will be passed to client. It must be
-    /// destroyed after input/output blocks, because they may contain other
-    /// threads that use this queue.
-    InternalTextLogsQueuePtr logs_queue;
-    BlockOutputStreamPtr logs_block_out;
 
     /// Query text.
     String query;
@@ -35,7 +30,7 @@ struct LocalQueryState
 
     std::optional<Exception> exception;
 
-    /// Last polled block.
+    /// Current block to be sent next.
     std::optional<Block> block;
 
     /// Is request cancelled
@@ -47,23 +42,11 @@ struct LocalQueryState
     bool sent_extremes = false;
     bool sent_progress = false;
 
-    /// Request requires data from the client (INSERT, but not INSERT SELECT).
-    bool need_receive_data_for_insert = false;
-    /// Request requires data from client for function input()
-    bool need_receive_data_for_input = false;
-    /// temporary place for incoming data block for input()
-    Block block_for_input;
-    /// sample block from StorageInput
-    Block input_header;
-
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_send_progress;
     Stopwatch query_execution_time;
-
-    /// Timeouts setter for current query
-    std::unique_ptr<TimeoutSetter> timeout_setter;
 };
 
 
@@ -123,26 +106,6 @@ public:
     void setThrottler(const ThrottlerPtr &) override {}
 
 private:
-    ContextMutablePtr query_context;
-    Session session;
-
-    String description;
-
-    String server_name;
-    UInt64 server_version_major = 0;
-    UInt64 server_version_minor = 0;
-    UInt64 server_version_patch = 0;
-    UInt64 server_revision = 0;
-    String server_timezone;
-    String server_display_name;
-    String default_database;
-
-    /// At the moment, only one ongoing query in the connection is supported at a time.
-    std::optional<LocalQueryState> state;
-
-    /// Last "server" packet.
-    std::optional<UInt64> next_packet_type;
-
     void initBlockInput();
 
     void processOrdinaryQuery();
@@ -158,5 +121,24 @@ private:
     void updateProgress(const Progress & value);
 
     bool pollImpl();
+
+    ContextMutablePtr query_context;
+    Session session;
+
+    /// At the moment, only one ongoing query in the connection is supported at a time.
+    std::optional<LocalQueryState> state;
+
+    /// Last "server" packet.
+    std::optional<UInt64> next_packet_type;
+
+    String description;
+    String server_name;
+    UInt64 server_version_major = 0;
+    UInt64 server_version_minor = 0;
+    UInt64 server_version_patch = 0;
+    UInt64 server_revision = 0;
+    String server_timezone;
+    String server_display_name;
+    String default_database;
 };
 }

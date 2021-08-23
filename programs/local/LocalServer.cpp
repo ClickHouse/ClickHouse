@@ -65,10 +65,10 @@ namespace ErrorCodes
 
 void LocalServer::processError(const String & query) const
 {
+    /// For non-interactive mode process exception only when all queries were executed.
     if (!is_interactive)
         return;
 
-    /// For non-interactive mode process exception only when all queries were executed.
     if (server_exception)
     {
         fmt::print(stderr, "Error on processing query '{}':\n{}\n", query, server_exception->message());
@@ -84,8 +84,6 @@ void LocalServer::processError(const String & query) const
 
 void LocalServer::processSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
-    cancelled = false;
-
     /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
     /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
     /// first exception or whether we need to even rethrow it because there is --ignore-error.
@@ -94,15 +92,6 @@ void LocalServer::processSingleQuery(const String & query_to_execute, ASTPtr par
         server_exception.reset();
         client_exception.reset();
     }
-
-    auto process_error = [&]()
-    {
-        if (!ignore_error)
-            throw;
-
-        server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
-        have_error = true;
-    };
 
     try
     {
@@ -122,16 +111,13 @@ void LocalServer::processSingleQuery(const String & query_to_execute, ASTPtr par
         else
             processOrdinaryQuery(query_to_execute, parsed_query);
     }
-    catch (const Exception & e)
-    {
-        if (is_interactive && e.code() == ErrorCodes::QUERY_WAS_CANCELLED)
-            std::cout << "Query was cancelled." << std::endl;
-        else
-            process_error();
-    }
     catch (...)
     {
-        process_error();
+        if (!ignore_error)
+            throw;
+
+        server_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+        have_error = true;
     }
 }
 
@@ -444,6 +430,13 @@ String LocalServer::getQueryTextPrefix()
 }
 
 
+void LocalServer::connect()
+{
+    connection_parameters = ConnectionParameters(config());
+    connection = std::make_unique<LocalConnection>(global_context);
+}
+
+
 int LocalServer::mainImpl()
 try
 {
@@ -463,12 +456,9 @@ try
     registerFormats();
 
     processConfig();
-
     applyCmdSettings(global_context);
 
-    connection_parameters = ConnectionParameters(config());
-    connection = std::make_unique<LocalConnection>(global_context);
-    /// TODO: Use the same query_id (and thread group) for all queries
+    connect();
 
     if (is_interactive)
     {

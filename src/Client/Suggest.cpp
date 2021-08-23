@@ -148,7 +148,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit)
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
     WriteBufferFromOwnString query;
- query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
+    query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
         "SELECT name FROM system.functions"
         " UNION ALL "
         "SELECT name FROM system.table_engines"

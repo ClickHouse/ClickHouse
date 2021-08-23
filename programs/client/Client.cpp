@@ -81,13 +81,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
-    extern const int UNEXPECTED_PACKET_FROM_SERVER;
-    extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int INVALID_USAGE_OF_INPUT;
-    extern const int DEADLOCK_AVOIDED;
     extern const int SYNTAX_ERROR;
     extern const int TOO_DEEP_RECURSION;
     extern const int NETWORK_ERROR;

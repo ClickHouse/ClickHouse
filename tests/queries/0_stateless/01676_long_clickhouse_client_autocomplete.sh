@@ -149,9 +149,9 @@ local_compwords_positive=(
     SimpleAggregateFunction
 )
 
-#for w in "${client_compwords_positive[@]}"; do
-#    test_completion_word_client "$w" || echo "[FAIL] $w (positive)"
-#done
+for w in "${client_compwords_positive[@]}"; do
+    test_completion_word_client "$w" || echo "[FAIL] $w (positive)"
+done
 
 for w in "${local_compwords_positive[@]}"; do
     test_completion_word_local "$w" || echo "[FAIL] $w (positive)"

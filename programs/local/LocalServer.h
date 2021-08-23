@@ -34,17 +34,18 @@ protected:
 
     void processError(const String & query) const override;
     void loadSuggestionData(Suggest &) override;
+
+    void connect() override;
+    int mainImpl() override;
+
     String getQueryTextPrefix() override;
     void printHelpMessage(const OptionsDescription & options_description) override;
 
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &) override;
     void addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments) override;
-    void processOptions(const OptionsDescription & options_description,
-                        const CommandLineOptions & options,
+    void processOptions(const OptionsDescription & options_description, const CommandLineOptions & options,
                         const std::vector<Arguments> &) override;
     void processConfig() override;
-
-    int mainImpl() override;
 
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
@@ -61,18 +62,7 @@ private:
     void applyCmdSettings(ContextMutablePtr context);
 
     std::optional<StatusFile> status;
-
-    void processQuery(const String & query, std::exception_ptr exception);
-
     std::optional<std::filesystem::path> temporary_directory_to_delete;
-
-    /// Used to cancel query on ctrl-c. Lives for single query execution.
-    std::optional<InterruptListener> interrupt_listener;
-
-    std::mutex interrupt_listener_mutex;
-
-    /// Was currently executed query cancelled by ctrl-c in interactive mode?
-    bool cancelled = true;
 };
 
 }

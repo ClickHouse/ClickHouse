@@ -42,15 +42,13 @@ protected:
     void runInteractive();
     void runNonInteractive();
 
-    /// Prepare for and call either runInteractive() or runNonInteractive().
+    virtual void connect() = 0;
     virtual int mainImpl() = 0;
 
     virtual bool processWithFuzzing(const String &)
     {
         throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
-
-    virtual void connect() {}
 
     virtual void processSingleQuery(const String & query_to_execute, ASTPtr parsed_query) = 0;
     virtual bool processMultiQuery(const String & all_queries_text) = 0;

@@ -66,7 +66,6 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
-    extern const int INVALID_USAGE_OF_INPUT;
     extern const int NO_DATA_TO_INSERT;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
 }
@@ -193,7 +192,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
 
-    if (need_render_progress && stdout_is_a_tty)
+    if (need_render_progress && (stdout_is_a_tty || is_interactive))
         progress_indication.clearProgressOutput();
 
     block_out_stream->write(block);
@@ -203,7 +202,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     block_out_stream->flush();
 
     /// Restore progress bar after data block.
-    if (need_render_progress && stdout_is_a_tty)
+    if (need_render_progress && (stdout_is_a_tty || is_interactive))
         progress_indication.writeProgress();
 }
 
@@ -1228,6 +1227,9 @@ static void showClientVersion()
 int ClientBase::main(const std::vector<std::string> & /*args*/)
 {
     UseSSL use_ssl;
+
+    std::cout << std::fixed << std::setprecision(3);
+    std::cerr << std::fixed << std::setprecision(3);
 
     if (is_interactive)
     {
