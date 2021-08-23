@@ -322,9 +322,10 @@ public:
 
     /// Templates to avoid ambiguity.
     template <typename T, typename Z = void *>
-    using enable_if_not_field_or_stringlike_t = std::enable_if_t<
-        !std::is_same_v<std::decay_t<T>, Field>
-        && !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>, Z>;
+    using enable_if_not_field_or_bool_or_stringlike_t = std::enable_if_t<
+        !std::is_same_v<std::decay_t<T>, Field> &&
+        !std::is_same_v<std::decay_t<T>, bool> &&
+        !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>, Z>;
 
     Field() //-V730
         : which(Types::Null)
@@ -345,7 +346,9 @@ public:
     }
 
     template <typename T>
-    Field(T && rhs, enable_if_not_field_or_stringlike_t<T> = nullptr);
+    Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T> = nullptr);
+
+    Field(bool rhs);
 
     /// Create a string inplace.
     Field(const std::string_view & str) { create(str.data(), str.size()); }
@@ -395,8 +398,10 @@ public:
     /// 1. float <--> int needs explicit cast
     /// 2. customized types needs explicit cast
     template <typename T>
-    enable_if_not_field_or_stringlike_t<T, Field> &
+    enable_if_not_field_or_bool_or_stringlike_t<T, Field> &
     operator=(T && rhs);
+
+    Field & operator= (bool rhs);
 
     Field & operator= (const std::string_view & str);
     Field & operator= (const String & str) { return *this = std::string_view{str}; }
@@ -886,14 +891,18 @@ decltype(auto) castToNearestFieldType(T && x)
 }
 
 template <typename T>
-Field::Field(T && rhs, enable_if_not_field_or_stringlike_t<T>) //-V730
+Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
 }
 
+inline Field::Field(bool rhs) : Field(castToNearestFieldType(rhs))
+{
+}
+
 template <typename T>
-Field::enable_if_not_field_or_stringlike_t<T, Field> &
+Field::enable_if_not_field_or_bool_or_stringlike_t<T, Field> &
 Field::operator=(T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
@@ -908,6 +917,10 @@ Field::operator=(T && rhs)
     return *this;
 }
 
+inline Field & Field::operator=(bool rhs)
+{
+    return *this = castToNearestFieldType(rhs);
+}
 
 inline Field & Field::operator=(const std::string_view & str)
 {
