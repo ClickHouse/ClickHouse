@@ -31,11 +31,13 @@ class FunctionExtractGroups : public IFunction
 {
 public:
     static constexpr auto name = "extractGroups";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionExtractGroups>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractGroups>(); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }

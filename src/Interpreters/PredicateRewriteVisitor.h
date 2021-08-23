@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class PredicateRewriteVisitorData : WithConstContext
+class PredicateRewriteVisitorData : WithContext
 {
 public:
     bool is_rewrite = false;
@@ -24,7 +24,7 @@ public:
     }
 
     PredicateRewriteVisitorData(
-        ContextConstPtr context_,
+        ContextPtr context_,
         const ASTs & predicates_,
         const TableWithColumnNamesAndTypes & table_columns_,
         bool optimize_final_,

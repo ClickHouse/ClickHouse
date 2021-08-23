@@ -9,7 +9,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <ext/map.h>
+#include <common/map.h>
 
 
 namespace DB
@@ -35,7 +35,7 @@ class FunctionFormatRow : public IFunction
 public:
     static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
 
-    FunctionFormatRow(const String & format_name_, ContextConstPtr context_) : format_name(format_name_), context(context_)
+    FunctionFormatRow(const String & format_name_, ContextPtr context_) : format_name(format_name_), context(context_)
     {
         if (!FormatFactory::instance().getAllFormats().count(format_name))
             throw Exception("Unknown format " + format_name, ErrorCodes::UNKNOWN_FORMAT);
@@ -45,6 +45,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -76,7 +77,7 @@ public:
 
 private:
     String format_name;
-    ContextConstPtr context;
+    ContextPtr context;
 };
 
 template <bool no_newline>
@@ -84,8 +85,8 @@ class FormatRowOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
-    static FunctionOverloadResolverPtr create(ContextConstPtr context) { return std::make_unique<FormatRowOverloadResolver>(context); }
-    explicit FormatRowOverloadResolver(ContextConstPtr context_) : context(context_) { }
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<FormatRowOverloadResolver>(context); }
+    explicit FormatRowOverloadResolver(ContextPtr context_) : context(context_) { }
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -102,7 +103,7 @@ public:
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 std::make_shared<FunctionFormatRow<no_newline>>(name_col->getValue<String>(), context),
-                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         else
             throw Exception("First argument to " + getName() + " must be a format name", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -111,7 +112,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
 
 private:
-    ContextConstPtr context;
+    ContextPtr context;
 };
 
 }

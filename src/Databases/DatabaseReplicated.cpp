@@ -8,7 +8,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/Exception.h>
-#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -22,6 +21,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/formatAST.h>
 #include <Common/Macros.h>
 
@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int NO_ACTIVE_REPLICAS;
 }
 
 static constexpr const char * DROPPED_MARK = "DROPPED";
@@ -136,7 +137,9 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         Coordination::Stat stat;
         hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
         if (hosts.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No hosts found");
+            throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "No replicas of database {} found. "
+                            "It's possible if the first replica is not fully created yet "
+                            "or if the last replica was just dropped or due to logical error", database_name);
         Int32 cversion = stat.cversion;
         std::sort(hosts.begin(), hosts.end());
 
@@ -192,7 +195,17 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
     UInt16 default_port = getContext()->getTCPPort();
     bool secure = db_settings.cluster_secure_connection;
 
-    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, username, password, default_port, false, secure);
+    bool treat_local_as_remote = false;
+    bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
+    return std::make_shared<Cluster>(
+        getContext()->getSettingsRef(),
+        shards,
+        username,
+        password,
+        default_port,
+        treat_local_as_remote,
+        treat_local_port_as_remote,
+        secure);
 }
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
@@ -273,19 +286,11 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
     __builtin_unreachable();
 }
 
-void DatabaseReplicated::createEmptyLogEntry(Coordination::Requests & ops, const ZooKeeperPtr & current_zookeeper)
+void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper)
 {
     /// On replica creation add empty entry to log. Can be used to trigger some actions on other replicas (e.g. update cluster info).
     DDLLogEntry entry{};
-
-    String query_path_prefix = zookeeper_path + "/log/query-";
-    String counter_prefix = zookeeper_path + "/counter/cnt-";
-    String counter_path = current_zookeeper->create(counter_prefix, "", zkutil::CreateMode::EphemeralSequential);
-    String query_path = query_path_prefix + counter_path.substr(counter_prefix.size());
-
-    ops.emplace_back(zkutil::makeCreateRequest(query_path, entry.toString(), zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(query_path + "/committed", getFullReplicaName(), zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
+    DatabaseReplicatedDDLWorker::enqueueQueryImpl(current_zookeeper, entry, this, true);
 }
 
 void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
@@ -296,8 +301,8 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
-    createEmptyLogEntry(ops, current_zookeeper);
     current_zookeeper->multi(ops);
+    createEmptyLogEntry(current_zookeeper);
 }
 
 void DatabaseReplicated::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
@@ -325,9 +330,24 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             if (!replicated_table || !create->storage->engine->arguments)
                 return;
 
-            ASTs & args = create->storage->engine->arguments->children;
+            ASTs & args_ref = create->storage->engine->arguments->children;
+            ASTs args = args_ref;
             if (args.size() < 2)
                 return;
+
+            /// It can be a constant expression. Try to evaluate it, ignore exception if we cannot.
+            bool has_expression_argument = args_ref[0]->as<ASTFunction>() || args_ref[1]->as<ASTFunction>();
+            if (has_expression_argument)
+            {
+                try
+                {
+                    args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
+                    args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
+                }
+                catch (...)
+                {
+                }
+            }
 
             ASTLiteral * arg1 = args[0]->as<ASTLiteral>();
             ASTLiteral * arg2 = args[1]->as<ASTLiteral>();
@@ -356,12 +376,12 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             if (maybe_shard_macros && maybe_replica_macros)
                 return;
 
-            if (enable_functional_tests_helper)
+            if (enable_functional_tests_helper && !has_expression_argument)
             {
                 if (maybe_path.empty() || maybe_path.back() != '/')
                     maybe_path += '/';
-                arg1->value = maybe_path + "auto_{shard}";
-                arg2->value = maybe_replica + "auto_{replica}";
+                args_ref[0]->as<ASTLiteral>()->value = maybe_path + "auto_{shard}";
+                args_ref[1]->as<ASTLiteral>()->value = maybe_replica + "auto_{replica}";
                 return;
             }
 
@@ -496,6 +516,19 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         }
     }
 
+    auto make_query_context = [this, current_zookeeper]()
+    {
+        auto query_context = Context::createCopy(getContext());
+        query_context->makeQueryContext();
+        query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        query_context->getClientInfo().is_replicated_database_internal = true;
+        query_context->setCurrentDatabase(database_name);
+        query_context->setCurrentQueryId("");
+        auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
+        query_context->initZooKeeperMetadataTransaction(txn);
+        return query_context;
+    };
+
     String db_name = getDatabaseName();
     String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
     if (total_tables * db_settings.max_broken_tables_ratio < tables_to_detach.size())
@@ -530,7 +563,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             dropped_dictionaries += table->isDictionary();
 
             table->flushAndShutdown();
-            DatabaseAtomic::dropTable(getContext(), table_name, true);
+            DatabaseAtomic::dropTable(make_query_context(), table_name, true);
         }
         else
         {
@@ -540,7 +573,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             assert(db_name < to_db_name);
             DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_db_name, to_name);
             auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_db_name);
-            DatabaseAtomic::renameTable(getContext(), table_name, *to_db_ptr, to_name, false, false);
+            DatabaseAtomic::renameTable(make_query_context(), table_name, *to_db_ptr, to_name, false, false);
             ++moved_tables;
         }
     }
@@ -559,7 +592,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// TODO Maybe we should do it in two steps: rename all tables to temporary names and then rename them to actual names?
         DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to));
         DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::max(from, to));
-        DatabaseAtomic::renameTable(getContext(), from, *this, to, false, false);
+        DatabaseAtomic::renameTable(make_query_context(), from, *this, to, false, false);
     }
 
     for (const auto & id : dropped_tables)
@@ -574,15 +607,9 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         }
 
         auto query_ast = parseQueryFromMetadataInZooKeeper(name_and_meta.first, name_and_meta.second);
-
-        auto query_context = Context::createCopy(getContext());
-        query_context->makeQueryContext();
-        query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        query_context->setCurrentDatabase(database_name);
-        query_context->setCurrentQueryId(""); // generate random query_id
-
         LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
-        InterpreterCreateQuery(query_ast, query_context).execute();
+        auto create_query_context = make_query_context();
+        InterpreterCreateQuery(query_ast, create_query_context).execute();
     }
 
     current_zookeeper->set(replica_path + "/log_ptr", toString(max_log_ptr));
@@ -659,10 +686,8 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 void DatabaseReplicated::drop(ContextPtr context_)
 {
     auto current_zookeeper = getZooKeeper();
-    Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeSetRequest(replica_path, DROPPED_MARK, -1));
-    createEmptyLogEntry(ops, current_zookeeper);
-    current_zookeeper->multi(ops);
+    current_zookeeper->set(replica_path, DROPPED_MARK, -1);
+    createEmptyLogEntry(current_zookeeper);
 
     DatabaseAtomic::drop(context_);
 

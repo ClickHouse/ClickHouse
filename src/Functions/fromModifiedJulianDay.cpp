@@ -127,6 +127,11 @@ namespace DB
             return true;
         }
 
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+        {
+            return true;
+        }
+
         bool hasInformationAboutMonotonicity() const override
         {
             return true;
@@ -151,7 +156,7 @@ namespace DB
     public:
         static constexpr auto name = Name::name;
 
-        static FunctionOverloadResolverPtr create(ContextConstPtr)
+        static FunctionOverloadResolverPtr create(ContextPtr)
         {
             return std::make_unique<FromModifiedJulianDayOverloadResolver<Name, nullOnErrors>>();
         }

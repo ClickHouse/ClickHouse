@@ -40,14 +40,14 @@ namespace
     }
 }
 
-ODBCBlockOutputStream::ODBCBlockOutputStream(nanodbc::ConnectionHolderPtr connection_,
+ODBCBlockOutputStream::ODBCBlockOutputStream(nanodbc::ConnectionHolderPtr connection_holder_,
                                              const std::string & remote_database_name_,
                                              const std::string & remote_table_name_,
                                              const Block & sample_block_,
                                              ContextPtr local_context_,
                                              IdentifierQuotingStyle quoting_)
     : log(&Poco::Logger::get("ODBCBlockOutputStream"))
-    , connection(std::move(connection_))
+    , connection_holder(std::move(connection_holder_))
     , db_name(remote_database_name_)
     , table_name(remote_table_name_)
     , sample_block(sample_block_)
@@ -69,7 +69,8 @@ void ODBCBlockOutputStream::write(const Block & block)
     writer->write(block);
 
     std::string query = getInsertQuery(db_name, table_name, block.getColumnsWithTypeAndName(), quoting) + values_buf.str();
-    execute(connection->get(), query);
+    execute<void>(connection_holder,
+                  [&](nanodbc::connection & connection) { execute(connection, query); });
 }
 
 }

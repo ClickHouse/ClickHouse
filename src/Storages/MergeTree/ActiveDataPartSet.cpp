@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Common/Exception.h>
+#include <common/logger_useful.h>
 #include <algorithm>
+#include <cassert>
 
 
 namespace DB
@@ -11,13 +13,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
 ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names)
     : format_version(format_version_)
 {
     for (const auto & name : names)
         add(name);
 }
-
 
 bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
 {
@@ -56,8 +58,7 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
     /// Let's go to the right.
     while (it != part_info_to_name.end() && part_info.contains(it->first))
     {
-        if (part_info == it->first)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", name);
+        assert(part_info != it->first);
         if (out_replaced_parts)
             out_replaced_parts->push_back(it->second);
         part_info_to_name.erase(it++);

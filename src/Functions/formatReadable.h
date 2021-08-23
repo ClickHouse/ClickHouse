@@ -28,11 +28,16 @@ class FunctionFormatReadable : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionFormatReadable<Impl>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadable<Impl>>(); }
 
     String getName() const override
     {
         return name;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return true;
     }
 
     size_t getNumberOfArguments() const override { return 1; }

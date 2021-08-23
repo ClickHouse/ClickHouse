@@ -11,7 +11,7 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
 #include "ODBCConnectionFactory.h"
@@ -21,7 +21,7 @@ namespace DB
 {
 void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    HTMLForm params(request, request.getStream());
+    HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
@@ -46,7 +46,7 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
-        auto identifier = getIdentifierQuote(connection->get());
+        auto identifier = getIdentifierQuote(std::move(connection));
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try

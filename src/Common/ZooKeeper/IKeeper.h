@@ -411,7 +411,7 @@ public:
   * - whenever you receive exception with ZSESSIONEXPIRED code or method isExpired returns true,
   *   the ZooKeeper instance is no longer usable - you may only destroy it and probably create another.
   * - whenever session is expired or ZooKeeper instance is destroying, all callbacks are notified with special event.
-  * - data for callbacks must be alive when ZooKeeper instance is alive.
+  * - data for callbacks must be alive when ZooKeeper instance is alive, so try to avoid capturing references in callbacks, it's error-prone.
   */
 class IKeeper
 {
@@ -428,6 +428,9 @@ public:
     ///
     /// After the method is executed successfully, you must wait for callbacks
     ///  (don't destroy callback data before it will be called).
+    /// TODO: The above line is the description of an error-prone interface. It's better
+    ///  to replace callbacks with std::future results, so the caller shouldn't think about
+    ///  lifetime of the callback data.
     ///
     /// All callbacks are executed sequentially (the execution of callbacks is serialized).
     ///

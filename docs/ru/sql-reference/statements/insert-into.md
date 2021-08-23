@@ -107,7 +107,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 Для табличной функции [input()](../table-functions/input.md) после секции `SELECT` должна следовать
 секция `FORMAT`.
 
-Чтобы вставить значение по умолчанию вместо `NULL` в столбец, который не позволяет хранить `NULL`, включите настройку [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default). 
+Чтобы вставить значение по умолчанию вместо `NULL` в столбец, который не позволяет хранить `NULL`, включите настройку [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default).
 
 ### Замечания о производительности {#zamechaniia-o-proizvoditelnosti}
 

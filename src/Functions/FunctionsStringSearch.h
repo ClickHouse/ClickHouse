@@ -51,11 +51,13 @@ class FunctionsStringSearch : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionsStringSearch>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearch>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return Impl::supports_start_pos; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override
     {

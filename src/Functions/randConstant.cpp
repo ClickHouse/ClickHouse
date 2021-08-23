@@ -52,6 +52,8 @@ public:
         return return_type;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionRandomConstant<ToType, Name>>(value);
@@ -79,7 +81,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    static FunctionOverloadResolverPtr create(ContextConstPtr)
+    static FunctionOverloadResolverPtr create(ContextPtr)
     {
         return std::make_unique<RandomConstantOverloadResolver<ToType, Name>>();
     }

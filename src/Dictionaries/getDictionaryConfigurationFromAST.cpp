@@ -11,10 +11,12 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Core/Names.h>
+#include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionFactory.h>
+
 
 namespace DB
 {
@@ -397,7 +399,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTExpressionList * ast_expr_list,
-    ContextConstPtr context)
+    ContextPtr context)
 {
     const auto & children = ast_expr_list->children;
     for (size_t i = 0; i != children.size(); ++i)
@@ -464,7 +466,7 @@ void buildSourceConfiguration(
     AutoPtr<Element> root,
     const ASTFunctionWithKeyValueArguments * source,
     const ASTDictionarySettings * settings,
-    ContextConstPtr context)
+    ContextPtr context)
 {
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
@@ -494,9 +496,6 @@ void checkAST(const ASTCreateQuery & query)
     if (!query.is_dictionary || query.dictionary == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot convert dictionary to configuration from non-dictionary AST.");
 
-    if (query.dictionary_attributes_list == nullptr || query.dictionary_attributes_list->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty attributes list");
-
     if (query.dictionary->layout == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty layout");
 
@@ -510,8 +509,6 @@ void checkAST(const ASTCreateQuery & query)
 
     if (query.dictionary->source == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty source");
-
-    /// Range can be empty
 }
 
 void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs)
@@ -525,7 +522,7 @@ void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs
 
 
 DictionaryConfigurationPtr
-getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextConstPtr context, const std::string & database_)
+getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_)
 {
     checkAST(query);
 

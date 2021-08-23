@@ -5,7 +5,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <ext/range.h>
+#include <common/range.h>
 
 #include <memory>
 #include <string>
@@ -31,11 +31,13 @@ class FormatFunction : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FormatFunction>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FormatFunction>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
 
@@ -55,7 +57,7 @@ public:
                     + ", should be at most " + std::to_string(FormatImpl::argument_threshold),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (const auto arg_idx : ext::range(0, arguments.size()))
+        for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))

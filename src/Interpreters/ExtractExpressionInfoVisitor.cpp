@@ -82,12 +82,12 @@ bool ExpressionInfoMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
     return !node->as<ASTSubquery>();
 }
 
-bool hasNonRewritableFunction(const ASTPtr & node, ContextConstPtr context)
+bool hasNonRewritableFunction(const ASTPtr & node, ContextPtr context)
 {
     for (const auto & select_expression : node->children)
     {
         TablesWithColumns tables;
-        ExpressionInfoVisitor::Data expression_info{WithConstContext{context}, tables};
+        ExpressionInfoVisitor::Data expression_info{WithContext{context}, tables};
         ExpressionInfoVisitor(expression_info).visit(select_expression);
 
         if (expression_info.is_stateful_function

@@ -14,7 +14,7 @@ class FunctionArray : public IFunction
 {
 public:
     static constexpr auto name = "array";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionArray>();
     }
@@ -23,6 +23,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

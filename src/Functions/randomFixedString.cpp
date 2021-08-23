@@ -35,6 +35,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -77,7 +79,7 @@ public:
 class FunctionRandomFixedString : public FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>
 {
 public:
-    explicit FunctionRandomFixedString(ContextConstPtr context) : selector(context)
+    explicit FunctionRandomFixedString(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
@@ -93,7 +95,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionRandomFixedString>(context);
     }

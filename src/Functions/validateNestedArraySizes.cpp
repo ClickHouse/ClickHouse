@@ -24,10 +24,11 @@ class FunctionValidateNestedArraySizes : public IFunction
 {
 public:
     static constexpr auto name = "validateNestedArraySizes";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionValidateNestedArraySizes>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionValidateNestedArraySizes>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;

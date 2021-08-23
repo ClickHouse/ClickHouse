@@ -22,7 +22,7 @@ class FunctionEmptyArray : public IFunction
 {
 public:
     static String getNameImpl() { return "emptyArray" + DataType().getName(); }
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionEmptyArray>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEmptyArray>(); }
 
 private:
     String getName() const override
@@ -36,6 +36,8 @@ private:
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataType>());
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {

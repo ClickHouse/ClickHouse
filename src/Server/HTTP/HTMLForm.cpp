@@ -1,5 +1,6 @@
 #include <Server/HTTP/HTMLForm.h>
 
+#include <Core/Settings.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <Server/HTTP/ReadHeaders.h>
@@ -35,38 +36,41 @@ const std::string HTMLForm::ENCODING_MULTIPART = "multipart/form-data";
 const int HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
 
 
-HTMLForm::HTMLForm() : field_limit(DFL_FIELD_LIMIT), value_length_limit(DFL_MAX_VALUE_LENGTH), encoding(ENCODING_URL)
+HTMLForm::HTMLForm(const Settings & settings)
+    : max_fields_number(settings.http_max_fields)
+    , max_field_name_size(settings.http_max_field_name_size)
+    , max_field_value_size(settings.http_max_field_value_size)
+    , encoding(ENCODING_URL)
 {
 }
 
 
-HTMLForm::HTMLForm(const std::string & encoding_)
-    : field_limit(DFL_FIELD_LIMIT), value_length_limit(DFL_MAX_VALUE_LENGTH), encoding(encoding_)
+HTMLForm::HTMLForm(const Settings & settings, const std::string & encoding_) : HTMLForm(settings)
 {
+    encoding = encoding_;
 }
 
 
-HTMLForm::HTMLForm(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler)
-    : field_limit(DFL_FIELD_LIMIT), value_length_limit(DFL_MAX_VALUE_LENGTH)
+HTMLForm::HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler)
+    : HTMLForm(settings)
 {
     load(request, requestBody, handler);
 }
 
 
-HTMLForm::HTMLForm(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody)
-    : field_limit(DFL_FIELD_LIMIT), value_length_limit(DFL_MAX_VALUE_LENGTH)
+HTMLForm::HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody) : HTMLForm(settings)
 {
     load(request, requestBody);
 }
 
 
-HTMLForm::HTMLForm(const Poco::Net::HTTPRequest & request) : HTMLForm(Poco::URI(request.getURI()))
+HTMLForm::HTMLForm(const Settings & settings, const Poco::Net::HTTPRequest & request) : HTMLForm(settings, Poco::URI(request.getURI()))
 {
 }
 
-HTMLForm::HTMLForm(const Poco::URI & uri) : field_limit(DFL_FIELD_LIMIT), value_length_limit(DFL_MAX_VALUE_LENGTH)
+HTMLForm::HTMLForm(const Settings & settings, const Poco::URI & uri) : HTMLForm(settings)
 {
-    ReadBufferFromString istr(uri.getRawQuery()); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    ReadBufferFromString istr(uri.getRawQuery());  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     readQuery(istr);
 }
 
@@ -123,7 +127,7 @@ void HTMLForm::readQuery(ReadBuffer & in)
 
     while (true)
     {
-        if (field_limit > 0 && fields == field_limit)
+        if (max_fields_number > 0 && fields == max_fields_number)
             throw Poco::Net::HTMLFormException("Too many form fields");
 
         std::string name;
@@ -133,7 +137,7 @@ void HTMLForm::readQuery(ReadBuffer & in)
         {
             if (ch == '+')
                 ch = ' ';
-            if (name.size() < MAX_NAME_LENGTH)
+            if (name.size() < max_field_name_size)
                 name += ch;
             else
                 throw Poco::Net::HTMLFormException("Field name too long");
@@ -145,7 +149,7 @@ void HTMLForm::readQuery(ReadBuffer & in)
             {
                 if (ch == '+')
                     ch = ' ';
-                if (value.size() < value_length_limit)
+                if (value.size() < max_field_value_size)
                     value += ch;
                 else
                     throw Poco::Net::HTMLFormException("Field value too long");
@@ -185,11 +189,11 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
     /// Read each part until next boundary (or last boundary)
     while (!in.eof())
     {
-        if (field_limit && fields > field_limit)
+        if (max_fields_number && fields > max_fields_number)
             throw Poco::Net::HTMLFormException("Too many form fields");
 
         Poco::Net::MessageHeader header;
-        readHeaders(header, in);
+        readHeaders(header, in, max_fields_number, max_field_name_size, max_field_value_size);
         skipToNextLineOrEOF(in);
 
         NameValueCollection params;
@@ -209,7 +213,7 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
 
             while (in.read(ch))
             {
-                if (value.size() > value_length_limit)
+                if (value.size() > max_field_value_size)
                     throw Poco::Net::HTMLFormException("Field value too long");
                 value += ch;
             }

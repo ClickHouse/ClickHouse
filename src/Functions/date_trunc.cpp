@@ -25,13 +25,14 @@ class FunctionDateTrunc : public IFunction
 public:
     static constexpr auto name = "date_trunc";
 
-    explicit FunctionDateTrunc(ContextConstPtr context_) : context(context_) {}
+    explicit FunctionDateTrunc(ContextPtr context_) : context(context_) {}
 
-    static FunctionPtr create(ContextConstPtr context) { return std::make_shared<FunctionDateTrunc>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateTrunc>(context); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -62,7 +63,7 @@ public:
 
         bool second_argument_is_date = false;
         auto check_second_argument = [&] {
-            if (!isDateOrDateTime(arguments[1].type))
+            if (!isDate(arguments[1].type) && !isDateTime(arguments[1].type) && !isDateTime64(arguments[1].type))
                 throw Exception(
                     "Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -146,7 +147,7 @@ public:
     }
 
 private:
-    ContextConstPtr context;
+    ContextPtr context;
     mutable IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
 };
 

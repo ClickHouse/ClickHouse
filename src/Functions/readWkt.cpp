@@ -35,6 +35,8 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
@@ -68,7 +70,7 @@ public:
         return true;
     }
 
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionReadWkt<DataTypeName, Geometry, Serializer, NameHolder>>();
     }

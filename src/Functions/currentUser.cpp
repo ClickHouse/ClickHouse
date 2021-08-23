@@ -16,7 +16,7 @@ class FunctionCurrentUser : public IFunction
 
 public:
     static constexpr auto name = "currentUser";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionCurrentUser>(context->getClientInfo().initial_user);
     }
@@ -40,6 +40,8 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {

@@ -88,4 +88,7 @@ void ReadBufferFromFile::close()
     metric_increment.destroy();
 }
 
+
+OpenedFileCache ReadBufferFromFilePReadWithCache::cache;
+
 }

@@ -8,7 +8,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <cmath>
 
 
@@ -246,10 +246,11 @@ private:
     size_t getNumberOfArguments() const override { return 4; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (const auto arg_idx : ext::range(0, arguments.size()))
+        for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isNumber(WhichDataType(arg)))
@@ -287,7 +288,7 @@ template <Method method>
 class FunctionGeoDistance : public TargetSpecific::Default::FunctionGeoDistance<method>
 {
 public:
-    explicit FunctionGeoDistance(ContextConstPtr context) : selector(context)
+    explicit FunctionGeoDistance(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             TargetSpecific::Default::FunctionGeoDistance<method>>();
@@ -307,7 +308,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionGeoDistance<method>>(context);
     }

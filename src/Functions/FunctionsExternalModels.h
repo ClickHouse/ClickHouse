@@ -17,13 +17,15 @@ class FunctionModelEvaluate final : public IFunction
 public:
     static constexpr auto name = "modelEvaluate";
 
-    static FunctionPtr create(ContextConstPtr context);
+    static FunctionPtr create(ContextPtr context);
 
     explicit FunctionModelEvaluate(const ExternalModelsLoader & models_loader_) : models_loader(models_loader_) {}
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool isDeterministic() const override { return false; }
 

@@ -36,7 +36,7 @@ class FunctionAddressToLine : public IFunction
 {
 public:
     static constexpr auto name = "addressToLine";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         context->checkAccess(AccessType::addressToLine);
         return std::make_shared<FunctionAddressToLine>();
@@ -51,6 +51,8 @@ public:
     {
         return 1;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

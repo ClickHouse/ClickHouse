@@ -4,6 +4,18 @@ add_headers_and_sources(clickhouse_dictionaries .)
 
 add_headers_and_sources(clickhouse_dictionaries "${CMAKE_CURRENT_BINARY_DIR}/generated/")
 
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
+
+    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
+    set_source_files_properties(
+        FlatDictionary.cpp
+        HashedDictionary.cpp
+        CacheDictionary.cpp
+        RangeHashedDictionary.cpp
+        DirectDictionary.cpp
+        PROPERTIES COMPILE_FLAGS -g0)
+endif ()
+
 list(REMOVE_ITEM clickhouse_dictionaries_sources DictionaryFactory.cpp DictionarySourceFactory.cpp DictionaryStructure.cpp getDictionaryConfigurationFromAST.cpp)
 list(REMOVE_ITEM clickhouse_dictionaries_headers DictionaryFactory.h DictionarySourceFactory.h DictionaryStructure.h getDictionaryConfigurationFromAST.h)
 

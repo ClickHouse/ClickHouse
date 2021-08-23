@@ -18,7 +18,7 @@ private:
 
 public:
     static constexpr auto name = "blockNumber";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBlockNumber>();
     }
@@ -32,6 +32,11 @@ public:
     bool isStateful() const override
     {
         return true;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return false;
     }
 
     size_t getNumberOfArguments() const override

@@ -28,7 +28,7 @@ public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
@@ -60,6 +60,8 @@ public:
 
     String getName() const override { return name; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
 
@@ -74,13 +76,13 @@ private:
 };
 
 template <bool or_null>
-class JoinGetOverloadResolver final : public IFunctionOverloadResolver, WithConstContext
+class JoinGetOverloadResolver final : public IFunctionOverloadResolver, WithContext
 {
 public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
-    static FunctionOverloadResolverPtr create(ContextConstPtr context_) { return std::make_unique<JoinGetOverloadResolver>(context_); }
+    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<JoinGetOverloadResolver>(context_); }
 
-    explicit JoinGetOverloadResolver(ContextConstPtr context_) : WithConstContext(context_) {}
+    explicit JoinGetOverloadResolver(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 

@@ -30,7 +30,7 @@ class FunctionRandomStringUTF8 : public IFunction
 public:
     static constexpr auto name = "randomStringUTF8";
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionRandomStringUTF8>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomStringUTF8>(); }
 
     String getName() const override { return name; }
 
@@ -48,6 +48,7 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {

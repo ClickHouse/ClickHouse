@@ -134,10 +134,10 @@ $ ./release
 
 ## Faster builds for development
 
-Normally all tools of the ClickHouse bundle, such as `clickhouse-server`, `clickhouse-client` etc., are linked into a single static executable, `clickhouse`. This executable must be re-linked on every change, which might be slow. Two common ways to improve linking time are to use `lld` linker, and use the 'split' build configuration, which builds a separate binary for every tool, and further splits the code into several shared libraries. To enable these tweaks, pass the following flags to `cmake`:
+Normally all tools of the ClickHouse bundle, such as `clickhouse-server`, `clickhouse-client` etc., are linked into a single static executable, `clickhouse`. This executable must be re-linked on every change, which might be slow. One common way to improve build time is to use the 'split' build configuration, which builds a separate binary for every tool, and further splits the code into several shared libraries. To enable this tweak, pass the following flags to `cmake`:
 
 ```
--DCMAKE_C_FLAGS="--ld-path=lld" -DCMAKE_CXX_FLAGS="--ld-path=lld" -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
+-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
 ```
 
 ## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
@@ -155,6 +155,10 @@ Normally ClickHouse is statically linked into a single static `clickhouse` binar
 -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
 ```
 
-Note that in this configuration there is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client` etc.
+Note that the split build has several drawbacks:
+* There is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client`, etc.
+* Risk of segfault if you run any of the programs while rebuilding the project.
+* You cannot run the integration tests since they only work a single complete binary.
+* You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
 
 [Original article](https://clickhouse.tech/docs/en/development/build/) <!--hide-->

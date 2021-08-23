@@ -14,9 +14,11 @@ toc_title: "Введение"
 
 -   [MySQL](../../engines/database-engines/mysql.md)
 
--   [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md)
+-   [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)
 
 -   [Lazy](../../engines/database-engines/lazy.md)
 
 -   [PostgreSQL](../../engines/database-engines/postgresql.md)
+
+-   [Replicated](../../engines/database-engines/replicated.md)
 

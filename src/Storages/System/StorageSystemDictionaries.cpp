@@ -15,7 +15,7 @@
 #include <Columns/ColumnString.h>
 #include <Core/Names.h>
 
-#include <ext/map.h>
+#include <common/map.h>
 #include <mutex>
 
 namespace DB
@@ -99,15 +99,15 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         else
             res_columns[i++]->insertDefault();
 
-        res_columns[i++]->insert(ext::map<Array>(dictionary_structure.getKeysNames(), [] (auto & name) { return name; }));
+        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.getKeysNames(), [] (auto & name) { return name; }));
 
         if (dictionary_structure.id)
             res_columns[i++]->insert(Array({"UInt64"}));
         else
-            res_columns[i++]->insert(ext::map<Array>(*dictionary_structure.key, [] (auto & attr) { return attr.type->getName(); }));
+            res_columns[i++]->insert(collections::map<Array>(*dictionary_structure.key, [] (auto & attr) { return attr.type->getName(); }));
 
-        res_columns[i++]->insert(ext::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.name; }));
-        res_columns[i++]->insert(ext::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.type->getName(); }));
+        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.name; }));
+        res_columns[i++]->insert(collections::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.type->getName(); }));
 
         if (dict_ptr)
         {

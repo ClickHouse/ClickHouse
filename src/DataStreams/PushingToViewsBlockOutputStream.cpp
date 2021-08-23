@@ -1,24 +1,31 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/NestedUtils.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Common/CurrentThread.h>
-#include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
-#include <Common/checkStackSize.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
-#include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageValues.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadPool.h>
+#include <Common/ThreadProfileEvents.h>
+#include <Common/ThreadStatus.h>
+#include <Common/checkStackSize.h>
+#include <Common/setThreadName.h>
 #include <common/logger_useful.h>
+#include <common/scope_guard.h>
 
+#include <atomic>
+#include <chrono>
 
 namespace DB
 {
@@ -79,9 +86,12 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
         ASTPtr query;
         BlockOutputStreamPtr out;
+        QueryViewsLogElement::ViewType type = QueryViewsLogElement::ViewType::DEFAULT;
+        String target_name = database_table.getFullTableName();
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
+            type = QueryViewsLogElement::ViewType::MATERIALIZED;
             addTableLock(
                 materialized_view->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout));
 
@@ -89,6 +99,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
+            target_name = inner_table_id.getFullTableName();
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
             insert->table_id = inner_table_id;
@@ -114,24 +125,70 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             BlockIO io = interpreter.execute();
             out = io.out;
         }
-        else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+        else if (const auto * live_view = dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+        {
+            type = QueryViewsLogElement::ViewType::LIVE;
+            query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
             out = std::make_shared<PushingToViewsBlockOutputStream>(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true);
+        }
         else
             out = std::make_shared<PushingToViewsBlockOutputStream>(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr());
 
-        views.emplace_back(ViewInfo{std::move(query), database_table, std::move(out), nullptr, 0 /* elapsed_ms */});
+        /// If the materialized view is executed outside of a query, for example as a result of SYSTEM FLUSH LOGS or
+        /// SYSTEM FLUSH DISTRIBUTED ..., we can't attach to any thread group and we won't log, so there is no point on collecting metrics
+        std::unique_ptr<ThreadStatus> thread_status = nullptr;
+
+        ThreadGroupStatusPtr running_group = current_thread && current_thread->getThreadGroup()
+            ? current_thread->getThreadGroup()
+            : MainThreadStatus::getInstance().thread_group;
+        if (running_group)
+        {
+            /// We are creating a ThreadStatus per view to store its metrics individually
+            /// Since calling ThreadStatus() changes current_thread we save it and restore it after the calls
+            /// Later on, before doing any task related to a view, we'll switch to its ThreadStatus, do the work,
+            /// and switch back to the original thread_status.
+            auto * original_thread = current_thread;
+            SCOPE_EXIT({ current_thread = original_thread; });
+
+            thread_status = std::make_unique<ThreadStatus>();
+            /// Disable query profiler for this ThreadStatus since the running (main query) thread should already have one
+            /// If we didn't disable it, then we could end up with N + 1 (N = number of dependencies) profilers which means
+            /// N times more interruptions
+            thread_status->query_profiled_enabled = false;
+            thread_status->setupState(running_group);
+        }
+
+        QueryViewsLogElement::ViewRuntimeStats runtime_stats{
+            target_name,
+            type,
+            std::move(thread_status),
+            0,
+            std::chrono::system_clock::now(),
+            QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START};
+        views.emplace_back(ViewRuntimeData{std::move(query), database_table, std::move(out), nullptr, std::move(runtime_stats)});
+
+
+        /// Add the view to the query access info so it can appear in system.query_log
+        if (!no_destination)
+        {
+            getContext()->getQueryContext()->addQueryAccessInfo(
+                backQuoteIfNeed(database_table.getDatabaseName()), target_name, {}, "", database_table.getFullTableName());
+        }
     }
 
     /// Do not push to destination table if the flag is set
     if (!no_destination)
     {
-        output = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), getContext());
-        replicated_output = dynamic_cast<ReplicatedMergeTreeBlockOutputStream *>(output.get());
+        auto sink = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), getContext());
+
+        metadata_snapshot->check(sink->getPort().getHeader().getColumnsWithTypeAndName());
+
+        replicated_output = dynamic_cast<ReplicatedMergeTreeSink *>(sink.get());
+        output = std::make_shared<PushingToSinkBlockOutputStream>(std::move(sink));
     }
 }
-
 
 Block PushingToViewsBlockOutputStream::getHeader() const
 {
@@ -143,6 +200,39 @@ Block PushingToViewsBlockOutputStream::getHeader() const
         return metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals());
 }
 
+/// Auxiliary function to do the setup and teardown to run a view individually and collect its metrics inside the view ThreadStatus
+void inline runViewStage(ViewRuntimeData & view, const std::string & action, std::function<void()> stage)
+{
+    Stopwatch watch;
+
+    auto * original_thread = current_thread;
+    SCOPE_EXIT({ current_thread = original_thread; });
+
+    if (view.runtime_stats.thread_status)
+    {
+        /// Change thread context to store individual metrics per view. Once the work in done, go back to the original thread
+        view.runtime_stats.thread_status->resetPerformanceCountersLastUsage();
+        current_thread = view.runtime_stats.thread_status.get();
+    }
+
+    try
+    {
+        stage();
+    }
+    catch (Exception & ex)
+    {
+        ex.addMessage(action + " " + view.table_id.getNameForLogs());
+        view.setException(std::current_exception());
+    }
+    catch (...)
+    {
+        view.setException(std::current_exception());
+    }
+
+    if (view.runtime_stats.thread_status)
+        view.runtime_stats.thread_status->updatePerformanceCounters();
+    view.runtime_stats.elapsed_ms += watch.elapsedMilliseconds();
+}
 
 void PushingToViewsBlockOutputStream::write(const Block & block)
 {
@@ -165,39 +255,34 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             output->write(block);
     }
 
-    /// Don't process materialized views if this block is duplicate
-    if (!getContext()->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views && replicated_output && replicated_output->lastBlockIsDuplicate())
+    if (views.empty())
         return;
 
-    // Insert data into materialized views only after successful insert into main table
+    /// Don't process materialized views if this block is duplicate
     const Settings & settings = getContext()->getSettingsRef();
-    if (settings.parallel_view_processing && views.size() > 1)
+    if (!settings.deduplicate_blocks_in_dependent_materialized_views && replicated_output && replicated_output->lastBlockIsDuplicate())
+        return;
+
+    size_t max_threads = 1;
+    if (settings.parallel_view_processing)
+        max_threads = settings.max_threads ? std::min(static_cast<size_t>(settings.max_threads), views.size()) : views.size();
+    if (max_threads > 1)
     {
-        // Push to views concurrently if enabled and more than one view is attached
-        ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
+        ThreadPool pool(max_threads);
         for (auto & view : views)
         {
-            auto thread_group = CurrentThread::getGroup();
-            pool.scheduleOrThrowOnError([=, &view, this]
-            {
+            pool.scheduleOrThrowOnError([&] {
                 setThreadName("PushingToViews");
-                if (thread_group)
-                    CurrentThread::attachToIfDetached(thread_group);
-                process(block, view);
+                runViewStage(view, "while pushing to view", [&]() { process(block, view); });
             });
         }
-        // Wait for concurrent view processing
         pool.wait();
     }
     else
     {
-        // Process sequentially
         for (auto & view : views)
         {
-            process(block, view);
-
-            if (view.exception)
-                std::rethrow_exception(view.exception);
+            runViewStage(view, "while pushing to view", [&]() { process(block, view); });
         }
     }
 }
@@ -209,14 +294,11 @@ void PushingToViewsBlockOutputStream::writePrefix()
 
     for (auto & view : views)
     {
-        try
+        runViewStage(view, "while writing prefix to view", [&] { view.out->writePrefix(); });
+        if (view.exception)
         {
-            view.out->writePrefix();
-        }
-        catch (Exception & ex)
-        {
-            ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
-            throw;
+            logQueryViews();
+            std::rethrow_exception(view.exception);
         }
     }
 }
@@ -226,95 +308,82 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     if (output)
         output->writeSuffix();
 
-    std::exception_ptr first_exception;
+    if (views.empty())
+        return;
 
-    const Settings & settings = getContext()->getSettingsRef();
-    bool parallel_processing = false;
+    auto process_suffix = [](ViewRuntimeData & view)
+    {
+        view.out->writeSuffix();
+        view.runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
+    };
+    static std::string stage_step = "while writing suffix to view";
 
     /// Run writeSuffix() for views in separate thread pool.
     /// In could have been done in PushingToViewsBlockOutputStream::process, however
     /// it is not good if insert into main table fail but into view succeed.
-    if (settings.parallel_view_processing && views.size() > 1)
+    const Settings & settings = getContext()->getSettingsRef();
+    size_t max_threads = 1;
+    if (settings.parallel_view_processing)
+        max_threads = settings.max_threads ? std::min(static_cast<size_t>(settings.max_threads), views.size()) : views.size();
+    bool exception_happened = false;
+    if (max_threads > 1)
     {
-        parallel_processing = true;
-
-        // Push to views concurrently if enabled and more than one view is attached
-        ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
-        auto thread_group = CurrentThread::getGroup();
-
+        ThreadPool pool(max_threads);
+        std::atomic_uint8_t exception_count = 0;
         for (auto & view : views)
         {
             if (view.exception)
-                continue;
-
-            pool.scheduleOrThrowOnError([thread_group, &view, this]
             {
+                exception_happened = true;
+                continue;
+            }
+            pool.scheduleOrThrowOnError([&] {
                 setThreadName("PushingToViews");
-                if (thread_group)
-                    CurrentThread::attachToIfDetached(thread_group);
 
-                Stopwatch watch;
-                try
-                {
-                    view.out->writeSuffix();
-                }
-                catch (...)
-                {
-                    view.exception = std::current_exception();
-                }
-                view.elapsed_ms += watch.elapsedMilliseconds();
-
-                LOG_TRACE(log, "Pushing from {} to {} took {} ms.",
-                    storage->getStorageID().getNameForLogs(),
-                    view.table_id.getNameForLogs(),
-                    view.elapsed_ms);
+                runViewStage(view, stage_step, [&] { process_suffix(view); });
+                if (view.exception)
+                    exception_count.fetch_add(1, std::memory_order_relaxed);
             });
         }
-        // Wait for concurrent view processing
         pool.wait();
+        exception_happened |= exception_count.load(std::memory_order_relaxed) != 0;
+    }
+    else
+    {
+        for (auto & view : views)
+        {
+            if (view.exception)
+            {
+                exception_happened = true;
+                continue;
+            }
+            runViewStage(view, stage_step, [&] { process_suffix(view); });
+            if (view.exception)
+                exception_happened = true;
+        }
     }
 
     for (auto & view : views)
     {
-        if (view.exception)
-        {
-            if (!first_exception)
-                first_exception = view.exception;
-
-            continue;
-        }
-
-        if (parallel_processing)
-            continue;
-
-        Stopwatch watch;
-        try
-        {
-            view.out->writeSuffix();
-        }
-        catch (Exception & ex)
-        {
-            ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
-            throw;
-        }
-        view.elapsed_ms += watch.elapsedMilliseconds();
-
-        LOG_TRACE(log, "Pushing from {} to {} took {} ms.",
-            storage->getStorageID().getNameForLogs(),
-            view.table_id.getNameForLogs(),
-            view.elapsed_ms);
+        if (!view.exception)
+            LOG_TRACE(
+                log,
+                "Pushing ({}) from {} to {} took {} ms.",
+                max_threads <= 1 ? "sequentially" : ("parallel " + std::to_string(max_threads)),
+                storage->getStorageID().getNameForLogs(),
+                view.table_id.getNameForLogs(),
+                view.runtime_stats.elapsed_ms);
     }
 
-    if (first_exception)
-        std::rethrow_exception(first_exception);
+    if (exception_happened)
+        checkExceptionsInViews();
 
-    UInt64 milliseconds = main_watch.elapsedMilliseconds();
     if (views.size() > 1)
     {
-        LOG_DEBUG(log, "Pushing from {} to {} views took {} ms.",
-            storage->getStorageID().getNameForLogs(), views.size(),
-            milliseconds);
+        UInt64 milliseconds = main_watch.elapsedMilliseconds();
+        LOG_DEBUG(log, "Pushing from {} to {} views took {} ms.", storage->getStorageID().getNameForLogs(), views.size(), milliseconds);
     }
+    logQueryViews();
 }
 
 void PushingToViewsBlockOutputStream::flush()
@@ -326,70 +395,103 @@ void PushingToViewsBlockOutputStream::flush()
         view.out->flush();
 }
 
-void PushingToViewsBlockOutputStream::process(const Block & block, ViewInfo & view)
+void PushingToViewsBlockOutputStream::process(const Block & block, ViewRuntimeData & view)
 {
-    Stopwatch watch;
+    BlockInputStreamPtr in;
 
-    try
+    /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
+    ///
+    /// - We copy Context inside InterpreterSelectQuery to support
+    ///   modification of context (Settings) for subqueries
+    /// - InterpreterSelectQuery lives shorter than query pipeline.
+    ///   It's used just to build the query pipeline and no longer needed
+    /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
+    ///   **can** take a reference to Context from InterpreterSelectQuery
+    ///   (the problem raises only when function uses context from the
+    ///    execute*() method, like FunctionDictGet do)
+    /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
+    std::optional<InterpreterSelectQuery> select;
+
+    if (view.runtime_stats.type == QueryViewsLogElement::ViewType::MATERIALIZED)
     {
-        BlockInputStreamPtr in;
+        /// We create a table with the same name as original table and the same alias columns,
+        ///  but it will contain single block (that is INSERT-ed into main table).
+        /// InterpreterSelectQuery will do processing of alias columns.
 
-        /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
-        ///
-        /// - We copy Context inside InterpreterSelectQuery to support
-        ///   modification of context (Settings) for subqueries
-        /// - InterpreterSelectQuery lives shorter than query pipeline.
-        ///   It's used just to build the query pipeline and no longer needed
-        /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
-        ///   **can** take a reference to Context from InterpreterSelectQuery
-        ///   (the problem raises only when function uses context from the
-        ///    execute*() method, like FunctionDictGet do)
-        /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
-        std::optional<InterpreterSelectQuery> select;
+        auto local_context = Context::createCopy(select_context);
+        local_context->addViewSource(
+            StorageValues::create(storage->getStorageID(), metadata_snapshot->getColumns(), block, storage->getVirtuals()));
+        select.emplace(view.query, local_context, SelectQueryOptions());
+        in = std::make_shared<MaterializingBlockInputStream>(select->execute().getInputStream());
 
-        if (view.query)
-        {
-            /// We create a table with the same name as original table and the same alias columns,
-            ///  but it will contain single block (that is INSERT-ed into main table).
-            /// InterpreterSelectQuery will do processing of alias columns.
-
-            auto local_context = Context::createCopy(select_context);
-            local_context->addViewSource(
-                StorageValues::create(storage->getStorageID(), metadata_snapshot->getColumns(), block, storage->getVirtuals()));
-            select.emplace(view.query, local_context, SelectQueryOptions());
-            in = std::make_shared<MaterializingBlockInputStream>(select->execute().getInputStream());
-
-            /// Squashing is needed here because the materialized view query can generate a lot of blocks
-            /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
-            /// and two-level aggregation is triggered).
-            in = std::make_shared<SquashingBlockInputStream>(
-                    in, getContext()->getSettingsRef().min_insert_block_size_rows, getContext()->getSettingsRef().min_insert_block_size_bytes);
-            in = std::make_shared<ConvertingBlockInputStream>(in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
-        }
-        else
-            in = std::make_shared<OneBlockInputStream>(block);
-
-        in->readPrefix();
-
-        while (Block result_block = in->read())
-        {
-            Nested::validateArraySizes(result_block);
-            view.out->write(result_block);
-        }
-
-        in->readSuffix();
+        /// Squashing is needed here because the materialized view query can generate a lot of blocks
+        /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+        /// and two-level aggregation is triggered).
+        in = std::make_shared<SquashingBlockInputStream>(
+            in, getContext()->getSettingsRef().min_insert_block_size_rows, getContext()->getSettingsRef().min_insert_block_size_bytes);
+        in = std::make_shared<ConvertingBlockInputStream>(in, view.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
     }
-    catch (Exception & ex)
+    else
+        in = std::make_shared<OneBlockInputStream>(block);
+
+    in->setProgressCallback([this](const Progress & progress)
     {
-        ex.addMessage("while pushing to view " + view.table_id.getNameForLogs());
-        view.exception = std::current_exception();
-    }
-    catch (...)
+        CurrentThread::updateProgressIn(progress);
+        this->onProgress(progress);
+    });
+
+    in->readPrefix();
+
+    while (Block result_block = in->read())
     {
-        view.exception = std::current_exception();
+        Nested::validateArraySizes(result_block);
+        view.out->write(result_block);
     }
 
-    view.elapsed_ms += watch.elapsedMilliseconds();
+    in->readSuffix();
 }
 
+void PushingToViewsBlockOutputStream::checkExceptionsInViews()
+{
+    for (auto & view : views)
+    {
+        if (view.exception)
+        {
+            logQueryViews();
+            std::rethrow_exception(view.exception);
+        }
+    }
+}
+
+void PushingToViewsBlockOutputStream::logQueryViews()
+{
+    const auto & settings = getContext()->getSettingsRef();
+    const UInt64 min_query_duration = settings.log_queries_min_query_duration_ms.totalMilliseconds();
+    const QueryViewsLogElement::ViewStatus min_status = settings.log_queries_min_type;
+    if (views.empty() || !settings.log_queries || !settings.log_query_views)
+        return;
+
+    for (auto & view : views)
+    {
+        if ((min_query_duration && view.runtime_stats.elapsed_ms <= min_query_duration) || (view.runtime_stats.event_status < min_status))
+            continue;
+
+        try
+        {
+            if (view.runtime_stats.thread_status)
+                view.runtime_stats.thread_status->logToQueryViewsLog(view);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
+
+void PushingToViewsBlockOutputStream::onProgress(const Progress & progress)
+{
+    if (getContext()->getProgressCallback())
+        getContext()->getProgressCallback()(progress);
+}
 }

@@ -32,9 +32,8 @@
 #include <Common/Arena.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/FieldVisitors.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <ext/map.h>
+#include <common/map.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -514,7 +513,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr const bool is_multiply = IsOperation<Op>::multiply;
     static constexpr const bool is_division = IsOperation<Op>::division;
 
-    ContextConstPtr context;
+    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename F>
@@ -597,10 +596,10 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextConstPtr context)
+    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        bool first_is_date_or_datetime = isDateOrDateTime(type0);
-        bool second_is_date_or_datetime = isDateOrDateTime(type1);
+        bool first_is_date_or_datetime = isDate(type0) || isDateTime(type0) || isDateTime64(type0);
+        bool second_is_date_or_datetime = isDate(type1) || isDateTime(type1) || isDateTime64(type1);
 
         /// Exactly one argument must be Date or DateTime
         if (first_is_date_or_datetime == second_is_date_or_datetime)
@@ -775,7 +774,7 @@ class FunctionBinaryArithmetic : public IFunction
         ColumnsWithTypeAndName new_arguments = arguments;
 
         /// Interval argument must be second.
-        if (WhichDataType(arguments[1].type).isDateOrDateTime())
+        if (isDate(arguments[1].type) || isDateTime(arguments[1].type) || isDateTime64(arguments[1].type))
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
@@ -945,9 +944,9 @@ class FunctionBinaryArithmetic : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
 
-    explicit FunctionBinaryArithmetic(ContextConstPtr context_)
+    explicit FunctionBinaryArithmetic(ContextPtr context_)
     :   context(context_),
         check_decimal_overflow(decimalCheckArithmeticOverflow(context))
     {}
@@ -956,12 +955,18 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        return ((IsOperation<Op>::div_int || IsOperation<Op>::modulo) && !arguments[1].is_const)
+            || (IsOperation<Op>::div_floating && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return getReturnTypeImplStatic(arguments, context);
     }
 
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextConstPtr context)
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
@@ -990,7 +995,7 @@ public:
                 new_arguments[i].type = arguments[i];
 
             /// Interval argument must be second.
-            if (WhichDataType(new_arguments[1].type).isDateOrDateTime())
+            if (isDate(new_arguments[1].type) || isDateTime(new_arguments[1].type) || isDateTime64(new_arguments[1].type))
                 std::swap(new_arguments[0], new_arguments[1]);
 
             /// Change interval argument to its representation
@@ -1373,7 +1378,7 @@ public:
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        ContextConstPtr context)
+        ContextPtr context)
     {
         return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context);
     }
@@ -1382,7 +1387,7 @@ public:
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        ContextConstPtr context_)
+        ContextPtr context_)
         : Base(context_), left(left_), right(right_), return_type(return_type_)
     {
     }
@@ -1536,12 +1541,12 @@ class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionOverloadResolverPtr create(ContextConstPtr context)
+    static FunctionOverloadResolverPtr create(ContextPtr context)
     {
         return std::make_unique<BinaryArithmeticOverloadResolver>(context);
     }
 
-    explicit BinaryArithmeticOverloadResolver(ContextConstPtr context_) : context(context_) {}
+    explicit BinaryArithmeticOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -1557,13 +1562,13 @@ public:
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(
                     arguments[0], arguments[1], return_type, context),
-                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         }
 
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(context),
-            ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+            collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
             return_type);
     }
 
@@ -1577,6 +1582,6 @@ public:
     }
 
 private:
-    ContextConstPtr context;
+    ContextPtr context;
 };
 }

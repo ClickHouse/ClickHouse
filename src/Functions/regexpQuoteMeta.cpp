@@ -21,7 +21,7 @@ class FunctionRegexpQuoteMeta : public IFunction
 public:
     static constexpr auto name = "regexpQuoteMeta";
 
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionRegexpQuoteMeta>();
     }
@@ -40,6 +40,8 @@ public:
     {
         return true;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

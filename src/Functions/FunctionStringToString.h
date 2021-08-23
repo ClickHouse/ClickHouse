@@ -23,7 +23,7 @@ class FunctionStringToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionStringToString>();
     }
@@ -41,6 +41,11 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override
     {
         return is_injective;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return true;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

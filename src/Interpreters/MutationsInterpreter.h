@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -62,7 +61,9 @@ public:
     BlockInputStreamPtr execute();
 
     /// Only changed columns.
-    const Block & getUpdatedHeader() const;
+    Block getUpdatedHeader() const;
+
+    const ColumnDependencies & getColumnDependencies() const;
 
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
@@ -156,5 +157,8 @@ private:
     NameSet materialized_projections;
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
+
+    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
+    ColumnDependencies dependencies;
 };
 }

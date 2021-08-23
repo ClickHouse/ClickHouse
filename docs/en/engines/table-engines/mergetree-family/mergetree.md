@@ -17,7 +17,7 @@ Main features:
 
 -   Partitions can be used if the [partitioning key](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md) is specified.
 
-    ClickHouse supports certain operations with partitions that are more effective than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query.
+    ClickHouse supports certain operations with partitions that are more efficient than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query.
 
 -   Data replication support.
 
@@ -39,16 +39,19 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
     INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
-    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
+    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2,
+    ...
+    PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
+    PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
 ) ENGINE = MergeTree()
 ORDER BY expr
 [PARTITION BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[TTL expr 
+[TTL expr
     [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
-    [WHERE conditions] 
-    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ] 
+    [WHERE conditions]
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ]
 [SETTINGS name=value, ...]
 ```
 
@@ -76,14 +79,14 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
 -   `SAMPLE BY` — An expression for sampling. Optional.
 
-    If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+    If a sampling expression is used, the primary key must contain it. The result of a sampling expression must be an unsigned integer. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
 -   `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes). Optional.
 
     Expression must have one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
 
-    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`), or aggregating values in expired rows. Default type of the rule is removal (`DELETE`). List of multiple rules can specified, but there should be no more than one `DELETE` rule.
+    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`), or aggregating values in expired rows. Default type of the rule is removal (`DELETE`). List of multiple rules can be specified, but there should be no more than one `DELETE` rule.
 
     For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
@@ -105,7 +108,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 	-   `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. You can also specify this setting in the global settings (see [max_compress_block_size](../../../operations/settings/settings.md#max-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
 	-   `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark. You can also specify this setting in the global settings (see [min_compress_block_size](../../../operations/settings/settings.md#min-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
     -   `max_partitions_to_read` — Limits the maximum number of partitions that can be accessed in one query. You can also specify setting [max_partitions_to_read](../../../operations/settings/merge-tree-settings.md#max-partitions-to-read) in the global setting.
-    
+
 **Example of Sections Setting**
 
 ``` sql
@@ -158,7 +161,7 @@ When data is inserted in a table, separate data parts are created and each of th
 
 Data belonging to different partitions are separated into different parts. In the background, ClickHouse merges data parts for more efficient storage. Parts belonging to different partitions are not merged. The merge mechanism does not guarantee that all rows with the same primary key will be in the same data part.
 
-Data parts can be stored in `Wide` or `Compact` format. In `Wide` format each column is stored in a separate file in a filesystem, in `Compact` format all columns are stored in one file. `Compact` format can be used to increase performance of small and frequent inserts. 
+Data parts can be stored in `Wide` or `Compact` format. In `Wide` format each column is stored in a separate file in a filesystem, in `Compact` format all columns are stored in one file. `Compact` format can be used to increase performance of small and frequent inserts.
 
 Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the table engine. If the number of bytes or rows in a data part is less then the corresponding setting's value, the part is stored in `Compact` format. Otherwise it is stored in `Wide` format. If none of these settings is set, data parts are stored in `Wide` format.
 
@@ -385,6 +388,24 @@ Functions with a constant argument that is less than ngram size can’t be used 
     -   `s != 1`
     -   `NOT startsWith(s, 'test')`
 
+### Projections {#projections}
+Projections are like materialized views but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
+
+#### Query {#projection-query}
+A projection query is what defines a projection. It has the following grammar:
+
+`SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]`
+
+It implicitly selects data from the parent table.
+
+#### Storage {#projection-storage}
+Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous MergeTree table's part. The table is induced by the definition query of the projection. If there is a GROUP BY clause, the underlying storage engine becomes AggregatedMergeTree, and all aggregate functions are converted to AggregateFunction. If there is an ORDER BY clause, the MergeTree table will use it as its primary key expression. During the merge process, the projection part will be merged via its storage's merge routine. The checksum of the parent table's part will combine the projection's part. Other maintenance jobs are similar to skip indices.
+
+#### Query Analysis {#projection-query-analysis}
+1. Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.
+2. Select the best feasible match, which contains the least granules to read.
+3. The query pipeline which uses projections will be different from the one that uses the original parts. If the projection is absent in some parts, we can add the pipeline to "project" it on the fly.
+
 ## Concurrent Data Access {#concurrent-data-access}
 
 For concurrent table access, we use multi-versioning. In other words, when a table is simultaneously read and updated, data is read from a set of parts that is current at the time of the query. There are no lengthy locks. Inserts do not get in the way of read operations.
@@ -457,10 +478,10 @@ ALTER TABLE example_table
 Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving feature, all rows of a part must satisfy the movement expression criteria.
 
 ``` sql
-TTL expr 
+TTL expr
     [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
-    [WHERE conditions] 
-    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]   
+    [WHERE conditions]
+    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]
 ```
 
 Type of TTL rule may follow each TTL expression. It affects an action which is to be done once the expression is satisfied (reaches current time):
@@ -472,9 +493,9 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 
 With `WHERE` clause you may specify which of the expired rows to delete or aggregate (it cannot be applied to moves).
 
-`GROUP BY` expression must be a prefix of the table primary key. 
+`GROUP BY` expression must be a prefix of the table primary key.
 
-If a column is not part of the `GROUP BY` expression and is not set explicitely in the `SET` clause, in result row it contains an occasional value from the grouped rows (as if aggregate function `any` is applied to it).
+If a column is not part of the `GROUP BY` expression and is not set explicitly in the `SET` clause, in result row it contains an occasional value from the grouped rows (as if aggregate function `any` is applied to it).
 
 **Examples**
 
@@ -506,7 +527,7 @@ Creating a table, where the rows are expired after one month. The expired rows w
 ``` sql
 CREATE TABLE table_with_where
 (
-    d DateTime, 
+    d DateTime,
     a Int
 )
 ENGINE = MergeTree
@@ -520,10 +541,10 @@ Creating a table, where expired rows are aggregated. In result rows `x` contains
 ``` sql
 CREATE TABLE table_for_aggregation
 (
-    d DateTime, 
-    k1 Int, 
-    k2 Int, 
-    x Int, 
+    d DateTime,
+    k1 Int,
+    k2 Int,
+    x Int,
     y Int
 )
 ENGINE = MergeTree
@@ -657,7 +678,7 @@ Cofiguration examples:
             </volumes>
             <move_factor>0.2</move_factor>
         </moving_from_ssd_to_hdd>
-		
+
 		<small_jbod_with_external_no_merges>
             <volumes>
                 <main>
@@ -695,7 +716,8 @@ PARTITION BY toYYYYMM(EventDate)
 SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 ```
 
-The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`. Once a table is created, its storage policy cannot be changed.
+The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`.
+You could change storage policy after table creation with [ALTER TABLE ... MODIFY SETTING] query, new policy should include all old disks and volumes with same names.
 
 The number of threads performing background moves of data parts can be changed by [background_move_pool_size](../../../operations/settings/settings.md#background_move_pool_size) setting.
 
@@ -727,7 +749,9 @@ During this time, they are not moved to other volumes or disks. Therefore, until
 
 ## Using S3 for Data Storage {#table_engine-mergetree-s3}
 
-`MergeTree` family table engines is able to store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
+`MergeTree` family table engines can store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
+
+This feature is under development and not ready for production. There are known drawbacks such as very low performance.
 
 Configuration markup:
 ``` xml
@@ -748,6 +772,7 @@ Configuration markup:
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
             <retry_attempts>10</retry_attempts>
+            <single_read_retries>4</single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <cache_enabled>true</cache_enabled>
@@ -760,25 +785,27 @@ Configuration markup:
 ```
 
 Required parameters:
--   `endpoint` — S3 endpoint url in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint url should contain bucket and root path to store data.
--   `access_key_id` — S3 access key id. 
+
+-   `endpoint` — S3 endpoint URL in `path` or `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Endpoint URL should contain a bucket and root path to store data.
+-   `access_key_id` — S3 access key id.
 -   `secret_access_key` — S3 secret access key.
 
-Optional parameters:    
+Optional parameters:
+
 -   `region` — S3 region name.
 -   `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
 -   `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
--   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL. 
--   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`. 
--   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`. 
--   `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`. 
--   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`. 
--   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`. 
--   `cache_enabled` — Allows to cache mark and index files on local FS. Default value is `true`. 
--   `cache_path` — Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`. 
+-   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.
+-   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`.
+-   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`.
+-   `retry_attempts` — Number of retry attempts in case of failed request. Default value is `10`.
+-   `single_read_retries` — Number of retry attempts in case of connection drop during read. Default value is `4`.
+-   `min_bytes_for_seek` — Minimal number of bytes to use seek operation instead of sequential read. Default value is `1 Mb`.
+-   `metadata_path` — Path on local FS to store metadata files for S3. Default value is `/var/lib/clickhouse/disks/<disk_name>/`.
+-   `cache_enabled` — Allows to cache mark and index files on local FS. Default value is `true`.
+-   `cache_path` — Path on local FS where to store cached mark and index files. Default value is `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 -   `skip_access_check` — If true, disk access checks will not be performed on disk start-up. Default value is `false`.
 -   `server_side_encryption_customer_key_base64` — If specified, required headers for accessing S3 objects with SSE-C encryption will be set.
-
 
 S3 disk can be configured as `main` or `cold` storage:
 ``` xml
@@ -816,6 +843,4 @@ S3 disk can be configured as `main` or `cold` storage:
 </storage_configuration>
 ```
 
-In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule. 
-
-[Original article](https://clickhouse.tech/docs/ru/operations/table_engines/mergetree/) <!--hide-->
+In case of `cold` option a data can be moved to S3 if local disk free size will be smaller than `move_factor * disk_size` or by TTL move rule.

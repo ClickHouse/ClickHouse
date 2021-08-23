@@ -3,6 +3,8 @@ FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+
 RUN apt-get update \
     && apt-get install \
         apt-transport-https \
@@ -72,7 +74,7 @@ RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
     && cd .. \
     && rm -rf apple-libtapi
 
-# Build and install tools for cross-linking to Darwin
+# Build and install tools for cross-linking to Darwin (x86-64)
 RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
@@ -81,8 +83,17 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && cd ../.. \
     && rm -rf cctools-port
 
-# Download toolchain for Darwin
-RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
+# Build and install tools for cross-linking to Darwin (aarch64)
+RUN git clone https://github.com/tpoechtrager/cctools-port.git \
+    && cd cctools-port/cctools \
+    && ./configure --prefix=/cctools --with-libtapi=/cctools \
+        --target=aarch64-apple-darwin \
+    && make install \
+    && cd ../.. \
+    && rm -rf cctools-port
+
+# Download toolchain and SDK for Darwin
+RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
 
 # Download toolchain for ARM
 # It contains all required headers and libraries. Note that it's named as "gcc" but actually we are using clang for cross compiling.

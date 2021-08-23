@@ -12,7 +12,7 @@ class FunctionFQDN : public IFunction
 {
 public:
     static constexpr auto name = "FQDN";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionFQDN>();
     }
@@ -23,6 +23,8 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override
     {

@@ -35,11 +35,13 @@ class FunctionMathUnary : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionMathUnary>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMathUnary>(); }
 
 private:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

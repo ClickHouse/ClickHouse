@@ -29,7 +29,7 @@ class FunctionGeohashesInBox : public IFunction
 {
 public:
     static constexpr auto name = "geohashesInBox";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionGeohashesInBox>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeohashesInBox>(); }
 
     String getName() const override { return name; }
 
@@ -60,6 +60,8 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     template <typename LonAndLatType, typename PrecisionType>
     void execute(

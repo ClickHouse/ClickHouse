@@ -31,6 +31,12 @@
 
 namespace DB
 {
+
+struct NameAnd { static constexpr auto name = "and"; };
+struct NameOr { static constexpr auto name = "or"; };
+struct NameXor { static constexpr auto name = "xor"; };
+struct NameNot { static constexpr auto name = "not"; };
+
 namespace FunctionsLogicalDetail
 {
 namespace Ternary
@@ -139,7 +145,7 @@ class FunctionAnyArityLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionAnyArityLogical>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionAnyArityLogical>(); }
 
 public:
     String getName() const override
@@ -148,6 +154,15 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
+    {
+        settings.enable_lazy_execution_for_first_argument = false;
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
+        settings.force_enable_lazy_execution = false;
+        return name == NameAnd::name || name == NameOr::name;
+    }
+    ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const;
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForNulls() const override { return !Impl::specialImplementationForNulls(); }
@@ -155,7 +170,7 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override;
 
@@ -206,7 +221,7 @@ class FunctionUnaryLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionUnaryLogical>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryLogical>(); }
 
 public:
     String getName() const override
@@ -219,6 +234,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override;
 
@@ -234,11 +251,6 @@ public:
 };
 
 }
-
-struct NameAnd { static constexpr auto name = "and"; };
-struct NameOr { static constexpr auto name = "or"; };
-struct NameXor { static constexpr auto name = "xor"; };
-struct NameNot { static constexpr auto name = "not"; };
 
 using FunctionAnd = FunctionsLogicalDetail::FunctionAnyArityLogical<FunctionsLogicalDetail::AndImpl, NameAnd>;
 using FunctionOr = FunctionsLogicalDetail::FunctionAnyArityLogical<FunctionsLogicalDetail::OrImpl, NameOr>;

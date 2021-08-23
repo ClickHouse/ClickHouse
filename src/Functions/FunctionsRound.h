@@ -16,7 +16,7 @@
 #include <cmath>
 #include <type_traits>
 #include <array>
-#include <ext/bit_cast.h>
+#include <common/bit_cast.h>
 #include <algorithm>
 
 #ifdef __SSE4_1__
@@ -520,7 +520,7 @@ class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionRounding>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRounding>(); }
 
     String getName() const override
     {
@@ -529,6 +529,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -629,7 +630,7 @@ class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionRoundDown>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRoundDown>(); }
 
     String getName() const override { return name; }
 
@@ -637,6 +638,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

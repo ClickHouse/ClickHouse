@@ -183,24 +183,37 @@ endif ()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
-if (OS_LINUX)
-    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
-    if (OBJCOPY_PATH)
-        message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
+find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
 
-        if (ARCH_AMD64)
-            set(OBJCOPY_ARCH_OPTIONS -O elf64-x86-64 -B i386)
-        elseif (ARCH_AARCH64)
-            set(OBJCOPY_ARCH_OPTIONS -O elf64-aarch64 -B aarch64)
+if (NOT OBJCOPY_PATH AND OS_DARWIN)
+    find_program (BREW_PATH NAMES "brew")
+    if (BREW_PATH)
+        execute_process (COMMAND ${BREW_PATH} --prefix llvm ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE LLVM_PREFIX)
+        if (LLVM_PREFIX)
+            find_program (OBJCOPY_PATH NAMES "llvm-objcopy" PATHS "${LLVM_PREFIX}/bin" NO_DEFAULT_PATH)
         endif ()
-    else ()
-        message(FATAL_ERROR "Cannot find objcopy.")
+        if (NOT OBJCOPY_PATH)
+            execute_process (COMMAND ${BREW_PATH} --prefix binutils ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE BINUTILS_PREFIX)
+            if (BINUTILS_PREFIX)
+                find_program (OBJCOPY_PATH NAMES "objcopy" PATHS "${BINUTILS_PREFIX}/bin" NO_DEFAULT_PATH)
+            endif ()
+        endif ()
     endif ()
 endif ()
 
+if (OBJCOPY_PATH)
+    message (STATUS "Using objcopy: ${OBJCOPY_PATH}")
+else ()
+    message (FATAL_ERROR "Cannot find objcopy.")
+endif ()
+
 if (OS_DARWIN)
-    set(WHOLE_ARCHIVE -all_load)
-    set(NO_WHOLE_ARCHIVE -noall_load)
+    # The `-all_load` flag forces loading of all symbols from all libraries,
+    # and leads to multiply-defined symbols. This flag allows force loading
+    # from a _specific_ library, which is what we need.
+    set(WHOLE_ARCHIVE -force_load)
+    # The `-noall_load` flag is the default and now obsolete.
+    set(NO_WHOLE_ARCHIVE "")
 else ()
     set(WHOLE_ARCHIVE --whole-archive)
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
@@ -257,12 +270,6 @@ else()
 endif()
 
 include(cmake/cpu_features.cmake)
-
-option(ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated.")
-
-if (ARCH_NATIVE)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
-endif ()
 
 # Asynchronous unwind tables are needed for Query Profiler.
 # They are already by default on some platforms but possibly not on all platforms.
@@ -388,9 +395,10 @@ endif ()
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-# We recommend avoiding this mode for production builds because we can't guarantee all needed libraries exist in your
-# system.
+# We recommend avoiding this mode for production builds because we can't guarantee
+# all needed libraries exist in your system.
 # This mode exists for enthusiastic developers who are searching for trouble.
+# The whole idea of using unknown version of libraries from the OS distribution is deeply flawed.
 # Useful for maintainers of OS packages.
 option (UNBUNDLED "Use system libraries instead of ones in contrib/" OFF)
 
@@ -523,11 +531,14 @@ include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
 include (cmake/find/nanodbc.cmake)
+include (cmake/find/sqlite.cmake)
 include (cmake/find/rocksdb.cmake)
 include (cmake/find/libpqxx.cmake)
 include (cmake/find/nuraft.cmake)
 include (cmake/find/yaml-cpp.cmake)
-
+include (cmake/find/s2geometry.cmake)
+include (cmake/find/nlp.cmake)
+include (cmake/find/bzip2.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
@@ -582,7 +593,23 @@ macro (add_executable target)
         # disabled for TSAN and gcc since libtsan.a provides overrides too
         if (TARGET clickhouse_new_delete)
             # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
+        endif()
+
+        # In case of static jemalloc, because zone_register() is located in zone.c and
+        # is never used outside (it is declared as constructor) it is omitted
+        # by the linker, and so jemalloc will not be registered as system
+        # allocator under osx [1], and clickhouse will SIGSEGV.
+        #
+        #   [1]: https://github.com/jemalloc/jemalloc/issues/708
+        #
+        # About symbol name:
+        # - _zone_register not zone_register due to Mach-O binary format,
+        # - _je_zone_register due to JEMALLOC_PRIVATE_NAMESPACE=je_ under OS X.
+        # - but jemalloc-cmake does not run private_namespace.sh
+        #   so symbol name should be _zone_register
+        if (ENABLE_JEMALLOC AND MAKE_STATIC_LIBRARIES AND OS_DARWIN)
+            set_property(TARGET ${target} APPEND PROPERTY LINK_OPTIONS -u_zone_register)
         endif()
     endif()
 endmacro()

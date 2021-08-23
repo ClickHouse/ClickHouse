@@ -11,6 +11,7 @@
 #define DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_SECURE_MS 100
 #define DBMS_DEFAULT_SEND_TIMEOUT_SEC 300
 #define DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC 300
+#define DBMS_DEFAULT_DRAIN_TIMEOUT_SEC 3
 /// Timeouts for hedged requests.
 #define DBMS_DEFAULT_HEDGED_CONNECTION_TIMEOUT_MS 100
 #define DBMS_DEFAULT_RECEIVE_DATA_TIMEOUT_MS 2000
@@ -70,6 +71,7 @@
 
 /// Minimum revision supporting SettingsBinaryFormat::STRINGS.
 #define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
+#define DBMS_MIN_REVISION_WITH_SCALARS 54429
 
 /// Minimum revision supporting OpenTelemetry
 #define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54442
@@ -83,10 +85,18 @@
 #define DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO 54443
 #define DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO 54447
 
-/// Version of ClickHouse TCP protocol. Increment it manually when you change the protocol.
-#define DBMS_TCP_PROTOCOL_VERSION 54448
-
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH 54448
+
+/// Version of ClickHouse TCP protocol.
+///
+/// Should be incremented manually on protocol changes.
+///
+/// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
+/// later is just a number for server version (one number instead of commit SHA)
+/// for simplicity (sometimes it may be more convenient in some use cases).
+#define DBMS_TCP_PROTOCOL_VERSION 54449
+
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME 54449
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
 

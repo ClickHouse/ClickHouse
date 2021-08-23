@@ -36,7 +36,7 @@ class FunctionsStringSearchToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionsStringSearchToString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearchToString>(); }
 
     String getName() const override { return name; }
 
@@ -44,6 +44,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

@@ -7,8 +7,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Core/Block.h>
-#include <ext/range.h>
-#include <ext/size.h>
 #include <Common/HashTable/HashMap.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
@@ -22,8 +20,7 @@ template <DictionaryKeyType dictionary_key_type>
 class DirectDictionary final : public IDictionary
 {
 public:
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by direct dictionary");
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     DirectDictionary(
         const StorageID & dict_id_,
@@ -32,7 +29,7 @@ public:
 
     std::string getTypeName() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return "Direct";
         else
             return "ComplexKeyDirect";
@@ -99,10 +96,10 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size) const override;
 
 private:
-    BlockInputStreamPtr getSourceBlockInputStream(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    Pipe getSourceBlockInputStream(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -112,7 +109,7 @@ private:
     mutable std::atomic<size_t> found_count{0};
 };
 
-extern template class DirectDictionary<DictionaryKeyType::simple>;
-extern template class DirectDictionary<DictionaryKeyType::complex>;
+extern template class DirectDictionary<DictionaryKeyType::Simple>;
+extern template class DirectDictionary<DictionaryKeyType::Complex>;
 
 }

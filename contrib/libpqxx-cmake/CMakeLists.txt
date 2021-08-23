@@ -64,7 +64,7 @@ set (HDRS
 add_library(libpqxx ${SRCS} ${HDRS})
 
 target_link_libraries(libpqxx PUBLIC ${LIBPQ_LIBRARY})
-target_include_directories (libpqxx PRIVATE "${LIBRARY_DIR}/include")
+target_include_directories (libpqxx SYSTEM PRIVATE "${LIBRARY_DIR}/include")
 
 # crutch
 set(CM_CONFIG_H_IN "${LIBRARY_DIR}/include/pqxx/config.h.in")

@@ -2,7 +2,6 @@
 #include <AggregateFunctions/AggregateFunctionGroupArrayInsertAt.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -17,7 +16,8 @@ namespace ErrorCodes
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertBinary(name, argument_types);
 

@@ -32,6 +32,7 @@ public:
         friend bool operator >=(const Params & lhs, const Params & rhs) { return !(lhs < rhs); }
     };
 
+    EnabledRowPolicies();
     ~EnabledRowPolicies();
 
     using ConditionType = RowPolicy::ConditionType;

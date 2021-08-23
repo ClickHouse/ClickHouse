@@ -4,12 +4,10 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {

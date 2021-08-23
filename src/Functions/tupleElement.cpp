@@ -30,7 +30,7 @@ class FunctionTupleElement : public IFunction
 {
 public:
     static constexpr auto name = "tupleElement";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionTupleElement>();
     }
@@ -54,6 +54,8 @@ public:
     {
         return {1};
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
