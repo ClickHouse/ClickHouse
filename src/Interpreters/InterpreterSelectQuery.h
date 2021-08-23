@@ -157,7 +157,8 @@ private:
     enum class Modificator
     {
         ROLLUP = 0,
-        CUBE = 1
+        CUBE = 1,
+        GROUPING_SETS = 2
     };
 
     void executeRollupOrCube(QueryPlan & query_plan, Modificator modificator);
