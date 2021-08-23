@@ -201,6 +201,19 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     return name_deps;
 }
 
+bool IStorage::isReadOnly() const
+{
+    auto storage_policy = getStoragePolicy();
+    if (storage_policy)
+    {
+        for (const auto disk : storage_policy->getDisks())
+            if (!disk->isReadOnly())
+                return false;
+        return true;
+    }
+    return false;
+}
+
 std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;

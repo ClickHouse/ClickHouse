@@ -3,7 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/ReadIndirectBufferFromWebServer.h>
+#include <Disks/ReadIndirectBufferFromWebServer.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

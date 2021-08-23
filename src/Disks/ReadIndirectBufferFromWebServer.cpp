@@ -58,6 +58,7 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
 
     if (impl)
     {
+        /// Restore correct position at the needed offset.
         impl->position() = position();
         assert(!impl->hasPendingData());
     }
