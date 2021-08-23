@@ -9,7 +9,7 @@
     Do not use any JavaScript or CSS frameworks or preprocessors.
     This HTML page should not require any build systems (node.js, npm, gulp, etc.)
     This HTML page should not be minified, instead it should be reasonably minimalistic by itself.
-    This HTML page should not load any external resources
+    This HTML page should not load any external resources on load.
     (CSS and JavaScript must be embedded directly to the page. No external fonts or images should be loaded).
     This UI should look as lightweight, clean and fast as possible.
     All UI elements must be aligned in pixel-perfect way.
@@ -68,7 +68,7 @@
         html, body
         {
             /* Personal choice. */
-            font-family: Sans-Serif;
+            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
         }
@@ -96,9 +96,14 @@
         .monospace
         {
             /* Prefer fonts that have full hinting info. This is important for non-retina displays.
-               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant).
-            */
+               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant). */
             font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, Monospace;
+        }
+
+        .monospace-table
+        {
+            /* Liberation is worse than DejaVu for block drawing characters. */
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, Monospace;
         }
 
         .shadow
@@ -325,8 +330,8 @@
         <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
     </div>
     <div id="data_div">
-        <table class="monospace shadow" id="data-table"></table>
-        <pre class="monospace shadow" id="data-unparsed"></pre>
+        <table class="monospace-table shadow" id="data-table"></table>
+        <pre class="monospace-table shadow" id="data-unparsed"></pre>
     </div>
     <svg id="graph" fill="none"></svg>
     <p id="error" class="monospace shadow">
@@ -343,34 +348,40 @@
     /// Save query in history only if it is different.
     let previous_query = '';
 
-    /// Substitute the address of the server where the page is served.
-    if (location.protocol != 'file:') {
+    const current_url = new URL(window.location);
+
+    const server_address = current_url.searchParams.get('url');
+    if (server_address) {
+        document.getElementById('url').value = server_address;
+    } else if (location.protocol != 'file:') {
+        /// Substitute the address of the server where the page is served.
         document.getElementById('url').value = location.origin;
     }
 
     /// Substitute user name if it's specified in the query string
-    let user_from_url = (new URL(window.location)).searchParams.get('user');
+    const user_from_url = current_url.searchParams.get('user');
     if (user_from_url) {
         document.getElementById('user').value = user_from_url;
     }
 
     function postImpl(posted_request_num, query)
     {
-        /// TODO: Check if URL already contains query string (append parameters).
+        const user = document.getElementById('user').value;
+        const password = document.getElementById('password').value;
 
-        let user = document.getElementById('user').value;
-        let password = document.getElementById('password').value;
+        const server_address = document.getElementById('url').value;
 
-        let url = document.getElementById('url').value +
+        const url = server_address +
+            (server_address.indexOf('?') >= 0 ? '&' : '?') +
             /// Ask server to allow cross-domain requests.
-            '?add_http_cors_header=1' +
+            'add_http_cors_header=1' +
             '&user=' + encodeURIComponent(user) +
             '&password=' + encodeURIComponent(password) +
             '&default_format=JSONCompact' +
             /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
-        let xhr = new XMLHttpRequest;
+        const xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
 
@@ -384,17 +395,24 @@
                 /// The query is saved in browser history (in state JSON object)
                 /// as well as in URL fragment identifier.
                 if (query != previous_query) {
-                    let state = {
+                    const state = {
                         query: query,
                         status: this.status,
                         response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
                     };
-                    let title = "ClickHouse Query: " + query;
-                    let url = window.location.pathname + '?user=' + encodeURIComponent(user) + '#' + window.btoa(query);
+                    const title = "ClickHouse Query: " + query;
+
+                    let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+                    if (server_address != location.origin) {
+                        /// Save server's address in URL if it's not identical to the address of the play UI.
+                        history_url += '&url=' + encodeURIComponent(server_address);
+                    }
+                    history_url += '#' + window.btoa(query);
+
                     if (previous_query == '') {
-                        history.replaceState(state, title, url);
+                        history.replaceState(state, title, history_url);
                     } else {
-                        history.pushState(state, title, url);
+                        history.pushState(state, title, history_url);
                     }
                     document.title = title;
                     previous_query = query;
@@ -599,10 +617,16 @@
     }
 
     /// Huge JS libraries should be loaded only if needed.
-    function loadJS(src) {
+    function loadJS(src, integrity) {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = src;
+            if (integrity) {
+                script.crossOrigin = 'anonymous';
+                script.integrity = integrity;
+            } else {
+                console.warn('no integrity for', src)
+            }
             script.addEventListener('load', function() { resolve(true); });
             document.head.appendChild(script);
         });
@@ -613,10 +637,14 @@
         if (load_dagre_promise) { return load_dagre_promise; }
 
         load_dagre_promise = Promise.all([
-            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js'),
-            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js'),
-            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js'),
-            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0'),
+            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
+                   'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
+            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
+                   'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
+            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
+                   'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
+            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
+                   'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
         ]);
 
         return load_dagre_promise;

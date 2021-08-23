@@ -122,3 +122,5 @@ $CLICKHOUSE_CLIENT -n --query="DROP DICTIONARY 01280_db.ssd_dict;
     SELECT arrayJoin([('1', toInt32(3)), ('2', toInt32(-1)), ('', toInt32(0)), ('', toInt32(0)), ('2', toInt32(-1)), ('1', toInt32(3))]) AS keys, dictGetInt32('01280_db.ssd_dict', 'b', keys);
     DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
     DROP TABLE IF EXISTS database_for_dict.keys_table;"
+
+$CLICKHOUSE_CLIENT -n --query="DROP DATABASE IF EXISTS 01280_db;"

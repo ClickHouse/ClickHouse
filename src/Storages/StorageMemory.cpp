@@ -1,8 +1,6 @@
 #include <cassert>
 #include <Common/Exception.h>
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
@@ -11,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
+#include <Processors/Sinks/SinkToStorage.h>
 
 
 namespace DB
@@ -35,7 +34,7 @@ public:
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {})
         : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
+        , column_names_and_types(metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names_, true))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
@@ -100,21 +99,23 @@ private:
 };
 
 
-class MemoryBlockOutputStream : public IBlockOutputStream
+class MemorySink : public SinkToStorage
 {
 public:
-    MemoryBlockOutputStream(
+    MemorySink(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : storage(storage_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
     {
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    String getName() const override { return "MemorySink"; }
 
-    void write(const Block & block) override
+    void consume(Chunk chunk) override
     {
+        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
         metadata_snapshot->check(block, true);
 
         if (storage.compress)
@@ -131,7 +132,7 @@ public:
         }
     }
 
-    void writeSuffix() override
+    void onFinish() override
     {
         size_t inserted_bytes = 0;
         size_t inserted_rows = 0;
@@ -228,9 +229,9 @@ Pipe StorageMemory::read(
 }
 
 
-BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<MemoryBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<MemorySink>(*this, metadata_snapshot);
 }
 
 

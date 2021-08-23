@@ -90,6 +90,7 @@ private:
     {
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
+        const UInt64 distributed_group_by_no_merge;
 
         ExtractedSettings(const Settings & settings_);
     };
@@ -326,14 +327,14 @@ public:
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain) const;
 
+    /// Create Set-s that we make from IN section to use index on them.
+    void makeSetsForIndex(const ASTPtr & node);
+
 private:
     StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
     SelectQueryOptions query_options;
-
-    /// Create Set-s that we make from IN section to use index on them.
-    void makeSetsForIndex(const ASTPtr & node);
 
     JoinPtr makeTableJoin(
         const ASTTablesInSelectQueryElement & join_element,

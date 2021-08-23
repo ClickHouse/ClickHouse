@@ -76,6 +76,10 @@ add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
+if (USE_SQLITE)
+    add_headers_and_sources(dbms Databases/SQLite)
+endif()
+
 if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
@@ -157,6 +161,8 @@ else()
     add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
     target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
 endif()
+
+target_link_libraries (clickhouse_common_io PRIVATE jemalloc)
 
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
@@ -297,10 +303,11 @@ target_link_libraries(clickhouse_common_io
             ${ZLIB_LIBRARIES}
             pcg_random
             Poco::Foundation
-            roaring
 )
 
-
+# Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
+# That way we we can redirect malloc/free functions avoiding circular dependencies
+dbms_target_link_libraries(PUBLIC roaring)
 
 if (USE_RDKAFKA)
     dbms_target_link_libraries(PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
@@ -419,6 +426,11 @@ if (USE_AWS_S3)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_INCLUDE_DIR})
 endif()
 
+if (USE_S2_GEOMETRY)
+    dbms_target_link_libraries (PUBLIC ${S2_GEOMETRY_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${S2_GEOMETRY_INCLUDE_DIR})
+endif()
+
 if (USE_BROTLI)
     target_link_libraries (clickhouse_common_io PRIVATE ${BROTLI_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
@@ -427,6 +439,10 @@ endif()
 if (USE_AMQPCPP)
     dbms_target_link_libraries(PUBLIC ${AMQPCPP_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${AMQPCPP_INCLUDE_DIR})
+endif()
+
+if (USE_SQLITE)
+    dbms_target_link_libraries(PUBLIC sqlite)
 endif()
 
 if (USE_CASSANDRA)
@@ -463,6 +479,17 @@ if (USE_DATASKETCHES)
 endif ()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
+
+if (USE_NLP)
+    dbms_target_link_libraries (PUBLIC stemmer)
+    dbms_target_link_libraries (PUBLIC wnb)
+    dbms_target_link_libraries (PUBLIC lemmagen)
+endif()
+
+if (USE_BZIP2)
+    target_link_libraries (clickhouse_common_io PRIVATE ${BZIP2_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BZIP2_INCLUDE_DIR})
+endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
