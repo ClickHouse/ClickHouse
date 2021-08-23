@@ -78,7 +78,7 @@ public:
     /// Example:
     /// Enum('a' = 1, 'b' = 2) -> Enum('c' = 1, 'b' = 2, 'd' = 3) OK
     /// Enum('a' = 1, 'b' = 2) -> Enum('a' = 2, 'b' = 1) NOT OK
-    virtual bool contains(const IDataType & rhs) const override;
+    bool contains(const IDataType & rhs) const override;
 
     SerializationPtr doGetDefaultSerialization() const override;
 };
