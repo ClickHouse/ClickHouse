@@ -232,7 +232,7 @@ Result:
 
 ## toDate32OrNull {#todate32OrNull}
 
-The same as `toDate32` but returns `NULL` if a zero argument is received.
+The same as `toDate32` but returns `NULL` if invalid argument is received.
 
 **Example**
 
