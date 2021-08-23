@@ -1534,7 +1534,11 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     auto in_partition = mutations_by_partition.find(part->info.partition_id);
     if (in_partition == mutations_by_partition.end())
     {
-        LOG_WARNING(log, "There are no mutations for partition ID {} (trying to mutate part {} to {})", part->info.partition_id, part->name, toString(desired_mutation_version));
+        LOG_WARNING(log,
+            "There are no mutations for partition ID {} (trying to mutate part {} to {}). Mutation is likely killed.",
+            part->info.partition_id,
+            part->name,
+            toString(desired_mutation_version));
         return MutationCommands{};
     }
 

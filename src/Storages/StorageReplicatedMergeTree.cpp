@@ -1884,6 +1884,11 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MergeTreePartInfo new_part_info = MergeTreePartInfo::fromPartName(
         entry.new_part_name, format_version);
     MutationCommands commands = queue.getMutationCommands(source_part, new_part_info.mutation);
+    if (commands.empty())
+    {
+        /// Logging is done from the getMutationCommands()
+        return true;
+    }
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
