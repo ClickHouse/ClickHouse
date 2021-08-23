@@ -475,7 +475,6 @@ if (USE_DATASKETCHES)
 endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE lz4)
-target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE lz4)
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 
