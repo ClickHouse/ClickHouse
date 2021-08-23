@@ -141,7 +141,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
             if (!generic_compression_codec_pos && result_codec->isGenericCompression())
                 generic_compression_codec_pos = i;
 
-            if (result_codec->isPostProcessing())
+            if (result_codec->isEncryption())
                 post_processing_codecs.insert(i);
         }
 
