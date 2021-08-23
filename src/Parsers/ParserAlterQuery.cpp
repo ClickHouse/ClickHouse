@@ -75,6 +75,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_unfreeze("UNFREEZE");
     ParserKeyword s_partition("PARTITION");
 
+    ParserKeyword s_final("FINAL");
     ParserKeyword s_first("FIRST");
     ParserKeyword s_after("AFTER");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
@@ -177,6 +178,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             command->type = ASTAlterCommand::MATERIALIZE_COLUMN;
             command->detach = false;
+            command->materialize_column_final = s_final.ignore(pos, expected);
 
             if (s_in_partition.ignore(pos, expected))
             {
