@@ -1,6 +1,8 @@
 # docker build -t yandex/clickhouse-testflows-runner .
 FROM ubuntu:20.04
 
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     ca-certificates \
