@@ -7,7 +7,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNKNOWN_EXCEPTION;
 }
@@ -37,38 +36,6 @@ void LocalConnection::setDefaultDatabase(const String & database)
     default_database = database;
 }
 
-void LocalConnection::getServerVersion(
-    const ConnectionTimeouts & /* timeouts */, String & name,
-    UInt64 & version_major, UInt64 & version_minor,
-    UInt64 & version_patch, UInt64 & revision)
-{
-    name = server_name;
-    version_major = server_version_major;
-    version_minor = server_version_minor;
-    version_patch = server_version_patch;
-    revision = server_revision;
-}
-
-UInt64 LocalConnection::getServerRevision(const ConnectionTimeouts &)
-{
-    return server_revision;
-}
-
-const String & LocalConnection::getDescription() const
-{
-    return description;
-}
-
-const String & LocalConnection::getServerTimezone(const ConnectionTimeouts &)
-{
-    return server_timezone;
-}
-
-const String & LocalConnection::getServerDisplayName(const ConnectionTimeouts &)
-{
-    return server_display_name;
-}
-
 bool LocalConnection::hasReadPendingData() const
 {
     return !state->is_finished;
@@ -84,9 +51,6 @@ void LocalConnection::updateProgress(const Progress & value)
     state->progress.incrementPiecewiseAtomically(value);
 }
 
-/*
- * SendQuery: execute query and suspend the result, which will be received back via poll.
-**/
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
     const String & query_,
@@ -106,7 +70,6 @@ void LocalConnection::sendQuery(
     query_context->makeSessionContext(); /// initial_create_query requires a session context to be set.
     query_context->setCurrentQueryId("");
     query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
-
     CurrentThread::QueryScope query_scope_holder(query_context);
 
     state->after_send_progress.restart();
@@ -115,11 +78,9 @@ void LocalConnection::sendQuery(
     try
     {
         state->io = executeQuery(state->query, query_context, false, state->stage, true);
-        next_packet_type = Protocol::Server::Data;
 
         if (state->io.out)
         {
-            state->need_receive_data_for_insert = true;
             state->io.out->writePrefix();
             state->block = state->io.out->getHeader();
         }
@@ -134,6 +95,9 @@ void LocalConnection::sendQuery(
             state->async_in->readPrefix();
             state->block = state->io.in->getHeader();
         }
+
+        if (state->block)
+            next_packet_type = Protocol::Server::Data;
     }
     catch (const Exception & e)
     {
@@ -156,8 +120,15 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 {
     if (block)
     {
-        /// INSERT query.
-        state->io.out->write(block);
+        try
+        {
+            state->io.out->write(block);
+        }
+        catch (...)
+        {
+            state->io.out->writeSuffix();
+            throw;
+        }
     }
     else
     {
@@ -387,6 +358,38 @@ Packet LocalConnection::receivePacket()
 
     next_packet_type.reset();
     return packet;
+}
+
+void LocalConnection::getServerVersion(
+    const ConnectionTimeouts & /* timeouts */, String & name,
+    UInt64 & version_major, UInt64 & version_minor,
+    UInt64 & version_patch, UInt64 & revision)
+{
+    name = server_name;
+    version_major = server_version_major;
+    version_minor = server_version_minor;
+    version_patch = server_version_patch;
+    revision = server_revision;
+}
+
+UInt64 LocalConnection::getServerRevision(const ConnectionTimeouts &)
+{
+    return server_revision;
+}
+
+const String & LocalConnection::getDescription() const
+{
+    return description;
+}
+
+const String & LocalConnection::getServerTimezone(const ConnectionTimeouts &)
+{
+    return server_timezone;
+}
+
+const String & LocalConnection::getServerDisplayName(const ConnectionTimeouts &)
+{
+    return server_display_name;
 }
 
 }
