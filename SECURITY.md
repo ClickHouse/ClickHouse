@@ -13,17 +13,24 @@ The following versions of ClickHouse server are currently being supported with s
 | 18.x   | :x:                |
 | 19.x   | :x:                |
 | 20.1   | :x: |
-| 20.3   | :white_check_mark: |
+| 20.3   | :x: |
 | 20.4   | :x: |
 | 20.5   | :x: |
 | 20.6   | :x: |
 | 20.7   | :x: |
-| 20.8   | :white_check_mark: |
+| 20.8   | :x: |
 | 20.9   | :x: |
 | 20.10  | :x: |
-| 20.11  | :white_check_mark: |
-| 20.12  | :white_check_mark: |
-| 21.1   | :white_check_mark: |
+| 20.11  | :x: |
+| 20.12  | :x: |
+| 21.1   | :x: |
+| 21.2   | :x: |
+| 21.3   | ✅ |
+| 21.4   | :x: |
+| 21.5   | :x: |
+| 21.6   | ✅ |
+| 21.7   | ✅ |
+| 21.8   | ✅ |
 
 ## Reporting a Vulnerability
 
