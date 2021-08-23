@@ -152,6 +152,104 @@ Cиноним: `DATE`.
 
 ## toDateTimeOrNull {#todatetimeornull}
 
+## toDate32 {#toDate32}
+
+Конвертирует аргумент в значение типа [Date32](../../sql-reference/data-types/date32.md). Если значение выходит за границы диапазона, возвращается пограничное значение [Date32](../../sql-reference/data-types/date32.md). Если аргумент имеет тип [Date](../../sql-reference/data-types/string.md) границы типа `Date` учитываются.
+
+**Синтаксис** 
+
+``` sql
+toDate32(expr)
+```
+
+**Аргументы** 
+
+-   `expr` — Значение даты. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) или [Date](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Календарная дата.
+
+Тип: [Date32](../../sql-reference/data-types/date32.md).
+
+**Пример**
+
+1. Если значение находится в границах диапазона:
+
+``` sql
+SELECT toDate32('1955-01-01') AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
+│ 1955-01-01 │ Date32                             │
+└────────────┴────────────────────────────────────┘
+```
+
+2. Если значение выходит за границы диапазона:
+
+``` sql
+SELECT toDate32('1924-01-01') AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
+│ 1925-01-01 │ Date32                             │
+└────────────┴────────────────────────────────────┘
+```
+
+3. С аргументом типа `Date`:
+
+``` sql
+SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32(toDate('1924-01-01')))─┐
+│ 1970-01-01 │ Date32                                     │
+└────────────┴────────────────────────────────────────────┘
+```
+
+## toDate32OrZero {#toDate32OrZero}
+
+То же самое, что и `toDate32` но возвращает минимальное значение типа [Date32](../../sql-reference/data-types/date32.md) если получен недопустимый аргумент.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toDate32OrZero('1924-01-01'), toDate32OrZero('');
+```
+
+Результат:
+
+``` text
+┌─toDate32OrZero('1924-01-01')─┬─toDate32OrZero('')─┐
+│                   1925-01-01 │         1925-01-01 │
+└──────────────────────────────┴────────────────────┘
+```
+
+## toDate32OrNull {#todate32OrNull}
+
+То же самое, что и `toDate32` но возвращает `NULL` если получен недопустимый аргумент.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('');
+```
+
+Результат:
+
+``` text
+┌─toDate32OrNull('1955-01-01')─┬─toDate32OrNull('')─┐
+│                   1955-01-01 │               ᴺᵁᴸᴸ │
+└──────────────────────────────┴────────────────────┘
+```
+
 ## toDecimal(32\|64\|128\|256) {#todecimal3264128}
 
 Преобразует `value` к типу данных [Decimal](../../sql-reference/functions/type-conversion-functions.md) с точностью `S`. `value` может быть числом или строкой. Параметр `S` (scale) задаёт число десятичных знаков.

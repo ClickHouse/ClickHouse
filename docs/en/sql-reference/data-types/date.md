@@ -9,7 +9,7 @@ The date. Stored in two bytes as the number of days since 1970-01-01 (unsigned).
 
 The date value is stored without the time zone.
 
-**Examples**
+**Example**
 
 Creating a table with a `Date`-type column and inserting data into it:
 
@@ -24,9 +24,6 @@ ENGINE = TinyLog;
 
 ``` sql
 INSERT INTO dt VALUES (1546300800, 1), ('2019-01-01', 2);
-```
-
-``` sql
 SELECT * FROM dt;
 ```
 
@@ -37,7 +34,7 @@ SELECT * FROM dt;
 └────────────┴──────────┘
 ```
 
-## See Also {#see-also}
+**See also**
 
 -   [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
 -   [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
