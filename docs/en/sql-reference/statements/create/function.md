@@ -5,7 +5,7 @@ toc_title: FUNCTION
 
 # CREATE FUNCTION {#create-function}
 
-Creates a user defined function from a lambda expression. The expression must consist of function parameters, constants, operators or other function calls.
+Creates a user defined function from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
 
 **Syntax**
 
