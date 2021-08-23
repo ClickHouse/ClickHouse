@@ -105,6 +105,8 @@ void LocalConnection::sendQuery(
     query_context = session.makeQueryContext();
     query_context->makeSessionContext(); /// initial_create_query requires a session context to be set.
     query_context->setCurrentQueryId("");
+    query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+
     CurrentThread::QueryScope query_scope_holder(query_context);
 
     state->after_send_progress.restart();
@@ -113,21 +115,24 @@ void LocalConnection::sendQuery(
     try
     {
         state->io = executeQuery(state->query, query_context, false, state->stage, true);
+        next_packet_type = Protocol::Server::Data;
+
         if (state->io.out)
         {
             state->need_receive_data_for_insert = true;
             state->io.out->writePrefix();
-            next_packet_type = Protocol::Server::Data;
             state->block = state->io.out->getHeader();
         }
         else if (state->io.pipeline.initialized())
         {
             state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
+            state->block = state->io.pipeline.getHeader();
         }
         else if (state->io.in)
         {
             state->async_in = std::make_unique<AsynchronousBlockInputStream>(state->io.in);
             state->async_in->readPrefix();
+            state->block = state->io.in->getHeader();
         }
     }
     catch (const Exception & e)
@@ -217,7 +222,7 @@ bool LocalConnection::poll(size_t)
     if (!state)
         return false;
 
-    if (state->after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
+    if (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay)
     {
         state->after_send_progress.restart();
         next_packet_type = Protocol::Server::Progress;
@@ -287,6 +292,13 @@ bool LocalConnection::poll(size_t)
             state->block.emplace(extremes);
             return true;
         }
+    }
+
+    if (state->is_finished && !state->sent_progress)
+    {
+        state->sent_progress = true;
+        next_packet_type = Protocol::Server::Progress;
+        return true;
     }
 
     if (state->is_finished)
@@ -366,8 +378,12 @@ Packet LocalConnection::receivePacket()
                 + " from server " + getDescription(), ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     }
 
-    // if (state && state->query_execution_time.elapsed() > static_cast<Float64>(query_context->getSettingsRef().max_execution_time.totalMilliseconds()))
-    //     state->is_finished = true;
+    if (state)
+    {
+        auto max_execution_time = query_context->getSettingsRef().max_execution_time.totalSeconds();
+        if (max_execution_time && state->query_execution_time.elapsedSeconds() > static_cast<Float64>(max_execution_time))
+            state->is_finished = true;
+    }
 
     next_packet_type.reset();
     return packet;

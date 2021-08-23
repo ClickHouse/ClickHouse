@@ -90,7 +90,10 @@ void LocalServer::processSingleQuery(const String & query_to_execute, ASTPtr par
     /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
     /// first exception or whether we need to even rethrow it because there is --ignore-error.
     if (!ignore_error)
+    {
         server_exception.reset();
+        client_exception.reset();
+    }
 
     auto process_error = [&]()
     {
@@ -465,9 +468,7 @@ try
 
     connection_parameters = ConnectionParameters(config());
     connection = std::make_unique<LocalConnection>(global_context);
-    /// Use the same query_id (and thread group) for all queries
-
-    connect();
+    /// TODO: Use the same query_id (and thread group) for all queries
 
     if (is_interactive)
     {
@@ -480,9 +481,12 @@ try
 
         if (server_exception)
             server_exception->rethrow();
+        if (client_exception)
+            client_exception->rethrow();
     }
 
     connection.reset();
+
     global_context->shutdown();
     global_context.reset();
 
