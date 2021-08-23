@@ -36,7 +36,8 @@ ccache --show-config ||:
 ccache --show-stats ||:
 
  # Also build fuzzers if any
-if [[ "${CMAKE_FLAGS[@]}" == "*ENABLE_FUZZING*" ]]; then
+if [ -n "$FUZZER" ]
+then
     FUZZER_TARGETS=$(find ../src -name '*_fuzzer.cpp' -execdir basename {} .cpp ';' | tr '\n' ' ')
 
     mkdir -p /output/fuzzers
