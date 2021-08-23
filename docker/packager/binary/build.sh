@@ -41,11 +41,12 @@ FUZZER_TARGETS=$(find ../src -name '*_fuzzer.cpp' -execdir basename {} .cpp ';' 
 mkdir -p /output/fuzzers
 for FUZZER_TARGET in $FUZZER_TARGETS
 do
+    # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
     ninja $NINJA_FLAGS $FUZZER_TARGET
     # Find this binary in build directory and strip it
-    FUZZER_PATH=$(find ./src -name $FUZZER_TARGET)
-    strip --strip-unneeded $FUZZER_PATH
-    mv $FUZZER_PATH /output/fuzzers
+    FUZZER_PATH=$(find ./src -name "$FUZZER_TARGET")
+    strip --strip-unneeded "$FUZZER_PATH"
+    mv "$FUZZER_PATH" /output/fuzzers
 done
 
 tar -zcvf /output/fuzzers.tar.gz /output/fuzzers
