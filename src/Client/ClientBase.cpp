@@ -193,7 +193,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
 
-    if (need_render_progress)
+    if (need_render_progress && stdout_is_a_tty)
         progress_indication.clearProgressOutput();
 
     block_out_stream->write(block);
@@ -203,7 +203,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     block_out_stream->flush();
 
     /// Restore progress bar after data block.
-    if (need_render_progress)
+    if (need_render_progress && stdout_is_a_tty)
         progress_indication.writeProgress();
 }
 
@@ -487,6 +487,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
 
             /// Poll for changes after a cancellation check, otherwise it never reached
             /// because of progress updates from server.
+
             if (connection->poll(poll_interval))
                 break;
         }
@@ -692,6 +693,16 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!parsed_insert_query)
         return;
 
+    if (need_render_progress)
+    {
+        /// Set total_bytes_to_read for current fd.
+        FileProgress file_progress(0, std_in.size());
+        progress_indication.updateProgress(Progress(file_progress));
+
+        /// Set callback to be called on file progress.
+        progress_indication.setFileProgressCallback(global_context, true);
+    }
+
     if (parsed_insert_query->infile)
     {
         const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
@@ -731,22 +742,15 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     }
     else if (!is_interactive)
     {
+        if (need_render_progress)
+        {
+            /// Add callback to track reading from fd.
+            std_in.setProgressCallback(global_context);
+        }
+
         /// Send data read from stdin.
         try
         {
-            if (need_render_progress)
-            {
-                /// Set total_bytes_to_read for current fd.
-                FileProgress file_progress(0, std_in.size());
-                progress_indication.updateProgress(Progress(file_progress));
-
-                /// Set callback to be called on file progress.
-                progress_indication.setFileProgressCallback(global_context, true);
-
-                /// Add callback to track reading from fd.
-                std_in.setProgressCallback(global_context);
-            }
-
             sendDataFrom(std_in, sample, columns_description, parsed_query);
         }
         catch (Exception & e)
@@ -1224,9 +1228,6 @@ static void showClientVersion()
 int ClientBase::main(const std::vector<std::string> & /*args*/)
 {
     UseSSL use_ssl;
-
-    std::cout << std::fixed << std::setprecision(3);
-    std::cerr << std::fixed << std::setprecision(3);
 
     if (is_interactive)
     {

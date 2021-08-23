@@ -45,6 +45,7 @@ struct LocalQueryState
 
     bool sent_totals = false;
     bool sent_extremes = false;
+    bool sent_progress = false;
 
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
