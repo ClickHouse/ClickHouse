@@ -39,6 +39,7 @@
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
+#include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
@@ -79,7 +80,6 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <filesystem>
 
-
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
 #   include "Common/config_version.h"
@@ -97,7 +97,7 @@
 #endif
 
 #if USE_SSL
-#    if USE_INTERNAL_SSL_LIBRARY
+#    if USE_INTERNAL_SSL_LIBRARY  && !defined(ARCADIA_BUILD)
 #        include <Compression/CompressionCodecEncrypted.h>
 #    endif
 #    include <Poco/Net/Context.h>
@@ -126,6 +126,7 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
     extern const Metric MaxDDLEntryID;
+    extern const Metric MaxPushedDDLEntryID;
 }
 
 namespace fs = std::filesystem;
@@ -144,7 +145,6 @@ static bool jemallocOptionEnabled(const char *name)
 #else
 static bool jemallocOptionEnabled(const char *) { return 0; }
 #endif
-
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
@@ -357,6 +357,7 @@ void Server::createServer(const std::string & listen_host, const char * port_nam
     try
     {
         func(port);
+        global_context->registerServerPort(port_name, port);
     }
     catch (const Poco::Exception &)
     {
@@ -666,13 +667,14 @@ if (ThreadFuzzer::instance().isEffective())
 
     global_context->setRemoteHostFilter(config());
 
-    std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
+    std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
+    fs::path path = path_str;
     std::string default_database = config().getString("default_database", "default");
 
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
     struct stat statbuf;
-    if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+    if (stat(path_str.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
     {
         const auto effective_user = getUserName(effective_user_id);
         const auto data_owner = getUserName(statbuf.st_uid);
@@ -689,9 +691,11 @@ if (ThreadFuzzer::instance().isEffective())
         }
     }
 
-    global_context->setPath(path);
+    global_context->setPath(path_str);
 
-    StatusFile status{path + "status", StatusFile::write_full_info};
+    StatusFile status{path / "status", StatusFile::write_full_info};
+
+    DB::ServerUUID::load(path / "uuid", log);
 
     /// Try to increase limit on number of open files.
     {
@@ -725,7 +729,7 @@ if (ThreadFuzzer::instance().isEffective())
 
     /// Storage with temporary data for processing of heavy queries.
     {
-        std::string tmp_path = config().getString("tmp_path", path + "tmp/");
+        std::string tmp_path = config().getString("tmp_path", path / "tmp/");
         std::string tmp_policy = config().getString("tmp_policy", "");
         const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
         for (const DiskPtr & disk : volume->getDisks())
@@ -737,7 +741,7 @@ if (ThreadFuzzer::instance().isEffective())
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
     {
-        auto flags_path = fs::path(path) / "flags/";
+        auto flags_path = path / "flags/";
         fs::create_directories(flags_path);
         global_context->setFlagsPath(flags_path);
     }
@@ -746,29 +750,29 @@ if (ThreadFuzzer::instance().isEffective())
       */
     {
 
-        std::string user_files_path = config().getString("user_files_path", fs::path(path) / "user_files/");
+        std::string user_files_path = config().getString("user_files_path", path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
     }
 
     {
-        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", fs::path(path) / "dictionaries_lib/");
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
         fs::create_directories(dictionaries_lib_path);
     }
 
     /// top_level_domains_lists
     {
-        const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
+        const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 
     {
-        fs::create_directories(fs::path(path) / "data/");
-        fs::create_directories(fs::path(path) / "metadata/");
+        fs::create_directories(path / "data/");
+        fs::create_directories(path / "metadata/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
-        fs::create_directories(fs::path(path) / "metadata_dropped/");
+        fs::create_directories(path / "metadata_dropped/");
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -951,7 +955,7 @@ if (ThreadFuzzer::instance().isEffective())
 #endif
 
     /// Set path for format schema files
-    fs::path format_schema_path(config().getString("format_schema_path", fs::path(path) / "format_schemas/"));
+    fs::path format_schema_path(config().getString("format_schema_path", path / "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
@@ -1087,7 +1091,7 @@ if (ThreadFuzzer::instance().isEffective())
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
-    LOG_INFO(log, "Loading metadata from {}", path);
+    LOG_INFO(log, "Loading metadata from {}", path_str);
 
     try
     {
@@ -1427,7 +1431,6 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
-        global_context->enableNamedSessions();
 
         {
             String level_str = config().getString("text_log.level", "");
@@ -1468,7 +1471,8 @@ if (ThreadFuzzer::instance().isEffective())
             if (pool_size < 1)
                 throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
-                                                                     "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
+                                                                     "distributed_ddl", "DDLWorker",
+                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
         }
 
         for (auto & server : *servers)

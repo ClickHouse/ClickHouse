@@ -41,6 +41,10 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return false;
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {

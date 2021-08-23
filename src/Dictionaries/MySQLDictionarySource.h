@@ -12,7 +12,7 @@
 #    include "DictionaryStructure.h"
 #    include "ExternalQueryBuilder.h"
 #    include "IDictionarySource.h"
-#    include <Formats/MySQLBlockInputStream.h>
+#    include <Formats/MySQLSource.h>
 
 namespace Poco
 {
@@ -35,6 +35,7 @@ public:
     {
         const std::string db;
         const std::string table;
+        const std::string query;
         const std::string where;
         const std::string invalidate_query;
         const std::string update_field;
