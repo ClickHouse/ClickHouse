@@ -138,7 +138,6 @@ void ReplicatedMergeTreeRestartingThread::run()
         partialShutdown();
         storage.startup_event.set();
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
         if (e.code() == ErrorCodes::REPLICA_STATUS_CHANGED)
             reschedule_now = true;
     }
