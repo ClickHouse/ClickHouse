@@ -217,7 +217,7 @@ public:
     virtual void truncateFile(const String & path, size_t size);
 
     /// Return disk type - "local", "s3", etc.
-    virtual DiskType::Type getType() const = 0;
+    virtual DiskType getType() const = 0;
 
     /// Whether this disk support zero-copy replication.
     /// Overrode in remote fs disks.

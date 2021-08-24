@@ -157,7 +157,7 @@ Disks StoragePolicy::getDisks() const
 }
 
 
-Disks StoragePolicy::getDisksByType(DiskType::Type type) const
+Disks StoragePolicy::getDisksByType(DiskType type) const
 {
     Disks res;
     for (const auto & volume : volumes)

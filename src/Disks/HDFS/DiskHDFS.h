@@ -42,7 +42,7 @@ public:
         const String & metadata_path_,
         const Poco::Util::AbstractConfiguration & config_);
 
-    DiskType::Type getType() const override { return DiskType::Type::HDFS; }
+    DiskType getType() const override { return DiskType::HDFS; }
 
     bool supportZeroCopyReplication() const override { return true; }
 
