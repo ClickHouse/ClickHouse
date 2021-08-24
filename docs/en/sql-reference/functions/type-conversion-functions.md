@@ -174,7 +174,7 @@ Type: [Date32](../../sql-reference/data-types/date32.md).
 
 **Example**
 
-1. If the value is within the range:
+1. The value is within the range:
 
 ``` sql
 SELECT toDate32('1955-01-01') AS value, toTypeName(value);
