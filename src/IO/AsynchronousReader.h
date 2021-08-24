@@ -45,7 +45,7 @@ public:
         size_t offset = 0;
         size_t size = 0;
         char * buf = nullptr;
-        int priority = 0;
+        int64_t priority = 0;
     };
 
     /// Less than requested amount of data can be returned.
