@@ -210,7 +210,7 @@ SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
 └────────────┴────────────────────────────────────────────┘
 ```
 
-## toDate32OrZero {#toDate32OrZero}
+## toDate32OrZero {#todate32-or-zero}
 
 То же самое, что и `toDate32` но возвращает минимальное значение типа [Date32](../../sql-reference/data-types/date32.md), если получен недопустимый аргумент.
 
