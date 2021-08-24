@@ -186,7 +186,7 @@ StoragePtr DatabaseMaterializedMySQL<Base>::tryGetTable(const String & name, Con
 
 template <typename Base>
 DatabaseTablesIteratorPtr
-DatabaseMaterializedMySQL<Base>::getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name)
+DatabaseMaterializedMySQL<Base>::getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
 {
     if (!MaterializedMySQLSyncThread::isMySQLSyncThread())
     {
