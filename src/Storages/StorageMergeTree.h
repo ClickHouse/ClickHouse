@@ -144,10 +144,13 @@ private:
     void loadDeduplicationLog();
 
     /** Determines what parts should be merged and merges it.
-      * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
-      * Returns true if merge is finished successfully.
+      * aggressive: when selecting parts, don't take into account their ratio size and novelty (used for OPTIMIZE query).
+      * Returns true if merge finished successfully.
       */
-    bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, const Names & deduplicate_by_columns, String * out_disable_reason = nullptr, bool optimize_skip_merged_partitions = false);
+    bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate,
+        const Names & deduplicate_by_columns,
+        String * out_disable_reason = nullptr,
+        bool optimize_skip_merged_partitions = false);
 
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists

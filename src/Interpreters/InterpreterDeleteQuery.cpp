@@ -45,7 +45,7 @@ BlockIO InterpreterDeleteQuery::execute()
 
     auto & predicate = query.predicate;
 
-    // TODO no check for non-replicated tables
+    // TODO no check for non-replicated tables as for now
     /// table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
 
     // TODO no validation required for non-replicated tables

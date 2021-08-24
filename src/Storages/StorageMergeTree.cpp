@@ -88,7 +88,10 @@ StorageMergeTree::StorageMergeTree(
     loadDataParts(has_force_restore_data_flag);
 
     if (!attach && !getDataParts().empty())
-        throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Data directory for table already contains data parts - probably it was unclean DROP table or manual "
+            "intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if "
+            "you need to use that parts.");
 
     increment.set(getMaxBlockNumber());
 
@@ -675,18 +678,21 @@ void StorageMergeTree::loadMutations()
     {
         for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
         {
-            if (startsWith(it->name(), "mutation_"))
+            const String name = it->name();
+
+            if (startsWith(name, "mutation_"))
             {
-                MergeTreeMutationEntry entry(disk, path, it->name());
-                Int64 block_number = entry.block_number;
-                LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
-                auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
+                MergeTreeMutationEntry entry(disk, path, name);
+
+                const Int64 block_number = entry.block_number;
+
+                LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", name, entry.commands.size());
+
+                auto insertion = current_mutations_by_id.emplace(name, std::move(entry));
                 current_mutations_by_version.emplace(block_number, insertion.first->second);
             }
-            else if (startsWith(it->name(), "tmp_mutation_"))
-            {
+            else if (startsWith(name, "tmp_mutation_"))
                 disk->removeFile(it->path());
-            }
         }
     }
 
@@ -1068,6 +1074,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
     bool has_mutations;
+
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
         if (merger_mutator.merges_blocker.isCancelled())
@@ -1093,17 +1100,22 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
         {
             return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
         }, PoolType::MERGE_MUTATE});
+
         return true;
     }
+
     if (mutate_entry)
     {
         executor.execute({[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
         {
             return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
         }, PoolType::MERGE_MUTATE});
+
         return true;
     }
+
     bool executed = false;
+
     if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
     {
         executor.execute({[this, share_lock]

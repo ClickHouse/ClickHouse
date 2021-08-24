@@ -287,10 +287,10 @@ MutationsInterpreter::MutationsInterpreter(
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
     , select_limits(SelectQueryOptions().analyze(true).ignoreLimits())
-    , stages({ Stage{context} })
 {
     mutation_kind.set(MutationKind::MUTATE_OTHER);
 
+    stages.emplace_back(context);
     stages[0].filters = { makeASTFunction("isZeroOrNull", point_delete_predicate->clone()) };
 
     is_prepared = true;
