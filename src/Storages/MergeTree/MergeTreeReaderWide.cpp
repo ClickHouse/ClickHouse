@@ -75,26 +75,29 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
         OffsetColumns offset_columns;
         std::unordered_map<String, ISerialization::SubstreamsCache> caches;
 
-        /// Request reading of data in advance,
-        /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
-        auto name_and_type = columns.begin();
-        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+        if (disk->isRemote() ? settings.read_settings.remote_fs_prefetch : settings.read_settings.local_fs_prefetch)
         {
-            auto column_from_part = getColumnFromPart(*name_and_type);
-            try
+            /// Request reading of data in advance,
+            /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
+            auto name_and_type = columns.begin();
+            for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
             {
-                auto & cache = caches[column_from_part.getNameInStorage()];
-                prefetch(column_from_part, from_mark, continue_reading, cache);
-            }
-            catch (Exception & e)
-            {
-                /// Better diagnostics.
-                e.addMessage("(while reading column " + column_from_part.name + ")");
-                throw;
+                auto column_from_part = getColumnFromPart(*name_and_type);
+                try
+                {
+                    auto & cache = caches[column_from_part.getNameInStorage()];
+                    prefetch(column_from_part, from_mark, continue_reading, cache);
+                }
+                catch (Exception & e)
+                {
+                    /// Better diagnostics.
+                    e.addMessage("(while reading column " + column_from_part.name + ")");
+                    throw;
+                }
             }
         }
 
-        name_and_type = columns.begin();
+        auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
             auto column_from_part = getColumnFromPart(*name_and_type);
