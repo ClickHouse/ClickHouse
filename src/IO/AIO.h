@@ -36,7 +36,7 @@ struct AIOContext : private boost::noncopyable
     aio_context_t ctx = 0;
 
     AIOContext() {}
-    AIOContext(unsigned int nr_events = 128);
+    AIOContext(unsigned int nr_events);
     ~AIOContext();
     AIOContext(AIOContext && rhs);
     AIOContext & operator=(AIOContext && rhs);
