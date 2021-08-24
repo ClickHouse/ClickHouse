@@ -186,7 +186,7 @@ SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 └────────────┴────────────────────────────────────┘
 ```
 
-2. If the value is outside the range:
+2. The value is outside the range:
 
 ``` sql
 SELECT toDate32('1924-01-01') AS value, toTypeName(value);
