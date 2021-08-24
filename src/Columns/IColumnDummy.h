@@ -4,7 +4,6 @@
 #include <Common/PODArray.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsCommon.h>
-#include <Core/Field.h>
 
 
 namespace DB
@@ -59,20 +58,12 @@ public:
 
     StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override
     {
-        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
-        char * res = arena.allocContinue(1, begin);
-        *res = 0;
-        return { res, 1 };
+        return { arena.allocContinue(0, begin), 0 };
     }
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
         ++s;
-        return pos + 1;
-    }
-
-    const char * skipSerializedInArena(const char * pos) const override
-    {
         return pos;
     }
 
@@ -100,16 +91,7 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
     {
-        size_t bytes = countBytesInFilter(filt);
-        return cloneDummy(bytes);
-    }
-
-    void expand(const IColumn::Filter & mask, bool inverted) override
-    {
-        size_t bytes = countBytesInFilter(mask);
-        if (inverted)
-            bytes = mask.size() - bytes;
-        s = bytes;
+        return cloneDummy(countBytesInFilter(filt));
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override

@@ -20,6 +20,7 @@
 #include <Columns/ColumnFixedString.h>
 
 #include <DataStreams/SizeLimits.h>
+#include <DataStreams/IBlockStream_fwd.h>
 
 #include <Core/Block.h>
 
@@ -133,8 +134,6 @@ class HashJoin : public IJoin
 public:
     HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
-    const TableJoin & getTableJoin() const override { return *table_join; }
-
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
@@ -154,16 +153,16 @@ public:
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
     void setTotals(const Block & block) override { totals = block; }
-    const Block & getTotals() const override { return totals; }
+    bool hasTotals() const override { return totals; }
 
-    bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
+    void joinTotals(Block & block) const override;
 
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & result_sample_block, UInt64 max_block_size) const override;
+    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -221,15 +220,15 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
-        std::unique_ptr<FixedHashMap<UInt8, Mapped>>                  key8;
-        std::unique_ptr<FixedHashMap<UInt16, Mapped>>                 key16;
-        std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>   key32;
-        std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>   key64;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_string;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>      key_fixed_string;
-        std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>   keys128;
-        std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>   keys256;
-        std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
+        std::unique_ptr<FixedHashMap<UInt8, Mapped>>   key8;
+        std::unique_ptr<FixedHashMap<UInt16, Mapped>> key16;
+        std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>                     key32;
+        std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>                     key64;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_fixed_string;
+        std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
+        std::unique_ptr<HashMap<DummyUInt256, Mapped, UInt256HashCRC32>>                keys256;
+        std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;
 
         void create(Type which)
         {
@@ -336,15 +335,12 @@ public:
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
 
 private:
-    friend class NotJoinedHash;
+    friend class NonJoinedBlockInputStream;
     friend class JoinSource;
 
     std::shared_ptr<TableJoin> table_join;
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
-
-    /// This join was created from StorageJoin and it is already filled.
-    bool from_storage_join = false;
 
     /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
     const Names & key_names_right;
@@ -375,10 +371,6 @@ private:
     Block required_right_keys;
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
-
-    /// Additional conditions for rows to join from JOIN ON section
-    String condition_mask_column_name_left;
-    String condition_mask_column_name_right;
 
     Poco::Logger * log;
 

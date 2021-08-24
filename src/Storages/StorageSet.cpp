@@ -13,7 +13,6 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/Sinks/SinkToStorage.h>
 
 
 namespace DB
@@ -31,17 +30,17 @@ namespace ErrorCodes
 }
 
 
-class SetOrJoinSink : public SinkToStorage
+class SetOrJoinBlockOutputStream : public IBlockOutputStream
 {
 public:
-    SetOrJoinSink(
+    SetOrJoinBlockOutputStream(
         StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
         const String & backup_path_, const String & backup_tmp_path_,
         const String & backup_file_name_, bool persistent_);
 
-    String getName() const override { return "SetOrJoinSink"; }
-    void consume(Chunk chunk) override;
-    void onFinish() override;
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    void write(const Block & block) override;
+    void writeSuffix() override;
 
 private:
     StorageSetOrJoinBase & table;
@@ -56,15 +55,14 @@ private:
 };
 
 
-SetOrJoinSink::SetOrJoinSink(
+SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
     StorageSetOrJoinBase & table_,
     const StorageMetadataPtr & metadata_snapshot_,
     const String & backup_path_,
     const String & backup_tmp_path_,
     const String & backup_file_name_,
     bool persistent_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
-    , table(table_)
+    : table(table_)
     , metadata_snapshot(metadata_snapshot_)
     , backup_path(backup_path_)
     , backup_tmp_path(backup_tmp_path_)
@@ -76,17 +74,17 @@ SetOrJoinSink::SetOrJoinSink(
 {
 }
 
-void SetOrJoinSink::consume(Chunk chunk)
+void SetOrJoinBlockOutputStream::write(const Block & block)
 {
     /// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
-    Block sorted_block = getPort().getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
+    Block sorted_block = block.sortColumns();
 
     table.insertBlock(sorted_block);
     if (persistent)
         backup_stream.write(sorted_block);
 }
 
-void SetOrJoinSink::onFinish()
+void SetOrJoinBlockOutputStream::writeSuffix()
 {
     table.finishInsert();
     if (persistent)
@@ -101,10 +99,10 @@ void SetOrJoinSink::onFinish()
 }
 
 
-SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinSink>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", persistent);
+    return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", persistent);
 }
 
 
@@ -114,14 +112,14 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     bool persistent_)
-    : IStorage(table_id_), disk(disk_), persistent(persistent_)
+    : IStorage(table_id_),
+    disk(disk_),
+    persistent(persistent_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
 
@@ -138,28 +136,27 @@ StorageSet::StorageSet(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     bool persistent_)
-    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
-    , set(std::make_shared<Set>(SizeLimits(), false, true))
+    : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, persistent_},
+    set(std::make_shared<Set>(SizeLimits(), false, true))
 {
 
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
     header = header.sortColumns();
-    set->setHeader(header.getColumnsWithTypeAndName());
+    set->setHeader(header);
 
     restore();
 }
 
 
-void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block.getColumnsWithTypeAndName()); }
+void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block); }
 void StorageSet::finishInsert() { set->finishInsert(); }
 
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 std::optional<UInt64> StorageSet::totalRows(const Settings &) const { return set->getTotalRowCount(); }
 std::optional<UInt64> StorageSet::totalBytes(const Settings &) const { return set->getTotalByteCount(); }
 
-void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
+void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
 {
     disk->removeRecursive(path);
     disk->createDirectories(path);
@@ -170,7 +167,7 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
     increment = 0;
     set = std::make_shared<Set>(SizeLimits(), false, true);
-    set->setHeader(header.getColumnsWithTypeAndName());
+    set->setHeader(header);
 }
 
 
@@ -249,9 +246,8 @@ void registerStorageSet(StorageFactory & factory)
         if (has_settings)
             set_settings.loadFromQuery(*args.storage_def);
 
-        DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
-        return StorageSet::create(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
+        DiskPtr disk = args.context.getDisk(set_settings.disk);
+        return StorageSet::create(disk, args.relative_data_path, args.table_id, args.columns, args.constraints, set_settings.persistent);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 

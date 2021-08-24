@@ -19,22 +19,20 @@ namespace ErrorCodes
 class FunctionTupleHammingDistance : public IFunction
 {
 private:
-    ContextPtr context;
+    const Context & context;
 
 public:
     static constexpr auto name = "tupleHammingDistance";
     using ResultType = UInt8;
 
-    explicit FunctionTupleHammingDistance(ContextPtr context_) : context(context_) {}
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTupleHammingDistance>(context); }
+    explicit FunctionTupleHammingDistance(const Context & context_) : context(context_) {}
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTupleHammingDistance>(context); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     Columns getTupleElements(const IColumn & column) const
     {

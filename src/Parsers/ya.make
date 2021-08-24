@@ -21,7 +21,6 @@ SRCS(
     ASTCreateRowPolicyQuery.cpp
     ASTCreateSettingsProfileQuery.cpp
     ASTCreateUserQuery.cpp
-    ASTDatabaseOrNone.cpp
     ASTDictionary.cpp
     ASTDictionaryAttributeDeclaration.cpp
     ASTDropAccessEntityQuery.cpp
@@ -39,8 +38,6 @@ SRCS(
     ASTOptimizeQuery.cpp
     ASTOrderByElement.cpp
     ASTPartition.cpp
-    ASTProjectionDeclaration.cpp
-    ASTProjectionSelectQuery.cpp
     ASTQualifiedAsterisk.cpp
     ASTQueryParameter.cpp
     ASTQueryWithOnCluster.cpp
@@ -96,7 +93,6 @@ SRCS(
     ParserCreateSettingsProfileQuery.cpp
     ParserCreateUserQuery.cpp
     ParserDataType.cpp
-    ParserDatabaseOrNone.cpp
     ParserDescribeTableQuery.cpp
     ParserDictionary.cpp
     ParserDictionaryAttributeDeclaration.cpp
@@ -109,7 +105,6 @@ SRCS(
     ParserKillQueryQuery.cpp
     ParserOptimizeQuery.cpp
     ParserPartition.cpp
-    ParserProjectionSelectQuery.cpp
     ParserQuery.cpp
     ParserQueryWithOutput.cpp
     ParserRenameQuery.cpp
