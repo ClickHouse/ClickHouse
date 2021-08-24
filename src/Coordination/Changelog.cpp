@@ -216,7 +216,7 @@ public:
                 if (record.header.index < start_log_index)
                     continue;
 
-                /// Create log entry for readed data
+                /// Create log entry for read data
                 auto log_entry = nuraft::cs_new<nuraft::log_entry>(record.header.term, record.blob, record.header.value_type);
                 if (result.first_read_index == 0)
                     result.first_read_index = record.header.index;
