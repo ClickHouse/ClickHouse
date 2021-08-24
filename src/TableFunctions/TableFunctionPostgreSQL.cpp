@@ -69,7 +69,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     ASTs & args = func_args.arguments->children;
 
     if (args.size() < 5 || args.size() > 7)
-        throw Exception("Table function 'PostgreSQL' requires from 5 to 6 parameters: "
+        throw Exception("Table function 'PostgreSQL' requires from 5 to 7 parameters: "
                         "PostgreSQL('host:port', 'database', 'table', 'user', 'password', [, 'schema', 'ON CONFLICT ...']).",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
