@@ -32,7 +32,7 @@ SELECT * FROM new;
 └────────────┴──────────┘
 ```
 
-**See also**
+**See Also**
 
 -   [toDate32](../../sql-reference/functions/type-conversion-functions.md#toDate32)
 -   [toDate32OrZero](../../sql-reference/functions/type-conversion-functions.md#toDate32OrZero)
