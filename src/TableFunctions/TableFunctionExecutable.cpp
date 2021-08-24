@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, const Context & context)
+void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto * function = ast_function->as<ASTFunction>();
 
@@ -46,19 +46,20 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, const 
     if (args.size() == 4) {
         if (!(args[3]->as<ASTSubquery>()))
             throw Exception("Table function '" + getName() + "' 4th argument is invalid input query", ErrorCodes::LOGICAL_ERROR);
-        
+
         input = interpretSubquery(args[3], context, {}, {})->execute().getInputStream();
     }
 }
 
-ColumnsDescription TableFunctionExecutable::getActualTableStructure(const Context & context) const
+ColumnsDescription TableFunctionExecutable::getActualTableStructure(ContextPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    auto storage = StorageExecutable::create(StorageID(getDatabaseName(), table_name), file_path, format, input, getActualTableStructure(context), ConstraintsDescription{}, context);
+    auto storage_id = StorageID(getDatabaseName(), table_name);
+    auto storage = StorageExecutable::create(storage_id, file_path, format, getActualTableStructure(context), ConstraintsDescription{});
     storage->startup();
     return storage;
 }
