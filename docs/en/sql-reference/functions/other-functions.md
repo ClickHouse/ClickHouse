@@ -2241,7 +2241,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 Returns the ID of the current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `query_id`.
 
 !!! warning "Warning"
-    In contrast to [initialQueryID](#initial-query-id) function `queryID` can return different results on shards (see example). And then the server will argue that constant column has different values.
+    In contrast to [initialQueryID](#initial-query-id) function, `queryID` can return different results on shards (see example). And then the server will argue that constant column has different values.
 
 **Syntax**
 
