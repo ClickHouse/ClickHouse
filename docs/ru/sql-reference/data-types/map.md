@@ -5,9 +5,9 @@ toc_title: Map(key, value)
 
 # Map(key, value) {#data_type-map}
 
-Тип данных `Map(key, value)` хранит пары `ключ:значение`. 
+Тип данных `Map(key, value)` хранит пары `ключ:значение`.
 
-**Параметры** 
+**Параметры**
 
 -   `key` — ключ. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md) или [FixedString](../../sql-reference/data-types/fixedstring.md).
 -   `value` — значение. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [Array](../../sql-reference/data-types/array.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md) или [FixedString](../../sql-reference/data-types/fixedstring.md).
@@ -23,7 +23,7 @@ CREATE TABLE table_map (a Map(String, UInt64)) ENGINE=Memory;
 INSERT INTO table_map VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
 ```
 
-Выборка всех значений ключа `key2`: 
+Выборка всех значений ключа `key2`:
 
 ```sql
 SELECT a['key2'] FROM table_map;
@@ -38,7 +38,7 @@ SELECT a['key2'] FROM table_map;
 └─────────────────────────┘
 ```
 
-Если для какого-то ключа `key` в колонке с типом `Map()` нет значения, запрос возвращает нули для числовых колонок, пустые строки или пустые массивы. 
+Если для какого-то ключа `key` в колонке с типом `Map()` нет значения, запрос возвращает нули для числовых колонок, пустые строки или пустые массивы.
 
 ```sql
 INSERT INTO table_map VALUES ({'key3':100}), ({});

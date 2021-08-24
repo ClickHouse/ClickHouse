@@ -5,7 +5,7 @@ toc_title: welchTTest
 
 # welchTTest {#welchttest}
 
-Applies Welch's t-test to samples from two populations. 
+Applies Welch's t-test to samples from two populations.
 
 **Syntax**
 

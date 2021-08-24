@@ -1,7 +1,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/dense_hash_set>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -322,18 +322,12 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 {
     Block res;
 
-#if !defined(ARCADIA_BUILD)
-    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
-#else
-    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
-#endif
-
-    virtuals_map.set_empty_key(StringRef());
+    HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
 
     /// Virtual columns must be appended after ordinary, because user can
     /// override them.
     for (const auto & column : virtuals)
-        virtuals_map.emplace(column.name, &column.type);
+        virtuals_map[column.name] = &column.type;
 
     for (const auto & name : column_names)
     {
@@ -342,9 +336,9 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
         {
             res.insert({column->type->createColumn(), column->type, column->name});
         }
-        else if (auto it = virtuals_map.find(name); it != virtuals_map.end())
+        else if (auto * it = virtuals_map.find(name); it != virtuals_map.end())
         {
-            const auto & type = *it->second;
+            const auto & type = *it->getMapped();
             res.insert({type->createColumn(), type, name});
         }
         else
@@ -477,13 +471,8 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
 
 namespace
 {
-#if !defined(ARCADIA_BUILD)
-    using NamesAndTypesMap = google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
-#else
-    using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
-#endif
+    using NamesAndTypesMap = HashMapWithSavedHash<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = HashSetWithSavedHash<StringRef, StringRefHash>;
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
@@ -500,19 +489,11 @@ namespace
     NamesAndTypesMap getColumnsMap(const NamesAndTypesList & columns)
     {
         NamesAndTypesMap res;
-        res.set_empty_key(StringRef());
 
         for (const auto & column : columns)
             res.insert({column.name, column.type.get()});
 
         return res;
-    }
-
-    UniqueStrings initUniqueStrings()
-    {
-        UniqueStrings strings;
-        strings.set_empty_key(StringRef());
-        return strings;
     }
 }
 
@@ -526,11 +507,12 @@ void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTy
     }
 
     const auto virtuals_map = getColumnsMap(virtuals);
-    auto unique_names = initUniqueStrings();
+    UniqueStrings unique_names;
 
     for (const auto & name : column_names)
     {
-        bool has_column = getColumns().hasColumnOrSubcolumn(ColumnsDescription::AllPhysical, name) || virtuals_map.count(name);
+        bool has_column = getColumns().hasColumnOrSubcolumn(ColumnsDescription::AllPhysical, name)
+            || virtuals_map.find(name) != nullptr;
 
         if (!has_column)
         {
@@ -552,23 +534,31 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
     const NamesAndTypesList & available_columns = getColumns().getAllPhysical();
     const auto columns_map = getColumnsMap(available_columns);
 
-    auto unique_names = initUniqueStrings();
+    UniqueStrings unique_names;
+
     for (const NameAndTypePair & column : provided_columns)
     {
-        auto it = columns_map.find(column.name);
+        const auto * it = columns_map.find(column.name);
         if (columns_map.end() == it)
             throw Exception(
-                "There is no column with name " + column.name + ". There are columns: " + listOfColumns(available_columns),
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "There is no column with name {}. There are columns: {}",
+                column.name,
+                listOfColumns(available_columns));
 
-        if (!column.type->equals(*it->second))
+        if (!column.type->equals(*it->getMapped()))
             throw Exception(
-                "Type mismatch for column " + column.name + ". Column has type " + it->second->getName() + ", got type "
-                    + column.type->getName(),
-                ErrorCodes::TYPE_MISMATCH);
+                ErrorCodes::TYPE_MISMATCH,
+                "Type mismatch for column {}. Column has type {}, got type {}",
+                column.name,
+                it->getMapped()->getName(),
+                column.type->getName());
 
         if (unique_names.end() != unique_names.find(column.name))
-            throw Exception("Column " + column.name + " queried more than once", ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE);
+            throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
+                "Column {} queried more than once",
+                column.name);
+
         unique_names.insert(column.name);
     }
 }
@@ -584,26 +574,38 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
             "Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
             ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 
-    auto unique_names = initUniqueStrings();
+    UniqueStrings unique_names;
+
     for (const String & name : column_names)
     {
-        auto it = provided_columns_map.find(name);
+        const auto * it = provided_columns_map.find(name);
         if (provided_columns_map.end() == it)
             continue;
 
-        auto jt = available_columns_map.find(name);
+        const auto * jt = available_columns_map.find(name);
         if (available_columns_map.end() == jt)
             throw Exception(
-                "There is no column with name " + name + ". There are columns: " + listOfColumns(available_columns),
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "There is no column with name {}. There are columns: {}",
+                name,
+                listOfColumns(available_columns));
 
-        if (!it->second->equals(*jt->second))
+        const auto & provided_column_type = *it->getMapped();
+        const auto & available_column_type = *jt->getMapped();
+
+        if (!provided_column_type.equals(available_column_type))
             throw Exception(
-                "Type mismatch for column " + name + ". Column has type " + jt->second->getName() + ", got type " + it->second->getName(),
-                ErrorCodes::TYPE_MISMATCH);
+                ErrorCodes::TYPE_MISMATCH,
+                "Type mismatch for column {}. Column has type {}, got type {}",
+                name,
+                provided_column_type.getName(),
+                available_column_type.getName());
 
         if (unique_names.end() != unique_names.find(name))
-            throw Exception("Column " + name + " queried more than once", ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE);
+            throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
+                "Column {} queried more than once",
+                name);
+
         unique_names.insert(name);
     }
 }
@@ -624,17 +626,21 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
 
         names_in_block.insert(column.name);
 
-        auto it = columns_map.find(column.name);
+        const auto * it = columns_map.find(column.name);
         if (columns_map.end() == it)
             throw Exception(
-                "There is no column with name " + column.name + ". There are columns: " + listOfColumns(available_columns),
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "There is no column with name {}. There are columns: {}",
+                column.name,
+                listOfColumns(available_columns));
 
-        if (!column.type->equals(*it->second))
+        if (!column.type->equals(*it->getMapped()))
             throw Exception(
-                "Type mismatch for column " + column.name + ". Column has type " + it->second->getName() + ", got type "
-                    + column.type->getName(),
-                ErrorCodes::TYPE_MISMATCH);
+                ErrorCodes::TYPE_MISMATCH,
+                "Type mismatch for column {}. Column has type {}, got type {}",
+                column.name,
+                it->getMapped()->getName(),
+                column.type->getName());
     }
 
     if (need_all && names_in_block.size() < columns_map.size())

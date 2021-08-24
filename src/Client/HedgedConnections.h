@@ -72,7 +72,7 @@ public:
     };
 
     HedgedConnections(const ConnectionPoolWithFailoverPtr & pool_,
-                      const Settings & settings_,
+                      ContextPtr context_,
                       const ConnectionTimeouts & timeouts_,
                       const ThrottlerPtr & throttler,
                       PoolMode pool_mode,
@@ -188,6 +188,7 @@ private:
     Packet last_received_packet;
 
     Epoll epoll;
+    ContextPtr context;
     const Settings & settings;
 
     /// The following two fields are from settings but can be referenced outside the lifetime of

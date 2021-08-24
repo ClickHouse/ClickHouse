@@ -517,10 +517,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     }
                 }
 
-                auto updated_column = makeASTFunction("CAST",
+                auto updated_column = makeASTFunction("_CAST",
                     makeASTFunction("if",
                         condition,
-                        makeASTFunction("CAST",
+                        makeASTFunction("_CAST",
                             update_expr->clone(),
                             type_literal),
                         std::make_shared<ASTIdentifier>(column)),
@@ -945,9 +945,10 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     return result_stream;
 }
 
-const Block & MutationsInterpreter::getUpdatedHeader() const
+Block MutationsInterpreter::getUpdatedHeader() const
 {
-    return *updated_header;
+    // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
+    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const

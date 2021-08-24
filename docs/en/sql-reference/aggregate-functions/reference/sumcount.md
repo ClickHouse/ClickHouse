@@ -12,7 +12,7 @@ Calculates the sum of the numbers and counts the number of rows at the same time
 sumCount(x)
 ```
 
-**Arguments** 
+**Arguments**
 
 -   `x` — Input value, must be [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
 
