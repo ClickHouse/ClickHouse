@@ -33,6 +33,12 @@ fi
 # Also build fuzzers if any sanitizer specified
 if [ -n "$SANITIZER" ]
 then
+  # Script is supposed that we are in build directory.
+  mkdir -p build/build_docker
+  cd build/build_docker
+  # Launching build script
+  ../docker/packager/other/fuzzer.sh
+  cd
   build/docker/packager/other/fuzzer.sh
 fi
 
