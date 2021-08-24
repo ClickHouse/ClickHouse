@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+
 namespace
 {
     /// Owns ShellCommand and calls wait for it.
