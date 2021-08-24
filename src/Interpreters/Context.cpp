@@ -1889,8 +1889,8 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) c
     auto res = getClusters()->getCluster(cluster_name);
     if (res)
         return res;
-
-    res = tryGetReplicatedDatabaseCluster(cluster_name);
+    if (!cluster_name.empty())
+        res = tryGetReplicatedDatabaseCluster(cluster_name);
     if (res)
         return res;
 
