@@ -3,18 +3,18 @@ toc_priority: 66
 toc_title: ClickHouse Keeper
 ---
 
-# [pre-production] clickhouse-keeper
+# Clickhouse-keeper
 
 ClickHouse server use [ZooKeeper](https://zookeeper.apache.org/) coordination system for data [replication](../engines/table-engines/mergetree-family/replication.md) and [distributed DDL](../sql-reference/distributed-ddl.md) queries execution. ClickHouse Keeper is an alternative coordination system compatible with ZooKeeper.
 
 !!! warning "Warning"
-    This feature currently in pre-production stage. We test it in our CI and on small internal installations.
+    This feature is currently in the pre-production stage. We test it in our CI and on small internal installations.
 
 ## Implementation details
 
 ZooKeeper is one of the first well-known open-source coordination systems. It's implemented in Java, has quite a simple and powerful data model. ZooKeeper's coordination algorithm called ZAB (ZooKeeper Atomic Broadcast) doesn't provide linearizability guarantees for reads, because each ZooKeeper node serves reads locally. Unlike ZooKeeper `clickhouse-keeper` written in C++ and use [RAFT algorithm](https://raft.github.io/) [implementation](https://github.com/eBay/NuRaft). This algorithm allows to have linearizability for reads and writes, has several open-source implementations in different languages.
 
-By default, `clickhouse-keeper` provides the same guarantees as ZooKeeper (linearizable writes, non-linearizable reads). It has a compatible client-server protocol, so any standard ZooKeeper client can be used to interact with `clickhouse-keeper`. Snapshots and logs have an incompatible format with ZooKeeper, but `clickhouse-keeper-converter` tool allows to convert ZooKeeper data to `clickhouse-keeper` snapshot. Interserver protocol in `clickhouse-keeper` also incompatible with ZooKeeper so mixed ZooKeeper/clickhouse-keeper cluster is impossible.
+By default, `clickhouse-keeper` provides the same guarantees as ZooKeeper (linearizable writes, non-linearizable reads). It has a compatible client-server protocol, so any standard ZooKeeper client can be used to interact with `clickhouse-keeper`. Snapshots and logs have an incompatible format with ZooKeeper, but `clickhouse-keeper-converter` tool allows to convert ZooKeeper data to `clickhouse-keeper` snapshot. Interserver protocol in `clickhouse-keeper`is also incompatible with ZooKeeper so mixed ZooKeeper/clickhouse-keeper cluster is impossible.
 
 ## Configuration
 
@@ -26,7 +26,7 @@ By default, `clickhouse-keeper` provides the same guarantees as ZooKeeper (linea
 -    `log_storage_path` — path to coordination logs, better to store logs on the non-busy device (same for ZooKeeper)
 -    `snapshot_storage_path` — path to coordination snapshots
 
-Other common parameters are inherited from clickhouse-server config (`listen_host`, `logger` and so on).
+Other common parameters are inherited from clickhouse-server config (`listen_host`, `logger`, and so on).
 
 Internal coordination settings are located in `<keeper_server>.<coordination_settings>` section:
 
@@ -54,7 +54,7 @@ Quorum configuration is located in `<keeper_server>.<raft_configuration>` sectio
 
 -    `id` — server_id in quorum
 -    `hostname` — hostname where this server placed
--    `port` — port where this server listen for connections
+-    `port` — port where this server listens for connections
 
 
 Examples of configuration for quorum with three nodes can be found in [integration tests](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) with `test_keeper_` prefix. Example configuration for server #1:
@@ -106,13 +106,14 @@ Seamlessly migration from ZooKeeper to `clickhouse-keeper` is impossible you hav
 
 1. Stop all ZooKeeper nodes.
 
-2. [optional, but recommended] Found ZooKeeper leader node, start and stop it again. It will force ZooKeeper to create consistent snapshot.
+2. [optional, but recommended] Found ZooKeeper leader node, start and stop it again. It will force ZooKeeper to create a consistent snapshot.
 
-3. Run `clickhouse-keeper-converter` on leader, example
+3. Run `clickhouse-keeper-converter` on a leader, for example:
 
 ```bash
 clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/version-2 --output-dir /path/to/clickhouse/keeper/snapshots
 ```
 
-4. Copy snapshot to `clickhouse-server` nodes with configured `keeper` or start `clickhouse-keeper` instead of ZooKeeper. Snapshot must persist on all nodes, otherwise empty nodes can be faster and one of them can becamse leader.
+4. Copy snapshot to `clickhouse-server` nodes with configured `keeper` or start `clickhouse-keeper` instead of ZooKeeper. The snapshot must persist on all nodes, otherwise, empty nodes can be faster and one of them can become leader.
 
+[Original article](https://clickhouse.tech/docs/en/operations/clickhouse-keeper/) <!--hide-->
