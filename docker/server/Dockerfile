@@ -11,6 +11,8 @@ ARG gosu_ver=1.10
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
 
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+
 RUN groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \

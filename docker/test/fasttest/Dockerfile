@@ -3,6 +3,8 @@ FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
 
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
         --yes --no-install-recommends --verbose-versions \
