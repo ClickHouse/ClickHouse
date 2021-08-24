@@ -79,7 +79,7 @@ RUN python3 -m pip install \
     pytest-timeout \
     pytest-xdist \
     pytest-repeat \
-    pytz
+    pytz \
     redis \
     tzlocal==2.1 \
     urllib3 \
