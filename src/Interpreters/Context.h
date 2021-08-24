@@ -340,6 +340,9 @@ public:
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
+    void setBackupsVolume(const String & path, const String & policy_name = "");
+    VolumePtr getBackupsVolume() const;
+
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
     /// Global application configuration settings.
@@ -579,6 +582,11 @@ public:
     UInt16 getTCPPort() const;
 
     std::optional<UInt16> getTCPPortSecure() const;
+
+    /// Register server ports during server starting up. No lock is held.
+    void registerServerPort(String port_name, UInt16 port);
+
+    UInt16 getServerPort(const String & port_name) const;
 
     /// For methods below you may need to acquire the context lock by yourself.
 
