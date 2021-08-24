@@ -474,19 +474,11 @@ bool NO_INLINE decompressImpl(
         if (unlikely(copy_end > output_end))
             return false;
 
-        std::cout << "ip " << ip << std::endl;
-        std::cout << "length " << length << std::endl;
-        std::cout << "diff " << input_end - ip << std::endl;
-        std::cout << "input_end " << input_end << std::endl;
-
         // Due to implementation specifics the copy length is always a multiple of copy_amount
         const size_t real_length = std::max(copy_amount, static_cast<size_t>(std::ceil(static_cast<double>(length) / copy_amount) * copy_amount));
 
         if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
              return false;
-
-        // if (unlikely(ip + 1 >= input_end))
-        //     return false;
 
         wildCopy<copy_amount>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
 
