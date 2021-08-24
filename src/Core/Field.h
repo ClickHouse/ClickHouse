@@ -28,12 +28,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-template <typename T, typename SFINAE = void>
-struct NearestFieldTypeImpl;
-
-template <typename T>
-using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
-
 class Field;
 using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 
@@ -168,6 +162,12 @@ template <> constexpr inline bool is_decimal_field<DecimalField<Decimal64>> = tr
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal128>> = true;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal256>> = true;
 
+template <typename T, typename SFINAE = void>
+struct NearestFieldTypeImpl;
+
+template <typename T>
+using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
+
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
 /// signedness of char is different in Linux on x86 and Linux on ARM.
@@ -229,6 +229,16 @@ struct NearestFieldTypeImpl<T, std::enable_if_t<std::is_enum_v<T>>>
 {
     using Type = NearestFieldType<std::underlying_type_t<T>>;
 };
+
+template <typename T>
+decltype(auto) castToNearestFieldType(T && x)
+{
+    using U = NearestFieldType<std::decay_t<T>>;
+    if constexpr (std::is_same_v<std::decay_t<T>, U>)
+        return std::forward<T>(x);
+    else
+        return U(x);
+}
 
 /** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.
   * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
@@ -348,7 +358,7 @@ public:
     template <typename T>
     Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T> = nullptr);
 
-    Field(bool rhs);
+    Field(bool rhs) : Field(castToNearestFieldType(rhs)) {}
 
     /// Create a string inplace.
     Field(const std::string_view & str) { create(str.data(), str.size()); }
@@ -401,7 +411,7 @@ public:
     enable_if_not_field_or_bool_or_stringlike_t<T, Field> &
     operator=(T && rhs);
 
-    Field & operator= (bool rhs);
+    Field & operator= (bool rhs) { return *this = castToNearestFieldType(rhs); }
 
     Field & operator= (const std::string_view & str);
     Field & operator= (const String & str) { return *this = std::string_view{str}; }
@@ -881,24 +891,10 @@ template <> inline constexpr const char * TypeName<AggregateFunctionStateData> =
 
 
 template <typename T>
-decltype(auto) castToNearestFieldType(T && x)
-{
-    using U = NearestFieldType<std::decay_t<T>>;
-    if constexpr (std::is_same_v<std::decay_t<T>, U>)
-        return std::forward<T>(x);
-    else
-        return U(x);
-}
-
-template <typename T>
 Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
-}
-
-inline Field::Field(bool rhs) : Field(castToNearestFieldType(rhs))
-{
 }
 
 template <typename T>
@@ -915,11 +911,6 @@ Field::operator=(T && rhs)
     else
         assignConcrete(std::forward<U>(val));
     return *this;
-}
-
-inline Field & Field::operator=(bool rhs)
-{
-    return *this = castToNearestFieldType(rhs);
 }
 
 inline Field & Field::operator=(const std::string_view & str)
