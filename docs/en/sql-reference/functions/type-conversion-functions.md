@@ -210,7 +210,7 @@ SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
 └────────────┴────────────────────────────────────────────┘
 ```
 
-## toDate32OrZero {#toDate32OrZero}
+## toDate32OrZero {#todate32-or-zero}
 
 The same as [toDate32](#todate32) but returns the min value of [Date32](../../sql-reference/data-types/date32.md) if invalid argument is received.
 
