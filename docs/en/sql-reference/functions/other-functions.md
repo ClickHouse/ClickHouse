@@ -2273,7 +2273,7 @@ Result:
 
 ## initialQueryID {#initial-query-id}
 
-Returns the ID of the initial current query, which can be used instantly in other queries. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `initial_query_id`.
+Returns the ID of the initial current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `initial_query_id`.
 
 In contrast to [queryID](#query-id) function `initialQueryID` returns same results on shards (see example).
 
