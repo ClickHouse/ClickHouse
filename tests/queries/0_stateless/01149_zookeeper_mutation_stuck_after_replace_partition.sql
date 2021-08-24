@@ -1,3 +1,4 @@
+set send_logs_level='error';
 drop table if exists mt;
 drop table if exists rmt sync;
 

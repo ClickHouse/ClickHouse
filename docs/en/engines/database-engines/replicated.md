@@ -1,6 +1,11 @@
+---
+toc_priority: 36
+toc_title: Replicated
+---
+
 # [experimental] Replicated {#replicated}
 
-The engine is based on the [Atomic](../../engines/database-engines/atomic.md) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database. 
+The engine is based on the [Atomic](../../engines/database-engines/atomic.md) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
 
 One ClickHouse server can have multiple replicated databases running and updating at the same time. But there can't be multiple replicas of the same replicated database.
 
@@ -20,9 +25,9 @@ One ClickHouse server can have multiple replicated databases running and updatin
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
-DDL queries with `Replicated` database work in a similar way to [ON CLUSTER](../../sql-reference/distributed-ddl.md) queries, but with minor differences. 
+DDL queries with `Replicated` database work in a similar way to [ON CLUSTER](../../sql-reference/distributed-ddl.md) queries, but with minor differences.
 
-First, the DDL request tries to execute on the initiator (the host that originally received the request from the user). If the request is not fulfilled, then the user immediately receives an error, other hosts do not try to fulfill it. If the request has been successfully completed on the initiator, then all other hosts will automatically retry until they complete it. The initiator will try to wait for the query to be completed on other hosts (no longer than [distributed_ddl_task_timeout](../../operations/settings/settings.md#distributed_ddl_task_timeout)) and will return a table with the query execution statuses on each host. 
+First, the DDL request tries to execute on the initiator (the host that originally received the request from the user). If the request is not fulfilled, then the user immediately receives an error, other hosts do not try to fulfill it. If the request has been successfully completed on the initiator, then all other hosts will automatically retry until they complete it. The initiator will try to wait for the query to be completed on other hosts (no longer than [distributed_ddl_task_timeout](../../operations/settings/settings.md#distributed_ddl_task_timeout)) and will return a table with the query execution statuses on each host.
 
 The behavior in case of errors is regulated by the [distributed_ddl_output_mode](../../operations/settings/settings.md#distributed_ddl_output_mode) setting, for a `Replicated` database it is better to set it to `null_status_on_timeout` — i.e. if some hosts did not have time to execute the request for [distributed_ddl_task_timeout](../../operations/settings/settings.md#distributed_ddl_task_timeout), then do not throw an exception, but show the `NULL` status for them in the table.
 
@@ -47,8 +52,8 @@ CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
 ```
 
 ``` text
-┌─────hosts────────────┬──status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐ 
-│ shard1|replica1      │    0    │       │          2          │        0         │ 
+┌─────hosts────────────┬──status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ shard1|replica1      │    0    │       │          2          │        0         │
 │ shard1|other_replica │    0    │       │          1          │        0         │
 │ other_shard|r1       │    0    │       │          0          │        0         │
 └──────────────────────┴─────────┴───────┴─────────────────────┴──────────────────┘
@@ -57,13 +62,13 @@ CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
 Showing the system table:
 
 ``` sql
-SELECT cluster, shard_num, replica_num, host_name, host_address, port, is_local 
+SELECT cluster, shard_num, replica_num, host_name, host_address, port, is_local
 FROM system.clusters WHERE cluster='r';
 ```
 
 ``` text
-┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐ 
-│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │ 
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
 │ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
 │ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
 └─────────┴───────────┴─────────────┴───────────┴──────────────┴──────┴──────────┘
@@ -78,9 +83,9 @@ node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 ```
 
 ``` text
-┌─hosts─┬─groupArray(n)─┐ 
-│ node1 │  [1,3,5,7,9]  │   
-│ node2 │  [0,2,4,6,8]  │    
+┌─hosts─┬─groupArray(n)─┐
+│ node1 │  [1,3,5,7,9]  │
+│ node2 │  [0,2,4,6,8]  │
 └───────┴───────────────┘
 ```
 
@@ -93,8 +98,8 @@ node4 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','r2');
 The cluster configuration will look like this:
 
 ``` text
-┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐ 
-│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │ 
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
 │ r       │     1     │      2      │   node4   │  127.0.0.1   │ 9003 │     0    │
 │ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
 │ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
@@ -108,8 +113,8 @@ node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 ```
 
 ```text
-┌─hosts─┬─groupArray(n)─┐ 
-│ node2 │  [1,3,5,7,9]  │   
-│ node4 │  [0,2,4,6,8]  │    
+┌─hosts─┬─groupArray(n)─┐
+│ node2 │  [1,3,5,7,9]  │
+│ node4 │  [0,2,4,6,8]  │
 └───────┴───────────────┘
 ```

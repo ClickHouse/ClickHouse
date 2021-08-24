@@ -14,7 +14,7 @@ SRCS(
     FormatFactory.cpp
     FormatSchemaInfo.cpp
     JSONEachRowUtils.cpp
-    MySQLBlockInputStream.cpp
+    MySQLSource.cpp
     NativeFormat.cpp
     NullFormat.cpp
     ParsedTemplateFormatString.cpp

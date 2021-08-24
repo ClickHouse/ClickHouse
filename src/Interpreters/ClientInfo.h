@@ -28,6 +28,8 @@ public:
         GRPC = 3,
         MYSQL = 4,
         POSTGRESQL = 5,
+        LOCAL = 6,
+        TCP_INTERSERVER = 7,
     };
 
     enum class HTTPMethod : uint8_t
@@ -99,6 +101,8 @@ public:
     String quota_key;
 
     UInt64 distributed_depth = 0;
+
+    bool is_replicated_database_internal = false;
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 

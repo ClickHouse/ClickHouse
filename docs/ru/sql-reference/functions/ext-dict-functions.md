@@ -138,7 +138,7 @@ LIMIT 3;
                 <name>c2</name>
                 <type>String</type>
                 <null_value></null_value>
-            </attribute>            
+            </attribute>
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
@@ -290,16 +290,16 @@ Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-refere
 
 Возвращает потомков первого уровня в виде массива индексов. Это обратное преобразование для [dictGetHierarchy](#dictgethierarchy).
 
-**Синтаксис** 
+**Синтаксис**
 
 ``` sql
 dictGetChildren(dict_name, key)
 ```
 
-**Аргументы** 
+**Аргументы**
 
--   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
--   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md). 
+-   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
+-   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 
 **Возвращаемые значения**
 
@@ -345,9 +345,9 @@ SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers 
 dictGetDescendants(dict_name, key, level)
 ```
 
-**Аргументы** 
+**Аргументы**
 
--   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 -   `level` — уровень иерархии. Если `level = 0`, возвращаются все потомки. [UInt8](../../sql-reference/data-types/int-uint.md).
 

@@ -1,5 +1,5 @@
-#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeString.h>
 
@@ -30,6 +30,16 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
+    {
+        settings.enable_lazy_execution_for_first_argument = false;
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
+        settings.force_enable_lazy_execution = true;
+        return true;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     size_t getNumberOfArguments() const override
@@ -53,7 +63,6 @@ public:
     }
 
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
-
 };
 
 }

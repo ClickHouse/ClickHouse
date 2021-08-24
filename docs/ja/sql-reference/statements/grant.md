@@ -35,7 +35,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 -   `user` — ClickHouse user account.
 
 この `WITH ADMIN OPTION` 句の付与 [ADMIN OPTION](#admin-option-privilege) への特権 `user` または `role`.
-この `WITH REPLACE OPTION` 句は`user`または` role`の新しい役割によって古い役割を置き換えます, 指定しない場合は、古い特権を古いものに追加してください 
+この `WITH REPLACE OPTION` 句は`user`または` role`の新しい役割によって古い役割を置き換えます, 指定しない場合は、古い特権を古いものに追加してください
 
 ## 使用法 {#grant-usage}
 

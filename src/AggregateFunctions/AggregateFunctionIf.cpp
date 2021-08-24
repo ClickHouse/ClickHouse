@@ -1,5 +1,5 @@
-#include <AggregateFunctions/AggregateFunctionIf.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/AggregateFunctionIf.h>
 #include "AggregateFunctionNull.h"
 
 
@@ -11,6 +11,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_AGGREGATION;
 }
 
 class AggregateFunctionCombinatorIf final : public IAggregateFunctionCombinator
@@ -35,9 +36,13 @@ public:
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
-        const Array &) const override
+        const Array & params) const override
     {
-        return std::make_shared<AggregateFunctionIf>(nested_function, arguments);
+        if (nested_function->getName().find(getName()) != String::npos)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "nested function for {0}-combinator must not have {0}-combinator", getName());
+        }
+        return std::make_shared<AggregateFunctionIf>(nested_function, arguments, params);
     }
 };
 
