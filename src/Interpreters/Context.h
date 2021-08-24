@@ -825,6 +825,9 @@ public:
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);
 
+    /** Get settings for reading from filesystem. */
+    ReadSettings getReadSettings() const;
+
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
