@@ -1841,6 +1841,10 @@ class ClickHouseInstance:
         build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
         return "-fsanitize={}".format(sanitizer_name) in build_opts
 
+    def is_debug_build(self):
+        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+        return 'NDEBUG' not in build_opts
+
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer('thread')
 
@@ -2029,6 +2033,37 @@ class ClickHouseInstance:
                 return None
         return None
 
+    def restart_with_original_version(self, stop_start_wait_sec=300, callback_onstop=None, signal=15):
+        if not self.stay_alive:
+            raise Exception("Cannot restart not stay alive container")
+        self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
+        retries = int(stop_start_wait_sec / 0.5)
+        local_counter = 0
+        # wait stop
+        while local_counter < retries:
+            if not self.get_process_pid("clickhouse server"):
+                break
+            time.sleep(0.5)
+            local_counter += 1
+
+        # force kill if server hangs
+        if self.get_process_pid("clickhouse server"):
+            # server can die before kill, so don't throw exception, it's expected
+            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], nothrow=True, user='root')
+
+        if callback_onstop:
+            callback_onstop(self)
+        self.exec_in_container(
+            ["bash", "-c", "cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"],
+            user='root')
+        self.exec_in_container(["bash", "-c",
+                                "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse"],
+                               user='root')
+        self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
+
+        # wait start
+        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
+
     def restart_with_latest_version(self, stop_start_wait_sec=300, callback_onstop=None, signal=15):
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
@@ -2049,6 +2084,9 @@ class ClickHouseInstance:
 
         if callback_onstop:
             callback_onstop(self)
+        self.exec_in_container(
+            ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
+            user='root')
         self.exec_in_container(
             ["bash", "-c", "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"],
             user='root')

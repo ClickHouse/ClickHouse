@@ -297,7 +297,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
          *  so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
          */
-        context->setSetting("input_format_parallel_parsing", Field{false});
+        context->setSetting("input_format_parallel_parsing", false);
 
         String settings_config_prefix = config_prefix + ".executable_pool";
 
