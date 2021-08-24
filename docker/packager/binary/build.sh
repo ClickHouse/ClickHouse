@@ -83,6 +83,16 @@ then
     mv "$COMBINED_OUTPUT.tgz" /output
 fi
 
+# Also build fuzzers if any sanitizer specified
+if [ -n "$SANITIZER" ]
+then
+  # Currently we are in build/build_docker directory
+  ../docker/packager/other/fuzzer.sh
+fi
+
+ccache --show-config ||:
+ccache --show-stats ||:
+
 if [ "${CCACHE_DEBUG:-}" == "1" ]
 then
     find . -name '*.ccache-*' -print0 \
@@ -94,31 +104,4 @@ then
     # Compress the log as well, or else the CI will try to compress all log
     # files in place, and will fail because this directory is not writable.
     tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
-fi
-
-# Also build fuzzers if any sanitizer specified
-if [ -n "$SANITIZER" ]
-then
-    # Delete previous cache, because we add a new flag -DENABLE_FUZZING=1
-    rm -rf CMakeCache.txt CMakeFiles/
-
-    # Hope, that the most part of files will be in cache, so we just link new executables
-    cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" \
-        "-DSANITIZE=$SANITIZER" -DENABLE_FUZZING=1 -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
-
-    FUZZER_TARGETS=$(find ../src -name '*_fuzzer.cpp' -execdir basename {} .cpp ';' | tr '\n' ' ')
-
-    mkdir -p /output/fuzzers
-    for FUZZER_TARGET in $FUZZER_TARGETS
-    do
-        # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-        ninja $NINJA_FLAGS $FUZZER_TARGET
-        # Find this binary in build directory and strip it
-        FUZZER_PATH=$(find ./src -name "$FUZZER_TARGET")
-        strip --strip-unneeded "$FUZZER_PATH"
-        mv "$FUZZER_PATH" /output/fuzzers
-    done
-
-    tar -zcvf /output/fuzzers.tar.gz /output/fuzzers
-    rm -rf /output/fuzzers
 fi
