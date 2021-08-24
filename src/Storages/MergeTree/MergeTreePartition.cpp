@@ -172,9 +172,7 @@ namespace
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
 {
     size_t file_size = disk->getFileSize(path);
-    ReadSettings settings;
-    settings.local_fs_buffer_size = settings.remote_fs_buffer_size = std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, file_size);
-    return disk->readFile(path, settings, file_size);
+    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
 }
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const

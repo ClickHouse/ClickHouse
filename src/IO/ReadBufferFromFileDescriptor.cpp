@@ -7,6 +7,7 @@
 #include <Common/CurrentMetrics.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Progress.h>
 #include <sys/stat.h>
 
 

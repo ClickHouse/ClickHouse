@@ -118,6 +118,7 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_READ_METHOD;
 }
 
 
@@ -2689,6 +2690,33 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
         const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
+}
+
+
+ReadSettings Context::getReadSettings() const
+{
+    ReadSettings res;
+
+    if (settings.local_filesystem_read_method.value == "read")
+        res.local_fs_method = ReadMethod::read;
+    else if (settings.local_filesystem_read_method.value == "pread")
+        res.local_fs_method = ReadMethod::pread;
+    else if (settings.local_filesystem_read_method.value == "mmap")
+        res.local_fs_method = ReadMethod::mmap;
+    else if (settings.local_filesystem_read_method.value == "pread_threadpool")
+        res.local_fs_method = ReadMethod::pread_threadpool;
+    else
+        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}'", settings.local_filesystem_read_method.value);
+
+    res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
+    res.local_fs_buffer_size = settings.max_read_buffer_size;
+    res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
+    res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
+    res.priority = settings.read_priority;
+
+    res.mmap_cache = getMMappedFileCache().get();
+
+    return res;
 }
 
 }

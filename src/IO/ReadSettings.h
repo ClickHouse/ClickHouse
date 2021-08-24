@@ -52,6 +52,14 @@ struct ReadSettings
 
     /// For 'pread_threadpool' method. Lower is more priority.
     size_t priority = 0;
+
+    ReadSettings adjustBufferSize(size_t file_size) const
+    {
+        ReadSettings res = *this;
+        res.local_fs_buffer_size = std::min(file_size, local_fs_buffer_size);
+        res.remote_fs_buffer_size = std::min(file_size, remote_fs_buffer_size);
+        return res;
+    }
 };
 
 }
