@@ -1,0 +1,2 @@
+add_executable (compressed_buffer_fuzzer compressed_buffer_fuzzer.cpp)
+target_link_libraries (compressed_buffer_fuzzer PRIVATE fuzz_compression clickhouse_common_io ${LIB_FUZZING_ENGINE})
