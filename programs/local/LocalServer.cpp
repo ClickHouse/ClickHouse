@@ -383,8 +383,8 @@ void LocalServer::processQueries()
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
     /// Authenticate and create a context to execute queries.
-    Session session{global_context, ClientInfo::Interface::TCP};
-    session.authenticate("default", "", Poco::Net::SocketAddress{});
+    Session session{global_context, ClientInfo::Interface::LOCAL};
+    session.authenticate("default", "", {});
 
     /// Use the same context for all queries.
     auto context = session.makeQueryContext();
