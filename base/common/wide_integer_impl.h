@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cfloat>
 #include <cassert>
+#include <tuple>
 #include <limits>
 
 
@@ -38,6 +39,18 @@ static constexpr bool IntegralConcept() noexcept
 {
     return std::is_integral_v<T> || IsWideInteger<T>::value;
 }
+
+template <typename T>
+class IsTupleLike
+{
+    template <typename U>
+    static auto check(U * p) -> decltype(std::tuple_size<U>::value, int());
+    template <typename>
+    static void check(...);
+
+public:
+    static constexpr const bool value = !std::is_void<decltype(check<T>(nullptr))>::value;
+};
 
 }
 
@@ -152,7 +165,7 @@ namespace wide
 template <size_t Bits, typename Signed>
 struct integer<Bits, Signed>::_impl
 {
-    static constexpr size_t _Bits = Bits;
+    static constexpr size_t _bits = Bits;
     static constexpr const unsigned byte_count = Bits / 8;
     static constexpr const unsigned item_count = byte_count / sizeof(base_type);
     static constexpr const unsigned base_bits = sizeof(base_type) * 8;
@@ -225,6 +238,19 @@ struct integer<Bits, Signed>::_impl
 
         for (size_t i = 1; i < item_count; ++i)
             self.items[i] = 0;
+    }
+
+    template <typename TupleLike, size_t i = 0>
+    constexpr static void wide_integer_from_tuple_like(integer<Bits, Signed> & self, const TupleLike & tuple) noexcept
+    {
+        if constexpr (i < item_count)
+        {
+            if constexpr (i < std::tuple_size_v<TupleLike>)
+                self.items[i] = std::get<i>(tuple);
+            else
+                self.items[i] = 0;
+            wide_integer_from_tuple_like<TupleLike, i + 1>(self, tuple);
+        }
     }
 
     /**
@@ -614,8 +640,8 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::_impl::operator_plus(
-                integer<T::_impl::_Bits, Signed>(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::_impl::operator_plus(
+                integer<T::_impl::_bits, Signed>(lhs), rhs);
         }
     }
 
@@ -632,8 +658,8 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::_impl::operator_minus(
-                integer<T::_impl::_Bits, Signed>(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::_impl::operator_minus(
+                integer<T::_impl::_bits, Signed>(lhs), rhs);
         }
     }
 
@@ -857,7 +883,7 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::operator_slash(T(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::operator_slash(T(lhs), rhs);
         }
     }
 
@@ -877,7 +903,7 @@ public:
         else
         {
             static_assert(IsWideInteger<T>::value);
-            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_Bits, Signed>>::operator_percent(T(lhs), rhs);
+            return std::common_type_t<integer<Bits, Signed>, integer<T::_impl::_bits, Signed>>::operator_percent(T(lhs), rhs);
         }
     }
 
@@ -966,6 +992,8 @@ constexpr integer<Bits, Signed>::integer(T rhs) noexcept
 {
     if constexpr (IsWideInteger<T>::value)
         _impl::wide_integer_from_wide_integer(*this, rhs);
+    else if  constexpr (IsTupleLike<T>::value)
+        _impl::wide_integer_from_tuple_like(*this, rhs);
     else
         _impl::wide_integer_from_builtin(*this, rhs);
 }
@@ -979,6 +1007,8 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
     {
         if constexpr (IsWideInteger<T>::value)
             _impl::wide_integer_from_wide_integer(*this, *il.begin());
+        else if  constexpr (IsTupleLike<T>::value)
+            _impl::wide_integer_from_tuple_like(*this, *il.begin());
         else
             _impl::wide_integer_from_builtin(*this, *il.begin());
     }
@@ -1007,7 +1037,10 @@ template <size_t Bits, typename Signed>
 template <typename T>
 constexpr integer<Bits, Signed> & integer<Bits, Signed>::operator=(T rhs) noexcept
 {
-    _impl::wide_integer_from_builtin(*this, rhs);
+    if  constexpr (IsTupleLike<T>::value)
+        _impl::wide_integer_from_tuple_like(*this, rhs);
+    else
+        _impl::wide_integer_from_builtin(*this, rhs);
     return *this;
 }
 

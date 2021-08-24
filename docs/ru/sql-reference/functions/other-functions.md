@@ -2088,3 +2088,100 @@ SELECT tcpPort();
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
+## currentProfiles {#current-profiles}
+
+Возвращает список [профилей настроек](../../operations/access-rights.md#settings-profiles-management) для текущего пользователя.
+
+Для изменения текущего профиля настроек может быть использована команда SET PROFILE. Если команда `SET PROFILE` не применялась, функция возвращает профили, указанные при определении текущего пользователя (см. [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
+
+**Синтаксис**
+
+``` sql
+currentProfiles()
+```
+
+**Возвращаемое значение**
+
+-   Список профилей настроек для текущего пользователя.
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## enabledProfiles {#enabled-profiles}
+
+Возвращает профили настроек, назначенные пользователю как явно, так и неявно. Явно назначенные профили — это те же профили, которые возвращает функция [currentProfiles](#current-profiles). Неявно назначенные профили включают родительские профили других назначенных профилей; профили, назначенные с помощью предоставленных ролей; профили, назначенные с помощью собственных настроек; основной профиль по умолчанию (см. секцию `default_profile` в основном конфигурационном файле сервера).
+
+**Синтаксис**
+
+``` sql
+enabledProfiles()
+```
+
+**Возвращаемое значение**
+
+-   Список доступных профилей для текущего пользователя.
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## defaultProfiles {#default-profiles}
+
+Возвращает все профили, указанные при объявлении текущего пользователя (см. [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement))
+
+**Синтаксис**
+
+``` sql
+defaultProfiles()
+```
+
+**Возвращаемое значение**
+
+-   Список профилей по умолчанию.
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## currentRoles {#current-roles}
+
+Возвращает список текущих ролей для текущего пользователя. Список ролей пользователя можно изменить с помощью выражения [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement). Если выражение `SET ROLE` не использовалось, данная функция возвращает тот же результат, что и функция [defaultRoles](#default-roles).
+
+**Синтаксис**
+
+``` sql
+currentRoles()
+```
+
+**Возвращаемое значение**
+
+-   Список текущих ролей для текущего пользователя. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## enabledRoles {#enabled-roles}
+
+Возвращает имена текущих ролей, а также ролей, которые разрешено использовать текущему пользователю путем назначения привилегий.
+
+**Синтаксис**
+
+``` sql
+enabledRoles()
+```
+
+**Возвращаемое значение**
+
+-   Список доступных ролей для текущего пользователя. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+## defaultRoles {#default-roles}
+
+Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant/#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement). 
+
+**Синтаксис**
+
+``` sql
+defaultRoles()
+```
+
+**Возвращаемое значение**
+
+-   Список ролей по умолчанию. 
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).

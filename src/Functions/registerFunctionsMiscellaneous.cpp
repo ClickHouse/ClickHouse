@@ -71,6 +71,7 @@ void registerFunctionHasThreadFuzzer(FunctionFactory &);
 void registerFunctionInitializeAggregation(FunctionFactory &);
 void registerFunctionErrorCodeToName(FunctionFactory &);
 void registerFunctionTcpPort(FunctionFactory &);
+void registerFunctionGetServerPort(FunctionFactory &);
 void registerFunctionByteSize(FunctionFactory &);
 void registerFunctionFile(FunctionFactory & factory);
 void registerFunctionConnectionId(FunctionFactory & factory);
@@ -78,6 +79,7 @@ void registerFunctionPartitionId(FunctionFactory & factory);
 void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
 void registerFunctionQueryID(FunctionFactory & factory);
 void registerFunctionInitialQueryID(FunctionFactory & factory);
+void registerFunctionServerUUID(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -149,6 +151,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionInitializeAggregation(factory);
     registerFunctionErrorCodeToName(factory);
     registerFunctionTcpPort(factory);
+    registerFunctionGetServerPort(factory);
     registerFunctionByteSize(factory);
     registerFunctionFile(factory);
     registerFunctionConnectionId(factory);
@@ -156,6 +159,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionIsIPAddressContainedIn(factory);
     registerFunctionQueryID(factory);
     registerFunctionInitialQueryID(factory);
+    registerFunctionServerUUID(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

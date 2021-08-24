@@ -155,6 +155,10 @@ Normally ClickHouse is statically linked into a single static `clickhouse` binar
 -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
 ```
 
-Note that in this configuration there is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client` etc.
+Note that the split build has several drawbacks:
+* There is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client`, etc.
+* Risk of segfault if you run any of the programs while rebuilding the project.
+* You cannot run the integration tests since they only work a single complete binary.
+* You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
 
 [Original article](https://clickhouse.tech/docs/en/development/build/) <!--hide-->
