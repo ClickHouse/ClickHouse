@@ -10,6 +10,7 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("node1", main_configs=["configs/storage_conf.xml"], with_nginx=True)
         cluster.add_instance("node2", main_configs=["configs/storage_conf_web.xml"], with_nginx=True)
+        cluster.add_instance("node3", main_configs=["configs/storage_conf_web.xml"], with_nginx=True)
         cluster.start()
 
         node1 = cluster.instances["node1"]
@@ -63,7 +64,7 @@ def test_usage(cluster):
 
 def test_incorrect_usage(cluster):
     node1 = cluster.instances["node1"]
-    node2 = cluster.instances["node2"]
+    node2 = cluster.instances["node3"]
     global uuids
     node2.query("""
         ATTACH TABLE test0 UUID '{}'

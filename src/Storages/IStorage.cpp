@@ -214,6 +214,16 @@ bool IStorage::isReadOnly() const
     return false;
 }
 
+BackupEntries IStorage::backup(const ASTs &, ContextPtr) const
+{
+    throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+RestoreDataTasks IStorage::restoreFromBackup(const BackupPtr &, const String &, const ASTs &, ContextMutablePtr)
+{
+    throw Exception("Table engine " + getName() + " doesn't support restoring", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
