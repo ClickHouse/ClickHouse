@@ -300,4 +300,10 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
 
     return part_info;
 }
+
+void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo& part)
+{
+    // Both class are aggregates so it's ok.
+    static_cast<MergeTreePartInfo &>(*this) = part;
+}
 }
