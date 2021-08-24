@@ -1200,12 +1200,13 @@ ClickHouse использует ZooKeeper для хранения метадан
 Секция конфигурационного файла,которая содержит настройки:
 -   Путь к конфигурационному файлу с предустановленными пользователями.
 -   Путь к файлу, в котором содержатся пользователи, созданные при помощи SQL команд.
+-   Путь к узлу ZooKeeper, где хранятся и реплицируются пользователи, созданные с помощью команд SQL (экспериментально).
 
 Если эта секция определена, путь из [users_config](../../operations/server-configuration-parameters/settings.md#users-config) и [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) не используется.
 
 Секция `user_directories` может содержать любое количество элементов, порядок расположения элементов обозначает их приоритет (чем выше элемент, тем выше приоритет).
 
-**Пример**
+**Примеры**
 
 ``` xml
 <user_directories>
@@ -1218,7 +1219,20 @@ ClickHouse использует ZooKeeper для хранения метадан
 </user_directories>
 ```
 
-Также вы можете указать настройку `memory` — означает хранение информации только в памяти, без записи на диск, и `ldap` — означает хранения информации на [LDAP-сервере](https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol).
+Пользователи, роли, политики доступа к строкам, квоты и профили могут храниться в ZooKeeper:
+
+``` xml
+<user_directories>
+    <users_xml>
+        <path>/etc/clickhouse-server/users.xml</path>
+    </users_xml>
+    <replicated>
+        <zookeeper_path>/clickhouse/access/</zookeeper_path>
+    </replicated>
+</user_directories>
+```
+
+Также вы можете секцию `memory` — означает хранение информации только в памяти, без записи на диск, и `ldap` — означает хранения информации на [LDAP-сервере](https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol).
 
 Чтобы добавить LDAP-сервер в качестве удаленного каталога пользователей, которые не определены локально, определите один раздел `ldap` со следующими параметрами:
 -   `server` — имя одного из LDAP-серверов, определенных в секции `ldap_servers` конфигурациионного файла. Этот параметр явялется необязательным и может быть пустым.
