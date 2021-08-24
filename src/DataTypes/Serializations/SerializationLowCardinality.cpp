@@ -18,7 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INVALID_BINARY_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -65,7 +65,7 @@ struct KeysSerializationVersion
     static void checkVersion(UInt64 version)
     {
         if (version != SharedDictionariesWithAdditionalKeys)
-            throw Exception("Invalid version for SerializationLowCardinality key column.", ErrorCodes::INVALID_BINARY_DATA);
+            throw Exception("Invalid version for SerializationLowCardinality key column.", ErrorCodes::INCORRECT_DATA);
     }
 
     explicit KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
@@ -106,7 +106,7 @@ struct IndexesSerializationType
         if (value <= TUInt64)
             return;
 
-        throw Exception("Invalid type for SerializationLowCardinality index column.", ErrorCodes::INVALID_BINARY_DATA);
+        throw Exception("Invalid type for SerializationLowCardinality index column.", ErrorCodes::INCORRECT_DATA);
     }
 
     void serialize(WriteBuffer & buffer) const
@@ -135,7 +135,7 @@ struct IndexesSerializationType
         if (settings.native_format)
         {
             if (need_global_dictionary)
-                throw Exception(ErrorCodes::INVALID_BINARY_DATA,
+                throw Exception(ErrorCodes::INCORRECT_DATA,
                                 "LowCardinality indexes serialization type for Native format "
                                 "cannot use global dictionary");
         }
