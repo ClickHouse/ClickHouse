@@ -178,6 +178,12 @@ if __name__ == "__main__":
         help="List of tests to run")
 
     parser.add_argument(
+        "-k", "--keyword_expression",
+        action="store",
+        dest="keyword_expression",
+        help="pytest keyword expression")
+
+    parser.add_argument(
         "--tmpfs",
         action='store_true',
         default=False,
@@ -262,13 +268,16 @@ if __name__ == "__main__":
     for old_log_path in glob.glob(args.cases_dir + "/pytest*.log"):
         os.remove(old_log_path)
 
+    if args.keyword_expression:
+        args.pytest_args += ['-k', args.keyword_expression]
+
     cmd = "docker run {net} {tty} --rm --name {name} --privileged \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={library_bridge_bin}:/clickhouse-library-bridge --volume={bin}:/clickhouse \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
         {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
-        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list}' {img} {command}".format(
+        {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} -vvv' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
@@ -280,7 +289,7 @@ if __name__ == "__main__":
         env_tags=env_tags,
         env_cleanup=env_cleanup,
         parallel=parallel_args,
-        opts=' '.join(args.pytest_args),
+        opts=' '.join(args.pytest_args).replace('\'', '\\\''),
         tests_list=' '.join(args.tests_list),
         dockerd_internal_volume=dockerd_internal_volume,
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,

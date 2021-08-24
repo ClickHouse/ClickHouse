@@ -88,7 +88,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
             -   `ALTER CLEAR INDEX`
         -   `ALTER CONSTRAINT`
             -   `ALTER ADD CONSTRAINT`
-            
+
             -   `ALTER DROP CONSTRAINT`
         -   `ALTER TTL`
         -   `ALTER MATERIALIZE TTL`

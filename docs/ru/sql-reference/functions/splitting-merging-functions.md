@@ -146,6 +146,70 @@ SELECT splitByRegexp('', 'abcde');
 └────────────────────────────┘
 ```
 
+## splitByWhitespace(s) {#splitbywhitespaceseparator-s}
+
+Разбивает строку на подстроки, используя в качестве разделителей пробельные символы.
+
+**Синтаксис**
+
+``` sql
+splitByWhitespace(s)
+```
+
+**Аргументы**
+
+-   `s` — разбиваемая строка. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемые значения**
+
+Возвращает массив подстрок.
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+**Пример**
+
+``` sql
+SELECT splitByWhitespace('  1!  a,  b.  ');
+```
+
+``` text
+┌─splitByWhitespace('  1!  a,  b.  ')─┐
+│ ['1!','a,','b.']                    │
+└─────────────────────────────────────┘
+```
+
+## splitByNonAlpha(s) {#splitbynonalphaseparator-s}
+
+Разбивает строку на подстроки, используя в качестве разделителей пробельные символы и символы пунктуации.
+
+**Синтаксис**
+
+``` sql
+splitByNonAlpha(s)
+```
+
+**Аргументы**
+
+-   `s` — разбиваемая строка. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемые значения**
+
+Возвращает массив подстрок.
+
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+**Пример**
+
+``` sql
+SELECT splitByNonAlpha('  1!  a,  b.  ');
+```
+
+``` text
+┌─splitByNonAlpha('  1!  a,  b.  ')─┐
+│ ['1','a','b']                     │
+└───────────────────────────────────┘
+```
+
 ## arrayStringConcat(arr\[, separator\]) {#arraystringconcatarr-separator}
 
 Склеивает строки, перечисленные в массиве, с разделителем separator.

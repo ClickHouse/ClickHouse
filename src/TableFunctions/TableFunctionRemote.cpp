@@ -12,6 +12,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/Macros.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <common/range.h>
@@ -156,10 +157,11 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
+        String cluster_name_expanded = context->getMacros()->expand(cluster_name);
         if (name != "clusterAllReplicas")
-            cluster = context->getCluster(cluster_name);
+            cluster = context->getCluster(cluster_name_expanded);
         else
-            cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
+            cluster = context->getCluster(cluster_name_expanded)->getClusterWithReplicasAsShards(context->getSettings());
     }
     else
     {

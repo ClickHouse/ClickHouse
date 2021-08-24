@@ -1,3 +1,8 @@
+#include <Storages/MergeTree/MergeTreeData.h>
+
+#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromSmallFile.h>
+#include <Backups/IBackup.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeArray.h>
@@ -9,6 +14,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -32,7 +38,6 @@
 #include <Parsers/queryToString.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
@@ -51,10 +56,12 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
 
+#include <common/insertAtEnd.h>
 #include <common/scope_guard_safe.h>
 
 #include <algorithm>
@@ -2395,7 +2402,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         /// It's a DROP PART and it's already executed by fetching some covering part
         bool is_drop_part = !drop_range.isFakeDropRangePart() && drop_range.min_block;
 
-        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block))
+        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block || part->info.getMutationVersion() != drop_range.getMutationVersion()))
         {
             /// Why we check only min and max blocks here without checking merge
             /// level? It's a tricky situation which can happen on a stale
@@ -2412,9 +2419,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             /// So here we just check that all_1_3_1 covers blocks from drop
             /// all_2_2_2.
             ///
-            /// NOTE: this helps only to avoid logical error during drop part.
-            /// We still get intersecting "parts" in queue.
-            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block;
+            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block && part->info.getMutationVersion() >= drop_range.getMutationVersion();
             if (is_covered_by_min_max_block)
             {
                 LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartName(), part->name);
@@ -2838,7 +2843,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
     return getActiveContainingPart(part_info);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(MergeTreeData::DataPartState state, const String & partition_id)
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(MergeTreeData::DataPartState state, const String & partition_id) const
 {
     DataPartStateAndPartitionID state_with_partition{state, partition_id};
 
@@ -2846,6 +2851,22 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(Merg
     return DataPartsVector(
         data_parts_by_state_and_info.lower_bound(state_with_partition),
         data_parts_by_state_and_info.upper_bound(state_with_partition));
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitions(MergeTreeData::DataPartState state, const std::unordered_set<String> & partition_ids) const
+{
+    auto lock = lockParts();
+    DataPartsVector res;
+    for (const auto & partition_id : partition_ids)
+    {
+        DataPartStateAndPartitionID state_with_partition{state, partition_id};
+        insertAtEnd(
+            res,
+            DataPartsVector(
+                data_parts_by_state_and_info.lower_bound(state_with_partition),
+                data_parts_by_state_and_info.upper_bound(state_with_partition)));
+    }
+    return res;
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states)
@@ -3209,12 +3230,130 @@ Pipe MergeTreeData::alterPartition(
     return {};
 }
 
+
+BackupEntries MergeTreeData::backup(const ASTs & partitions, ContextPtr local_context) const
+{
+    DataPartsVector data_parts;
+    if (partitions.empty())
+        data_parts = getDataPartsVector();
+    else
+        data_parts = getDataPartsVectorInPartitions(MergeTreeDataPartState::Committed, getPartitionIDsFromQuery(partitions, local_context));
+    return backupDataParts(data_parts);
+}
+
+
+BackupEntries MergeTreeData::backupDataParts(const DataPartsVector & data_parts)
+{
+    BackupEntries backup_entries;
+    std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>> temp_dirs;
+
+    for (const auto & part : data_parts)
+    {
+        auto disk = part->volume->getDisk();
+
+        auto temp_dir_it = temp_dirs.find(disk);
+        if (temp_dir_it == temp_dirs.end())
+            temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp_backup_")).first;
+        auto temp_dir_owner = temp_dir_it->second;
+        fs::path temp_dir = temp_dir_owner->getPath();
+
+        fs::path part_dir = part->getFullRelativePath();
+        fs::path temp_part_dir = temp_dir / part->relative_path;
+        disk->createDirectories(temp_part_dir);
+
+        for (const auto & [filepath, checksum] : part->checksums.files)
+        {
+            String relative_filepath = fs::path(part->relative_path) / filepath;
+            String hardlink_filepath = temp_part_dir / filepath;
+            disk->createHardLink(part_dir / filepath, hardlink_filepath);
+            UInt128 file_hash{checksum.file_hash.first, checksum.file_hash.second};
+            backup_entries.emplace_back(
+                relative_filepath,
+                std::make_unique<BackupEntryFromImmutableFile>(disk, hardlink_filepath, checksum.file_size, file_hash, temp_dir_owner));
+        }
+
+        for (const auto & filepath : part->getFileNamesWithoutChecksums())
+        {
+            String relative_filepath = fs::path(part->relative_path) / filepath;
+            backup_entries.emplace_back(relative_filepath, std::make_unique<BackupEntryFromSmallFile>(disk, part_dir / filepath));
+        }
+    }
+
+    return backup_entries;
+}
+
+
+RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & backup, const String & data_path_in_backup,
+                                                           const std::unordered_set<String> & partition_ids,
+                                                           SimpleIncrement * increment)
+{
+    RestoreDataTasks restore_tasks;
+
+    Strings part_names = backup->list(data_path_in_backup);
+    for (const String & part_name : part_names)
+    {
+        MergeTreePartInfo part_info;
+        if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
+            continue;
+
+        if (!partition_ids.empty() && !partition_ids.contains(part_info.partition_id))
+            continue;
+
+        UInt64 total_size_of_part = 0;
+        Strings filenames = backup->list(data_path_in_backup + part_name + "/", "");
+        for (const String & filename : filenames)
+            total_size_of_part += backup->getSize(data_path_in_backup + part_name + "/" + filename);
+
+        std::shared_ptr<IReservation> reservation = getStoragePolicy()->reserveAndCheck(total_size_of_part);
+
+        auto restore_task = [this,
+                             backup,
+                             data_path_in_backup,
+                             part_name,
+                             part_info = std::move(part_info),
+                             filenames = std::move(filenames),
+                             reservation,
+                             increment]()
+        {
+            auto disk = reservation->getDisk();
+
+            auto temp_part_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, relative_data_path + "restoring_" + part_name + "_");
+            String temp_part_dir = temp_part_dir_owner->getPath();
+            disk->createDirectories(temp_part_dir);
+
+            assert(temp_part_dir.starts_with(relative_data_path));
+            String relative_temp_part_dir = temp_part_dir.substr(relative_data_path.size());
+
+            for (const String & filename : filenames)
+            {
+                auto backup_entry = backup->read(data_path_in_backup + part_name + "/" + filename);
+                auto read_buffer = backup_entry->getReadBuffer();
+                auto write_buffer = disk->writeFile(temp_part_dir + "/" + filename);
+                copyData(*read_buffer, *write_buffer);
+            }
+
+            auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
+            auto part = createPart(part_name, part_info, single_disk_volume, relative_temp_part_dir);
+            part->loadColumnsChecksumsIndexes(false, true);
+            renameTempPartAndAdd(part, increment);
+        };
+
+        restore_tasks.emplace_back(std::move(restore_task));
+    }
+
+    return restore_tasks;
+}
+
+
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
 
     if (!partition_ast.value)
+    {
+        MergeTreePartInfo::validatePartitionID(partition_ast.id, format_version);
         return partition_ast.id;
+    }
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -3223,10 +3362,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         if (partition_lit && partition_lit->value.getType() == Field::Types::String)
         {
             String partition_id = partition_lit->value.get<String>();
-            if (partition_id.size() != 6 || !std::all_of(partition_id.begin(), partition_id.end(), isNumericASCII))
-                throw Exception(
-                    "Invalid partition format: " + partition_id + ". Partition should consist of 6 digits: YYYYMM",
-                    ErrorCodes::INVALID_PARTITION_VALUE);
+            MergeTreePartInfo::validatePartitionID(partition_id, format_version);
             return partition_id;
         }
     }
@@ -3240,6 +3376,21 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
             ", must be: " + toString(fields_count),
             ErrorCodes::INVALID_PARTITION_VALUE);
+
+    if (auto * f = partition_ast.value->as<ASTFunction>())
+    {
+        assert(f->name == "tuple");
+        if (f->arguments && !f->arguments->as<ASTExpressionList>()->children.empty())
+        {
+            ASTPtr query = partition_ast.value->clone();
+            auto syntax_analyzer_result
+                = TreeRewriter(local_context)
+                      .analyze(query, metadata_snapshot->getPartitionKey().sample_block.getNamesAndTypesList(), {}, {}, false, false);
+            auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, local_context).getActions(true);
+            if (actions->hasArrayJoin())
+                throw Exception("The partition expression cannot contain array joins", ErrorCodes::INVALID_PARTITION_VALUE);
+        }
+    }
 
     const FormatSettings format_settings;
     Row partition_row(fields_count);
@@ -3288,6 +3439,15 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
     return partition_id;
 }
+
+std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & asts, ContextPtr local_context) const
+{
+    std::unordered_set<String> partition_ids;
+    for (const auto & ast : asts)
+        partition_ids.emplace(getPartitionIDFromQuery(ast, local_context));
+    return partition_ids;
+}
+
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(
     const DataPartStates & affordable_states, DataPartStateVector * out_states, bool require_projection_parts) const
@@ -3929,7 +4089,7 @@ static void selectBestProjection(
     if (projection_parts.empty())
         return;
 
-    auto sum_marks = reader.estimateNumMarksToRead(
+    auto projection_result_ptr = reader.estimateNumMarksToRead(
         projection_parts,
         candidate.required_columns,
         metadata_snapshot,
@@ -3939,6 +4099,10 @@ static void selectBestProjection(
         settings.max_threads,
         max_added_blocks);
 
+    if (projection_result_ptr->error())
+        return;
+
+    auto sum_marks = projection_result_ptr->marks();
     if (normal_parts.empty())
     {
         // All parts are projection parts which allows us to use in_order_optimization.
@@ -3947,7 +4111,7 @@ static void selectBestProjection(
     }
     else
     {
-        sum_marks += reader.estimateNumMarksToRead(
+        auto normal_result_ptr = reader.estimateNumMarksToRead(
             normal_parts,
             required_columns,
             metadata_snapshot,
@@ -3956,7 +4120,14 @@ static void selectBestProjection(
             query_context,
             settings.max_threads,
             max_added_blocks);
+
+        if (normal_result_ptr->error())
+            return;
+
+        sum_marks += normal_result_ptr->marks();
+        candidate.merge_tree_normal_select_result_ptr = normal_result_ptr;
     }
+    candidate.merge_tree_projection_select_result_ptr = projection_result_ptr;
 
     // We choose the projection with least sum_marks to read.
     if (sum_marks < min_sum_marks)
@@ -4122,7 +4293,8 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             candidate.before_aggregation = analysis_result.before_aggregation->clone();
             auto required_columns = candidate.before_aggregation->foldActionsByProjection(keys, projection.sample_block_for_keys);
 
-            if (required_columns.empty() && !keys.empty())
+            // TODO Let's find out the exact required_columns for keys.
+            if (required_columns.empty() && (!keys.empty() && !candidate.before_aggregation->getRequiredColumns().empty()))
                 continue;
 
             if (analysis_result.optimize_aggregation_in_order)
@@ -4176,10 +4348,25 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
         auto parts = getDataPartsVector();
         MergeTreeDataSelectExecutor reader(*this);
+        query_info.merge_tree_select_result_ptr = reader.estimateNumMarksToRead(
+            parts,
+            analysis_result.required_columns,
+            metadata_snapshot,
+            metadata_snapshot,
+            query_info,
+            query_context,
+            settings.max_threads,
+            max_added_blocks);
+
+        size_t min_sum_marks = std::numeric_limits<size_t>::max();
+        if (!query_info.merge_tree_select_result_ptr->error())
+        {
+            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
+            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
+            min_sum_marks = query_info.merge_tree_select_result_ptr->marks() + 1;
+        }
 
         ProjectionCandidate * selected_candidate = nullptr;
-        size_t min_sum_marks = std::numeric_limits<size_t>::max();
-        bool has_ordinary_projection = false;
         /// Favor aggregate projections
         for (auto & candidate : candidates)
         {
@@ -4198,44 +4385,25 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     selected_candidate,
                     min_sum_marks);
             }
-            else
-                has_ordinary_projection = true;
         }
 
-        /// Select the best normal projection if no aggregate projection is available
-        if (!selected_candidate && has_ordinary_projection)
+        /// Select the best normal projection.
+        for (auto & candidate : candidates)
         {
-            min_sum_marks = reader.estimateNumMarksToRead(
-                parts,
-                analysis_result.required_columns,
-                metadata_snapshot,
-                metadata_snapshot,
-                query_info,
-                query_context,
-                settings.max_threads,
-                max_added_blocks);
-
-            // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
-            // NOTE: It is not clear if we need it. E.g. projections do not support skip index for now.
-            min_sum_marks += 1;
-
-            for (auto & candidate : candidates)
+            if (candidate.desc->type == ProjectionDescription::Type::Normal)
             {
-                if (candidate.desc->type == ProjectionDescription::Type::Normal)
-                {
-                    selectBestProjection(
-                        reader,
-                        metadata_snapshot,
-                        query_info,
-                        analysis_result.required_columns,
-                        candidate,
-                        query_context,
-                        max_added_blocks,
-                        settings,
-                        parts,
-                        selected_candidate,
-                        min_sum_marks);
-                }
+                selectBestProjection(
+                    reader,
+                    metadata_snapshot,
+                    query_info,
+                    analysis_result.required_columns,
+                    candidate,
+                    query_context,
+                    max_added_blocks,
+                    settings,
+                    parts,
+                    selected_candidate,
+                    min_sum_marks);
             }
         }
 
@@ -4249,7 +4417,6 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         }
 
         query_info.projection = std::move(*selected_candidate);
-
         return true;
     }
     return false;
