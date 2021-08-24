@@ -164,7 +164,7 @@ toDate32(value)
 
 **Аргументы** 
 
--   `value` — Значение даты. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) или [Date](../../sql-reference/data-types/string.md).
+-   `value` — Значение даты. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) или [Date](../../sql-reference/data-types/date.md).
 
 **Возвращаемое значение**
 
