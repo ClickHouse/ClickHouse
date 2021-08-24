@@ -7,7 +7,7 @@
 
 #include <common/unaligned.h>
 #include <common/sort.h>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 
 
 #include <IO/WriteHelpers.h>
@@ -15,7 +15,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/MaskOperations.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -319,12 +318,6 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
     }
 
     return res;
-}
-
-template <typename T>
-void ColumnDecimal<T>::expand(const IColumn::Filter & mask, bool inverted)
-{
-    expandDataByMask<T>(data, mask, inverted);
 }
 
 template <typename T>

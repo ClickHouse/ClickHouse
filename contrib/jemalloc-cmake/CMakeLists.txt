@@ -1,6 +1,6 @@
 if (SANITIZE OR NOT (
     ((OS_LINUX OR OS_FREEBSD) AND (ARCH_AMD64 OR ARCH_ARM OR ARCH_PPC64LE)) OR
-    (OS_DARWIN AND (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo" OR CMAKE_BUILD_TYPE STREQUAL "Debug"))
+    (OS_DARWIN AND CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
 ))
     if (ENABLE_JEMALLOC)
         message (${RECONFIGURE_MESSAGE_LEVEL}
@@ -139,5 +139,9 @@ target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)
 target_compile_options(jemalloc PRIVATE -D_GNU_SOURCE)
 
 set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_JEMALLOC=1)
+if (MAKE_STATIC_LIBRARIES)
+    # To detect whether we need to register jemalloc for osx as default zone.
+    set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS BUNDLED_STATIC_JEMALLOC=1)
+endif()
 
 message (STATUS "Using jemalloc")

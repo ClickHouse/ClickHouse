@@ -4,7 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <common/map.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -77,8 +77,6 @@ public:
         return true;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0])
@@ -133,7 +131,7 @@ public:
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
                 FunctionReverse::create(context),
-                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
     }
 

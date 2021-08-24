@@ -17,8 +17,7 @@ public:
         int server_id_,
         const std::string & config_prefix,
         const Poco::Util::AbstractConfiguration & config,
-        const CoordinationSettingsPtr & coordination_settings,
-        bool standalone_keeper);
+        const CoordinationSettingsPtr & coordination_settings);
 
     KeeperStateManager(
         int server_id_,

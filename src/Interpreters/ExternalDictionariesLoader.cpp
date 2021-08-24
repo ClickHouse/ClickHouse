@@ -45,20 +45,12 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
-
-    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
-        local_context->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, resolved_dictionary_name);
-
     return std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
 }
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
-
-    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
-        local_context->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, resolved_dictionary_name);
-
     return std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 }
 
@@ -128,10 +120,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
     std::string maybe_database_name = name.substr(0, pos);
     std::string maybe_table_name = name.substr(pos + 1);
 
-    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
-        {maybe_database_name, maybe_table_name},
-        const_pointer_cast<Context>(getContext()));
-
+    auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, getContext());
     if (!db)
         return name;
     assert(table);
