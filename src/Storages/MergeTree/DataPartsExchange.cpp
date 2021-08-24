@@ -181,7 +181,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
             auto disk = part->volume->getDisk();
-            auto disk_type = DiskType::toString(disk->getType());
+            auto disk_type = toString(disk->getType());
             if (disk->supportZeroCopyReplication() && std::find(capability.begin(), capability.end(), disk_type) != capability.end())
             {
                 /// Send metadata if the receiver's capability covers the source disk type.
@@ -429,19 +429,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         if (!disk)
         {
-            DiskType::Type zero_copy_disk_types[] = {DiskType::Type::S3, DiskType::Type::HDFS};
+            DiskType zero_copy_disk_types[] = {DiskType::S3, DiskType::HDFS};
             for (auto disk_type: zero_copy_disk_types)
             {
                 Disks disks = data.getDisksByType(disk_type);
                 if (!disks.empty())
                 {
-                    capability.push_back(DiskType::toString(disk_type));
+                    capability.push_back(toString(disk_type));
                 }
             }
         }
         else if (disk->supportZeroCopyReplication())
         {
-            capability.push_back(DiskType::toString(disk->getType()));
+            capability.push_back(toString(disk->getType()));
         }
     }
     if (!capability.empty())

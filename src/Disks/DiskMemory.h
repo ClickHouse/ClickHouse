@@ -87,7 +87,7 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    DiskType::Type getType() const override { return DiskType::Type::RAM; }
+    DiskType getType() const override { return DiskType::RAM; }
 
     bool supportZeroCopyReplication() const override { return false; }
 
