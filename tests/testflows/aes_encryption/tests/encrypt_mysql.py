@@ -24,13 +24,17 @@ def aes_encrypt_mysql(self, plaintext=None, key=None, mode=None, iv=None, exitco
     return current().context.node.query(sql, step=step, exitcode=exitcode, message=message)
 
 @TestOutline(Scenario)
+@Requirements(
+    RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Values_GCM_Error("1.0"),
+    RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Values_CTR_Error("1.0")
+)
 @Examples("mode", [
-    ("'aes-128-gcm'", Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Value_AES_128_GCM_Error("1.0"))),
-    ("'aes-192-gcm'", Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Value_AES_192_GCM_Error("1.0"))),
-    ("'aes-256-gcm'", Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Value_AES_256_GCM_Error("1.0"))),
-    ("'aes-128-ctr'", Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Value_AES_128_CTR_Error("1.0"))),
-    ("'aes-192-ctr'", Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Value_AES_192_CTR_Error("1.0"))),
-    ("'aes-256-ctr'", Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Value_AES_256_CTR_Error("1.0"))),
+    ("'aes-128-gcm'",),
+    ("'aes-192-gcm'",),
+    ("'aes-256-gcm'",),
+    ("'aes-128-ctr'",),
+    ("'aes-192-ctr'",),
+    ("'aes-256-ctr'",),
 ])
 def unsupported_modes(self, mode):
     """Check that `aes_encrypt_mysql` function returns an error when unsupported modes are specified.
@@ -46,7 +50,7 @@ def invalid_parameters(self):
     we call it with invalid parameters.
     """
     with Example("no parameters"):
-        aes_encrypt_mysql(exitcode=42, message="DB::Exception: Incorrect number of arguments for function aes_encrypt provided 0, expected 3 to 4")
+        aes_encrypt_mysql(exitcode=42, message="DB::Exception: Incorrect number of arguments for function aes_encrypt_mysql provided 0, expected 3 to 4")
 
     with Example("missing key and mode"):
         aes_encrypt_mysql(plaintext="'hello there'", exitcode=42, message="DB::Exception: Incorrect number of arguments for function aes_encrypt_mysql provided 1")
@@ -105,55 +109,67 @@ def invalid_parameters(self):
 
 @TestOutline(Scenario)
 @Requirements(
+    RQ_SRS008_AES_Functions_InvalidParameters("1.0")
+)
+@Examples("data_type, value", [
+    ("UInt8", "toUInt8('1')"),
+    ("UInt16", "toUInt16('1')"),
+    ("UInt32", "toUInt32('1')"),
+    ("UInt64", "toUInt64('1')"),
+    ("Int8", "toInt8('1')"),
+    ("Int16", "toInt16('1')"),
+    ("Int32", "toInt32('1')"),
+    ("Int64", "toInt64('1')"),
+    ("Float32", "toFloat32('1.0')"),
+    ("Float64", "toFloat64('1.0')"),
+    ("Decimal32", "toDecimal32(2, 4)"),
+    ("Decimal64", "toDecimal64(2, 4)"),
+    ("Decimal128", "toDecimal128(2, 4)"),
+    ("UUID", "toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')"),
+    ("Date", "toDate('2020-01-01')"),
+    ("DateTime", "toDateTime('2020-01-01 20:01:02')"),
+    ("DateTime64", "toDateTime64('2020-01-01 20:01:02.123', 3)"),
+    ("Array", "[1,2]"),
+    ("Tuple", "(1,'a')"),
+    ("IPv4", "toIPv4('171.225.130.45')"),
+    ("IPv6", "toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001')"),
+    ("Enum8", r"CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)')"),
+    ("Enum16", r"CAST('a', 'Enum16(\'a\' = 1, \'b\' = 2)')")
+])
+def invalid_plaintext_data_type(self, data_type, value):
+    """Check that aes_encrypt_mysql function returns an error if the
+    plaintext parameter has invalid data type.
+    """
+    with When("I try to encrypt plaintext with invalid data type", description=f"{data_type} with value {value}"):
+        aes_encrypt_mysql(plaintext=value, key="'0123456789123456'", mode="'aes-128-cbc'", iv="'0123456789123456'",
+            exitcode=43, message="DB::Exception: Illegal type of argument")
+
+@TestOutline(Scenario)
+@Requirements(
     RQ_SRS008_AES_MySQL_Encrypt_Function_Key_Length_TooShortError("1.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_Key_Length_TooLong("1.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_InitializationVector_Length_TooShortError("1.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_InitializationVector_Length_TooLong("1.0"),
-    RQ_SRS008_AES_MySQL_Encrypt_Function_InitializationVector_NotValidForMode("1.0")
+    RQ_SRS008_AES_MySQL_Encrypt_Function_InitializationVector_NotValidForMode("1.0"),
+    RQ_SRS008_AES_MySQL_Encrypt_Function_Mode_KeyAndInitializationVector_Length("1.0")
 )
 @Examples("mode key_len iv_len", [
     # ECB
-    ("'aes-128-ecb'", 16, None,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_128_ECB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-ecb'", 24, None,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_192_ECB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-ecb'", 32, None,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_256_ECB_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-ecb'", 16, None),
+    ("'aes-192-ecb'", 24, None),
+    ("'aes-256-ecb'", 32, None),
     # CBC
-    ("'aes-128-cbc'", 16, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_128_CBC_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cbc'", 24, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_192_CBC_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cbc'", 32, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_256_CBC_KeyAndInitializationVector_Length("1.0"))),
-    # CFB1
-    ("'aes-128-cfb1'", 16, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_128_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb1'", 24, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_192_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cfb1'", 32, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_256_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    # CFB8
-    ("'aes-128-cfb8'", 16, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_128_CFB8_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb8'", 24, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_192_CFB8_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cfb8'", 32, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_256_CFB8_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-cbc'", 16, 16),
+    ("'aes-192-cbc'", 24, 16),
+    ("'aes-256-cbc'", 32, 16),
     # CFB128
-    ("'aes-128-cfb128'", 16, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_128_CFB128_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb128'", 24, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_192_CFB128_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cfb128'", 32, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_256_CFB128_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-cfb128'", 16, 16),
+    ("'aes-192-cfb128'", 24, 16),
+    ("'aes-256-cfb128'", 32, 16),
     # OFB
-    ("'aes-128-ofb'", 16, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_128_OFB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-ofb'", 24, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_192_OFB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-ofb'", 32, 16,
-     Requirements(RQ_SRS008_AES_MySQL_Encrypt_Function_AES_256_OFB_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-ofb'", 16, 16),
+    ("'aes-192-ofb'", 24, 16),
+    ("'aes-256-ofb'", 32, 16)
 ], "%-16s %-10s %-10s")
 def key_or_iv_length_for_mode(self, mode, key_len, iv_len):
     """Check that key or iv length for mode.
@@ -286,9 +302,10 @@ def syntax(self):
 
 @TestScenario
 @Requirements(
-    RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_PlainText("1.0"),
+    RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_PlainText("2.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode("1.0"),
     RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_ValuesFormat("1.0"),
+    RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Values("1.0")
 )
 def encryption(self):
     """Check that `aes_encrypt_mysql` functions accepts `plaintext` as the second parameter
@@ -299,10 +316,8 @@ def encryption(self):
 
     for mode, key_len, iv_len in mysql_modes:
         for datatype, plaintext in plaintexts:
-            requirement = globals().get(f"""RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Value_{mode.strip("'").replace("-","_").upper()}""")("1.0")
 
-            with Example(f"""mode={mode.strip("'")} datatype={datatype.strip("'")} key={key_len} iv={iv_len}""",
-                    requirements=[requirement]) as example:
+            with Example(f"""mode={mode.strip("'")} datatype={datatype.strip("'")} key={key_len} iv={iv_len}""") as example:
 
                 r = aes_encrypt_mysql(plaintext=plaintext, key=f"'{key[:key_len]}'", mode=mode,
                     iv=(None if not iv_len else f"'{iv[:iv_len]}'"))

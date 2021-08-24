@@ -41,6 +41,7 @@ struct QueryThreadLogElement
 
     String current_database;
     String query;
+    UInt64 normalized_query_hash{};
 
     ClientInfo client_info;
 
@@ -48,7 +49,8 @@ struct QueryThreadLogElement
 
     static std::string name() { return "QueryThreadLog"; }
 
-    static Block createBlock();
+    static NamesAndTypesList getNamesAndTypes();
+    static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
 };
 

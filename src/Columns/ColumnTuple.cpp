@@ -1,17 +1,17 @@
 #include <Columns/ColumnTuple.h>
+
 #include <Columns/IColumnImpl.h>
-#include <DataStreams/ColumnGathererStream.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <ext/map.h>
-#include <ext/range.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
+#include <Columns/ColumnCompressed.h>
 #include <Core/Field.h>
-#if !defined(ARCADIA_BUILD)
-    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
-#endif
+#include <DataStreams/ColumnGathererStream.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include <common/sort.h>
+#include <common/map.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -100,14 +100,14 @@ MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
 
 Field ColumnTuple::operator[](size_t n) const
 {
-    return ext::map<Tuple>(columns, [n] (const auto & column) { return (*column)[n]; });
+    return collections::map<Tuple>(columns, [n] (const auto & column) { return (*column)[n]; });
 }
 
 void ColumnTuple::get(size_t n, Field & res) const
 {
     const size_t tuple_size = columns.size();
     Tuple tuple(tuple_size);
-    for (const auto i : ext::range(0, tuple_size))
+    for (const auto i : collections::range(0, tuple_size))
         columns[i]->get(n, tuple[i]);
 
     res = tuple;
@@ -180,6 +180,14 @@ const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
+const char * ColumnTuple::skipSerializedInArena(const char * pos) const
+{
+    for (const auto & column : columns)
+        pos = column->skipSerializedInArena(pos);
+
+    return pos;
+}
+
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (const auto & column : columns)
@@ -222,6 +230,12 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
         new_columns[i] = columns[i]->filter(filt, result_size_hint);
 
     return ColumnTuple::create(new_columns);
+}
+
+void ColumnTuple::expand(const Filter & mask, bool inverted)
+{
+    for (auto & column : columns)
+        column->expand(mask, inverted);
 }
 
 ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
@@ -312,6 +326,11 @@ int ColumnTuple::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs,
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
 }
 
+bool ColumnTuple::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnTuple>();
+}
+
 template <bool positive>
 struct ColumnTuple::Less
 {
@@ -354,17 +373,9 @@ void ColumnTuple::getPermutationImpl(size_t limit, Permutation & res, LessOperat
         limit = 0;
 
     if (limit)
-    {
-#if !defined(ARCADIA_BUILD)
-        miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less);
-#else
-        std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
-#endif
-    }
+        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-    {
         std::sort(res.begin(), res.end(), less);
-    }
 }
 
 void ColumnTuple::updatePermutationImpl(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const
@@ -433,6 +444,14 @@ size_t ColumnTuple::byteSize() const
     return res;
 }
 
+size_t ColumnTuple::byteSizeAt(size_t n) const
+{
+    size_t res = 0;
+    for (const auto & column : columns)
+        res += column->byteSizeAt(n);
+    return res;
+}
+
 size_t ColumnTuple::allocatedBytes() const
 {
     size_t res = 0;
@@ -454,7 +473,7 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     Tuple min_tuple(tuple_size);
     Tuple max_tuple(tuple_size);
 
-    for (const auto i : ext::range(0, tuple_size))
+    for (const auto i : collections::range(0, tuple_size))
         columns[i]->getExtremes(min_tuple[i], max_tuple[i]);
 
     min = min_tuple;
@@ -475,7 +494,7 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
         if (tuple_size != rhs_tuple->columns.size())
             return false;
 
-        for (const auto i : ext::range(0, tuple_size))
+        for (const auto i : collections::range(0, tuple_size))
             if (!columns[i]->structureEquals(*rhs_tuple->columns[i]))
                 return false;
 
@@ -487,7 +506,7 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
 
 bool ColumnTuple::isCollationSupported() const
 {
-    for (const auto& column : columns)
+    for (const auto & column : columns)
     {
         if (column->isCollationSupported())
             return true;
@@ -495,5 +514,26 @@ bool ColumnTuple::isCollationSupported() const
     return false;
 }
 
+
+ColumnPtr ColumnTuple::compress() const
+{
+    size_t byte_size = 0;
+    Columns compressed;
+    compressed.reserve(columns.size());
+    for (const auto & column : columns)
+    {
+        auto compressed_column = column->compress();
+        byte_size += compressed_column->byteSize();
+        compressed.emplace_back(std::move(compressed_column));
+    }
+
+    return ColumnCompressed::create(size(), byte_size,
+        [compressed = std::move(compressed)]() mutable
+        {
+            for (auto & column : compressed)
+                column = column->decompress();
+            return ColumnTuple::create(compressed);
+        });
+}
 
 }

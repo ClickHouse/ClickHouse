@@ -3,6 +3,7 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -33,9 +34,14 @@ namespace
         }
 
         String authentication_type_name = Authentication::TypeInfo::get(authentication_type).name;
+        String by_keyword = "BY";
         std::optional<String> by_value;
 
-        if (show_password || authentication_type == Authentication::LDAP_SERVER)
+        if (
+            show_password ||
+            authentication_type == Authentication::LDAP ||
+            authentication_type == Authentication::KERBEROS
+        )
         {
             switch (authentication_type)
             {
@@ -56,9 +62,18 @@ namespace
                     by_value = authentication.getPasswordHashHex();
                     break;
                 }
-                case Authentication::LDAP_SERVER:
+                case Authentication::LDAP:
                 {
-                    by_value = authentication.getServerName();
+                    by_keyword = "SERVER";
+                    by_value = authentication.getLDAPServerName();
+                    break;
+                }
+                case Authentication::KERBEROS:
+                {
+                    by_keyword = "REALM";
+                    const auto & realm = authentication.getKerberosRealm();
+                    if (!realm.empty())
+                        by_value = realm;
                     break;
                 }
 
@@ -70,9 +85,12 @@ namespace
 
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH " << authentication_type_name
                       << (settings.hilite ? IAST::hilite_none : "");
+
         if (by_value)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " BY " << (settings.hilite ? IAST::hilite_none : "")
-                << quoteString(*by_value);
+        {
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << by_keyword << " "
+                          << (settings.hilite ? IAST::hilite_none : "") << quoteString(*by_value);
+        }
     }
 
 
@@ -185,6 +203,19 @@ namespace
         format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
         settings.format(format);
     }
+
+
+    void formatGrantees(const ASTRolesOrUsersSet & grantees, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " GRANTEES " << (settings.hilite ? IAST::hilite_none : "");
+        grantees.format(settings);
+    }
+
+    void formatDefaultDatabase(const ASTDatabaseOrNone & default_database, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT DATABASE " << (settings.hilite ? IAST::hilite_none : "");
+        default_database.format(settings);
+    }
 }
 
 
@@ -237,10 +268,16 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (remove_hosts)
         formatHosts("DROP", *remove_hosts, format);
 
+    if (default_database)
+        formatDefaultDatabase(*default_database, format);
+
     if (default_roles)
         formatDefaultRoles(*default_roles, format);
 
     if (settings && (!settings->empty() || alter))
         formatSettings(*settings, format);
+
+    if (grantees)
+        formatGrantees(*grantees, format);
 }
 }

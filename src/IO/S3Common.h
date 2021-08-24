@@ -1,12 +1,15 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_AWS_S3
 
 #include <common/types.h>
-#include <aws/core/Aws.h>
-#include <aws/core/client/ClientConfiguration.h>
+#include <aws/core/Aws.h>  // Y_IGNORE
+#include <aws/core/client/ClientConfiguration.h> // Y_IGNORE
+#include <IO/S3/PocoHTTPClient.h>
 #include <Poco/URI.h>
 
 namespace Aws::S3
@@ -23,7 +26,6 @@ namespace DB
 
 namespace DB::S3
 {
-
 class ClientFactory
 {
 public:
@@ -32,26 +34,19 @@ public:
     static ClientFactory & instance();
 
     std::shared_ptr<Aws::S3::S3Client> create(
-        const String & endpoint,
+        const PocoHTTPClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter);
-
-    std::shared_ptr<Aws::S3::S3Client> create(
-        Aws::Client::ClientConfiguration & cfg,
-        bool is_virtual_hosted_style,
-        const String & access_key_id,
-        const String & secret_access_key,
-        const RemoteHostFilter & remote_host_filter);
-
-    std::shared_ptr<Aws::S3::S3Client> create(
-        const String & endpoint,
-        bool is_virtual_hosted_style,
-        const String & access_key_id,
-        const String & secret_access_key,
+        const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
-        const RemoteHostFilter & remote_host_filter);
+        bool use_environment_credentials,
+        bool use_insecure_imds_request);
+
+    PocoHTTPClientConfiguration createClientConfiguration(
+        const String & force_region,
+        const RemoteHostFilter & remote_host_filter,
+        unsigned int s3_max_redirects);
 
 private:
     ClientFactory();
@@ -79,6 +74,8 @@ struct URI
     bool is_virtual_hosted_style;
 
     explicit URI(const Poco::URI & uri_);
+
+    static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
 
 }

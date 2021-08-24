@@ -10,6 +10,11 @@ RUN apt-get update --yes \
         gpg-agent \
         debsig-verify \
         strace \
+        protobuf-compiler \
+        protobuf-compiler-grpc \
+        libprotoc-dev \
+        libgrpc++-dev \
+        libc-ares-dev \
         --yes --no-install-recommends
 
 #RUN wget -nv -O - http://files.viva64.com/etc/pubkey.txt | sudo apt-key add -
@@ -23,7 +28,7 @@ RUN apt-get update --yes \
 ENV PKG_VERSION="pvs-studio-latest"
 
 RUN set -x \
-    && export PUBKEY_HASHSUM="486a0694c7f92e96190bbfac01c3b5ac2cb7823981db510a28f744c99eabbbf17a7bcee53ca42dc6d84d4323c2742761" \
+    && export PUBKEY_HASHSUM="686e5eb8b3c543a5c54442c39ec876b6c2d912fe8a729099e600017ae53c877dda3368fe38ed7a66024fe26df6b5892a" \
     && wget -nv https://files.viva64.com/etc/pubkey.txt -O /tmp/pubkey.txt \
     && echo "${PUBKEY_HASHSUM} /tmp/pubkey.txt" | sha384sum -c \
     && apt-key add /tmp/pubkey.txt \
@@ -33,8 +38,9 @@ RUN set -x \
     && dpkg -i "${PKG_VERSION}.deb"
 
 CMD echo "Running PVS version $PKG_VERSION" && cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
-    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF && ninja re2_st \
+    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF -D"USE_INTERNAL_PROTOBUF_LIBRARY"=OFF -D"USE_INTERNAL_GRPC_LIBRARY"=OFF \
+    && ninja re2_st clickhouse_grpc_protos \
     && pvs-studio-analyzer analyze -o pvs-studio.log -e contrib -j 4 -l ./licence.lic; \
+    cp /repo_folder/pvs-studio.log /test_output; \
     plog-converter -a GA:1,2 -t fullhtml -o /test_output/pvs-studio-html-report pvs-studio.log; \
     plog-converter -a GA:1,2 -t tasklist -o /test_output/pvs-studio-task-report.txt pvs-studio.log
-

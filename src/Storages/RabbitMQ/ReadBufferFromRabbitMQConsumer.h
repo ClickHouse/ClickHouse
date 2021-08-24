@@ -48,19 +48,24 @@ public:
     {
         String message;
         String message_id;
-        uint64_t timestamp;
-        bool redelivered;
-        AckTracker track;
+        uint64_t timestamp = 0;
+        bool redelivered = false;
+        AckTracker track{};
     };
-
-    bool isConsumerStopped() { return stopped; }
-    bool isChannelError() { return channel_error; }
-    /// Do not allow to update channel if current channel is not properly set up and subscribed
-    bool isChannelUpdateAllowed() { return !wait_subscription; }
 
     ChannelPtr & getChannel() { return consumer_channel; }
     void setupChannel();
+    bool needChannelUpdate();
+    void closeChannel()
+    {
+        if (consumer_channel)
+            consumer_channel->close();
+    }
 
+    void updateQueues(std::vector<String> & queues_) { queues = queues_; }
+    size_t queuesCount() { return queues.size(); }
+
+    bool isConsumerStopped() { return stopped; }
     bool ackMessages();
     void updateAckTracker(AckTracker record = AckTracker());
 

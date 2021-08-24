@@ -21,16 +21,6 @@ public:
         CompressionCodecPtr default_codec_,
         bool blocks_are_granules_size = false);
 
-    MergedBlockOutputStream(
-        const MergeTreeDataPartPtr & data_part,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const NamesAndTypesList & columns_list_,
-        const MergeTreeIndices & skip_indices,
-        CompressionCodecPtr default_codec_,
-        const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
-        size_t aio_threshold,
-        bool blocks_are_granules_size = false);
-
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
     /// If the data is pre-sorted.

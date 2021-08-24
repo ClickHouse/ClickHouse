@@ -10,6 +10,8 @@ PartialSortingTransform::PartialSortingTransform(
     : ISimpleTransform(header_, header_, false)
     , description(description_), limit(limit_)
 {
+    // Sorting by no columns doesn't make sense.
+    assert(!description.empty());
 }
 
 static ColumnRawPtrs extractColumns(const Block & block, const SortDescription & description)
@@ -91,6 +93,14 @@ size_t getFilterMask(const ColumnRawPtrs & lhs, const ColumnRawPtrs & rhs, size_
 
 void PartialSortingTransform::transform(Chunk & chunk)
 {
+    if (chunk.getNumRows())
+    {
+        // The following code works with Blocks and will lose the number of
+        // rows when there are no columns. We shouldn't get such block, because
+        // we have to sort by at least one column.
+        assert(chunk.getNumColumns());
+    }
+
     if (read_rows)
         read_rows->add(chunk.getNumRows());
 

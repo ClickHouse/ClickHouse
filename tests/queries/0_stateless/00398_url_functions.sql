@@ -38,6 +38,9 @@ SELECT topLevelDomain('svn+ssh://example.ru.?q=hello%20world') AS Domain;
 SELECT topLevelDomain('//www.example.com') AS Domain;
 SELECT topLevelDomain('www.example.com') as Domain;
 SELECT topLevelDomain('example.com') as Domain;
+SELECT topLevelDomain('example.рф') as Domain;
+SELECT topLevelDomain('example.') as Domain;
+SELECT topLevelDomain('example') as Domain;
 
 SELECT '====PATH====';
 SELECT decodeURLComponent('%D0%9F');
@@ -86,6 +89,16 @@ SELECT cutToFirstSignificantSubdomain('http://paul@www.example.com/a/b/c?a=b#d=f
 SELECT cutToFirstSignificantSubdomain('//paul@www.example.com/a/b/c?a=b#d=f');
 SELECT cutToFirstSignificantSubdomain('www.example.com');
 SELECT cutToFirstSignificantSubdomain('example.com');
+SELECT cutToFirstSignificantSubdomain('www.com');
+SELECT cutToFirstSignificantSubdomain('com');
+
+SELECT '====CUT TO FIRST SIGNIFICANT SUBDOMAIN WITH WWW====';
+SELECT cutToFirstSignificantSubdomainWithWWW('http://com');
+SELECT cutToFirstSignificantSubdomainWithWWW('http://www.com');
+SELECT cutToFirstSignificantSubdomainWithWWW('http://www.example.com');
+SELECT cutToFirstSignificantSubdomainWithWWW('http://www.foo.example.com');
+SELECT cutToFirstSignificantSubdomainWithWWW('http://www.example.com:1');
+SELECT cutToFirstSignificantSubdomainWithWWW('http://www.example.com/');
 
 SELECT '====CUT WWW====';
 SELECT cutWWW('http://www.example.com');

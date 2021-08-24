@@ -6,18 +6,22 @@ CREATE TABLE test_01191._ (n UInt64, s String) ENGINE = Memory();
 CREATE DICTIONARY test_01191.dict (n UInt64, s String)
 PRIMARY KEY n
 LAYOUT(DIRECT())
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE '_' DB 'test_01191'));
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE '_' DB 'test_01191'));
 
 INSERT INTO test_01191._ VALUES (42, 'test');
 
 SELECT name, status FROM system.dictionaries WHERE database='test_01191';
 SELECT name, engine FROM system.tables WHERE database='test_01191' ORDER BY name;
 
-RENAME DICTIONARY test_01191.table TO test_01191.table1; -- {serverError 80}
-EXCHANGE TABLES test_01191.table AND test_01191.dict; -- {serverError 48}
+RENAME DICTIONARY test_01191.table TO test_01191.table1; -- {serverError 60}
+EXCHANGE TABLES test_01191.table AND test_01191.dict; -- {serverError 60}
 EXCHANGE TABLES test_01191.dict AND test_01191.table; -- {serverError 80}
 RENAME TABLE test_01191.dict TO test_01191.dict1; -- {serverError 80}
-RENAME DICTIONARY test_01191.dict TO default.dict1; -- {serverError 48}
+
+CREATE DATABASE dummy_db ENGINE=Atomic;
+RENAME DICTIONARY test_01191.dict TO dummy_db.dict1;
+RENAME DICTIONARY dummy_db.dict1 TO test_01191.dict;
+DROP DATABASE dummy_db;
 
 RENAME DICTIONARY test_01191.dict TO test_01191.dict1;
 

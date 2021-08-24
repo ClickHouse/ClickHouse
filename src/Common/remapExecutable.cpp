@@ -26,6 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
+/// NOLINTNEXTLINE(cert-dcl50-cpp)
 __attribute__((__noinline__)) int64_t our_syscall(...)
 {
     __asm__ __volatile__ (R"(

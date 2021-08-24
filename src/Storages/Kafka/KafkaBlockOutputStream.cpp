@@ -1,4 +1,4 @@
-#include "KafkaBlockOutputStream.h"
+#include <Storages/Kafka/KafkaBlockOutputStream.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
@@ -6,37 +6,26 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_CREATE_IO_BUFFER;
-}
-
-KafkaBlockOutputStream::KafkaBlockOutputStream(
+KafkaSink::KafkaSink(
     StorageKafka & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const std::shared_ptr<Context> & context_)
-    : storage(storage_)
+    const ContextPtr & context_)
+    : SinkToStorage(metadata_snapshot_->getSampleBlockNonMaterialized())
+    , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
 {
 }
 
-Block KafkaBlockOutputStream::getHeader() const
+void KafkaSink::onStart()
 {
-    return metadata_snapshot->getSampleBlockNonMaterialized();
-}
+    buffer = storage.createWriteBuffer(getPort().getHeader());
 
-void KafkaBlockOutputStream::writePrefix()
-{
-    buffer = storage.createWriteBuffer(getHeader());
-    if (!buffer)
-        throw Exception("Failed to create Kafka producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
+    auto format_settings = getFormatSettings(context);
+    format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
-    auto format_settings = getFormatSettings(*context);
-    format_settings.protobuf.allow_many_rows_no_delimiters = true;
-
-    child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer,
-        getHeader(), *context,
+    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
+        getPort().getHeader(), context,
         [this](const Columns & columns, size_t row)
         {
             buffer->countRow(columns, row);
@@ -44,20 +33,17 @@ void KafkaBlockOutputStream::writePrefix()
         format_settings);
 }
 
-void KafkaBlockOutputStream::write(const Block & block)
+void KafkaSink::consume(Chunk chunk)
 {
-    child->write(block);
+    child->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
-void KafkaBlockOutputStream::writeSuffix()
+void KafkaSink::onFinish()
 {
     if (child)
         child->writeSuffix();
-    flush();
-}
+    //flush();
 
-void KafkaBlockOutputStream::flush()
-{
     if (buffer)
         buffer->flush();
 }

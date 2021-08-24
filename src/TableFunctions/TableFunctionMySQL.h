@@ -24,13 +24,12 @@ public:
         return name;
     }
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "MySQL"; }
 
-    ColumnsDescription getActualTableStructure(const Context & context) const override;
-    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    std::pair<std::string, UInt16> parsed_host_port;
     String remote_database_name;
     String remote_table_name;
     String user_name;
@@ -38,7 +37,7 @@ private:
     bool replace_query = false;
     String on_duplicate_clause;
 
-    mutable std::optional<mysqlxx::Pool> pool;
+    mutable std::optional<mysqlxx::PoolWithFailover> pool;
 };
 
 }

@@ -3,6 +3,8 @@ FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
         --yes --no-install-recommends --verbose-versions \
@@ -27,38 +29,32 @@ RUN apt-get update \
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
+RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
 # Libraries from OS are only needed to test the "unbundled" build (this is not used in production).
 RUN apt-get update \
     && apt-get install \
-        gcc-9 \
-        g++-9 \
+        alien \
         clang-11 \
         clang-tidy-11 \
+        cmake \
+        debhelper \
+        devscripts \
+        gdb  \
+        git \
+        gperf \
         lld-11 \
         llvm-11 \
         llvm-11-dev \
-        clang-10 \
-        clang-tidy-10 \
-        lld-10 \
-        llvm-10 \
-        llvm-10-dev \
+        moreutils \
         ninja-build \
         perl \
-        pkg-config \
-        devscripts \
-        debhelper \
-        git \
-        tzdata \
-        gperf \
-        alien \
-        cmake \
-        gdb  \
-        moreutils \
         pigz \
+        pixz \
+        pkg-config \
+        tzdata \
         --yes --no-install-recommends
 
 # NOTE: For some reason we have outdated version of gcc-10 in ubuntu 20.04 stable.

@@ -17,6 +17,7 @@ public:
 
 protected:
     ReadBuffers buffers;
+    bool own_buffers = false;
     ReadBuffers::iterator current;
 
     bool nextImpl() override
@@ -25,11 +26,16 @@ protected:
             return false;
 
         /// First reading
-        if (working_buffer.size() == 0 && (*current)->hasPendingData())
+        if (working_buffer.empty())
         {
-            working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
-            return true;
+            if ((*current)->hasPendingData())
+            {
+                working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
+                return true;
+            }
         }
+        else
+            (*current)->position() = position();
 
         if (!(*current)->next())
         {
@@ -51,13 +57,38 @@ protected:
     }
 
 public:
-    ConcatReadBuffer(const ReadBuffers & buffers_) : ReadBuffer(nullptr, 0), buffers(buffers_), current(buffers.begin()) {}
-
-    ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ReadBuffer(nullptr, 0)
+    explicit ConcatReadBuffer(const ReadBuffers & buffers_) : ReadBuffer(nullptr, 0), buffers(buffers_), current(buffers.begin())
     {
-        buffers.push_back(&buf1);
-        buffers.push_back(&buf2);
+        assert(!buffers.empty());
+    }
+
+    ConcatReadBuffer(ReadBuffer & buf1, ReadBuffer & buf2) : ConcatReadBuffer(ReadBuffers{&buf1, &buf2}) {}
+
+    ConcatReadBuffer(std::vector<std::unique_ptr<ReadBuffer>> buffers_) : ReadBuffer(nullptr, 0)
+    {
+        own_buffers = true;
+        buffers.reserve(buffers_.size());
+        for (auto & buffer : buffers_)
+            buffers.emplace_back(buffer.release());
         current = buffers.begin();
+    }
+
+    ConcatReadBuffer(std::unique_ptr<ReadBuffer> buf1, std::unique_ptr<ReadBuffer> buf2) : ReadBuffer(nullptr, 0)
+    {
+        own_buffers = true;
+        buffers.reserve(2);
+        buffers.emplace_back(buf1.release());
+        buffers.emplace_back(buf2.release());
+        current = buffers.begin();
+    }
+
+    ~ConcatReadBuffer() override
+    {
+        if (own_buffers)
+        {
+            for (auto * buffer : buffers)
+                delete buffer;
+        }
     }
 };
 

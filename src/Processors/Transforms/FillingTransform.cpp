@@ -1,6 +1,11 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/IDataType.h>
+#include <Core/Types.h>
+#include <DataTypes/DataTypesDecimal.h>
+
 
 namespace DB
 {
@@ -10,31 +15,61 @@ namespace ErrorCodes
     extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
+Block FillingTransform::transformHeader(Block header, const SortDescription & sort_description)
+{
+    NameSet sort_keys;
+    for (const auto & key : sort_description)
+        sort_keys.insert(key.column_name);
+
+    /// Columns which are not from sorting key may not be constant anymore.
+    for (auto & column : header)
+        if (column.column && isColumnConst(*column.column) && !sort_keys.count(column.name))
+            column.column = column.type->createColumn();
+
+    return header;
+}
 
 FillingTransform::FillingTransform(
-        const Block & header_, const SortDescription & sort_description_)
-        : ISimpleTransform(header_, header_, true)
+        const Block & header_, const SortDescription & sort_description_, bool on_totals_)
+        : ISimpleTransform(header_, transformHeader(header_, sort_description_), true)
         , sort_description(sort_description_)
+        , on_totals(on_totals_)
         , filling_row(sort_description_)
         , next_row(sort_description_)
 {
+    if (on_totals)
+        return;
+
     auto try_convert_fields = [](auto & descr, const auto & type)
     {
         auto max_type = Field::Types::Null;
         WhichDataType which(type);
         DataTypePtr to_type;
-        if (isInteger(type) || which.isDateOrDateTime())
+
+        /// TODO Wrong results for big integers.
+        if (isInteger(type) || which.isDate() || which.isDate32() || which.isDateTime())
         {
             max_type = Field::Types::Int64;
             to_type = std::make_shared<DataTypeInt64>();
+        }
+        else if (which.isDateTime64())
+        {
+            max_type = Field::Types::Decimal64;
+            const auto & date_type = static_cast<const DataTypeDateTime64 &>(*type);
+            size_t precision = date_type.getPrecision();
+            size_t scale = date_type.getScale();
+            to_type = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
         }
         else if (which.isFloat())
         {
             max_type = Field::Types::Float64;
             to_type = std::make_shared<DataTypeFloat64>();
         }
+        else
+            return false;
 
-        if (descr.fill_from.getType() > max_type || descr.fill_to.getType() > max_type
+        if (descr.fill_from.getType() > max_type
+            || descr.fill_to.getType() > max_type
             || descr.fill_step.getType() > max_type)
             return false;
 
@@ -75,7 +110,7 @@ FillingTransform::FillingTransform(
 
 IProcessor::Status FillingTransform::prepare()
 {
-    if (input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
+    if (!on_totals && input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
     {
         should_insert_first = next_row < filling_row;
 
@@ -95,6 +130,9 @@ IProcessor::Status FillingTransform::prepare()
 
 void FillingTransform::transform(Chunk & chunk)
 {
+    if (on_totals)
+        return;
+
     Columns old_fill_columns;
     Columns old_other_columns;
     MutableColumns res_fill_columns;

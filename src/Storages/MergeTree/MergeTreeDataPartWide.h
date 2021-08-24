@@ -20,13 +20,15 @@ public:
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume,
-        const std::optional<String> & relative_path = {});
+        const std::optional<String> & relative_path_ = {},
+        const IMergeTreeDataPart * parent_part_ = nullptr);
 
     MergeTreeDataPartWide(
         MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume,
-        const std::optional<String> & relative_path = {});
+        const std::optional<String> & relative_path_ = {},
+        const IMergeTreeDataPart * parent_part_ = nullptr);
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
@@ -54,7 +56,7 @@ public:
 
     ~MergeTreeDataPartWide() override;
 
-    bool hasColumnFiles(const String & column, const IDataType & type) const override;
+    bool hasColumnFiles(const NameAndTypePair & column) const override;
 
 private:
     void checkConsistency(bool require_part_metadata) const override;
@@ -62,7 +64,7 @@ private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 
-    ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const;
+    ColumnSize getColumnSizeImpl(const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const;
 
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };

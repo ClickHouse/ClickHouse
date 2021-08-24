@@ -7,6 +7,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
 }
 
 MergeTreeIndexGranularity::MergeTreeIndexGranularity(const std::vector<size_t> & marks_rows_partial_sums_)
@@ -18,6 +19,17 @@ MergeTreeIndexGranularity::MergeTreeIndexGranularity(const std::vector<size_t> &
 MergeTreeIndexGranularity::MergeTreeIndexGranularity(size_t marks_count, size_t fixed_granularity)
     : marks_rows_partial_sums(marks_count, fixed_granularity)
 {
+}
+
+/// Rows after mark to next mark
+size_t MergeTreeIndexGranularity::getMarkRows(size_t mark_index) const
+{
+    if (mark_index >= getMarksCount())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get non existing mark {}, while size is {}", mark_index, getMarksCount());
+    if (mark_index == 0)
+        return marks_rows_partial_sums[0];
+    else
+        return marks_rows_partial_sums[mark_index] - marks_rows_partial_sums[mark_index - 1];
 }
 
 size_t MergeTreeIndexGranularity::getMarkStartingRow(size_t mark_index) const

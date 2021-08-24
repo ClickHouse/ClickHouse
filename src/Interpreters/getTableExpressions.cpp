@@ -73,19 +73,23 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
     return nullptr;
 }
 
-static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, const Context & context,
-                                                NamesAndTypesList & materialized, NamesAndTypesList & aliases, NamesAndTypesList & virtuals)
+static NamesAndTypesList getColumnsFromTableExpression(
+    const ASTTableExpression & table_expression,
+    ContextPtr context,
+    NamesAndTypesList & materialized,
+    NamesAndTypesList & aliases,
+    NamesAndTypesList & virtuals)
 {
     NamesAndTypesList names_and_type_list;
     if (table_expression.subquery)
     {
         const auto & subquery = table_expression.subquery->children.at(0);
-        names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context).getNamesAndTypesList();
+        names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context, true).getNamesAndTypesList();
     }
     else if (table_expression.table_function)
     {
         const auto table_function = table_expression.table_function;
-        auto * query_context = const_cast<Context *>(&context.getQueryContext());
+        auto query_context = context->getQueryContext();
         const auto & function_storage = query_context->executeTableFunction(table_function);
         auto function_metadata_snapshot = function_storage->getInMemoryMetadataPtr();
         const auto & columns = function_metadata_snapshot->getColumns();
@@ -96,7 +100,7 @@ static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression 
     }
     else if (table_expression.database_and_table_name)
     {
-        auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
+        auto table_id = context->resolveStorageID(table_expression.database_and_table_name);
         const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
         auto table_metadata_snapshot = table->getInMemoryMetadataPtr();
         const auto & columns = table_metadata_snapshot->getColumns();
@@ -109,38 +113,42 @@ static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression 
     return names_and_type_list;
 }
 
-NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
-{
-    NamesAndTypesList materialized;
-    NamesAndTypesList aliases;
-    NamesAndTypesList virtuals;
-    return getColumnsFromTableExpression(table_expression, context, materialized, aliases, virtuals);
-}
-
-TablesWithColumns getDatabaseAndTablesWithColumns(const std::vector<const ASTTableExpression *> & table_expressions, const Context & context)
+TablesWithColumns getDatabaseAndTablesWithColumns(
+        const ASTTableExprConstPtrs & table_expressions,
+        ContextPtr context,
+        bool include_alias_cols,
+        bool include_materialized_cols)
 {
     TablesWithColumns tables_with_columns;
 
-    if (!table_expressions.empty())
+    String current_database = context->getCurrentDatabase();
+
+    for (const ASTTableExpression * table_expression : table_expressions)
     {
-        String current_database = context.getCurrentDatabase();
+        NamesAndTypesList materialized;
+        NamesAndTypesList aliases;
+        NamesAndTypesList virtuals;
+        NamesAndTypesList names_and_types = getColumnsFromTableExpression(
+            *table_expression, context, materialized, aliases, virtuals);
 
-        for (const ASTTableExpression * table_expression : table_expressions)
+        removeDuplicateColumns(names_and_types);
+
+        tables_with_columns.emplace_back(
+            DatabaseAndTableWithAlias(*table_expression, current_database), names_and_types);
+
+        auto & table = tables_with_columns.back();
+        table.addHiddenColumns(materialized);
+        table.addHiddenColumns(aliases);
+        table.addHiddenColumns(virtuals);
+
+        if (include_alias_cols)
         {
-            NamesAndTypesList materialized;
-            NamesAndTypesList aliases;
-            NamesAndTypesList virtuals;
-            NamesAndTypesList names_and_types = getColumnsFromTableExpression(*table_expression, context, materialized, aliases, virtuals);
+            table.addAliasColumns(aliases);
+        }
 
-            removeDuplicateColumns(names_and_types);
-
-            tables_with_columns.emplace_back(
-                DatabaseAndTableWithAlias(*table_expression, current_database), names_and_types);
-
-            auto & table = tables_with_columns.back();
-            table.addHiddenColumns(materialized);
-            table.addHiddenColumns(aliases);
-            table.addHiddenColumns(virtuals);
+        if (include_materialized_cols)
+        {
+            table.addMaterializedColumns(materialized);
         }
     }
 

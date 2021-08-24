@@ -60,11 +60,11 @@ Otherwise you will get only exported symbols from program headers.
 #endif
 
 #define __msan_unpoison_string(X) // NOLINT
-#if defined(__has_feature)
-#   if __has_feature(memory_sanitizer)
-#       undef __msan_unpoison_string
-#       include <sanitizer/msan_interface.h>
-#   endif
+#if defined(ch_has_feature)
+#    if ch_has_feature(memory_sanitizer)
+#        undef __msan_unpoison_string
+#        include <sanitizer/msan_interface.h>
+#    endif
 #endif
 
 
@@ -300,13 +300,13 @@ void collectSymbolsFromELF(dl_phdr_info * info,
 
     String our_build_id = getBuildIDFromProgramHeaders(info);
 
-    /// If the name is empty - it's main executable.
-    /// Find a elf file for the main executable.
-
+    /// If the name is empty and there is a non-empty build-id - it's main executable.
+    /// Find a elf file for the main executable and set the build-id.
     if (object_name.empty())
     {
         object_name = "/proc/self/exe";
-        build_id = our_build_id;
+        if (build_id.empty())
+            build_id = our_build_id;
     }
 
     std::error_code ec;
@@ -316,9 +316,37 @@ void collectSymbolsFromELF(dl_phdr_info * info,
         return;
 
     /// Debug info and symbol table sections may be split to separate binary.
+    std::filesystem::path local_debug_info_path = canonical_path.parent_path() / canonical_path.stem();
+    local_debug_info_path += ".debug";
     std::filesystem::path debug_info_path = std::filesystem::path("/usr/lib/debug") / canonical_path.relative_path();
 
-    object_name = std::filesystem::exists(debug_info_path) ? debug_info_path : canonical_path;
+    if (std::filesystem::exists(local_debug_info_path))
+        object_name = local_debug_info_path;
+    else if (std::filesystem::exists(debug_info_path))
+        object_name = debug_info_path;
+    else if (build_id.size() >= 2)
+    {
+        // Check if there is a .debug file in .build-id folder. For example:
+        // /usr/lib/debug/.build-id/e4/0526a12e9a8f3819a18694f6b798f10c624d5c.debug
+        String build_id_hex;
+        build_id_hex.resize(build_id.size() * 2);
+
+        char * pos = build_id_hex.data();
+        for (auto c : build_id)
+        {
+            writeHexByteLowercase(c, pos);
+            pos += 2;
+        }
+
+        std::filesystem::path build_id_debug_info_path(
+            fmt::format("/usr/lib/debug/.build-id/{}/{}.debug", build_id_hex.substr(0, 2), build_id_hex.substr(2)));
+        if (std::filesystem::exists(build_id_debug_info_path))
+            object_name = build_id_debug_info_path;
+        else
+            object_name = canonical_path;
+    }
+    else
+        object_name = canonical_path;
 
     /// But we have to compare Build ID to check that debug info corresponds to the same executable.
 
@@ -434,10 +462,12 @@ String SymbolIndex::getBuildIDHex() const
     return build_id_hex;
 }
 
-SymbolIndex & SymbolIndex::instance()
+MultiVersion<SymbolIndex>::Version SymbolIndex::instance(bool reload)
 {
-    static SymbolIndex instance;
-    return instance;
+    static MultiVersion<SymbolIndex> instance(std::unique_ptr<SymbolIndex>(new SymbolIndex));
+    if (reload)
+        instance.set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
+    return instance.get();
 }
 
 }

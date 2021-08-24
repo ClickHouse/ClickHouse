@@ -2,7 +2,6 @@
 
 #include <DataTypes/DataTypeCustom.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/FieldVisitors.h>
 
 #include <IO/ReadHelpers.h>
 
@@ -37,6 +36,7 @@ public:
 
     const AggregateFunctionPtr getFunction() const { return function; }
     String getName() const override;
+    static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
 
 }

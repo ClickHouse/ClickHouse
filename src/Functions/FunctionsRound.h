@@ -9,18 +9,20 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
-#include "IFunctionImpl.h"
+#include "IFunction.h"
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
-#include <ext/bit_cast.h>
+#include <common/bit_cast.h>
 #include <algorithm>
 
 #ifdef __SSE4_1__
     #include <smmintrin.h>
+#else
+    #include <fenv.h>
 #endif
 
 
@@ -34,6 +36,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_SET_ROUNDING_MODE;
 }
 
 
@@ -101,7 +104,8 @@ struct IntegerRoundingComputation
         return scale;
     }
 
-    static ALWAYS_INLINE T computeImpl(T x, T scale)
+    /// Integer overflow is Ok.
+    static ALWAYS_INLINE_NO_SANITIZE_UNDEFINED T computeImpl(T x, T scale)
     {
         switch (rounding_mode)
         {
@@ -230,7 +234,7 @@ inline float roundWithMode(float x, RoundingMode mode)
 {
     switch (mode)
     {
-        case RoundingMode::Round: return roundf(x);
+        case RoundingMode::Round: return nearbyintf(x);
         case RoundingMode::Floor: return floorf(x);
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
@@ -243,7 +247,7 @@ inline double roundWithMode(double x, RoundingMode mode)
 {
     switch (mode)
     {
-        case RoundingMode::Round: return round(x);
+        case RoundingMode::Round: return nearbyint(x);
         case RoundingMode::Floor: return floor(x);
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
@@ -440,13 +444,7 @@ public:
         }
         else
         {
-            if constexpr (!is_big_int_v<NativeType>)
-                memcpy(out.data(), in.data(), in.size() * sizeof(T));
-            else
-            {
-                for (size_t i = 0; i < in.size(); i++)
-                    out[i] = in[i];
-            }
+            memcpy(out.data(), in.data(), in.size() * sizeof(T));
         }
     }
 };
@@ -507,7 +505,7 @@ class Dispatcher
 public:
     static ColumnPtr apply(const IColumn * column, Scale scale_arg)
     {
-        if constexpr (IsNumber<T>)
+        if constexpr (is_arithmetic_v<T>)
             return apply(checkAndGetColumn<ColumnVector<T>>(column), scale_arg);
         else if constexpr (IsDecimalNumber<T>)
             return apply(checkAndGetColumn<ColumnDecimal<T>>(column), scale_arg);
@@ -522,7 +520,7 @@ class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRounding>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRounding>(); }
 
     String getName() const override
     {
@@ -531,6 +529,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -548,7 +547,7 @@ public:
         return arguments[0];
     }
 
-    static Scale getScaleArg(ColumnsWithTypeAndName & arguments)
+    static Scale getScaleArg(const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() == 2)
         {
@@ -574,7 +573,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & column = arguments[0];
         Scale scale_arg = getScaleArg(arguments);
@@ -593,6 +592,15 @@ public:
             }
             return false;
         };
+
+#if !defined(__SSE4_1__)
+        /// In case of "nearbyint" function is used, we should ensure the expected rounding mode for the Banker's rounding.
+        /// Actually it is by default. But we will set it just in case.
+
+        if constexpr (rounding_mode == RoundingMode::Round)
+            if (0 != fesetround(FE_TONEAREST))
+                throw Exception("Cannot set floating point rounding mode", ErrorCodes::CANNOT_SET_ROUNDING_MODE);
+#endif
 
         if (!callOnIndexAndDataType<void>(column.type->getTypeId(), call))
         {
@@ -622,7 +630,7 @@ class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRoundDown>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRoundDown>(); }
 
     String getName() const override { return name; }
 
@@ -630,6 +638,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -656,7 +665,7 @@ public:
         return getLeastSupertype({type_x, type_arr_nested});
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
     {
         auto in_column = arguments[0].column;
         const auto & in_type = arguments[0].type;

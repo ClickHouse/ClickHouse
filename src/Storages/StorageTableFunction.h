@@ -4,7 +4,7 @@
 #include <Processors/Pipe.h>
 #include <Storages/StorageProxy.h>
 #include <Common/CurrentThread.h>
-#include <Processors/Transforms/ConvertingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
 
@@ -62,6 +62,13 @@ public:
             nested->shutdown();
     }
 
+    void flush() override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->flush();
+    }
+
     void drop() override
     {
         std::lock_guard lock{nested_mutex};
@@ -73,7 +80,7 @@ public:
             const Names & column_names,
             const StorageMetadataPtr & metadata_snapshot,
             SelectQueryInfo & query_info,
-            const Context & context,
+            ContextPtr context,
             QueryProcessingStage::Enum processed_stage,
             size_t max_block_size,
             unsigned num_streams) override
@@ -89,21 +96,27 @@ public:
         {
             auto to_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot,
                                                          query_info, context, processed_stage);
+
+            auto convert_actions_dag = ActionsDAG::makeConvertingActions(
+                    pipe.getHeader().getColumnsWithTypeAndName(),
+                    to_header.getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Name);
+            auto convert_actions = std::make_shared<ExpressionActions>(
+                convert_actions_dag,
+                ExpressionActionsSettings::fromSettings(context->getSettingsRef(), CompileExpressions::yes));
+
             pipe.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<ConvertingTransform>(
-                       header,
-                       to_header,
-                       ConvertingTransform::MatchColumnsMode::Name);
+                return std::make_shared<ExpressionTransform>(header, convert_actions);
             });
         }
         return pipe;
     }
 
-    BlockOutputStreamPtr write(
+    SinkToStoragePtr write(
             const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
-            const Context & context) override
+            ContextPtr context) override
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
