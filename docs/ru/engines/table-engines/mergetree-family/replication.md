@@ -102,7 +102,7 @@ CREATE TABLE table_name
 ) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', ver)
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
-SAMPLE BY intHash32(UserID)
+SAMPLE BY intHash32(UserID);
 ```
 
 <details markdown="1">
@@ -115,12 +115,12 @@ CREATE TABLE table_name
     EventDate DateTime,
     CounterID UInt32,
     UserID UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192);
 ```
 
 </details>
 
-Как видно в примере, эти параметры могут содержать подстановки в фигурных скобках. Подставляемые значения достаются из конфигурационного файла, из секции «[macros](../../../operations/server-configuration-parameters/settings/#macros)».
+Как видно в примере, эти параметры могут содержать подстановки в фигурных скобках. Эти подстановки заменяются на соответствующие значения из конфигурационного файла, из секции [macros](../../../operations/server-configuration-parameters/settings.md#macros).
 
 Пример:
 

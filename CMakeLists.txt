@@ -45,6 +45,7 @@ include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
 include (cmake/analysis.cmake)
+include (cmake/git_status.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -593,7 +594,23 @@ macro (add_executable target)
         # disabled for TSAN and gcc since libtsan.a provides overrides too
         if (TARGET clickhouse_new_delete)
             # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
+        endif()
+
+        # In case of static jemalloc, because zone_register() is located in zone.c and
+        # is never used outside (it is declared as constructor) it is omitted
+        # by the linker, and so jemalloc will not be registered as system
+        # allocator under osx [1], and clickhouse will SIGSEGV.
+        #
+        #   [1]: https://github.com/jemalloc/jemalloc/issues/708
+        #
+        # About symbol name:
+        # - _zone_register not zone_register due to Mach-O binary format,
+        # - _je_zone_register due to JEMALLOC_PRIVATE_NAMESPACE=je_ under OS X.
+        # - but jemalloc-cmake does not run private_namespace.sh
+        #   so symbol name should be _zone_register
+        if (ENABLE_JEMALLOC AND MAKE_STATIC_LIBRARIES AND OS_DARWIN)
+            set_property(TARGET ${target} APPEND PROPERTY LINK_OPTIONS -u_zone_register)
         endif()
     endif()
 endmacro()

@@ -1,0 +1,50 @@
+-- { echo }
+select x3, x2, x1 from test order by 1;
+1	100	100
+10	1	10
+100	10	1
+select x3, x2, x1 from test order by x3;
+1	100	100
+10	1	10
+100	10	1
+select x3, x2, x1 from test order by 1 desc;
+100	10	1
+10	1	10
+1	100	100
+select x3, x2, x1 from test order by x3 desc;
+100	10	1
+10	1	10
+1	100	100
+insert into test values (1, 10, 200), (10, 1, 200), (100, 100, 1);
+select x3, x2 from test group by x3, x2;
+200	1
+10	1
+200	10
+1	100
+100	10
+select x3, x2 from test group by 1, 2;
+200	1
+10	1
+200	10
+1	100
+100	10
+select x1, x2, x3 from test order by x3 limit 1 by x3;
+100	100	1
+10	1	10
+1	10	100
+1	10	200
+select x1, x2, x3 from test order by 3 limit 1 by 3;
+100	100	1
+10	1	10
+1	10	100
+1	10	200
+select x1, x2, x3 from test order by x3 limit 1 by x1;
+100	100	1
+10	1	10
+1	10	100
+select x1, x2, x3 from test order by 3 limit 1 by 1;
+100	100	1
+10	1	10
+1	10	100
+select max(x3), max(x2), max(x1) from test group by 1; -- { serverError 43 }
+select max(x1) from test order by 1; -- { serverError 43 }

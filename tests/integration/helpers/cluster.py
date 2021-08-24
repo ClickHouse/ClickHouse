@@ -474,6 +474,11 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
+    def copy_file_from_container_to_container(self, src_node, src_path, dst_node, dst_path):
+        fname = os.path.basename(src_path)
+        run_and_check([f"docker cp {src_node.docker_id}:{src_path} {self.instances_dir}"], shell=True)
+        run_and_check([f"docker cp {self.instances_dir}/{fname} {dst_node.docker_id}:{dst_path}"], shell=True)
+
     def setup_zookeeper_secure_cmd(self, instance, env_variables, docker_compose_yml_dir):
         logging.debug('Setup ZooKeeper Secure')
         zookeeper_docker_compose_path = p.join(docker_compose_yml_dir, 'docker_compose_zookeeper_secure.yml')
@@ -1836,6 +1841,10 @@ class ClickHouseInstance:
         build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
         return "-fsanitize={}".format(sanitizer_name) in build_opts
 
+    def is_debug_build(self):
+        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
+        return 'NDEBUG' not in build_opts
+
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer('thread')
 
@@ -2024,6 +2033,37 @@ class ClickHouseInstance:
                 return None
         return None
 
+    def restart_with_original_version(self, stop_start_wait_sec=300, callback_onstop=None, signal=15):
+        if not self.stay_alive:
+            raise Exception("Cannot restart not stay alive container")
+        self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
+        retries = int(stop_start_wait_sec / 0.5)
+        local_counter = 0
+        # wait stop
+        while local_counter < retries:
+            if not self.get_process_pid("clickhouse server"):
+                break
+            time.sleep(0.5)
+            local_counter += 1
+
+        # force kill if server hangs
+        if self.get_process_pid("clickhouse server"):
+            # server can die before kill, so don't throw exception, it's expected
+            self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(9)], nothrow=True, user='root')
+
+        if callback_onstop:
+            callback_onstop(self)
+        self.exec_in_container(
+            ["bash", "-c", "cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"],
+            user='root')
+        self.exec_in_container(["bash", "-c",
+                                "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse"],
+                               user='root')
+        self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
+
+        # wait start
+        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
+
     def restart_with_latest_version(self, stop_start_wait_sec=300, callback_onstop=None, signal=15):
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
@@ -2044,6 +2084,9 @@ class ClickHouseInstance:
 
         if callback_onstop:
             callback_onstop(self)
+        self.exec_in_container(
+            ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
+            user='root')
         self.exec_in_container(
             ["bash", "-c", "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"],
             user='root')
