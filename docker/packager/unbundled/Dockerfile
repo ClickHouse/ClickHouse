@@ -1,6 +1,8 @@
 # docker build -t yandex/clickhouse-unbundled-builder .
 FROM yandex/clickhouse-deb-builder
 
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+
 # Libraries from OS are only needed to test the "unbundled" build (that is not used in production).
 RUN apt-get update \
     && apt-get install \
