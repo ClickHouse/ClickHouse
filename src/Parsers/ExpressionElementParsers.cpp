@@ -3,10 +3,10 @@
 
 #include <Poco/String.h>
 
-#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <Common/typeid_cast.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/DumpASTNode.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsTransformers.h>
@@ -268,7 +268,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     return true;
 }
 
-
 bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
@@ -276,6 +275,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword all("ALL");
     ParserExpressionList contents(false, is_table_function);
     ParserSelectWithUnionQuery select;
+    ParserKeyword filter("FILTER");
     ParserKeyword over("OVER");
 
     bool has_all = false;
@@ -440,14 +440,25 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_node->children.push_back(function_node->parameters);
     }
 
-    if (over.ignore(pos, expected))
+    if (filter.ignore(pos, expected))
     {
-        function_node->is_window_function = true;
-
         // We are slightly breaking the parser interface by parsing the window
         // definition into an existing ASTFunction. Normally it would take a
         // reference to ASTPtr and assign it the new node. We only have a pointer
         // of a different type, hence this workaround with a temporary pointer.
+        ASTPtr function_node_as_iast = function_node;
+
+        ParserFilterClause filter_parser;
+        if (!filter_parser.parse(pos, function_node_as_iast, expected))
+        {
+            return false;
+        }
+    }
+
+    if (over.ignore(pos, expected))
+    {
+        function_node->is_window_function = true;
+
         ASTPtr function_node_as_iast = function_node;
 
         ParserWindowReference window_reference;
@@ -501,6 +512,40 @@ bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     function_node->arguments = expr_list_with_single_query;
     function_node->children.push_back(function_node->arguments);
     node = function_node;
+    return true;
+}
+
+bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    assert(node);
+    ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
+
+    ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
+    if (!parser_opening_bracket.ignore(pos, expected))
+    {
+        return false;
+    }
+
+    ParserKeyword parser_where("WHERE");
+    if (!parser_where.ignore(pos, expected))
+    {
+        return false;
+    }
+    ParserExpressionList parser_condition(false);
+    ASTPtr condition;
+    if (!parser_condition.parse(pos, condition, expected) || condition->children.size() != 1)
+    {
+        return false;
+    }
+
+    ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
+    if (!parser_closing_bracket.ignore(pos, expected))
+    {
+        return false;
+    }
+
+    function.name += "If";
+    function.arguments->children.push_back(condition->children[0]);
     return true;
 }
 
