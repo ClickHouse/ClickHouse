@@ -429,15 +429,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         if (!disk)
         {
-            DiskType zero_copy_disk_types[] = {DiskType::S3, DiskType::HDFS};
-            for (auto disk_type: zero_copy_disk_types)
-            {
-                Disks disks = data.getDisksByType(disk_type);
-                if (!disks.empty())
-                {
-                    capability.push_back(toString(disk_type));
-                }
-            }
+            Disks disks = data.getDisks();
+            for (const auto & data_disk : disks)
+                if (data_disk->supportZeroCopyReplication())
+                    capability.push_back(toString(data_disk->getType()));
         }
         else if (disk->supportZeroCopyReplication())
         {
@@ -446,6 +441,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     }
     if (!capability.empty())
     {
+        std::sort(capability.begin(), capability.end());
+        capability.erase(std::unique(capability.begin(), capability.end()), capability.end());
         const String & remote_fs_metadata = boost::algorithm::join(capability, ", ");
         uri.addQueryParameter("remote_fs_metadata", remote_fs_metadata);
     }
