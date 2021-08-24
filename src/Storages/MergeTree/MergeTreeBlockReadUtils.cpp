@@ -35,16 +35,16 @@ bool injectRequiredColumnsRecursively(
     /// stages.
     checkStackSize();
 
-    auto column_in_storage = storage_columns.tryGetColumnOrSubcolumn(ColumnsDescription::AllPhysical, column_name);
-    if (column_in_storage)
+    if (storage_columns.hasPhysicalOrSubcolumn(column_name))
     {
-        auto column_name_in_part = column_in_storage->getNameInStorage();
+        auto column_in_storage = storage_columns.getPhysicalOrSubcolumn(column_name);
+        auto column_name_in_part = column_in_storage.getNameInStorage();
         if (alter_conversions.isColumnRenamed(column_name_in_part))
             column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
 
         auto column_in_part = NameAndTypePair(
-            column_name_in_part, column_in_storage->getSubcolumnName(),
-            column_in_storage->getTypeInStorage(), column_in_storage->type);
+            column_name_in_part, column_in_storage.getSubcolumnName(),
+            column_in_storage.getTypeInStorage(), column_in_storage.type);
 
         /// column has files and hence does not require evaluation
         if (part->hasColumnFiles(column_in_part))
@@ -87,13 +87,11 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
     bool have_at_least_one_physical_column = false;
 
     const auto & storage_columns = metadata_snapshot->getColumns();
-    MergeTreeData::AlterConversions alter_conversions;
-    if (!part->isProjectionPart())
-        alter_conversions = storage.getAlterConversionsForPart(part);
+    auto alter_conversions = storage.getAlterConversionsForPart(part);
     for (size_t i = 0; i < columns.size(); ++i)
     {
         /// We are going to fetch only physical columns
-        if (!storage_columns.hasColumnOrSubcolumn(ColumnsDescription::AllPhysical, columns[i]))
+        if (!storage_columns.hasPhysicalOrSubcolumn(columns[i]))
             throw Exception("There is no physical column or subcolumn " + columns[i] + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
@@ -272,16 +270,16 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     if (prewhere_info)
     {
         if (prewhere_info->alias_actions)
-            pre_column_names = prewhere_info->alias_actions->getRequiredColumnsNames();
+            pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
         else
         {
-            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
 
             if (prewhere_info->row_level_filter)
             {
                 NameSet names(pre_column_names.begin(), pre_column_names.end());
 
-                for (auto & name : prewhere_info->row_level_filter->getRequiredColumnsNames())
+                for (auto & name : prewhere_info->row_level_filter->getRequiredColumns())
                 {
                     if (names.count(name) == 0)
                         pre_column_names.push_back(name);
@@ -310,9 +308,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (check_columns)
     {
-        const auto & columns = metadata_snapshot->getColumns();
-        result.pre_columns = columns.getByNames(ColumnsDescription::All, pre_column_names, true);
-        result.columns = columns.getByNames(ColumnsDescription::All, column_names, true);
+        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllWithSubcolumns();
+        result.pre_columns = physical_columns.addTypes(pre_column_names);
+        result.columns = physical_columns.addTypes(column_names);
     }
     else
     {

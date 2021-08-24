@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstddef>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB

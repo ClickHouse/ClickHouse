@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         std::pair<String, UInt16> & parsed_address_,
-        ContextPtr global_context,
+        const Context & global_context,
         const std::pair<String, String> & login_password_,
         const String & vhost_,
         const Names & routing_keys_,
@@ -72,7 +72,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
                 ErrorCodes::CANNOT_CONNECT_RABBITMQ);
     }
 
-    writing_task = global_context->getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
+    writing_task = global_context.getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
     writing_task->deactivate();
 
     if (exchange_type == AMQP::ExchangeType::headers)
@@ -101,7 +101,7 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
     }
 
-    assert(rows == 0);
+    assert(rows == 0 && chunks.empty());
 }
 
 

@@ -1,6 +1,6 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnsCommon.h>
@@ -27,7 +27,7 @@ CheckConstraintsBlockOutputStream::CheckConstraintsBlockOutputStream(
     const BlockOutputStreamPtr & output_,
     const Block & header_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_)
+    const Context & context_)
     : table_id(table_id_),
     output(output_),
     header(header_),
