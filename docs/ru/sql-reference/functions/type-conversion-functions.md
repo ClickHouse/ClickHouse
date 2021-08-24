@@ -152,7 +152,7 @@ Cиноним: `DATE`.
 
 ## toDateTimeOrNull {#todatetimeornull}
 
-## toDate32 {#toDate32}
+## toDate32 {#todate32}
 
 Конвертирует аргумент в значение типа [Date32](../../sql-reference/data-types/date32.md). Если значение выходит за границы диапазона, возвращается пограничное значение [Date32](../../sql-reference/data-types/date32.md). Если аргумент имеет тип [Date](../../sql-reference/data-types/string.md) границы типа `Date` учитываются.
 
