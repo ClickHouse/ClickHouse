@@ -1,3 +1,8 @@
+---
+toc_priority: 2
+toc_title: ClickHouse的特性
+---
+
 # ClickHouse的特性 {#clickhouse-de-te-xing}
 
 ## 真正的列式数据库管理系统 {#zhen-zheng-de-lie-shi-shu-ju-ku-guan-li-xi-tong}
@@ -12,9 +17,13 @@
 
 在一些列式数据库管理系统中(例如：InfiniDB CE 和 MonetDB) 并没有使用数据压缩。但是, 若想达到比较优异的性能，数据压缩确实起到了至关重要的作用。
 
+除了在磁盘空间和CPU消耗之间进行不同权衡的高效通用压缩编解码器之外，ClickHouse还提供针对特定类型数据的[专用编解码器](../sql-reference/statements/create.md#create-query-specialized-codecs)，这使得ClickHouse能够与更小的数据库(如时间序列数据库)竞争并超越它们。
+
 ## 数据的磁盘存储 {#shu-ju-de-ci-pan-cun-chu}
 
-许多的列式数据库(如 SAP HANA, Google PowerDrill)只能在内存中工作，这种方式会造成比实际更多的设备预算。ClickHouse被设计用于工作在传统磁盘上的系统，它提供每GB更低的存储成本，但如果有可以使用SSD和内存，它也会合理的利用这些资源。
+许多的列式数据库(如 SAP HANA, Google PowerDrill)只能在内存中工作，这种方式会造成比实际更多的设备预算。
+
+ClickHouse被设计用于工作在传统磁盘上的系统，它提供每GB更低的存储成本，但如果可以使用SSD和内存，它也会合理的利用这些资源。
 
 ## 多核心并行处理 {#duo-he-xin-bing-xing-chu-li}
 
@@ -27,9 +36,11 @@ ClickHouse会使用服务器上一切可用的资源，从而以最自然的方�
 
 ## 支持SQL {#zhi-chi-sql}
 
-ClickHouse支持基于SQL的声明式查询语言，该语言大部分情况下是与SQL标准兼容的。
-支持的查询包括 GROUP BY，ORDER BY，IN，JOIN以及非相关子查询。
-不支持窗口函数和相关子查询。
+ClickHouse支持一种[基于SQL的声明式查询语言](../sql-reference/index.md)，它在许多情况下与[ANSI SQL标准](../sql-reference/ansi.md)相同。
+
+支持的查询[GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), [FROM](../sql-reference/statements/select/from.md), [JOIN](../sql-reference/statements/select/join.md), [IN](../sql-reference/operators/in.md)以及非相关子查询。
+
+相关(依赖性)子查询和窗口函数暂不受支持，但将来会被实现。
 
 ## 向量引擎 {#xiang-liang-yin-qing}
 
@@ -55,11 +66,19 @@ ClickHouse提供各种各样在允许牺牲数据精度的情况下对查询进�
 2.  基于数据的部分样本进行近似查询。这时，仅会从磁盘检索少部分比例的数据。
 3.  不使用全部的聚合条件，通过随机选择有限个数据聚合条件进行聚合。这在数据聚合条件满足某些分布条件下，在提供相当准确的聚合结果的同时降低了计算资源的使用。
 
+## Adaptive Join Algorithm {#adaptive-join-algorithm}
+
+ClickHouse支持自定义[JOIN](../sql-reference/statements/select/join.md)多个表，它更倾向于散列连接算法，如果有多个大表，则使用合并-连接算法
+
 ## 支持数据复制和数据完整性 {#zhi-chi-shu-ju-fu-zhi-he-shu-ju-wan-zheng-xing}
 
 ClickHouse使用异步的多主复制技术。当数据被写入任何一个可用副本后，系统会在后台将数据分发给其他副本，以保证系统在不同副本上保持相同的数据。在大多数情况下ClickHouse能在故障后自动恢复，在一些少数的复杂情况下需要手动恢复。
 
 更多信息，参见 [数据复制](../engines/table-engines/mergetree-family/replication.md)。
+
+## 角色的访问控制 {#role-based-access-control}
+
+ClickHouse使用SQL查询实现用户帐户管理，并允许[角色的访问控制](../operations/access-rights.md)，类似于ANSI SQL标准和流行的关系数据库管理系统。
 
 # 限制 {#clickhouseke-xian-zhi}
 

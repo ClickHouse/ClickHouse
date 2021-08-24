@@ -40,7 +40,7 @@
                         <div class="dropdown-menu bg-dark" aria-labelledby="lang-dropdown">
                             {% for code, name in config.extra.languages.items() %}
                             <a class="dropdown-item{% if language == code %} disabled{% endif %}"
-                               href="/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}{{ code }}/{{ page.url }}">
+                               href="/docs/{{ code }}/{{ page.url }}">
                                 <img src="/images/flags/{{ code }}.svg" alt="" title="" width="32" class="d-inline-block mr-2" />{{ name }}
                             </a>
                             {% endfor %}

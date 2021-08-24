@@ -1,14 +1,16 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
 
-class PredicateRewriteVisitorData
+class PredicateRewriteVisitorData : WithContext
 {
 public:
     bool is_rewrite = false;
@@ -18,18 +20,19 @@ public:
 
     static bool needChild(const ASTPtr & node, const ASTPtr &)
     {
-        if (node && node->as<TypeToVisit>())
-            return false;
-
-        return true;
+        return !(node && node->as<TypeToVisit>());
     }
 
-    PredicateRewriteVisitorData(const Context & context_, const ASTs & predicates_, Names && column_names_, bool optimize_final_, bool optimize_with_);
+    PredicateRewriteVisitorData(
+        ContextPtr context_,
+        const ASTs & predicates_,
+        const TableWithColumnNamesAndTypes & table_columns_,
+        bool optimize_final_,
+        bool optimize_with_);
 
 private:
-    const Context & context;
     const ASTs & predicates;
-    const Names column_names;
+    const TableWithColumnNamesAndTypes & table_columns;
     bool optimize_final;
     bool optimize_with;
 
@@ -37,9 +40,10 @@ private:
 
     void visitOtherInternalSelect(ASTSelectQuery & select_query, ASTPtr &);
 
-    bool rewriteSubquery(ASTSelectQuery & subquery, const Names & outer_columns, const Names & inner_columns);
+    bool rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns);
 };
 
 using PredicateRewriteMatcher = OneTypeMatcher<PredicateRewriteVisitorData, PredicateRewriteVisitorData::needChild>;
 using PredicateRewriteVisitor = InDepthNodeVisitor<PredicateRewriteMatcher, true>;
+
 }

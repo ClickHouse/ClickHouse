@@ -27,7 +27,8 @@ struct FormatSettings
     bool with_names_use_header = false;
     bool write_statistics = true;
     bool import_nested_json = false;
-    bool null_as_default = false;
+    bool null_as_default = true;
+    bool decimal_trailing_zeros = false;
 
     enum class DateTimeInputFormat
     {
@@ -52,6 +53,8 @@ struct FormatSettings
     struct
     {
         UInt64 row_group_size = 1000000;
+        bool low_cardinality_as_dictionary = false;
+        bool import_nested = false;
     } arrow;
 
     struct
@@ -60,6 +63,7 @@ struct FormatSettings
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
+        String string_column_pattern;
     } avro;
 
     struct CSV
@@ -71,6 +75,7 @@ struct FormatSettings
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         bool input_format_enum_as_number = false;
+        bool input_format_arrays_as_nested_csv = false;
     } csv;
 
     struct Custom
@@ -86,15 +91,18 @@ struct FormatSettings
 
     struct
     {
+        bool array_of_rows = false;
         bool quote_64bit_integers = true;
         bool quote_denormals = true;
         bool escape_forward_slashes = true;
+        bool named_tuples_as_objects = false;
         bool serialize_as_strings = false;
     } json;
 
     struct
     {
         UInt64 row_group_size = 1000000;
+        bool import_nested = false;
     } parquet;
 
     struct Pretty
@@ -117,7 +125,6 @@ struct FormatSettings
 
     struct
     {
-        bool write_row_delimiters = true;
         /**
          * Some buffers (kafka / rabbit) split the rows internally using callback,
          * and always send one row per message, so we can push there formats
@@ -125,8 +132,15 @@ struct FormatSettings
          * we have to enforce exporting at most one row in the format output,
          * because Protobuf without delimiters is not generally useful.
          */
-        bool allow_many_rows_no_delimiters = false;
+        bool allow_multiple_rows_without_delimiter = false;
     } protobuf;
+
+    struct
+    {
+        uint32_t client_capabilities = 0;
+        size_t max_packet_size = 0;
+        uint8_t * sequence_id = nullptr; /// Not null if it's MySQLWire output format used to handle MySQL protocol connections.
+    } mysql_wire;
 
     struct
     {
@@ -163,7 +177,11 @@ struct FormatSettings
         bool deduce_templates_of_expressions = true;
         bool accurate_types_of_literals = true;
     } values;
+
+    struct
+    {
+        bool import_nested = false;
+    } orc;
 };
 
 }
-

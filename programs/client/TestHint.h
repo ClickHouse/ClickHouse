@@ -1,114 +1,61 @@
 #pragma once
 
-#include <memory>
-#include <sstream>
-#include <iostream>
+#include <optional>
 #include <Core/Types.h>
-#include <Common/Exception.h>
-#include <Parsers/Lexer.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNEXPECTED_ERROR_CODE;
-}
-
-
-/// Checks expected server and client error codes in testmode.
-/// To enable it add special comment after the query: "-- { serverError 60 }" or "-- { clientError 20 }".
+/// Checks expected server and client error codes in --testmode.
+///
+/// The following comment hints are supported:
+///
+/// - "-- { serverError 60 }" -- in case of you are expecting server error.
+///
+/// - "-- { clientError 20 }" -- in case of you are expecting client error.
+///
+/// - "-- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }" -- by error name.
+///
+/// - "-- { clientError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }" -- by error name.
+///
+///   Remember that the client parse the query first (not the server), so for
+///   example if you are expecting syntax error, then you should use
+///   clientError not serverError.
+///
+/// Examples:
+///
+/// - echo 'select / -- { clientError 62 }' | clickhouse-client --testmode -nm
+///
+//    Here the client parses the query but it is incorrect, so it expects
+///   SYNTAX_ERROR (62).
+///
+/// - echo 'select foo -- { serverError 47 }' | clickhouse-client --testmode -nm
+///
+///   But here the query is correct, but there is no such column "foo", so it
+///   is UNKNOWN_IDENTIFIER server error.
+///
+/// The following hints will control the query echo mode (i.e print each query):
+///
+/// - "-- { echo }"
+/// - "-- { echoOn }"
+/// - "-- { echoOff }"
 class TestHint
 {
 public:
-    TestHint(bool enabled_, const String & query_)
-    : enabled(enabled_)
-    , query(query_)
-    {
-        if (!enabled_)
-            return;
-
-        Lexer lexer(query.data(), query.data() + query.size());
-
-        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
-        {
-            if (token.type == TokenType::Comment)
-            {
-                String comment(token.begin, token.begin + token.size());
-
-                if (!comment.empty())
-                {
-                    size_t pos_start = comment.find('{', 0);
-                    if (pos_start != String::npos)
-                    {
-                        size_t pos_end = comment.find('}', pos_start);
-                        if (pos_end != String::npos)
-                        {
-                            String hint(comment.begin() + pos_start + 1, comment.begin() + pos_end);
-                            parse(hint);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// @returns true if it's possible to continue without reconnect
-    bool checkActual(int & actual_server_error, int & actual_client_error,
-                     bool & got_exception, std::unique_ptr<Exception> & last_exception) const
-    {
-        if (!enabled)
-            return true;
-
-        if (allErrorsExpected(actual_server_error, actual_client_error))
-        {
-            got_exception = false;
-            last_exception.reset();
-            actual_server_error = 0;
-            actual_client_error = 0;
-            return false;
-        }
-
-        if (lostExpectedError(actual_server_error, actual_client_error))
-        {
-            std::cerr << "Success when error expected in query: " << query << "It expects server error "
-                << server_error << ", client error " << client_error << "." << std::endl;
-            got_exception = true;
-            last_exception = std::make_unique<Exception>("Success when error expected", ErrorCodes::UNEXPECTED_ERROR_CODE); /// return error to OS
-            return false;
-        }
-
-        return true;
-    }
+    TestHint(bool enabled_, const String & query_);
 
     int serverError() const { return server_error; }
     int clientError() const { return client_error; }
+    std::optional<bool> echoQueries() const { return echo; }
 
 private:
-    bool enabled = false;
     const String & query;
     int server_error = 0;
     int client_error = 0;
+    std::optional<bool> echo;
 
-    void parse(const String & hint)
-    {
-        std::stringstream ss;
-        ss << hint;
-        String item;
-
-        while (!ss.eof())
-        {
-            ss >> item;
-            if (ss.eof())
-                break;
-
-            if (item == "serverError")
-                ss >> server_error;
-            else if (item == "clientError")
-                ss >> client_error;
-        }
-    }
+    void parse(const String & hint, bool is_leading_hint);
 
     bool allErrorsExpected(int actual_server_error, int actual_client_error) const
     {

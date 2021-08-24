@@ -216,9 +216,7 @@ inline Float64 getSpan(uint8_t precision, CoordType type)
 inline uint8_t geohashPrecision(uint8_t precision)
 {
     if (precision == 0 || precision > MAX_PRECISION)
-    {
         precision = MAX_PRECISION;
-    }
 
     return precision;
 }
@@ -281,13 +279,21 @@ GeohashesInBoxPreparedArgs geohashesInBoxPrepare(
         return {};
     }
 
-    longitude_min = std::max(longitude_min, LON_MIN);
-    longitude_max = std::min(longitude_max, LON_MAX);
-    latitude_min = std::max(latitude_min, LAT_MIN);
-    latitude_max = std::min(latitude_max, LAT_MAX);
+    auto saturate = [](Float64 & value, Float64 min, Float64 max)
+    {
+        if (value < min)
+            value = min;
+        else if (value > max)
+            value = max;
+    };
 
-    const auto lon_step = getSpan(precision, LONGITUDE);
-    const auto lat_step = getSpan(precision, LATITUDE);
+    saturate(longitude_min, LON_MIN, LON_MAX);
+    saturate(longitude_max, LON_MIN, LON_MAX);
+    saturate(latitude_min, LAT_MIN, LAT_MAX);
+    saturate(latitude_max, LAT_MIN, LAT_MAX);
+
+    Float64 lon_step = getSpan(precision, LONGITUDE);
+    Float64 lat_step = getSpan(precision, LATITUDE);
 
     /// Align max to the right (or up) border of geohash grid cell to ensure that cell is in result.
     Float64 lon_min = floor(longitude_min / lon_step) * lon_step;

@@ -36,16 +36,16 @@ DataStream ITransformingStep::createOutputStream(
 }
 
 
-QueryPipelinePtr ITransformingStep::updatePipeline(QueryPipelines pipelines)
+QueryPipelinePtr ITransformingStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (collect_processors)
     {
         QueryPipelineProcessorsCollector collector(*pipelines.front(), this);
-        transformPipeline(*pipelines.front());
+        transformPipeline(*pipelines.front(), settings);
         processors = collector.detachProcessors();
     }
     else
-        transformPipeline(*pipelines.front());
+        transformPipeline(*pipelines.front(), settings);
 
     return std::move(pipelines.front());
 }
@@ -55,9 +55,9 @@ void ITransformingStep::updateDistinctColumns(const Block & res_header, NameSet 
     if (distinct_columns.empty())
         return;
 
-    for (const auto & column : res_header)
+    for (const auto & column : distinct_columns)
     {
-        if (distinct_columns.count(column.name) == 0)
+        if (!res_header.has(column))
         {
             distinct_columns.clear();
             break;

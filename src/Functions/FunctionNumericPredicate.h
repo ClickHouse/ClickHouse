@@ -1,9 +1,11 @@
 #pragma once
-#include <Functions/IFunctionImpl.h>
+
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <ext/range.h>
+#include <Interpreters/Context_fwd.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -21,7 +23,7 @@ class FunctionNumericPredicate : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionNumericPredicate>();
     }
@@ -36,6 +38,11 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return false;
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isNativeNumber(arguments.front()))
@@ -46,7 +53,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto * in = arguments.front().column.get();
 
@@ -78,7 +85,7 @@ public:
             const auto & in_data = in->getData();
             auto & out_data = out->getData();
 
-            for (const auto i : ext::range(0, size))
+            for (const auto i : collections::range(0, size))
                 out_data[i] = Impl::execute(in_data[i]);
 
             return out;

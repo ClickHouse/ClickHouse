@@ -1,8 +1,10 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 CFLAGS(
-    -DUSE_H3 -DUSE_SSL -DUSE_XXHASH
+    -DUSE_SSL -DUSE_XXHASH
 )
 
 ADDINCL(
@@ -13,6 +15,7 @@ ADDINCL(
     contrib/libs/libdivide
     contrib/libs/rapidjson/include
     contrib/libs/xxhash
+    GLOBAL contrib/restricted/murmurhash
 )
 
 PEERDIR(
@@ -28,6 +31,7 @@ PEERDIR(
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
+    contrib/restricted/murmurhash
     library/cpp/consistent_hashing
 )
 
@@ -35,12 +39,20 @@ PEERDIR(
 
 SRCS(
     CRC.cpp
+    CastOverloadResolver.cpp
+    DateOrDateTimeFunctionsConvertion.cpp
+    FunctionChar.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
+    FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
+    FunctionSQLJSON.cpp
     FunctionsAES.cpp
-    FunctionsCoding.cpp
+    FunctionsBinaryRepr.cpp
+    FunctionsBitToArray.cpp
+    FunctionsCodingIP.cpp
+    FunctionsCodingUUID.cpp
     FunctionsConversion.cpp
     FunctionsEmbeddedDictionaries.cpp
     FunctionsExternalDictionaries.cpp
@@ -51,6 +63,7 @@ SRCS(
     FunctionsRandom.cpp
     FunctionsRound.cpp
     FunctionsStringArray.cpp
+    FunctionsStringHash.cpp
     FunctionsStringSimilarity.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
@@ -70,6 +83,12 @@ SRCS(
     GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
     GeoHash.cpp
     IFunction.cpp
+    JSONPath/Parsers/ParserJSONPath.cpp
+    JSONPath/Parsers/ParserJSONPathMemberAccess.cpp
+    JSONPath/Parsers/ParserJSONPathQuery.cpp
+    JSONPath/Parsers/ParserJSONPathRange.cpp
+    JSONPath/Parsers/ParserJSONPathRoot.cpp
+    JSONPath/Parsers/ParserJSONPathStar.cpp
     TargetSpecific.cpp
     URL/URLHierarchy.cpp
     URL/URLPathHierarchy.cpp
@@ -78,6 +97,7 @@ SRCS(
     URL/cutQueryString.cpp
     URL/cutQueryStringAndFragment.cpp
     URL/cutToFirstSignificantSubdomain.cpp
+    URL/cutToFirstSignificantSubdomainCustom.cpp
     URL/cutURLParameter.cpp
     URL/cutWWW.cpp
     URL/decodeURLComponent.cpp
@@ -87,6 +107,7 @@ SRCS(
     URL/extractURLParameterNames.cpp
     URL/extractURLParameters.cpp
     URL/firstSignificantSubdomain.cpp
+    URL/firstSignificantSubdomainCustom.cpp
     URL/fragment.cpp
     URL/netloc.cpp
     URL/path.cpp
@@ -100,6 +121,7 @@ SRCS(
     URL/topLevelDomain.cpp
     abs.cpp
     acos.cpp
+    acosh.cpp
     addDays.cpp
     addHours.cpp
     addMinutes.cpp
@@ -115,6 +137,7 @@ SRCS(
     appendTrailingCharIfAbsent.cpp
     array/array.cpp
     array/arrayAUC.cpp
+    array/arrayAggregation.cpp
     array/arrayAll.cpp
     array/arrayCompact.cpp
     array/arrayConcat.cpp
@@ -150,7 +173,6 @@ SRCS(
     array/arraySlice.cpp
     array/arraySort.cpp
     array/arraySplit.cpp
-    array/arraySum.cpp
     array/arrayUniq.cpp
     array/arrayWithConstant.cpp
     array/arrayZip.cpp
@@ -168,8 +190,11 @@ SRCS(
     array/range.cpp
     array/registerFunctionsArray.cpp
     asin.cpp
+    asinh.cpp
     assumeNotNull.cpp
     atan.cpp
+    atan2.cpp
+    atanh.cpp
     bar.cpp
     base64Decode.cpp
     base64Encode.cpp
@@ -177,6 +202,7 @@ SRCS(
     bitBoolMaskAnd.cpp
     bitBoolMaskOr.cpp
     bitCount.cpp
+    bitHammingDistance.cpp
     bitNot.cpp
     bitOr.cpp
     bitRotateLeft.cpp
@@ -189,30 +215,43 @@ SRCS(
     bitTestAny.cpp
     bitWrapperFunc.cpp
     bitXor.cpp
-    bitmaskToList.cpp
     blockNumber.cpp
     blockSerializedSize.cpp
     blockSize.cpp
     buildId.cpp
+    byteSize.cpp
     caseWithExpression.cpp
     cbrt.cpp
     coalesce.cpp
     concat.cpp
+    connectionId.cpp
     convertCharset.cpp
     cos.cpp
+    cosh.cpp
     countDigits.cpp
+    countMatches.cpp
+    countSubstrings.cpp
+    countSubstringsCaseInsensitive.cpp
+    countSubstringsCaseInsensitiveUTF8.cpp
     currentDatabase.cpp
+    currentProfiles.cpp
+    currentRoles.cpp
     currentUser.cpp
     dateDiff.cpp
+    dateName.cpp
     date_trunc.cpp
+    decodeXMLComponent.cpp
     decrypt.cpp
     defaultValueOfArgumentType.cpp
     defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
+    divide/divide.cpp
+    divide/divideImpl.cpp
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
+    encodeXMLComponent.cpp
     encrypt.cpp
     endsWith.cpp
     equals.cpp
@@ -227,6 +266,7 @@ SRCS(
     extractAllGroupsHorizontal.cpp
     extractAllGroupsVertical.cpp
     extractGroups.cpp
+    extractTextFromHTML.cpp
     extractTimeZoneFromFunctionArguments.cpp
     filesystem.cpp
     finalizeAggregation.cpp
@@ -236,6 +276,7 @@ SRCS(
     formatReadableTimeDelta.cpp
     formatRow.cpp
     formatString.cpp
+    fromModifiedJulianDay.cpp
     fromUnixTimestamp64Micro.cpp
     fromUnixTimestamp64Milli.cpp
     fromUnixTimestamp64Nano.cpp
@@ -243,6 +284,7 @@ SRCS(
     gcd.cpp
     generateUUIDv4.cpp
     geoToH3.cpp
+    geoToS2.cpp
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp
@@ -266,11 +308,14 @@ SRCS(
     h3ToParent.cpp
     h3ToString.cpp
     h3kRing.cpp
+    h3toGeo.cpp
     hasColumnInTable.cpp
     hasThreadFuzzer.cpp
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
+    hyperscanRegexpChecker.cpp
+    hypot.cpp
     identity.cpp
     if.cpp
     ifNotFinite.cpp
@@ -278,6 +323,8 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
+    indexHint.cpp
+    initialQueryID.cpp
     initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -286,6 +333,7 @@ SRCS(
     isConstant.cpp
     isDecimalOverflow.cpp
     isFinite.cpp
+    isIPAddressContainedIn.cpp
     isInfinite.cpp
     isNaN.cpp
     isNotNull.cpp
@@ -295,6 +343,7 @@ SRCS(
     jumpConsistentHash.cpp
     lcm.cpp
     least.cpp
+    lemmatize.cpp
     lengthUTF8.cpp
     less.cpp
     lessOrEquals.cpp
@@ -302,12 +351,14 @@ SRCS(
     like.cpp
     log.cpp
     log10.cpp
+    log1p.cpp
     log2.cpp
     logTrace.cpp
     lowCardinalityIndices.cpp
     lowCardinalityKeys.cpp
     lower.cpp
     lowerUTF8.cpp
+    map.cpp
     match.cpp
     materialize.cpp
     minus.cpp
@@ -348,15 +399,27 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
+    padString.cpp
+    partitionId.cpp
     pi.cpp
     plus.cpp
     pointInEllipses.cpp
     pointInPolygon.cpp
+    polygonArea.cpp
+    polygonConvexHull.cpp
+    polygonPerimeter.cpp
+    polygonsDistance.cpp
+    polygonsEquals.cpp
+    polygonsIntersection.cpp
+    polygonsSymDifference.cpp
+    polygonsUnion.cpp
+    polygonsWithin.cpp
     position.cpp
     positionCaseInsensitive.cpp
     positionCaseInsensitiveUTF8.cpp
     positionUTF8.cpp
     pow.cpp
+    queryID.cpp
     rand.cpp
     rand64.cpp
     randConstant.cpp
@@ -364,6 +427,7 @@ SRCS(
     randomPrintableASCII.cpp
     randomString.cpp
     randomStringUTF8.cpp
+    readWkt.cpp
     regexpQuoteMeta.cpp
     registerFunctions.cpp
     registerFunctionsArithmetic.cpp
@@ -387,8 +451,6 @@ SRCS(
     registerFunctionsUnixTimestamp64.cpp
     registerFunctionsVisitParam.cpp
     reinterpretAs.cpp
-    reinterpretAsFixedString.cpp
-    reinterpretAsString.cpp
     repeat.cpp
     replaceAll.cpp
     replaceOne.cpp
@@ -403,14 +465,28 @@ SRCS(
     rowNumberInAllBlocks.cpp
     rowNumberInBlock.cpp
     runningAccumulate.cpp
+    runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
+    s2CapContains.cpp
+    s2CapUnion.cpp
+    s2CellsIntersect.cpp
+    s2GetNeighbors.cpp
+    s2RectAdd.cpp
+    s2RectContains.cpp
+    s2RectIntersection.cpp
+    s2RectUnion.cpp
+    s2ToGeo.cpp
     sigmoid.cpp
+    sign.cpp
     sin.cpp
+    sinh.cpp
     sleep.cpp
     sleepEachRow.cpp
     sqrt.cpp
     startsWith.cpp
+    stem.cpp
+    stringCutToZero.cpp
     stringToH3.cpp
     substring.cpp
     subtractDays.cpp
@@ -421,14 +497,19 @@ SRCS(
     subtractSeconds.cpp
     subtractWeeks.cpp
     subtractYears.cpp
+    svg.cpp
+    synonyms.cpp
     tan.cpp
     tanh.cpp
+    tcpPort.cpp
     tgamma.cpp
     throwIf.cpp
     tid.cpp
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp
+    timezoneOf.cpp
+    timezoneOffset.cpp
     toColumnTypeName.cpp
     toCustomWeek.cpp
     toDayOfMonth.cpp
@@ -438,8 +519,10 @@ SRCS(
     toHour.cpp
     toISOWeek.cpp
     toISOYear.cpp
+    toJSONString.cpp
     toLowCardinality.cpp
     toMinute.cpp
+    toModifiedJulianDay.cpp
     toMonday.cpp
     toMonth.cpp
     toNullable.cpp
@@ -466,7 +549,7 @@ SRCS(
     toStartOfTenMinutes.cpp
     toStartOfYear.cpp
     toTime.cpp
-    toTimeZone.cpp
+    toTimezone.cpp
     toTypeName.cpp
     toUnixTimestamp64Micro.cpp
     toUnixTimestamp64Milli.cpp
@@ -483,9 +566,12 @@ SRCS(
     tryBase64Decode.cpp
     tuple.cpp
     tupleElement.cpp
+    tupleHammingDistance.cpp
+    tupleToNameValuePairs.cpp
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
+    validateNestedArraySizes.cpp
     version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp
@@ -495,6 +581,7 @@ SRCS(
     visitParamExtractString.cpp
     visitParamExtractUInt.cpp
     visitParamHas.cpp
+    wkt.cpp
     yandexConsistentHash.cpp
     yesterday.cpp
 

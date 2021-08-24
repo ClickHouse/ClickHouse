@@ -3,7 +3,6 @@
 #include <Columns/IColumnUnique.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
 #include "ColumnsNumber.h"
 
 
@@ -95,6 +94,8 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
@@ -107,6 +108,11 @@ public:
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
+    }
+
+    void expand(const Filter & mask, bool inverted) override
+    {
+        idx.getPositionsPtr()->expand(mask, inverted);
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
@@ -126,6 +132,8 @@ public:
                        int direction, int nan_direction_hint) const override;
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
+
+    bool hasEqualValues() const override;
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
@@ -152,6 +160,7 @@ public:
     void reserve(size_t n) override { idx.reserve(n); }
 
     size_t byteSize() const override { return idx.getPositions()->byteSize() + getDictionary().byteSize(); }
+    size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
     void forEachSubcolumn(ColumnCallback callback) override
@@ -183,9 +192,14 @@ public:
      * So LC(Nullable(T)) would return true, LC(U) -- false.
      */
     bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
+    bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
+    void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
+    void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
+    IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
+    ColumnPtr & getDictionaryPtr() { return dictionary.getColumnUniquePtr(); }
     /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique); }
     /// ColumnPtr getUniquePtr() const { return column_unique; }
 

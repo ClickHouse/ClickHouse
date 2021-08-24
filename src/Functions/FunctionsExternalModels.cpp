@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Columns/ColumnString.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <string>
 #include <memory>
 #include <DataTypes/DataTypeNullable.h>
@@ -18,9 +18,9 @@
 namespace DB
 {
 
-FunctionPtr FunctionModelEvaluate::create(const Context & context)
+FunctionPtr FunctionModelEvaluate::create(ContextPtr context)
 {
-    return std::make_shared<FunctionModelEvaluate>(context.getExternalModelsLoader());
+    return std::make_shared<FunctionModelEvaluate>(context->getExternalModelsLoader());
 }
 
 namespace ErrorCodes
@@ -69,7 +69,7 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
     return type;
 }
 
-ColumnPtr FunctionModelEvaluate::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
+ColumnPtr FunctionModelEvaluate::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
     if (!name_col)
@@ -83,9 +83,9 @@ ColumnPtr FunctionModelEvaluate::executeImpl(ColumnsWithTypeAndName & arguments,
     ColumnPtr null_map;
 
     column_ptrs.reserve(arguments.size());
-    for (auto arg : ext::range(1, arguments.size()))
+    for (auto arg : collections::range(1, arguments.size()))
     {
-        auto & column = arguments[arg].column;
+        const auto & column = arguments[arg].column;
         column_ptrs.push_back(column.get());
         if (auto full_column = column->convertToFullColumnIfConst())
         {

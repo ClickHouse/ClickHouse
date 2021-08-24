@@ -1,20 +1,19 @@
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnsNumber.h>
+
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataTypes/NumberTraits.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <common/sort.h>
+#include <common/scope_guard.h>
 
-#include <ext/scope_guard.h>
-
-#if !defined(ARCADIA_BUILD)
-    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
-#endif
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -123,7 +122,7 @@ namespace
         else if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapUniqueIndexImpl(*data_uint64);
         else
-            throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got" + column.getName(),
+            throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got " + column.getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
 }
@@ -152,7 +151,7 @@ void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Expected ColumnLowCardinality, got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     size_t position = low_cardinality_src->getIndexes().getUInt(n);
 
@@ -248,6 +247,11 @@ const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * po
     return new_pos;
 }
 
+const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
+{
+    return getDictionary().skipSerializedInArena(pos);
+}
+
 void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
 {
     auto s = size();
@@ -310,6 +314,13 @@ void ColumnLowCardinality::compareColumn(const IColumn & rhs, size_t rhs_row_num
     return doCompareColumn<ColumnLowCardinality>(
             assert_cast<const ColumnLowCardinality &>(rhs), rhs_row_num, row_indexes,
             compare_results, direction, nan_direction_hint);
+}
+
+bool ColumnLowCardinality::hasEqualValues() const
+{
+    if (getDictionary().size() <= 1)
+        return true;
+    return getIndexes().hasEqualValues();
 }
 
 void ColumnLowCardinality::getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator) const
@@ -397,11 +408,7 @@ void ColumnLowCardinality::updatePermutationImpl(size_t limit, Permutation & res
 
         /// Since then we are working inside the interval.
 
-#if !defined(ARCADIA_BUILD)
-        miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
-#else
-        std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
-#endif
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
         auto new_first = first;
 
         for (auto j = first + 1; j < limit; ++j)

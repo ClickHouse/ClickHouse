@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# shellcheck source=./mergetree_mutations.lib
 . "$CURDIR"/mergetree_mutations.lib
 
 ${CLICKHOUSE_CLIENT} --multiquery << EOF
 DROP TABLE IF EXISTS mutations_r1;
 DROP TABLE IF EXISTS for_subquery;
 
-CREATE TABLE mutations_r1(x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_DATABASE}/mutations', 'r1') ORDER BY x;
+CREATE TABLE mutations_r1(x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/mutations', 'r1') ORDER BY x;
 INSERT INTO mutations_r1 VALUES (123, 1), (234, 2), (345, 3);
 
 CREATE TABLE for_subquery(x UInt32) ENGINE TinyLog;

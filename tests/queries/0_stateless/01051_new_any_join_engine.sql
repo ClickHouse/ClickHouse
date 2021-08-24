@@ -57,6 +57,29 @@ SELECT * FROM t1 ANTI LEFT JOIN anti_left_join j USING(x) ORDER BY x, str, s;
 SELECT 'anti right';
 SELECT * FROM t1 ANTI RIGHT JOIN anti_right_join j USING(x) ORDER BY x, str, s;
 
+-- run queries once more time (issue #16991)
+
+SELECT 'any left';
+SELECT * FROM t1 ANY LEFT JOIN any_left_join j USING(x) ORDER BY x, str, s;
+
+SELECT 'any inner';
+SELECT * FROM t1 ANY INNER JOIN any_inner_join j USING(x) ORDER BY x, str, s;
+
+SELECT 'any right';
+SELECT * FROM t1 ANY RIGHT JOIN any_right_join j USING(x) ORDER BY x, str, s;
+
+SELECT 'semi left';
+SELECT * FROM t1 SEMI LEFT JOIN semi_left_join j USING(x) ORDER BY x, str, s;
+
+SELECT 'semi right';
+SELECT * FROM t1 SEMI RIGHT JOIN semi_right_join j USING(x) ORDER BY x, str, s;
+
+SELECT 'anti left';
+SELECT * FROM t1 ANTI LEFT JOIN anti_left_join j USING(x) ORDER BY x, str, s;
+
+SELECT 'anti right';
+SELECT * FROM t1 ANTI RIGHT JOIN anti_right_join j USING(x) ORDER BY x, str, s;
+
 DROP TABLE t1;
 
 DROP TABLE any_left_join;

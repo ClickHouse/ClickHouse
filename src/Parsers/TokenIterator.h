@@ -80,6 +80,6 @@ public:
 
 /// Returns positions of unmatched parentheses.
 using UnmatchedParentheses = std::vector<Token>;
-UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, Token * last);
+UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin);
 
 }

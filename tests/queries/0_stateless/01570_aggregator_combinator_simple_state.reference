@@ -1,0 +1,14 @@
+SimpleAggregateFunction(any, UInt64)	0
+SimpleAggregateFunction(anyLast, UInt64)	0
+SimpleAggregateFunction(min, UInt64)	0
+SimpleAggregateFunction(max, UInt64)	0
+SimpleAggregateFunction(sum, UInt64)	0
+SimpleAggregateFunction(sumWithOverflow, UInt64)	0
+SimpleAggregateFunction(groupBitAnd, UInt64)	0
+SimpleAggregateFunction(groupBitOr, UInt64)	0
+SimpleAggregateFunction(groupBitXor, UInt64)	0
+SimpleAggregateFunction(sumMap, Tuple(Array(UInt64), Array(UInt64)))	([],[])
+SimpleAggregateFunction(minMap, Tuple(Array(UInt64), Array(UInt64)))	([0],[0])
+SimpleAggregateFunction(maxMap, Tuple(Array(UInt64), Array(UInt64)))	([0],[0])
+SimpleAggregateFunction(groupArrayArray, Array(UInt64))	[0]
+SimpleAggregateFunction(groupUniqArrayArray, Array(UInt64))	[0]

@@ -8,10 +8,9 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 
-
 class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
-    def __init__(self, base_path, config_dir):
-        ClickHouseCluster.__init__(self, base_path)
+    def __init__(self, base_path, config_dir, testcase_name):
+        ClickHouseCluster.__init__(self, base_path, name=testcase_name)
 
         self.test_config_dir = config_dir
 
@@ -83,7 +82,7 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
         assert codes[0] == "0", "\n" + tsv_content
 
     def ddl_check_query(self, instance, query, num_hosts=None, settings=None):
-        contents = instance.query(query, settings=settings)
+        contents = instance.query_with_retry(query, settings=settings)
         self.check_all_hosts_successfully_executed(contents, num_hosts)
         return contents
 
@@ -104,8 +103,8 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
     def ddl_check_there_are_no_dublicates(instance):
         query = "SELECT max(c), argMax(q, c) FROM (SELECT lower(query) AS q, count() AS c FROM system.query_log WHERE type=2 AND q LIKE '/* ddl_entry=query-%' GROUP BY query)"
         rows = instance.query(query)
-        assert len(rows) > 0 and rows[0][0] == "1", "dublicates on {} {}, query {}".format(instance.name,
-                                                                                           instance.ip_address, query)
+        assert len(rows) > 0 and rows[0][0] == "1", "dublicates on {} {}: {}".format(instance.name,
+                                                                                           instance.ip_address, rows)
 
     @staticmethod
     def insert_reliable(instance, query_insert):

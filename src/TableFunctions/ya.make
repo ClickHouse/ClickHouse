@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
@@ -10,6 +12,7 @@ SRCS(
     ITableFunction.cpp
     ITableFunctionFileLike.cpp
     ITableFunctionXDBC.cpp
+    TableFunctionDictionary.cpp
     TableFunctionFactory.cpp
     TableFunctionExecutable.cpp
     TableFunctionFile.cpp
@@ -20,6 +23,7 @@ SRCS(
     TableFunctionNull.cpp
     TableFunctionNumbers.cpp
     TableFunctionRemote.cpp
+    TableFunctionSQLite.cpp
     TableFunctionURL.cpp
     TableFunctionValues.cpp
     TableFunctionView.cpp

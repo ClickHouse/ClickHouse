@@ -7,9 +7,9 @@ toc_title: Storing Dictionaries in Memory
 
 There are a variety of ways to store dictionaries in memory.
 
-We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed). which provide optimal processing speed.
+We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed), which provide optimal processing speed.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section “[cache](#cache)”.
+Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section [cache](#cache).
 
 There are several ways to improve dictionary performance:
 
@@ -68,9 +68,9 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 The dictionary is completely stored in memory in the form of flat arrays. How much memory does the dictionary use? The amount is proportional to the size of the largest key (in space used).
 
-The dictionary key has the `UInt64` type and the value is limited to 500,000. If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary.
+The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type and the value is limited to `max_array_size` (by default — 500,000). If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary. Dictionary flat arrays initial size is controlled by `initial_array_size` setting (by default — 1024).
 
-All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
+All types of sources are supported. When updating, data (from a file or from a table) is read in it entirety.
 
 This method provides the best performance among all available methods of storing the dictionary.
 
@@ -78,21 +78,27 @@ Configuration example:
 
 ``` xml
 <layout>
-  <flat />
+  <flat>
+    <initial_array_size>50000</initial_array_size>
+    <max_array_size>5000000</max_array_size>
+  </flat>
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(FLAT())
+LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 ```
 
 ### hashed {#dicts-external_dicts_dict_layout-hashed}
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 
-The hash table will be preallocated (this will make dictionary load faster), if the is approx number of total rows is known, this is supported only if the source is `clickhouse` without any `<where>` (since in case of `<where>` you can filter out too much rows and the dictionary will allocate too much memory, that will not be used eventually).
+If `preallocate` is `true` (default is `false`) the hash table will be preallocated (this will make the dictionary load faster). But note that you should use it only if:
+
+- The source support an approximate number of elements (for now it is supported only by the `ClickHouse` source).
+- There are no duplicates in the data (otherwise it may increase memory usage for the hashtable).
 
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
@@ -100,21 +106,23 @@ Configuration example:
 
 ``` xml
 <layout>
-  <hashed />
+  <hashed>
+    <preallocate>0</preallocate>
+  </hashed>
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(HASHED())
+LAYOUT(HASHED(PREALLOCATE 0))
 ```
 
 ### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
 
-It will be also preallocated so as `hashed`, note that it is even more significant for `sparse_hashed`.
+It will be also preallocated so as `hashed` (with `preallocate` set to `true`), and note that it is even more significant for `sparse_hashed`.
 
 Configuration example:
 
@@ -124,8 +132,10 @@ Configuration example:
 </layout>
 ```
 
+or
+
 ``` sql
-LAYOUT(SPARSE_HASHED())
+LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
 ```
 
 ### complex_key_hashed {#complex-key-hashed}
@@ -208,8 +218,8 @@ This function returns the value for the specified `id`s and the date range that 
 Details of the algorithm:
 
 -   If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
--   If there are overlapping ranges, you can use any.
--   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01 or 2039-01-01), the range is left open. The range can be open on both sides.
+-   If there are overlapping ranges, it returns value for any (random) range.
+-   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01), the range is open. The range can be open on both sides.
 
 Configuration example:
 
@@ -265,8 +275,12 @@ The dictionary is stored in a cache that has a fixed number of cells. These cell
 
 When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
 
-For cache dictionaries, the expiration [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used, and it is re-requested the next time it needs to be used.
+If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
+
+For cache dictionaries, the expiration [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used and key becomes expired, and it is re-requested the next time it needs to be used this behaviour can be configured with setting `allow_read_expired_keys`.
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the `system.dictionaries` table.
+
+If setting `allow_read_expired_keys` is set to 1, by default 0. Then dictionary can support asynchronous updates. If a client requests keys and all of them are in cache, but some of them are expired, then dictionary will return expired keys for a client and request them asynchronously from the source.
 
 To improve cache performance, use a subquery with `LIMIT`, and call the function with the dictionary externally.
 
@@ -279,6 +293,16 @@ Example of settings:
     <cache>
         <!-- The size of the cache, in number of cells. Rounded up to a power of two. -->
         <size_in_cells>1000000000</size_in_cells>
+        <!-- Allows to read expired keys. -->
+        <allow_read_expired_keys>0</allow_read_expired_keys>
+        <!-- Max size of update queue. -->
+        <max_update_queue_size>100000</max_update_queue_size>
+        <!-- Max timeout in milliseconds for push update task into queue. -->
+        <update_queue_push_timeout_milliseconds>10</update_queue_push_timeout_milliseconds>
+        <!-- Max wait timeout in milliseconds for update task to complete. -->
+        <query_wait_timeout_milliseconds>60000</query_wait_timeout_milliseconds>
+        <!-- Max threads for cache dictionary update. -->
+        <max_threads_for_updates>4</max_threads_for_updates>
     </cache>
 </layout>
 ```
@@ -305,7 +329,7 @@ This type of storage is for use with composite [keys](../../../sql-reference/dic
 
 ### ssd_cache {#ssd-cache}
 
-Similar to `cache`, but stores data on SSD and index in RAM.
+Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionary settings related to update queue can also be applied to SSD cache dictionaries.
 
 ``` xml
 <layout>
@@ -320,8 +344,6 @@ Similar to `cache`, but stores data on SSD and index in RAM.
         <write_buffer_size>1048576</write_buffer_size>
         <!-- Path where cache file will be stored. -->
         <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
-        <!-- Max number on stored keys in the cache. Rounded up to a power of two. -->
-        <max_stored_keys>1048576</max_stored_keys>
     </ssd_cache>
 </layout>
 ```
@@ -329,8 +351,8 @@ Similar to `cache`, but stores data on SSD and index in RAM.
 or
 
 ``` sql
-LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict MAX_STORED_KEYS 1048576))
+LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH ./user_files/test_dict))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}
@@ -406,6 +428,14 @@ Example:
             <null_value>??</null_value>
     </attribute>
     ...
+</structure>
+<layout>
+    <ip_trie>
+        <!-- Key attribute `prefix` can be retrieved via dictGetString. -->
+        <!-- This option increases memory usage. -->
+        <access_to_key_from_attributes>true</access_to_key_from_attributes>
+    </ip_trie>
+</layout>
 ```
 
 or
@@ -435,6 +465,5 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
-Data is stored in a `trie`. It must completely fit into RAM.
+Data must completely fit into RAM.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

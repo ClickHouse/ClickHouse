@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
@@ -24,7 +24,7 @@ class FunctionTuple : public IFunction
 public:
     static constexpr auto name = "tuple";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionTuple>();
     }
@@ -49,6 +49,8 @@ public:
         return true;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -66,14 +68,18 @@ public:
             names.emplace_back(argument.name);
         }
 
-        /// Create named tuple if possible.
+        /// Create named tuple if possible. We don't print tuple element names
+        /// because they are bad anyway -- aliases are not used, e.g. tuple(1 a)
+        /// will have element name '1' and not 'a'. If we ever change this, and
+        /// add the ability to access tuple elements by name, like tuple(1 a).a,
+        /// we should probably enable printing for better discoverability.
         if (DataTypeTuple::canBeCreatedWithNames(names))
-            return std::make_shared<DataTypeTuple>(types, names, false);
+            return std::make_shared<DataTypeTuple>(types, names, false /*print names*/);
 
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);

@@ -22,6 +22,13 @@ def system_settings_profile_elements(profile_name=None, user_name=None, role_nam
     return TSV(instance.query("SELECT * FROM system.settings_profile_elements" + where))
 
 
+session_id_counter = 0
+def new_session_id():
+    global session_id_counter
+    session_id_counter += 1
+    return 'session #' + str(session_id_counter)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def setup_nodes():
     try:
@@ -42,11 +49,11 @@ def reset_after_test():
     finally:
         instance.query("CREATE USER OR REPLACE robin")
         instance.query("DROP ROLE IF EXISTS worker")
-        instance.query("DROP SETTINGS PROFILE IF EXISTS xyz, alpha")
+        instance.query("DROP SETTINGS PROFILE IF EXISTS xyz, alpha, P1, P2, P3, P4, P5, P6")
 
 
 def test_smoke():
-    # Set settings and constraints via CREATE SETTINGS PROFILE ... TO user 
+    # Set settings and constraints via CREATE SETTINGS PROFILE ... TO user
     instance.query(
         "CREATE SETTINGS PROFILE xyz SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin")
     assert instance.query(
@@ -194,26 +201,70 @@ def test_show_profiles():
 
     assert instance.query("SHOW CREATE PROFILE xyz") == "CREATE SETTINGS PROFILE xyz\n"
     assert instance.query(
-        "SHOW CREATE SETTINGS PROFILE default") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n"
+        "SHOW CREATE SETTINGS PROFILE default") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n"
     assert instance.query(
-        "SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n" \
+        "SHOW CREATE PROFILES") == "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n" \
                                    "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n" \
                                    "CREATE SETTINGS PROFILE xyz\n"
 
-    expected_access = "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, use_uncompressed_cache = 0, load_balancing = \\'random\\'\n" \
+    expected_access = "CREATE SETTINGS PROFILE default SETTINGS max_memory_usage = 10000000000, load_balancing = \\'random\\'\n" \
                       "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n" \
                       "CREATE SETTINGS PROFILE xyz\n"
     assert expected_access in instance.query("SHOW ACCESS")
 
 
-def test_allow_ddl():
-    assert "Not enough privileges" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
-    assert "DDL queries are prohibited" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log",
-                                                                        settings={"allow_ddl": 0})
+def test_set_profile():
+    instance.query("CREATE SETTINGS PROFILE P1 SETTINGS max_memory_usage=10000000001 MAX 20000000002")
 
-    assert "Not enough privileges" in instance.query_and_get_error("GRANT CREATE ON tbl TO robin", user="robin")
-    assert "DDL queries are prohibited" in instance.query_and_get_error("GRANT CREATE ON tbl TO robin",
-                                                                        settings={"allow_ddl": 0})
+    session_id = new_session_id()
+    instance.http_query("SET profile='P1'", user='robin', params={'session_id':session_id})
+    assert instance.http_query("SELECT getSetting('max_memory_usage')", user='robin', params={'session_id':session_id}) == "10000000001\n"
+
+    expected_error = "max_memory_usage shouldn't be greater than 20000000002"
+    assert expected_error in instance.http_query_and_get_error("SET max_memory_usage=20000000003", user='robin', params={'session_id':session_id})
+
+
+def test_changing_default_profiles_affects_new_sessions_only():
+    instance.query("CREATE SETTINGS PROFILE P1 SETTINGS max_memory_usage=10000000001")
+    instance.query("CREATE SETTINGS PROFILE P2 SETTINGS max_memory_usage=10000000002")
+    instance.query("ALTER USER robin SETTINGS PROFILE P1")
+
+    session_id = new_session_id()
+    assert instance.http_query("SELECT getSetting('max_memory_usage')", user='robin', params={'session_id':session_id}) == "10000000001\n"
+    instance.query("ALTER USER robin SETTINGS PROFILE P2")
+    assert instance.http_query("SELECT getSetting('max_memory_usage')", user='robin', params={'session_id':session_id}) == "10000000001\n"
+
+    other_session_id = new_session_id()
+    assert instance.http_query("SELECT getSetting('max_memory_usage')", user='robin', params={'session_id':other_session_id}) == "10000000002\n"
+
+
+def test_function_current_profiles():
+    instance.query("CREATE SETTINGS PROFILE P1, P2")
+    instance.query("ALTER USER robin SETTINGS PROFILE P1, P2")
+    instance.query("CREATE SETTINGS PROFILE P3 TO robin")
+    instance.query("CREATE SETTINGS PROFILE P4")
+    instance.query("CREATE SETTINGS PROFILE P5 SETTINGS INHERIT P4")
+    instance.query("CREATE ROLE worker SETTINGS PROFILE P5")
+    instance.query("GRANT worker TO robin")
+    instance.query("CREATE SETTINGS PROFILE P6")
+
+    session_id = new_session_id()
+    assert instance.http_query('SELECT defaultProfiles(), currentProfiles(), enabledProfiles()', user='robin', params={'session_id':session_id}) == "['P1','P2']\t['P1','P2']\t['default','P3','P4','P5','P1','P2']\n"
+
+    instance.http_query("SET profile='P6'", user='robin', params={'session_id':session_id})
+    assert instance.http_query('SELECT defaultProfiles(), currentProfiles(), enabledProfiles()', user='robin', params={'session_id':session_id}) == "['P1','P2']\t['P6']\t['default','P3','P4','P5','P1','P2','P6']\n"
+
+    instance.http_query("SET profile='P5'", user='robin', params={'session_id':session_id})
+    assert instance.http_query('SELECT defaultProfiles(), currentProfiles(), enabledProfiles()', user='robin', params={'session_id':session_id}) == "['P1','P2']\t['P5']\t['default','P3','P1','P2','P6','P4','P5']\n"
+
+    instance.query("ALTER USER robin SETTINGS PROFILE P2")
+    assert instance.http_query('SELECT defaultProfiles(), currentProfiles(), enabledProfiles()', user='robin', params={'session_id':session_id}) == "['P2']\t['P5']\t['default','P3','P1','P2','P6','P4','P5']\n"
+
+
+def test_allow_ddl():
+    assert "it's necessary to have grant" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
+    assert "it's necessary to have grant" in instance.query_and_get_error("GRANT CREATE ON tbl TO robin", user="robin")
+    assert "DDL queries are prohibited" in instance.query_and_get_error("CREATE TABLE tbl(a Int32) ENGINE=Log", settings={"allow_ddl": 0})
 
     instance.query("GRANT CREATE ON tbl TO robin")
     instance.query("CREATE TABLE tbl(a Int32) ENGINE=Log", user="robin")
@@ -221,20 +272,16 @@ def test_allow_ddl():
 
 
 def test_allow_introspection():
-    assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')")
-    assert "Not enough privileges" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
-    assert "Not enough privileges" in instance.query_and_get_error("SELECT demangle('a')", user="robin",
-                                                                   settings={"allow_introspection_functions": 1})
-
-    assert "Introspection functions are disabled" in instance.query_and_get_error("GRANT demangle ON *.* TO robin")
-    assert "Not enough privileges" in instance.query_and_get_error("GRANT demangle ON *.* TO robin", user="robin")
-    assert "Not enough privileges" in instance.query_and_get_error("GRANT demangle ON *.* TO robin", user="robin",
-                                                                   settings={"allow_introspection_functions": 1})
-
     assert instance.query("SELECT demangle('a')", settings={"allow_introspection_functions": 1}) == "signed char\n"
-    instance.query("GRANT demangle ON *.* TO robin", settings={"allow_introspection_functions": 1})
 
+    assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')")
+    assert "it's necessary to have grant" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
+    assert "it's necessary to have grant" in instance.query_and_get_error("SELECT demangle('a')", user="robin", settings={"allow_introspection_functions": 1})
+
+    instance.query("GRANT demangle ON *.* TO robin")
     assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
+    assert instance.query("SELECT demangle('a')", user="robin", settings={"allow_introspection_functions": 1}) == "signed char\n"
+
     instance.query("ALTER USER robin SETTINGS allow_introspection_functions=1")
     assert instance.query("SELECT demangle('a')", user="robin") == "signed char\n"
 
@@ -248,4 +295,4 @@ def test_allow_introspection():
     assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
 
     instance.query("REVOKE demangle ON *.* FROM robin", settings={"allow_introspection_functions": 1})
-    assert "Not enough privileges" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
+    assert "it's necessary to have grant" in instance.query_and_get_error("SELECT demangle('a')", user="robin")

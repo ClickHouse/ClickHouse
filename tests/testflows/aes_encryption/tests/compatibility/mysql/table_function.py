@@ -169,7 +169,7 @@ def encrypt(self, mysql_datatype):
 @TestFeature
 @Name("table function")
 @Requirements(
-    RQ_SRS008_AES_Functions_Compatability_TableFunction_MySQL("1.0")
+    RQ_SRS008_AES_Functions_Compatibility_TableFunction_MySQL("1.0")
 )
 def feature(self, node="clickhouse1", mysql_node="mysql1"):
     """Check usage of encryption functions with [MySQL table function].

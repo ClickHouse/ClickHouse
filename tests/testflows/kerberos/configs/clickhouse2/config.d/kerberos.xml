@@ -1,0 +1,5 @@
+<yandex>
+    <kerberos>
+        <realm>EXAMPLE.COM</realm>
+    </kerberos>
+</yandex>

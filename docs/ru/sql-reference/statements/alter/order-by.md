@@ -19,4 +19,3 @@ MODIFY ORDER BY new_expression
 сортировки, разрешено добавлять в ключ только новые столбцы (т.е. столбцы, добавляемые командой `ADD COLUMN`
 в том же запросе `ALTER`), у которых нет выражения по умолчанию.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/order-by/) <!--hide-->

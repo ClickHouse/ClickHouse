@@ -1,12 +1,20 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
     clickhouse/src/Common
     contrib/libs/msgpack
     contrib/libs/protobuf
+    contrib/libs/apache/arrow
 )
 
+ADDINCL(
+    contrib/libs/apache/arrow/src
+)
+
+CFLAGS(-DUSE_ARROW=1)
 
 SRCS(
     Chunk.cpp
@@ -15,6 +23,7 @@ SRCS(
     Executors/ExecutingGraph.cpp
     Executors/PipelineExecutingBlockInputStream.cpp
     Executors/PipelineExecutor.cpp
+    Executors/PollingQueue.cpp
     Executors/PullingAsyncPipelineExecutor.cpp
     Executors/PullingPipelineExecutor.cpp
     ForkProcessor.cpp
@@ -22,8 +31,13 @@ SRCS(
     Formats/IOutputFormat.cpp
     Formats/IRowInputFormat.cpp
     Formats/IRowOutputFormat.cpp
+    Formats/Impl/ArrowBlockInputFormat.cpp
+    Formats/Impl/ArrowBlockOutputFormat.cpp
+    Formats/Impl/ArrowBufferedStreams.cpp
+    Formats/Impl/ArrowColumnToCHColumn.cpp
     Formats/Impl/BinaryRowInputFormat.cpp
     Formats/Impl/BinaryRowOutputFormat.cpp
+    Formats/Impl/CHColumnToArrowColumn.cpp
     Formats/Impl/CSVRowInputFormat.cpp
     Formats/Impl/CSVRowOutputFormat.cpp
     Formats/Impl/ConstantExpressionTemplate.cpp
@@ -40,9 +54,10 @@ SRCS(
     Formats/Impl/MsgPackRowInputFormat.cpp
     Formats/Impl/MsgPackRowOutputFormat.cpp
     Formats/Impl/MySQLOutputFormat.cpp
-    Formats/Impl/NativeFormat.cpp
     Formats/Impl/NullFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
+    Formats/Impl/ParallelFormattingOutputFormat.cpp
+    Formats/Impl/ParallelParsingInputFormat.cpp
     Formats/Impl/PostgreSQLOutputFormat.cpp
     Formats/Impl/PrettyBlockOutputFormat.cpp
     Formats/Impl/PrettyCompactBlockOutputFormat.cpp
@@ -75,6 +90,7 @@ SRCS(
     LimitTransform.cpp
     Merges/Algorithms/AggregatingSortedAlgorithm.cpp
     Merges/Algorithms/CollapsingSortedAlgorithm.cpp
+    Merges/Algorithms/FinishAggregatingInOrderAlgorithm.cpp
     Merges/Algorithms/GraphiteRollupSortedAlgorithm.cpp
     Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.cpp
     Merges/Algorithms/IMergingAlgorithmWithSharedChunks.cpp
@@ -88,12 +104,9 @@ SRCS(
     Pipe.cpp
     Port.cpp
     QueryPipeline.cpp
-    QueryPlan/AddingConstColumnStep.cpp
-    QueryPlan/AddingDelayedSourceStep.cpp
-    QueryPlan/AddingMissedStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
-    QueryPlan/ConvertingStep.cpp
+    QueryPlan/BuildQueryPipelineSettings.cpp
     QueryPlan/CreatingSetsStep.cpp
     QueryPlan/CubeStep.cpp
     QueryPlan/DistinctStep.cpp
@@ -105,35 +118,44 @@ SRCS(
     QueryPlan/IQueryPlanStep.cpp
     QueryPlan/ISourceStep.cpp
     QueryPlan/ITransformingStep.cpp
+    QueryPlan/JoinStep.cpp
     QueryPlan/LimitByStep.cpp
     QueryPlan/LimitStep.cpp
-    QueryPlan/MaterializingStep.cpp
     QueryPlan/MergeSortingStep.cpp
     QueryPlan/MergingAggregatedStep.cpp
-    QueryPlan/MergingFinal.cpp
     QueryPlan/MergingSortedStep.cpp
     QueryPlan/OffsetStep.cpp
+    QueryPlan/Optimizations/QueryPlanOptimizationSettings.cpp
+    QueryPlan/Optimizations/filterPushDown.cpp
+    QueryPlan/Optimizations/liftUpArrayJoin.cpp
+    QueryPlan/Optimizations/limitPushDown.cpp
+    QueryPlan/Optimizations/mergeExpressions.cpp
+    QueryPlan/Optimizations/optimizeTree.cpp
+    QueryPlan/Optimizations/splitFilter.cpp
     QueryPlan/PartialSortingStep.cpp
+    QueryPlan/QueryIdHolder.cpp
     QueryPlan/QueryPlan.cpp
+    QueryPlan/ReadFromMergeTree.cpp
     QueryPlan/ReadFromPreparedSource.cpp
+    QueryPlan/ReadFromRemote.cpp
     QueryPlan/ReadNothingStep.cpp
-    QueryPlan/ReverseRowsStep.cpp
     QueryPlan/RollupStep.cpp
     QueryPlan/SettingQuotaAndLimitsStep.cpp
     QueryPlan/TotalsHavingStep.cpp
     QueryPlan/UnionStep.cpp
+    QueryPlan/WindowStep.cpp
     ResizeProcessor.cpp
     Sources/DelayedSource.cpp
     Sources/RemoteSource.cpp
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
-    Transforms/AddingMissedTransform.cpp
+    Transforms/AddingDefaultsTransform.cpp
     Transforms/AddingSelectorTransform.cpp
     Transforms/AggregatingInOrderTransform.cpp
     Transforms/AggregatingTransform.cpp
     Transforms/ArrayJoinTransform.cpp
-    Transforms/ConvertingTransform.cpp
+    Transforms/CheckSortedTransform.cpp
     Transforms/CopyTransform.cpp
     Transforms/CreatingSetsTransform.cpp
     Transforms/CubeTransform.cpp
@@ -154,7 +176,10 @@ SRCS(
     Transforms/ReverseTransform.cpp
     Transforms/RollupTransform.cpp
     Transforms/SortingTransform.cpp
+    Transforms/SquashingChunksTransform.cpp
     Transforms/TotalsHavingTransform.cpp
+    Transforms/WindowTransform.cpp
+    Transforms/getSourceFromFromASTInsertQuery.cpp
     printPipeline.cpp
 
 )

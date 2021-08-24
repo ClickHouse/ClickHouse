@@ -1,9 +1,8 @@
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -12,11 +11,12 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
 
-Block PartLogElement::createBlock()
+NamesAndTypesList PartLogElement::getNamesAndTypes()
 {
     auto event_type_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -30,32 +30,37 @@ Block PartLogElement::createBlock()
         }
     );
 
-    return
-    {
-        {ColumnInt8::create(),   std::move(event_type_datatype),       "event_type"},
-        {ColumnUInt16::create(), std::make_shared<DataTypeDate>(),     "event_date"},
-        {ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(), "event_time"},
-        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "duration_ms"},
+    ColumnsWithTypeAndName columns_with_type_and_name;
 
-        {ColumnString::create(), std::make_shared<DataTypeString>(),   "database"},
-        {ColumnString::create(), std::make_shared<DataTypeString>(),   "table"},
-        {ColumnString::create(), std::make_shared<DataTypeString>(),   "part_name"},
-        {ColumnString::create(), std::make_shared<DataTypeString>(),   "partition_id"},
-        {ColumnString::create(), std::make_shared<DataTypeString>(),   "path_on_disk"},
+    return {
+        {"query_id", std::make_shared<DataTypeString>()},
+        {"event_type", std::move(event_type_datatype)},
+        {"event_date", std::make_shared<DataTypeDate>()},
 
-        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "rows"},
-        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "size_in_bytes"}, // On disk
+        {"event_time", std::make_shared<DataTypeDateTime>()},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+
+        {"duration_ms", std::make_shared<DataTypeUInt64>()},
+
+        {"database", std::make_shared<DataTypeString>()},
+        {"table", std::make_shared<DataTypeString>()},
+        {"part_name", std::make_shared<DataTypeString>()},
+        {"partition_id", std::make_shared<DataTypeString>()},
+        {"path_on_disk", std::make_shared<DataTypeString>()},
+
+        {"rows", std::make_shared<DataTypeUInt64>()},
+        {"size_in_bytes", std::make_shared<DataTypeUInt64>()}, // On disk
 
         /// Merge-specific info
-        {ColumnArray::create(ColumnString::create()), std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "merged_from"},
-        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "bytes_uncompressed"}, // Result bytes
-        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "read_rows"},
-        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "read_bytes"},
-        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "peak_memory_usage"},
+        {"merged_from", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"bytes_uncompressed", std::make_shared<DataTypeUInt64>()}, // Result bytes
+        {"read_rows", std::make_shared<DataTypeUInt64>()},
+        {"read_bytes", std::make_shared<DataTypeUInt64>()},
+        {"peak_memory_usage", std::make_shared<DataTypeUInt64>()},
 
         /// Is there an error during the execution or commit
-        {ColumnUInt16::create(), std::make_shared<DataTypeUInt16>(),   "error"},
-        {ColumnString::create(), std::make_shared<DataTypeString>(),   "exception"},
+        {"error", std::make_shared<DataTypeUInt16>()},
+        {"exception", std::make_shared<DataTypeString>()},
     };
 }
 
@@ -63,9 +68,11 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(query_id);
     columns[i++]->insert(event_type);
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
+    columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(duration_ms);
 
     columns[i++]->insert(database_name);
@@ -94,13 +101,25 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 }
 
 
-bool PartLog::addNewPart(Context & current_context, const MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
+bool PartLog::addNewPart(
+    ContextPtr current_context, const MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
 {
     return addNewParts(current_context, {part}, elapsed_ns, execution_status);
 }
 
-bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns,
-                          const ExecutionStatus & execution_status)
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
+
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
+bool PartLog::addNewParts(
+    ContextPtr current_context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
 {
     if (parts.empty())
         return true;
@@ -110,16 +129,26 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
     try
     {
         auto table_id = parts.front()->storage.getStorageID();
-        part_log = current_context.getPartLog(table_id.database_name); // assume parts belong to the same table
+        part_log = current_context->getPartLog(table_id.database_name); // assume parts belong to the same table
         if (!part_log)
             return false;
+
+        auto query_id = CurrentThread::getQueryId();
 
         for (const auto & part : parts)
         {
             PartLogElement elem;
 
-            elem.event_type = PartLogElement::NEW_PART;
-            elem.event_time = time(nullptr);
+            if (query_id.data && query_id.size)
+                elem.query_id.insert(0, query_id.data, query_id.size);
+
+            elem.event_type = PartLogElement::NEW_PART; //-V1048
+
+            // construct event_time and event_time_microseconds using the same time point
+            // so that the two times will always be equal up to a precision of a second.
+            const auto time_now = std::chrono::system_clock::now();
+            elem.event_time = time_in_seconds(time_now);
+            elem.event_time_microseconds = time_in_microseconds(time_now);
             elem.duration_ms = elapsed_ns / 1000000;
 
             elem.database_name = table_id.database_name;

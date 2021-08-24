@@ -1,0 +1,86 @@
+EXPLAIN SYNTAX
+SELECT 1
+UNION ALL
+(
+    SELECT 1
+    UNION ALL
+    (
+        SELECT 1
+        UNION ALL
+        SELECT 1
+    )
+    UNION ALL
+    SELECT 1
+);
+
+SELECT '-';
+
+EXPLAIN SYNTAX
+SELECT 1
+UNION ALL
+(
+    SELECT 1
+    UNION DISTINCT
+    (
+        SELECT 1
+        UNION ALL
+        SELECT 1
+    )
+    UNION ALL
+    SELECT 1
+);
+
+SELECT '-';
+
+EXPLAIN SYNTAX
+SELECT x
+FROM
+(
+    SELECT 1 AS x
+    UNION ALL
+    (
+        SELECT 1
+        UNION DISTINCT
+        (
+            SELECT 1
+            UNION ALL
+            SELECT 1
+        )
+        UNION ALL
+        SELECT 1
+    )
+);
+
+SELECT '-';
+
+EXPLAIN SYNTAX
+SELECT x
+FROM
+(
+    SELECT 1 AS x
+    UNION ALL
+    (
+        SELECT 1
+        UNION ALL
+        SELECT 1
+    )
+);
+
+SELECT '-';
+
+EXPLAIN SYNTAX
+SELECT 1
+UNION ALL
+SELECT 1
+UNION DISTINCT
+SELECT 1;
+
+SELECT '-';
+
+EXPLAIN SYNTAX
+(((((((((((((((SELECT 1)))))))))))))));
+
+SELECT '-';
+
+EXPLAIN SYNTAX
+(((((((((((((((SELECT 1 UNION DISTINCT SELECT 1))) UNION DISTINCT SELECT 1)))) UNION ALL SELECT 1))))))));

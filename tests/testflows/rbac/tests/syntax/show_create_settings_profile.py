@@ -25,13 +25,13 @@ def feature(self, node="clickhouse1"):
             with Finally("I drop the settings profile"):
                 node.query(f"DROP SETTINGS PROFILE IF EXISTS {profile}")
 
-    with Scenario("I show create settings profile", flags=TE, requirements=[
+    with Scenario("I show create settings profile", requirements=[
             RQ_SRS_006_RBAC_SettingsProfile_ShowCreateSettingsProfile("1.0")]):
         with cleanup("profile0"):
             with When("I run show create settings profile command"):
                 node.query("SHOW CREATE SETTINGS PROFILE profile0")
 
-    with Scenario("I show create settings profile short form", flags=TE, requirements=[
+    with Scenario("I show create settings profile short form", requirements=[
             RQ_SRS_006_RBAC_SettingsProfile_ShowCreateSettingsProfile("1.0")]):
         with cleanup("profile1"):
             with When("I run show create settings profile command"):

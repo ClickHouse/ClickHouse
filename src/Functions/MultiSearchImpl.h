@@ -41,6 +41,8 @@ struct MultiSearchImpl
             }
             ++iteration;
         }
+        if (iteration == 0)
+            std::fill(res.begin(), res.end(), 0);
     }
 };
 

@@ -33,6 +33,8 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 
 In this example, we set partitioning by the event types that occurred during the current week.
 
+By default, the floating-point partition key is not supported. To use it enable the setting [allow_floating_point_partition_key](../../../operations/settings/merge-tree-settings.md#allow_floating_point_partition_key).
+
 When inserting new data to a table, this data is stored as a separate part (chunk) sorted by the primary key. In 10-15 minutes after inserting, the parts of the same partition are merged into the entire part.
 
 !!! info "Info"

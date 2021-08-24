@@ -1,4 +1,9 @@
-# 维基访问数据 {#wei-ji-fang-wen-shu-ju}
+---
+toc_priority: 17
+toc_title: WikiStat
+---
+
+# WikiStat {#wikistat}
 
 参考: http://dumps.wikimedia.org/other/pagecounts-raw/
 

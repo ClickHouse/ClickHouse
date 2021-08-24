@@ -25,6 +25,8 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
 
     client1.send('DROP TABLE IF EXISTS test.lv')
     client1.expect(prompt)
+    client1.send('DROP TABLE IF EXISTS test.lv_sums')
+    client1.expect(prompt)
     client1.send('DROP TABLE IF EXISTS test.mt')
     client1.expect(prompt)
     client1.send('DROP TABLE IF EXISTS test.sums')
@@ -39,12 +41,10 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client3.expect(prompt)
 
     client3.send("WATCH test.lv_sums FORMAT CSVWithNames")
-    client3.expect('_version')
 
     client1.send('INSERT INTO test.sums WATCH test.lv')
     client1.expect(r'INSERT INTO')
-    client1.expect(r'Progress')
-    
+
     client3.expect('0,1.*\r\n')
 
     client2.send('INSERT INTO test.mt VALUES (1),(2),(3)')
@@ -67,7 +67,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     match = client1.expect('(%s)|([#\$] )' % prompt)
     if match.groups()[1]:
         client1.send(client1.command)
-        client1.expect(prompt)    
+        client1.expect(prompt)
 
     client2.send('DROP TABLE test.lv')
     client2.expect(prompt)
