@@ -206,7 +206,7 @@ bool IStorage::isReadOnly() const
     auto storage_policy = getStoragePolicy();
     if (storage_policy)
     {
-        for (const auto disk : storage_policy->getDisks())
+        for (const auto & disk : storage_policy->getDisks())
             if (!disk->isReadOnly())
                 return false;
         return true;
