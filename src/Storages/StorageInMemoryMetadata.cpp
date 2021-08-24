@@ -503,13 +503,13 @@ namespace
      */
     bool isCompatibleEnumTypes(const IDataType * lhs, const IDataType * rhs)
     {
-        WhichDataType which{lhs};
-        if (!which.isEnum())
-            return false;
-        IDataTypeEnum const * enum_type = dynamic_cast<IDataTypeEnum const *>(lhs);
-        if (!enum_type->contains(*rhs))
-            return false;
-        return enum_type->getMaximumSizeOfValueInMemory() == rhs->getMaximumSizeOfValueInMemory();
+        if (IDataTypeEnum const * enum_type = dynamic_cast<IDataTypeEnum const *>(lhs))
+        {
+            if (!enum_type->contains(*rhs))
+                return false;
+            return enum_type->getMaximumSizeOfValueInMemory() == rhs->getMaximumSizeOfValueInMemory();
+        }
+        return false;
     }
 }
 
