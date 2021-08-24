@@ -878,6 +878,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     {
         /// Check extra parts at different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
+
         for (const auto & disk_ptr : disks)
             defined_disk_names.insert(disk_ptr->getName());
 
@@ -887,9 +888,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             {
                 for (const auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
                 {
-                    MergeTreePartInfo part_info;
-                    if (MergeTreePartInfo::tryParsePartName(it->name(), &part_info, format_version))
-                        throw Exception("Part " + backQuote(it->name()) + " was found on disk " + backQuote(disk_name) + " which is not defined in the storage policy", ErrorCodes::UNKNOWN_DISK);
+                    if (MergeTreePartInfo::tryParsePartName(it->name(), format_version))
+                        throw Exception(ErrorCodes::UNKNOWN_DISK, 
+                            "Part {} was found on disk {} which is not defined in the storage policy",
+                            backQuote(it->name()), backQuote(disk_name));
                 }
             }
         }
@@ -900,10 +902,13 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
     {
         auto disk_ptr = *disk_it;
+
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             /// Skip temporary directories, file 'format_version.txt' and directory 'detached'.
-            if (startsWith(it->name(), "tmp") || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME || it->name() == MergeTreeData::DETACHED_DIR_NAME)
+            if (startsWith(it->name(), "tmp")
+                || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME
+                || it->name() == MergeTreeData::DETACHED_DIR_NAME)
                 continue;
 
             if (!startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
@@ -950,25 +955,34 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     {
         pool.scheduleOrThrowOnError([&]
         {
-            const auto & part_name = part_names_with_disk.first;
-            const auto part_disk_ptr = part_names_with_disk.second;
+            const auto & [part_name, part_disk_ptr] = part_names_with_disk;
 
-            MergeTreePartInfo part_info;
-            if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
+            auto part_opt = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+
+            if (!part_opt)
                 return;
 
             auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, part_disk_ptr, 0);
-            auto part = createPart(part_name, part_info, single_disk_volume, part_name);
+            auto part = createPart(part_name, *part_opt, single_disk_volume, part_name);
             bool broken = false;
 
             String part_path = fs::path(relative_data_path) / part_name;
             String marker_path = fs::path(part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
+
             if (part_disk_ptr->exists(marker_path))
             {
-                LOG_WARNING(log, "Detaching stale part {}{}, which should have been deleted after a move. That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.", getFullPathOnDisk(part_disk_ptr), part_name);
+                LOG_WARNING(log,
+                    "Detaching stale part {}{}, which should have been deleted after a move. That can only happen "
+                    "after unclean restart of ClickHouse after move of a part having an operation blocking that "
+                    "stale copy of part.",
+                    getFullPathOnDisk(part_disk_ptr), part_name);
+
                 std::lock_guard loading_lock(mutex);
+
                 broken_parts_to_detach.push_back(part);
+
                 ++suspicious_broken_parts;
+
                 return;
             }
 
@@ -996,25 +1010,34 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             /// Ignore broken parts that can appear as a result of hard server restart.
             if (broken)
             {
-                LOG_ERROR(log, "Detaching broken part {}{}. If it happened after update, it is likely because of backward incompability. You need to resolve this manually", getFullPathOnDisk(part_disk_ptr), part_name);
+                LOG_ERROR(log,
+                    "Detaching broken part {}{}. If it happened after update, it is likely because of backward "
+                    "incompatibility. You need to resolve this manually",
+                    getFullPathOnDisk(part_disk_ptr), part_name);
+
                 std::lock_guard loading_lock(mutex);
+
                 broken_parts_to_detach.push_back(part);
+
                 ++suspicious_broken_parts;
 
                 return;
             }
+
             if (!part->index_granularity_info.is_adaptive)
                 has_non_adaptive_parts.store(true, std::memory_order_relaxed);
             else
                 has_adaptive_parts.store(true, std::memory_order_relaxed);
 
             part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
+
             /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
             part->setState(DataPartState::Committed);
 
             std::lock_guard loading_lock(mutex);
+
             if (!data_parts_indexes.insert(part).second)
-                throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+                throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} already exists", part->name);
 
             addPartContributionToDataVolume(part);
         });
@@ -3399,11 +3422,8 @@ std::vector<DetachedPartInfo> MergeTreeData::getDetachedParts() const
         {
             for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
             {
-                res.emplace_back();
-                auto & part = res.back();
-
-                DetachedPartInfo::tryParseDetachedPartName(it->name(), part, format_version);
-                part.disk = disk->getName();
+                auto res_it = res.emplace_back(DetachedPartInfo::parseDetachedPartName(it->name(), format_version));
+                res_it.disk = disk->getName();
             }
         }
     }
@@ -3474,7 +3494,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         validateDetachedPartName(part_id);
         renamed_parts.addPart(part_id, "attaching_" + part_id);
 
-        if (MergeTreePartInfo::tryParsePartName(part_id, nullptr, format_version))
+        if (MergeTreePartInfo::tryParsePartName(part_id, format_version))
             name_to_disk[part_id] = getDiskForPart(part_id, source_dir);
     }
     else
@@ -3490,12 +3510,11 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             for (auto it = disk->iterateDirectory(relative_data_path + source_dir); it->isValid(); it->next())
             {
                 const String & name = it->name();
-                MergeTreePartInfo part_info;
 
                 // TODO what if name contains "_tryN" suffix?
                 /// Parts with prefix in name (e.g. attaching_1_3_3_0, deleting_1_3_3_0) will be ignored
-                if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version)
-                    || part_info.partition_id != partition_id)
+                if (auto part_opt = MergeTreePartInfo::tryParsePartName(name, format_version);
+                    !part_opt || part_opt->partition_id != partition_id)
                 {
                     continue;
                 }
