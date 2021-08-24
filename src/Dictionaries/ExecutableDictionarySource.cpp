@@ -1,26 +1,21 @@
 #include "ExecutableDictionarySource.h"
 
 #include <functional>
-#include <common/scope_guard.h>
-#include <DataStreams/OwningBlockInputStream.h>
-#include <DataStreams/formatBlock.h>
-#include <Processors/ISimpleTransform.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Interpreters/Context.h>
-#include <Formats/FormatFactory.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <Common/ShellCommand.h>
-#include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
 #include <common/LocalDateTime.h>
-#include "DictionarySourceFactory.h"
-#include "DictionarySourceHelpers.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
+#include <Common/ShellCommand.h>
+
+#include <DataStreams/ShellCommandSource.h>
+#include <DataStreams/formatBlock.h>
+
+#include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
 
 
 namespace DB
@@ -35,41 +30,78 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-
 namespace
 {
-    /// Owns ShellCommand and calls wait for it.
-    class ShellCommandOwningTransform final : public ISimpleTransform
+
+/** A stream, that runs child process and sends data to its stdin in background thread,
+  *  and receives data from its stdout.
+  *
+  *  TODO: implement without background thread.
+  */
+class SourceWithBackgroundThread final : public SourceWithProgress
+{
+public:
+    SourceWithBackgroundThread(
+        ContextPtr context,
+        const std::string & format,
+        const Block & sample_block,
+        const std::string & command_str,
+        Poco::Logger * log_,
+        std::function<void(WriteBufferFromFile &)> && send_data_)
+        : SourceWithProgress(sample_block)
+        , log(log_)
+        , command(ShellCommand::execute(command_str))
+        , send_data(std::move(send_data_))
+        , thread([this] { send_data(command->in); })
     {
-    private:
-        Poco::Logger * log;
-        std::unique_ptr<ShellCommand> command;
-    public:
-        ShellCommandOwningTransform(const Block & header, Poco::Logger * log_, std::unique_ptr<ShellCommand> command_)
-            : ISimpleTransform(header, header, true), log(log_), command(std::move(command_))
+        pipeline.init(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, DEFAULT_BLOCK_SIZE)));
+        executor = std::make_unique<PullingPipelineExecutor>(pipeline);
+    }
+
+    ~SourceWithBackgroundThread() override
+    {
+        if (thread.joinable())
+            thread.join();
+    }
+
+protected:
+    Chunk generate() override
+    {
+        Chunk chunk;
+        executor->pull(chunk);
+        return chunk;
+    }
+
+public:
+    Status prepare() override
+    {
+        auto status = SourceWithProgress::prepare();
+
+        if (status == Status::Finished)
         {
+            std::string err;
+            readStringUntilEOF(err, command->err);
+            if (!err.empty())
+                LOG_ERROR(log, "Having stderr: {}", err);
+
+            if (thread.joinable())
+                thread.join();
+
+            command->wait();
         }
 
-        String getName() const override { return "ShellCommandOwningTransform"; }
-        void transform(Chunk &) override {}
+        return status;
+    }
 
-        Status prepare() override
-        {
-            auto status = ISimpleTransform::prepare();
-            if (status == Status::Finished)
-            {
-                std::string err;
-                readStringUntilEOF(err, command->err);
-                if (!err.empty())
-                    LOG_ERROR(log, "Having stderr: {}", err);
+    String getName() const override { return "SourceWithBackgroundThread"; }
 
-                command->wait();
-            }
-
-            return status;
-        }
-    };
-
+    Poco::Logger * log;
+    QueryPipeline pipeline;
+    std::unique_ptr<PullingPipelineExecutor> executor;
+    std::unique_ptr<ShellCommand> command;
+    std::function<void(WriteBufferFromFile &)> send_data;
+    ThreadFromGlobalPool thread;
+};
 }
 
 ExecutableDictionarySource::ExecutableDictionarySource(
@@ -133,83 +165,9 @@ Pipe ExecutableDictionarySource::loadUpdatedAll()
 
     LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
     auto process = ShellCommand::execute(command_with_update_field);
-
     Pipe pipe(FormatFactory::instance().getInput(configuration.format, process->out, sample_block, context, max_block_size));
     pipe.addTransform(std::make_shared<ShellCommandOwningTransform>(pipe.getHeader(), log, std::move(process)));
     return pipe;
-}
-
-namespace
-{
-    /** A stream, that runs child process and sends data to its stdin in background thread,
-      *  and receives data from its stdout.
-      *
-      *  TODO: implement without background thread.
-      */
-    class SourceWithBackgroundThread final : public SourceWithProgress
-    {
-    public:
-        SourceWithBackgroundThread(
-            ContextPtr context,
-            const std::string & format,
-            const Block & sample_block,
-            const std::string & command_str,
-            Poco::Logger * log_,
-            std::function<void(WriteBufferFromFile &)> && send_data_)
-            : SourceWithProgress(sample_block)
-            , log(log_)
-            , command(ShellCommand::execute(command_str))
-            , send_data(std::move(send_data_))
-            , thread([this] { send_data(command->in); })
-        {
-            pipeline.init(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, max_block_size)));
-            executor = std::make_unique<PullingPipelineExecutor>(pipeline);
-        }
-
-        ~SourceWithBackgroundThread() override
-        {
-            if (thread.joinable())
-                thread.join();
-        }
-
-    protected:
-        Chunk generate() override
-        {
-            Chunk chunk;
-            executor->pull(chunk);
-            return chunk;
-        }
-
-    public:
-        Status prepare() override
-        {
-            auto status = SourceWithProgress::prepare();
-
-            if (status == Status::Finished)
-            {
-                std::string err;
-                readStringUntilEOF(err, command->err);
-                if (!err.empty())
-                    LOG_ERROR(log, "Having stderr: {}", err);
-
-                if (thread.joinable())
-                    thread.join();
-
-                command->wait();
-            }
-
-            return status;
-        }
-
-        String getName() const override { return "SourceWithBackgroundThread"; }
-
-        Poco::Logger * log;
-        QueryPipeline pipeline;
-        std::unique_ptr<PullingPipelineExecutor> executor;
-        std::unique_ptr<ShellCommand> command;
-        std::function<void(WriteBufferFromFile &)> send_data;
-        ThreadFromGlobalPool thread;
-    };
 }
 
 Pipe ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
