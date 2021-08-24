@@ -230,7 +230,7 @@ SELECT toDate32OrZero('1924-01-01'), toDate32OrZero('');
 └──────────────────────────────┴────────────────────┘
 ```
 
-## toDate32OrNull {#todate32OrNull}
+## toDate32OrNull {#todate32-or-null}
 
 То же самое, что и `toDate32` но возвращает `NULL`, если получен недопустимый аргумент.
 
