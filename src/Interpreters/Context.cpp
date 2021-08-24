@@ -46,6 +46,7 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
+#include <Backups/BackupFactory.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -164,6 +165,8 @@ struct ContextSharedPart
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
     mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
+
+    mutable VolumePtr backups_volume;                       /// Volume for all the backups.
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -518,6 +521,35 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     return shared->tmp_volume;
+}
+
+void Context::setBackupsVolume(const String & path, const String & policy_name)
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    if (policy_name.empty())
+    {
+        String path_with_separator = path;
+        if (!path_with_separator.ends_with('/'))
+            path_with_separator += '/';
+        auto disk = std::make_shared<DiskLocal>("_backups_default", path_with_separator, 0);
+        shared->backups_volume = std::make_shared<SingleDiskVolume>("_backups_default", disk, 0);
+    }
+    else
+    {
+        StoragePolicyPtr policy = getStoragePolicySelector(lock)->get(policy_name);
+        if (policy->getVolumes().size() != 1)
+             throw Exception("Policy " + policy_name + " is used for backups, such policy should have exactly one volume",
+                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        shared->backups_volume = policy->getVolume(0);
+    }
+
+    BackupFactory::instance().setBackupsVolume(shared->backups_volume);
+}
+
+VolumePtr Context::getBackupsVolume() const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    return shared->backups_volume;
 }
 
 void Context::setFlagsPath(const String & path)
