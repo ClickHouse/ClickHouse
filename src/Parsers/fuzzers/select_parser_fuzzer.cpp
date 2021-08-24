@@ -14,7 +14,10 @@ try
     DB::ParserQueryWithOutput parser(input.data() + input.size());
     DB::ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
-    DB::formatAST(*ast, std::cerr);
+    DB::WriteBufferFromOwnString wb;
+    DB::formatAST(*ast, wb);
+
+    std::cerr << wb.str() << std::endl;
 
     return 0;
 }

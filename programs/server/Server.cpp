@@ -357,6 +357,7 @@ void Server::createServer(const std::string & listen_host, const char * port_nam
     try
     {
         func(port);
+        global_context->registerServerPort(port_name, port);
     }
     catch (const Poco::Exception &)
     {
@@ -734,6 +735,10 @@ if (ThreadFuzzer::instance().isEffective())
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
+
+    /// Storage keeping all the backups.
+    fs::create_directories(path / "backups");
+    global_context->setBackupsVolume(config().getString("backups_path", path / "backups"), config().getString("backups_policy", ""));
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
       * Flags may be cleared automatically after being applied by the server.
