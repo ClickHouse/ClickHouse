@@ -598,6 +598,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     loadUUID();
+    loadSkipIndex();
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
@@ -1013,6 +1014,18 @@ void IMergeTreeDataPart::loadUUID()
         if (uuid == UUIDHelpers::Nil)
             throw Exception("Unexpected empty " + String(UUID_FILE_NAME) + " in part: " + name, ErrorCodes::LOGICAL_ERROR);
     }
+}
+
+void IMergeTreeDataPart::loadSkipIndex()
+{
+    const String path = fs::path(getFullRelativePath()) / SKIP_INDEX_FILE_NAME;
+
+    if (!volume->getDisk()->exists(path))
+        return;
+
+    auto in = openForReading(volume->getDisk(), path);
+
+    readVectorBinary(skip_index.skipped_rows, *in);
 }
 
 void IMergeTreeDataPart::loadColumns(bool require)

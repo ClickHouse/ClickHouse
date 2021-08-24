@@ -92,9 +92,9 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
           *  consider only guaranteed full marks.
           * That is, do not take into account the first and last marks, which may be incomplete.
           */
-        for (const auto & range : ranges)
-            if (range.end - range.begin > 2)
-                rows_count += part->index_granularity.getRowsCountInRange({range.begin + 1, range.end - 1});
+        for (const auto [begin, end] : ranges)
+            if (end - begin > 2)
+                rows_count += part->index_granularity.getRowsCountInRange({begin + 1, end - 1});
 
     }
 
@@ -133,6 +133,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
     const auto & settings = context->getSettingsRef();
+
     if (!query_info.projection)
     {
         auto plan = readFromParts(
@@ -673,21 +674,10 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
         partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
-        {
-            String msg = "Neither MinMax index by columns (";
-            bool first = true;
-            for (const String & col : minmax_columns_names)
-            {
-                if (first)
-                    first = false;
-                else
-                    msg += ", ";
-                msg += col;
-            }
-            msg += ") nor partition expr is used and setting 'force_index_by_date' is set";
-
-            throw Exception(msg, ErrorCodes::INDEX_NOT_USED);
-        }
+            throw Exception(ErrorCodes::INDEX_NOT_USED,
+                "Neither MinMax index by columns ({}) nor partition expression is used and setting "
+                "'force_index_by_date' is set",
+                fmt::join(minmax_columns_names, ", "));
     }
 
     auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;

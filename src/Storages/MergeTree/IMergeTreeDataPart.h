@@ -41,6 +41,13 @@ class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
 
+/// Rows that were deleted by DELETE query.
+struct MergeTreePartSkipIndex {
+    std::vector<size_t> skipped_rows;
+};
+
+static constexpr auto SKIP_INDEX_FILE_NAME = "skip_index.bin";
+
 /// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
@@ -243,18 +250,13 @@ public:
 
     String getNameWithState() const
     {
-        return name + " (state " + stateString() + ")";
+        return fmt::format("{} (state {})", name, stateString());
     }
 
     /// Returns true if state of part is one of affordable_states
     bool checkState(const std::initializer_list<State> & affordable_states) const
     {
-        for (auto affordable_state : affordable_states)
-        {
-            if (state == affordable_state)
-                return true;
-        }
-        return false;
+        return std::find(affordable_states.begin(), affordable_states.end(), state) != affordable_states.end();
     }
 
     /// Throws an exception if state of the part is not in affordable_states
@@ -398,7 +400,11 @@ public:
     /// Required for distinguish different copies of the same part on S3
     String getUniqueId() const;
 
+    const MergeTreePartSkipIndex& getSkipIndex() const { return skip_index; }
+
 protected:
+    // TODO empty constructor as for now
+    MergeTreePartSkipIndex skip_index {};
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
@@ -438,6 +444,9 @@ private:
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
+
+    /// Reads part skip index (rows deleted by DELETE statement)
+    void loadSkipIndex();
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);

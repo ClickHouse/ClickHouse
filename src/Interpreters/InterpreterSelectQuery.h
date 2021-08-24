@@ -15,10 +15,7 @@
 
 #include <Columns/FilterDescription.h>
 
-namespace Poco
-{
-class Logger;
-}
+namespace Poco { class Logger; }
 
 namespace DB
 {

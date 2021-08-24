@@ -1178,8 +1178,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 }
             }
 
-            if (!query_info.projection && expressions.hasWhere())
-                executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
+            if (!query_info.projection)
+            {
+                executeFilterWithSkipIndex(query_plan);
+
+                if (expressions.hasWhere())
+                    executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
+            }
 
             if (expressions.need_aggregate)
             {
@@ -2038,7 +2043,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     }
 }
 
-
 void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter)
 {
     auto where_step = std::make_unique<FilterStep>(
@@ -2047,7 +2051,6 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsD
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));
 }
-
 
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
