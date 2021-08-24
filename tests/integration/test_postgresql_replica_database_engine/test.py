@@ -258,7 +258,7 @@ def test_different_data_types(started_cluster):
 
     check_tables_are_synchronized('test_data_types', 'id');
     result = instance.query('SELECT * FROM test_database.test_data_types ORDER BY id LIMIT 1;')
-    assert(result == '0\t-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12.012345\t2000-05-12\t0.20000\t0.20000\n')
+    assert(result == '0\t-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12.012345\t2000-05-12\t0.2\t0.2\n')
 
     for i in range(10):
         col = random.choice(['a', 'b', 'c'])
