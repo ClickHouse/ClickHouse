@@ -14,6 +14,7 @@ void registerFunctionsHashing(FunctionFactory & factory)
     factory.registerFunction<FunctionSHA1>();
     factory.registerFunction<FunctionSHA224>();
     factory.registerFunction<FunctionSHA256>();
+    factory.registerFunction<FunctionSHA512>();
 #endif
     factory.registerFunction<FunctionSipHash64>();
     factory.registerFunction<FunctionSipHash128>();
