@@ -34,7 +34,7 @@ SELECT * FROM dt;
 └────────────┴──────────┘
 ```
 
-**See also**
+**See Also**
 
 -   [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
 -   [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
