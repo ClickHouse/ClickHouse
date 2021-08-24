@@ -43,7 +43,7 @@ class Native41 : public IPlugin
 public:
     Native41();
 
-    Native41(const String & password, const String & auth_plugin_data);
+    Native41(const String & password_, const String & scramble_);
 
     String getName() override { return "mysql_native_password"; }
 
