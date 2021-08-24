@@ -95,6 +95,7 @@ public:
     void createHardLink(const String & src_path, const String & dst_path, bool send_metadata);
 
     DiskType getType() const override { return DiskType::S3; }
+    bool isRemote() const override { return true; }
 
     bool supportZeroCopyReplication() const override { return true; }
 

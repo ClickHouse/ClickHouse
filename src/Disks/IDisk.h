@@ -219,6 +219,9 @@ public:
     /// Return disk type - "local", "s3", etc.
     virtual DiskType getType() const = 0;
 
+    /// Involves network interaction.
+    virtual bool isRemote() const = 0;
+
     /// Whether this disk support zero-copy replication.
     /// Overrode in remote fs disks.
     virtual bool supportZeroCopyReplication() const = 0;
