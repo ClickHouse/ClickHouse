@@ -2225,7 +2225,7 @@ SELECT count(DISTINCT t) FROM (SELECT queryID() AS t FROM remote('127.0.0.{1..3}
 
 Возвращает идентификатор родительского запроса. Другие параметры запроса могут быть извлечены из системной таблицы [system.query_log](../../operations/system-tables/query_log.md) через `initial_query_id`.
 
-В отличие от [queryID](#query-id) функция `initialQueryID` возвращает одинаковые значения на шардах (см. пример).
+В отличие от [queryID](#query-id), функция `initialQueryID` возвращает одинаковые значения для разных шардов (см. пример).
 
 **Синтаксис**
 
