@@ -245,7 +245,22 @@ SELECT
 └──────────────────┴──────────────────────────────────────┘
 ```
 
+## serverUUID() {#server-uuid}
+
+Returns the random and unique UUID, which is generated when the server is first started and stored forever. Writes it to a file in the data directory of the server. The resultant file written is UUID and is at the same level as the status file in the ClickHouse server directory.
+
+**Syntax**
+
+```sql
+serverUUID()
+```
+
+**Returned value**
+
+-   The UUID of the server. 
+
+Type: [UUID](../data-types/uuid.md).
+
 ## See Also {#see-also}
 
 -   [dictGetUUID](../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions-other)
-
