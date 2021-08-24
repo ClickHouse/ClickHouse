@@ -152,7 +152,7 @@ Alias: `DATE`.
 
 ## toDateTimeOrNull {#todatetimeornull}
 
-## toDate32 {#toDate32}
+## toDate32 {#todate32}
 
 Converts the argument to the [Date32](../../sql-reference/data-types/date32.md) data type. If the value is outside the range returns the border values of [Date32](../../sql-reference/data-types/date32.md). If the argument has [Date](../../sql-reference/data-types/string.md) type borders of `Date` are taken into account.
 
