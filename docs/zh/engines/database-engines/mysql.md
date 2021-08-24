@@ -59,7 +59,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 - `version`
 - `max_allowed_packet`
 
-!!! warning "Warning"
+!!! warning "警告"
     到目前为止，这些变量是存根，并且不对应任何内容。
 
 示例:

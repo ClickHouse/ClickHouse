@@ -34,7 +34,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cac
 | TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | REAL             | [Float32](../../sql-reference/data-types/float.md)           |
 | DOUBLE           | [Float64](../../sql-reference/data-types/float.md)           |
-| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md)       |
+| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md)         |
 | SMALLINT         | [Int16](../../sql-reference/data-types/int-uint.md)          |
 | INTEGER          | [Int32](../../sql-reference/data-types/int-uint.md)          |
 | BIGINT           | [Int64](../../sql-reference/data-types/int-uint.md)          |
