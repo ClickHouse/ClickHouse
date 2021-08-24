@@ -62,6 +62,7 @@ public:
     String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
     DiskType getType() const override { return delegate->getType(); }
+    bool isRemote() const override { return delegate->isRemote(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;

@@ -43,6 +43,7 @@ public:
         const Poco::Util::AbstractConfiguration & config_);
 
     DiskType getType() const override { return DiskType::HDFS; }
+    bool isRemote() const override { return true; }
 
     bool supportZeroCopyReplication() const override { return true; }
 
