@@ -77,7 +77,7 @@ public:
 
     bool isLeaderAlive() const;
 
-    /// Wait server intitialization (see callbackFunc)
+    /// Wait server initialization (see callbackFunc)
     void waitInit();
 
     void shutdown();
