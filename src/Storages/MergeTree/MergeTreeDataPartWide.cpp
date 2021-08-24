@@ -129,9 +129,7 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     }
     else
     {
-        ReadSettings settings;
-        settings.local_fs_buffer_size = settings.remote_fs_buffer_size = marks_file_size;
-        auto buffer = volume->getDisk()->readFile(marks_file_path, marks_file_size);
+        auto buffer = volume->getDisk()->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size);
         while (!buffer->eof())
         {
             buffer->seek(sizeof(size_t) * 2, SEEK_CUR); /// skip offset_in_compressed file and offset_in_decompressed_block

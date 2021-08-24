@@ -262,7 +262,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String &
         if (old_file_size)
         {
             /// Append mode: we continue to use the same header.
-            auto read_buffer = delegate->readFile(wrapped_path, FileEncryption::Header::kSize);
+            auto read_buffer = delegate->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
             header = readHeader(*read_buffer);
             key = getKey(path, header, *settings);
         }

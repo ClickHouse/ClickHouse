@@ -3,6 +3,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Defines.h>
+#include <IO/ReadSettings.h>
 
 
 namespace Poco::Util
@@ -500,7 +501,7 @@ class IColumn;
     \
     M(String, local_filesystem_read_method, "pread", "Method of reading data from local filesystem, one of: read, pread, mmap, pread_threadpool.", 0) \
     M(Bool, local_filesystem_read_prefetch, false, "Should use prefetching when reading data from local filesystem.", 0) \
-    M(Int32, read_priority, 0, "Priority to read data from local filesystem. Only supported for 'pread_threadpool' method.", 0) \
+    M(Int64, read_priority, 0, "Priority to read data from local filesystem. Only supported for 'pread_threadpool' method.", 0) \
     \
     /** Experimental functions */ \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
