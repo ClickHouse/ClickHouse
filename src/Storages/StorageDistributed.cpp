@@ -327,11 +327,13 @@ StorageDistributed::StorageDistributed(
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
     bool attach_,
-    ClusterPtr owned_cluster_)
+    ClusterPtr owned_cluster_,
+    ASTPtr remote_table_function_ptr_)
     : IStorage(id_)
     , WithContext(context_->getGlobalContext())
     , remote_database(remote_database_)
     , remote_table(remote_table_)
+    , remote_table_function_ptr(remote_table_function_ptr_)
     , log(&Poco::Logger::get("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
@@ -363,10 +365,13 @@ StorageDistributed::StorageDistributed(
     }
 
     /// Sanity check. Skip check if the table is already created to allow the server to start.
-    if (!attach_ && !cluster_name.empty())
+    if (!attach_)
     {
-        size_t num_local_shards = getContext()->getCluster(cluster_name)->getLocalShardCount();
-        if (num_local_shards && remote_database == id_.database_name && remote_table == id_.table_name)
+        if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
+            LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
+
+        size_t num_local_shards = getCluster()->getLocalShardCount();
+        if (num_local_shards && (remote_database.empty() || remote_database == id_.database_name) && remote_table == id_.table_name)
             throw Exception("Distributed table " + id_.table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
 }
@@ -399,9 +404,9 @@ StorageDistributed::StorageDistributed(
         relative_data_path_,
         distributed_settings_,
         attach,
-        std::move(owned_cluster_))
+        std::move(owned_cluster_),
+        remote_table_function_ptr_)
 {
-    remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
@@ -810,9 +815,6 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
 
 void StorageDistributed::startup()
 {
-    if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
-        LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
-
     if (!storage_policy)
         return;
 

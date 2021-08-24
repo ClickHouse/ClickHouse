@@ -39,6 +39,9 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
+struct MergeTreeDataSelectAnalysisResult;
+using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
+
 struct PrewhereInfo
 {
     /// Actions which are executed in order to alias columns are used for prewhere actions.
@@ -118,6 +121,8 @@ struct ProjectionCandidate
     ReadInOrderOptimizerPtr order_optimizer;
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 };
 
 /** Query along with some additional data,
@@ -158,6 +163,7 @@ struct SelectQueryInfo
     std::optional<ProjectionCandidate> projection;
     bool ignore_projections = false;
     bool is_projection_query = false;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 };
 
 }
