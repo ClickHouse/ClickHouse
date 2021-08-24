@@ -263,9 +263,7 @@ DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot extract uuid for: {}", path);
 
     /// Do not throw if it is not a query, but disk load.
-    bool can_throw = false;
-    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
-        can_throw = true;
+    bool can_throw = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext();
 
     try
     {
