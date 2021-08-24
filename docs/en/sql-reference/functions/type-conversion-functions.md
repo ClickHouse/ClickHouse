@@ -230,7 +230,7 @@ Result:
 └──────────────────────────────┴────────────────────┘
 ```
 
-## toDate32OrNull {#todate32OrNull}
+## toDate32OrNull {#todate32-or-null}
 
 The same as `toDate32` but returns `NULL` if invalid argument is received.
 
