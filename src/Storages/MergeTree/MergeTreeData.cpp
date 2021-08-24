@@ -3315,11 +3315,12 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
     Strings part_names = backup->list(data_path_in_backup);
     for (const String & part_name : part_names)
     {
-        MergeTreePartInfo part_info;
-        if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
+        const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+
+        if (!part_info)
             continue;
 
-        if (!partition_ids.empty() && !partition_ids.contains(part_info.partition_id))
+        if (!partition_ids.empty() && !partition_ids.contains(part_info->partition_id))
             continue;
 
         UInt64 total_size_of_part = 0;
@@ -3356,7 +3357,7 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
             }
 
             auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
-            auto part = createPart(part_name, part_info, single_disk_volume, relative_temp_part_dir);
+            auto part = createPart(part_name, *part_info, single_disk_volume, relative_temp_part_dir);
             part->loadColumnsChecksumsIndexes(false, true);
             renameTempPartAndAdd(part, increment);
         };
