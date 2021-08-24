@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 
-set -x -e
-
 # This script is responsible for building all fuzzers, and copy them to output directory
 # as an archive.
+# Script is supposed that we are in build directory.
+
+set -x -e
+
+printenv
 
 # Delete previous cache, because we add a new flags -DENABLE_FUZZING=1 and -DFUZZER=libfuzzer
 rm -f CMakeCache.txt
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 # Hope, that the most part of files will be in cache, so we just link new executables
-cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" \
+cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX \
     "-DSANITIZE=$SANITIZER" -DENABLE_FUZZING=1 -DFUZZER='libfuzzer' -DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0 \
     -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
