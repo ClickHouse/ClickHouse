@@ -95,6 +95,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     attach<StorageSystemZeros>(system_database, "zeros_mt", true);
     attach<StorageSystemDatabases>(system_database, "databases");
     attach<StorageSystemTables>(system_database, "tables");
+    attach<StorageSystemTableViews>(system_database, "table_views");
     attach<StorageSystemColumns>(system_database, "columns");
     attach<StorageSystemFunctions>(system_database, "functions");
     attach<StorageSystemEvents>(system_database, "events");
