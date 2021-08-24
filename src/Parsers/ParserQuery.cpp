@@ -1,4 +1,5 @@
 #include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateQuotaQuery.h>
 #include <Parsers/ParserCreateRoleQuery.h>
@@ -26,7 +27,7 @@ namespace DB
 
 bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserQueryWithOutput query_with_output_p;
+    ParserQueryWithOutput query_with_output_p(end);
     ParserInsertQuery insert_p(end);
     ParserUseQuery use_p;
     ParserSetQuery set_p;
@@ -40,6 +41,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserGrantQuery grant_p;
     ParserSetRoleQuery set_role_p;
     ParserExternalDDLQuery external_ddl_p;
+    ParserBackupQuery backup_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -54,7 +56,8 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || drop_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
-        || external_ddl_p.parse(pos, node, expected);
+        || external_ddl_p.parse(pos, node, expected)
+        || backup_p.parse(pos, node, expected);
 
     return res;
 }

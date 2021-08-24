@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-
 
 R1=table_1013_1
 R2=table_1013_2
@@ -11,8 +11,8 @@ ${CLICKHOUSE_CLIENT} -n -q "
     DROP TABLE IF EXISTS $R1;
     DROP TABLE IF EXISTS $R2;
 
-    CREATE TABLE $R1 (x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_DATABASE}.table_1013', 'r1') ORDER BY x;
-    CREATE TABLE $R2 (x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_DATABASE}.table_1013', 'r2') ORDER BY x;
+    CREATE TABLE $R1 (x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table_1013', 'r1') ORDER BY x;
+    CREATE TABLE $R2 (x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table_1013', 'r2') ORDER BY x;
 
     SYSTEM STOP FETCHES $R2;
     INSERT INTO $R1 VALUES (1)

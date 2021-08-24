@@ -1,0 +1,12 @@
+profiles:
+  default:
+    max_memory_usage: 10000000000
+    max_block_size: 64999
+users:
+  default:
+    password: ''
+    networks:
+      "@replace": replace
+      ip: '::/0'
+    profile: default
+

@@ -1,4 +1,4 @@
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -27,13 +27,14 @@ class FunctionEmptyArrayToSingle : public IFunction
 {
 public:
     static constexpr auto name = "emptyArrayToSingle";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -45,7 +46,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 };
 
 
@@ -53,7 +54,7 @@ namespace
 {
     namespace FunctionEmptyArrayToSingleImpl
     {
-        ColumnPtr executeConst(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
         {
             if (const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get()))
             {
@@ -367,7 +368,7 @@ namespace
 }
 
 
-ColumnPtr FunctionEmptyArrayToSingle::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     if (auto res = FunctionEmptyArrayToSingleImpl::executeConst(arguments, result_type, input_rows_count))
         return res;

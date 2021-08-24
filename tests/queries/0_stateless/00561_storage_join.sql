@@ -36,5 +36,13 @@ from (
 ) js1
 SEMI LEFT JOIN joinbug_join using id2;
 
+/* type conversion */
+SELECT * FROM
+(
+    SELECT toUInt32(11) AS id2
+) AS js1
+SEMI LEFT JOIN joinbug_join USING (id2);
+
+
 DROP TABLE joinbug;
 DROP TABLE joinbug_join;

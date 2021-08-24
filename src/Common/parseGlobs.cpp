@@ -1,4 +1,7 @@
 #include <Common/parseGlobs.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/Operators.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <algorithm>
@@ -18,21 +21,21 @@ namespace DB
  */
 std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_globs)
 {
-    std::ostringstream oss_for_escaping;
-    oss_for_escaping.exceptions(std::ios::failbit);
+    /// FIXME make it better
+    WriteBufferFromOwnString buf_for_escaping;
     /// Escaping only characters that not used in glob syntax
     for (const auto & letter : initial_str_with_globs)
     {
-        if ((letter == '[') || (letter == ']') || (letter == '|') || (letter == '+') || (letter == '-') || (letter == '(') || (letter == ')'))
-            oss_for_escaping << '\\';
-        oss_for_escaping << letter;
+        if ((letter == '[') || (letter == ']') || (letter == '|') || (letter == '+') || (letter == '-') || (letter == '(') || (letter == ')') || (letter == '\\'))
+            buf_for_escaping << '\\';
+        buf_for_escaping << letter;
     }
-    std::string escaped_with_globs = oss_for_escaping.str();
+    std::string escaped_with_globs = buf_for_escaping.str();
 
     static const re2::RE2 enum_or_range(R"({([\d]+\.\.[\d]+|[^{}*,]+,[^{}*]*[^{}*,])})");    /// regexp for {expr1,expr2,expr3} or {M..N}, where M and N - non-negative integers, expr's should be without {}*,
     re2::StringPiece input(escaped_with_globs);
     re2::StringPiece matched;
-    std::ostringstream oss_for_replacing;
+    std::ostringstream oss_for_replacing;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss_for_replacing.exceptions(std::ios::failbit);
     size_t current_index = 0;
     while (RE2::FindAndConsume(&input, enum_or_range, &matched))
@@ -45,9 +48,8 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             size_t range_begin = 0;
             size_t range_end = 0;
             char point;
-            std::istringstream iss_range(buffer);
-            iss_range.exceptions(std::ios::failbit);
-            iss_range >> range_begin >> point >> point >> range_end;
+            ReadBufferFromString buf_range(buffer);
+            buf_range >> range_begin >> point >> point >> range_end;
             bool leading_zeros = buffer[0] == '0';
             size_t num_len = std::to_string(range_end).size();
             if (leading_zeros)
@@ -71,20 +73,19 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     }
     oss_for_replacing << escaped_with_globs.substr(current_index);
     std::string almost_res = oss_for_replacing.str();
-    std::ostringstream oss_final_processing;
-    oss_final_processing.exceptions(std::ios::failbit);
+    WriteBufferFromOwnString buf_final_processing;
     for (const auto & letter : almost_res)
     {
         if ((letter == '?') || (letter == '*'))
         {
-            oss_final_processing << "[^/]";   /// '?' is any symbol except '/'
+            buf_final_processing << "[^/]";   /// '?' is any symbol except '/'
             if (letter == '?')
                 continue;
         }
         if ((letter == '.') || (letter == '{') || (letter == '}'))
-            oss_final_processing << '\\';
-        oss_final_processing << letter;
+            buf_final_processing << '\\';
+        buf_final_processing << letter;
     }
-    return oss_final_processing.str();
+    return buf_final_processing.str();
 }
 }

@@ -61,7 +61,7 @@ class FunctionBase64Conversion : public IFunction
 public:
     static constexpr auto name = Func::name;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBase64Conversion>();
     }
@@ -75,6 +75,8 @@ public:
     {
         return 1;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override
     {
@@ -91,7 +93,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column_string = arguments[0].column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
@@ -146,7 +148,7 @@ public:
                     if (!outlen)
                     {
                         outlen = 0;
-                        dst_pos = savepoint;
+                        dst_pos = savepoint; //-V1048
                         // clean the symbol
                         dst_pos[0] = 0;
                     }
@@ -158,7 +160,9 @@ public:
             __msan_unpoison(dst_pos, outlen);
 
             source += srclen + 1;
-            dst_pos += outlen + 1;
+            dst_pos += outlen;
+            *dst_pos = '\0';
+            dst_pos += 1;
 
             dst_offsets[row] = dst_pos - dst;
             src_offset_prev = src_offsets[row];

@@ -81,11 +81,6 @@ void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 
     parseHex(&src36[16], dst16, 8);
 }
 
-UInt128 stringToUUID(const String & str)
-{
-    return parseFromString<UUID>(str);
-}
-
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
@@ -96,7 +91,7 @@ void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
     else
         out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
-    throw Exception(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+    throw ParsingException(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
 
 
@@ -194,12 +189,12 @@ inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const ch
     s.insert(rb.position(), end);
 }
 
-template <typename Vector>
-void readStringInto(Vector & s, ReadBuffer & buf)
+template <char... chars, typename Vector>
+void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<chars...>(buf.position(), buf.buffer().end());
 
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
@@ -210,19 +205,28 @@ void readStringInto(Vector & s, ReadBuffer & buf)
 }
 
 template <typename Vector>
+void readStringInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<'\t', '\n'>(s, buf);
+}
+
+template <typename Vector>
+void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<' '>(s, buf);
+}
+
+template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf)
 {
-    while (!buf.eof())
-    {
-        char * next_pos = find_first_symbols<'\0'>(buf.position(), buf.buffer().end());
-
-        appendToStringOrVector(s, buf, next_pos);
-        buf.position() = next_pos;
-
-        if (buf.hasPendingData())
-            break;
-    }
+    readStringUntilCharsInto<'\0'>(s, buf);
     buf.ignore();
+}
+
+void readStringUntilWhitespace(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilWhitespaceInto(s, buf);
 }
 
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
@@ -244,9 +248,6 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
     {
         appendToStringOrVector(s, buf, buf.buffer().end());
         buf.position() = buf.buffer().end();
-
-        if (buf.hasPendingData())
-            return;
     }
 }
 
@@ -326,6 +327,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
             && decoded_char != '"'
             && decoded_char != '`'  /// MySQL style identifiers
             && decoded_char != '/'  /// JavaScript in HTML
+            && decoded_char != '='  /// Yandex's TSKV
             && !isControlASCII(decoded_char))
         {
             s.push_back('\\');
@@ -350,8 +352,11 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
     };
 
     ++buf.position();
+
     if (buf.eof())
         return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+
+    assert(buf.hasPendingData());
 
     switch (*buf.position())
     {
@@ -493,8 +498,12 @@ template <char quote, bool enable_sql_style_quoting, typename Vector>
 static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
     if (buf.eof() || *buf.position() != quote)
-        throw Exception("Cannot parse quoted string: expected opening quote",
-            ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
+    {
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
+            "Cannot parse quoted string: expected opening quote '{}', got '{}'",
+            std::string{quote}, buf.eof() ? "EOF" : std::string{*buf.position()});
+    }
+
     ++buf.position();
 
     while (!buf.eof())
@@ -525,7 +534,7 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
             parseComplexEscapeSequence(s, buf);
     }
 
-    throw Exception("Cannot parse quoted string: expected closing quote",
+    throw ParsingException("Cannot parse quoted string: expected closing quote",
         ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
 }
 
@@ -673,7 +682,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             /** CSV format can contain insignificant spaces and tabs.
               * Usually the task of skipping them is for the calling code.
-              * But in this case, it will be difficult to do this, so remove the trailing whitespace by yourself.
+              * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
               */
             size_t size = s.size();
             while (size > 0
@@ -703,7 +712,7 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
     auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw Exception(message, code);
+            throw ParsingException(message, code);
         return ReturnType(false);
     };
 
@@ -760,7 +769,7 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 
     auto ignore_delimiter = [&]
     {
-        if (!buf.eof())
+        if (!buf.eof() && !isNumericASCII(*buf.position()))
         {
             ++buf.position();
             return true;
@@ -821,14 +830,18 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     static constexpr auto date_time_broken_down_length = 19;
     /// YYYY-MM-DD
     static constexpr auto date_broken_down_length = 10;
-    /// unix timestamp max length
-    static constexpr auto unix_timestamp_max_length = 10;
 
     char s[date_time_broken_down_length];
     char * s_pos = s;
 
-    /// A piece similar to unix timestamp.
-    while (s_pos < s + unix_timestamp_max_length && !buf.eof() && isNumericASCII(*buf.position()))
+    /** Read characters, that could represent unix timestamp.
+      * Only unix timestamp of at least 5 characters is supported.
+      * Then look at 5th character. If it is a number - treat whole as unix timestamp.
+      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
+      */
+
+    /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
+    while (s_pos < s + date_time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))
     {
         *s_pos = *buf.position();
         ++s_pos;
@@ -836,7 +849,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
 
     /// 2015-01-01 01:02:03 or 2015-01-01
-    if (s_pos == s + 4 && !buf.eof() && (*buf.position() < '0' || *buf.position() > '9'))
+    if (s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         const auto already_read_length = s_pos - s;
         const size_t remaining_date_time_size = date_time_broken_down_length - already_read_length;
@@ -848,7 +861,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             s_pos[size] = 0;
 
             if constexpr (throw_exception)
-                throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
             else
                 return false;
         }
@@ -875,8 +888,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
     else
     {
-        /// Only unix timestamp of 5-10 characters is supported. For consistency. See readDateTimeTextImpl.
-        if (s_pos - s >= 5 && s_pos - s <= 10)
+        if (s_pos - s >= 5)
         {
             /// Not very efficient.
             datetime = 0;
@@ -886,7 +898,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         else
         {
             if constexpr (throw_exception)
-                throw Exception("Cannot parse datetime", ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw ParsingException("Cannot parse datetime", ErrorCodes::CANNOT_PARSE_DATETIME);
             else
                 return false;
         }
@@ -1004,7 +1016,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
 }
 
 
-Exception readException(ReadBuffer & buf, const String & additional_message)
+Exception readException(ReadBuffer & buf, const String & additional_message, bool remote_exception)
 {
     int code = 0;
     String name;
@@ -1031,12 +1043,31 @@ Exception readException(ReadBuffer & buf, const String & additional_message)
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    return Exception(out.str(), code);
+    return Exception(out.str(), code, remote_exception);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)
 {
     readException(buf, additional_message).rethrow();
+}
+
+
+void skipToCarriageReturnOrEOF(ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\r'>(buf.position(), buf.buffer().end());
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (*buf.position() == '\r')
+        {
+            ++buf.position();
+            return;
+        }
+    }
 }
 
 
@@ -1094,13 +1125,16 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
     assert(current >= in.position());
     assert(current <= in.buffer().end());
 
-    const int old_bytes = memory.size();
-    const int additional_bytes = current - in.position();
-    const int new_bytes = old_bytes + additional_bytes;
+    const size_t old_bytes = memory.size();
+    const size_t additional_bytes = current - in.position();
+    const size_t new_bytes = old_bytes + additional_bytes;
+
     /// There are no new bytes to add to memory.
     /// No need to do extra stuff.
     if (new_bytes == 0)
         return;
+
+    assert(in.position() + additional_bytes <= in.buffer().end());
     memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;

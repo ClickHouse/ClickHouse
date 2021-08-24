@@ -76,6 +76,14 @@ def invalid_parameters(self):
             message="DB::Exception: AAD can be only set for GCM-mode")
 
     with Example("invalid mode value", requirements=[RQ_SRS008_AES_Encrypt_Function_Parameters_Mode_Value_Invalid("1.0")]):
+        with When("using unsupported cfb1 mode"):
+            encrypt(plaintext="'hello there'", key="'0123456789123456'", mode="'aes-128-cfb1'", exitcode=36,
+                message="DB::Exception: Invalid mode: aes-128-cfb1")
+
+        with When("using unsupported cfb8 mode"):
+            encrypt(plaintext="'hello there'", key="'0123456789123456'", mode="'aes-128-cfb8'", exitcode=36,
+                message="DB::Exception: Invalid mode: aes-128-cfb8")
+
         with When("typo in the block algorithm"):
             encrypt(plaintext="'hello there'", key="'0123456789123456'", mode="'aes-128-eeb'", exitcode=36,
                 message="DB::Exception: Invalid mode: aes-128-eeb")
@@ -102,60 +110,69 @@ def invalid_parameters(self):
 
 @TestOutline(Scenario)
 @Requirements(
+    RQ_SRS008_AES_Functions_InvalidParameters("1.0")
+)
+@Examples("data_type, value", [
+    ("UInt8", "toUInt8('1')"),
+    ("UInt16", "toUInt16('1')"),
+    ("UInt32", "toUInt32('1')"),
+    ("UInt64", "toUInt64('1')"),
+    ("Int8", "toInt8('1')"),
+    ("Int16", "toInt16('1')"),
+    ("Int32", "toInt32('1')"),
+    ("Int64", "toInt64('1')"),
+    ("Float32", "toFloat32('1.0')"),
+    ("Float64", "toFloat64('1.0')"),
+    ("Decimal32", "toDecimal32(2, 4)"),
+    ("Decimal64", "toDecimal64(2, 4)"),
+    ("Decimal128", "toDecimal128(2, 4)"),
+    ("UUID", "toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')"),
+    ("Date", "toDate('2020-01-01')"),
+    ("DateTime", "toDateTime('2020-01-01 20:01:02')"),
+    ("DateTime64", "toDateTime64('2020-01-01 20:01:02.123', 3)"),
+    ("Array", "[1,2]"),
+    ("Tuple", "(1,'a')"),
+    ("IPv4", "toIPv4('171.225.130.45')"),
+    ("IPv6", "toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001')"),
+    ("Enum8", r"CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)')"),
+    ("Enum16", r"CAST('a', 'Enum16(\'a\' = 1, \'b\' = 2)')")
+])
+def invalid_plaintext_data_type(self, data_type, value):
+    """Check that encrypt function returns an error if the
+    plaintext parameter has invalid data type.
+    """
+    with When("I try to encrypt plaintext with invalid data type", description=f"{data_type} with value {value}"):
+        encrypt(plaintext=value, key="'0123456789123456'", mode="'aes-128-cbc'", iv="'0123456789123456'",
+            exitcode=43, message="DB::Exception: Illegal type of argument")
+
+@TestOutline(Scenario)
+@Requirements(
     RQ_SRS008_AES_Encrypt_Function_Key_Length_InvalidLengthError("1.0"),
     RQ_SRS008_AES_Encrypt_Function_InitializationVector_Length_InvalidLengthError("1.0"),
-    RQ_SRS008_AES_Encrypt_Function_AdditionalAuthenticationData_NotValidForMode("1.0")
+    RQ_SRS008_AES_Encrypt_Function_AdditionalAuthenticationData_NotValidForMode("1.0"),
+    RQ_SRS008_AES_Encrypt_Function_NonGCMMode_KeyAndInitializationVector_Length("1.0")
 )
 @Examples("mode key_len iv_len aad", [
     # ECB
-    ("'aes-128-ecb'", 16, None, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_128_ECB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-ecb'", 24, None, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_192_ECB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-ecb'", 32, None, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_256_ECB_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-ecb'", 16, None, None),
+    ("'aes-192-ecb'", 24, None, None),
+    ("'aes-256-ecb'", 32, None, None),
     # CBC
-    ("'aes-128-cbc'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_128_CBC_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cbc'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_192_CBC_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cbc'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_256_CBC_KeyAndInitializationVector_Length("1.0"))),
-    # CFB1
-    ("'aes-128-cfb1'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_128_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb1'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_192_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cfb1'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_256_CFB1_KeyAndInitializationVector_Length("1.0"))),
-    # CFB8
-    ("'aes-128-cfb8'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_128_CFB8_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb8'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_192_CFB8_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cfb8'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_256_CFB8_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-cbc'", 16, 16, None),
+    ("'aes-192-cbc'", 24, 16, None),
+    ("'aes-256-cbc'", 32, 16, None),
     # CFB128
-    ("'aes-128-cfb128'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_128_CFB128_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-cfb128'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_192_CFB128_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-cfb128'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_256_CFB128_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-cfb128'", 16, 16, None),
+    ("'aes-192-cfb128'", 24, 16, None),
+    ("'aes-256-cfb128'", 32, 16, None),
     # OFB
-    ("'aes-128-ofb'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_128_OFB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-ofb'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_192_OFB_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-ofb'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_256_OFB_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-ofb'", 16, 16, None),
+    ("'aes-192-ofb'", 24, 16, None),
+    ("'aes-256-ofb'", 32, 16, None),
     # CTR
-    ("'aes-128-ctr'", 16, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_128_CTR_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-ctr'", 24, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_192_CTR_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-ctr'", 32, 16, None,
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_256_CTR_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-ctr'", 16, 16, None),
+    ("'aes-192-ctr'", 24, 16, None),
+    ("'aes-256-ctr'", 32, 16, None),
 ], "%-16s %-10s %-10s %-10s")
 def invalid_key_or_iv_length_for_mode_non_gcm(self, mode, key_len, iv_len, aad):
     """Check that an error is returned when key or iv length does not match
@@ -190,16 +207,14 @@ def invalid_key_or_iv_length_for_mode_non_gcm(self, mode, key_len, iv_len, aad):
 @Requirements(
     RQ_SRS008_AES_Encrypt_Function_Key_Length_InvalidLengthError("1.0"),
     RQ_SRS008_AES_Encrypt_Function_InitializationVector_Length_InvalidLengthError("1.0"),
-    RQ_SRS008_AES_Encrypt_Function_AdditionalAuthenticationData_NotValidForMode("1.0")
+    RQ_SRS008_AES_Encrypt_Function_AdditionalAuthenticationData_NotValidForMode("1.0"),
+    RQ_SRS008_AES_Encrypt_Function_GCMMode_KeyAndInitializationVector_Length("1.0")
 )
 @Examples("mode key_len iv_len aad", [
     # GCM
-    ("'aes-128-gcm'", 16, 8, "'hello there aad'",
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_128_GCM_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-192-gcm'", 24, 8, "''",
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_192_GCM_KeyAndInitializationVector_Length("1.0"))),
-    ("'aes-256-gcm'", 32, 8, "'a'",
-     Requirements(RQ_SRS008_AES_Encrypt_Function_AES_256_GCM_KeyAndInitializationVector_Length("1.0"))),
+    ("'aes-128-gcm'", 16, 8, "'hello there aad'"),
+    ("'aes-192-gcm'", 24, 8, "''"),
+    ("'aes-256-gcm'", 32, 8, "'a'"),
 ], "%-16s %-10s %-10s %-10s")
 def invalid_key_or_iv_length_for_gcm(self, mode, key_len, iv_len, aad):
     """Check that an error is returned when key or iv length does not match
@@ -217,7 +232,7 @@ def invalid_key_or_iv_length_for_gcm(self, mode, key_len, iv_len, aad):
 
     if iv_len is not None:
         with When(f"iv is too short"):
-            encrypt(plaintext=plaintext, key=f"'{key[:key_len]}'", iv=f"'{iv[:iv_len-1]}'", mode=mode, exitcode=198, message="DB::Exception:")
+            encrypt(plaintext=plaintext, key=f"'{key[:key_len]}'", iv=f"'{iv[:iv_len-1]}'", mode=mode, exitcode=0)
     else:
         with When("iv is not specified"):
             encrypt(plaintext=plaintext, key=f"'{key[:key_len]}'", mode=mode, exitcode=36, message="DB::Exception: Invalid IV size")
@@ -331,9 +346,10 @@ def mode_parameter_types(self):
 
 @TestScenario
 @Requirements(
-    RQ_SRS008_AES_Encrypt_Function_Parameters_PlainText("1.0"),
+    RQ_SRS008_AES_Encrypt_Function_Parameters_PlainText("2.0"),
     RQ_SRS008_AES_Encrypt_Function_Parameters_Mode("1.0"),
     RQ_SRS008_AES_Encrypt_Function_Parameters_Mode_ValuesFormat("1.0"),
+    RQ_SRS008_AES_Encrypt_Function_Parameters_Mode_Values("1.0")
 )
 def encryption(self):
     """Check that `encrypt` functions accepts `plaintext` as the second parameter
@@ -345,11 +361,8 @@ def encryption(self):
 
     for mode, key_len, iv_len, aad_len in modes:
         for datatype, plaintext in plaintexts:
+            with Example(f"""mode={mode.strip("'")} datatype={datatype.strip("'")} iv={iv_len} aad={aad_len}""") as example:
 
-            requirement = globals().get(f"""RQ_SRS008_AES_Encrypt_Function_Parameters_Mode_Value_{mode.strip("'").replace("-","_").upper()}""")("1.0")
-
-            with Example(f"""mode={mode.strip("'")} datatype={datatype.strip("'")} iv={iv_len} aad={aad_len}""",
-                    requirements=[requirement]) as example:
                 r = encrypt(plaintext=plaintext, key=f"'{key[:key_len]}'", mode=mode,
                     iv=(None if not iv_len else f"'{iv[:iv_len]}'"), aad=(None if not aad_len else f"'{aad}'"))
 

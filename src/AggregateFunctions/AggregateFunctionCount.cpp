@@ -1,14 +1,14 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+struct Settings;
 
 AggregateFunctionPtr AggregateFunctionCount::getOwnNullAdapter(
-    const AggregateFunctionPtr &, const DataTypes & types, const Array & params) const
+    const AggregateFunctionPtr &, const DataTypes & types, const Array & params, const AggregateFunctionProperties & /*properties*/) const
 {
     return std::make_shared<AggregateFunctionCountNotNullUnary>(types[0], params);
 }
@@ -16,7 +16,7 @@ AggregateFunctionPtr AggregateFunctionCount::getOwnNullAdapter(
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
     assertArityAtMost<1>(name, argument_types);

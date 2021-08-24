@@ -1,4 +1,6 @@
 #include <Parsers/parseQuery.h>
+
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/Lexer.h>
@@ -76,6 +78,10 @@ void writeQueryWithHighlightedErrorPositions(
     for (size_t position_to_hilite_idx = 0; position_to_hilite_idx < num_positions_to_hilite; ++position_to_hilite_idx)
     {
         const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx].begin;
+
+        assert(current_position_to_hilite <= end);
+        assert(current_position_to_hilite >= begin);
+
         out.write(pos, current_position_to_hilite - pos);
 
         if (current_position_to_hilite == end)
@@ -187,6 +193,10 @@ std::string getLexicalErrorMessage(
     writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
 
     out << getErrorTokenDescription(last_token.type);
+    if (last_token.size())
+    {
+       out << ": '" << StringRef{last_token.begin, last_token.size()} << "'";
+    }
 
     return out.str();
 }
@@ -215,8 +225,8 @@ std::string getUnmatchedParenthesesErrorMessage(
 
 ASTPtr tryParseQuery(
     IParser & parser,
-    const char * & pos,
-    const char * end,
+    const char * & _out_query_end, /* also query begin as input parameter */
+    const char * all_queries_end,
     std::string & out_error_message,
     bool hilite,
     const std::string & query_description,
@@ -224,7 +234,8 @@ ASTPtr tryParseQuery(
     size_t max_query_size,
     size_t max_parser_depth)
 {
-    Tokens tokens(pos, end, max_query_size);
+    const char * query_begin = _out_query_end;
+    Tokens tokens(query_begin, all_queries_end, max_query_size);
     IParser::Pos token_iterator(tokens, max_parser_depth);
 
     if (token_iterator->isEnd()
@@ -239,70 +250,82 @@ ASTPtr tryParseQuery(
         //"
         // Advance the position, so that we can use this parser for stream parsing
         // even in presence of such queries.
-        pos = token_iterator->begin;
+        _out_query_end = token_iterator->begin;
         return nullptr;
     }
 
     Expected expected;
-
     ASTPtr res;
-    bool parse_res = parser.parse(token_iterator, res, expected);
-    Token last_token = token_iterator.max();
+    const bool parse_res = parser.parse(token_iterator, res, expected);
+    const auto last_token = token_iterator.max();
+    _out_query_end = last_token.end;
 
-    /// If parsed query ends at data for insertion. Data for insertion could be in any format and not necessary be lexical correct.
     ASTInsertQuery * insert = nullptr;
     if (parse_res)
         insert = res->as<ASTInsertQuery>();
 
-    if (!(insert && insert->data))
+    // If parsed query ends at data for insertion. Data for insertion could be
+    // in any format and not necessary be lexical correct, so we can't perform
+    // most of the checks.
+    if (insert && insert->data)
     {
-        /// Lexical error
-        if (last_token.isError())
-        {
-            out_error_message = getLexicalErrorMessage(pos, end, last_token, hilite, query_description);
-            return nullptr;
-        }
+        return res;
+    }
 
-        /// Unmatched parentheses
-        UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), &last_token);
-        if (!unmatched_parens.empty())
-        {
-            out_error_message = getUnmatchedParenthesesErrorMessage(pos, end, unmatched_parens, hilite, query_description);
-            return nullptr;
-        }
+    // More granular checks for queries other than INSERT w/inline data.
+    /// Lexical error
+    if (last_token.isError())
+    {
+        out_error_message = getLexicalErrorMessage(query_begin, all_queries_end,
+            last_token, hilite, query_description);
+        return nullptr;
+    }
+
+    /// Unmatched parentheses
+    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens));
+    if (!unmatched_parens.empty())
+    {
+        out_error_message = getUnmatchedParenthesesErrorMessage(query_begin,
+            all_queries_end, unmatched_parens, hilite, query_description);
+        return nullptr;
     }
 
     if (!parse_res)
     {
-        /// Parse error.
-        out_error_message = getSyntaxErrorMessage(pos, end, last_token, expected, hilite, query_description);
+        /// Generic parse error.
+        out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
+            last_token, expected, hilite, query_description);
         return nullptr;
     }
 
     /// Excessive input after query. Parsed query must end with end of data or semicolon or data for INSERT.
     if (!token_iterator->isEnd()
-        && token_iterator->type != TokenType::Semicolon
-        && !(insert && insert->data))
+        && token_iterator->type != TokenType::Semicolon)
     {
-        expected.add(pos, "end of query");
-        out_error_message = getSyntaxErrorMessage(pos, end, last_token, expected, hilite, query_description);
+        expected.add(last_token.begin, "end of query");
+        out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
+            last_token, expected, hilite, query_description);
         return nullptr;
     }
 
+    // Skip the semicolon that might be left after parsing the VALUES format.
     while (token_iterator->type == TokenType::Semicolon)
-        ++token_iterator;
-
-    /// If multi-statements are not allowed, then after semicolon, there must be no non-space characters.
-    if (!allow_multi_statements
-        && !token_iterator->isEnd()
-        && !(insert && insert->data))
     {
-        out_error_message = getSyntaxErrorMessage(pos, end, last_token, {}, hilite,
-            (query_description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
+        ++token_iterator;
+    }
+
+    // If multi-statements are not allowed, then after semicolon, there must
+    // be no non-space characters.
+    if (!allow_multi_statements
+        && !token_iterator->isEnd())
+    {
+        out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
+            last_token, {}, hilite,
+            (query_description.empty() ? std::string() : std::string(". "))
+                + "Multi-statements are not allowed");
         return nullptr;
     }
 
-    pos = token_iterator->begin;
     return res;
 }
 
@@ -334,8 +357,7 @@ ASTPtr parseQuery(
     size_t max_query_size,
     size_t max_parser_depth)
 {
-    const char * pos = begin;
-    return parseQueryAndMovePosition(parser, pos, end, query_description, false, max_query_size, max_parser_depth);
+    return parseQueryAndMovePosition(parser, begin, end, query_description, false, max_query_size, max_parser_depth);
 }
 
 

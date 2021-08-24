@@ -47,12 +47,12 @@ protected:
     void finalize() override;
 
     void writeRow(const Chunk & chunk, size_t row_num);
-    void serializeField(const IColumn & column, const IDataType & type, size_t row_num, ColumnFormat format);
+    void serializeField(const IColumn & column, const ISerialization & serialization, size_t row_num, ColumnFormat format);
     template <typename U, typename V> void writeValue(U value, ColumnFormat col_format);
 
 protected:
     const FormatSettings settings;
-    DataTypes types;
+    Serializations serializations;
 
     ParsedTemplateFormatString format;
     ParsedTemplateFormatString row_format;

@@ -1,4 +1,5 @@
 SET send_logs_level = 'fatal';
+SET optimize_on_insert = 0;
 
 DROP TABLE IF EXISTS old_style;
 CREATE TABLE old_style(d Date, x UInt32) ENGINE MergeTree(d, x, 8192);

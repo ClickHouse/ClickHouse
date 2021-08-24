@@ -23,19 +23,19 @@ select lcm(255, 254);
 select lcm(2147483647, 2147483646);
 select lcm(4611686011984936962, 2147483647);
 select lcm(-2147483648, 1);
--- test gcd float will cast to int
-select gcd(1280.1, 1024.1);
-select gcd(11.1, 121.1);
-select gcd(-256.1, 64.1);
-select gcd(1.1, 1.1);
-select gcd(4.1, 2.1);
-select gcd(15.1, 49.1);
-select gcd(255.1, 254.1);
--- test lcm float cast to int
-select lcm(1280.1, 1024.1);
-select lcm(11.1, 121.1);
-select lcm(-256.1, 64.1);
-select lcm(1.1, 1.1);
-select lcm(4.1, 2.1);
-select lcm(15.1, 49.1);
-select lcm(255.1, 254.1);
+-- test gcd float
+select gcd(1280.1, 1024.1); -- { serverError 43 }
+select gcd(11.1, 121.1); -- { serverError 43 }
+select gcd(-256.1, 64.1); -- { serverError 43 }
+select gcd(1.1, 1.1); -- { serverError 43 }
+select gcd(4.1, 2.1); -- { serverError 43 }
+select gcd(15.1, 49.1); -- { serverError 43 }
+select gcd(255.1, 254.1); -- { serverError 43 }
+-- test lcm float
+select lcm(1280.1, 1024.1); -- { serverError 43 }
+select lcm(11.1, 121.1); -- { serverError 43 }
+select lcm(-256.1, 64.1); -- { serverError 43 }
+select lcm(1.1, 1.1); -- { serverError 43 }
+select lcm(4.1, 2.1); -- { serverError 43 }
+select lcm(15.1, 49.1); -- { serverError 43 }
+select lcm(255.1, 254.1); -- { serverError 43 }

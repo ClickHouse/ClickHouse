@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="create database if not exists test_01054;"
@@ -72,3 +73,4 @@ wait
 echo OK
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE if exists test_01054.ints"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01054"

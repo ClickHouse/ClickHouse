@@ -94,7 +94,7 @@ restart:
     if (input != STDIN_FILENO && tcgetattr(input, &oterm) == 0) {
         memcpy(&term, &oterm, sizeof(term));
         if (!(flags & RPP_ECHO_ON))
-            term.c_lflag &= ~(ECHO | ECHONL);
+            term.c_lflag &= ~((unsigned int) (ECHO | ECHONL));
 #ifdef VSTATUS
         if (term.c_cc[VSTATUS] != _POSIX_VDISABLE)
             term.c_cc[VSTATUS] = _POSIX_VDISABLE;

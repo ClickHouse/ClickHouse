@@ -1,3 +1,5 @@
+OWNER(g:clickhouse)
+
 PROGRAM(clickhouse-server)
 
 PEERDIR(

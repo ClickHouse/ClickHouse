@@ -20,16 +20,16 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false)
         : IMergingTransform(
-            num_inputs, header, header, true,
+            num_inputs, header, header, /*have_all_inputs_=*/ true, /*has_limit_below_one_block_=*/ false,
             header,
             num_inputs,
             std::move(description_),
             sign_column,
             only_positive_sign,
             max_block_size,
+            &Poco::Logger::get("CollapsingSortedTransform"),
             out_row_sources_buf_,
-            use_average_block_sizes,
-            &Poco::Logger::get("CollapsingSortedTransform"))
+            use_average_block_sizes)
     {
     }
 

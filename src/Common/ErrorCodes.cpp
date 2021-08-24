@@ -1,4 +1,6 @@
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
+#include <chrono>
 
 /** Previously, these constants were located in one enum.
   * But in this case there is a problem: when you add a new constant, you need to recompile
@@ -404,7 +406,7 @@
     M(432, UNKNOWN_CODEC) \
     M(433, ILLEGAL_CODEC_PARAMETER) \
     M(434, CANNOT_PARSE_PROTOBUF_SCHEMA) \
-    M(435, NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD) \
+    M(435, NO_COLUMN_SERIALIZED_TO_REQUIRED_PROTOBUF_FIELD) \
     M(436, PROTOBUF_BAD_CAST) \
     M(437, PROTOBUF_FIELD_NOT_REPEATED) \
     M(438, DATA_TYPE_CANNOT_BE_PROMOTED) \
@@ -412,7 +414,7 @@
     M(440, INVALID_LIMIT_EXPRESSION) \
     M(441, CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING) \
     M(442, BAD_DATABASE_FOR_TEMPORARY_TABLE) \
-    M(443, NO_COMMON_COLUMNS_WITH_PROTOBUF_SCHEMA) \
+    M(443, NO_COLUMNS_SERIALIZED_TO_PROTOBUF_FIELDS) \
     M(444, UNKNOWN_PROTOBUF_FORMAT) \
     M(445, CANNOT_MPROTECT) \
     M(446, FUNCTION_NOT_ALLOWED) \
@@ -519,7 +521,64 @@
     M(550, CONDITIONAL_TREE_PARENT_NOT_FOUND) \
     M(551, ILLEGAL_PROJECTION_MANIPULATOR) \
     M(552, UNRECOGNIZED_ARGUMENTS) \
+    M(553, LZMA_STREAM_ENCODER_FAILED) \
+    M(554, LZMA_STREAM_DECODER_FAILED) \
+    M(555, ROCKSDB_ERROR) \
+    M(556, SYNC_MYSQL_USER_ACCESS_ERROR)\
+    M(557, UNKNOWN_UNION) \
+    M(558, EXPECTED_ALL_OR_DISTINCT) \
+    M(559, INVALID_GRPC_QUERY_INFO) \
+    M(560, ZSTD_ENCODER_FAILED) \
+    M(561, ZSTD_DECODER_FAILED) \
+    M(562, TLD_LIST_NOT_FOUND) \
+    M(563, CANNOT_READ_MAP_FROM_TEXT) \
+    M(564, INTERSERVER_SCHEME_DOESNT_MATCH) \
+    M(565, TOO_MANY_PARTITIONS) \
+    M(566, CANNOT_RMDIR) \
+    M(567, DUPLICATED_PART_UUIDS) \
+    M(568, RAFT_ERROR) \
+    M(569, MULTIPLE_COLUMNS_SERIALIZED_TO_SAME_PROTOBUF_FIELD) \
+    M(570, DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD) \
+    M(571, DATABASE_REPLICATION_FAILED) \
+    M(572, TOO_MANY_QUERY_PLAN_OPTIMIZATIONS) \
+    M(573, EPOLL_ERROR) \
+    M(574, DISTRIBUTED_TOO_MANY_PENDING_BYTES) \
+    M(575, UNKNOWN_SNAPSHOT) \
+    M(576, KERBEROS_ERROR) \
+    M(577, INVALID_SHARD_ID) \
+    M(578, INVALID_FORMAT_INSERT_QUERY_WITH_DATA) \
+    M(579, INCORRECT_PART_TYPE) \
+    M(580, CANNOT_SET_ROUNDING_MODE) \
+    M(581, TOO_LARGE_DISTRIBUTED_DEPTH) \
+    M(582, NO_SUCH_PROJECTION_IN_TABLE) \
+    M(583, ILLEGAL_PROJECTION) \
+    M(584, PROJECTION_NOT_USED) \
+    M(585, CANNOT_PARSE_YAML) \
+    M(586, CANNOT_CREATE_FILE) \
+    M(587, CONCURRENT_ACCESS_NOT_SUPPORTED) \
+    M(588, DISTRIBUTED_BROKEN_BATCH_INFO) \
+    M(589, DISTRIBUTED_BROKEN_BATCH_FILES) \
+    M(590, CANNOT_SYSCONF) \
+    M(591, SQLITE_ENGINE_ERROR) \
+    M(592, DATA_ENCRYPTION_ERROR) \
+    M(593, ZERO_COPY_REPLICATION_ERROR) \
+    M(594, BZIP2_STREAM_DECODER_FAILED) \
+    M(595, BZIP2_STREAM_ENCODER_FAILED) \
+    M(596, INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH) \
+    M(597, NO_SUCH_ERROR_CODE) \
+    M(598, BACKUP_ALREADY_EXISTS) \
+    M(599, BACKUP_NOT_FOUND) \
+    M(600, BACKUP_VERSION_NOT_SUPPORTED) \
+    M(601, BACKUP_DAMAGED) \
+    M(602, NO_BASE_BACKUP) \
+    M(603, WRONG_BASE_BACKUP) \
+    M(604, BACKUP_ENTRY_ALREADY_EXISTS) \
+    M(605, BACKUP_ENTRY_NOT_FOUND) \
+    M(606, BACKUP_IS_EMPTY) \
+    M(607, BACKUP_ELEMENT_DUPLICATE) \
+    M(608, CANNOT_RESTORE_TABLE) \
     \
+    M(998, POSTGRESQL_CONNECTION_FAILURE) \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
@@ -529,35 +588,80 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
-    #define M(VALUE, NAME) extern const Value NAME = VALUE;
-        APPLY_FOR_ERROR_CODES(M)
-    #undef M
+#define M(VALUE, NAME) extern const ErrorCode NAME = VALUE;
+    APPLY_FOR_ERROR_CODES(M)
+#undef M
 
-    constexpr Value END = 3000;
-    std::atomic<Value> values[END + 1] {};
+    constexpr ErrorCode END = 3000;
+    ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
     {
         std::string_view names[END + 1];
         ErrorCodesNames()
         {
-            #define M(VALUE, NAME) names[VALUE] = std::string_view(#NAME);
-                APPLY_FOR_ERROR_CODES(M)
-            #undef M
+#define M(VALUE, NAME) names[VALUE] = std::string_view(#NAME);
+            APPLY_FOR_ERROR_CODES(M)
+#undef M
         }
     } error_codes_names;
 
     std::string_view getName(ErrorCode error_code)
     {
-        if (error_code >= END)
+        if (error_code < 0 || error_code >= END)
             return std::string_view();
         return error_codes_names.names[error_code];
     }
 
-    ErrorCode end() { return END+1; }
+    ErrorCode getErrorCodeByName(std::string_view error_name)
+    {
+        for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+        {
+            std::string_view name = ErrorCodes::getName(i);
+
+            if (name.empty())
+                continue;
+
+            if (name == error_name)
+                return i;
+        }
+        throw Exception(NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
+    }
+
+    ErrorCode end() { return END + 1; }
+
+    void increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace)
+    {
+        if (error_code < 0 || error_code >= end())
+        {
+            /// For everything outside the range, use END.
+            /// (end() is the pointer pass the end, while END is the last value that has an element in values array).
+            error_code = end() - 1;
+        }
+
+        values[error_code].increment(remote, message, trace);
+    }
+
+    void ErrorPairHolder::increment(bool remote, const std::string & message, const FramePointers & trace)
+    {
+        const auto now = std::chrono::system_clock::now();
+
+        std::lock_guard lock(mutex);
+
+        auto & error = remote ? value.remote : value.local;
+
+        ++error.count;
+        error.message = message;
+        error.trace = trace;
+        error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    }
+    ErrorPair ErrorPairHolder::get()
+    {
+        std::lock_guard lock(mutex);
+        return value;
+    }
 }
 
 }

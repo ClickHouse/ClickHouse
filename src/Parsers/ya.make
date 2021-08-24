@@ -1,4 +1,6 @@
 # This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
@@ -19,6 +21,7 @@ SRCS(
     ASTCreateRowPolicyQuery.cpp
     ASTCreateSettingsProfileQuery.cpp
     ASTCreateUserQuery.cpp
+    ASTDatabaseOrNone.cpp
     ASTDictionary.cpp
     ASTDictionaryAttributeDeclaration.cpp
     ASTDropAccessEntityQuery.cpp
@@ -36,6 +39,8 @@ SRCS(
     ASTOptimizeQuery.cpp
     ASTOrderByElement.cpp
     ASTPartition.cpp
+    ASTProjectionDeclaration.cpp
+    ASTProjectionSelectQuery.cpp
     ASTQualifiedAsterisk.cpp
     ASTQueryParameter.cpp
     ASTQueryWithOnCluster.cpp
@@ -52,13 +57,13 @@ SRCS(
     ASTShowAccessEntitiesQuery.cpp
     ASTShowCreateAccessEntityQuery.cpp
     ASTShowGrantsQuery.cpp
-    ASTShowPrivilegesQuery.cpp
     ASTShowTablesQuery.cpp
     ASTSubquery.cpp
     ASTSystemQuery.cpp
     ASTTTLElement.cpp
     ASTTablesInSelectQuery.cpp
     ASTUserNameWithHost.cpp
+    ASTWindowDefinition.cpp
     ASTWithAlias.cpp
     ASTWithElement.cpp
     CommonParsers.cpp
@@ -66,6 +71,7 @@ SRCS(
     ExpressionListParsers.cpp
     IAST.cpp
     IParserBase.cpp
+    InsertQuerySettingsPushDownVisitor.cpp
     Lexer.cpp
     MySQL/ASTAlterCommand.cpp
     MySQL/ASTAlterQuery.cpp
@@ -90,6 +96,7 @@ SRCS(
     ParserCreateSettingsProfileQuery.cpp
     ParserCreateUserQuery.cpp
     ParserDataType.cpp
+    ParserDatabaseOrNone.cpp
     ParserDescribeTableQuery.cpp
     ParserDictionary.cpp
     ParserDictionaryAttributeDeclaration.cpp
@@ -102,6 +109,7 @@ SRCS(
     ParserKillQueryQuery.cpp
     ParserOptimizeQuery.cpp
     ParserPartition.cpp
+    ParserProjectionSelectQuery.cpp
     ParserQuery.cpp
     ParserQueryWithOutput.cpp
     ParserRenameQuery.cpp

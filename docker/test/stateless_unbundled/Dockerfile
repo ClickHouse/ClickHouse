@@ -8,14 +8,13 @@ RUN apt-get --allow-unauthenticated update -y \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
             alien \
             brotli \
+            zstd \
             cmake \
             devscripts \
             expect \
             gdb  \
             gperf \
-            gperf \
             heimdal-multidev \
-            intel-opencl-icd \
             libboost-filesystem-dev \
             libboost-iostreams-dev \
             libboost-program-options-dev \
@@ -43,13 +42,13 @@ RUN apt-get --allow-unauthenticated update -y \
             libreadline-dev \
             libsasl2-dev \
             libzstd-dev \
+            librocksdb-dev \
+            libgflags-dev \
             lsof \
             moreutils \
             ncdu \
             netcat-openbsd \
-            ocl-icd-libopencl1 \
             odbcinst \
-            opencl-headers \
             openssl \
             perl \
             pigz \
@@ -78,8 +77,6 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
    && rm -rf /tmp/clickhouse-odbc-tmp
 
-ENV TZ=Europe/Moscow
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]
+

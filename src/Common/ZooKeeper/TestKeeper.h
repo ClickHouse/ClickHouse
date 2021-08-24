@@ -30,7 +30,7 @@ using TestKeeperRequestPtr = std::shared_ptr<TestKeeperRequest>;
   *
   * NOTE: You can add various failure modes for better testing.
   */
-class TestKeeper : public IKeeper
+class TestKeeper final : public IKeeper
 {
 public:
     TestKeeper(const String & root_path_, Poco::Timespan operation_timeout_);
@@ -83,6 +83,7 @@ public:
             const Requests & requests,
             MultiCallback callback) override;
 
+    void finalize() override;
 
     struct Node
     {
@@ -125,14 +126,11 @@ private:
     Watches watches;
     Watches list_watches;   /// Watches for 'list' request (watches on children).
 
-    void createWatchCallBack(const String & path);
-
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
     RequestsQueue requests_queue{1};
 
     void pushRequest(RequestInfo && request);
 
-    void finalize();
 
     ThreadFromGlobalPool processing_thread;
 

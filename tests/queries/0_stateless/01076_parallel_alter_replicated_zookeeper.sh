@@ -10,6 +10,7 @@
 
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 REPLICAS=5
@@ -19,7 +20,7 @@ for i in $(seq $REPLICAS); do
 done
 
 for i in $(seq $REPLICAS); do
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE concurrent_mutate_mt_$i (key UInt64, value1 UInt64, value2 String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01076/concurrent_mutate_mt', '$i') ORDER BY key SETTINGS max_replicated_mutations_in_queue=1000, number_of_free_entries_in_pool_to_execute_mutation=0,max_replicated_merges_in_queue=1000,temporary_directories_lifetime=10,cleanup_delay_period=3,cleanup_delay_period_random_add=0"
+    $CLICKHOUSE_CLIENT --query "CREATE TABLE concurrent_mutate_mt_$i (key UInt64, value1 UInt64, value2 String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/concurrent_mutate_mt', '$i') ORDER BY key SETTINGS max_replicated_mutations_in_queue=1000, number_of_free_entries_in_pool_to_execute_mutation=0,max_replicated_merges_in_queue=1000,temporary_directories_lifetime=10,cleanup_delay_period=3,cleanup_delay_period_random_add=0"
 done
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_mt_1 SELECT number, number + 10, toString(number) from numbers(10)"
@@ -103,8 +104,10 @@ done
 sleep 1
 
 counter=0
+have_undone_mutations_query="select * from system.mutations where table like 'concurrent_mutate_mt_%' and is_done=0 and database='${CLICKHOUSE_DATABASE}'"
+have_all_tables_query="select count() FROM system.tables WHERE name LIKE 'concurrent_mutate_mt_%' and database='${CLICKHOUSE_DATABASE}'"
 
-while [[ $($CLICKHOUSE_CLIENT --query "select * from system.mutations where table like 'concurrent_mutate_mt_%' and is_done=0" 2>&1) ]]; do
+while true ; do
     if [ "$counter" -gt 120 ]
     then
         break
@@ -113,7 +116,13 @@ while [[ $($CLICKHOUSE_CLIENT --query "select * from system.mutations where tabl
     for i in $(seq $REPLICAS); do
         $CLICKHOUSE_CLIENT --query "ATTACH TABLE concurrent_mutate_mt_$i" 2> /dev/null
     done
+
     counter=$(($counter + 1))
+
+    # no active mutations and all tables attached
+    if [[ -z $($CLICKHOUSE_CLIENT --query "$have_undone_mutations_query" 2>&1) && $($CLICKHOUSE_CLIENT --query "$have_all_tables_query" 2>&1) == "$REPLICAS" ]]; then
+        break
+    fi
 done
 
 for i in $(seq $REPLICAS); do

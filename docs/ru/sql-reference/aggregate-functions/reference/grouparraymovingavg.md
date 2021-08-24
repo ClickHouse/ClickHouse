@@ -6,12 +6,14 @@ toc_priority: 114
 
 Вычисляет скользящее среднее для входных значений.
 
-    groupArrayMovingAvg(numbers_for_summing)
-    groupArrayMovingAvg(window_size)(numbers_for_summing)
+``` sql
+groupArrayMovingAvg(numbers_for_summing)
+groupArrayMovingAvg(window_size)(numbers_for_summing)
+```
 
 Функция может принимать размер окна в качестве параметра. Если окно не указано, то функция использует размер окна, равный количеству строк в столбце.
 
-**Параметры**
+**Аргументы**
 
 -   `numbers_for_summing` — [выражение](../../syntax.md#syntax-expressions), возвращающее значение числового типа.
 -   `window_size` — размер окна.
@@ -75,4 +77,3 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingavg/) <!--hide-->

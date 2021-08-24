@@ -3,6 +3,7 @@
 set -e
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 
@@ -21,3 +22,5 @@ ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test_empty_data"
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test_empty_data"
 (echo "INSERT INTO test_empty_data FORMAT Parquet" && ${CLICKHOUSE_CLIENT} --query="SELECT 1 AS x LIMIT 0 FORMAT Parquet") | ${CLICKHOUSE_CLIENT}
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test_empty_data"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_empty_data"

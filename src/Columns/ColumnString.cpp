@@ -1,18 +1,18 @@
-#include <Common/Arena.h>
-#include <Common/memcmpSmall.h>
-#include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
-#include <Common/HashTable/Hash.h>
-#include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsCommon.h>
-#include <DataStreams/ColumnGathererStream.h>
 
+#include <Columns/Collator.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnCompressed.h>
+#include <Columns/MaskOperations.h>
+#include <DataStreams/ColumnGathererStream.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/memcmpSmall.h>
+#include <common/sort.h>
 #include <common/unaligned.h>
-#include <ext/scope_guard.h>
-#if !defined(ARCADIA_BUILD)
-    #include <miniselect/floyd_rivest_select.h> // Y_IGNORE
-#endif
+#include <common/scope_guard.h>
 
 
 namespace DB
@@ -158,6 +158,53 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     return res;
 }
 
+void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
+{
+    auto & offsets_data = getOffsets();
+    auto & chars_data = getChars();
+    if (mask.size() < offsets_data.size())
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+
+    /// We cannot change only offsets, because each string should end with terminating zero byte.
+    /// So, we will insert one zero byte when mask value is zero.
+
+    int index = mask.size() - 1;
+    int from = offsets_data.size() - 1;
+    /// mask.size() - offsets_data.size() should be equal to the number of zeros in mask
+    /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
+    UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());
+    offsets_data.resize(mask.size());
+    chars_data.resize_fill(last_offset, 0);
+    while (index >= 0)
+    {
+        offsets_data[index] = last_offset;
+        if (!!mask[index] ^ inverted)
+        {
+            if (from < 0)
+                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+
+            size_t len = offsets_data[from] - offsets_data[from - 1];
+
+            /// Copy only if it makes sense. It's important to copy backward, because
+            /// ranges can overlap, but destination is always is more to the right then source
+            if (last_offset - len != offsets_data[from - 1])
+                std::copy_backward(&chars_data[offsets_data[from - 1]], &chars_data[offsets_data[from]], &chars_data[last_offset]);
+            last_offset -= len;
+            --from;
+        }
+        else
+        {
+            chars_data[last_offset - 1] = 0;
+            --last_offset;
+        }
+
+        --index;
+    }
+
+    if (from != -1)
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+}
+
 
 ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 {
@@ -238,6 +285,12 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
     return pos + string_size;
 }
 
+const char * ColumnString::skipSerializedInArena(const char * pos) const
+{
+    const size_t string_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(string_size);
+    return pos + string_size;
+}
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 {
@@ -288,6 +341,11 @@ void ColumnString::compareColumn(
                                          compare_results, direction, nan_direction_hint);
 }
 
+bool ColumnString::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnString>();
+}
+
 template <bool positive>
 struct ColumnString::Cmp
 {
@@ -317,11 +375,7 @@ void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Comparato
     auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
 
     if (limit)
-#if !defined(ARCADIA_BUILD)
-        miniselect::floyd_rivest_partial_sort(res.begin(), res.begin() + limit, res.end(), less);
-#else
-        std::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
-#endif
+        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
         std::sort(res.begin(), res.end(), less);
 }
@@ -372,11 +426,7 @@ void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualR
             return;
 
         /// Since then we are working inside the interval.
-#if !defined(ARCADIA_BUILD)
-        miniselect::floyd_rivest_partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
-#else
-        std::partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
-#endif
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
 
         size_t new_first = first;
         for (size_t j = first + 1; j < limit; ++j)
@@ -532,6 +582,46 @@ void ColumnString::getExtremes(Field & min, Field & max) const
 
     get(min_idx, min);
     get(max_idx, max);
+}
+
+ColumnPtr ColumnString::compress() const
+{
+    size_t source_chars_size = chars.size();
+    size_t source_offsets_size = offsets.size() * sizeof(Offset);
+
+    /// Don't compress small blocks.
+    if (source_chars_size < 4096) /// A wild guess.
+        return ColumnCompressed::wrap(this->getPtr());
+
+    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, false);
+
+    /// Return original column if not compressible.
+    if (!chars_compressed)
+        return ColumnCompressed::wrap(this->getPtr());
+
+    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, true);
+
+    return ColumnCompressed::create(offsets.size(), chars_compressed->size() + offsets_compressed->size(),
+        [
+            chars_compressed = std::move(chars_compressed),
+            offsets_compressed = std::move(offsets_compressed),
+            source_chars_size,
+            source_offsets_elements = offsets.size()
+        ]
+        {
+            auto res = ColumnString::create();
+
+            res->getChars().resize(source_chars_size);
+            res->getOffsets().resize(source_offsets_elements);
+
+            ColumnCompressed::decompressBuffer(
+                chars_compressed->data(), res->getChars().data(), chars_compressed->size(), source_chars_size);
+
+            ColumnCompressed::decompressBuffer(
+                offsets_compressed->data(), res->getOffsets().data(), offsets_compressed->size(), source_offsets_elements * sizeof(Offset));
+
+            return res;
+        });
 }
 
 

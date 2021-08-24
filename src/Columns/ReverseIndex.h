@@ -6,7 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <common/unaligned.h>
 
 
@@ -316,8 +316,8 @@ template <typename IndexType, typename ColumnType>
 class ReverseIndex
 {
 public:
-    explicit ReverseIndex(UInt64 num_prefix_rows_to_skip_, UInt64 base_index_)
-            : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), saved_hash_ptr(nullptr) {}
+    ReverseIndex(UInt64 num_prefix_rows_to_skip_, UInt64 base_index_)
+        : num_prefix_rows_to_skip(num_prefix_rows_to_skip_), base_index(base_index_), saved_hash_ptr(nullptr) {}
 
     void setColumn(ColumnType * column_);
 
@@ -329,14 +329,16 @@ public:
     /// Returns the found data's index in the dictionary. If index is not built, builds it.
     UInt64 getInsertionPoint(StringRef data)
     {
-        if (!index) buildIndex();
+        if (!index)
+            buildIndex();
         return getIndexImpl(data);
     }
 
     /// Returns the found data's index in the dictionary if the #index is built, otherwise, returns a std::nullopt.
     std::optional<UInt64> getIndex(StringRef data) const
     {
-        if (!index) return {};
+        if (!index)
+            return {};
         return getIndexImpl(data);
     }
 
@@ -445,7 +447,7 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
     IteratorType iterator;
     bool inserted;
 
-    for (auto row : ext::range(num_prefix_rows_to_skip, size))
+    for (auto row : collections::range(num_prefix_rows_to_skip, size))
     {
         UInt64 hash;
         if constexpr (use_saved_hash)
@@ -469,7 +471,7 @@ ColumnUInt64::MutablePtr ReverseIndex<IndexType, ColumnType>::calcHashes() const
     auto size = column->size();
     auto hash = ColumnUInt64::create(size);
 
-    for (auto row : ext::range(0, size))
+    for (auto row : collections::range(0, size))
         hash->getElement(row) = getHash(column->getDataAt(row));
 
     return hash;

@@ -90,4 +90,6 @@ select * from products limit 1;
 └───────────────┴─────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/dictionary/) <!--hide-->
+**Смотрите также**
+
+-   [Функция dictionary](../../../sql-reference/table-functions/dictionary.md#dictionary-function)

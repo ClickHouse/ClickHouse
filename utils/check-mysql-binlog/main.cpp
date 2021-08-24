@@ -9,6 +9,7 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/MySQLBinlogEventReadBuffer.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <Core/MySQL/MySQLReplication.h>
 
 static DB::MySQLReplication::BinlogEventPtr parseSingleEventBody(
@@ -17,10 +18,7 @@ static DB::MySQLReplication::BinlogEventPtr parseSingleEventBody(
 {
     DB::MySQLReplication::BinlogEventPtr event;
     DB::ReadBufferPtr limit_read_buffer = std::make_shared<DB::LimitReadBuffer>(payload, header.event_size - 19, false);
-    DB::ReadBufferPtr event_payload = limit_read_buffer;
-
-    if (exist_checksum)
-        event_payload = std::make_shared<DB::MySQLBinlogEventReadBuffer>(*limit_read_buffer);
+    DB::ReadBufferPtr event_payload = std::make_shared<DB::MySQLBinlogEventReadBuffer>(*limit_read_buffer, exist_checksum ? 4 : 0);
 
     switch (header.type)
     {
@@ -71,21 +69,27 @@ static DB::MySQLReplication::BinlogEventPtr parseSingleEventBody(
         case DB::MySQLReplication::WRITE_ROWS_EVENT_V1:
         case DB::MySQLReplication::WRITE_ROWS_EVENT_V2:
         {
-            event = std::make_shared<DB::MySQLReplication::WriteRowsEvent>(last_table_map_event, std::move(header));
+            DB::MySQLReplication::RowsEventHeader rows_header(header.type);
+            rows_header.parse(*event_payload);
+            event = std::make_shared<DB::MySQLReplication::WriteRowsEvent>(last_table_map_event, std::move(header), rows_header);
             event->parseEvent(*event_payload);
             break;
         }
         case DB::MySQLReplication::DELETE_ROWS_EVENT_V1:
         case DB::MySQLReplication::DELETE_ROWS_EVENT_V2:
         {
-            event = std::make_shared<DB::MySQLReplication::DeleteRowsEvent>(last_table_map_event, std::move(header));
+            DB::MySQLReplication::RowsEventHeader rows_header(header.type);
+            rows_header.parse(*event_payload);
+            event = std::make_shared<DB::MySQLReplication::DeleteRowsEvent>(last_table_map_event, std::move(header), rows_header);
             event->parseEvent(*event_payload);
             break;
         }
         case DB::MySQLReplication::UPDATE_ROWS_EVENT_V1:
         case DB::MySQLReplication::UPDATE_ROWS_EVENT_V2:
         {
-            event = std::make_shared<DB::MySQLReplication::UpdateRowsEvent>(last_table_map_event, std::move(header));
+            DB::MySQLReplication::RowsEventHeader rows_header(header.type);
+            rows_header.parse(*event_payload);
+            event = std::make_shared<DB::MySQLReplication::UpdateRowsEvent>(last_table_map_event, std::move(header), rows_header);
             event->parseEvent(*event_payload);
             break;
         }
@@ -126,18 +130,20 @@ static int checkBinLogFile(const std::string & bin_path, bool exist_checksum)
     }
     catch (...)
     {
-        std::cerr << "Unable to parse MySQL binlog event. Code: " << DB::getCurrentExceptionCode() << ", Exception message: "
-            << DB::getCurrentExceptionMessage(false) << std::endl << ", Previous event: " << std::endl;
-        last_event->dump(std::cerr);
-        std::cerr << std::endl << ", Event header: " << std::endl;
-        last_header->dump(std::cerr);
-        std::cerr << std::endl;
+        DB::WriteBufferFromOStream cerr(std::cerr);
+        cerr << "Unable to parse MySQL binlog event. Code: " << DB::getCurrentExceptionCode() << ", Exception message: "
+            << DB::getCurrentExceptionMessage(false) << '\n' << ", Previous event: " << '\n';
+        last_event->dump(cerr);
+        cerr << '\n' << ", Event header: " << '\n';
+        last_header->dump(cerr);
+        cerr << '\n';
         return DB::getCurrentExceptionCode();
     }
 
-    std::cout << "Check passed. " << std::endl << "No exception was thrown." << std::endl << "The last binlog event: " << std::endl;
-    last_event->dump(std::cout);
-    std::cout << std::endl;
+    DB::WriteBufferFromOStream cout(std::cout);
+    cout << "Check passed. " << '\n' << "No exception was thrown." << '\n' << "The last binlog event: " << '\n';
+    last_event->dump(cout);
+    cout << '\n';
     return 0;
 }
 

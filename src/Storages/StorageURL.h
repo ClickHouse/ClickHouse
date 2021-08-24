@@ -2,14 +2,18 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <ext/shared_ptr_helper.h>
-#include <DataStreams/IBlockOutputStream.h>
-#include <IO/ConnectionTimeouts.h>
+#include <common/shared_ptr_helper.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
+#include <Storages/StorageFactory.h>
 
 
 namespace DB
 {
+
+struct ConnectionTimeouts;
+
 /**
  * This class represents table engine for external urls.
  * It sends HTTP GET to server when select is called and
@@ -23,26 +27,26 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 protected:
     IStorageURLBase(
         const Poco::URI & uri_,
-        const Context & context_,
+        ContextPtr context_,
         const StorageID & id_,
         const String & format_name_,
         const std::optional<FormatSettings> & format_settings_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         const String & compression_method_);
 
     Poco::URI uri;
-    const Context & context_global;
     String compression_method;
     String format_name;
     // For URL engine, we use format settings from server context + `SETTINGS`
@@ -51,14 +55,13 @@ protected:
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
 
-private:
     virtual std::string getReadMethod() const;
 
     virtual std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
@@ -66,56 +69,51 @@ private:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
+private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const = 0;
 };
 
-class StorageURLBlockOutputStream : public IBlockOutputStream
+class StorageURLSink : public SinkToStorage
 {
 public:
-    StorageURLBlockOutputStream(
+    StorageURLSink(
         const Poco::URI & uri,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
-        const Block & sample_block_,
-        const Context & context,
+        const Block & sample_block,
+        ContextPtr context,
         const ConnectionTimeouts & timeouts,
-        const CompressionMethod compression_method);
+        CompressionMethod compression_method);
 
-    Block getHeader() const override
-    {
-        return sample_block;
-    }
-
-    void write(const Block & block) override;
-    void writePrefix() override;
-    void writeSuffix() override;
+    std::string getName() const override { return "StorageURLSink"; }
+    void consume(Chunk chunk) override;
+    void onFinish() override;
 
 private:
-    Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
+
+    bool is_first_chunk = true;
 };
 
-class StorageURL final : public ext::shared_ptr_helper<StorageURL>, public IStorageURLBase
+class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase
 {
-    friend struct ext::shared_ptr_helper<StorageURL>;
+    friend struct shared_ptr_helper<StorageURL>;
 public:
-    StorageURL(const Poco::URI & uri_,
-            const StorageID & table_id_,
-            const String & format_name_,
-            const std::optional<FormatSettings> & format_settings_,
-            const ColumnsDescription & columns_,
-            const ConstraintsDescription & constraints_,
-            Context & context_,
-            const String & compression_method_)
-        : IStorageURLBase(uri_, context_, table_id_, format_name_,
-            format_settings_, columns_, constraints_, compression_method_)
-    {
-    }
+    StorageURL(
+        const Poco::URI & uri_,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const std::optional<FormatSettings> & format_settings_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        ContextPtr context_,
+        const String & compression_method_);
 
     String getName() const override
     {
@@ -126,5 +124,35 @@ public:
     {
         return metadata_snapshot->getSampleBlock();
     }
+
+    static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
+};
+
+
+/// StorageURLWithFailover is allowed only for URL table function, not as a separate storage.
+class StorageURLWithFailover final : public StorageURL
+{
+public:
+    StorageURLWithFailover(
+            const std::vector<String> & uri_options_,
+            const StorageID & table_id_,
+            const String & format_name_,
+            const std::optional<FormatSettings> & format_settings_,
+            const ColumnsDescription & columns_,
+            const ConstraintsDescription & constraints_,
+            ContextPtr context_,
+            const String & compression_method_);
+
+    Pipe read(
+        const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
+private:
+    std::vector<Poco::URI> uri_options;
 };
 }

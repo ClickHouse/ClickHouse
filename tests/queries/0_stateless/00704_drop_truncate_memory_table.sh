@@ -4,6 +4,7 @@ set -e
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --multiquery --query="
@@ -22,7 +23,7 @@ INSERT INTO memory SELECT * FROM numbers(1000);"
 
 ${CLICKHOUSE_CLIENT} --multiquery --query="
 SET max_threads = 1;
-SELECT count() FROM memory WHERE NOT ignore(sleep(0.0001));" 2>&1 | grep -c -P '^1000$|^0$|Table .+? doesn.t exist' &
+SELECT count() FROM memory WHERE NOT ignore(sleep(0.0001));" 2>&1 | grep -c -P '^1000$|^0$|Exception' &
 
 sleep 0.05;
 

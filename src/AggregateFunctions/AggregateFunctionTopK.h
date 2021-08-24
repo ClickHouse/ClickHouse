@@ -10,7 +10,6 @@
 #include <Columns/ColumnArray.h>
 
 #include <Common/SpaceSaving.h>
-#include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -18,6 +17,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 template <typename T>
@@ -50,7 +50,9 @@ public:
         return std::make_shared<DataTypeArray>(this->argument_types[0]);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & set = this->data(place).value;
         if (set.capacity() != reserved)
@@ -62,7 +64,7 @@ public:
             set.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & set = this->data(place).value;
         if (set.capacity() != reserved)
@@ -70,19 +72,19 @@ public:
         set.merge(this->data(rhs).value);
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).value.write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         auto & set = this->data(place).value;
         set.resize(reserved);
         set.read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -116,7 +118,8 @@ struct AggregateFunctionTopKGenericData
  *  For such columns topK() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column, bool is_weighted>
-class AggregateFunctionTopKGeneric : public IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>
+class AggregateFunctionTopKGeneric
+    : public IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>
 {
 private:
     using State = AggregateFunctionTopKGenericData;
@@ -145,12 +148,12 @@ public:
         return true;
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).value.write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         set.clear();
@@ -173,7 +176,7 @@ public:
         set.readAlphaMap(buf);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         if (set.capacity() != reserved)
@@ -198,7 +201,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & set = this->data(place).value;
         if (set.capacity() != reserved)
@@ -206,7 +209,7 @@ public:
         set.merge(this->data(rhs).value);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();

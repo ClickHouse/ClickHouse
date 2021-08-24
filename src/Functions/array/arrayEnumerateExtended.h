@@ -1,5 +1,5 @@
 #pragma once
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -30,13 +30,14 @@ template <typename Derived>
 class FunctionArrayEnumerateExtended : public IFunction
 {
 public:
-    static FunctionPtr create(const Context &) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -56,7 +57,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
     }
 
-    ColumnPtr executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
@@ -121,7 +122,7 @@ private:
 
 
 template <typename Derived>
-ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
+ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     const ColumnArray::Offsets * offsets = nullptr;
     size_t num_arguments = arguments.size();
@@ -352,6 +353,9 @@ bool FunctionArrayEnumerateExtended<Derived>::execute128bit(
         key_sizes[j] = columns[j]->sizeOfValueIfFixed();
         keys_bytes += key_sizes[j];
     }
+
+    if (keys_bytes > 16)
+        return false;
 
     executeMethod<MethodFixed>(offsets, columns, key_sizes, nullptr, res_values);
     return true;
