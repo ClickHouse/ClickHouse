@@ -22,8 +22,8 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateFunctionQuery::execute()
 {
-    auto context = getContext();
-    context->checkAccess(AccessType::CREATE_FUNCTION);
+    auto current_context = getContext();
+    current_context->checkAccess(AccessType::CREATE_FUNCTION);
 
     FunctionNameNormalizer().visit(query_ptr.get());
     auto * create_function_query = query_ptr->as<ASTCreateFunctionQuery>();
@@ -40,7 +40,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
     {
         try
         {
-            UserDefinedObjectsLoader::instance().storeObject(context, UserDefinedObjectType::Function, function_name, *query_ptr);
+            UserDefinedObjectsLoader::instance().storeObject(current_context, UserDefinedObjectType::Function, function_name, *query_ptr);
         }
         catch (Exception & exception)
         {
