@@ -955,9 +955,36 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->setMMappedFileCache(mmap_cache_size);
 
 #if USE_EMBEDDED_COMPILER
-    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 1024;
-    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
-    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
+    {
+        UInt64 max_map_count = 0;
+        {
+            static constexpr size_t buf_size = 1024;
+            char buf[buf_size];
+            ReadBufferFromFile file("/proc/sys/vm/max_map_count", buf_size, -1, buf);
+            readText(max_map_count, file);
+        }
+
+        size_t compiled_expression_cache_size_max = max_map_count / 2;
+        size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 4096);
+        /// NOTE: Each compiled function variant (i.e. function with it's own
+        /// set of constant arguments) requires one VMA (see JITModuleMemoryManager)
+        ///
+        /// And this means that it is pretty easy to hit vm.max_map_count limit.
+        ///
+        /// Limit size of compiled_expression_cache_size to vm.max_map_count/2,
+        /// since ClickHouse itself needs VMA's too for allocations.
+        if (compiled_expression_cache_size > compiled_expression_cache_size_max)
+        {
+            LOG_ERROR(log,
+                "compiled_expression_cache_size (={}) cannot be greater then {} (half of vm.max_map_count). "
+                "The value of compiled_expression_cache_size will be lowered to {}. "
+                "If you really want to increase compiled_expression_cache_size (although it is not recommended) you need to increase vm.max_connections sysctl.",
+                compiled_expression_cache_size, compiled_expression_cache_size_max,
+                compiled_expression_cache_size_max);
+            compiled_expression_cache_size = compiled_expression_cache_size_max;
+        }
+        CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
+    }
 #endif
 
     /// Set path for format schema files
