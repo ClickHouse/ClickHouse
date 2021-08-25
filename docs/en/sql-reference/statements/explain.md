@@ -384,5 +384,32 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersMt × 2 0 → 1
 ```
+### EXPLAIN ESTIMATE {#explain-estimate}
+
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family. 
+
+**Example**
+
+Creating a table:
+
+```sql
+CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
+INSERT INTO ttt SELECT number FROM numbers(128);
+OPTIMIZE TABLE ttt;
+```
+
+Query:
+
+```sql
+EXPLAIN ESTIMATE SELECT * FROM ttt;
+```
+
+Result:
+
+```text
+┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
+│ default  │ ttt   │     1 │  128 │     8 │
+└──────────┴───────┴───────┴──────┴───────┘
+```
 
 [Оriginal article](https://clickhouse.tech/docs/en/sql-reference/statements/explain/) <!--hide-->
