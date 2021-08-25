@@ -30,80 +30,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-namespace
-{
-
-/** A stream, that runs child process and sends data to its stdin in background thread,
-  *  and receives data from its stdout.
-  *
-  *  TODO: implement without background thread.
-  */
-class SourceWithBackgroundThread final : public SourceWithProgress
-{
-public:
-    SourceWithBackgroundThread(
-        ContextPtr context,
-        const std::string & format,
-        const Block & sample_block,
-        const std::string & command_str,
-        Poco::Logger * log_,
-        std::function<void(WriteBufferFromFile &)> && send_data_)
-        : SourceWithProgress(sample_block)
-        , log(log_)
-        , command(ShellCommand::execute(command_str))
-        , send_data(std::move(send_data_))
-        , thread([this] { send_data(command->in); })
-    {
-        pipeline.init(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, DEFAULT_BLOCK_SIZE)));
-        executor = std::make_unique<PullingPipelineExecutor>(pipeline);
-    }
-
-    ~SourceWithBackgroundThread() override
-    {
-        if (thread.joinable())
-            thread.join();
-    }
-
-protected:
-    Chunk generate() override
-    {
-        Chunk chunk;
-        executor->pull(chunk);
-        return chunk;
-    }
-
-public:
-    Status prepare() override
-    {
-        auto status = SourceWithProgress::prepare();
-
-        if (status == Status::Finished)
-        {
-            std::string err;
-            readStringUntilEOF(err, command->err);
-            if (!err.empty())
-                LOG_ERROR(log, "Having stderr: {}", err);
-
-            if (thread.joinable())
-                thread.join();
-
-            command->wait();
-        }
-
-        return status;
-    }
-
-    String getName() const override { return "SourceWithBackgroundThread"; }
-
-    Poco::Logger * log;
-    QueryPipeline pipeline;
-    std::unique_ptr<PullingPipelineExecutor> executor;
-    std::unique_ptr<ShellCommand> command;
-    std::function<void(WriteBufferFromFile &)> send_data;
-    ThreadFromGlobalPool thread;
-};
-}
-
 ExecutableDictionarySource::ExecutableDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
@@ -145,7 +71,9 @@ Pipe ExecutableDictionarySource::loadAll()
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
 
     LOG_TRACE(log, "loadAll {}", toString());
-    auto process = ShellCommand::execute(configuration.command);
+
+    ShellCommand::Config config(configuration.command);
+    auto process = ShellCommand::execute(config);
     Pipe pipe(FormatFactory::instance().getInput(configuration.format, process->out, sample_block, context, max_block_size));
     pipe.addTransform(std::make_shared<ShellCommandOwningTransform>(pipe.getHeader(), log, std::move(process)));
     return pipe;
@@ -164,7 +92,8 @@ Pipe ExecutableDictionarySource::loadUpdatedAll()
         command_with_update_field += " " + configuration.update_field + " " + DB::toString(LocalDateTime(update_time - configuration.update_lag));
 
     LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
-    auto process = ShellCommand::execute(command_with_update_field);
+    ShellCommand::Config config(command_with_update_field);
+    auto process = ShellCommand::execute(config);
     Pipe pipe(FormatFactory::instance().getInput(configuration.format, process->out, sample_block, context, max_block_size));
     pipe.addTransform(std::make_shared<ShellCommandOwningTransform>(pipe.getHeader(), log, std::move(process)));
     return pipe;
@@ -188,10 +117,13 @@ Pipe ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std
 
 Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
 {
-    Pipe pipe(std::make_unique<SourceWithBackgroundThread>(
-        context, configuration.format, sample_block, configuration.command, log,
-        [block, this](WriteBufferFromFile & out) mutable
+    ShellCommand::Config config(configuration.command);
+    auto process = ShellCommand::execute(config);
+    Pipe pipe(std::make_unique<ShellCommandSourceWithBackgroundThread>(
+        context, configuration.format, sample_block, std::move(process), log,
+        [block, this](ShellCommand & command) mutable
         {
+            auto & out = command.in;
             auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
             formatBlock(output_stream, block);
             out.close();

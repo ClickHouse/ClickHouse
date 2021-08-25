@@ -765,6 +765,12 @@ if (ThreadFuzzer::instance().isEffective())
         fs::create_directories(dictionaries_lib_path);
     }
 
+    {
+        std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
+        global_context->setUserScriptsPath(user_scripts_path);
+        fs::create_directories(user_scripts_path);
+    }
+
     /// top_level_domains_lists
     {
         const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
