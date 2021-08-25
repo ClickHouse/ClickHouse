@@ -1239,7 +1239,7 @@ namespace
                             else
                             {
                                 WriteBufferFromOwnString buf;
-                                writeText(decimal, scale, buf);
+                                writeText(decimal, scale, buf, false);
                                 cannotConvertValue(buf.str(), TypeName<DecimalType>, field_descriptor.type_name());
                             }
                         };
@@ -1316,9 +1316,9 @@ namespace
         {
             WriteBufferFromString buf{str};
             if constexpr (std::is_same_v<DecimalType, DateTime64>)
-               writeDateTimeText(decimal, scale, buf);
+                writeDateTimeText(decimal, scale, buf);
             else
-                writeText(decimal, scale, buf);
+                writeText(decimal, scale, buf, false);
         }
 
         DecimalType stringToDecimal(const String & str) const

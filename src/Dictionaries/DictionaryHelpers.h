@@ -380,14 +380,14 @@ template <DictionaryKeyType key_type>
 class DictionaryKeysArenaHolder;
 
 template <>
-class DictionaryKeysArenaHolder<DictionaryKeyType::simple>
+class DictionaryKeysArenaHolder<DictionaryKeyType::Simple>
 {
 public:
     static Arena * getComplexKeyArena() { return nullptr; }
 };
 
 template <>
-class DictionaryKeysArenaHolder<DictionaryKeyType::complex>
+class DictionaryKeysArenaHolder<DictionaryKeyType::Complex>
 {
 public:
 
@@ -402,8 +402,7 @@ template <DictionaryKeyType key_type>
 class DictionaryKeysExtractor
 {
 public:
-    using KeyType = std::conditional_t<key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(key_type != DictionaryKeyType::range, "Range key type is not supported by DictionaryKeysExtractor");
+    using KeyType = std::conditional_t<key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     explicit DictionaryKeysExtractor(const Columns & key_columns_, Arena * complex_key_arena_)
         : key_columns(key_columns_)
@@ -411,7 +410,7 @@ public:
     {
         assert(!key_columns.empty());
 
-        if constexpr (key_type == DictionaryKeyType::simple)
+        if constexpr (key_type == DictionaryKeyType::Simple)
         {
             key_columns[0] = key_columns[0]->convertToFullColumnIfConst();
 
@@ -437,7 +436,7 @@ public:
     {
         assert(current_key_index < keys_size);
 
-        if constexpr (key_type == DictionaryKeyType::simple)
+        if constexpr (key_type == DictionaryKeyType::Simple)
         {
             const auto & column_vector = static_cast<const ColumnVector<UInt64> &>(*key_columns[0]);
             const auto & data = column_vector.getData();
@@ -465,7 +464,7 @@ public:
 
     void rollbackCurrentKey() const
     {
-        if constexpr (key_type == DictionaryKeyType::complex)
+        if constexpr (key_type == DictionaryKeyType::Complex)
             complex_key_arena->rollback(current_complex_key.size);
     }
 
@@ -497,6 +496,20 @@ private:
     Arena * complex_key_arena;
 };
 
+/// Deserialize columns from keys array using dictionary structure
+MutableColumns deserializeColumnsFromKeys(
+    const DictionaryStructure & dictionary_structure,
+    const PaddedPODArray<StringRef> & keys,
+    size_t start,
+    size_t end);
+
+/// Deserialize columns with type and name from keys array using dictionary structure
+ColumnsWithTypeAndName deserializeColumnsWithTypeAndNameFromKeys(
+    const DictionaryStructure & dictionary_structure,
+    const PaddedPODArray<StringRef> & keys,
+    size_t start,
+    size_t end);
+
 /** Merge block with blocks from stream. If there are duplicate keys in block they are filtered out.
   * In result block_to_update will be merged with blocks from stream.
   * Note: readPrefix readImpl readSuffix will be called on stream object during function execution.
@@ -507,8 +520,7 @@ void mergeBlockWithPipe(
     Block & block_to_update,
     Pipe pipe)
 {
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by updatePreviousyLoadedBlockWithStream");
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     Columns saved_block_key_columns;
     saved_block_key_columns.reserve(key_columns_size);

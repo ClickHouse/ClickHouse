@@ -27,3 +27,6 @@ def test_select_aggregate_alias_column(start_cluster):
 
     node1.query("select sum(x_alias) from remote('node{1,2}', default, tab)")
     node2.query("select sum(x_alias) from remote('node{1,2}', default, tab)")
+
+    node1.query("drop table tab")
+    node2.query("drop table tab")
