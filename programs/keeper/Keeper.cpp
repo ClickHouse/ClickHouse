@@ -300,9 +300,9 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     if (config().has("keeper_server.storage_path"))
         path = config().getString("keeper_server.storage_path");
     else if (config().has("keeper_server.log_storage_path"))
-        path = config().getString("keeper_server.log_storage_path");
+        path = std::filesystem::path(config().getString("keeper_server.log_storage_path")).parent_path();
     else if (config().has("keeper_server.snapshot_storage_path"))
-        path = config().getString("keeper_server.snapshot_storage_path");
+        path = std::filesystem::path(config().getString("keeper_server.snapshot_storage_path")).parent_path();
     else
         path = std::filesystem::path{KEEPER_DEFAULT_PATH};
 
