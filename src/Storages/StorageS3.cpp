@@ -356,6 +356,7 @@ public:
         const String & format_,
         const Block & sample_block_,
         ContextPtr context_,
+        std::optional<FormatSettings> format_settings_,
         const CompressionMethod compression_method_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket_,
@@ -372,7 +373,7 @@ public:
         , key(key_)
         , min_upload_part_size(min_upload_part_size_)
         , max_single_part_upload_size(max_single_part_upload_size_)
-
+        , format_settings(format_settings_)
     {
         std::vector<ASTPtr> arguments(1, partition_by);
         ASTPtr partition_by_string = makeASTFunction(FunctionToString::name, std::move(arguments));
@@ -447,6 +448,7 @@ private:
     const String key;
     size_t min_upload_part_size;
     size_t max_single_part_upload_size;
+    std::optional<FormatSettings> format_settings;
 
     ExpressionActionsPtr partition_by_expr;
     String partition_by_column_name;
@@ -473,6 +475,7 @@ private:
                 format,
                 sample_block,
                 context,
+                format_settings,
                 compression_method,
                 client,
                 partition_bucket,
@@ -647,6 +650,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             format_name,
             sample_block,
             local_context,
+            format_settings,
             chosen_compression_method,
             client_auth.client,
             client_auth.uri.bucket,
@@ -660,6 +664,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
             format_name,
             sample_block,
             local_context,
+            format_settings,
             chosen_compression_method,
             client_auth.client,
             client_auth.uri.bucket,
@@ -713,6 +718,7 @@ void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAut
 
     client_configuration.endpointOverride = upd.uri.endpoint;
     client_configuration.maxConnections = upd.max_connections;
+    client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(/*maxRetry*/1, /*scope*/ 1);
 
     upd.client = S3::ClientFactory::instance().create(
         client_configuration,
