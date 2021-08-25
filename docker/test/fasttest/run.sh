@@ -393,6 +393,9 @@ function run_tests
         01853_s2_cells_intersect
         01854_s2_cap_contains
         01854_s2_cap_union
+
+        # needs s3
+        01944_insert_partition_by
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
