@@ -163,7 +163,7 @@
         "02009_array_join_partition",
         "02012_changed_enum_type_non_replicated",
         "02012_zookeeper_changed_enum_type",
-	"02012_zookeeper_changed_enum_type_incompatible",
+        "02012_zookeeper_changed_enum_type_incompatible",
         /// Old syntax is not allowed
         "01062_alter_on_mutataion_zookeeper",
         "00925_zookeeper_empty_replicated_merge_tree_optimize_final",
