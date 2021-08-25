@@ -111,4 +111,9 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default",      HandleKafkaErrorMode::DEFAULT},
      {"stream",       HandleKafkaErrorMode::STREAM}})
+
+IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
+    {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
+     {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
+     {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
 }

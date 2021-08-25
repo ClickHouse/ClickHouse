@@ -14,8 +14,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-template class CacheDictionaryUpdateUnit<DictionaryKeyType::simple>;
-template class CacheDictionaryUpdateUnit<DictionaryKeyType::complex>;
+template class CacheDictionaryUpdateUnit<DictionaryKeyType::Simple>;
+template class CacheDictionaryUpdateUnit<DictionaryKeyType::Complex>;
 
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
@@ -155,7 +155,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
     }
 }
 
-template class CacheDictionaryUpdateQueue<DictionaryKeyType::simple>;
-template class CacheDictionaryUpdateQueue<DictionaryKeyType::complex>;
+template class CacheDictionaryUpdateQueue<DictionaryKeyType::Simple>;
+template class CacheDictionaryUpdateQueue<DictionaryKeyType::Complex>;
 
 }
