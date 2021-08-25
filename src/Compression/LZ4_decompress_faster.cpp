@@ -475,7 +475,15 @@ bool NO_INLINE decompressImpl(
             return false;
 
         // Due to implementation specifics the copy length is always a multiple of copy_amount
-        const size_t real_length = std::max(copy_amount, static_cast<size_t>(std::ceil(static_cast<double>(length) / copy_amount) * copy_amount));
+        size_t real_length = 0;
+        if constexpr (copy_amount == 8)
+            real_length = (((length >> 3) + 1) * 8);
+        else if constexpr (copy_amount == 16)
+            real_length = (((length >> 4) + 1) * 16);
+        else if constexpr (copy_amount == 32)
+            real_length = (((length >> 5) + 1) * 32);
+        else
+            throw std::runtime_error("Compile error!");
 
         if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
              return false;
