@@ -1339,7 +1339,7 @@ FROM numbers(3);
 └───────────────────────────────────────────┘
 ```
 
-## snowflakeToDateTime {#snowflakeToDateTime}
+## snowflakeToDateTime {#snowflaketodatetime}
 
 Извлекает время из Snowflake ID в формате [DateTime](../data-types/datetime.md).
 
