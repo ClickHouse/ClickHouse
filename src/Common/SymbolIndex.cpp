@@ -466,7 +466,11 @@ MultiVersion<SymbolIndex>::Version SymbolIndex::instance(bool reload)
 {
     static MultiVersion<SymbolIndex> instance(std::unique_ptr<SymbolIndex>(new SymbolIndex));
     if (reload)
+    {
         instance.set(std::unique_ptr<SymbolIndex>(new SymbolIndex));
+        /// Also reload stacktrace cache.
+        StackTrace::toStringStatic({}, 0, 0, true);
+    }
     return instance.get();
 }
 

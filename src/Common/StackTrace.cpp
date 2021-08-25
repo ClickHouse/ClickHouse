@@ -417,11 +417,7 @@ void StackTrace::toStringEveryLine(std::function<void(const std::string &)> call
 
 std::string StackTrace::toString() const
 {
-    /// Calculation of stack trace text is extremely slow.
-    /// We use simple cache because otherwise the server could be overloaded by trash queries.
-
-    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
-    return func_cached(frame_pointers, offset, size);
+    return toStringStatic(frame_pointers, offset, size);
 }
 
 std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t size)
@@ -432,6 +428,19 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
     for (size_t i = 0; i < size; ++i)
         frame_pointers_copy[i] = frame_pointers_[i];
 
+    return toStringStatic(frame_pointers_copy, offset, size);
+}
+
+std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size, bool reload)
+{
+    /// Calculation of stack trace text is extremely slow.
+    /// We use simple cache because otherwise the server could be overloaded by trash queries.
     static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
-    return func_cached(frame_pointers_copy, offset, size);
+    /// Reload cached stacktrace instead.
+    if (reload)
+    {
+        func_cached.drop();
+        return "";
+    }
+    return func_cached(frame_pointers, offset, size);
 }
