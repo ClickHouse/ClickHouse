@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Common/CurrentMetrics.h>
@@ -58,6 +59,9 @@ private:
         std::shared_ptr<WriteBuffer> out_maybe_compressed;
         /// Points to 'out' or to CompressedWriteBuffer(*out) or to CascadeWriteBuffer.
         std::shared_ptr<WriteBuffer> out_maybe_delayed_and_compressed;
+
+        /// A queue with internal logs that will be passed to client
+        InternalTextLogsQueuePtr logs_queue;
 
         inline bool hasDelayed() const
         {

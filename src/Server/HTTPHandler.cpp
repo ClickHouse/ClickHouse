@@ -426,6 +426,13 @@ bool HTTPHandler::authenticateUser(
 }
 
 
+const std::string & getLogPriorityName(int priority)
+{
+    static const std::string priorities[] = {"", "Fatal", "Critical", "Error", "Warning", "Notice", "Information", "Debug", "Trace"};
+
+    return priorities[priority];
+}
+
 void HTTPHandler::processQuery(
     HTTPServerRequest & request,
     HTMLForm & params,
@@ -743,18 +750,107 @@ void HTTPHandler::processQuery(
     query_scope.emplace(context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
+        [&] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
             response.setContentType(content_type);
             response.add("X-ClickHouse-Query-Id", current_query_id);
             response.add("X-ClickHouse-Format", format);
             response.add("X-ClickHouse-Timezone", timezone);
+
+            if (settings.http_multipart_response)
+            {
+                /* TODO: Check that this works with query settings or document it */
+                if (settings.send_logs_level != LogsLevel::none)
+                {
+                    const auto client_logs_level = settings.send_logs_level;
+                    used_output.logs_queue = std::make_shared<InternalTextLogsQueue>();
+                    used_output.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+                    CurrentThread::attachInternalTextLogsQueue(used_output.logs_queue, client_logs_level);
+                }
+
+                // TODO: Check if doing this "boundary" is ok and won't conflict with the output (which is very much possible)
+                // Maybe add some randomness to the boundary
+                response.setContentType("multipart/form-data;boundary=\"boundary\"");
+                std::string boundary = "\r\n--boundary\r\n";
+                std::string form_content_name = "Content-Disposition: form-data; name=\"data\"\r\n";
+                std::string form_content_type = "Content-Type: " + content_type + "\r\n\r\n";
+                writeString(boundary, *used_output.out_maybe_delayed_and_compressed);
+                writeString(form_content_name, *used_output.out_maybe_delayed_and_compressed);
+                writeString(form_content_type, *used_output.out_maybe_delayed_and_compressed);
+            }
         }
     );
 
+    /// Set logs
+    if (settings.http_multipart_response && used_output.logs_queue && !used_output.logs_queue->empty())
+    {
+        auto & wb = *used_output.out_maybe_delayed_and_compressed;
+        std::string boundary = "--boundary\r\n";
+        std::string form_content_name = "Content-Disposition: form-data; name=\"logs\"\r\n";
+        std::string form_content_type = "Content-Type: text/plain; charset=utf-8\r\n\r\n";
+        writeString(boundary, wb);
+        writeString(form_content_name, wb);
+        writeString(form_content_type, wb);
+
+        /// Read logs_queue and append it here
+        MutableColumns columns;
+        while (used_output.logs_queue->tryPop(columns))
+        {
+            assert(columns.size() == 8);
+            assert(columns[0]->getName() == "event_time");
+            assert(columns[1]->getName() == "event_time_microseconds");
+            assert(columns[2]->getName() == "host_name");
+            assert(columns[3]->getName() == "query_id");
+            assert(columns[4]->getName() == "thread_id");
+            assert(columns[5]->getName() == "priority");
+            assert(columns[6]->getName() == "source");
+            assert(columns[7]->getName() == "text");
+            UInt32 event_time = columns[0]->operator[](0).get<UInt32>();
+            UInt32 time_microseconds = columns[1]->operator[](0).get<UInt32>();
+            String host_name = columns[2]->operator[](0).get<String>();
+            String query_id = columns[3]->operator[](0).get<String>();
+            UInt64 thread_id = columns[4]->operator[](0).get<UInt64>();
+            Int8 priority = columns[5]->operator[](0).get<Int8>();
+            String source = columns[6]->operator[](0).get<String>();
+            String text = columns[7]->operator[](0).get<String>();
+
+            DB::writeDateTimeText(event_time, wb);
+            DB::writeChar('.', wb);
+            DB::writeChar('0' + ((time_microseconds / 100000) % 10), wb);
+            DB::writeChar('0' + ((time_microseconds / 10000) % 10), wb);
+            DB::writeChar('0' + ((time_microseconds / 1000) % 10), wb);
+            DB::writeChar('0' + ((time_microseconds / 100) % 10), wb);
+            DB::writeChar('0' + ((time_microseconds / 10) % 10), wb);
+            DB::writeChar('0' + ((time_microseconds / 1) % 10), wb);
+
+            writeCString(" [ ", wb);
+            DB::writeIntText(thread_id, wb);
+            writeCString(" ] ", wb);
+
+            writeCString("{", wb);
+            DB::writeString(query_id, wb);
+            writeCString("} ", wb);
+
+            writeCString("<", wb);
+            DB::writeString(getLogPriorityName(priority), wb);
+            writeCString("> ", wb);
+
+            DB::writeString(source, wb);
+            writeCString(": ", wb);
+            DB::writeString(text, wb);
+            writeCString("\n", wb);
+        }
+    }
+
+    if (settings.http_multipart_response)
+    {
+        auto & wb = *used_output.out_maybe_delayed_and_compressed;
+        std::string boundary = "--boundary--\r\n";
+        DB::writeString(boundary, wb);
+    }
+
     if (used_output.hasDelayed())
     {
-        /// TODO: set Content-Length if possible
         pushDelayedResults(used_output);
     }
 
@@ -766,6 +862,8 @@ void HTTPHandler::processQuery(
 void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 {
+    // TODO: If multipart, add the logs as a new form
+
     try
     {
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
