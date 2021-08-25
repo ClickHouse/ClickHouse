@@ -1412,7 +1412,7 @@ Result:
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## dateTimeToSnowflake {#dateTimeToSnowflake}
+## dateTimeToSnowflake {#datetimetosnowflake}
 
 Converts [DateTime](../data-types/datetime.md) value to the first Snowflake ID at the giving time.
 
