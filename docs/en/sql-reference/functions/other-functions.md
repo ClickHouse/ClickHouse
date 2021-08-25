@@ -2238,7 +2238,7 @@ Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-refere
 
 ## getServerPort {#getserverport}
 
-Returns the number of the server port. When the port is not used by the server, throw an exception.
+Returns the number of the server port. When the port is not used by the server, throws an exception.
 
 **Syntax**
 
