@@ -712,6 +712,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (disk->exists(new_part_tmp_path))
         throw Exception("Directory " + fullPath(disk, new_part_tmp_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
+    // TODO(ab): Is the sorting_key in parts.front() appropriate to use?
+    auto primary_sorting_key_map = data.getPrimarySortingKeyMap();
+    const auto & sorting_key = parts.front()->getKeyDescription(metadata_snapshot, false, *primary_sorting_key_map);
+    const auto & primary_keys = parts.front()->getKeyDescription(metadata_snapshot, true, *primary_sorting_key_map).column_names;
 
     Names all_column_names = metadata_snapshot->getColumns().getNamesOfPhysical();
     NamesAndTypesList storage_columns = metadata_snapshot->getColumns().getAllPhysical();
@@ -722,7 +726,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
         storage_columns,
-        metadata_snapshot->getSortingKey().expression,
+        sorting_key.expression,
         metadata_snapshot->getSecondaryIndices(),
         merging_params,
         gathering_columns,
@@ -848,29 +852,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergeStageProgress horizontal_stage_progress(
         column_sizes ? column_sizes->keyColumnsWeight() : 1.0);
 
-    auto primary_key_map = data.getPrimaryKeyMap();
-    const auto & sorting_key = [&]()
-    {
-        // TODO(ab): Is the sorting_key in parts.front() appropriate to use?
-        if (parts.front()->sorting_key_ast_str.empty())
-        {
-            if (metadata_snapshot->isOriginalSortingKeyDefined())
-                return metadata_snapshot->getOriginalSortingKey();
-            else
-                return metadata_snapshot->getSortingKey();
-        }
-        else
-        {
-            auto it = primary_key_map->find(parts.front()->sorting_key_ast_str);
-            if (it == primary_key_map->end())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Cannot find sorting key condition for key {}. It is a bug",
-                    parts.front()->sorting_key_ast_str);
-            return it->second;
-        }
-    }();
-
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeSequentialSource>(
@@ -982,6 +963,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         new_data_part,
         metadata_snapshot,
         merging_columns,
+        primary_keys,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
         compression_codec,
         blocks_are_granules_size};
@@ -2218,11 +2200,12 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
         mutating_stream = std::make_shared<TTLCalcInputStream>(mutating_stream, data, metadata_snapshot, new_data_part, time_of_mutation, true);
 
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
-
+    const auto & primary_keys = new_data_part->getKeyDescription(metadata_snapshot, true, *data.getPrimarySortingKeyMap()).column_names;
     MergedBlockOutputStream out{
         new_data_part,
         metadata_snapshot,
         new_data_part->getColumns(),
+        primary_keys,
         skip_indices,
         compression_codec};
 

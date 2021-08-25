@@ -12,13 +12,14 @@ namespace ErrorCodes
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
+    const Names & primary_key_columns_,
     const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
+    : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, primary_key_columns_, metadata_snapshot_,
         indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, index_granularity_)
     , plain_file(data_part->volume->getDisk()->writeFile(
@@ -159,7 +160,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 
     if (settings.rewrite_primary_key)
     {
-        Block primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
+        Block primary_key_block = getBlockAndPermute(block, primary_key_columns, nullptr);
         calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
     }
 

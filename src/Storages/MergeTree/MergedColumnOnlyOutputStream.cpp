@@ -32,6 +32,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     writer = data_part->getWriter(
         header.getNamesAndTypesList(),
+        {}, // We don't need to rewrite primary key here.
         metadata_snapshot_,
         indices_to_recalc,
         default_codec,

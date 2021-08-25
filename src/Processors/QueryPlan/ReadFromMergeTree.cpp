@@ -823,35 +823,14 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     // Build and check if any primary key is used when necessary
     std::map<String, KeyCondition> key_condition_map;
     bool valid_primary_key = false;
-    auto primary_key_map = data.getPrimaryKeyMap();
+    auto primary_sorting_key_map = data.getPrimarySortingKeyMap();
     for (const auto & part : parts)
     {
         auto key_it = key_condition_map.find(part->primary_key_ast_str);
         if (key_it != key_condition_map.end())
             continue;
 
-        const auto & primary_key = [&]()
-        {
-            if (part->primary_key_ast_str.empty())
-            {
-                if (metadata_snapshot->isOriginalPrimaryKeyDefined())
-                    return metadata_snapshot->getOriginalPrimaryKey();
-                else if (metadata_snapshot->isOriginalSortingKeyDefined())
-                    return metadata_snapshot->getOriginalSortingKey();
-                else
-                    return metadata_snapshot->getPrimaryKey();
-            }
-            else
-            {
-                auto it = primary_key_map->find(part->primary_key_ast_str);
-                if (it == primary_key_map->end())
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Cannot find primary key condition for key {}. It is a bug",
-                        part->primary_key_ast_str);
-                return it->second;
-            }
-        }();
+        const auto & primary_key = part->getKeyDescription(metadata_snapshot, true /* primary */, *primary_sorting_key_map);
         Names primary_key_columns = primary_key.column_names;
         key_it = key_condition_map
                      .emplace(

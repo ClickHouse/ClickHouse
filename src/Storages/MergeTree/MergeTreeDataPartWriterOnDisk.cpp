@@ -64,6 +64,7 @@ void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPa
 MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const MergeTreeData::DataPartPtr & data_part_,
     const NamesAndTypesList & columns_list_,
+    const Names & primary_key_columns_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeIndices & indices_to_recalc_,
     const String & marks_file_extension_,
@@ -71,7 +72,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : IMergeTreeDataPartWriter(data_part_,
-        columns_list_, metadata_snapshot_, settings_, index_granularity_)
+        columns_list_, primary_key_columns_, metadata_snapshot_, settings_, index_granularity_)
     , skip_indices(indices_to_recalc_)
     , part_path(data_part_->getFullRelativePath())
     , marks_file_extension(marks_file_extension_)

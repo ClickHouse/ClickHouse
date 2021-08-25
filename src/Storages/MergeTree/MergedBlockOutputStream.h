@@ -17,6 +17,16 @@ public:
         const MergeTreeDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
+        const Names & primary_keys,
+        const MergeTreeIndices & skip_indices,
+        CompressionCodecPtr default_codec_,
+        bool blocks_are_granules_size = false);
+
+    /// When used to generate new parts, primary_keys is derived from metadata_snapshot.
+    MergedBlockOutputStream(
+        const MergeTreeDataPartPtr & data_part,
+        const StorageMetadataPtr & metadata_snapshot_,
+        const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
         CompressionCodecPtr default_codec_,
         bool blocks_are_granules_size = false);

@@ -62,6 +62,8 @@ public:
 
     Block mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation *& permutation);
 
+    static void setPrimarySortingKeys(const StorageMetadataPtr & metadata_snapshot, IMergeTreeDataPart & part);
+
 private:
     static MergeTreeData::MutableDataPartPtr writeProjectionPartImpl(
         MergeTreeData & data,

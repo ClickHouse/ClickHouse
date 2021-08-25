@@ -1126,18 +1126,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     calculateColumnSizesImpl();
 
     /// Prepare possible primary key descriptions
-    std::map<String, KeyDescription> new_primary_key_map;
+    std::map<String, KeyDescription> new_primary_sorting_key_map;
     for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (!part->primary_key_ast_str.empty())
         {
             for (const auto & ast : {part->primary_key_ast_str, part->sorting_key_ast_str})
-                if (new_primary_key_map.find(ast) == new_primary_key_map.end())
-                    new_primary_key_map.emplace(
+                if (new_primary_sorting_key_map.find(ast) == new_primary_sorting_key_map.end())
+                    new_primary_sorting_key_map.emplace(
                         ast, KeyDescription::getSortingKeyFromAST(parseKeyExpr(ast), part->getColumns(), getContext(), {}));
         }
     }
-    primary_key_map.set(std::make_unique<std::map<String, KeyDescription>>(std::move(new_primary_key_map)));
+    primary_sorting_key_map.set(std::make_unique<std::map<String, KeyDescription>>(std::move(new_primary_sorting_key_map)));
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
 }
@@ -2337,24 +2337,24 @@ bool MergeTreeData::renameTempPartAndReplace(
 
         if (!part->primary_key_ast_str.empty())
         {
-            auto primary_key_map_snapshot = primary_key_map.get();
+            auto primary_key_map_snapshot = primary_sorting_key_map.get();
             auto primary_key_map_ptr = primary_key_map_snapshot.get();
-            std::map<String, KeyDescription> new_primary_key_map;
+            std::map<String, KeyDescription> new_primary_sorting_key_map;
             for (const auto & ast : {part->primary_key_ast_str, part->sorting_key_ast_str})
             {
                 if (primary_key_map_ptr->find(ast) == primary_key_map_ptr->end())
                 {
-                    if (primary_key_map_ptr != &new_primary_key_map)
+                    if (primary_key_map_ptr != &new_primary_sorting_key_map)
                     {
-                        new_primary_key_map = *primary_key_map_ptr;
-                        primary_key_map_ptr = &new_primary_key_map;
+                        new_primary_sorting_key_map = *primary_key_map_ptr;
+                        primary_key_map_ptr = &new_primary_sorting_key_map;
                     }
-                    new_primary_key_map.emplace(
+                    new_primary_sorting_key_map.emplace(
                         ast, KeyDescription::getSortingKeyFromAST(parseKeyExpr(ast), part->getColumns(), getContext(), {}));
                 }
             }
-            if (primary_key_map_ptr == &new_primary_key_map)
-                primary_key_map.set(std::make_unique<std::map<String, KeyDescription>>(std::move(new_primary_key_map)));
+            if (primary_key_map_ptr == &new_primary_sorting_key_map)
+                primary_sorting_key_map.set(std::make_unique<std::map<String, KeyDescription>>(std::move(new_primary_sorting_key_map)));
         }
     }
 
@@ -4005,9 +4005,9 @@ ASTPtr MergeTreeData::parseKeyExpr(const String & key_expr)
     return order_by_ast;
 };
 
-std::shared_ptr<const std::map<String, KeyDescription>> MergeTreeData::getPrimaryKeyMap() const
+std::shared_ptr<const std::map<String, KeyDescription>> MergeTreeData::getPrimarySortingKeyMap() const
 {
-    return primary_key_map.get();
+    return primary_sorting_key_map.get();
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData::DataPartsLock * acquired_parts_lock)
@@ -4029,9 +4029,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
         size_t reduce_rows = 0;
         size_t reduce_parts = 0;
 
-        auto primary_key_map_snapshot = data.primary_key_map.get().get();
-        std::map<String, KeyDescription> new_primary_key_map;
-        bool primary_key_map_changed = false;
+        auto primary_sorting_key_map_snapshot = data.primary_sorting_key_map.get().get();
+        std::map<String, KeyDescription> new_primary_sorting_key_map;
+        bool primary_sorting_key_map_changed = false;
         for (const DataPartPtr & part : precommitted_parts)
         {
             DataPartPtr covering_part;
@@ -4069,16 +4069,16 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             {
                 for (const auto & ast : {part->primary_key_ast_str, part->sorting_key_ast_str})
                 {
-                    if (primary_key_map_snapshot->find(ast) == primary_key_map_snapshot->end())
+                    if (primary_sorting_key_map_snapshot->find(ast) == primary_sorting_key_map_snapshot->end())
                     {
-                        if (!primary_key_map_changed)
+                        if (!primary_sorting_key_map_changed)
                         {
-                            new_primary_key_map = *primary_key_map_snapshot;
-                            primary_key_map_snapshot = &new_primary_key_map;
-                            primary_key_map_changed = true;
+                            new_primary_sorting_key_map = *primary_sorting_key_map_snapshot;
+                            primary_sorting_key_map_snapshot = &new_primary_sorting_key_map;
+                            primary_sorting_key_map_changed = true;
                         }
 
-                        new_primary_key_map.emplace(
+                        new_primary_sorting_key_map.emplace(
                             ast, KeyDescription::getSortingKeyFromAST(parseKeyExpr(ast), part->getColumns(), data.getContext(), {}));
                     }
                 }
@@ -4086,8 +4086,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
         }
         data.decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
         data.increaseDataVolume(add_bytes, add_rows, add_parts);
-        if (primary_key_map_changed)
-            data.primary_key_map.set(std::make_unique<std::map<String, KeyDescription>>(std::move(new_primary_key_map)));
+        if (primary_sorting_key_map_changed)
+            data.primary_sorting_key_map.set(std::make_unique<std::map<String, KeyDescription>>(std::move(new_primary_sorting_key_map)));
     }
 
     clear();

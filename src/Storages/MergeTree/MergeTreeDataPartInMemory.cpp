@@ -57,6 +57,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartInMemory::getReader(
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
     const NamesAndTypesList & columns_list,
+    const Names & primary_key_columns,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & /* indices_to_recalc */,
     const CompressionCodecPtr & /* default_codec */,
@@ -65,7 +66,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
 {
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartInMemory>(shared_from_this());
     return std::make_unique<MergeTreeDataPartWriterInMemory>(
-        ptr, columns_list, metadata_snapshot, writer_settings);
+        ptr, columns_list, primary_key_columns, metadata_snapshot, writer_settings);
 }
 
 void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const String & new_relative_path, const StorageMetadataPtr & metadata_snapshot) const
@@ -94,7 +95,8 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
 
     auto compression_codec = storage.getContext()->chooseCompressionCodec(0, 0);
     auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, indices, compression_codec);
+    const auto & primary_keys = new_data_part->getKeyDescription(metadata_snapshot, true, *storage.getPrimarySortingKeyMap()).column_names;
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, primary_keys, indices, compression_codec);
     out.writePrefix();
     out.write(block);
     out.writeSuffixAndFinalizePart(new_data_part);

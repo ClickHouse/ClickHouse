@@ -17,6 +17,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list_,
+    const Names & primary_keys,
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec_,
     bool blocks_are_granules_size)
@@ -34,7 +35,31 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     if (!part_path.empty())
         volume->getDisk()->createDirectories(part_path);
 
-    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings);
+    writer = data_part->getWriter(
+        columns_list,
+        primary_keys,
+        metadata_snapshot,
+        skip_indices,
+        default_codec,
+        writer_settings);
+}
+
+MergedBlockOutputStream::MergedBlockOutputStream(
+    const MergeTreeDataPartPtr & data_part,
+    const StorageMetadataPtr & metadata_snapshot_,
+    const NamesAndTypesList & columns_list_,
+    const MergeTreeIndices & skip_indices,
+    CompressionCodecPtr default_codec_,
+    bool blocks_are_granules_size)
+    : MergedBlockOutputStream(
+        data_part,
+        metadata_snapshot_,
+        columns_list_,
+        metadata_snapshot_->getPrimaryKeyColumns(),
+        skip_indices,
+        default_codec_,
+        blocks_are_granules_size)
+{
 }
 
 /// If data is pre-sorted.

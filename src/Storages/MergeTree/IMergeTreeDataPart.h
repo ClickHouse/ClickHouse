@@ -89,6 +89,7 @@ public:
 
     virtual MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
+        const Names & primary_key_columns,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
@@ -405,6 +406,9 @@ public:
     /// Return some uniq string for file
     /// Required for distinguish different copies of the same part on S3
     String getUniqueId() const;
+
+    const KeyDescription &
+    getKeyDescription(const StorageMetadataPtr & metadata_snapshot, bool primary, const std::map<String, KeyDescription> & key_map) const;
 
 protected:
 

@@ -653,12 +653,9 @@ void IMergeTreeDataPart::loadIndex()
         // If we don't have part-level primary_key, check original primary key first, then sorting key.
         if (primary_key_str.empty())
         {
-            if (metadata_snapshot->isOriginalPrimaryKeyDefined())
+            if (metadata_snapshot->isOriginalSortingKeyDefined())
                 return std::make_pair(
                     metadata_snapshot->getOriginalPrimaryKey().column_names, metadata_snapshot->getOriginalPrimaryKey().data_types);
-            else if (metadata_snapshot->isOriginalSortingKeyDefined())
-                return std::make_pair(
-                    metadata_snapshot->getOriginalSortingKey().column_names, metadata_snapshot->getOriginalSortingKey().data_types);
             else
                 return std::make_pair(metadata_snapshot->getPrimaryKey().column_names, metadata_snapshot->getPrimaryKey().data_types);
         }
@@ -1563,6 +1560,36 @@ String IMergeTreeDataPart::getUniqueId() const
     return id;
 }
 
+const KeyDescription & IMergeTreeDataPart::getKeyDescription(
+    const StorageMetadataPtr & metadata_snapshot, bool primary, const std::map<String, KeyDescription> & key_map) const
+{
+    const auto & key_ast_str = primary ? primary_key_ast_str : sorting_key_ast_str;
+    if (key_ast_str.empty())
+    {
+        if (primary)
+        {
+            if (metadata_snapshot->isOriginalSortingKeyDefined())
+                return metadata_snapshot->getOriginalPrimaryKey();
+            else
+                return metadata_snapshot->getPrimaryKey();
+        }
+        else
+        {
+            if (metadata_snapshot->isOriginalSortingKeyDefined())
+                return metadata_snapshot->getOriginalSortingKey();
+            else
+                return metadata_snapshot->getSortingKey();
+        }
+    }
+    else
+    {
+        auto it = key_map.find(key_ast_str);
+        if (it == key_map.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find key condition for key {}. It is a bug", key_ast_str);
+        else
+            return it->second;
+    }
+}
 
 String IMergeTreeDataPart::getZeroLevelPartBlockID() const
 {

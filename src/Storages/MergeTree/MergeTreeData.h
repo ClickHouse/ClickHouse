@@ -832,7 +832,8 @@ public:
     bool areBackgroundMovesNeeded() const;
 
     const String & getOriginalPrimaryKeyAST() const { return original_primary_key_ast; }
-    std::shared_ptr<const std::map<String, KeyDescription>> getPrimaryKeyMap() const;
+
+    std::shared_ptr<const std::map<String, KeyDescription>> getPrimarySortingKeyMap() const;
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
@@ -1113,8 +1114,9 @@ private:
 
     /// Store the original primary key AST when ALTER PRIMARY KEY happens.
     String original_primary_key_ast;
+
     /// Store all existing primary keys and initialize their descriptions.
-    MultiVersion<std::map<String, KeyDescription>> primary_key_map{std::make_unique<std::map<String, KeyDescription>>()};
+    MultiVersion<std::map<String, KeyDescription>> primary_sorting_key_map{std::make_unique<std::map<String, KeyDescription>>()};
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

@@ -12,6 +12,7 @@ public:
     MergeTreeDataPartWriterInMemory(
         const DataPartInMemoryPtr & part_,
         const NamesAndTypesList & columns_list_,
+        const Names & primary_key_columns_,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeWriterSettings & settings_);
 

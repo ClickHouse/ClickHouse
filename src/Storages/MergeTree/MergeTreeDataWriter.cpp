@@ -267,6 +267,24 @@ Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_
     return block.cloneWithColumns(status.chunk.getColumns());
 }
 
+void MergeTreeDataWriter::setPrimarySortingKeys(const StorageMetadataPtr & metadata_snapshot, IMergeTreeDataPart & part)
+{
+    if (metadata_snapshot->isOriginalSortingKeyDefined())
+    {
+        // We need to record part local primary/sorting key information
+        const auto & primary_key = metadata_snapshot->getPrimaryKey();
+        const auto & sorting_key = metadata_snapshot->getSortingKey();
+        part.sorting_key_ast_str = queryToString(sorting_key.definition_ast);
+        part.primary_key_ast_str
+            = primary_key.definition_ast ? queryToString(primary_key.definition_ast) : part.sorting_key_ast_str;
+        auto key_size = primary_key.column_names.size();
+        NamesAndTypesList l;
+        for (auto i = 0ul; i < key_size; ++i)
+            l.emplace_back(primary_key.column_names[i], primary_key.data_types[i]);
+        part.primary_key_str = l.toString();
+    }
+}
+
 MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
     BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
@@ -361,21 +379,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
     if (data.storage_settings.get()->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    if (metadata_snapshot->isOriginalSortingKeyDefined())
-    {
-        // We need to record part local primary/sorting key information
-        const auto & primary_key = metadata_snapshot->getPrimaryKey();
-        const auto & sorting_key = metadata_snapshot->getSortingKey();
-        new_data_part->sorting_key_ast_str = queryToString(sorting_key.definition_ast);
-        new_data_part->primary_key_ast_str
-            = primary_key.definition_ast ? queryToString(primary_key.definition_ast) : new_data_part->sorting_key_ast_str;
-        auto key_size = primary_key.column_names.size();
-        NamesAndTypesList l;
-        for (auto i = 0ul; i < key_size; ++i)
-            l.emplace_back(primary_key.column_names[i], primary_key.data_types[i]);
-        new_data_part->primary_key_str = l.toString();
-    }
-
     new_data_part->setColumns(columns);
     new_data_part->rows_count = block.rows();
     new_data_part->partition = std::move(partition);
@@ -454,6 +457,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
+
+    /// Set primary and sorting keys for the new part if needed.
+    setPrimarySortingKeys(metadata_snapshot, *new_data_part);
     out.writeSuffixAndFinalizePart(new_data_part, sync_on_insert);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());

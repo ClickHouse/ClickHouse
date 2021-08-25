@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -203,6 +204,9 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
 
             part_out.writePrefix();
             part_out.write(block);
+
+            /// Set primary and sorting keys for the new part if needed.
+            MergeTreeDataWriter::setPrimarySortingKeys(metadata_snapshot, *part);
             part_out.writeSuffixAndFinalizePart(part);
 
             min_block_number = std::min(min_block_number, part->info.min_block);

@@ -13,9 +13,10 @@ namespace ErrorCodes
 MergeTreeDataPartWriterInMemory::MergeTreeDataPartWriterInMemory(
     const DataPartInMemoryPtr & part_,
     const NamesAndTypesList & columns_list_,
+    const Names & primary_key_columns_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeWriterSettings & settings_)
-    : IMergeTreeDataPartWriter(part_, columns_list_, metadata_snapshot_, settings_)
+    : IMergeTreeDataPartWriter(part_, columns_list_, primary_key_columns_, metadata_snapshot_, settings_)
     , part_in_memory(part_) {}
 
 void MergeTreeDataPartWriterInMemory::write(
@@ -26,7 +27,7 @@ void MergeTreeDataPartWriterInMemory::write(
 
     Block primary_key_block;
     if (settings.rewrite_primary_key)
-        primary_key_block = getBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
+        primary_key_block = getBlockAndPermute(block, primary_key_columns, permutation);
 
     Block result_block;
     if (permutation)

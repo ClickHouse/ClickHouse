@@ -667,8 +667,23 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
     new_data_part->partition.create(metadata_snapshot, block, 0, context);
 
+    /// Local primary key map might not contain this key description. So we calculate the primary
+    /// key columns directly instead of using `new_data_part->getKeyDescription(...)`.
+    Names primary_keys;
+    if (!new_data_part->primary_key_str.empty())
+        primary_keys = NamesAndTypesList::parse(new_data_part->primary_key_str).getNames();
+    else if (metadata_snapshot->isOriginalSortingKeyDefined())
+        primary_keys = metadata_snapshot->getOriginalPrimaryKey().column_names;
+    else
+        primary_keys = metadata_snapshot->getPrimaryKeyColumns();
+
     MergedBlockOutputStream part_out(
-        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
+        new_data_part,
+        metadata_snapshot,
+        block.getNamesAndTypesList(),
+        primary_keys,
+        {},
+        CompressionCodecFactory::instance().get("NONE", {}));
     part_out.writePrefix();
     part_out.write(block);
     part_out.writeSuffixAndFinalizePart(new_data_part);

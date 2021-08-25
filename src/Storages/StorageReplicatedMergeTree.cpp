@@ -7564,6 +7564,10 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
     out.writePrefix();
     out.write(block);
+
+    /// TODO(ab) Should we write primary/sorting key here? We should allow merging empty parts even
+    /// when it contains different primary key.
+    MergeTreeDataWriter::setPrimarySortingKeys(metadata_snapshot, *new_data_part);
     out.writeSuffixAndFinalizePart(new_data_part, sync_on_insert);
 
     try
