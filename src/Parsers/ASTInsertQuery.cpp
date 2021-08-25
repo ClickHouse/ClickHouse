@@ -25,6 +25,11 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "FUNCTION ";
         table_function->formatImpl(settings, state, frame);
+        if (partition_by)
+        {
+            settings.ostr << " PARTITION BY ";
+            partition_by->formatImpl(settings, state, frame);
+        }
     }
     else
         settings.ostr << (settings.hilite ? hilite_none : "")
