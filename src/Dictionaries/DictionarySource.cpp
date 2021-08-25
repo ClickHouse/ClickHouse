@@ -29,7 +29,7 @@ DictionarySourceData::DictionarySourceData(
     , key_type(DictionaryInputStreamKeyType::ComplexKey)
 {
     const DictionaryStructure & dictionary_structure = dictionary->getStructure();
-    fillKeyColumns(keys, 0, keys.size(), dictionary_structure, key_columns);
+    key_columns = deserializeColumnsWithTypeAndNameFromKeys(dictionary_structure, keys, 0, keys.size());
 }
 
 DictionarySourceData::DictionarySourceData(
@@ -132,7 +132,7 @@ Block DictionarySourceData::fillBlock(
         {
             ColumnPtr column;
 
-            if (dictionary_key_type == DictionaryKeyType::simple)
+            if (dictionary_key_type == DictionaryKeyType::Simple)
             {
                 column = dictionary->getColumn(
                     attribute.name,
@@ -156,34 +156,6 @@ Block DictionarySourceData::fillBlock(
     }
 
     return Block(block_columns);
-}
-
-void DictionarySourceData::fillKeyColumns(
-    const PaddedPODArray<StringRef> & keys,
-    size_t start,
-    size_t size,
-    const DictionaryStructure & dictionary_structure,
-    ColumnsWithTypeAndName & result)
-{
-    MutableColumns columns;
-    columns.reserve(dictionary_structure.key->size());
-
-    for (const DictionaryAttribute & attribute : *dictionary_structure.key)
-        columns.emplace_back(attribute.type->createColumn());
-
-    for (size_t index = start; index < size; ++index)
-    {
-        const auto & key = keys[index];
-        const auto *ptr = key.data;
-        for (auto & column : columns)
-            ptr = column->deserializeAndInsertFromArena(ptr);
-    }
-
-    for (size_t i = 0, num_columns = columns.size(); i < num_columns; ++i)
-    {
-        const auto & dictionary_attribute = (*dictionary_structure.key)[i];
-        result.emplace_back(ColumnWithTypeAndName{std::move(columns[i]), dictionary_attribute.type, dictionary_attribute.name});
-    }
 }
 
 }
