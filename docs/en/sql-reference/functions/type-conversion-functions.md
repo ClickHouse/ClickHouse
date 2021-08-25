@@ -1342,7 +1342,7 @@ Result:
 
 ## snowflakeToDateTime {#snowflakeToDateTime}
 
-Extracts time from Snowflake ID as [DateTime](../data-types/datetime.md) format.
+Extracts time from [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as [DateTime](../data-types/datetime.md) format.
 
 **Syntax**
 
