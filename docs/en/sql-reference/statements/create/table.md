@@ -254,6 +254,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
+<!--
 ### Encryption Codecs {#create-query-encryption-codecs}
 
 These codecs don't actually compress data, but instead encrypt data on disk. These are only available when an encryption key is specified by [encryption](../../../operations/server-configuration-parameters/settings.md#server-settings-encryption) settings. Note that encryption only makes sense at the end of codec pipelines, because encrypted data usually can't be compressed in any meaningful way.
@@ -267,7 +268,7 @@ Encryption codecs:
 
 !!! attention "Attention"
     If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
-
+-->
 ## Temporary Tables {#temporary-tables}
 
 ClickHouse supports temporary tables which have the following characteristics:
