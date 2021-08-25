@@ -85,6 +85,8 @@ function filter_exists_and_template
 
 function fuzz
 {
+    /generate-test-j2.py --path ch/tests/queries/0_stateless
+
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
     # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
     NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\(\.j2\)\?\)$!ch/\1!p' ci-changed-files.txt | sort -R)"
@@ -96,8 +98,6 @@ function fuzz
     else
         NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
     fi
-
-    /generate-test-j2.py --path ch/tests/queries/0_stateless
 
     export CLICKHOUSE_WATCHDOG_ENABLE=0 # interferes with gdb
     clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
