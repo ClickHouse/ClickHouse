@@ -736,6 +736,10 @@ if (ThreadFuzzer::instance().isEffective())
             setupTmpPath(log, disk->getPath());
     }
 
+    /// Storage keeping all the backups.
+    fs::create_directories(path / "backups");
+    global_context->setBackupsVolume(config().getString("backups_path", path / "backups"), config().getString("backups_policy", ""));
+
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
       * Flags may be cleared automatically after being applied by the server.
       * Examples: do repair of local data; clone all replicated tables from replica.
@@ -1078,6 +1082,9 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
+
+        // Uses a raw pointer to global context for getting ZooKeeper.
+        main_config_reloader.reset();
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -1510,7 +1517,6 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_INFO(log, "Closed connections.");
 
             dns_cache_updater.reset();
-            main_config_reloader.reset();
 
             if (current_connections)
             {
