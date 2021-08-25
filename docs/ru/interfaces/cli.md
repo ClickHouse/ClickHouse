@@ -155,3 +155,29 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 </config>
 ```
 
+### Формат ID запроса {#query-id-format}
+
+В интерактивном режиме `clickhouse-client` показывает ID для каждого запроса. По умолчанию ID выводится в таком виде:
+
+```sql
+Query id: 927f137d-00f1-4175-8914-0dd066365e96
+```
+
+Произвольный формат ID можно задать в конфигурационном файле внутри тега `query_id_formats`. ID подставляется на место `{query_id}` в строке формата. В теге может быть перечислено несколько строк формата.
+Эта возможность может быть полезна для генерации URL, с помощью которых выполняется профилирование запросов.
+
+**Пример**
+
+```xml
+<config>
+  <query_id_formats>
+    <speedscope>http://speedscope-host/#profileURL=qp%3Fid%3D{query_id}</speedscope>
+  </query_id_formats>
+</config>
+```
+
+Если применить такую конфигурацию, то ID запроса будет выводиться в следующем виде:
+
+``` text
+speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
+```
