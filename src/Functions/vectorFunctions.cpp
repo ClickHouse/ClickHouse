@@ -440,6 +440,109 @@ public:
     }
 };
 
+class FunctionL2Norm : public TupleIFunction
+{
+public:
+    static constexpr auto name = "L2Norm";
+
+    explicit FunctionL2Norm(ContextPtr context_) : TupleIFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionL2Norm>(context_); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+                            getName(), arguments[0].type->getName());
+
+        const auto & cur_types = cur_tuple->getElements();
+
+        Columns cur_elements;
+        if (arguments[0].column)
+            cur_elements = getTupleElements(*arguments[0].column);
+
+        size_t tuple_size = cur_types.size();
+        if (tuple_size == 0)
+            return std::make_shared<DataTypeUInt8>();
+
+        auto multiply = FunctionFactory::instance().get("multiply", context);
+        auto plus = FunctionFactory::instance().get("plus", context);
+        DataTypePtr res_type;
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            try
+            {
+                ColumnWithTypeAndName cur{cur_elements.empty() ? nullptr : cur_elements[i], cur_types[i], {}};
+                auto elem_multiply = multiply->build(ColumnsWithTypeAndName{cur, cur});
+
+                if (i == 0)
+                {
+                    res_type = elem_multiply->getResultType();
+                    continue;
+                }
+
+                ColumnWithTypeAndName left_type{res_type, {}};
+                ColumnWithTypeAndName right_type{elem_multiply->getResultType(), {}};
+                auto plus_elem = plus->build({left_type, right_type});
+                res_type = plus_elem->getResultType();
+            }
+            catch (DB::Exception & e)
+            {
+                e.addMessage("While executing function {} for tuple element {}", getName(), i);
+                throw;
+            }
+        }
+
+        auto sqrt = FunctionFactory::instance().get("sqrt", context);
+        return sqrt->build({ColumnWithTypeAndName{res_type, {}}})->getResultType();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+        const auto & cur_types = cur_tuple->getElements();
+        auto cur_elements = getTupleElements(*arguments[0].column);
+
+        size_t tuple_size = cur_elements.size();
+        if (tuple_size == 0)
+            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
+
+        auto multiply = FunctionFactory::instance().get("multiply", context);
+        auto plus = FunctionFactory::instance().get("plus", context);
+        ColumnWithTypeAndName res;
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            ColumnWithTypeAndName cur{cur_elements[i], cur_types[i], {}};
+            auto elem_multiply = multiply->build(ColumnsWithTypeAndName{cur, cur});
+
+            ColumnWithTypeAndName column;
+            column.type = elem_multiply->getResultType();
+            column.column = elem_multiply->execute({cur, cur}, column.type, input_rows_count);
+
+            if (i == 0)
+            {
+                res = std::move(column);
+            }
+            else
+            {
+                auto plus_elem = plus->build({res, column});
+                auto res_type = plus_elem->getResultType();
+                res.column = plus_elem->execute({res, column}, res_type, input_rows_count);
+                res.type = res_type;
+            }
+        }
+
+        auto sqrt = FunctionFactory::instance().get("sqrt", context);
+        auto sqrt_elem = sqrt->build({res});
+        return sqrt_elem->execute({res}, sqrt_elem->getResultType(), input_rows_count);
+    }
+};
+
 void registerVectorFunctions(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTuplePlus>();
@@ -457,14 +560,14 @@ void registerVectorFunctions(FunctionFactory & factory)
     factory.registerAlias("scalarProduct", FunctionDotProduct::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionL1Norm>();
+    factory.registerFunction<FunctionL2Norm>();
+    //factory.registerFunction<FunctionLinfNorm>();
     /*factory.registerFunction<FunctionL1Distance>();
     factory.registerFunction<FunctionL1Normalize>();
 
-    factory.registerFunction<FunctionL2Norm>();
     factory.registerFunction<FunctionL2Distance>();
     factory.registerFunction<FunctionL2Normalize>();
 
-    factory.registerFunction<FunctionLinfNorm>();
     factory.registerFunction<FunctionLinfDistance>();
     factory.registerFunction<FunctionLinfNormalize>();
 
