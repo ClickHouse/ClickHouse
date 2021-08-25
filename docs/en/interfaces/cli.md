@@ -141,7 +141,7 @@ Since version 20.5, `clickhouse-client` has automatic syntax highlighting (alway
 
 Example of a config file:
 
-``` xml
+```xml
 <config>
     <user>username</user>
     <password>password</password>
@@ -153,7 +153,7 @@ Example of a config file:
 
 In interactive mode `clickhouse-client` shows query ID for every query. By default, the ID is formatted like this:
 
-``` sql
+```sql
 Query id: 927f137d-00f1-4175-8914-0dd066365e96
 ```
 

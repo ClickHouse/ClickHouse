@@ -84,7 +84,7 @@ $ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FOR
 clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
-#### Cинтаксис запроса {#cli-queries-with-parameters-syntax}
+#### Синтаксис запроса {#cli-queries-with-parameters-syntax}
 
 Отформатируйте запрос обычным способом. Представьте значения, которые вы хотите передать из параметров приложения в запрос в следующем формате:
 
