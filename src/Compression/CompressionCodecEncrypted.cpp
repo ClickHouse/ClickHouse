@@ -36,13 +36,13 @@ namespace ErrorCodes
 namespace
 {
 
-String getAlgorithmName(CompressionMethodByte Algorithm)
+String getMethodName(EncryptionMethod Method)
 {
-    if (Algorithm == CompressionMethodByte::AES_128_GCM_SIV)
+    if (Method == AES_128_GCM_SIV)
     {
         return "AES_128_GCM_SIV";
     }
-    else if (Algorithm == CompressionMethodByte::AES_256_GCM_SIV)
+    else if (Method == AES_256_GCM_SIV)
     {
         return "AES_256_GCM_SIV";
     }
@@ -52,19 +52,35 @@ String getAlgorithmName(CompressionMethodByte Algorithm)
     }
 }
 
-auto getAlgorithm(CompressionMethodByte Algorithm)
+auto getMethod(EncryptionMethod Method)
 {
-    if (Algorithm == CompressionMethodByte::AES_128_GCM_SIV)
+    if (Method == AES_128_GCM_SIV)
     {
         return EVP_aead_aes_128_gcm_siv;
     }
-    else if (Algorithm == CompressionMethodByte::AES_256_GCM_SIV)
+    else if (Method == AES_256_GCM_SIV)
     {
         return EVP_aead_aes_256_gcm_siv;
     }
     else
     {
-        throw Exception("Wrong encryption algorithm. Got " + getAlgorithmName(Algorithm), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
+    }
+}
+
+UInt64 methodKeySize(EncryptionMethod Method)
+{
+    if (Method == AES_128_GCM_SIV)
+    {
+        return 16;
+    }
+    else if (Method == AES_256_GCM_SIV)
+    {
+        return 32;
+    }
+    else
+    {
+        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
     }
 }
 
@@ -75,24 +91,19 @@ std::string lastErrorString()
     return std::string(buffer.data());
 }
 
-UInt32 encrypt(const std::string_view & plaintext, char * ciphertext_and_tag, const CompressionCodecEncrypted::Configuration& configuration)
+size_t encrypt(const std::string_view & plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String& current_key, const String& nonce)
 {
-    String nonce_from_config = configuration.getNonce();
-    std::string_view nonce(nonce_from_config);
-
-    char * start_of_encrypted = writeVarUInt(configuration.getCurrentKeyID(), ciphertext_and_tag);
-    UInt32 size = getLengthOfVarUInt(configuration.getCurrentKeyID());
-
     EVP_AEAD_CTX encrypt_ctx;
     EVP_AEAD_CTX_zero(&encrypt_ctx);
-    const int ok_init = EVP_AEAD_CTX_init(&encrypt_ctx, getAlgorithm(configuration.getAlgorithmByte())(),
-                                            reinterpret_cast<const uint8_t*>(configuration.getCurrentKey().data()), configuration.getCurrentKey().size(),
+    const int ok_init = EVP_AEAD_CTX_init(&encrypt_ctx, getMethod(method)(),
+                                            reinterpret_cast<const uint8_t*>(current_key.data()), current_key.size(),
                                             16 /* tag size */, nullptr);
     if (!ok_init)
         throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+
     size_t out_len;
     const int ok_open = EVP_AEAD_CTX_seal(&encrypt_ctx,
-                                            reinterpret_cast<uint8_t *>(start_of_encrypted),
+                                            reinterpret_cast<uint8_t *>(ciphertext_and_tag),
                                             &out_len, plaintext.size() + 16,
                                             reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size(),
                                             reinterpret_cast<const uint8_t *>(plaintext.data()), plaintext.size(),
@@ -100,25 +111,21 @@ UInt32 encrypt(const std::string_view & plaintext, char * ciphertext_and_tag, co
     if (!ok_open)
         throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    assert(out_len == plaintext.size() + 16);
-    return plaintext.size() + 16 + size;
+    return out_len;
 }
 
-void decrypt(const std::string_view & ciphertext, char * plaintext, UInt64 key_id, const CompressionCodecEncrypted::Configuration& configuration)
+size_t decrypt(const std::string_view & ciphertext, char * plaintext, EncryptionMethod method, const String& current_key, const String& nonce)
 {
-    String nonce_from_config = configuration.getNonce();
-    std::string_view nonce(nonce_from_config);
-
-    size_t out_len;
     EVP_AEAD_CTX decrypt_ctx;
     EVP_AEAD_CTX_zero(&decrypt_ctx);
 
-    const int ok_init = EVP_AEAD_CTX_init(&decrypt_ctx, getAlgorithm(configuration.getAlgorithmByte())(),
-                                          reinterpret_cast<const uint8_t*>(configuration.getKey(key_id).data()), configuration.getKey(key_id).size(),
+    const int ok_init = EVP_AEAD_CTX_init(&decrypt_ctx, getMethod(method)(),
+                                          reinterpret_cast<const uint8_t*>(current_key.data()), current_key.size(),
                                           16 /* tag size */, nullptr);
     if (!ok_init)
         throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
+    size_t out_len;
     const int ok_open = EVP_AEAD_CTX_open(&decrypt_ctx,
                                           reinterpret_cast<uint8_t *>(plaintext),
                                           &out_len, ciphertext.size(),
@@ -128,22 +135,38 @@ void decrypt(const std::string_view & ciphertext, char * plaintext, UInt64 key_i
     if (!ok_open)
         throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
-    assert(out_len == ciphertext.size() - 16);
+    return out_len;
 }
 
-void registerEncryptionCodec(CompressionCodecFactory & factory, CompressionMethodByte Algorithm)
+uint8_t getMethodCode(EncryptionMethod Method)
 {
-    const auto method_code = uint8_t(Algorithm);
-    factory.registerCompressionCodec(getAlgorithmName(Algorithm), method_code, [&, Algorithm](const ASTPtr & arguments) -> CompressionCodecPtr
+    if (Method == AES_128_GCM_SIV)
+    {
+        return uint8_t(CompressionMethodByte::AES_128_GCM_SIV);
+    }
+    else if (Method == AES_256_GCM_SIV)
+    {
+        return uint8_t(CompressionMethodByte::AES_256_GCM_SIV);
+    }
+    else
+    {
+        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
+    }
+}
+
+void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod Method)
+{
+    const auto method_code = getMethodCode(Method);
+    factory.registerCompressionCodec(getMethodName(Method), method_code, [&, Method](const ASTPtr & arguments) -> CompressionCodecPtr
     {
         if (arguments)
         {
             if (!arguments->children.empty())
-                throw Exception("Codec " + getAlgorithmName(Algorithm) + " must not have parameters, given " +
+                throw Exception("Codec " + getMethodName(Method) + " must not have parameters, given " +
                                 std::to_string(arguments->children.size()),
                                 ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
         }
-        return std::make_shared<CompressionCodecEncrypted>(Algorithm);
+        return std::make_shared<CompressionCodecEncrypted>(Method);
     });
 }
 
@@ -167,10 +190,12 @@ CompressionCodecEncrypted::Configuration & CompressionCodecEncrypted::Configurat
     return ret;
 }
 
-CompressionCodecEncrypted::Configuration::Params CompressionCodecEncrypted::Configuration::loadImpl(
-    const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+void CompressionCodecEncrypted::Configuration::loadImpl(
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, EncryptionMethod method, std::unique_ptr<Params>& new_params)
 {
-    Params new_params;
+    if (method == MAX_ENCRYPTION_METHOD)
+        throw Exception("Wrong argument for loading configurations.", ErrorCodes::BAD_ARGUMENTS);
+
     Strings config_keys;
     config.keys(config_prefix, config_keys);
     for (const std::string & config_key : config_keys)
@@ -191,93 +216,86 @@ CompressionCodecEncrypted::Configuration::Params CompressionCodecEncrypted::Conf
         else
             continue;
 
-        if (new_params.keys_storage.contains(key_id))
+        if (new_params->keys_storage[method].contains(key_id))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple keys have the same ID {}", key_id);
-        new_params.keys_storage[key_id] = key;
+        new_params->keys_storage[method][key_id] = key;
     }
 
-    if (new_params.keys_storage.empty())
+    if (new_params->keys_storage[method].empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No keys, an encrypted disk needs keys to work");
 
-    new_params.current_key_id = config.getUInt64(config_prefix + ".current_key_id", 0);
-    if (!new_params.keys_storage.contains(new_params.current_key_id))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", new_params.current_key_id);
-    if (new_params.keys_storage[new_params.current_key_id].size() != 16)
+    new_params->current_key_id[method] = config.getUInt64(config_prefix + ".current_key_id", 0);
+    if (!new_params->keys_storage[method].contains(new_params->current_key_id[method]))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", new_params->current_key_id[method]);
+    if (new_params->keys_storage[method][new_params->current_key_id[method]].size() != methodKeySize(method))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Got an encryption key with unexpected size {}, the size should be 16",
-            new_params.keys_storage[new_params.current_key_id].size());
+            "Got an encryption key with unexpected size {}, the size should be {}",
+            new_params->keys_storage[method][new_params->current_key_id[method]].size(), methodKeySize(method));
 
     if (config.has(config_prefix + ".nonce_hex"))
-        new_params.nonce = unhexKey(config.getString(config_prefix + ".nonce_hex"));
+        new_params->nonce[method] = unhexKey(config.getString(config_prefix + ".nonce_hex"));
     else
-        new_params.nonce = config.getString(config_prefix + ".nonce", "");
+        new_params->nonce[method] = config.getString(config_prefix + ".nonce", "");
 
-    if (new_params.nonce.size() != 12 && !new_params.nonce.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be 12", new_params.nonce.size());
-
-    return new_params;
+    if (new_params->nonce[method].size() != 12 && !new_params->nonce[method].empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be 12", new_params->nonce[method].size());
 }
 
-void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+void CompressionCodecEncrypted::Configuration::tryload(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    if (config.has(config_prefix + ".aes_128_gcm_siv"))
+    try
     {
-        auto new_params = loadImpl(config, config_prefix + ".aes_128_gcm_siv");
-        new_params.algorithm = CompressionMethodByte::AES_128_GCM_SIV;
-        params.set(std::make_unique<Params>(new_params));
+        std::unique_ptr<Params> new_params(new Params);
+        if (config.has(config_prefix + ".aes_128_gcm_siv"))
+        {
+            loadImpl(config, config_prefix + ".aes_128_gcm_siv", AES_128_GCM_SIV, new_params);
+        }
+        if (config.has(config_prefix + ".aes_256_gcm_siv"))
+        {
+        loadImpl(config, config_prefix + ".aes_256_gcm_siv", AES_256_GCM_SIV, new_params);
+        }
+
+        params.set(std::move(new_params));
     }
-    if (config.has(config_prefix + ".aes_256_gcm_siv"))
+    catch (...)
     {
-        auto new_params = loadImpl(config, config_prefix + ".aes_256_gcm_siv");
-        new_params.algorithm = CompressionMethodByte::AES_256_GCM_SIV;
-        params.set(std::make_unique<Params>(new_params));
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
-String CompressionCodecEncrypted::Configuration::getKey(UInt64 id) const
+void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionMethod method, UInt64 &current_key_id, String &current_key, String &nonce) const
 {
     if (!params.get())
         throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
-    return params.get()->keys_storage.at(id);
+    const auto current_params = params.get();
+    current_key_id = current_params->current_key_id[method];
+    current_key = current_params->keys_storage[method].at(current_key_id);
+    nonce = current_params->nonce[method];
+    if (nonce.empty())
+        nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", 12};
 }
 
-String CompressionCodecEncrypted::Configuration::getCurrentKey() const
+void CompressionCodecEncrypted::Configuration::getKeyAndNonce(EncryptionMethod method, const UInt64 &key_id, String &key, String &nonce) const
 {
     if (!params.get())
         throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
-    return params.get()->keys_storage.at(params.get()->current_key_id);
+    const auto current_params = params.get();
+    key = current_params->keys_storage[method].at(key_id);
+    nonce = current_params->nonce[method];
+    if (nonce.empty())
+        nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", 12};
 }
 
-UInt64 CompressionCodecEncrypted::Configuration::getCurrentKeyID() const
-{
-    if (!params.get())
-        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
-    return params.get()->current_key_id;
-}
 
-String CompressionCodecEncrypted::Configuration::getNonce() const
+CompressionCodecEncrypted::CompressionCodecEncrypted(EncryptionMethod Method): encryption_method(Method)
 {
-    if (!params.get())
-        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
-    return params.get()->nonce.empty() ? String("\0\0\0\0\0\0\0\0\0\0\0\0", 12) : params.get()->nonce;
-}
-
-CompressionMethodByte CompressionCodecEncrypted::Configuration::getAlgorithmByte() const
-{
-    if (!params.get())
-        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
-    return params.get()->algorithm;
-}
-
-CompressionCodecEncrypted::CompressionCodecEncrypted(CompressionMethodByte Algorithm)
-{
-    setCodecDescription(getAlgorithmName(Algorithm));
+    setCodecDescription(getMethodName(encryption_method));
 }
 
 uint8_t CompressionCodecEncrypted::getMethodByte() const
 {
-    return static_cast<uint8_t>(CompressionMethodByte::AES_128_GCM_SIV);
+    return getMethodCode(encryption_method);
 }
 
 void CompressionCodecEncrypted::updateHash(SipHash & hash) const
@@ -290,7 +308,7 @@ UInt32 CompressionCodecEncrypted::getMaxCompressedDataSize(UInt32 uncompressed_s
     // The GCM mode is a stream cipher. No paddings are
     // involved. There will be a tag at the end of ciphertext (16
     // octets). Also it has not more than 8 bytes for key_id in the beginning
-    return uncompressed_size + 24;
+    return uncompressed_size + tag_size + key_id_max_size;
 }
 
 UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -303,28 +321,43 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
     // tag will be written directly in the dest buffer.
     const std::string_view plaintext = std::string_view(source, source_size);
 
-    return encrypt(plaintext, dest, Configuration::instance());
+    UInt64 current_key_id;
+    String current_key, nonce;
+    Configuration::instance().getCurrentKeyAndNonce(encryption_method, current_key_id, current_key, nonce);
+
+    char* ciphertext = writeVarUInt(current_key_id, dest);
+    size_t keyid_size = ciphertext - dest;
+
+    size_t out_len = encrypt(plaintext, ciphertext, encryption_method, current_key, nonce);
+
+    if (out_len != source_size + tag_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't encrypt data, length after encryption {} is wrong, expected {}", out_len, source_size + tag_size);
+
+    return out_len + keyid_size;
 }
 
-void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size [[maybe_unused]]) const
+void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    UInt64 encrypted_text_key_id;
-    source = readVarUInt(encrypted_text_key_id, source, length_of_varint);
-    source_size -= getLengthOfVarUInt(encrypted_text_key_id);
-    // Extract the IV from the encrypted data block. Decrypt the
-    // block with the extracted IV, and compare the tag. Throw an
-    // exception if tags don't match.
-    const std::string_view ciphertext_and_tag = std::string_view(source, source_size);
-    assert(ciphertext_and_tag.size() == uncompressed_size + 16);
+    UInt64 key_id;
+    const char * ciphertext = readVarUInt(key_id, source, source_size);
+    size_t keyid_size = ciphertext - source;
+    size_t ciphertext_size = source_size - keyid_size;
+    if (ciphertext_size != uncompressed_size + tag_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, uncompressed_size {} is wrong, expected {}", uncompressed_size, ciphertext_size - tag_size);
 
-    decrypt(ciphertext_and_tag, dest, encrypted_text_key_id, Configuration::instance());
+    String key, nonce;
+    Configuration::instance().getKeyAndNonce(encryption_method, key_id, key, nonce);
+
+    size_t out_len = decrypt({ciphertext, ciphertext_size}, dest, encryption_method, key, nonce);
+    if (out_len != ciphertext_size - tag_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, out length after decryption {} is wrong, expected {}", out_len, ciphertext_size - tag_size);
 }
 
 
 void registerCodecEncrypted(CompressionCodecFactory & factory)
 {
-    registerEncryptionCodec(factory, CompressionMethodByte::AES_128_GCM_SIV);
-    registerEncryptionCodec(factory, CompressionMethodByte::AES_256_GCM_SIV);
+    registerEncryptionCodec(factory, AES_128_GCM_SIV);
+    registerEncryptionCodec(factory, AES_256_GCM_SIV);
 }
 
 }

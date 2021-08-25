@@ -859,14 +859,7 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->updateInterserverCredentials(*config);
 
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
-            try
-            {
-                CompressionCodecEncrypted::Configuration::instance().load(*config, "encryption_codecs");
-            }
-            catch (Exception & e)
-            {
-                std::cout << e.message() << std::endl;
-            }
+            CompressionCodecEncrypted::Configuration::instance().tryload(*config, "encryption_codecs");
 #else
             LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
 #endif
@@ -946,14 +939,7 @@ if (ThreadFuzzer::instance().isEffective())
 // using if for unbundled build
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
     /// try set up encryption.
-    try
-    {
-        CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
-    }
-    catch (Exception & e)
-    {
-        std::cout << e.message() << std::endl;
-    }
+    CompressionCodecEncrypted::Configuration::instance().tryload(config(), "encryption_codecs");
 #else
     LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
 #endif

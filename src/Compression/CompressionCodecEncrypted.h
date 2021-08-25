@@ -16,6 +16,13 @@
 
 namespace DB
 {
+enum EncryptionMethod
+{
+    AES_128_GCM_SIV,
+    AES_256_GCM_SIV,
+    MAX_ENCRYPTION_METHOD
+};
+
 /** This codec encrypts and decrypts blocks with AES-128 in
     * GCM-SIV mode (RFC-8452), which is the only cipher currently
     * supported. Although it is implemented as a compression codec
@@ -54,7 +61,7 @@ public:
         * Note that the key is currently not guarded by a
         * mutex. This method should be invoked no more than once.
         */
-    explicit CompressionCodecEncrypted(CompressionMethodByte Algorithm);
+    explicit CompressionCodecEncrypted(EncryptionMethod Method);
 
     /**
         * This is utility class. It holds information about encryption configuration.
@@ -64,24 +71,19 @@ public:
     public:
         static Configuration & instance();
 
-        void load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-        String getKey(UInt64 id) const;
-        String getCurrentKey() const;
-        UInt64 getCurrentKeyID() const;
-        String getNonce() const;
-        CompressionMethodByte getAlgorithmByte() const;
-
+        void tryload(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+        void getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, String & current_key, String & nonce) const;
+        void getKeyAndNonce(EncryptionMethod method, const UInt64 & key_id, String & key, String & nonce) const;
     private:
         struct Params
         {
-            std::unordered_map<UInt64, String> keys_storage;
-            UInt64 current_key_id;
-            String nonce;
-            CompressionMethodByte algorithm;
+            std::unordered_map<UInt64, String> keys_storage[MAX_ENCRYPTION_METHOD];
+            UInt64 current_key_id[MAX_ENCRYPTION_METHOD];
+            String nonce[MAX_ENCRYPTION_METHOD];
         };
 
         // used to read data from config and create Params
-        static Params loadImpl(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+        static void loadImpl(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, EncryptionMethod method, std::unique_ptr<Params>& new_params);
 
         MultiVersion<Params> params;
     };
@@ -108,6 +110,10 @@ protected:
 
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+private:
+    static constexpr size_t tag_size = 16;       /// AES-GCM-SIV always uses a tag of 16 bytes length
+    static constexpr size_t key_id_max_size = 8; /// Max size of varint.
+    EncryptionMethod encryption_method;
 };
 }
 
