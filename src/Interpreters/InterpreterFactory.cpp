@@ -7,7 +7,9 @@
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTCreateUserQuery.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
+#include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTGrantQuery.h>
@@ -36,6 +38,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterBackupQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
+#include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/InterpreterCreateRoleQuery.h>
@@ -44,6 +47,7 @@
 #include <Interpreters/InterpreterCreateUserQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterDropAccessEntityQuery.h>
+#include <Interpreters/InterpreterDropFunctionQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
@@ -271,6 +275,14 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTExternalDDLQuery>())
     {
         return std::make_unique<InterpreterExternalDDLQuery>(query, context);
+    }
+    else if (query->as<ASTCreateFunctionQuery>())
+    {
+        return std::make_unique<InterpreterCreateFunctionQuery>(query, context, false /*is_internal*/);
+    }
+    else if (query->as<ASTDropFunctionQuery>())
+    {
+        return std::make_unique<InterpreterDropFunctionQuery>(query, context);
     }
     else if (query->as<ASTBackupQuery>())
     {
