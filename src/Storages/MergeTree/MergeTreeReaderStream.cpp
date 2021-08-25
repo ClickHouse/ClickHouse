@@ -74,14 +74,14 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     /// For example: part has single dictionary and all marks point to the same position.
     ReadSettings read_settings = settings.read_settings;
     if (max_mark_range_bytes != 0)
-        read_settings = settings.read_settings.adjustBufferSize(max_mark_range_bytes);
+        read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
 
     /// Initialize the objects that shall be used to perform read operations.
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             fullPath(disk, path_prefix + data_file_extension),
-            [this, sum_mark_range_bytes, &read_settings]()
+            [this, sum_mark_range_bytes, read_settings]()
             {
                 return disk->readFile(
                     path_prefix + data_file_extension,
@@ -105,8 +105,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
             disk->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                sum_mark_range_bytes)
-        );
+                sum_mark_range_bytes));
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
