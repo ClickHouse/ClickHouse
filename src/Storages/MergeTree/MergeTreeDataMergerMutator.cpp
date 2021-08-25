@@ -494,7 +494,6 @@ static void extractMergingAndGatheringColumns(
     const NamesAndTypesList & storage_columns,
     const ExpressionActionsPtr & sorting_key_expr,
     const IndicesDescription & indexes,
-    const ProjectionsDescription & projections,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names)
@@ -505,13 +504,6 @@ static void extractMergingAndGatheringColumns(
     {
         Names index_columns_vec = index.expression->getRequiredColumns();
         std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
-                  std::inserter(key_columns, key_columns.end()));
-    }
-
-    for (const auto & projection : projections)
-    {
-        Names projection_columns_vec = projection.required_columns;
-        std::copy(projection_columns_vec.cbegin(), projection_columns_vec.cend(),
                   std::inserter(key_columns, key_columns.end()));
     }
 
@@ -728,7 +720,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         storage_columns,
         metadata_snapshot->getSortingKey().expression,
         metadata_snapshot->getSecondaryIndices(),
-        metadata_snapshot->getProjections(),
         merging_params,
         gathering_columns,
         gathering_column_names,
