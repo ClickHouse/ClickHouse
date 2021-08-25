@@ -43,7 +43,7 @@ def process_result(result_folder):
         description = "No top level test found"
     else:
         top_test_result =  top_test['result']['result_type'].upper()
-        if top_test_result != "OK" and not top_test_results.startswith("X"):
+        if top_test_result != "OK" and not top_test_result.startswith("X"):
             status = "failure"
         else:
             status = "success"
