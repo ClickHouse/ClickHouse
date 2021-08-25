@@ -18,14 +18,11 @@ namespace ErrorCodes
 /// Return the number of non-equal tuple elements
 class FunctionTupleHammingDistance : public TupleIFunction
 {
-private:
-    ContextPtr context;
-
 public:
     static constexpr auto name = "tupleHammingDistance";
 
-    explicit FunctionTupleHammingDistance(ContextPtr context_) : context(context_) {}
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTupleHammingDistance>(context); }
+    explicit FunctionTupleHammingDistance(ContextPtr context_) : TupleIFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleHammingDistance>(context_); }
 
     String getName() const override { return name; }
 
