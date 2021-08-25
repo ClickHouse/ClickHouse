@@ -162,7 +162,7 @@ This feature can be used to generate URLs to facilitate profiling of queries.
 
 **Example**
 
-``` text
+```xml
 <config>
   <query_id_formats>
     <speedscope>http://speedscope-host/#profileURL=qp%3Fid%3D{query_id}</speedscope>
