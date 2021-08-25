@@ -13,6 +13,7 @@ insert into ttl values (toDateTime('2100-10-10 00:00:00'), 4);
 
 alter table ttl modify ttl d + interval 1 day;
 select * from ttl order by a;
+select delete_ttl_info_min, delete_ttl_info_max  from system.parts where database = currentDatabase() and table = 'ttl' and active > 0 order by name asc;
 optimize table ttl final;
 select * from ttl order by a;
 select '=============';
@@ -26,12 +27,14 @@ insert into ttl values (1, 'a') (2, 'b') (3, 'c') (4, 'd');
 
 alter table ttl modify ttl i % 2 = 0 ? toDate('2000-01-01') : toDate('2100-01-01');
 select * from ttl order by i;
+select delete_ttl_info_min, delete_ttl_info_max  from system.parts where database = currentDatabase() and table = 'ttl' and active > 0;
 optimize table ttl final;
 select * from ttl order by i;
 select '=============';
 
 alter table ttl modify ttl toDate('2000-01-01');
 select * from ttl order by i;
+select delete_ttl_info_min, delete_ttl_info_max  from system.parts where database = currentDatabase() and table = 'ttl' and active > 0;
 optimize table ttl final;
 select * from ttl order by i;
 select '=============';
@@ -64,6 +67,7 @@ insert into ttl values (toDate('2000-01-02'), 1, 'a') (toDate('2000-01-03'), 2, 
 
 alter table ttl modify ttl i % 3 = 0 ? toDate('2000-01-01') : toDate('2100-01-01');
 select i, s from ttl order by i;
+select delete_ttl_info_min, delete_ttl_info_max  from system.parts where database = currentDatabase() and table = 'ttl' and active > 0;
 optimize table ttl final;
 select i, s from ttl order by i;
 select '=============';
@@ -88,7 +92,7 @@ select i, s, t from ttl order by i;
 optimize table ttl final;
 select i, s, t from ttl order by i;
 -- MATERIALIZE TTL ran only once
-select count() from system.mutations where table = 'ttl' and is_done;
+select count() from system.mutations where database = currentDatabase() and table = 'ttl' and is_done;
 select '=============';
 
 drop table if exists ttl;
@@ -98,6 +102,6 @@ create table ttl (i Int, s String ttl toDate('2000-01-02')) engine = MergeTree o
 SETTINGS max_number_of_merges_with_ttl_in_pool=0,materialize_ttl_recalculate_only=true;
 
 alter table ttl modify column s String ttl toDate('2000-01-02');
-select count() from system.mutations where table = 'ttl' and is_done;
+select count() from system.mutations where database = currentDatabase() and table = 'ttl' and is_done;
 
 drop table if exists ttl;
