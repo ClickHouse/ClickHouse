@@ -1414,7 +1414,7 @@ Result:
 
 ## dateTimeToSnowflake {#datetimetosnowflake}
 
-Converts [DateTime](../data-types/datetime.md) value to the first Snowflake ID at the giving time.
+Converts [DateTime](../data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 
