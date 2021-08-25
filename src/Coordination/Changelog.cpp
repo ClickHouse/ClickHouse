@@ -299,7 +299,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             {
                 /// Our first log starts from the more fresh log_id than we required to read and this changelog is not empty log.
                 /// So we are missing something in our logs, but it's not dataloss, we will receive snapshot and required
-                /// entries fro leader.
+                /// entries from leader.
                 if (changelog_description.from_log_index > last_commited_log_index && (changelog_description.from_log_index - last_commited_log_index) > 1)
                 {
                     LOG_ERROR(log, "Some records was lost, last committed log index {}, smallest available log index on disk {}. Hopefully will receive missing records from leader.", last_commited_log_index, changelog_description.from_log_index);
