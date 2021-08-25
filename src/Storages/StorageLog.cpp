@@ -214,8 +214,7 @@ public:
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
-        , marks_stream(
-            storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Rewrite))
+        , marks_stream(storage.disk->writeFile(storage.marks_file_path, 4096, WriteMode::Append))
     {
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
