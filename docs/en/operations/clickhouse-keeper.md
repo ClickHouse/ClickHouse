@@ -18,7 +18,7 @@ By default, `clickhouse-keeper` provides the same guarantees as ZooKeeper (linea
 
 ## Configuration
 
-`clickhouse-keeper` can be used as a standalone replacement for ZooKeeper or as an internal part of the `clickhouse-server`, but in both cases configuration is almost the same `.xml` file. The main `clickhouse-keeper` configuration tag is `<keeper_server>`. Keeper configuration has the following parameters:
+`clickhouse-keeper` can be used as a standalone replacement for ZooKeeper or as an internal part of the ClickHouse Server, but in both cases configuration is almost the same `.xml` file. The main `clickhouse-keeper` configuration tag is `<keeper_server>`. Keeper configuration has the following parameters:
 
 -    `tcp_port` — the port for a client to connect (default for ZooKeeper is `2181`)
 -    `tcp_port_secure` — the secure port for a client to connect
@@ -94,7 +94,7 @@ Examples of configuration for quorum with three nodes can be found in [integrati
 
 ## How to run
 
-`clickhouse-keeper` is bundled into `clickhouse-server` package, just add configuration of `<keeper_server>` and start clickhouse-server as always. If you want to run standalone `clickhouse-keeper` you can start it in a similar way with:
+`clickhouse-keeper` is bundled into `clickhouse-server` package, just add configuration of `<keeper_server>` and start ClickHouse Server as always. If you want to run standalone `clickhouse-keeper` you can start it in a similar way with:
 
 ```bash
 clickhouse-keeper --config /etc/your_path_to_config/config.xml --daemon
@@ -106,7 +106,7 @@ Seamlessly migration from ZooKeeper to `clickhouse-keeper` is impossible you hav
 
 1. Stop all ZooKeeper nodes.
 
-2. [optional, but recommended] Found ZooKeeper leader node, start and stop it again. It will force ZooKeeper to create a consistent snapshot.
+2. Optional, but recommended: find ZooKeeper leader node, start and stop it again. It will force ZooKeeper to create a consistent snapshot.
 
 3. Run `clickhouse-keeper-converter` on a leader, for example:
 
@@ -114,6 +114,6 @@ Seamlessly migration from ZooKeeper to `clickhouse-keeper` is impossible you hav
 clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/version-2 --output-dir /path/to/clickhouse/keeper/snapshots
 ```
 
-4. Copy snapshot to `clickhouse-server` nodes with configured `keeper` or start `clickhouse-keeper` instead of ZooKeeper. The snapshot must persist on all nodes, otherwise, empty nodes can be faster and one of them can become leader.
+4. Copy snapshot to ClickHouse server nodes with configured `keeper` or start `clickhouse-keeper` instead of ZooKeeper. The snapshot must persist on all nodes, otherwise, empty nodes can be faster and one of them can become leader.
 
 [Original article](https://clickhouse.tech/docs/en/operations/clickhouse-keeper/) <!--hide-->
