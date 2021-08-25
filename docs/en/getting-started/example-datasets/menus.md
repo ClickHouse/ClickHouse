@@ -105,7 +105,7 @@ We use `Decimal` data type to store prices. Everything else is quite straightfor
 
 ## Import Data
 
-Upload data into ClickHouse in parallel:
+Upload data into ClickHouse:
 
 ```
 clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO dish FORMAT CSVWithNames" < Dish.csv

@@ -110,6 +110,11 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
     }
 
+    void expand(const Filter & mask, bool inverted) override
+    {
+        idx.getPositionsPtr()->expand(mask, inverted);
+    }
+
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
