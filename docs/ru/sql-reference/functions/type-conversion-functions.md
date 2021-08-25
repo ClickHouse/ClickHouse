@@ -1411,7 +1411,7 @@ SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## dateTimeToSnowflake {#dateTimeToSnowflake}
+## dateTimeToSnowflake {#datetimetosnowflake}
 
 Преобразует значение [DateTime](../data-types/datetime.md) в первый идентификатор Snowflake ID на текущий момент.
 
