@@ -21,10 +21,13 @@ def process_result(result_folder):
     total_fail = 0
     total_other = 0
     test_results = []
+    top_test = None
     for test in results["tests"]:
         test_name = test['test']['test_name']
         test_result = test['result']['result_type'].upper()
         test_time = str(test['result']['message_rtime'])
+        if top_test is None:
+            top_test = test
         total_tests += 1
         if test_result == "OK":
             total_ok += 1
@@ -34,12 +37,18 @@ def process_result(result_folder):
             total_other += 1
 
         test_results.append((test_name, test_result, test_time))
-    if total_fail != 0:
-        status = "failure"
-    else:
-        status = "success"
 
-    description = "failed: {}, passed: {}, other: {}".format(total_fail, total_ok, total_other)
+    if top_test is None:
+        status = "failure"
+        description = "No top level test found"
+    else:
+        top_test_result =  top_test['result']['result_type'].upper()
+        if top_test_result != "OK" and not top_test_results.startswith("X"):
+            status = "failure"
+        else:
+            status = "success"
+    	description = "failed: {}, passed: {}, other: {}".format(total_fail, total_ok, total_other)
+
     return status, description, test_results, [json_path, test_binary_log]
 
 
