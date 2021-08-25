@@ -1266,7 +1266,7 @@ The `user_directories` section can contain any number of items, the order of the
 </user_directories>
 ```
 
-Users, roles, row policies, quotas and profiles can be also stored in ZooKeeper:
+Users, roles, row policies, quotas, and profiles can be also stored in ZooKeeper:
 
 ``` xml
 <user_directories>
