@@ -609,7 +609,7 @@ Dependencies DatabaseCatalog::getDependencies(const StorageID & from) const
     return Dependencies(iter->second.begin(), iter->second.end());
 }
 
-ViewDependencies DatabaseCatalog::getViewDependencies() const;
+ViewDependencies DatabaseCatalog::getViewDependencies() const
 {
     return view_dependencies;
 }
