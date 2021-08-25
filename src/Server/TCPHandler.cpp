@@ -1268,7 +1268,7 @@ void TCPHandler::receiveQuery()
     /// compatibility.
     if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        query_context->setSetting("normalize_function_names", Field(0));
+        query_context->setSetting("normalize_function_names", false);
     }
 }
 
