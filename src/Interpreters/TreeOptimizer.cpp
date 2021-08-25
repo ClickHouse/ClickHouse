@@ -593,40 +593,34 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & me
 ///    rewrite to : SELECT quantiles(0.5, 0.9, 0.95)(x)[1], quantiles(0.5, 0.9, 0.95)(x)[2], quantiles(0.5, 0.9, 0.95)(x)[3] FROM ...
 void fuseCandidate(std::unordered_map<String, GatherFunctionQuantileData::FuseQuantileAggregatesData> & fuse_quantile)
 {
-    for (const auto & candidate : fuse_quantile)
+    for (auto & candidate : fuse_quantile)
     {
         String func_name = candidate.first;
-        GatherFunctionQuantileData::FuseQuantileAggregatesData args_to_functions = candidate.second;
+        GatherFunctionQuantileData::FuseQuantileAggregatesData & args_to_functions = candidate.second;
 
-        // Try to fuse multiply quantilexxx Function to one
-        for (const auto & it : args_to_functions.arg_map_function)
+        // Try to fuse multiply `quantile*` Function to plural
+        for (auto & it : args_to_functions.arg_map_function)
         {
-            std::vector<ASTFunction *> functions = it.second;
+            std::vector<ASTPtr *> & functions = it.second;
             size_t count = functions.size();
             if (count > 1)
             {
                 auto param_exp_list = std::make_shared<ASTExpressionList>();
-                for (auto * func : functions)
+                for (auto ast : functions)
                 {
-                    const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
+                    const ASTs & parameters = (*ast)->as<ASTFunction>()->parameters->as<ASTExpressionList &>().children;
                     assert(parameters.size() == 1);
                     param_exp_list->children.push_back(parameters[0]);
                 }
-                functions[0]->parameters = param_exp_list;
-                functions[0]->name = quantile_fuse_name_mapping.find(func_name)->second;
-                auto func_base = functions[0]->clone();
+                auto func_base = makeASTFunction(quantile_fuse_name_mapping.find(func_name)->second, (*functions[0])->as<ASTFunction>()->arguments->children);
+                func_base->parameters = param_exp_list;
 
                 size_t idx = 0;
-                for (auto * func : functions)
+                for (auto & ast : functions)
                 {
-                    func->name = "arrayElement";
-                    auto func_exp_list = std::make_shared<ASTExpressionList>();
-                    func_exp_list->children.push_back(func_base);
-                    func_exp_list->children.push_back(std::make_shared<ASTLiteral>(++idx));
-                    func->children.clear();
-                    func->parameters = nullptr;
-                    func->arguments = func_exp_list;
-                    func->children.push_back(func_exp_list);
+                    auto ast_new = makeASTFunction("arrayElement", func_base, std::make_shared<ASTLiteral>(UInt64(++idx)));
+                    ast_new->setAlias((*ast)->tryGetAlias());
+                    *ast = ast_new;
                 }
             }
         }

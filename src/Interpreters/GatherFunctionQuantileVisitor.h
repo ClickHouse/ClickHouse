@@ -7,6 +7,7 @@
 
 namespace DB
 {
+/// Mapping from quantile functions for single value to plural
 static const std::unordered_map<String, String> quantile_fuse_name_mapping = {
     {NameQuantile::name, NameQuantiles::name},
     {NameQuantileDeterministic::name, NameQuantilesDeterministic::name},
@@ -23,15 +24,16 @@ static const std::unordered_map<String, String> quantile_fuse_name_mapping = {
     {NameQuantileBFloat16::name, NameQuantilesBFloat16::name}
 };
 
-/// Gather all the quantilexxx functions
+/// Gather all the `quantile*` functions
 class GatherFunctionQuantileData
 {
 public:
     struct FuseQuantileAggregatesData
     {
-        std::unordered_map<String, std::vector<ASTFunction *>> arg_map_function;
-        void addFuncNode(ASTFunction * func)
+        std::unordered_map<String, std::vector<ASTPtr *>> arg_map_function;
+        void addFuncNode(ASTPtr & ast)
         {
+            const auto * func = ast->as<ASTFunction>();
             auto argument = func->arguments->children.at(0)->getColumnName();
 
             /// This functions needs two arguments.
@@ -41,38 +43,19 @@ public:
                 || func->name == NameQuantileTDigestWeighted::name)
                 argument = argument + "," + func->arguments->children.at(1)->getColumnName();
 
-            auto it = arg_map_function.find(argument);
-            if (it != arg_map_function.end())
-            {
-                it->second.push_back(func);
-            }
-            else
-            {
-                std::vector<ASTFunction *> new_func_list;
-                new_func_list.push_back(func);
-                arg_map_function[argument] = new_func_list;
-            }
+            arg_map_function[argument].push_back(&ast);
         }
     };
 
     using TypeToVisit = ASTFunction;
     std::unordered_map<String, FuseQuantileAggregatesData> fuse_quantile;
-    void visit(ASTFunction & function, ASTPtr &)
+
+    void visit(ASTFunction & function, ASTPtr & ast)
     {
         if (quantile_fuse_name_mapping.find(function.name) == quantile_fuse_name_mapping.end())
             return;
 
-        auto it = fuse_quantile.find(function.name);
-        if (it != fuse_quantile.end())
-        {
-            it->second.addFuncNode(&function);
-        }
-        else
-        {
-            FuseQuantileAggregatesData funcs{};
-            funcs.addFuncNode(&function);
-            fuse_quantile[function.name] = funcs;
-        }
+        fuse_quantile[function.name].addFuncNode(ast);
     }
 };
 

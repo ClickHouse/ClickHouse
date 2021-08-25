@@ -51,4 +51,8 @@ SELECT 'quantileBFloat16:';
 EXPLAIN SYNTAX SELECT quantileBFloat16(0.2)(d), quantileBFloat16(0.3)(d), quantileBFloat16(0.4)(d + 1) FROM datetime;
 SELECT quantileBFloat16(0.2)(d), quantileBFloat16(0.3)(d), quantileBFloat16(0.4)(d + 1) FROM datetime;
 
+EXPLAIN SYNTAX SELECT quantile(0.2)(d) as k, quantile(0.3)(d) FROM datetime order by quantile(0.2)(d);
 DROP TABLE datetime;
+
+SELECT b, quantile(0.5)(x) as a, quantile(0.9)(x) as y, quantile(0.95)(x) FROM (select number as x, number % 2 as b from numbers(10)) group by b;
+EXPLAIN SYNTAX SELECT b, quantile(0.5)(x) as a, quantile(0.9)(x) as y, quantile(0.95)(x) FROM (select number as x, number % 2 as b from numbers(10)) group by b;
