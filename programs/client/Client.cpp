@@ -62,6 +62,7 @@
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
