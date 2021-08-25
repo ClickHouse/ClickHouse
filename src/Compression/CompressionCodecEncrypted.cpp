@@ -30,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int OPENSSL_ERROR;
+    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
