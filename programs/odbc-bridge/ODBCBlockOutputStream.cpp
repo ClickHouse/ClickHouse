@@ -9,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Formats/FormatFactory.h>
-#include <Common/getInsertQuery.h>
+#include <Parsers/getInsertQuery.h>
 
 
 namespace DB

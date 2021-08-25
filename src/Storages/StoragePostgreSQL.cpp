@@ -29,7 +29,7 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <IO/WriteHelpers.h>
-#include <Common/getInsertQuery.h>
+#include <Parsers/getInsertQuery.h>
 #include <IO/Operators.h>
 
 
@@ -292,7 +292,7 @@ private:
         pqxx::connection & connection;
         pqxx::work tx;
 
-        Inserter(pqxx::connection & connection_)
+        explicit Inserter(pqxx::connection & connection_)
             : connection(connection_)
             , tx(connection) {}
 
