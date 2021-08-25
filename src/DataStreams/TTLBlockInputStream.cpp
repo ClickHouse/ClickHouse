@@ -76,17 +76,17 @@ TTLBlockInputStream::TTLBlockInputStream(
 
             algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
                 description, old_ttl_infos.columns_ttl[name], current_time_,
-                force_, name, default_expression, default_column_name));
+                force_, name, default_expression, default_column_name, isCompactPart(data_part)));
         }
     }
 
     for (const auto & move_ttl : metadata_snapshot_->getMoveTTLs())
-        algorithms.emplace_back(std::make_unique<TTLMoveAlgorithm>(
-            move_ttl, old_ttl_infos.moves_ttl[move_ttl.result_column], current_time_, force_));
+        algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
+            move_ttl, TTLUpdateField::MOVES_TTL, move_ttl.result_column, old_ttl_infos.moves_ttl[move_ttl.result_column], current_time_, force_));
 
     for (const auto & recompression_ttl : metadata_snapshot_->getRecompressionTTLs())
-        algorithms.emplace_back(std::make_unique<TTLRecompressionAlgorithm>(
-            recompression_ttl, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
+        algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
+            recompression_ttl, TTLUpdateField::RECOMPRESSION_TTL, recompression_ttl.result_column, old_ttl_infos.recompression_ttl[recompression_ttl.result_column], current_time_, force_));
 }
 
 Block reorderColumns(Block block, const Block & header)
