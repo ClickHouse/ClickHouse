@@ -56,6 +56,8 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 
+#include <random>
+
 
 namespace ProfileEvents
 {
@@ -658,6 +660,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
             elem.client_info = client_info;
+
+            std::bernoulli_distribution should_write_log{
+                            settings.log_queries_probability};
+
+            context->setSetting("log_queries", should_write_log(thread_local_rng));
 
             bool log_queries = settings.log_queries && !internal;
 
