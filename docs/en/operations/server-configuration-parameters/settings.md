@@ -1279,7 +1279,7 @@ Users, roles, row policies, quotas, and profiles can be also stored in ZooKeeper
 </user_directories>
 ```
 
-You can also define sections memory `memory` — means storing information only in memory, without writing to disk, and `ldap` — means storing information on an LDAP server.
+You can also define sections `memory` — means storing information only in memory, without writing to disk, and `ldap` — means storing information on an LDAP server.
 
 To add an LDAP server as a remote user directory of users that are not defined locally, define a single `ldap` section with a following parameters:
 -   `server` — one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.
