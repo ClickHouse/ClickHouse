@@ -45,6 +45,7 @@ include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
 include (cmake/analysis.cmake)
+include (cmake/git_status.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
