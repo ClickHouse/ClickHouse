@@ -31,6 +31,6 @@ private:
     String file_path;
     String format;
     String structure;
-    BlockInputStreamPtr input;
+    std::vector<BlockInputStreamPtr> inputs;
 };
 }
