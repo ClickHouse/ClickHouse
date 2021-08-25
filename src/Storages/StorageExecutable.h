@@ -29,14 +29,16 @@ public:
 protected:
     StorageExecutable(
         const StorageID & table_id,
-        const String & file_path_,
+        const String & script_name_,
         const String & format_,
+        const std::vector<BlockInputStreamPtr> & inputs_,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints);
 
 private:
-    String file_path;
+    String script_name;
     String format;
+    std::vector<BlockInputStreamPtr> inputs;
     Poco::Logger * log;
 };
 }
