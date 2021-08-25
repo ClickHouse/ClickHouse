@@ -1156,7 +1156,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
 
 void KeeperStorage::clearDeadWatches(int64_t session_id)
 {
-    /// Clear all wathces for this session
+    /// Clear all watches for this session
     auto watches_it = sessions_and_watchers.find(session_id);
     if (watches_it != sessions_and_watchers.end())
     {
