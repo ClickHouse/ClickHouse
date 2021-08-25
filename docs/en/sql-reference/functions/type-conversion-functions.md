@@ -1448,7 +1448,7 @@ Result:
 
 ## dateTime64ToSnowflake {#datetime64tosnowflake}
 
-Convert [DateTime64](../data-types/datetime64.md) to the first Snowflake ID at the giving time.
+Convert [DateTime64](../data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 
