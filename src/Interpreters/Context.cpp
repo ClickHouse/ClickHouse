@@ -2709,6 +2709,8 @@ ReadSettings Context::getReadSettings() const
         throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}'", settings.local_filesystem_read_method.value);
 
     res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
+    res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
+
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
