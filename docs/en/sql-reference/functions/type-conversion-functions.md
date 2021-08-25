@@ -1378,7 +1378,7 @@ Result:
 
 ## snowflakeToDateTime64 {#snowflaketodatetime64}
 
-Extracts time from Snowflake ID as [DateTime64](../data-types/datetime64.md) format.
+Extracts time from [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as [DateTime64](../data-types/datetime64.md) format.
 
 **Syntax**
 
