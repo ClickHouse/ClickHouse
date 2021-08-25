@@ -1446,7 +1446,7 @@ Result:
 └─────────────────────────┘
 ```
 
-## dateTime64ToSnowflake {#dateTime64ToSnowflake}
+## dateTime64ToSnowflake {#datetime64tosnowflake}
 
 Convert [DateTime64](../data-types/datetime64.md) to the first Snowflake ID at the giving time.
 
