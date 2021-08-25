@@ -271,6 +271,7 @@ void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionM
         throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
     const auto current_params = params.get();
     current_key_id = current_params->current_key_id[method];
+    /// no need in try-catch block, because this check is made in loadImpl()
     current_key = current_params->keys_storage[method].at(current_key_id);
     nonce = current_params->nonce[method];
     if (nonce.empty())
@@ -282,7 +283,14 @@ void CompressionCodecEncrypted::Configuration::getKeyAndNonce(EncryptionMethod m
     if (!params.get())
         throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
     const auto current_params = params.get();
-    key = current_params->keys_storage[method].at(key_id);
+    try
+    {
+        key = current_params->keys_storage[method].at(key_id);
+    }
+    catch (...)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no key {} in config", key_id);
+    }
     nonce = current_params->nonce[method];
     if (nonce.empty())
         nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", 12};
