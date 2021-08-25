@@ -1375,7 +1375,7 @@ SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## snowflakeToDateTime64 {#snowflakeToDateTime64}
+## snowflakeToDateTime64 {#snowflaketodatetime64}
 
 Извлекает время из Snowflake ID в формате [DateTime64](../data-types/datetime64.md).
 
