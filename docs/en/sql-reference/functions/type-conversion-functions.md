@@ -1376,7 +1376,7 @@ Result:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## snowflakeToDateTime64 {#snowflakeToDateTime64}
+## snowflakeToDateTime64 {#snowflaketodatetime64}
 
 Extracts time from Snowflake ID as [DateTime64](../data-types/datetime64.md) format.
 
