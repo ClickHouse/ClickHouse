@@ -38,7 +38,7 @@ public:
         AsynchronousReaderPtr reader_, Int32 priority_,
         int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
         : ReadBufferFromFileBase(buf_size, existing_memory, alignment),
-        reader(std::move(reader_)), priority(priority_), prefetch_buffer(buf_size, alignment), required_alignment(alignment), fd(fd_)
+        reader(std::move(reader_)), priority(priority_), required_alignment(alignment), fd(fd_)
     {
     }
 
@@ -61,6 +61,9 @@ public:
 
     /// Seek to the beginning, discarding already read data if any. Useful to reread file that changes on every read.
     void rewind();
+
+private:
+    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
 };
 
 }

@@ -24,6 +24,19 @@ std::string AsynchronousReadBufferFromFileDescriptor::getFileName() const
 }
 
 
+std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescriptor::readInto(char * data, size_t size)
+{
+    IAsynchronousReader::Request request;
+    request.descriptor = std::make_shared<IAsynchronousReader::LocalFileDescriptor>(fd);
+    request.buf = data;
+    request.size = size;
+    request.offset = file_offset_of_buffer_end;
+    request.priority = priority;
+
+    return reader->submit(request);
+}
+
+
 void AsynchronousReadBufferFromFileDescriptor::prefetch()
 {
     if (prefetch_future.valid())
@@ -31,37 +44,46 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch()
 
     /// Will request the same amount of data that is read in nextImpl.
     prefetch_buffer.resize(internal_buffer.size());
-
-    IAsynchronousReader::Request request;
-    request.descriptor = std::make_shared<IAsynchronousReader::LocalFileDescriptor>(fd);
-    request.buf = prefetch_buffer.data();
-    request.size = prefetch_buffer.size();
-    request.offset = file_offset_of_buffer_end;
-    request.priority = priority;
-
-    prefetch_future = reader->submit(request);
+    prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
 }
 
 
 bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 {
-    if (!prefetch_future.valid())
-        prefetch();
-
-    auto size = prefetch_future.get();
-    prefetch_future = {};
-
-    file_offset_of_buffer_end += size;
-
-    if (size)
+    if (prefetch_future.valid())
     {
-        prefetch_buffer.swap(memory);
-        set(memory.data(), memory.size());
-        working_buffer.resize(size);
-        return true;
-    }
+        /// Read request already in flight. Wait for its completion.
 
-    return false;
+        auto size = prefetch_future.get();
+        prefetch_future = {};
+        file_offset_of_buffer_end += size;
+
+        if (size)
+        {
+            prefetch_buffer.swap(memory);
+            set(memory.data(), memory.size());
+            working_buffer.resize(size);
+            return true;
+        }
+
+        return false;
+    }
+    else
+    {
+        /// No pending request. Do synchronous read.
+
+        auto size = readInto(memory.data(), memory.size()).get();
+        file_offset_of_buffer_end += size;
+
+        if (size)
+        {
+            set(memory.data(), memory.size());
+            working_buffer.resize(size);
+            return true;
+        }
+
+        return false;
+    }
 }
 
 

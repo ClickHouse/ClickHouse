@@ -110,7 +110,7 @@ public:
                     else if (errno == EAGAIN)
                     {
                         /// Data is not available.
-                        std::cerr << "miss\n";
+                        //std::cerr << "miss\n";
                         break;
                     }
                     else if (errno == EINTR)
@@ -134,7 +134,7 @@ public:
 
             if (bytes_read)
             {
-                std::cerr << "hit\n";
+                //std::cerr << "hit\n";
                 promise.set_value(bytes_read);
                 return future;
             }
