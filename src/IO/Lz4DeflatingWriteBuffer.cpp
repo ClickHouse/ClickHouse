@@ -68,7 +68,6 @@ void Lz4DeflatingWriteBuffer::nextImpl()
             out_capacity = out->buffer().end() - out->position();
 
             /// write frame header and check for errors
-
             size_t header_size = LZ4F_compressBegin(ctx, out_data, out_capacity, &kPrefs);
 
             if (LZ4F_isError(header_size))
@@ -145,12 +144,14 @@ void Lz4DeflatingWriteBuffer::finishImpl()
 {
     next();
 
-    out_data = reinterpret_cast<void *>(out->position());
-    out_capacity = out->buffer().end() - out->position();
+    if (out_capacity < LZ4F_compressBound(0, &kPrefs))
+    {
+        out->next();
+        out_capacity = out->buffer().end() - out->position();
+    }
 
-    // LOG_FATAL(&Poco::Logger::root(), "Already leaving?");
-    // if (out_capacity < LZ4F_compressBound(0, &kPrefs))
-        // LOG_FATAL(&Poco::Logger::root(), "Ebal konya?");
+    out_data = reinterpret_cast<void *>(out->position());
+
     /// compression end
     size_t end_size = LZ4F_compressEnd(ctx, out_data, out_capacity, nullptr);
 
