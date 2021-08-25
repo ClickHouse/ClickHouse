@@ -1066,7 +1066,7 @@ template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
 struct JoinFeatures
 {
     static constexpr bool is_any_join = STRICTNESS == ASTTableJoin::Strictness::Any;
-    static constexpr bool is_any_or_old_join = STRICTNESS == ASTTableJoin::Strictness::Any || STRICTNESS == ASTTableJoin::Strictness::RightAny;
+    static constexpr bool is_any_or_semi_join = STRICTNESS == ASTTableJoin::Strictness::Any || STRICTNESS == ASTTableJoin::Strictness::RightAny || (STRICTNESS == ASTTableJoin::Strictness::Semi && KIND == ASTTableJoin::Kind::Left);
     static constexpr bool is_all_join = STRICTNESS == ASTTableJoin::Strictness::All;
     static constexpr bool is_asof_join = STRICTNESS == ASTTableJoin::Strictness::Asof;
     static constexpr bool is_semi_join = STRICTNESS == ASTTableJoin::Strictness::Semi;
@@ -1344,7 +1344,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     used_flags.template setUsed<jf.need_flags, multiple_disjuncts>(find_result);
                     added_columns.appendFromBlock<jf.add_missing>(*mapped.block, mapped.row_num);
 
-                    if (jf.is_any_or_old_join)
+                    if (jf.is_any_or_semi_join)
                     {
                         break;
                     }
