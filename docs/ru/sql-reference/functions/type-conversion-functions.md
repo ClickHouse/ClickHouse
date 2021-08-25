@@ -1445,7 +1445,7 @@ WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToS
 └─────────────────────────┘
 ```
 
-## dateTime64ToSnowflake {#dateTime64ToSnowflake}
+## dateTime64ToSnowflake {#datetime64tosnowflake}
 
 Преобразует значение [DateTime64](../data-types/datetime64.md) в первый идентификатор Snowflake ID на текущий момент.
 
