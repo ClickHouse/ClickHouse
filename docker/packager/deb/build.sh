@@ -39,7 +39,6 @@ then
   # Launching build script
   ../docker/packager/other/fuzzer.sh
   cd
-  build/docker/packager/other/fuzzer.sh
 fi
 
 ccache --show-config ||:
