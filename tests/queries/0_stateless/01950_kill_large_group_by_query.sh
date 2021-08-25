@@ -23,7 +23,7 @@ $CLICKHOUSE_CLIENT --max_execution_time 10 --query_id "test_01948_tcp_$CLICKHOUS
             SELECT 'Name' as name, number FROM system.numbers LIMIT 2000000
         ) AS a,
         (
-            SELECT 'Name' as name, number FROM system.numbers LIMIT 2000000
+            SELECT 'Name' as name2, number FROM system.numbers LIMIT 2000000
         ) as b
         GROUP BY n
     )
@@ -44,7 +44,7 @@ ${CLICKHOUSE_CURL_COMMAND} -q --max-time 10 -sS "$CLICKHOUSE_URL&query_id=test_0
             SELECT 'Name' as name, number FROM system.numbers LIMIT 2000000
         ) AS a,
         (
-            SELECT 'Name' as name, number FROM system.numbers LIMIT 2000000
+            SELECT 'Name' as name2, number FROM system.numbers LIMIT 2000000
         ) as b
         GROUP BY n
     )

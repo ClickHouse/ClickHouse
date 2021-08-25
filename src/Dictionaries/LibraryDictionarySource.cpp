@@ -41,10 +41,13 @@ LibraryDictionarySource::LibraryDictionarySource(
     , sample_block{sample_block_}
     , context(Context::createCopy(context_))
 {
-    if (fs::path(path).is_relative())
-        path = fs::canonical(path);
+    bool path_checked = false;
+    if (fs::is_symlink(path))
+        path_checked = symlinkStartsWith(path, context->getDictionariesLibPath());
+    else
+        path_checked = pathStartsWith(path, context->getDictionariesLibPath());
 
-    if (created_from_ddl && !pathStartsWith(path, context->getDictionariesLibPath()))
+    if (created_from_ddl && !path_checked)
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, context->getDictionariesLibPath());
 
     if (!fs::exists(path))
@@ -183,11 +186,11 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr context,
+                                 ContextPtr global_context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
-        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context, created_from_ddl);
+        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, global_context, created_from_ddl);
     };
 
     factory.registerSource("library", create_table_source);
