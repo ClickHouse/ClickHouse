@@ -10,3 +10,5 @@ SELECT tupleNegate(tuple(1, 0, 3.5));
 
 SELECT dotProduct(tuple(1, 2, 3), tuple(2, 3, 4));
 SELECT scalarProduct(tuple(-1, 2, 3.002), tuple(2, 3.4, 4));
+
+SELECT L1Norm(tuple(-1,2.5,-3.6));
