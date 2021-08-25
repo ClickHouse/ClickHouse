@@ -53,6 +53,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/InterserverCredentials.h>
+#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -702,6 +703,10 @@ if (ThreadFuzzer::instance().isEffective())
             setupTmpPath(log, disk->getPath());
     }
 
+    /// Storage keeping all the backups.
+    fs::create_directories(path / "backups");
+    global_context->setBackupsVolume(config().getString("backups_path", path / "backups"), config().getString("backups_policy", ""));
+
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
       * Flags may be cleared automatically after being applied by the server.
       * Examples: do repair of local data; clone all replicated tables from replica.
@@ -736,6 +741,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
         fs::create_directories(path / "data/");
         fs::create_directories(path / "metadata/");
+        fs::create_directories(path / "user_defined/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         fs::create_directories(path / "metadata_dropped/");
@@ -1056,6 +1062,9 @@ if (ThreadFuzzer::instance().isEffective())
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
 
+        // Uses a raw pointer to global context for getting ZooKeeper.
+        main_config_reloader.reset();
+
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
@@ -1067,6 +1076,18 @@ if (ThreadFuzzer::instance().isEffective())
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
+
+    LOG_INFO(log, "Loading user defined objects from {}", path_str);
+    try
+    {
+        UserDefinedObjectsLoader::instance().loadObjects(global_context);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Caught exception while loading user defined objects");
+        throw;
+    }
+    LOG_DEBUG(log, "Loaded user defined objects");
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
@@ -1487,7 +1508,6 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_INFO(log, "Closed connections.");
 
             dns_cache_updater.reset();
-            main_config_reloader.reset();
 
             if (current_connections)
             {
