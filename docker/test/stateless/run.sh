@@ -17,6 +17,14 @@ dpkg -i package_folder/clickhouse-test_*.deb
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
+
+# FIXME: This is an ugly fix to enable S3 related features to test with Funcitonal tests
+# AWS SDK checks these variables in the constructor of ClientConfiguration
+# and in case of absence will log some warnings in server's logs.
+# And tests will fail in this case.
+export AWS_RETRY_MODE="standart"
+export AWS_MAX_ATTEMPTS=3
+
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000

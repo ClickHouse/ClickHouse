@@ -222,8 +222,6 @@ SRCS(
     TTLDescription.cpp
     VirtualColumnUtils.cpp
     extractKeyExpressionList.cpp
-    fuzzers/columns_description_fuzzer.cpp
-    fuzzers/mergetree_checksum_fuzzer.cpp
     getStructureOfRemoteTable.cpp
     registerStorages.cpp
     transformQueryForExternalDatabase.cpp
