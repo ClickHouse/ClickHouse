@@ -11,10 +11,17 @@ SELECT tupleNegate(tuple(1, 0, 3.5));
 SELECT dotProduct(tuple(1, 2, 3), tuple(2, 3, 4));
 SELECT scalarProduct(tuple(-1, 2, 3.002), tuple(2, 3.4, 4));
 
-SELECT L1Norm(tuple(-1,2.5,-3.6));
+SELECT L1Norm(tuple(-1, 2, -3));
+SELECT L1Norm(tuple(-1, 2.5, -3.6));
 SELECT L2Norm(tuple(1, 1));
 SELECT L2Norm(tuple(3, 4));
 
 SELECT max2(1, 1.5);
 SELECT min2(-1, -3);
 SELECT LinfNorm(tuple(1, -2.3, 1.7));
+
+SELECT LpNorm(tuple(-1), 3);
+SELECT LpNorm(tuple(-1.1), 3);
+SELECT LpNorm(tuple(13, -84.4, 91, 63.1), 2) = L2Norm(tuple(13, -84.4, 91, 63.1));
+SELECT LpNorm(tuple(13, -84.4, 91, 63.1), 1) = L1Norm(tuple(13, -84.4, 91, 63.1));
+SELECT LpNorm(tuple(-1, -2), 11);
