@@ -111,11 +111,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         data = pos->begin;
     }
-    else if (s_from_infile.ignore(pos, expected))
-    {
-        if (!infile_name_p.parse(pos, infile, expected))
-            return false;
-    }
     else if (s_format.ignore(pos, expected))
     {
         if (!name_p.parse(pos, format, expected))
