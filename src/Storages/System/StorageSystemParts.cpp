@@ -75,7 +75,9 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 
         {"rows_where_ttl_info.expression",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())}
+        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+
+        {"projections",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     }
     )
 {
@@ -252,6 +254,13 @@ void StorageSystemParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
         add_ttl_info_map(part->ttl_infos.rows_where_ttl);
+
+        Array projections;
+        for (const auto & [name, _] : part->getProjectionParts())
+            projections.push_back(name);
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(projections);
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread
