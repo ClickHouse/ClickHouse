@@ -664,7 +664,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             std::bernoulli_distribution should_write_log{
                             settings.log_queries_probability};
 
-            context->setSetting("log_queries", should_write_log(thread_local_rng));
+            context->setSetting("log_queries", settings.log_queries && should_write_log(thread_local_rng));
+            context->setSetting("log_queries_probability", 1.0);
 
             bool log_queries = settings.log_queries && !internal;
 
