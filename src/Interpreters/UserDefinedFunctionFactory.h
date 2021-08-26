@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <mutex>
 
 #include <Common/NamePrompter.h>
 
@@ -25,8 +26,8 @@ public:
     std::vector<String> getAllRegisteredNames() const override;
 
 private:
-
     std::unordered_map<String, ASTPtr> function_name_to_create_query;
+    mutable std::mutex mutex;
 };
 
 }
