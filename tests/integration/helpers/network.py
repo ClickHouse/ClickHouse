@@ -242,7 +242,7 @@ class _NetworkManager:
 class NetThroughput(object):
     def __init__(self, node):
         try:
-            self.interface = subprocess.check_output("route | grep '^default' | grep -o '[^ ]*$'", shell=True).strip().decode("utf-8")
+            self.interface = subprocess.check_output("route | grep '^default' | awk '{print $NF}'", shell=True).strip().decode("utf-8")
         except Exception as ex:
             raise Exception("Cannot get default network interface" + str(ex)) from ex
 
