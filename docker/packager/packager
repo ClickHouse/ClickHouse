@@ -108,6 +108,9 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     if image_type == "deb" or image_type == "unbundled":
         result.append("DEB_CC={}".format(cc))
         result.append("DEB_CXX={}".format(cxx))
+        # For building fuzzers
+        result.append("CC={}".format(cc))
+        result.append("CXX={}".format(cxx))
     elif image_type == "binary":
         result.append("CC={}".format(cc))
         result.append("CXX={}".format(cxx))

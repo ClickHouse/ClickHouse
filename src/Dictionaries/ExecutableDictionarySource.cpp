@@ -275,7 +275,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr context,
+                                 ContextPtr global_context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
@@ -285,10 +285,10 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
-        if (created_from_ddl && context->getApplicationType() != Context::ApplicationType::LOCAL)
+        if (created_from_ddl && global_context->getApplicationType() != Context::ApplicationType::LOCAL)
             throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable dictionary source are not allowed to be created from DDL query");
 
-        auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 
         std::string settings_config_prefix = config_prefix + ".executable";
 
@@ -301,7 +301,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false)
         };
 
-        return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, context_local_copy);
+        return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, context);
     };
 
     factory.registerSource("executable", create_table_source);
