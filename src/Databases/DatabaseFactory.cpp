@@ -155,7 +155,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 /// Split into replicas if needed.
                 size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
                 auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-                auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, addresses, mysql_user_name, mysql_user_password);
+                mysqlxx::PoolWithFailover mysql_pool(mysql_database_name, addresses,
+                    mysql_user_name, mysql_user_password,
+                    MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
+                    MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
+                    MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+                    context->getSettingsRef().external_storage_connect_timeout,
+                    context->getSettingsRef().external_storage_rw_timeout);
 
                 mysql_database_settings->loadFromQueryContext(context);
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
@@ -167,7 +173,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
             MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
             auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
-
 
             auto materialize_mode_settings = std::make_unique<MaterializedMySQLSettings>();
 
