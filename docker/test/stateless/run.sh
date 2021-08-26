@@ -17,6 +17,7 @@ dpkg -i package_folder/clickhouse-test_*.deb
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
+./setup_minio.sh
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
