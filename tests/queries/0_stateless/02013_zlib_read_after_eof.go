@@ -24,18 +24,18 @@ func compress(data io.Reader) io.Reader {
 }
 
 func main() {
+	database := os.Getenv("CLICKHOUSE_DATABASE")
 	p, err := url.Parse("http://localhost:8123/")
 	if err != nil {
 		panic(err)
 	}
 	q := p.Query()
 
-	q.Set("query", "INSERT INTO graphite FORMAT RowBinary")
+	q.Set("query", "INSERT INTO "+database+".graphite FORMAT RowBinary")
 	p.RawQuery = q.Encode()
 	queryUrl := p.String()
 
 	var req *http.Request
-
 
 	req, err = http.NewRequest("POST", queryUrl, compress(os.Stdin))
 	req.Header.Add("Content-Encoding", "gzip")
