@@ -156,7 +156,7 @@ ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_
     ColumnDependencies dependencies;
     while (!new_updated_columns.empty())
     {
-        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns);
+        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
         new_updated_columns.clear();
         for (const auto & dependency : new_dependencies)
         {
@@ -335,6 +335,15 @@ static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPt
     return key_columns;
 }
 
+static bool materializeTTLRecalculateOnly(const StoragePtr & storage)
+{
+    auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+    if (!storage_from_merge_tree_data_part)
+        return false;
+
+    return storage_from_merge_tree_data_part->materializeTTLRecalculateOnly();
+}
+
 static void validateUpdateColumns(
     const StoragePtr & storage,
     const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns,
@@ -427,9 +436,19 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     NameSet updated_columns;
 
+    bool materialize_ttl_recalculate_only = materializeTTLRecalculateOnly(storage);
+
     for (const MutationCommand & command : commands)
-        for (const auto & [column_name, update_ast] : command.column_to_update_expression)
-            updated_columns.insert(column_name);
+    {
+        if (command.type == MutationCommand::Type::UPDATE
+            || command.type == MutationCommand::Type::DELETE)
+            materialize_ttl_recalculate_only = false;
+
+        for (const auto & kv : command.column_to_update_expression)
+        {
+            updated_columns.insert(kv.first);
+        }
+    }
 
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
     /// and projections to recalculate them if dependencies are updated.
@@ -598,7 +617,18 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (metadata_snapshot->hasRowsTTL())
+            if (materialize_ttl_recalculate_only)
+            {
+                // just recalculate ttl_infos without remove expired data
+                auto all_columns_vec = all_columns.getNames();
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(NameSet(all_columns_vec.begin(), all_columns_vec.end()), false);
+                for (const auto & dependency : new_dependencies)
+                {
+                    if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
+                        dependencies.insert(dependency);
+                }
+            }
+            else if (metadata_snapshot->hasRowsTTL())
             {
                 for (const auto & column : all_columns)
                     dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);
@@ -623,19 +653,19 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 /// Recalc only skip indices and projections of columns which could be updated by TTL.
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns);
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
                 for (const auto & dependency : new_dependencies)
                 {
                     if (dependency.kind == ColumnDependency::SKIP_INDEX || dependency.kind == ColumnDependency::PROJECTION)
                         dependencies.insert(dependency);
                 }
+            }
 
-                if (dependencies.empty())
-                {
-                    /// Very rare case. It can happen if we have only one MOVE TTL with constant expression.
-                    /// But we still have to read at least one column.
-                    dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
-                }
+            if (dependencies.empty())
+            {
+                /// Very rare case. It can happen if we have only one MOVE TTL with constant expression.
+                /// But we still have to read at least one column.
+                dependencies.emplace(all_columns.front().name, ColumnDependency::TTL_EXPRESSION);
             }
         }
         else if (command.type == MutationCommand::READ_COLUMN)

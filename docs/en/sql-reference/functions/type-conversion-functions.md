@@ -152,6 +152,104 @@ Alias: `DATE`.
 
 ## toDateTimeOrNull {#todatetimeornull}
 
+## toDate32 {#todate32}
+
+Converts the argument to the [Date32](../../sql-reference/data-types/date32.md) data type. If the value is outside the range returns the border values supported by `Date32`. If the argument has [Date](../../sql-reference/data-types/date.md) type, borders of `Date` are taken into account.
+
+**Syntax** 
+
+``` sql
+toDate32(expr)
+```
+
+**Arguments** 
+
+-   `expr` — The value. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) or [Date](../../sql-reference/data-types/date.md).
+
+**Returned value**
+
+-   A calendar date.
+
+Type: [Date32](../../sql-reference/data-types/date32.md).
+
+**Example**
+
+1. The value is within the range:
+
+``` sql
+SELECT toDate32('1955-01-01') AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
+│ 1955-01-01 │ Date32                             │
+└────────────┴────────────────────────────────────┘
+```
+
+2. The value is outside the range:
+
+``` sql
+SELECT toDate32('1924-01-01') AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
+│ 1925-01-01 │ Date32                             │
+└────────────┴────────────────────────────────────┘
+```
+
+3. With `Date`-type argument:
+
+``` sql
+SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
+```
+
+``` text
+┌──────value─┬─toTypeName(toDate32(toDate('1924-01-01')))─┐
+│ 1970-01-01 │ Date32                                     │
+└────────────┴────────────────────────────────────────────┘
+```
+
+## toDate32OrZero {#todate32-or-zero}
+
+The same as [toDate32](#todate32) but returns the min value of [Date32](../../sql-reference/data-types/date32.md) if invalid argument is received.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDate32OrZero('1924-01-01'), toDate32OrZero('');
+```
+
+Result:
+
+``` text
+┌─toDate32OrZero('1924-01-01')─┬─toDate32OrZero('')─┐
+│                   1925-01-01 │         1925-01-01 │
+└──────────────────────────────┴────────────────────┘
+```
+
+## toDate32OrNull {#todate32-or-null}
+
+The same as [toDate32](#todate32) but returns `NULL` if invalid argument is received.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('');
+```
+
+Result:
+
+``` text
+┌─toDate32OrNull('1955-01-01')─┬─toDate32OrNull('')─┐
+│                   1955-01-01 │               ᴺᵁᴸᴸ │
+└──────────────────────────────┴────────────────────┘
+```
+
 ## toDecimal(32\|64\|128\|256) {#todecimal3264128256}
 
 Converts `value` to the [Decimal](../../sql-reference/data-types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.

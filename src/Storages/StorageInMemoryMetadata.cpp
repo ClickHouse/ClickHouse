@@ -214,7 +214,7 @@ bool StorageInMemoryMetadata::hasAnyGroupByTTL() const
     return !table_ttl.group_by_ttl.empty();
 }
 
-ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns) const
+ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns, bool include_ttl_target) const
 {
     if (updated_columns.empty())
         return {};
@@ -250,7 +250,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
     if (hasRowsTTL())
     {
         auto rows_expression = getRowsTTL().expression;
-        if (add_dependent_columns(rows_expression, required_ttl_columns))
+        if (add_dependent_columns(rows_expression, required_ttl_columns) && include_ttl_target)
         {
             /// Filter all columns, if rows TTL expression have to be recalculated.
             for (const auto & column : getColumns().getAllPhysical())
@@ -263,12 +263,14 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     for (const auto & [name, entry] : getColumnTTLs())
     {
-        if (add_dependent_columns(entry.expression, required_ttl_columns))
+        if (add_dependent_columns(entry.expression, required_ttl_columns) && include_ttl_target)
             updated_ttl_columns.insert(name);
     }
 
     for (const auto & entry : getMoveTTLs())
         add_dependent_columns(entry.expression, required_ttl_columns);
+
+    //TODO what about rows_where_ttl and group_by_ttl ??
 
     for (const auto & column : indices_columns)
         res.emplace(column, ColumnDependency::SKIP_INDEX);

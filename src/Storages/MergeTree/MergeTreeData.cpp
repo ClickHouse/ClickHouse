@@ -895,7 +895,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 for (const auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
                 {
                     if (MergeTreePartInfo::tryParsePartName(it->name(), format_version))
-                        throw Exception(ErrorCodes::UNKNOWN_DISK, 
+                        throw Exception(ErrorCodes::UNKNOWN_DISK,
                             "Part {} was found on disk {} which is not defined in the storage policy",
                             backQuote(it->name()), backQuote(disk_name));
                 }
@@ -3569,8 +3569,10 @@ std::vector<DetachedPartInfo> MergeTreeData::getDetachedParts() const
         {
             for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
             {
-                auto res_it = res.emplace_back(DetachedPartInfo::parseDetachedPartName(it->name(), format_version));
-                res_it.disk = disk->getName();
+                auto part = DetachedPartInfo::parseDetachedPartName(it->name(), format_version);
+                part.disk = disk->getName();
+
+                res.push_back(std::move(part));
             }
         }
     }
