@@ -3435,3 +3435,25 @@ Possible values:
 -   1 — The table is automatically updated in the background, when schema changes are detected.
 
 Default value: `0`.
+
+## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
+
+Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md#projections) optimization when processing `SELECT` queries.
+
+Possible values:
+
+-   0 — Projection optimization disabled.
+-   1 — Projection optimization enabled.
+
+Default value: `0`.
+
+## force_optimize_projection {#force-optimize-projection}
+
+Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md#projections) in `SELECT` queries, when projection optimization is enabled (see [allow_experimental_projection_optimization](#allow-experimental-projection-optimization) setting). 
+
+Possible values:
+
+-   0 — Projection optimization is not obligatory.
+-   1 — Projection optimization is obligatory.
+
+Default value: `0`.
