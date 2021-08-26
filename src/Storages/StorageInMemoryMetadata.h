@@ -28,6 +28,7 @@ struct StorageInMemoryMetadata
     ConstraintsDescription constraints;
     /// Table projections. Currently supported for MergeTree only.
     ProjectionsDescription projections;
+    mutable const ProjectionDescription * selected_projection{};
     /// PARTITION BY expression. Currently supported for MergeTree only.
     KeyDescription partition_key;
     /// PRIMARY KEY expression. If absent, than equal to order_by_ast.
@@ -143,7 +144,7 @@ struct StorageInMemoryMetadata
 
     /// Returns columns, which will be needed to calculate dependencies (skip
     /// indices, TTL expressions) if we update @updated_columns set of columns.
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns, bool include_ttl_target) const;
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
 
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;
