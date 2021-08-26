@@ -94,6 +94,8 @@ public:
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
+    RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
+
     bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
@@ -114,8 +116,10 @@ private:
     /// For block numbers.
     SimpleIncrement increment;
 
-    /// For clearOldParts, clearOldTemporaryDirectories.
-    AtomicStopwatch time_after_previous_cleanup;
+    /// For clearOldParts
+    AtomicStopwatch time_after_previous_cleanup_parts;
+    /// For clearOldTemporaryDirectories.
+    AtomicStopwatch time_after_previous_cleanup_temporary_directories;
 
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.

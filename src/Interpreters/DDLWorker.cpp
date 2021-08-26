@@ -158,14 +158,19 @@ DDLWorker::DDLWorker(
     const Poco::Util::AbstractConfiguration * config,
     const String & prefix,
     const String & logger_name,
-    const CurrentMetrics::Metric * max_entry_metric_)
+    const CurrentMetrics::Metric * max_entry_metric_,
+    const CurrentMetrics::Metric * max_pushed_entry_metric_)
     : context(Context::createCopy(context_))
     , log(&Poco::Logger::get(logger_name))
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
+    , max_pushed_entry_metric(max_pushed_entry_metric_)
 {
     if (max_entry_metric)
         CurrentMetrics::set(*max_entry_metric, 0);
+
+    if (max_pushed_entry_metric)
+        CurrentMetrics::set(*max_pushed_entry_metric, 0);
 
     if (1 < pool_size)
     {
@@ -629,7 +634,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
             String dummy;
             if (zookeeper->tryGet(active_node_path, dummy, nullptr, eph_node_disappeared))
             {
-                constexpr int timeout_ms = 30 * 1000;
+                constexpr int timeout_ms = 60 * 1000;
                 if (!eph_node_disappeared->tryWait(timeout_ms))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Ephemeral node {} still exists, "
                                     "probably it's owned by someone else", active_node_path);
@@ -1046,6 +1051,15 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     zookeeper->createAncestors(query_path_prefix);
 
     String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
+    if (max_pushed_entry_metric)
+    {
+        String str_buf = node_path.substr(query_path_prefix.length());
+        DB::ReadBufferFromString in(str_buf);
+        CurrentMetrics::Metric id;
+        readText(id, in);
+        id = std::max(*max_pushed_entry_metric, id);
+        CurrentMetrics::set(*max_pushed_entry_metric, id);
+    }
 
     /// We cannot create status dirs in a single transaction with previous request,
     /// because we don't know node_path until previous request is executed.
@@ -1161,7 +1175,6 @@ void DDLWorker::runMainThread()
                         new_stat.numChildren,
                         new_stat.pzxid);
                     context->getZooKeeperLog()->flush();
-                    abort();
                 }
             }
         }

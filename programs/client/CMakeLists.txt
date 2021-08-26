@@ -3,6 +3,7 @@ set (CLICKHOUSE_CLIENT_SOURCES
     ConnectionParameters.cpp
     QueryFuzzer.cpp
     Suggest.cpp
+    TestHint.cpp
 )
 
 set (CLICKHOUSE_CLIENT_LINK

@@ -37,6 +37,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
@@ -44,25 +45,14 @@ namespace ErrorCodes
 
 InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_)
-    : InterpreterInsertQuery(query_ptr_, getReadBuffersFromASTInsertQuery(query_ptr_),
-        context_, allow_materialized_, no_squash_, no_destination_)
-{
-}
-
-InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, ReadBuffers read_buffers_,
-    ContextPtr context_, bool allow_materialized_,
-    bool no_squash_, bool no_destination_)
     : WithContext(context_)
     , query_ptr(query_ptr_)
-    , read_buffers(std::move(read_buffers_))
     , allow_materialized(allow_materialized_)
     , no_squash(no_squash_)
     , no_destination(no_destination_)
 {
     checkStackSize();
 }
-
 
 StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 {
@@ -165,6 +155,9 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
 
     StoragePtr table = getTable(query);
+    if (query.partition_by && !table->supportsPartitionBy())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
+
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings.lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
@@ -271,7 +264,6 @@ BlockIO InterpreterInsertQuery::execute()
         {
             InterpreterWatchQuery interpreter_watch{ query.watch, getContext() };
             res = interpreter_watch.execute();
-            res.pipeline.init(Pipe(std::make_shared<SourceFromInputStream>(std::move(res.in))));
         }
 
         for (size_t i = 0; i < out_streams_size; i++)
@@ -363,7 +355,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (!query.expectNativeData())
     {
-        auto pipe = getSourceFromASTInsertQuery(query_ptr, query_sample_block, std::move(read_buffers), getContext());
+        auto pipe = getSourceFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr).second;
         res.pipeline.init(std::move(pipe));
         res.pipeline.resize(1);
         res.pipeline.setSinks([&](const Block &, Pipe::StreamType)

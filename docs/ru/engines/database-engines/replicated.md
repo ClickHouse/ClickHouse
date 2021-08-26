@@ -1,3 +1,7 @@
+---
+toc_priority: 36
+toc_title: Replicated
+---
 
 # [экспериментальный] Replicated {#replicated}
 
