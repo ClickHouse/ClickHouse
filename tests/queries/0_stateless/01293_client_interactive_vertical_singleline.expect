@@ -11,7 +11,7 @@ expect_after {
 }
 
 set basedir [file dirname $argv0]
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT"
 expect ":) "
 
 send -- "SELECT 1\r"

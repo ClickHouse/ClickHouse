@@ -1,12 +1,11 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
 
 
@@ -16,9 +15,9 @@ namespace DB
 /** When writing, does nothing.
   * When reading, returns nothing.
   */
-class StorageNull final : public shared_ptr_helper<StorageNull>, public IStorage
+class StorageNull final : public ext::shared_ptr_helper<StorageNull>, public IStorage
 {
-    friend struct shared_ptr_helper<StorageNull>;
+    friend struct ext::shared_ptr_helper<StorageNull>;
 public:
     std::string getName() const override { return "Null"; }
 
@@ -37,9 +36,9 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr) override
+    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr) override
     {
-        return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
+        return std::make_shared<NullBlockOutputStream>(metadata_snapshot->getSampleBlock());
     }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;

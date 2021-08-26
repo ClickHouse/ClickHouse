@@ -7,6 +7,7 @@
 #include <pcg-random/pcg_random.hpp>
 
 #include <Common/randomSeed.h>
+#include <Common/Stopwatch.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 
@@ -16,7 +17,7 @@ namespace DB
 
 class ASTExpressionList;
 class ASTOrderByElement;
-struct ASTWindowDefinition;
+struct WindowFrame;
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
@@ -68,7 +69,7 @@ struct QueryFuzzer
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast);
     void fuzzColumnLikeExpressionList(IAST * ast);
-    void fuzzWindowFrame(ASTWindowDefinition & def);
+    void fuzzWindowFrame(WindowFrame & frame);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(const ASTPtr ast);

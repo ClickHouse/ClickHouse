@@ -1,6 +1,5 @@
 #pragma once
 
-#include <limits>
 #include <tuple>
 #include <vector>
 #include <common/types.h>
@@ -63,12 +62,6 @@ struct MergeTreePartInfo
             && max_block >= rhs.max_block
             && level >= rhs.level
             && mutation >= rhs.mutation;
-    }
-
-    /// Return part mutation version, if part wasn't mutated return zero
-    Int64 getMutationVersion() const
-    {
-        return mutation ? mutation : 0;
     }
 
     /// True if parts do not intersect in any way.

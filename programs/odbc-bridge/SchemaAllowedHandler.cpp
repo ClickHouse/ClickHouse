@@ -29,7 +29,7 @@ namespace
 
 void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
+    HTMLForm params(request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)

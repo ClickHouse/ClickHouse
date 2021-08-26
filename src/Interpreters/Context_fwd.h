@@ -21,10 +21,11 @@ using Scalars = std::map<String, Block>;
 class Context;
 
 /// Most used types have shorter names
-using ContextPtr = std::shared_ptr<const Context>;
-using ContextMutablePtr = std::shared_ptr<Context>;
-using ContextWeakPtr = std::weak_ptr<const Context>;
-using ContextWeakMutablePtr = std::weak_ptr<Context>;
+/// TODO: in the first part of refactoring all the context pointers are non-const.
+using ContextPtr = std::shared_ptr<Context>;
+using ContextConstPtr = std::shared_ptr<const Context>;
+using ContextWeakPtr = std::weak_ptr<Context>;
+using ContextWeakConstPtr = std::weak_ptr<const Context>;
 
 template <class Shared = ContextPtr>
 struct WithContextImpl
@@ -48,7 +49,6 @@ protected:
 };
 
 using WithContext = WithContextImpl<>;
-using WithConstContext = WithContext; /// For compatibility. Use WithContext.
-using WithMutableContext = WithContextImpl<ContextMutablePtr>;
+using WithConstContext = WithContextImpl<ContextConstPtr>;
 
 }
