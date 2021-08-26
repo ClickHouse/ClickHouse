@@ -48,6 +48,7 @@ struct AggregateFunctionSequenceMatchData final
 
     bool sorted = true;
     PODArrayWithStackMemory<TimestampEvents, 64> events_list;
+    /// sequenceMatch conditions met at least once in events_list
     std::bitset<max_events> conditions_met;
 
     void add(const Timestamp timestamp, const Events & events)
@@ -599,6 +600,7 @@ private:
 protected:
     /// `True` if the parsed pattern contains time assertions (?t...), `false` otherwise.
     bool pattern_has_time;
+    /// sequenceMatch conditions met at least once in the pattern
     std::bitset<max_events> conditions_in_pattern;
 
 private:
