@@ -8,7 +8,7 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
+clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], user_configs=['configs/users.xml'], with_mysql=True)
 
 
 @pytest.fixture(scope="module")
@@ -232,7 +232,7 @@ uint16_values = [0, 1, 65535]
 int8_values = [0, 1, -1, 127, -128]
 uint8_values = [0, 1, 255]
 # string_values = ["'ClickHouse'", 'NULL']
-string_values = ["'ClickHouse'"] 
+string_values = ["'ClickHouse'"]
 
 
 decimal_values = [0, 0.123, 0.4, 5.67, 8.91011, 123456789.123, -0.123, -0.4, -5.67, -8.91011, -123456789.123]
@@ -319,7 +319,8 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
     )
 
     clickhouse_query_settings = dict(
-        mysql_datatypes_support_level=setting_mysql_datatypes_support_level
+        mysql_datatypes_support_level=setting_mysql_datatypes_support_level,
+        output_format_decimal_trailing_zeros=1
     )
 
     def execute_query(node, query, **kwargs):
@@ -403,3 +404,26 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
             execute_query(clickhouse_node,
                           "SELECT value FROM mysql('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
                           settings=clickhouse_query_settings)
+
+
+def test_clickhouse_mysql_no_connection(started_cluster):
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query('CREATE TABLE `test_database`.`test_table` ( `i``d` int(11) NOT NULL, PRIMARY KEY (`i``d`)) ENGINE=InnoDB;')
+
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', test_database, 'root', 'clickhouse')")
+        clickhouse_node.query("INSERT INTO `test_database`.`test_table`(`i``d`) select number from numbers(10000)")
+        assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '10000'
+
+        started_cluster.pause_container('mysql57');
+        result = clickhouse_node.query_and_get_error("SELECT count() FROM `test_database`.`test_table`")
+        assert('Exception: Connections to all replicas failed' in result)
+
+        started_cluster.unpause_container('mysql57');
+        result = clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`")
+        assert(result.strip() == '10000')
+
+        started_cluster.pause_container('mysql57');
+        clickhouse_node.query("DROP DATABASE test_database")
+        assert 'test_database' not in clickhouse_node.query('SHOW DATABASES')
+        started_cluster.unpause_container('mysql57');

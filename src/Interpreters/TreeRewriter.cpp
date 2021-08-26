@@ -14,6 +14,7 @@
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/UserDefinedFunctionsVisitor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
@@ -976,7 +977,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns
-    if (settings.optimize_respect_aliases && result.metadata_snapshot)
+    bool is_initiator = getContext()->getClientInfo().distributed_depth == 0;
+    if (settings.optimize_respect_aliases && result.metadata_snapshot && is_initiator)
     {
         /// If query is changed, we need to redo some work to correct name resolution.
         if (replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.array_join_result_to_source, getContext()))
@@ -1044,6 +1046,9 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases)
 {
+    UserDefinedFunctionsVisitor::Data data_user_defined_functions_visitor;
+    UserDefinedFunctionsVisitor(data_user_defined_functions_visitor).visit(query);
+
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
 

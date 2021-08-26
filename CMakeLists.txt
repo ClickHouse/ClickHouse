@@ -45,6 +45,7 @@ include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
 include (cmake/analysis.cmake)
+include (cmake/git_status.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -126,12 +127,13 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-# Implies ${WITH_COVERAGE}
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
 
 if (ENABLE_FUZZING)
+    # Also set WITH_COVERAGE=1 for better fuzzing process
+    # By default this is disabled, because fuzzers are built in CI with the clickhouse itself.
+    # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
-    set (WITH_COVERAGE ON)
     set (FUZZER "libfuzzer")
 endif()
 
@@ -395,9 +397,10 @@ endif ()
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-# We recommend avoiding this mode for production builds because we can't guarantee all needed libraries exist in your
-# system.
+# We recommend avoiding this mode for production builds because we can't guarantee
+# all needed libraries exist in your system.
 # This mode exists for enthusiastic developers who are searching for trouble.
+# The whole idea of using unknown version of libraries from the OS distribution is deeply flawed.
 # Useful for maintainers of OS packages.
 option (UNBUNDLED "Use system libraries instead of ones in contrib/" OFF)
 
@@ -592,7 +595,23 @@ macro (add_executable target)
         # disabled for TSAN and gcc since libtsan.a provides overrides too
         if (TARGET clickhouse_new_delete)
             # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
+        endif()
+
+        # In case of static jemalloc, because zone_register() is located in zone.c and
+        # is never used outside (it is declared as constructor) it is omitted
+        # by the linker, and so jemalloc will not be registered as system
+        # allocator under osx [1], and clickhouse will SIGSEGV.
+        #
+        #   [1]: https://github.com/jemalloc/jemalloc/issues/708
+        #
+        # About symbol name:
+        # - _zone_register not zone_register due to Mach-O binary format,
+        # - _je_zone_register due to JEMALLOC_PRIVATE_NAMESPACE=je_ under OS X.
+        # - but jemalloc-cmake does not run private_namespace.sh
+        #   so symbol name should be _zone_register
+        if (ENABLE_JEMALLOC AND MAKE_STATIC_LIBRARIES AND OS_DARWIN)
+            set_property(TARGET ${target} APPEND PROPERTY LINK_OPTIONS -u_zone_register)
         endif()
     endif()
 endmacro()
