@@ -61,12 +61,23 @@ private:
         std::shared_ptr<WriteBuffer> out_maybe_delayed_and_compressed;
 
         /// A queue with internal logs that will be passed to client
-        InternalTextLogsQueuePtr logs_queue;
+        InternalTextLogsQueuePtr logs_queue = nullptr;
+        /// Using multipart
+        bool multipart = false;
+        /// Multipart boundary
+        String boundary = "";
 
         inline bool hasDelayed() const
         {
             return out_maybe_delayed_and_compressed != out_maybe_compressed;
         }
+
+        void multipart_setup(HTTPServerResponse & response);
+        void multipart_add_form_boundary();
+        void multipart_add_form_closing_boundary();
+        void multipart_add_data_headers(const std::string & content_type);
+        void multipart_add_logs();
+        void multipart_add_error(const std::string & s);
     };
 
     IServer & server;

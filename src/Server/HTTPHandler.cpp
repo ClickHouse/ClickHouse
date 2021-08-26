@@ -32,6 +32,8 @@
 #include <Common/typeid_cast.h>
 #include <common/getFQDNOrHostName.h>
 #include <common/scope_guard.h>
+#include <Common/randomSeed.h>
+#include <pcg_random.hpp>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -433,6 +435,142 @@ const std::string & getLogPriorityName(int priority)
     return priorities[priority];
 }
 
+// Use only alphanumeric values to avoid including quotes and other implementation limitations (not supporting ',' for example)
+std::string get_random_boundary()
+{
+    const size_t length = 60;
+    pcg64_fast rng(randomSeed());
+    String output;
+    output.resize(length);
+
+    static_assert(length % 4 == 0);
+    static const String alphanum = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+    for (size_t pos = 0; pos < length; pos += 4)
+    {
+        UInt64 rand = rng();
+
+        UInt16 rand1 = rand % alphanum.size();
+        UInt16 rand2 = (rand >> 16) % alphanum.size();
+        UInt16 rand3 = (rand >> 32) % alphanum.size();
+        UInt16 rand4 = (rand >> 48) % alphanum.size();
+
+        output[pos + 0] = alphanum[rand1];
+        output[pos + 1] = alphanum[rand2];
+        output[pos + 2] = alphanum[rand3];
+        output[pos + 3] = alphanum[rand4];
+    }
+
+    return output;
+}
+
+void HTTPHandler::Output::multipart_setup(HTTPServerResponse & response)
+{
+    multipart = true;
+    boundary = get_random_boundary();
+    response.add("MIME-Version", "1.0");
+    response.setContentType("multipart/form-data; boundary=\"" + boundary + "\"");
+}
+
+void HTTPHandler::Output::multipart_add_form_boundary()
+{
+    std::string boundary_str = "\r\n--" + boundary + "\r\n";
+    writeString(boundary_str, *out_maybe_delayed_and_compressed);
+}
+
+void HTTPHandler::Output::multipart_add_form_closing_boundary()
+{
+    std::string boundary_str = "\r\n--" + boundary + "--\r\n";
+    writeString(boundary_str, *out_maybe_delayed_and_compressed);
+}
+
+void HTTPHandler::Output::multipart_add_data_headers(const std::string & content_type)
+{
+    multipart_add_form_boundary();
+    std::string form_content_name = "Content-Disposition: form-data; name=\"data\"\r\n";
+    std::string form_content_type = "Content-Type: " + content_type + "\r\n\r\n";
+
+    writeString(form_content_name, *out_maybe_delayed_and_compressed);
+    writeString(form_content_type, *out_maybe_delayed_and_compressed);
+}
+
+void HTTPHandler::Output::multipart_add_logs()
+{
+    if (multipart && logs_queue && !logs_queue->empty())
+    {
+        auto & wb = *out_maybe_delayed_and_compressed;
+
+        multipart_add_form_boundary();
+        std::string form_content_name = "Content-Disposition: form-data; name=\"logs\"\r\n";
+        std::string form_content_type = "Content-Type: text/plain; charset=UTF-8\r\n\r\n";
+        writeString(form_content_name, wb);
+        writeString(form_content_type, wb);
+
+        /// Read logs_queue and append it here
+        MutableColumns columns;
+        while (logs_queue->tryPop(columns))
+        {
+            assert(columns.size() == 8);
+            assert(columns[0]->getName() == "event_time");
+            assert(columns[1]->getName() == "event_time_microseconds");
+            assert(columns[2]->getName() == "host_name");
+            assert(columns[3]->getName() == "query_id");
+            assert(columns[4]->getName() == "thread_id");
+            assert(columns[5]->getName() == "priority");
+            assert(columns[6]->getName() == "source");
+            assert(columns[7]->getName() == "text");
+            UInt32 event_time = columns[0]->operator[](0).get<UInt32>();
+            UInt32 time_microseconds = columns[1]->operator[](0).get<UInt32>();
+            String host_name = columns[2]->operator[](0).get<String>();
+            String query_id = columns[3]->operator[](0).get<String>();
+            UInt64 thread_id = columns[4]->operator[](0).get<UInt64>();
+            Int8 priority = columns[5]->operator[](0).get<Int8>();
+            String source = columns[6]->operator[](0).get<String>();
+            String text = columns[7]->operator[](0).get<String>();
+
+            DB::writeDateTimeText<'.', ':'>(event_time, wb);
+            DB::writeChar('.', wb);
+            DB::writeChar('0' + ((time_microseconds / 100000) % 10), wb);
+            DB::writeChar('0' + ((time_microseconds / 10000) % 10), wb);
+            DB::writeChar('0' + ((time_microseconds / 1000) % 10), wb);
+            DB::writeChar('0' + ((time_microseconds / 100) % 10), wb);
+            DB::writeChar('0' + ((time_microseconds / 10) % 10), wb);
+            DB::writeChar('0' + ((time_microseconds / 1) % 10), wb);
+
+            writeCString(" [ ", wb);
+            DB::writeIntText(thread_id, wb);
+            writeCString(" ] ", wb);
+
+            writeCString("{", wb);
+            DB::writeString(query_id, wb);
+            writeCString("} ", wb);
+
+            writeCString("<", wb);
+            DB::writeString(getLogPriorityName(priority), wb);
+            writeCString("> ", wb);
+
+            DB::writeString(source, wb);
+            writeCString(": ", wb);
+            DB::writeString(text, wb);
+            writeCString("\n", wb);
+        }
+    }
+}
+
+void HTTPHandler::Output::multipart_add_error(const std::string & s)
+{
+    auto & wb = *out_maybe_delayed_and_compressed;
+
+    multipart_add_form_boundary();
+    std::string form_content_name = "Content-Disposition: form-data; name=\"error\"\r\n";
+    std::string form_content_type = "Content-Type: text/plain; charset=UTF-8\r\n\r\n";
+    writeString(form_content_name, wb);
+    writeString(form_content_type, wb);
+
+    writeString(s, wb);
+}
+
+
 void HTTPHandler::processQuery(
     HTTPServerRequest & request,
     HTMLForm & params,
@@ -745,6 +883,11 @@ void HTTPHandler::processQuery(
         });
     }
 
+    if (settings.http_multipart_response)
+    {
+        used_output.multipart_setup(response);
+    }
+
     customizeContext(request, context);
 
     query_scope.emplace(context);
@@ -752,14 +895,16 @@ void HTTPHandler::processQuery(
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
-            response.setContentType(content_type);
             response.add("X-ClickHouse-Query-Id", current_query_id);
             response.add("X-ClickHouse-Format", format);
             response.add("X-ClickHouse-Timezone", timezone);
 
-            if (settings.http_multipart_response)
+            if (!settings.http_multipart_response)
             {
-                /* TODO: Check that this works with query settings or document it */
+                response.setContentType(content_type);
+            }
+            else
+            {
                 if (settings.send_logs_level != LogsLevel::none)
                 {
                     const auto client_logs_level = settings.send_logs_level;
@@ -768,85 +913,15 @@ void HTTPHandler::processQuery(
                     CurrentThread::attachInternalTextLogsQueue(used_output.logs_queue, client_logs_level);
                 }
 
-                // TODO: Check if doing this "boundary" is ok and won't conflict with the output (which is very much possible)
-                // Maybe add some randomness to the boundary
-                response.setContentType("multipart/form-data;boundary=\"boundary\"");
-                std::string boundary = "\r\n--boundary\r\n";
-                std::string form_content_name = "Content-Disposition: form-data; name=\"data\"\r\n";
-                std::string form_content_type = "Content-Type: " + content_type + "\r\n\r\n";
-                writeString(boundary, *used_output.out_maybe_delayed_and_compressed);
-                writeString(form_content_name, *used_output.out_maybe_delayed_and_compressed);
-                writeString(form_content_type, *used_output.out_maybe_delayed_and_compressed);
+                used_output.multipart_add_data_headers(content_type);
             }
         }
     );
 
-    /// Set logs
-    if (settings.http_multipart_response && used_output.logs_queue && !used_output.logs_queue->empty())
+    if (used_output.multipart)
     {
-        auto & wb = *used_output.out_maybe_delayed_and_compressed;
-        std::string boundary = "--boundary\r\n";
-        std::string form_content_name = "Content-Disposition: form-data; name=\"logs\"\r\n";
-        std::string form_content_type = "Content-Type: text/plain; charset=utf-8\r\n\r\n";
-        writeString(boundary, wb);
-        writeString(form_content_name, wb);
-        writeString(form_content_type, wb);
-
-        /// Read logs_queue and append it here
-        MutableColumns columns;
-        while (used_output.logs_queue->tryPop(columns))
-        {
-            assert(columns.size() == 8);
-            assert(columns[0]->getName() == "event_time");
-            assert(columns[1]->getName() == "event_time_microseconds");
-            assert(columns[2]->getName() == "host_name");
-            assert(columns[3]->getName() == "query_id");
-            assert(columns[4]->getName() == "thread_id");
-            assert(columns[5]->getName() == "priority");
-            assert(columns[6]->getName() == "source");
-            assert(columns[7]->getName() == "text");
-            UInt32 event_time = columns[0]->operator[](0).get<UInt32>();
-            UInt32 time_microseconds = columns[1]->operator[](0).get<UInt32>();
-            String host_name = columns[2]->operator[](0).get<String>();
-            String query_id = columns[3]->operator[](0).get<String>();
-            UInt64 thread_id = columns[4]->operator[](0).get<UInt64>();
-            Int8 priority = columns[5]->operator[](0).get<Int8>();
-            String source = columns[6]->operator[](0).get<String>();
-            String text = columns[7]->operator[](0).get<String>();
-
-            DB::writeDateTimeText(event_time, wb);
-            DB::writeChar('.', wb);
-            DB::writeChar('0' + ((time_microseconds / 100000) % 10), wb);
-            DB::writeChar('0' + ((time_microseconds / 10000) % 10), wb);
-            DB::writeChar('0' + ((time_microseconds / 1000) % 10), wb);
-            DB::writeChar('0' + ((time_microseconds / 100) % 10), wb);
-            DB::writeChar('0' + ((time_microseconds / 10) % 10), wb);
-            DB::writeChar('0' + ((time_microseconds / 1) % 10), wb);
-
-            writeCString(" [ ", wb);
-            DB::writeIntText(thread_id, wb);
-            writeCString(" ] ", wb);
-
-            writeCString("{", wb);
-            DB::writeString(query_id, wb);
-            writeCString("} ", wb);
-
-            writeCString("<", wb);
-            DB::writeString(getLogPriorityName(priority), wb);
-            writeCString("> ", wb);
-
-            DB::writeString(source, wb);
-            writeCString(": ", wb);
-            DB::writeString(text, wb);
-            writeCString("\n", wb);
-        }
-    }
-
-    if (settings.http_multipart_response)
-    {
-        auto & wb = *used_output.out_maybe_delayed_and_compressed;
-        std::string boundary = "--boundary--\r\n";
-        DB::writeString(boundary, wb);
+        used_output.multipart_add_logs();
+        used_output.multipart_add_form_closing_boundary();
     }
 
     if (used_output.hasDelayed())
@@ -862,8 +937,6 @@ void HTTPHandler::processQuery(
 void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 {
-    // TODO: If multipart, add the logs as a new form
-
     try
     {
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
@@ -887,6 +960,15 @@ void HTTPHandler::trySendExceptionToClient(
         else
         {
             response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
+        }
+
+        if (used_output.multipart)
+        {
+            used_output.multipart_add_logs();
+            used_output.multipart_add_error(s);
+            used_output.multipart_add_form_closing_boundary();
+            used_output.out->finalize();
+            return;
         }
 
         if (!response.sent() && !used_output.out_maybe_compressed)
