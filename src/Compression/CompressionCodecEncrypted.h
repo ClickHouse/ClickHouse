@@ -115,6 +115,7 @@ private:
     static constexpr size_t key_id_max_size = 8; /// Max size of varint.
     EncryptionMethod encryption_method;
 };
+
 }
 
 #endif /* USE_SSL && USE_INTERNAL_SSL_LIBRARY */
