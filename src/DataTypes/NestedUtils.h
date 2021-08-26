@@ -28,9 +28,6 @@ namespace Nested
 
     /// Check that sizes of arrays - elements of nested data structures - are equal.
     void validateArraySizes(const Block & block);
-
-    /// Get all nested tables names from a block.
-    std::unordered_set<String> getAllTableNames(const Block & block);
 }
 
 }

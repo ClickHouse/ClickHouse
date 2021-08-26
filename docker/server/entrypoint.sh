@@ -164,10 +164,6 @@ fi
 
 # if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
-    # Watchdog is launched by default, but does not send SIGINT to the main process,
-    # so the container can't be finished by ctrl+c
-    CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
-    export CLICKHOUSE_WATCHDOG_ENABLE
     exec $gosu /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 

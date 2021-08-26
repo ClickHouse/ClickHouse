@@ -1,12 +1,8 @@
 #pragma once
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#endif
-
+#include "config_formats.h"
 #if USE_ARROW
 
 #include <Processors/Formats/IInputFormat.h>
-#include <Formats/FormatSettings.h>
 
 namespace arrow { class RecordBatchReader; }
 namespace arrow::ipc { class RecordBatchFileReader; }
@@ -20,7 +16,7 @@ class ArrowColumnToCHColumn;
 class ArrowBlockInputFormat : public IInputFormat
 {
 public:
-    ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_);
+    ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_);
 
     void resetParser() override;
 
@@ -41,8 +37,6 @@ private:
 
     int record_batch_total = 0;
     int record_batch_current = 0;
-
-    const FormatSettings format_settings;
 
     void prepareReader();
 };

@@ -143,7 +143,7 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
     return loadTable(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
     Strings filtered_tables;
@@ -304,7 +304,7 @@ void DatabaseLazy::clearExpiredTables() const
 }
 
 
-DatabaseLazyIterator::DatabaseLazyIterator(const DatabaseLazy & database_, Strings && table_names_)
+DatabaseLazyIterator::DatabaseLazyIterator(DatabaseLazy & database_, Strings && table_names_)
     : IDatabaseTablesIterator(database_.database_name)
     , database(database_)
     , table_names(std::move(table_names_))

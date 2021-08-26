@@ -1,7 +1,4 @@
 #include "Connection.h"
-
-#if USE_LIBPQXX
-
 #include <common/logger_useful.h>
 
 namespace postgres
@@ -75,5 +72,3 @@ void Connection::connect()
         updateConnection();
 }
 }
-
-#endif
