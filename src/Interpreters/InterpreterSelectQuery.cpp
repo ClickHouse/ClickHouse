@@ -1178,13 +1178,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 }
             }
 
-            if (!query_info.projection)
-            {
-                executeFilterWithSkipIndex(query_plan);
-
-                if (expressions.hasWhere())
-                    executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
-            }
+            if (!query_info.projection && expressions.hasWhere())
+                executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
 
             if (expressions.need_aggregate)
             {

@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include "../../../contrib/magic_enum/include/magic_enum.hpp" //FIXME
 
 #include <shared_mutex>
 
@@ -229,12 +230,8 @@ public:
         DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
     };
 
-    static constexpr auto all_part_states =
-    {
-        State::Temporary, State::PreCommitted, State::Committed, State::Outdated, State::Deleting,
-        State::DeleteOnDestroy
-    };
-
+    static constexpr auto all_part_states = magic_enum::enum_values<State>();
+    
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 

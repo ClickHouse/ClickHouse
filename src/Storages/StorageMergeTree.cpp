@@ -508,14 +508,14 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 }
 
 
-void StorageMergeTree::pointDelete(const ASTPtr & predicate, ContextPtr context)
+void StorageMergeTree::pointDelete(const ASTPtr & predicate, ContextPtr _context)
 {
     // Point deletes should be consistent with ALTER DELETEs, so
     // we process them as ordinary mutations.
     // Code processing mutation checks if MutationCommands looks like we created it here and
     // dispatches work for DELETE on check success.
     // NOTE: .ast is empty for our command
-    mutate({{.type=MutationCommand::DELETE, .predicate = predicate}}, context);
+    mutate({{.type=MutationCommand::DELETE, .predicate = predicate}}, _context);
 }
 
 namespace

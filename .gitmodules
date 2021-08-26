@@ -246,3 +246,6 @@
 [submodule "contrib/bzip2"]
 	path = contrib/bzip2
 	url = https://github.com/ClickHouse-Extras/bzip2.git
+[submodule "contrib/magic_enum"]
+	path = contrib/magic_enum
+	url = https://github.com/Neargye/magic_enum

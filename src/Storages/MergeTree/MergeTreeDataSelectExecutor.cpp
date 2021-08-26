@@ -1119,6 +1119,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     else if (parts.empty())
         return std::make_unique<QueryPlan>();
 
+    // TODO Maybe restrict @c parts here
+
     Names real_column_names;
     Names virt_column_names;
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
