@@ -26,6 +26,12 @@ enum class SelectPartsDecision
     NOTHING_TO_MERGE = 2,
 };
 
+enum class ExecuteTTLType
+{
+    NONE = 0,
+    NORMAL = 1,
+    RECALCULATE= 2,
+};
 
 /** Can select parts for background processes and do them.
  * Currently helps with merges, mutations and moves
@@ -148,7 +154,7 @@ private:
         const MutationCommands & commands_for_removes);
 
     static bool shouldExecuteTTL(
-        const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies, const MutationCommands & commands);
+        const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies);
 
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.

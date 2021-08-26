@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/MergeTask.h>
 
 #include <DataStreams/TTLBlockInputStream.h>
+#include <DataStreams/TTLCalcInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
@@ -759,23 +760,23 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
 
 
 
-bool MergeTreeDataMergerMutator::shouldExecuteTTL(
-    const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies, const MutationCommands & commands)
+ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies)
 {
     if (!metadata_snapshot->hasAnyTTL())
-        return false;
+        return ExecuteTTLType::NONE;
 
-    for (const auto & command : commands)
-        if (command.type == MutationCommand::MATERIALIZE_TTL)
-            return true;
+    bool has_ttl_expression = false;
 
     for (const auto & dependency : dependencies)
-        if (dependency.kind == ColumnDependency::TTL_EXPRESSION || dependency.kind == ColumnDependency::TTL_TARGET)
-            return true;
+    {
+        if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
+            has_ttl_expression = true;
 
-    return false;
+        if (dependency.kind == ColumnDependency::TTL_TARGET)
+            return ExecuteTTLType::NORMAL;
+    }
+    return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
-
 
 
 }

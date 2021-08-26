@@ -183,7 +183,6 @@ private:
 
     size_t sum_input_rows_upper_bound{0};
 
-    bool need_remove_expired_values{false};
     bool force_ttl{false};
 
     DiskPtr tmp_disk{nullptr};

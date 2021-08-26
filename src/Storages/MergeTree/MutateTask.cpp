@@ -426,7 +426,7 @@ static NameToNameVector collectFilesForRenames(
 void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
-    bool need_remove_expired_values,
+    ExecuteTTLType execute_ttl_type,
     const CompressionCodecPtr & codec)
 {
     auto disk = new_data_part->volume->getDisk();
@@ -440,7 +440,7 @@ void finalizeMutatedPart(
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
     }
 
-    if (need_remove_expired_values)
+    if (execute_ttl_type != ExecuteTTLType::NONE)
     {
         /// Write a file with ttl infos in json format.
         auto out_ttl = disk->writeFile(fs::path(new_data_part->getFullRelativePath()) / "ttl.txt", 4096);
@@ -546,7 +546,7 @@ struct MutationContext
     NameToNameVector files_to_rename;
 
     bool need_sync;
-    bool need_remove_expired_values;
+    ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
@@ -947,8 +947,11 @@ private:
             ctx->mutating_stream = std::make_shared<MaterializingBlockInputStream>(
                 std::make_shared<ExpressionBlockInputStream>(ctx->mutating_stream, ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot)));
 
-        if (ctx->need_remove_expired_values)
+        if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
             ctx->mutating_stream = std::make_shared<TTLBlockInputStream>(ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+
+        if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
+            ctx->mutating_stream = std::make_shared<TTLCalcInputStream>(ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
@@ -1038,7 +1041,7 @@ private:
 
     void prepare()
     {
-        if (ctx->need_remove_expired_values)
+        if (execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
         ctx->disk->createDirectories(ctx->new_part_tmp_path);
@@ -1090,9 +1093,11 @@ private:
             if (ctx->mutating_stream == nullptr)
                 throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-            if (ctx->need_remove_expired_values)
-                ctx->mutating_stream = std::make_shared<TTLBlockInputStream>(
-                    ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+            if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
+                ctx->mutating_stream = std::make_shared<TTLBlockInputStream>(ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+
+            if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
+                ctx->mutating_stream = std::make_shared<TTLCalcInputStream>(ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
 
             IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets; // ??
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
@@ -1142,7 +1147,7 @@ private:
             }
         }
 
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->need_remove_expired_values, ctx->compression_codec);
+        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec);
     }
 
 
@@ -1240,8 +1245,8 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
     context_for_reading->setSetting("max_threads", 1);
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
-    context_for_reading->setSetting("force_index_by_date", Field(0));
-    context_for_reading->setSetting("force_primary_key", Field(0));
+    context_for_reading->setSetting("force_index_by_date", false);
+    context_for_reading->setSetting("force_primary_key", false);
 
     for (const auto & command : *ctx->commands)
     {
@@ -1303,11 +1308,10 @@ bool MutateTask::prepare()
 
     const auto data_settings = ctx->data->  getSettings();
     ctx->need_sync = needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk(), *data_settings);
-    ctx->need_remove_expired_values = false;
+    ctx->execute_ttl_type = ExecuteTTLType::NONE;
 
-    if (ctx->mutating_stream && MergeTreeDataMergerMutator::shouldExecuteTTL(
-        ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies(), ctx->commands_for_part))
-        ctx->need_remove_expired_values = true;
+    if (ctx->mutating_stream)
+        execute_ttl_type = MergeTreeDataMergerMutator::shouldExecuteTTL(metadata_snapshot, interpreter->getColumnDependencies());
 
 
     /// All columns from part are changed and may be some more that were missing before in part

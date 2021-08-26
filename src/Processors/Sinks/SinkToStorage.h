@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/// Sink which is returned from Storage::read.
+/// Sink which is returned from Storage::write.
 /// The same as ISink, but also can hold table lock.
 class SinkToStorage : public ISink
 {
