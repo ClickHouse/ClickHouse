@@ -6,7 +6,6 @@
 
 namespace DB
 {
-struct Settings;
 
 class AggregateFunctionFactory;
 void registerAggregateFunctionAvg(AggregateFunctionFactory &);
@@ -48,8 +47,6 @@ void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory &);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory &);
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
-void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory &);
-void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -65,7 +62,6 @@ void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFact
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
 
-void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
 
 void registerAggregateFunctions()
 {
@@ -111,14 +107,10 @@ void registerAggregateFunctions()
         registerAggregateFunctionAggThrow(factory);
         registerAggregateFunctionRankCorrelation(factory);
         registerAggregateFunctionMannWhitney(factory);
-        registerAggregateFunctionSequenceNextNode(factory);
         registerAggregateFunctionWelchTTest(factory);
         registerAggregateFunctionStudentTTest(factory);
-        registerAggregateFunctionSingleValueOrNull(factory);
 
         registerWindowFunctions(factory);
-
-        registerAggregateFunctionIntervalLengthSum(factory);
     }
 
     {

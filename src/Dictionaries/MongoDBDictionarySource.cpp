@@ -50,7 +50,8 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <IO/WriteHelpers.h>
-#include <DataStreams/MongoDBSource.h>
+#include <ext/enumerate.h>
+#include <DataStreams/MongoDBBlockInputStream.h>
 
 
 namespace DB
@@ -142,12 +143,12 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
-Pipe MongoDBDictionarySource::loadAll()
+BlockInputStreamPtr MongoDBDictionarySource::loadAll()
 {
-    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(db, collection, sample_block), sample_block, max_block_size));
+    return std::make_shared<MongoDBBlockInputStream>(connection, createCursor(db, collection, sample_block), sample_block, max_block_size);
 }
 
-Pipe MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -164,11 +165,11 @@ Pipe MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 
     cursor->query().selector().addNewDocument(dict_struct.id->name).add("$in", ids_array);
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
+    return std::make_shared<MongoDBBlockInputStream>(connection, std::move(cursor), sample_block, max_block_size);
 }
 
 
-Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
@@ -181,12 +182,9 @@ Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::v
     {
         auto & key = keys_array->addNewDocument(DB::toString(row_idx));
 
-        const auto & key_attributes = *dict_struct.key;
-        for (size_t attribute_index = 0; attribute_index < key_attributes.size(); ++attribute_index)
+        for (const auto attr : ext::enumerate(*dict_struct.key))
         {
-            const auto & key_attribute = key_attributes[attribute_index];
-
-            switch (key_attribute.underlying_type)
+            switch (attr.second.underlying_type)
             {
                 case AttributeUnderlyingType::UInt8:
                 case AttributeUnderlyingType::UInt16:
@@ -197,27 +195,27 @@ Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::v
                 case AttributeUnderlyingType::Int32:
                 case AttributeUnderlyingType::Int64:
                 {
-                    key.add(key_attribute.name, Int32(key_columns[attribute_index]->get64(row_idx)));
+                    key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
                     break;
                 }
                 case AttributeUnderlyingType::Float32:
                 case AttributeUnderlyingType::Float64:
                 {
-                    key.add(key_attribute.name, key_columns[attribute_index]->getFloat64(row_idx));
+                    key.add(attr.second.name, key_columns[attr.first]->getFloat64(row_idx));
                     break;
                 }
                 case AttributeUnderlyingType::String:
                 {
-                    String loaded_str(get<String>((*key_columns[attribute_index])[row_idx]));
+                    String loaded_str(get<String>((*key_columns[attr.first])[row_idx]));
                     /// Convert string to ObjectID
-                    if (key_attribute.is_object_id)
+                    if (attr.second.is_object_id)
                     {
                         Poco::MongoDB::ObjectId::Ptr loaded_id(new Poco::MongoDB::ObjectId(loaded_str));
-                        key.add(key_attribute.name, loaded_id);
+                        key.add(attr.second.name, loaded_id);
                     }
                     else
                     {
-                        key.add(key_attribute.name, loaded_str);
+                        key.add(attr.second.name, loaded_str);
                     }
                     break;
                 }
@@ -230,7 +228,7 @@ Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::v
     /// If more than one key we should use $or
     cursor->query().selector().add("$or", keys_array);
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
+    return std::make_shared<MongoDBBlockInputStream>(connection, std::move(cursor), sample_block, max_block_size);
 }
 
 std::string MongoDBDictionarySource::toString() const

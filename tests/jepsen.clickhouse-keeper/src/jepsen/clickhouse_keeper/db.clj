@@ -68,7 +68,6 @@
   (do
     (c/exec :mkdir :-p common-prefix)
     (c/exec :mkdir :-p data-dir)
-    (c/exec :mkdir :-p coordination-data-dir)
     (c/exec :mkdir :-p logs-dir)
     (c/exec :mkdir :-p configs-dir)
     (c/exec :mkdir :-p sub-configs-dir)
@@ -90,7 +89,10 @@
 
 (defn install-configs
   [test node]
-  (c/exec :echo (cluster-config test node (slurp (io/resource "keeper_config.xml"))) :> (str configs-dir "/keeper_config.xml")))
+  (c/exec :echo (slurp (io/resource "config.xml")) :> (str configs-dir "/config.xml"))
+  (c/exec :echo (slurp (io/resource "users.xml")) :> (str configs-dir "/users.xml"))
+  (c/exec :echo (slurp (io/resource "listen.xml")) :> (str sub-configs-dir "/listen.xml"))
+  (c/exec :echo (cluster-config test node (slurp (io/resource "keeper_config.xml"))) :> (str sub-configs-dir "/keeper_config.xml")))
 
 (defn collect-traces
   [test node]
@@ -142,7 +144,7 @@
            (info node "Coordination files exists, going to compress")
            (c/cd data-dir
                  (c/exec :tar :czf "coordination.tar.gz" "coordination")))))
-      (let [common-logs [stderr-file (str logs-dir "/clickhouse-keeper.log") (str data-dir "/coordination.tar.gz")]
+      (let [common-logs [stderr-file (str logs-dir "/clickhouse-server.log") (str data-dir "/coordination.tar.gz")]
             gdb-log (str logs-dir "/gdb.log")]
         (if (cu/exists? (str logs-dir "/gdb.log"))
           (conj common-logs gdb-log)

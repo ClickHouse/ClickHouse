@@ -1,17 +1,17 @@
 #include <Interpreters/TableJoin.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <common/logger_useful.h>
 
+#include <Parsers/ASTExpressionList.h>
+
+#include <Core/Settings.h>
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Settings.h>
+
+#include <Common/StringUtils/StringUtils.h>
 
 #include <DataTypes/DataTypeNullable.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
-
-#include <common/logger_useful.h>
+#include <DataStreams/materializeBlock.h>
 
 
 namespace DB
@@ -132,8 +132,6 @@ ASTPtr TableJoin::leftKeysList() const
 {
     ASTPtr keys_list = std::make_shared<ASTExpressionList>();
     keys_list->children = key_asts_left;
-    if (ASTPtr extra_cond = joinConditionColumn(JoinTableSide::Left))
-        keys_list->children.push_back(extra_cond);
     return keys_list;
 }
 
@@ -142,8 +140,6 @@ ASTPtr TableJoin::rightKeysList() const
     ASTPtr keys_list = std::make_shared<ASTExpressionList>();
     if (hasOn())
         keys_list->children = key_asts_right;
-    if (ASTPtr extra_cond = joinConditionColumn(JoinTableSide::Right))
-        keys_list->children.push_back(extra_cond);
     return keys_list;
 }
 
@@ -160,12 +156,9 @@ NameSet TableJoin::requiredRightKeys() const
 {
     NameSet required;
     for (const auto & name : key_names_right)
-    {
-        auto rename = renamedRightColumnName(name);
         for (const auto & column : columns_added_by_join)
-            if (rename == column.name)
+            if (name == column.name)
                 required.insert(name);
-    }
     return required;
 }
 
@@ -178,6 +171,22 @@ NamesWithAliases TableJoin::getRequiredColumns(const Block & sample, const Names
             required_columns.insert(column);
 
     return getNamesWithAliases(required_columns);
+}
+
+void TableJoin::splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const
+{
+    block_others = materializeBlock(sample_block);
+
+    for (const String & column_name : key_names_right)
+    {
+        /// Extract right keys with correct keys order. There could be the same key names.
+        if (!block_keys.has(column_name))
+        {
+            auto & col = block_others.getByName(column_name);
+            block_keys.insert(col);
+            block_others.erase(column_name);
+        }
+    }
 }
 
 Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const
@@ -231,7 +240,20 @@ void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 
 void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability) const
 {
-    for (auto & col : names_and_types)
+    ColumnsWithTypeAndName columns;
+    for (auto & pair : names_and_types)
+        columns.emplace_back(nullptr, std::move(pair.type), std::move(pair.name));
+    names_and_types.clear();
+
+    addJoinedColumnsAndCorrectTypes(columns, correct_nullability);
+
+    for (auto & col : columns)
+        names_and_types.emplace_back(std::move(col.name), std::move(col.type));
+}
+
+void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns, bool correct_nullability) const
+{
+    for (auto & col : columns)
     {
         if (hasUsing())
         {
@@ -239,12 +261,17 @@ void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_ty
                 col.type = it->second;
         }
         if (correct_nullability && leftBecomeNullable(col.type))
-            col.type = JoinCommon::convertTypeToNullable(col.type);
+        {
+            /// No need to nullify constants
+            bool is_column_const = col.column && isColumnConst(*col.column);
+            if (!is_column_const)
+                col.type = JoinCommon::convertTypeToNullable(col.type);
+        }
     }
 
     /// Types in columns_added_by_join already converted and set nullable if needed
     for (const auto & col : columns_added_by_join)
-        names_and_types.emplace_back(col.name, col.type);
+        columns.emplace_back(nullptr, col.type, col.name);
 }
 
 bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
@@ -435,75 +462,6 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
             name = it->second;
     }
     return dag;
-}
-
-String TableJoin::renamedRightColumnName(const String & name) const
-{
-    if (const auto it = renames.find(name); it != renames.end())
-        return it->second;
-    return name;
-}
-
-void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
-{
-    LOG_TRACE(&Poco::Logger::get("TableJoin"), "Add join condition for {} table: {}", (is_left ? "left" : "right"), queryToString(ast));
-
-    if (is_left)
-        on_filter_condition_asts_left.push_back(ast);
-    else
-        on_filter_condition_asts_right.push_back(ast);
-}
-
-std::unordered_map<String, String> TableJoin::leftToRightKeyRemap() const
-{
-    std::unordered_map<String, String> left_to_right_key_remap;
-    if (hasUsing())
-    {
-        const auto & required_right_keys = requiredRightKeys();
-        for (size_t i = 0; i < key_names_left.size(); ++i)
-        {
-            const String & left_key_name = key_names_left[i];
-            const String & right_key_name = key_names_right[i];
-
-            if (!required_right_keys.contains(right_key_name))
-                left_to_right_key_remap[left_key_name] = right_key_name;
-        }
-    }
-    return left_to_right_key_remap;
-}
-
-/// Returns all conditions related to one table joined with 'and' function
-static ASTPtr buildJoinConditionColumn(const ASTs & on_filter_condition_asts)
-{
-    if (on_filter_condition_asts.empty())
-        return nullptr;
-
-    if (on_filter_condition_asts.size() == 1)
-        return on_filter_condition_asts[0];
-
-    auto function = std::make_shared<ASTFunction>();
-    function->name = "and";
-    function->arguments = std::make_shared<ASTExpressionList>();
-    function->children.push_back(function->arguments);
-    function->arguments->children = on_filter_condition_asts;
-    return function;
-}
-
-ASTPtr TableJoin::joinConditionColumn(JoinTableSide side) const
-{
-    if (side == JoinTableSide::Left)
-        return buildJoinConditionColumn(on_filter_condition_asts_left);
-    return buildJoinConditionColumn(on_filter_condition_asts_right);
-}
-
-std::pair<String, String> TableJoin::joinConditionColumnNames() const
-{
-    std::pair<String, String> res;
-    if (auto cond_ast = joinConditionColumn(JoinTableSide::Left))
-        res.first = cond_ast->getColumnName();
-    if (auto cond_ast = joinConditionColumn(JoinTableSide::Right))
-        res.second = cond_ast->getColumnName();
-    return res;
 }
 
 }
