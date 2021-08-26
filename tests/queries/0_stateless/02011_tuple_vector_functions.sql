@@ -14,3 +14,7 @@ SELECT scalarProduct(tuple(-1, 2, 3.002), tuple(2, 3.4, 4));
 SELECT L1Norm(tuple(-1,2.5,-3.6));
 SELECT L2Norm(tuple(1, 1));
 SELECT L2Norm(tuple(3, 4));
+
+SELECT max2(1, 1.5);
+SELECT min2(-1, -3);
+SELECT LinfNorm(tuple(1, -2.3, 1.7));

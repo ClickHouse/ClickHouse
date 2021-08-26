@@ -543,6 +543,106 @@ public:
     }
 };
 
+class FunctionLinfNorm : public TupleIFunction
+{
+public:
+    static constexpr auto name = "LinfNorm";
+
+    explicit FunctionLinfNorm(ContextPtr context_) : TupleIFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLinfNorm>(context_); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+                            getName(), arguments[0].type->getName());
+
+        const auto & cur_types = cur_tuple->getElements();
+
+        Columns cur_elements;
+        if (arguments[0].column)
+            cur_elements = getTupleElements(*arguments[0].column);
+
+        size_t tuple_size = cur_types.size();
+        if (tuple_size == 0)
+            return std::make_shared<DataTypeUInt8>();
+
+        auto abs = FunctionFactory::instance().get("abs", context);
+        auto max = FunctionFactory::instance().get("max2", context);
+        DataTypePtr res_type;
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            try
+            {
+                ColumnWithTypeAndName cur{cur_elements.empty() ? nullptr : cur_elements[i], cur_types[i], {}};
+                auto elem_abs = abs->build(ColumnsWithTypeAndName{cur});
+
+                if (i == 0)
+                {
+                    res_type = elem_abs->getResultType();
+                    continue;
+                }
+
+                ColumnWithTypeAndName left_type{res_type, {}};
+                ColumnWithTypeAndName right_type{elem_abs->getResultType(), {}};
+                auto max_elem = max->build({left_type, right_type});
+                res_type = max_elem->getResultType();
+            }
+            catch (DB::Exception & e)
+            {
+                e.addMessage("While executing function {} for tuple element {}", getName(), i);
+                throw;
+            }
+        }
+
+        return res_type;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+        const auto & cur_types = cur_tuple->getElements();
+        auto cur_elements = getTupleElements(*arguments[0].column);
+
+        size_t tuple_size = cur_elements.size();
+        if (tuple_size == 0)
+            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
+
+        auto abs = FunctionFactory::instance().get("abs", context);
+        auto max = FunctionFactory::instance().get("max2", context);
+        ColumnWithTypeAndName res;
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            ColumnWithTypeAndName cur{cur_elements[i], cur_types[i], {}};
+            auto elem_abs = abs->build(ColumnsWithTypeAndName{cur});
+
+            ColumnWithTypeAndName column;
+            column.type = elem_abs->getResultType();
+            column.column = elem_abs->execute({cur}, column.type, input_rows_count);
+
+            if (i == 0)
+            {
+                res = std::move(column);
+            }
+            else
+            {
+                auto max_elem = max->build({res, column});
+                auto res_type = max_elem->getResultType();
+                res.column = max_elem->execute({res, column}, res_type, input_rows_count);
+                res.type = res_type;
+            }
+        }
+
+        return res.column;
+    }
+};
+
 void registerVectorFunctions(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTuplePlus>();
@@ -561,7 +661,7 @@ void registerVectorFunctions(FunctionFactory & factory)
 
     factory.registerFunction<FunctionL1Norm>();
     factory.registerFunction<FunctionL2Norm>();
-    //factory.registerFunction<FunctionLinfNorm>();
+    factory.registerFunction<FunctionLinfNorm>();
     /*factory.registerFunction<FunctionL1Distance>();
     factory.registerFunction<FunctionL1Normalize>();
 
