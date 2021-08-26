@@ -114,7 +114,7 @@ FROM
 (
     SELECT
         1 AS id,
-        identity(_CAST(1, \'Nullable(UInt8)\')) AS subquery
+        identity(CAST(1, \'Nullable(UInt8)\')) AS subquery
     WHERE subquery = 1
 )
 WHERE subquery = 1

@@ -287,7 +287,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -696,8 +695,6 @@ struct JSONExtractTree
         {
             if (element.isString())
                 return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
-            else if (element.isNull())
-                return false;
             else
                 return JSONExtractRawImpl<JSONParser>::insertResultToColumn(dest, element, {});
         }
