@@ -177,32 +177,32 @@ KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_)
 
 using Undo = std::function<void()>;
 
-struct KeeperStorageRequest
+struct KeeperStorageRequestProcessor
 {
     Coordination::ZooKeeperRequestPtr zk_request;
 
-    explicit KeeperStorageRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
+    explicit KeeperStorageRequestProcessor(const Coordination::ZooKeeperRequestPtr & zk_request_)
         : zk_request(zk_request_)
     {}
     virtual std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t session_id) const = 0;
     virtual KeeperStorage::ResponsesForSessions processWatches(KeeperStorage::Watches & /*watches*/, KeeperStorage::Watches & /*list_watches*/) const { return {}; }
     virtual bool checkAuth(KeeperStorage & /*storage*/, int64_t /*session_id*/) const { return true; }
 
-    virtual ~KeeperStorageRequest() = default;
+    virtual ~KeeperStorageRequestProcessor() = default;
 };
 
-struct KeeperStorageHeartbeatRequest final : public KeeperStorageRequest
+struct KeeperStorageHeartbeatRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & /* storage */, int64_t /* zxid */, int64_t /* session_id */) const override
     {
         return {zk_request->makeResponse(), {}};
     }
 };
 
-struct KeeperStorageSyncRequest final : public KeeperStorageRequest
+struct KeeperStorageSyncRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & /* storage */, int64_t /* zxid */, int64_t /* session_id */) const override
     {
         auto response = zk_request->makeResponse();
@@ -212,9 +212,9 @@ struct KeeperStorageSyncRequest final : public KeeperStorageRequest
     }
 };
 
-struct KeeperStorageCreateRequest final : public KeeperStorageRequest
+struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
 
     KeeperStorage::ResponsesForSessions processWatches(KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches) const override
     {
@@ -363,7 +363,7 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
     }
 };
 
-struct KeeperStorageGetRequest final : public KeeperStorageRequest
+struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProcessor
 {
 
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
@@ -381,7 +381,7 @@ struct KeeperStorageGetRequest final : public KeeperStorageRequest
         return checkACL(Coordination::ACL::Read, node_acls, session_auths);
     }
 
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /* zxid */, int64_t /* session_id */) const override
     {
         auto & container = storage.container;
@@ -423,7 +423,7 @@ namespace
     }
 }
 
-struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
+struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestProcessor
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
@@ -440,7 +440,7 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
         return checkACL(Coordination::ACL::Delete, node_acls, session_auths);
     }
 
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t /*session_id*/) const override
     {
         auto & container = storage.container;
@@ -520,9 +520,9 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
     }
 };
 
-struct KeeperStorageExistsRequest final : public KeeperStorageRequest
+struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /* session_id */) const override
     {
         auto & container = storage.container;
@@ -546,7 +546,7 @@ struct KeeperStorageExistsRequest final : public KeeperStorageRequest
     }
 };
 
-struct KeeperStorageSetRequest final : public KeeperStorageRequest
+struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProcessor
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
@@ -563,7 +563,7 @@ struct KeeperStorageSetRequest final : public KeeperStorageRequest
         return checkACL(Coordination::ACL::Write, node_acls, session_auths);
     }
 
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t zxid, int64_t /* session_id */) const override
     {
         auto & container = storage.container;
@@ -624,7 +624,7 @@ struct KeeperStorageSetRequest final : public KeeperStorageRequest
     }
 };
 
-struct KeeperStorageListRequest final : public KeeperStorageRequest
+struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProcessor
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
@@ -641,7 +641,7 @@ struct KeeperStorageListRequest final : public KeeperStorageRequest
         return checkACL(Coordination::ACL::Read, node_acls, session_auths);
     }
 
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/) const override
     {
         auto & container = storage.container;
@@ -669,7 +669,7 @@ struct KeeperStorageListRequest final : public KeeperStorageRequest
     }
 };
 
-struct KeeperStorageCheckRequest final : public KeeperStorageRequest
+struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestProcessor
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
@@ -686,7 +686,7 @@ struct KeeperStorageCheckRequest final : public KeeperStorageRequest
         return checkACL(Coordination::ACL::Read, node_acls, session_auths);
     }
 
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/) const override
     {
         auto & container = storage.container;
@@ -713,7 +713,7 @@ struct KeeperStorageCheckRequest final : public KeeperStorageRequest
 };
 
 
-struct KeeperStorageSetACLRequest final : public KeeperStorageRequest
+struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestProcessor
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
@@ -730,7 +730,7 @@ struct KeeperStorageSetACLRequest final : public KeeperStorageRequest
         return checkACL(Coordination::ACL::Admin, node_acls, session_auths);
     }
 
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
 
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t session_id) const override
     {
@@ -777,7 +777,7 @@ struct KeeperStorageSetACLRequest final : public KeeperStorageRequest
     }
 };
 
-struct KeeperStorageGetACLRequest final : public KeeperStorageRequest
+struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestProcessor
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
@@ -794,7 +794,7 @@ struct KeeperStorageGetACLRequest final : public KeeperStorageRequest
         /// LOL, GetACL require more permissions, then SetACL...
         return checkACL(Coordination::ACL::Admin | Coordination::ACL::Read, node_acls, session_auths);
     }
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
 
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t /*session_id*/) const override
     {
@@ -817,7 +817,7 @@ struct KeeperStorageGetACLRequest final : public KeeperStorageRequest
     }
 };
 
-struct KeeperStorageMultiRequest final : public KeeperStorageRequest
+struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestProcessor
 {
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
@@ -827,9 +827,9 @@ struct KeeperStorageMultiRequest final : public KeeperStorageRequest
         return true;
     }
 
-    std::vector<KeeperStorageRequestPtr> concrete_requests;
-    explicit KeeperStorageMultiRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
-        : KeeperStorageRequest(zk_request_)
+    std::vector<KeeperStorageRequestProcessorPtr> concrete_requests;
+    explicit KeeperStorageMultiRequestProcessor(const Coordination::ZooKeeperRequestPtr & zk_request_)
+        : KeeperStorageRequestProcessor(zk_request_)
     {
         Coordination::ZooKeeperMultiRequest & request = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*zk_request);
         concrete_requests.reserve(request.requests.size());
@@ -839,19 +839,19 @@ struct KeeperStorageMultiRequest final : public KeeperStorageRequest
             auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
             if (sub_zk_request->getOpNum() == Coordination::OpNum::Create)
             {
-                concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequest>(sub_zk_request));
+                concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
             }
             else if (sub_zk_request->getOpNum() == Coordination::OpNum::Remove)
             {
-                concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequest>(sub_zk_request));
+                concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequestProcessor>(sub_zk_request));
             }
             else if (sub_zk_request->getOpNum() == Coordination::OpNum::Set)
             {
-                concrete_requests.push_back(std::make_shared<KeeperStorageSetRequest>(sub_zk_request));
+                concrete_requests.push_back(std::make_shared<KeeperStorageSetRequestProcessor>(sub_zk_request));
             }
             else if (sub_zk_request->getOpNum() == Coordination::OpNum::Check)
             {
-                concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequest>(sub_zk_request));
+                concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequestProcessor>(sub_zk_request));
             }
             else
                 throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
@@ -923,18 +923,18 @@ struct KeeperStorageMultiRequest final : public KeeperStorageRequest
     }
 };
 
-struct KeeperStorageCloseRequest final : public KeeperStorageRequest
+struct KeeperStorageCloseRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage &, int64_t, int64_t) const override
     {
         throw DB::Exception("Called process on close request", ErrorCodes::LOGICAL_ERROR);
     }
 };
 
-struct KeeperStorageAuthRequest final : public KeeperStorageRequest
+struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProcessor
 {
-    using KeeperStorageRequest::KeeperStorageRequest;
+    using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage & storage, int64_t /*zxid*/, int64_t session_id) const override
     {
         Coordination::ZooKeeperAuthRequest & auth_request = dynamic_cast<Coordination::ZooKeeperAuthRequest &>(*zk_request);
@@ -988,20 +988,20 @@ void KeeperStorage::finalize()
 }
 
 
-class KeeperWrapperFactory final : private boost::noncopyable
+class KeeperStorageRequestProcessorsFactory final : private boost::noncopyable
 {
 
 public:
-    using Creator = std::function<KeeperStorageRequestPtr(const Coordination::ZooKeeperRequestPtr &)>;
+    using Creator = std::function<KeeperStorageRequestProcessorPtr(const Coordination::ZooKeeperRequestPtr &)>;
     using OpNumToRequest = std::unordered_map<Coordination::OpNum, Creator>;
 
-    static KeeperWrapperFactory & instance()
+    static KeeperStorageRequestProcessorsFactory & instance()
     {
-        static KeeperWrapperFactory factory;
+        static KeeperStorageRequestProcessorsFactory factory;
         return factory;
     }
 
-    KeeperStorageRequestPtr get(const Coordination::ZooKeeperRequestPtr & zk_request) const
+    KeeperStorageRequestProcessorPtr get(const Coordination::ZooKeeperRequestPtr & zk_request) const
     {
         auto it = op_num_to_request.find(zk_request->getOpNum());
         if (it == op_num_to_request.end())
@@ -1018,33 +1018,33 @@ public:
 
 private:
     OpNumToRequest op_num_to_request;
-    KeeperWrapperFactory();
+    KeeperStorageRequestProcessorsFactory();
 };
 
 template<Coordination::OpNum num, typename RequestT>
-void registerKeeperRequestWrapper(KeeperWrapperFactory & factory)
+void registerKeeperRequestProcessor(KeeperStorageRequestProcessorsFactory & factory)
 {
     factory.registerRequest(num, [] (const Coordination::ZooKeeperRequestPtr & zk_request) { return std::make_shared<RequestT>(zk_request); });
 }
 
 
-KeeperWrapperFactory::KeeperWrapperFactory()
+KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
 {
-    registerKeeperRequestWrapper<Coordination::OpNum::Heartbeat, KeeperStorageHeartbeatRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::Sync, KeeperStorageSyncRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::Auth, KeeperStorageAuthRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::Close, KeeperStorageCloseRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::Create, KeeperStorageCreateRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::Remove, KeeperStorageRemoveRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::Exists, KeeperStorageExistsRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::Get, KeeperStorageGetRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::Set, KeeperStorageSetRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::List, KeeperStorageListRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::SimpleList, KeeperStorageListRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::Check, KeeperStorageCheckRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::Multi, KeeperStorageMultiRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::SetACL, KeeperStorageSetACLRequest>(*this);
-    registerKeeperRequestWrapper<Coordination::OpNum::GetACL, KeeperStorageGetACLRequest>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::Heartbeat, KeeperStorageHeartbeatRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::Sync, KeeperStorageSyncRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::Auth, KeeperStorageAuthRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::Close, KeeperStorageCloseRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::Create, KeeperStorageCreateRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::Remove, KeeperStorageRemoveRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::Exists, KeeperStorageExistsRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::Get, KeeperStorageGetRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::Set, KeeperStorageSetRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::List, KeeperStorageListRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::SimpleList, KeeperStorageListRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::Check, KeeperStorageCheckRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::Multi, KeeperStorageMultiRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::SetACL, KeeperStorageSetACLRequestProcessor>(*this);
+    registerKeeperRequestProcessor<Coordination::OpNum::GetACL, KeeperStorageGetACLRequestProcessor>(*this);
 }
 
 
@@ -1059,7 +1059,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
     }
 
     session_expiry_queue.update(session_id, session_and_timeout[session_id]);
-    if (zk_request->getOpNum() == Coordination::OpNum::Close)
+
+    if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
         auto it = ephemerals.find(session_id);
         if (it != ephemerals.end())
@@ -1092,21 +1093,21 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
         session_and_timeout.erase(session_id);
         results.push_back(ResponseForSession{session_id, response});
     }
-    else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat)
+    else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
     {
-        KeeperStorageRequestPtr storage_request = KeeperWrapperFactory::instance().get(zk_request);
+        KeeperStorageRequestProcessorPtr storage_request = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
         auto [response, _] = storage_request->process(*this, zxid, session_id);
         response->xid = zk_request->xid;
         response->zxid = getZXID();
 
         results.push_back(ResponseForSession{session_id, response});
     }
-    else
+    else /// normal requests proccession
     {
-        KeeperStorageRequestPtr storage_request = KeeperWrapperFactory::instance().get(zk_request);
+        KeeperStorageRequestProcessorPtr request_processor = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
         Coordination::ZooKeeperResponsePtr response;
 
-        if (check_acl && !storage_request->checkAuth(*this, session_id))
+        if (check_acl && !request_processor->checkAuth(*this, session_id))
         {
             response = zk_request->makeResponse();
             /// Original ZooKeeper always throws no auth, even when user provided some credentials
@@ -1114,9 +1115,10 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
         }
         else
         {
-            std::tie(response, std::ignore) = storage_request->process(*this, zxid, session_id);
+            std::tie(response, std::ignore) = request_processor->process(*this, zxid, session_id);
         }
 
+        /// Watches for this requests are added to the watches lists
         if (zk_request->has_watch)
         {
             if (response->error == Coordination::Error::ZOK)
@@ -1135,9 +1137,10 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
             }
         }
 
+        /// If this requests processed successfully we need to check watches
         if (response->error == Coordination::Error::ZOK)
         {
-            auto watch_responses = storage_request->processWatches(watches, list_watches);
+            auto watch_responses = request_processor->processWatches(watches, list_watches);
             results.insert(results.end(), watch_responses.begin(), watch_responses.end());
         }
 
@@ -1153,11 +1156,13 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
 
 void KeeperStorage::clearDeadWatches(int64_t session_id)
 {
+    /// Clear all watches for this session
     auto watches_it = sessions_and_watchers.find(session_id);
     if (watches_it != sessions_and_watchers.end())
     {
         for (const auto & watch_path : watches_it->second)
         {
+            /// Maybe it's a normal watch
             auto watch = watches.find(watch_path);
             if (watch != watches.end())
             {
@@ -1173,6 +1178,7 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
                     watches.erase(watch);
             }
 
+            /// Maybe it's a list watch
             auto list_watch = list_watches.find(watch_path);
             if (list_watch != list_watches.end())
             {
@@ -1188,6 +1194,7 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
                     list_watches.erase(list_watch);
             }
         }
+
         sessions_and_watchers.erase(watches_it);
     }
 }
