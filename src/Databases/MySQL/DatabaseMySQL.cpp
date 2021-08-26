@@ -11,7 +11,7 @@
 #    include <DataTypes/convertMySQLDataType.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
-#    include <Formats/MySQLBlockInputStream.h>
+#    include <Formats/MySQLSource.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <Processors/QueryPipeline.h>
 #    include <IO/Operators.h>
@@ -84,7 +84,7 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name) const
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);

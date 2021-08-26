@@ -160,6 +160,10 @@
         "01781_merge_tree_deduplication",
         "00980_zookeeper_merge_tree_alter_settings",
         "00980_merge_alter_settings",
+        "02009_array_join_partition",
+        "02012_changed_enum_type_non_replicated",
+        "02012_zookeeper_changed_enum_type",
+        "02012_zookeeper_changed_enum_type_incompatible",
         /// Old syntax is not allowed
         "01062_alter_on_mutataion_zookeeper",
         "00925_zookeeper_empty_replicated_merge_tree_optimize_final",
@@ -321,6 +325,7 @@
         "01076_parallel_alter_replicated_zookeeper",
         "01079_parallel_alter_add_drop_column_zookeeper",
         "01079_parallel_alter_detach_table_zookeeper",
+        "01079_parallel_alter_modify_zookeeper_long",
         "01080_check_for_error_incorrect_size_of_nested_column",
         "01083_expressions_in_engine_arguments",
         "01084_regexp_empty",
@@ -415,7 +420,6 @@
         "01507_clickhouse_server_start_with_embedded_config",
         "01509_dictionary_preallocate",
         "01516_create_table_primary_key",
-        "01516_drop_table_stress",
         "01517_drop_mv_with_inner_table",
         "01526_complex_key_dict_direct_layout",
         "01527_clickhouse_local_optimize",
@@ -483,10 +487,11 @@
         "01804_dictionary_decimal256_type",
         "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
         "01821_table_comment",
+        "01856_create_function",
+        "01857_create_function_and_check_jit_compiled",
         "01824_prefer_global_in_and_join",
         "01870_modulo_partition_key",
         "01870_buffer_flush", // creates database
-        "01889_sqlite_read_write",
         "01889_postgresql_protocol_null_fields",
         "01889_check_row_policy_defined_using_user_function",
         "01921_concurrent_ttl_and_normal_merges_zookeeper_long", // heavy test, better to run sequentially

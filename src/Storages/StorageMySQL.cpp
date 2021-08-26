@@ -4,7 +4,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Formats/MySQLBlockInputStream.h>
+#include <Formats/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -271,7 +271,9 @@ void registerStorageMySQL(StorageFactory & factory)
             username, password,
             MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
             mysql_settings.connection_pool_size,
-            mysql_settings.connection_max_tries);
+            mysql_settings.connection_max_tries,
+            args.getContext()->getSettingsRef().external_storage_connect_timeout,
+            args.getContext()->getSettingsRef().external_storage_rw_timeout);
 
         bool replace_query = false;
         std::string on_duplicate_clause;
