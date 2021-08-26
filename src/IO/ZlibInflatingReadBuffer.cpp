@@ -48,8 +48,8 @@ ZlibInflatingReadBuffer::~ZlibInflatingReadBuffer()
 
 bool ZlibInflatingReadBuffer::nextImpl()
 {
-    /// Need do while loop to prevent situation, when 
-    /// eof was not reach, but working buffer got empty (when nothing was decompressed in current iteration)
+    /// Need do-while loop to prevent situation, when 
+    /// eof was not reached, but working buffer became empty (when nothing was decompressed in current iteration)
     /// (this happens with compression algorithms, same idea is implemented in ZstdInflatingReadBuffer)
     do
     {
