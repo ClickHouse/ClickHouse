@@ -322,6 +322,7 @@
         "01076_parallel_alter_replicated_zookeeper",
         "01079_parallel_alter_add_drop_column_zookeeper",
         "01079_parallel_alter_detach_table_zookeeper",
+        "01079_parallel_alter_modify_zookeeper_long",
         "01080_check_for_error_incorrect_size_of_nested_column",
         "01083_expressions_in_engine_arguments",
         "01084_regexp_empty",
