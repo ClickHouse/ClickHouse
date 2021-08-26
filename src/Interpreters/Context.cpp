@@ -14,7 +14,7 @@
 #include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
-#include <Coordination/KeeperStorageDispatcher.h>
+#include <Coordination/KeeperDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -147,7 +147,7 @@ struct ContextSharedPart
 
 #if USE_NURAFT
     mutable std::mutex keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperStorageDispatcher> keeper_storage_dispatcher;
+    mutable std::shared_ptr<KeeperDispatcher> keeper_storage_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -1650,7 +1650,7 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
         zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
 }
 
-void Context::initializeKeeperStorageDispatcher() const
+void Context::initializeKeeperDispatcher() const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
@@ -1661,14 +1661,14 @@ void Context::initializeKeeperStorageDispatcher() const
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
-        shared->keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
+        shared->keeper_storage_dispatcher = std::make_shared<KeeperDispatcher>();
         shared->keeper_storage_dispatcher->initialize(config, getApplicationType() == ApplicationType::KEEPER);
     }
 #endif
 }
 
 #if USE_NURAFT
-std::shared_ptr<KeeperStorageDispatcher> & Context::getKeeperStorageDispatcher() const
+std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
 {
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
     if (!shared->keeper_storage_dispatcher)
@@ -1678,7 +1678,7 @@ std::shared_ptr<KeeperStorageDispatcher> & Context::getKeeperStorageDispatcher()
 }
 #endif
 
-void Context::shutdownKeeperStorageDispatcher() const
+void Context::shutdownKeeperDispatcher() const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
