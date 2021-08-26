@@ -91,6 +91,7 @@ public:
 
 protected:
     void transform(Chunk & chunk) override;
+    void onFinish() override;
 
 private:
     ViewRuntimeData view;
