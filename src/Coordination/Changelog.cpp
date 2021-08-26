@@ -285,7 +285,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     /// Amount of entries in last log index
     uint64_t entries_in_last = 0;
     /// Log idx of the first incomplete log (key in existing_changelogs)
-    int64_t first_incomplete_log_start_index = 0;
+    int64_t first_incomplete_log_start_index = -1; /// if -1 then no incomplete log exists
 
     ChangelogReadResult result{};
     /// First log index which was read from all changelogs
@@ -460,7 +460,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write at index {} because changelog doesn't contain it", index);
 
     /// This write_at require to overwrite everything in this file and also in previous file(s)
-const bool go_to_previous_file = index < current_writer->getStartIndex();
+    const bool go_to_previous_file = index < current_writer->getStartIndex();
 
     if (go_to_previous_file)
     {
