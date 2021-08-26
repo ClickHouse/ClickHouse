@@ -850,8 +850,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             auto & sum_parts_pk = it->second.sum_parts_pk;
 
             RangesInDataPart ranges(part, part_index);
-            ranges.ranges
-                = markRangesFromPKRange(part, metadata_snapshot, key_condition_map.find(part->primary_key_ast_str)->second, settings, log);
+
+            size_t total_marks_count = part->index_granularity.getMarksCountWithoutFinal();
+
+            if (!part->index.empty())
+                ranges.ranges = markRangesFromPKRange(
+                    part, metadata_snapshot, key_condition_map.find(part->primary_key_ast_str)->second, settings, log);
+            else if (total_marks_count)
+                ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
             if (!ranges.ranges.empty())

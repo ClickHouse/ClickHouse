@@ -3990,6 +3990,9 @@ void MergeTreeData::Transaction::rollback()
 
 ASTPtr MergeTreeData::parseKeyExpr(const String & key_expr)
 {
+    if (key_expr.empty())
+        return makeASTFunction("tuple");
+
     ParserNotEmptyExpressionList parser(false);
     auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 

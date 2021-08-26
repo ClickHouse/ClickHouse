@@ -2026,7 +2026,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
         return false;
     }
 
-    return MergeTreeData::partsContainSameProjections(left, right);
+    return MergeTreeData::partsContainSameProjections(left, right) && MergeTreeData::partsContainSamePrimaryKey(left, right);
 }
 
 bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
