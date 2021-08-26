@@ -1,3 +1,7 @@
+#if defined(__clang__) && __clang_major__ >= 13
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 /// This code was based on the code by Fedor Korotkiy (prime@yandex-team.ru) for YT product in Yandex.
 
 #include <common/defines.h>
@@ -82,9 +86,9 @@ int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * da
 extern "C"
 {
 #ifdef ADDRESS_SANITIZER
-void lsan_ignore_object(const void *);
+void __lsan_ignore_object(const void *);
 #else
-void lsan_ignore_object(const void *) {} // NOLINT
+void __lsan_ignore_object(const void *) {} // NOLINT
 #endif
 }
 
@@ -107,7 +111,7 @@ void updatePHDRCache()
     phdr_cache.store(new_phdr_cache);
 
     /// Memory is intentionally leaked.
-    lsan_ignore_object(new_phdr_cache);
+    __lsan_ignore_object(new_phdr_cache);
 }
 
 
