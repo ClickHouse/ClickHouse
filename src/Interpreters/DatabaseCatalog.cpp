@@ -611,7 +611,8 @@ Dependencies DatabaseCatalog::getDependencies(const StorageID & from) const
 
 ViewDependencies DatabaseCatalog::getViewDependencies() const
 {
-    return view_dependencies;
+    std::lock_guard lock{databases_mutex};
+    return ViewDependencies(view_dependencies.begin(), view_dependencies.end());
 }
 
 void
