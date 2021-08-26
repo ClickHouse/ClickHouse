@@ -9,14 +9,12 @@
 #include <common/types.h>
 #include <aws/core/Aws.h>  // Y_IGNORE
 #include <aws/core/client/ClientConfiguration.h> // Y_IGNORE
-#include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <Poco/URI.h>
 
 namespace Aws::S3
 {
     class S3Client;
-    class RetryStrategy;
 }
 
 namespace DB

@@ -718,7 +718,6 @@ void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAut
 
     client_configuration.endpointOverride = upd.uri.endpoint;
     client_configuration.maxConnections = upd.max_connections;
-    client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(/*maxRetry*/1, /*scope*/ 1);
 
     upd.client = S3::ClientFactory::instance().create(
         client_configuration,
