@@ -4,6 +4,8 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/TablesLoader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -27,8 +29,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
-static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 namespace
@@ -60,15 +60,6 @@ namespace
             throw;
         }
     }
-
-    void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
-    {
-        if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
-        {
-            LOG_INFO(log, "{}%", processed * 100.0 / total);
-            watch.restart();
-        }
-    }
 }
 
 
@@ -90,14 +81,82 @@ void DatabaseOrdinary::loadStoredObjects(
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
       */
-    using FileNames = std::map<std::string, ASTPtr>;
-    std::mutex file_names_mutex;
-    FileNames file_names;
 
-    size_t total_dictionaries = 0;
+    ParsedTablesMetadata metadata;
+    loadTablesMetadata(local_context, metadata);
 
-    auto process_metadata = [&file_names, &total_dictionaries, &file_names_mutex, this](
-                                const String & file_name)
+    size_t total_tables = metadata.metadata.size() - metadata.total_dictionaries;
+
+    AtomicStopwatch watch;
+    std::atomic<size_t> dictionaries_processed{0};
+    std::atomic<size_t> tables_processed{0};
+
+    ThreadPool pool;
+
+    /// We must attach dictionaries before attaching tables
+    /// because while we're attaching tables we may need to have some dictionaries attached
+    /// (for example, dictionaries can be used in the default expressions for some tables).
+    /// On the other hand we can attach any dictionary (even sourced from ClickHouse table)
+    /// without having any tables attached. It is so because attaching of a dictionary means
+    /// loading of its config only, it doesn't involve loading the dictionary itself.
+
+    /// Attach dictionaries.
+    for (const auto & name_with_path_and_query : metadata.metadata)
+    {
+        const auto & name = name_with_path_and_query.first;
+        const auto & path = name_with_path_and_query.second.first;
+        const auto & ast = name_with_path_and_query.second.second;
+        const auto & create_query = ast->as<const ASTCreateQuery &>();
+
+        if (create_query.is_dictionary)
+        {
+            pool.scheduleOrThrowOnError([&]()
+            {
+                loadTableFromMetadata(local_context, path, name, ast, has_force_restore_data_flag);
+
+                /// Messages, so that it's not boring to wait for the server to load for a long time.
+                logAboutProgress(log, ++dictionaries_processed, metadata.total_dictionaries, watch);
+            });
+        }
+    }
+
+    pool.wait();
+
+    /// Attach tables.
+    for (const auto & name_with_path_and_query : metadata.metadata)
+    {
+        const auto & name = name_with_path_and_query.first;
+        const auto & path = name_with_path_and_query.second.first;
+        const auto & ast = name_with_path_and_query.second.second;
+        const auto & create_query = ast->as<const ASTCreateQuery &>();
+
+        if (!create_query.is_dictionary)
+        {
+            pool.scheduleOrThrowOnError([&]()
+            {
+                loadTableFromMetadata(local_context, path, name, ast, has_force_restore_data_flag);
+
+                /// Messages, so that it's not boring to wait for the server to load for a long time.
+                logAboutProgress(log, ++tables_processed, total_tables, watch);
+            });
+        }
+    }
+
+    pool.wait();
+
+    if (!skip_startup_tables)
+    {
+        /// After all tables was basically initialized, startup them.
+        startupTablesImpl(pool);
+    }
+}
+
+void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata)
+{
+    size_t prev_tables_count = metadata.metadata.size();
+    size_t prev_total_dictionaries = metadata.total_dictionaries;
+
+    auto process_metadata = [&metadata, this](const String & file_name)
     {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
@@ -122,9 +181,19 @@ void DatabaseOrdinary::loadStoredObjects(
                     return;
                 }
 
-                std::lock_guard lock{file_names_mutex};
-                file_names[file_name] = ast;
-                total_dictionaries += create_query->is_dictionary;
+                TableLoadingDependenciesVisitor::Data data;
+                data.default_database = metadata.default_database;
+                TableLoadingDependenciesVisitor visitor{data};
+                visitor.visit(ast);
+                QualifiedTableName qualified_name{database_name, create_query->table};
+
+                std::lock_guard lock{metadata.mutex};
+                metadata.metadata[qualified_name] = std::make_pair(full_path.string(), std::move(ast));
+                if (data.dependencies.empty())
+                    metadata.independent_tables.insert(std::move(qualified_name));
+                else
+                    metadata.table_dependencies.insert({std::move(qualified_name), std::move(data.dependencies)});
+                metadata.total_dictionaries += create_query->is_dictionary;
             }
         }
         catch (Exception & e)
@@ -136,77 +205,28 @@ void DatabaseOrdinary::loadStoredObjects(
 
     iterateMetadataFiles(local_context, process_metadata);
 
-    size_t total_tables = file_names.size() - total_dictionaries;
+    size_t objects_in_database = metadata.metadata.size() - prev_tables_count;
+    size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
+    size_t tables_in_database = objects_in_database - dictionaries_in_database;
 
-    LOG_INFO(log, "Total {} tables and {} dictionaries.", total_tables, total_dictionaries);
+    LOG_INFO(log, "Total {} tables and {} dictionaries.", tables_in_database, dictionaries_in_database);
+}
 
-    AtomicStopwatch watch;
-    std::atomic<size_t> tables_processed{0};
+void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore)
+{
+    assert(name.database == database_name);
+    const auto & create_query = ast->as<const ASTCreateQuery &>();
 
-    ThreadPool pool;
+    tryAttachTable(
+        local_context,
+        create_query,
+        *this,
+        name.database,
+        file_path,
+        force_restore);
 
-    /// We must attach dictionaries before attaching tables
-    /// because while we're attaching tables we may need to have some dictionaries attached
-    /// (for example, dictionaries can be used in the default expressions for some tables).
-    /// On the other hand we can attach any dictionary (even sourced from ClickHouse table)
-    /// without having any tables attached. It is so because attaching of a dictionary means
-    /// loading of its config only, it doesn't involve loading the dictionary itself.
-
-    /// Attach dictionaries.
-    for (const auto & name_with_query : file_names)
-    {
-        const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
-
-        if (create_query.is_dictionary)
-        {
-            pool.scheduleOrThrowOnError([&]()
-            {
-                tryAttachTable(
-                    local_context,
-                    create_query,
-                    *this,
-                    database_name,
-                    getMetadataPath() + name_with_query.first,
-                    has_force_restore_data_flag);
-
-                /// Messages, so that it's not boring to wait for the server to load for a long time.
-                logAboutProgress(log, ++tables_processed, total_tables, watch);
-            });
-        }
-    }
-
-    pool.wait();
-
-    /// Attach tables.
-    for (const auto & name_with_query : file_names)
-    {
-        const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
-
-        if (!create_query.is_dictionary)
-        {
-            pool.scheduleOrThrowOnError([&]()
-            {
-                tryAttachTable(
-                    local_context,
-                    create_query,
-                    *this,
-                    database_name,
-                    getMetadataPath() + name_with_query.first,
-                    has_force_restore_data_flag);
-
-                /// Messages, so that it's not boring to wait for the server to load for a long time.
-                logAboutProgress(log, ++tables_processed, total_tables, watch);
-            });
-        }
-    }
-
-    pool.wait();
-
-    if (!skip_startup_tables)
-    {
-        /// After all tables was basically initialized, startup them.
-        startupTablesImpl(pool);
-    }
+    /// Messages, so that it's not boring to wait for the server to load for a long time.
+    //logAboutProgress(log, ++tables_processed, total_tables, watch);
 }
 
 void DatabaseOrdinary::startupTables()

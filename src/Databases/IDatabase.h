@@ -7,6 +7,8 @@
 #include <Common/Exception.h>
 #include <Core/UUID.h>
 
+#include <Core/QualifiedTableName.h> //FIXME
+
 #include <ctime>
 #include <functional>
 #include <memory>
@@ -25,6 +27,7 @@ struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
+struct ParsedTablesMetadata;
 
 namespace ErrorCodes
 {
@@ -129,6 +132,18 @@ public:
         bool /*force_attach*/ = false,
         bool /* skip_startup_tables */ = false)
     {
+    }
+
+    virtual bool supportsLoadingInTopologicalOrder() const { return false; }
+
+    virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    virtual void loadTableFromMetadata(ContextMutablePtr /*local_context*/, const String & /*file_path*/, const QualifiedTableName & /*name*/, const ASTPtr & /*ast*/, bool /*force_restore*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
     virtual void startupTables() {}

@@ -22,6 +22,12 @@ public:
 
     void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables) override;
 
+    bool supportsLoadingInTopologicalOrder() const override { return true; }
+
+    void loadTablesMetadata(ContextPtr context, ParsedTablesMetadata & metadata) override;
+
+    void loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore) override;
+
     void startupTables() override;
 
     void alterTable(
