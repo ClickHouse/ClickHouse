@@ -38,7 +38,7 @@ ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
 #pragma GCC diagnostic pop
 
     if (rc != Z_OK)
-        throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateInit2 failed: {}; zlib version: {}.”, zError(rc), ZLIB_VERSION);
+        throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateInit2 failed: {}; zlib version: {}.", zError(rc), ZLIB_VERSION);
 }
 
 ZlibInflatingReadBuffer::~ZlibInflatingReadBuffer()
@@ -91,13 +91,13 @@ bool ZlibInflatingReadBuffer::nextImpl()
             {
                 rc = inflateReset(&zstr);
                 if (rc != Z_OK)
-                    throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}”, zError(rc));
+                    throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}", zError(rc));
                 return true;
             }
         }
         /// If it is not end and not OK, something went wrong, throw exception
         if (rc != Z_OK)
-            throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}”, zError(rc));
+            throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}", zError(rc));
     }
     while (working_buffer.empty());
 
