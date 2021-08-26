@@ -75,7 +75,7 @@ bool ZlibInflatingReadBuffer::nextImpl()
         /// change size of working buffer (it's size equal to internal_buffer size without unused uncompressed values)
         working_buffer.resize(internal_buffer.size() - zstr.avail_out);
 
-        /// If end was reached, it can be end of file or end of part (for example, chunck)
+        /// If end was reached, it can be end of file or end of part (for example, chunk)
         if (rc == Z_STREAM_END)
         {
             /// if it is end of file, remember this and return 
