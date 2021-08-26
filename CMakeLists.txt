@@ -271,6 +271,12 @@ endif()
 
 include(cmake/cpu_features.cmake)
 
+option(ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated.")
+
+if (ARCH_NATIVE)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
+endif ()
+
 # Asynchronous unwind tables are needed for Query Profiler.
 # They are already by default on some platforms but possibly not on all platforms.
 # Enable it explicitly.
@@ -395,10 +401,9 @@ endif ()
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-# We recommend avoiding this mode for production builds because we can't guarantee
-# all needed libraries exist in your system.
+# We recommend avoiding this mode for production builds because we can't guarantee all needed libraries exist in your
+# system.
 # This mode exists for enthusiastic developers who are searching for trouble.
-# The whole idea of using unknown version of libraries from the OS distribution is deeply flawed.
 # Useful for maintainers of OS packages.
 option (UNBUNDLED "Use system libraries instead of ones in contrib/" OFF)
 
@@ -531,14 +536,10 @@ include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
 include (cmake/find/nanodbc.cmake)
-include (cmake/find/sqlite.cmake)
 include (cmake/find/rocksdb.cmake)
 include (cmake/find/libpqxx.cmake)
 include (cmake/find/nuraft.cmake)
 include (cmake/find/yaml-cpp.cmake)
-include (cmake/find/s2geometry.cmake)
-include (cmake/find/nlp.cmake)
-include (cmake/find/bzip2.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
@@ -593,23 +594,7 @@ macro (add_executable target)
         # disabled for TSAN and gcc since libtsan.a provides overrides too
         if (TARGET clickhouse_new_delete)
             # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
-        endif()
-
-        # In case of static jemalloc, because zone_register() is located in zone.c and
-        # is never used outside (it is declared as constructor) it is omitted
-        # by the linker, and so jemalloc will not be registered as system
-        # allocator under osx [1], and clickhouse will SIGSEGV.
-        #
-        #   [1]: https://github.com/jemalloc/jemalloc/issues/708
-        #
-        # About symbol name:
-        # - _zone_register not zone_register due to Mach-O binary format,
-        # - _je_zone_register due to JEMALLOC_PRIVATE_NAMESPACE=je_ under OS X.
-        # - but jemalloc-cmake does not run private_namespace.sh
-        #   so symbol name should be _zone_register
-        if (ENABLE_JEMALLOC AND MAKE_STATIC_LIBRARIES AND OS_DARWIN)
-            set_property(TARGET ${target} APPEND PROPERTY LINK_OPTIONS -u_zone_register)
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
         endif()
     endif()
 endmacro()

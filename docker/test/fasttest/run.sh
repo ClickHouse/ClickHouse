@@ -113,7 +113,6 @@ function start_server
     echo "ClickHouse server pid '$server_pid' started and responded"
 
     echo "
-set follow-fork-mode child
 handle all noprint
 handle SIGSEGV stop print
 handle SIGBUS stop print
@@ -160,6 +159,7 @@ function clone_submodules
 
         SUBMODULES_TO_UPDATE=(
             contrib/abseil-cpp
+            contrib/antlr4-runtime
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
@@ -279,7 +279,6 @@ function run_tests
         00926_multimatch
         00929_multi_match_edit_distance
         01681_hyperscan_debug_assertion
-        02004_max_hyperscan_regex_length
 
         01176_mysql_client_interactive          # requires mysql client
         01031_mutations_interpreter_and_context
@@ -300,10 +299,8 @@ function run_tests
         01318_decrypt                           # Depends on OpenSSL
         01663_aes_msan                          # Depends on OpenSSL
         01667_aes_args_check                    # Depends on OpenSSL
-        01683_codec_encrypted                   # Depends on OpenSSL
         01776_decrypt_aead_size_check           # Depends on OpenSSL
         01811_filter_by_null                    # Depends on OpenSSL
-        02012_sha512_fixedstring                # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent
@@ -313,8 +310,6 @@ function run_tests
         01411_bayesian_ab_testing
         01798_uniq_theta_sketch
         01799_long_uniq_theta_sketch
-        01890_stem                               # depends on libstemmer_c
-        02003_compress_bz2                       # depends on bzip2
         collate
         collation
         _orc_
@@ -378,21 +373,14 @@ function run_tests
         # Depends on AWS
         01801_s3_cluster
 
+        # Depends on LLVM JIT
+        01072_nullable_jit
+        01852_jit_if
+        01865_jit_comparison_constant_result
+        01871_merge_tree_compile_expressions
+
         # needs psql
         01889_postgresql_protocol_null_fields
-
-        # needs pv
-        01923_network_receive_time_metric_insert
-
-        01889_sqlite_read_write
-
-        # needs s2
-        01849_geoToS2
-        01851_s2_to_geo
-        01852_s2_get_neighbours
-        01853_s2_cells_intersect
-        01854_s2_cap_contains
-        01854_s2_cap_union
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \

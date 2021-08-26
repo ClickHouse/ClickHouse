@@ -26,12 +26,8 @@ public:
     template <typename T, typename U>
     bool operator() (const T & l, const U & r) const
     {
-        if constexpr (std::is_same_v<T, Null> || std::is_same_v<U, Null>
-            || std::is_same_v<T, NegativeInfinity> || std::is_same_v<T, PositiveInfinity>
-            || std::is_same_v<U, NegativeInfinity> || std::is_same_v<U, PositiveInfinity>)
-        {
+        if constexpr (std::is_same_v<T, Null> || std::is_same_v<U, Null>)
             return std::is_same_v<T, U>;
-        }
         else
         {
             if constexpr (std::is_same_v<T, U>)
@@ -81,10 +77,6 @@ public:
     {
         if constexpr (std::is_same_v<T, Null> || std::is_same_v<U, Null>)
             return false;
-        else if constexpr (std::is_same_v<T, NegativeInfinity> || std::is_same_v<U, PositiveInfinity>)
-            return !std::is_same_v<T, U>;
-        else if constexpr (std::is_same_v<U, NegativeInfinity> || std::is_same_v<T, PositiveInfinity>)
-            return false;
         else
         {
             if constexpr (std::is_same_v<T, U>)
@@ -122,18 +114,6 @@ public:
 
         throw Exception("Cannot compare " + demangle(typeid(T).name()) + " with " + demangle(typeid(U).name()),
             ErrorCodes::BAD_TYPE_OF_FIELD);
-    }
-};
-
-
-class FieldVisitorAccurateLessOrEqual : public StaticVisitor<bool>
-{
-public:
-    template <typename T, typename U>
-    bool operator()(const T & l, const U & r) const
-    {
-        auto less_cmp = FieldVisitorAccurateLess();
-        return !less_cmp(r, l);
     }
 };
 

@@ -1,8 +1,6 @@
 # docker build -t yandex/clickhouse-integration-tests-runner .
 FROM ubuntu:20.04
 
-RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
-
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     ca-certificates \
@@ -78,7 +76,6 @@ RUN python3 -m pip install \
     pytest \
     pytest-timeout \
     pytest-xdist \
-    pytest-repeat \
     redis \
     tzlocal \
     urllib3 \

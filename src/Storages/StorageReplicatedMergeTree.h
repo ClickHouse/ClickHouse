@@ -116,7 +116,7 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     bool optimize(
         const ASTPtr & query,
@@ -174,10 +174,8 @@ public:
         UInt64 absolute_delay;
         UInt8 total_replicas;
         UInt8 active_replicas;
-        String last_queue_update_exception;
         /// If the error has happened fetching the info from ZooKeeper, this field will be set.
         String zookeeper_exception;
-        std::unordered_map<std::string, bool> replica_is_active;
     };
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
@@ -217,8 +215,8 @@ public:
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
                                               const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
 
-    /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
-    bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
+    /// Get job to execute in background pool (merge, mutate, drop range and so on)
+    std::optional<JobAndPool> getDataProcessingJob() override;
 
     /// Checks that fetches are not disabled with action blocker and pool for fetches
     /// is not overloaded
@@ -227,10 +225,10 @@ public:
     /// Fetch part only when it stored on shared storage like S3
     bool executeFetchShared(const String & source_replica, const String & new_part_name, const DiskPtr & disk, const String & path);
 
-    /// Lock part in zookeeper for use shared data in several nodes
+    /// Lock part in zookeeper for use common S3 data in several nodes
     void lockSharedData(const IMergeTreeDataPart & part) const override;
 
-    /// Unlock shared data part in zookeeper
+    /// Unlock common S3 data part in zookeeper
     /// Return true if data unlocked
     /// Return false if data is still used by another node
     bool unlockSharedData(const IMergeTreeDataPart & part) const override;
@@ -238,8 +236,8 @@ public:
     /// Fetch part only if some replica has it on shared storage like S3
     bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
-    /// Get best replica having this partition on a same type remote disk
-    String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType::Type disk_type) const;
+    /// Get best replica having this partition on S3
+    String getSharedDataReplica(const IMergeTreeDataPart & part) const;
 
     inline String getReplicaName() const { return replica_name; }
 
@@ -260,8 +258,6 @@ public:
         return replicated_sends_throttler;
     }
 
-    bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
-
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -271,7 +267,7 @@ private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
 
-    friend class ReplicatedMergeTreeSink;
+    friend class ReplicatedMergeTreeBlockOutputStream;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
@@ -331,10 +327,6 @@ private:
     ReplicatedMergeTreeQueue queue;
     std::atomic<time_t> last_queue_update_start_time{0};
     std::atomic<time_t> last_queue_update_finish_time{0};
-
-    mutable std::mutex last_queue_update_exception_lock;
-    String last_queue_update_exception;
-    String getLastQueueUpdateException() const;
 
     DataPartsExchange::Fetcher fetcher;
 
@@ -442,7 +434,7 @@ private:
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
-    /// Accepts a PreCommitted part, atomically checks its checksums with ones on other replicas and commit the part
+    /// Accepts a PreComitted part, atomically checks its checksums with ones on other replicas and commit the part
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
@@ -641,7 +633,7 @@ private:
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       * TODO: There are wrong usages of this method that are not fixed yet.
       *
-      * One method for convenient use on current table, another for waiting on foreign shards.
+      * One method for convenient use on current table, another for waiting on foregin shards.
       */
     Strings waitForAllTableReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
     Strings waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
@@ -694,29 +686,11 @@ private:
         bool fetch_part,
         ContextPtr query_context) override;
 
-    /// NOTE: there are no guarantees for concurrent merges. Dropping part can
-    /// be concurrently merged into some covering part and dropPart will do
-    /// nothing. There are some fundamental problems with it. But this is OK
-    /// because:
-    ///
-    /// dropPart used in the following cases:
-    /// 1) Remove empty parts after TTL.
-    /// 2) Remove parts after move between shards.
-    /// 3) User queries: ALTER TABLE DROP PART 'part_name'.
-    ///
-    /// In the first case merge of empty part is even better than DROP. In the
-    /// second case part UUIDs used to forbid merges for moving parts so there
-    /// is no problem with concurrent merges. The third case is quite rare and
-    /// we give very weak guarantee: there will be no active part with this
-    /// name, but possibly it was merged to some other part.
-    ///
-    /// NOTE: don't rely on dropPart if you 100% need to remove non-empty part
-    /// and don't use any explicit locking mechanism for merges.
     bool dropPartImpl(zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop);
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
-    bool checkFixedGranularityInZookeeper();
+    bool checkFixedGranualrityInZookeeper();
 
     /// Wait for timeout seconds mutation is finished on replicas
     void waitMutationToFinishOnReplicas(
@@ -725,8 +699,6 @@ private:
     MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
     void startBackgroundMovesIfNeeded() override;
-
-    std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(

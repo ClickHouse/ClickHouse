@@ -1,5 +1,6 @@
 #include <Coordination/KeeperStorageDispatcher.h>
 #include <Common/setThreadName.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <future>
 #include <chrono>
