@@ -3,6 +3,8 @@
 #include <string>
 #include <tuple>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -47,5 +49,23 @@ template <> struct hash<DB::QualifiedTableName>
         return qualified_table.hash();
     }
 };
-
 }
+
+namespace fmt
+{
+    template <>
+    struct formatter<DB::QualifiedTableName>
+    {
+        constexpr auto parse(format_parse_context & ctx)
+        {
+            return ctx.begin();
+        }
+
+        template <typename FormatContext>
+        auto format(const DB::QualifiedTableName & name, FormatContext & ctx)
+        {
+            return format_to(ctx.out(), "{}.{}", DB::backQuoteIfNeed(name.database), DB::backQuoteIfNeed(name.table));
+        }
+    };
+}
+
