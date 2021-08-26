@@ -13,6 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -21,19 +22,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
-{
-    appendColumnNameImpl(ostr, nullptr);
-}
-
-void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings & settings) const
-{
-    appendColumnNameImpl(ostr, &settings);
-}
-
-void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings * settings) const
 {
     if (name == "view")
         throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
@@ -48,10 +40,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings * sett
             if (it != parameters->children.begin())
                 writeCString(", ", ostr);
 
-            if (settings)
-                (*it)->appendColumnName(ostr, *settings);
-            else
-                (*it)->appendColumnName(ostr);
+            (*it)->appendColumnName(ostr);
         }
         writeChar(')', ostr);
     }
@@ -64,10 +53,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr, const Settings * sett
             if (it != arguments->children.begin())
                 writeCString(", ", ostr);
 
-            if (settings)
-                (*it)->appendColumnName(ostr, *settings);
-            else
-                (*it)->appendColumnName(ostr);
+            (*it)->appendColumnName(ostr);
         }
     }
 
@@ -571,6 +557,35 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         window_definition->formatImpl(settings, state, frame);
         settings.ostr << ")";
     }
+}
+
+String getFunctionName(const IAST * ast)
+{
+    String res;
+    if (tryGetFunctionNameInto(ast, res))
+        return res;
+    throw Exception(ast ? queryToString(*ast) + " is not an function" : "AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+}
+
+std::optional<String> tryGetFunctionName(const IAST * ast)
+{
+    String res;
+    if (tryGetFunctionNameInto(ast, res))
+        return res;
+    return {};
+}
+
+bool tryGetFunctionNameInto(const IAST * ast, String & name)
+{
+    if (ast)
+    {
+        if (const auto * node = ast->as<ASTFunction>())
+        {
+            name = node->name;
+            return true;
+        }
+    }
+    return false;
 }
 
 }

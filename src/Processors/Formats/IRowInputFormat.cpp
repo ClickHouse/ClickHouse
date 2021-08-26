@@ -52,6 +52,7 @@ IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
 
 Chunk IRowInputFormat::generate()
 {
+    std::cerr << "in: " << demangle(typeid(in).name()) << "\n";
     if (total_rows == 0)
         readPrefix();
 

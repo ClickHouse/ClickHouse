@@ -73,6 +73,7 @@ public:
     void setCurrentUnitNumber(size_t current_unit_number_) { current_unit_number = current_unit_number_; }
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
+    void setReadBuffer(ReadBuffer & in_);
 
 protected:
     ColumnMappingPtr column_mapping{};
@@ -83,5 +84,7 @@ private:
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
+
+using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 }

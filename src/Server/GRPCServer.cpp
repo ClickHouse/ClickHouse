@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <Common/SettingsChanges.h>
+#include <Common/setThreadName.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/PushingToSinkBlockOutputStream.h>
@@ -12,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Session.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -53,7 +55,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int UNKNOWN_DATABASE;
 }
 
 namespace
@@ -480,6 +481,40 @@ namespace
     };
 
 
+    /// A boolean state protected by mutex able to wait until other thread sets it to a specific value.
+    class BoolState
+    {
+    public:
+        explicit BoolState(bool initial_value) : value(initial_value) {}
+
+        bool get() const
+        {
+            std::lock_guard lock{mutex};
+            return value;
+        }
+
+        void set(bool new_value)
+        {
+            std::lock_guard lock{mutex};
+            if (value == new_value)
+                return;
+            value = new_value;
+            changed.notify_all();
+        }
+
+        void wait(bool wanted_value) const
+        {
+            std::unique_lock lock{mutex};
+            changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
+        }
+
+    private:
+        bool value;
+        mutable std::mutex mutex;
+        mutable std::condition_variable changed;
+    };
+
+
     /// Handles a connection after a responder is started (i.e. after getting a new call).
     class Call
     {
@@ -525,7 +560,7 @@ namespace
         IServer & iserver;
         Poco::Logger * log = nullptr;
 
-        std::shared_ptr<NamedSession> session;
+        std::optional<Session> session;
         ContextMutablePtr query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
         String query_text;
@@ -564,18 +599,15 @@ namespace
         UInt64 waited_for_client_writing = 0;
 
         /// The following fields are accessed both from call_thread and queue_thread.
-        std::atomic<bool> reading_query_info = false;
+        BoolState reading_query_info{false};
         std::atomic<bool> failed_to_read_query_info = false;
         GRPCQueryInfo next_query_info_while_reading;
         std::atomic<bool> want_to_cancel = false;
         std::atomic<bool> check_query_info_contains_cancel_only = false;
-        std::atomic<bool> sending_result = false;
+        BoolState sending_result{false};
         std::atomic<bool> failed_to_send_result = false;
 
         ThreadFromGlobalPool call_thread;
-        std::condition_variable read_finished;
-        std::condition_variable write_finished;
-        std::mutex dummy_mutex; /// Doesn't protect anything.
     };
 
     Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, Poco::Logger * log_)
@@ -610,6 +642,7 @@ namespace
     {
         try
         {
+            setThreadName("GRPCServerCall");
             receiveQuery();
             executeQuery();
             processInput();
@@ -656,34 +689,20 @@ namespace
             password = "";
         }
 
-        /// Create context.
-        query_context = Context::createCopy(iserver.context());
-
         /// Authentication.
-        query_context->setUser(user, password, user_address);
-        query_context->setCurrentQueryId(query_info.query_id());
-        if (!quota_key.empty())
-            query_context->setQuotaKey(quota_key);
+        session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
+        session->authenticate(user, password, user_address);
+        session->getClientInfo().quota_key = quota_key;
 
         /// The user could specify session identifier and session timeout.
         /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
         if (!query_info.session_id().empty())
         {
-            session = query_context->acquireNamedSession(
+            session->makeSessionContext(
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
-            query_context = Context::createCopy(session->context);
-            query_context->setSessionContext(session->context);
         }
 
-        query_scope.emplace(query_context);
-
-        /// Set client info.
-        ClientInfo & client_info = query_context->getClientInfo();
-        client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-        client_info.interface = ClientInfo::Interface::GRPC;
-        client_info.initial_user = client_info.current_user;
-        client_info.initial_query_id = client_info.current_query_id;
-        client_info.initial_address = client_info.current_address;
+        query_context = session->makeQueryContext();
 
         /// Prepare settings.
         SettingsChanges settings_changes;
@@ -693,11 +712,14 @@ namespace
         }
         query_context->checkSettingsConstraints(settings_changes);
         query_context->applySettingsChanges(settings_changes);
-        const Settings & settings = query_context->getSettingsRef();
+
+        query_context->setCurrentQueryId(query_info.query_id());
+        query_scope.emplace(query_context);
 
         /// Prepare for sending exceptions and logs.
-        send_exception_with_stacktrace = query_context->getSettingsRef().calculate_text_stack_trace;
-        const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
+        const Settings & settings = query_context->getSettingsRef();
+        send_exception_with_stacktrace = settings.calculate_text_stack_trace;
+        const auto client_logs_level = settings.send_logs_level;
         if (client_logs_level != LogsLevel::none)
         {
             logs_queue = std::make_shared<InternalTextLogsQueue>();
@@ -708,14 +730,10 @@ namespace
 
         /// Set the current database if specified.
         if (!query_info.database().empty())
-        {
-            if (!DatabaseCatalog::instance().isDatabaseExist(query_info.database()))
-                throw Exception("Database " + query_info.database() + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             query_context->setCurrentDatabase(query_info.database());
-        }
 
         /// The interactive delay will be used to show progress.
-        interactive_delay = query_context->getSettingsRef().interactive_delay;
+        interactive_delay = settings.interactive_delay;
         query_context->setProgressCallback([this](const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
 
         /// Parse the query.
@@ -1221,8 +1239,6 @@ namespace
         io = {};
         query_scope.reset();
         query_context.reset();
-        if (session)
-            session->release();
         session.reset();
     }
 
@@ -1230,8 +1246,7 @@ namespace
     {
         auto start_reading = [&]
         {
-            assert(!reading_query_info);
-            reading_query_info = true;
+            reading_query_info.set(true);
             responder->read(next_query_info_while_reading, [this](bool ok)
             {
                 /// Called on queue_thread.
@@ -1256,18 +1271,16 @@ namespace
                     /// on queue_thread.
                     failed_to_read_query_info = true;
                 }
-                reading_query_info = false;
-                read_finished.notify_one();
+                reading_query_info.set(false);
             });
         };
 
         auto finish_reading = [&]
         {
-            if (reading_query_info)
+            if (reading_query_info.get())
             {
                 Stopwatch client_writing_watch;
-                std::unique_lock lock{dummy_mutex};
-                read_finished.wait(lock, [this] { return !reading_query_info; });
+                reading_query_info.wait(false);
                 waited_for_client_writing += client_writing_watch.elapsedNanoseconds();
             }
             throwIfFailedToReadQueryInfo();
@@ -1430,11 +1443,10 @@ namespace
 
         /// Wait for previous write to finish.
         /// (gRPC doesn't allow to start sending another result while the previous is still being sending.)
-        if (sending_result)
+        if (sending_result.get())
         {
             Stopwatch client_reading_watch;
-            std::unique_lock lock{dummy_mutex};
-            write_finished.wait(lock, [this] { return !sending_result; });
+            sending_result.wait(false);
             waited_for_client_reading += client_reading_watch.elapsedNanoseconds();
         }
         throwIfFailedToSendResult();
@@ -1445,14 +1457,13 @@ namespace
         if (write_buffer)
             write_buffer->finalize();
 
-        sending_result = true;
+        sending_result.set(true);
         auto callback = [this](bool ok)
         {
             /// Called on queue_thread.
             if (!ok)
                 failed_to_send_result = true;
-            sending_result = false;
-            write_finished.notify_one();
+            sending_result.set(false);
         };
 
         Stopwatch client_reading_final_watch;
@@ -1472,8 +1483,7 @@ namespace
         if (send_final_message)
         {
             /// Wait until the result is actually sent.
-            std::unique_lock lock{dummy_mutex};
-            write_finished.wait(lock, [this] { return !sending_result; });
+            sending_result.wait(false);
             waited_for_client_reading += client_reading_final_watch.elapsedNanoseconds();
             throwIfFailedToSendResult();
             LOG_TRACE(log, "Final result has been sent to the client");
@@ -1584,7 +1594,7 @@ private:
     {
         /// Called on call_thread. That's why we can't destroy the `call` right now
         /// (thread can't join to itself). Thus here we only move the `call` from
-        /// `current_call` to `finished_calls` and run() will actually destroy the `call`.
+        /// `current_calls` to `finished_calls` and run() will actually destroy the `call`.
         std::lock_guard lock{mutex};
         auto it = current_calls.find(call);
         finished_calls.push_back(std::move(it->second));
@@ -1593,6 +1603,7 @@ private:
 
     void run()
     {
+        setThreadName("GRPCServerQueue");
         while (true)
         {
             {

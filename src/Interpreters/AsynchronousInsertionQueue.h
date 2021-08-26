@@ -26,9 +26,11 @@ class AsynchronousInsertQueue : public WithContext
         AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, size_t max_data_size, const Timeout & timeouts);
         ~AsynchronousInsertQueue();
 
-        void push(const ASTPtr & query, const Settings & settings);
+        bool push(const ASTPtr & query, const Settings & settings, const String & query_id);
+        void push(const ASTPtr & query, const Settings & settings, const String & query_id, const Block & header);
 
     private:
+
         struct InsertQuery
         {
             ASTPtr query;
@@ -74,6 +76,7 @@ class AsynchronousInsertQueue : public WithContext
         void busyCheck();
         void staleCheck();
 
+        void pushImpl(const ASTPtr & query, const String & query_id, QueueIterator it);
         static void processData(std::shared_ptr<InsertData> data, ContextPtr global_context);
 };
 
