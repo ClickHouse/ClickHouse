@@ -50,11 +50,6 @@ void FileChecker::setEmpty(const String & full_file_path)
     map[fileName(full_file_path)] = 0;
 }
 
-const FileChecker::Map & FileChecker::getFileSizes() const
-{
-    return map;
-}
-
 size_t FileChecker::getFileSize(const String & full_file_path) const
 {
     auto it = map.find(fileName(full_file_path));
