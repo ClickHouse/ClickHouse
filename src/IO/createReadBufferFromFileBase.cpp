@@ -131,9 +131,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIOFailed);
         }
     }
-#else
-    (void)direct_io_threshold;
-    (void)estimated_size;
 #endif
 
     ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
