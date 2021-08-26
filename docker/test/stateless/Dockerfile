@@ -24,6 +24,8 @@ RUN apt-get update -y \
             python3-pip \
             qemu-user-static \
             sudo \
+            # golang version 1.13 on Ubuntu 20 is enough for tests
+            golang \
             telnet \
             tree \
             unixodbc \
