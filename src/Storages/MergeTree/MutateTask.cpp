@@ -14,6 +14,7 @@
 
 
 #include <DataStreams/TTLBlockInputStream.h>
+#include <DataStreams/TTLCalcInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
@@ -1041,7 +1042,7 @@ private:
 
     void prepare()
     {
-        if (execute_ttl_type != ExecuteTTLType::NONE)
+        if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
         ctx->disk->createDirectories(ctx->new_part_tmp_path);
@@ -1311,7 +1312,7 @@ bool MutateTask::prepare()
     ctx->execute_ttl_type = ExecuteTTLType::NONE;
 
     if (ctx->mutating_stream)
-        execute_ttl_type = MergeTreeDataMergerMutator::shouldExecuteTTL(metadata_snapshot, interpreter->getColumnDependencies());
+        ctx->execute_ttl_type = MergeTreeDataMergerMutator::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
 
 
     /// All columns from part are changed and may be some more that were missing before in part

@@ -153,7 +153,7 @@ private:
         NamesAndTypesList storage_columns,
         const MutationCommands & commands_for_removes);
 
-    static bool shouldExecuteTTL(
+    static ExecuteTTLType shouldExecuteTTL(
         const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies);
 
 public :
