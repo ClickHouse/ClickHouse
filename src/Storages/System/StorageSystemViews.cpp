@@ -2,6 +2,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryViewsLog.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/LiveView/StorageLiveView.h>
 
 namespace DB
 {
@@ -11,22 +15,22 @@ class Context;
 NamesAndTypesList StorageSystemViews::getNamesAndTypes()
 {
     auto view_type_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
-        {"Default", static_cast<Int8>(ViewType::DEFAULT)},
-        {"Materialized", static_cast<Int8>(ViewType::MATERIALIZED)},
-        {"Live", static_cast<Int8>(ViewType::LIVE)}});
+        {"Default", static_cast<Int8>(QueryViewsLogElement::ViewType::DEFAULT)},
+        {"Materialized", static_cast<Int8>(QueryViewsLogElement::ViewType::MATERIALIZED)},
+        {"Live", static_cast<Int8>(QueryViewsLogElement::ViewType::LIVE)}});
 
     return {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
         {"table", std::make_shared<DataTypeString>()},
         {"table_database", std::make_shared<DataTypeString>()},
-        {"type", std::move(view_type_datatype)},
+        {"view_type", std::move(view_type_datatype)},
     };
 }
 
-void StorageSystemViews::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemViews::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    const auto access = context.getAccess();
+    const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     for (const auto & [table_id, view_ids] : DatabaseCatalog::instance().getViewDependencies())
