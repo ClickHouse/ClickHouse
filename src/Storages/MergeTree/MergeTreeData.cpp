@@ -2338,7 +2338,7 @@ bool MergeTreeData::renameTempPartAndReplace(
         if (!part->primary_key_ast_str.empty())
         {
             auto primary_key_map_snapshot = primary_sorting_key_map.get();
-            auto primary_key_map_ptr = primary_key_map_snapshot.get();
+            const auto * primary_key_map_ptr = primary_key_map_snapshot.get();
             std::map<String, KeyDescription> new_primary_sorting_key_map;
             for (const auto & ast : {part->primary_key_ast_str, part->sorting_key_ast_str})
             {
@@ -4029,7 +4029,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
         size_t reduce_rows = 0;
         size_t reduce_parts = 0;
 
-        auto primary_sorting_key_map_snapshot = data.primary_sorting_key_map.get().get();
+        auto primary_sorting_key_map_snapshot =  data.primary_sorting_key_map.get();
+        const auto * primary_sorting_key_map_snapshot_ptr = primary_sorting_key_map_snapshot.get();
         std::map<String, KeyDescription> new_primary_sorting_key_map;
         bool primary_sorting_key_map_changed = false;
         for (const DataPartPtr & part : precommitted_parts)
@@ -4069,12 +4070,12 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             {
                 for (const auto & ast : {part->primary_key_ast_str, part->sorting_key_ast_str})
                 {
-                    if (primary_sorting_key_map_snapshot->find(ast) == primary_sorting_key_map_snapshot->end())
+                    if (primary_sorting_key_map_snapshot_ptr->find(ast) == primary_sorting_key_map_snapshot_ptr->end())
                     {
                         if (!primary_sorting_key_map_changed)
                         {
-                            new_primary_sorting_key_map = *primary_sorting_key_map_snapshot;
-                            primary_sorting_key_map_snapshot = &new_primary_sorting_key_map;
+                            new_primary_sorting_key_map = *primary_sorting_key_map_snapshot_ptr;
+                            primary_sorting_key_map_snapshot_ptr = &new_primary_sorting_key_map;
                             primary_sorting_key_map_changed = true;
                         }
 

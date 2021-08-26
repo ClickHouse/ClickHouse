@@ -677,12 +677,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             metadata.original_sorting_key
                 = KeyDescription::getKeyFromAST(args.storage_def->original_order_by->ptr(), metadata.columns, args.getContext());
-        }
 
-        if (args.storage_def->original_primary_key)
-        {
-            metadata.original_primary_key
-                = KeyDescription::getKeyFromAST(args.storage_def->original_primary_key->ptr(), metadata.columns, args.getContext());
+            if (args.storage_def->original_primary_key)
+            {
+                metadata.original_primary_key
+                    = KeyDescription::getKeyFromAST(args.storage_def->original_primary_key->ptr(), metadata.columns, args.getContext());
+            }
+            else
+            {
+                metadata.original_primary_key
+                    = KeyDescription::getKeyFromAST(args.storage_def->original_order_by->ptr(), metadata.columns, args.getContext());
+                /// and set it's definition_ast to nullptr (so isOriginalPrimaryKeyDefined()
+                /// will return false but original_primary_key can still be used.
+                metadata.original_primary_key.definition_ast = nullptr;
+            }
         }
 
         /// If primary key explicitly defined, than get it from AST
