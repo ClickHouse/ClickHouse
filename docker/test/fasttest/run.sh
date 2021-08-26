@@ -377,7 +377,7 @@ function run_tests
 
         # Depends on AWS
         01801_s3_cluster
-		02012_settings_clause_for_s3
+        02012_settings_clause_for_s3
 
         # needs psql
         01889_postgresql_protocol_null_fields
