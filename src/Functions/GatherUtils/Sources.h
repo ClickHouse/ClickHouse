@@ -325,7 +325,7 @@ struct StringSource
 };
 
 
-/// Differs to StringSource by having 'offset' and 'length' in code points instead of bytes in getSlice* methods.
+/// Differs to StringSource by having 'offest' and 'length' in code points instead of bytes in getSlice* methods.
 /** NOTE: The behaviour of substring and substringUTF8 is inconsistent when negative offset is greater than string size:
   * substring:
   *      hello

@@ -57,7 +57,7 @@ public:
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
     ASTPtr getCreateDatabaseQuery() const override;
 

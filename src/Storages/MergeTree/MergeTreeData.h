@@ -436,8 +436,7 @@ public:
     void swapActivePart(MergeTreeData::DataPartPtr part_copy);
 
     /// Returns all parts in specified partition
-    DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id) const;
-    DataPartsVector getDataPartsVectorInPartitions(DataPartState state, const std::unordered_set<String> & partition_ids) const;
+    DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id);
 
     /// Returns the part with the given name and state or nullptr if no such part.
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
@@ -607,17 +606,6 @@ public:
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
-    /// Prepares entries to backup data of the storage.
-    BackupEntries backup(const ASTs & partitions, ContextPtr context) const override;
-    static BackupEntries backupDataParts(const DataPartsVector & data_parts);
-
-    /// Extract data from the backup and put it to the storage.
-    RestoreDataTasks restoreDataPartsFromBackup(
-        const BackupPtr & backup,
-        const String & data_path_in_backup,
-        const std::unordered_set<String> & partition_ids,
-        SimpleIncrement * increment);
-
     /// Moves partition to specified Disk
     void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
 
@@ -648,7 +636,6 @@ public:
 
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
-    std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM

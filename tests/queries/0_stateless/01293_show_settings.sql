@@ -1,3 +1,3 @@
 show settings like 'send_timeout';
-SHOW SETTINGS ILIKE '%RANGE_max%';
+SHOW SETTINGS ILIKE '%CONNECT_timeout%';
 SHOW CHANGED SETTINGS ILIKE '%MEMORY%';

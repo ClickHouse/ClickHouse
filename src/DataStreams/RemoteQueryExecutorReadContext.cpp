@@ -100,7 +100,7 @@ void RemoteQueryExecutorReadContext::setConnectionFD(int fd, Poco::Timespan time
     connection_fd = fd;
     epoll.add(connection_fd);
 
-    receive_timeout_usec = timeout.totalMicroseconds();
+    receive_timeout = timeout;
     connection_fd_description = fd_description;
 }
 
@@ -157,8 +157,8 @@ void RemoteQueryExecutorReadContext::setTimer() const
     /// Did not get packet yet. Init timeout for the next async reading.
     timer.reset();
 
-    if (receive_timeout_usec)
-        timer.setRelative(receive_timeout_usec);
+    if (receive_timeout.totalMicroseconds())
+        timer.setRelative(receive_timeout);
 }
 
 bool RemoteQueryExecutorReadContext::resumeRoutine()

@@ -84,7 +84,7 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name)
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);

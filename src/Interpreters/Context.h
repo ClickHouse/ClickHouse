@@ -102,7 +102,7 @@ class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
-class KeeperDispatcher;
+class KeeperStorageDispatcher;
 class Session;
 
 class IOutputFormat;
@@ -340,9 +340,6 @@ public:
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
-    void setBackupsVolume(const String & path, const String & policy_name = "");
-    VolumePtr getBackupsVolume() const;
-
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
     /// Global application configuration settings.
@@ -365,9 +362,13 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
+    /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
+    /// The function throws an exception if there is no such user or password is wrong.
+    void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
+    void authenticate(const Credentials & credentials, const Poco::Net::SocketAddress & address);
+
     /// Sets the current user assuming that he/she is already authenticated.
-    /// WARNING: This function doesn't check password!
-    /// Normally you shouldn't call this function. Use the Session class to do authentication instead.
+    /// WARNING: This function doesn't check password! Don't use until it's necessary!
     void setUser(const UUID & user_id_);
 
     UserPtr getUser() const;
@@ -583,11 +584,6 @@ public:
 
     std::optional<UInt16> getTCPPortSecure() const;
 
-    /// Register server ports during server starting up. No lock is held.
-    void registerServerPort(String port_name, UInt16 port);
-
-    UInt16 getServerPort(const String & port_name) const;
-
     /// For methods below you may need to acquire the context lock by yourself.
 
     ContextMutablePtr getQueryContext() const;
@@ -647,10 +643,10 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
 #if USE_NURAFT
-    std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
+    std::shared_ptr<KeeperStorageDispatcher> & getKeeperStorageDispatcher() const;
 #endif
-    void initializeKeeperDispatcher() const;
-    void shutdownKeeperDispatcher() const;
+    void initializeKeeperStorageDispatcher() const;
+    void shutdownKeeperStorageDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
