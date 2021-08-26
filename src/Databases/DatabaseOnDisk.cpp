@@ -608,7 +608,7 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     }
 
     /// Read and parse metadata in parallel
-    ThreadPool pool;
+    ThreadPool pool{1};
     for (const auto & file : metadata_files)
     {
         pool.scheduleOrThrowOnError([&]()
