@@ -14,6 +14,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -31,7 +32,6 @@
 #include "StorageLogSettings.h"
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
 
 #include <cassert>
@@ -154,13 +154,12 @@ private:
 };
 
 
-class StripeLogSink final : public SinkToStorage
+class StripeLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    explicit StripeLogSink(
+    explicit StripeLogBlockOutputStream(
         StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, std::unique_lock<std::shared_timed_mutex> && lock_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_)
+        : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
         , data_out_file(storage.table_path + "data.bin")
@@ -183,9 +182,7 @@ public:
         }
     }
 
-    String getName() const override { return "StripeLogSink"; }
-
-    ~StripeLogSink() override
+    ~StripeLogBlockOutputStream() override
     {
         try
         {
@@ -206,12 +203,14 @@ public:
         }
     }
 
-    void consume(Chunk chunk) override
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+
+    void write(const Block & block) override
     {
-        block_out.write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+        block_out.write(block);
     }
 
-    void onFinish() override
+    void writeSuffix() override
     {
         if (done)
             return;
@@ -259,7 +258,6 @@ StorageStripeLog::StorageStripeLog(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
     bool attach,
     size_t max_compress_block_size_)
     : IStorage(table_id_)
@@ -272,7 +270,6 @@ StorageStripeLog::StorageStripeLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -310,9 +307,9 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 }
 
 
-static std::chrono::seconds getLockTimeout(ContextPtr context)
+static std::chrono::seconds getLockTimeout(const Context & context)
 {
-    const Settings & settings = context->getSettingsRef();
+    const Settings & settings = context.getSettingsRef();
     Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
     if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
         lock_timeout = settings.max_execution_time.totalSeconds();
@@ -324,7 +321,7 @@ Pipe StorageStripeLog::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     unsigned num_streams)
@@ -361,7 +358,7 @@ Pipe StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            *this, metadata_snapshot, column_names, context->getSettingsRef().max_read_buffer_size, index, begin, end));
+            *this, metadata_snapshot, column_names, context.getSettingsRef().max_read_buffer_size, index, begin, end));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -370,17 +367,17 @@ Pipe StorageStripeLog::read(
 }
 
 
-SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+BlockOutputStreamPtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
     std::unique_lock lock(rwlock, getLockTimeout(context));
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
-    return std::make_shared<StripeLogSink>(*this, metadata_snapshot, std::move(lock));
+    return std::make_shared<StripeLogBlockOutputStream>(*this, metadata_snapshot, std::move(lock));
 }
 
 
-CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr context)
+CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, const Context & context)
 {
     std::shared_lock lock(rwlock, getLockTimeout(context));
     if (!lock)
@@ -389,7 +386,7 @@ CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr 
     return file_checker.check();
 }
 
-void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     disk->clearDirectory(table_path);
     file_checker = FileChecker{disk, table_path + "sizes.json"};
@@ -410,17 +407,11 @@ void registerStorageStripeLog(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         String disk_name = getDiskName(*args.storage_def);
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        DiskPtr disk = args.context.getDisk(disk_name);
 
         return StorageStripeLog::create(
-            disk,
-            args.relative_data_path,
-            args.table_id,
-            args.columns,
-            args.constraints,
-            args.comment,
-            args.attach,
-            args.getContext()->getSettings().max_compress_block_size);
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints,
+            args.attach, args.context.getSettings().max_compress_block_size);
     }, features);
 }
 

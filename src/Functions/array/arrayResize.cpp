@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
@@ -25,14 +25,12 @@ class FunctionArrayResize : public IFunction
 {
 public:
     static constexpr auto name = "arrayResize";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayResize>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayResize>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

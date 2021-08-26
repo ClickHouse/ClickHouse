@@ -9,7 +9,6 @@
 #include <AggregateFunctions/QuantileExactWeighted.h>
 #include <AggregateFunctions/QuantileTiming.h>
 #include <AggregateFunctions/QuantileTDigest.h>
-#include <AggregateFunctions/QuantileBFloat16Histogram.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesCommon.h>
@@ -29,7 +28,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -105,21 +103,14 @@ public:
             return res;
     }
 
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
-    {
-        return getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
-    }
-
-    bool allocatesMemoryInArena() const override { return false; }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto value = static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
 
         if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
         {
-            /// QuantileTiming only supports unsigned integers. Too large values are also meaningless.
-            if (isNaN(value) || value > std::numeric_limits<Int64>::max() || value < 0)
+            /// QuantileTiming only supports integers.
+            if (isNaN(value) || value > std::numeric_limits<Value>::max() || value < std::numeric_limits<Value>::min())
                 return;
         }
 
@@ -234,10 +225,5 @@ struct NameQuantileTDigest { static constexpr auto name = "quantileTDigest"; };
 struct NameQuantileTDigestWeighted { static constexpr auto name = "quantileTDigestWeighted"; };
 struct NameQuantilesTDigest { static constexpr auto name = "quantilesTDigest"; };
 struct NameQuantilesTDigestWeighted { static constexpr auto name = "quantilesTDigestWeighted"; };
-
-struct NameQuantileBFloat16 { static constexpr auto name = "quantileBFloat16"; };
-struct NameQuantilesBFloat16 { static constexpr auto name = "quantilesBFloat16"; };
-struct NameQuantileBFloat16Weighted { static constexpr auto name = "quantileBFloat16Weighted"; };
-struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBFloat16Weighted"; };
 
 }

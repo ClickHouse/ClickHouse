@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
-#include <common/range.h>
+#include <ext/range.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -71,22 +71,6 @@ namespace
                 query->settings = user.settings.toAST();
             else
                 query->settings = user.settings.toASTWithNames(*manager);
-        }
-
-        if (user.grantees != RolesOrUsersSet::AllTag{})
-        {
-            if (attach_mode)
-                query->grantees = user.grantees.toAST();
-            else
-                query->grantees = user.grantees.toASTWithNames(*manager);
-            query->grantees->use_keyword_any = true;
-        }
-
-        if (!user.default_database.empty())
-        {
-            auto ast = std::make_shared<ASTDatabaseOrNone>();
-            ast->database_name = user.default_database;
-            query->default_database = ast;
         }
 
         return query;
@@ -158,7 +142,7 @@ namespace
             ASTCreateQuotaQuery::Limits create_query_limits;
             create_query_limits.duration = limits.duration;
             create_query_limits.randomize_interval = limits.randomize_interval;
-            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
                 create_query_limits.max[resource_type] = limits.max[resource_type];
             query->all_limits.push_back(create_query_limits);
         }
@@ -188,7 +172,7 @@ namespace
         if (policy.isRestrictive())
             query->is_restrictive = policy.isRestrictive();
 
-        for (auto type : collections::range(RowPolicy::MAX_CONDITION_TYPE))
+        for (auto type : ext::range(RowPolicy::MAX_CONDITION_TYPE))
         {
             const auto & condition = policy.conditions[static_cast<size_t>(type)];
             if (!condition.empty())
@@ -232,8 +216,8 @@ namespace
 }
 
 
-InterpreterShowCreateAccessEntityQuery::InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, ContextPtr context_)
-    : WithContext(context_), query_ptr(query_ptr_)
+InterpreterShowCreateAccessEntityQuery::InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, const Context & context_)
+    : query_ptr(query_ptr_), context(context_)
 {
 }
 
@@ -277,9 +261,9 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities() const
 {
     auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
-    const auto & access_control = getContext()->getAccessControlManager();
-    getContext()->checkAccess(getRequiredAccess());
-    show_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    const auto & access_control = context.getAccessControlManager();
+    context.checkAccess(getRequiredAccess());
+    show_query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
     std::vector<AccessEntityPtr> entities;
 
     if (show_query.all)
@@ -293,12 +277,12 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     }
     else if (show_query.current_user)
     {
-        if (auto user = getContext()->getUser())
+        if (auto user = context.getUser())
             entities.push_back(user);
     }
     else if (show_query.current_quota)
     {
-        auto usage = getContext()->getQuotaUsage();
+        auto usage = context.getQuotaUsage();
         if (usage)
             entities.push_back(access_control.read<Quota>(usage->quota_id));
     }
@@ -348,7 +332,7 @@ ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries() const
     auto entities = getEntities();
 
     ASTs list;
-    const auto & access_control = getContext()->getAccessControlManager();
+    const auto & access_control = context.getAccessControlManager();
     for (const auto & entity : entities)
         list.push_back(getCreateQuery(*entity, access_control));
 

@@ -7,3 +7,4 @@ toc_title: Roadmap
 
 Планы развития на 2021 год опубликованы для обсуждения [здесь](https://github.com/ClickHouse/ClickHouse/issues/17623).
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/roadmap/) <!--hide-->
