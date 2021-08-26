@@ -632,11 +632,17 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
 void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default)
 {
     /// Replace "expr" with "CAST(expr, 'TypeName')"
-    /// or with "(CAST(assumeNotNull(expr as _expression), 'TypeName'), isNull(_expression))" if null_as_default is true
+    /// or with "(CAST(ifNull(x AS _expression, CAST(defaultValueOfTypeName('TypeName'), toTypeName(assumeNotNull(_expression)))), 'TypeName'), isNull(_expression))" if null_as_default is true
     if (null_as_default)
     {
         expr->setAlias("_expression");
-        expr = makeASTFunction("assumeNotNull", std::move(expr));
+        auto default_value = makeASTFunction("defaultValueOfTypeName", std::make_shared<ASTIdentifier>(result_column_type.getName()));
+        auto cast_default_value = makeASTFunction("_CAST", std::move(default_value));
+
+        auto nullable = makeASTFunction("assumeNotNull", std::make_shared<ASTIdentifier>("_expression"));
+        auto nullable_to_typename = makeASTFunction("toTypeName", std::move(nullable));
+
+        expr = makeASTFunction("ifNull", std::move(expr), std::move(cast_default_value), std::move(nullable_to_typename));
     }
 
     expr = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));

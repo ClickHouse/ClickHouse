@@ -15,5 +15,5 @@ drop table if exists test_date;
 
 drop table if exists test_datetime;
 create table test_datetime (`data` DateTime) engine = MergeTree order by tuple();
-insert into test_datetime values ('2021-01-01'), (NULL), ('2021-02-01'), ('2021-03-01');
+insert into test_datetime values ('2021-01-01 00:00:00'), (NULL), ('2021-02-01 01:00:00'), ('2021-03-01 02:00:00');
 drop table if exists test_datetime;
