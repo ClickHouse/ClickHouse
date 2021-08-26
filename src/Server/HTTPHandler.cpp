@@ -21,6 +21,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Session.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
@@ -259,6 +260,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
     : server(server_)
     , log(&Poco::Logger::get(name))
+    , default_settings(server.context()->getSettingsRef())
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -266,10 +268,7 @@ HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
 
 /// We need d-tor to be present in this translation unit to make it play well with some
 /// forward decls in the header. Other than that, the default d-tor would be OK.
-HTTPHandler::~HTTPHandler()
-{
-    (void)this;
-}
+HTTPHandler::~HTTPHandler() = default;
 
 
 bool HTTPHandler::authenticateUser(
@@ -349,7 +348,7 @@ bool HTTPHandler::authenticateUser(
     else
     {
         if (!request_credentials)
-            request_credentials = request_context->makeGSSAcceptorContext();
+            request_credentials = server.context()->makeGSSAcceptorContext();
 
         auto * gss_acceptor_context = dynamic_cast<GSSAcceptorContext *>(request_credentials.get());
         if (!gss_acceptor_context)
@@ -375,10 +374,7 @@ bool HTTPHandler::authenticateUser(
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
-
-    ClientInfo & client_info = request_context->getClientInfo();
-    client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-    client_info.interface = ClientInfo::Interface::HTTP;
+    ClientInfo & client_info = session->getClientInfo();
 
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
@@ -390,10 +386,11 @@ bool HTTPHandler::authenticateUser(
     client_info.http_user_agent = request.get("User-Agent", "");
     client_info.http_referer = request.get("Referer", "");
     client_info.forwarded_for = request.get("X-Forwarded-For", "");
+    client_info.quota_key = quota_key;
 
     try
     {
-        request_context->setUser(*request_credentials, request.clientAddress());
+        session->authenticate(*request_credentials, request.clientAddress());
     }
     catch (const Authentication::Require<BasicCredentials> & required_credentials)
     {
@@ -410,7 +407,7 @@ bool HTTPHandler::authenticateUser(
     }
     catch (const Authentication::Require<GSSAcceptorContext> & required_credentials)
     {
-        request_credentials = request_context->makeGSSAcceptorContext();
+        request_credentials = server.context()->makeGSSAcceptorContext();
 
         if (required_credentials.getRealm().empty())
             response.set("WWW-Authenticate", "Negotiate");
@@ -423,14 +420,6 @@ bool HTTPHandler::authenticateUser(
     }
 
     request_credentials.reset();
-
-    if (!quota_key.empty())
-        request_context->setQuotaKey(quota_key);
-
-    /// Query sent through HTTP interface is initial.
-    client_info.initial_user = client_info.current_user;
-    client_info.initial_address = client_info.current_address;
-
     return true;
 }
 
@@ -451,8 +440,6 @@ void HTTPHandler::processQuery(
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
-
-    std::shared_ptr<NamedSession> session;
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
@@ -463,43 +450,30 @@ void HTTPHandler::processQuery(
         session_id = params.get("session_id");
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
-
-        session = request_context->acquireNamedSession(session_id, session_timeout, session_check == "1");
-
-        request_context = Context::createCopy(session->context);
-        request_context->setSessionContext(session->context);
+        session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
-
-    SCOPE_EXIT({
-        if (session)
-            session->release();
-    });
 
     // Parse the OpenTelemetry traceparent header.
     // Disable in Arcadia -- it interferes with the
     // test_clickhouse.TestTracing.test_tracing_via_http_proxy[traceparent] test.
+    ClientInfo client_info = session->getClientInfo();
 #if !defined(ARCADIA_BUILD)
     if (request.has("traceparent"))
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!request_context->getClientInfo().client_trace_context.parseTraceparentHeader(
+        if (!client_info.client_trace_context.parseTraceparentHeader(
             opentelemetry_traceparent, error))
         {
             throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
                 "Failed to parse OpenTelemetry traceparent header '{}': {}",
                 opentelemetry_traceparent, error);
         }
-
-        request_context->getClientInfo().client_trace_context.tracestate = request.get("tracestate", "");
+        client_info.client_trace_context.tracestate = request.get("tracestate", "");
     }
 #endif
 
-    // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    request_context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
-
-    ClientInfo & client_info = request_context->getClientInfo();
-    client_info.initial_query_id = client_info.current_query_id;
+    auto context = session->makeQueryContext(std::move(client_info));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -564,7 +538,7 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            const std::string tmp_path(request_context->getTemporaryVolume()->getDisk()->getPath());
+            const std::string tmp_path(server.context()->getTemporaryVolume()->getDisk()->getPath());
             const std::string tmp_path_template(tmp_path + "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
@@ -652,13 +626,13 @@ void HTTPHandler::processQuery(
 
     /// In theory if initially readonly = 0, the client can change any setting and then set readonly
     /// to some other value.
-    const auto & settings = request_context->getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     /// Only readonly queries are allowed for HTTP GET requests.
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
     {
         if (settings.readonly == 0)
-            request_context->setSetting("readonly", 2);
+            context->setSetting("readonly", 2);
     }
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
@@ -695,22 +669,25 @@ void HTTPHandler::processQuery(
         else
         {
             /// Other than query parameters are treated as settings.
-            if (!customizeQueryParam(request_context, key, value))
+            if (!customizeQueryParam(context, key, value))
                 settings_changes.push_back({key, value});
         }
     }
 
     if (!database.empty())
-        request_context->setCurrentDatabase(database);
+        context->setCurrentDatabase(database);
 
     if (!default_format.empty())
-        request_context->setDefaultFormat(default_format);
+        context->setDefaultFormat(default_format);
 
     /// For external data we also want settings
-    request_context->checkSettingsConstraints(settings_changes);
-    request_context->applySettingsChanges(settings_changes);
+    context->checkSettingsConstraints(settings_changes);
+    context->applySettingsChanges(settings_changes);
 
-    const auto & query = getQuery(request, params, request_context);
+    // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
+    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+
+    const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
     in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
@@ -731,7 +708,7 @@ void HTTPHandler::processQuery(
     /// Origin header.
     used_output.out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
 
-    auto append_callback = [context = request_context] (ProgressCallback callback)
+    auto append_callback = [context = context] (ProgressCallback callback)
     {
         auto prev = context->getProgressCallback();
 
@@ -750,7 +727,7 @@ void HTTPHandler::processQuery(
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
-        append_callback([context = request_context, &request](const Progress &)
+        append_callback([context = context, &request](const Progress &)
         {
             /// Assume that at the point this method is called no one is reading data from the socket any more:
             /// should be true for read-only queries.
@@ -759,11 +736,11 @@ void HTTPHandler::processQuery(
         });
     }
 
-    customizeContext(request, request_context);
+    customizeContext(request, context);
 
-    query_scope.emplace(request_context);
+    query_scope.emplace(context);
 
-    executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, request_context,
+    executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
             response.setContentType(content_type);
@@ -859,23 +836,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
 
-    SCOPE_EXIT({
-        // If there is no request_credentials instance waiting for the next round, then the request is processed,
-        // so no need to preserve request_context either.
-        // Needs to be performed with respect to the other destructors in the scope though.
-        if (!request_credentials)
-            request_context.reset();
-    });
-
-    if (!request_context)
-    {
-        // Context should be initialized before anything, for correct memory accounting.
-        request_context = Context::createCopy(server.context());
-        request_credentials.reset();
-    }
-
-    /// Cannot be set here, since query_id is unknown.
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP);
+    SCOPE_EXIT({ session.reset(); });
     std::optional<CurrentThread::QueryScope> query_scope;
+
     Output used_output;
 
     /// In case of exception, send stack trace to client.
@@ -889,7 +853,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
-        HTMLForm params(request_context->getSettingsRef(), request);
+        HTMLForm params(default_settings, request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
         /// FIXME: maybe this check is already unnecessary.
@@ -939,7 +903,9 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
     {
         /// Save name and values of substitution in dictionary.
         const String parameter_name = key.substr(strlen("param_"));
-        context->setQueryParameter(parameter_name, value);
+
+        if (!context->getQueryParameters().contains(parameter_name))
+            context->setQueryParameter(parameter_name, value);
         return true;
     }
 
@@ -965,8 +931,16 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
     for (const auto & it : params)
+    {
         if (it.first == param_name)
+        {
             full_query += it.second;
+        }
+        else
+        {
+            customizeQueryParam(context, it.first, it.second);
+        }
+    }
 
     return full_query;
 }

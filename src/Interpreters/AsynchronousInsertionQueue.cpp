@@ -5,13 +5,13 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/copyData.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/queryToString.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 
 
 namespace DB
@@ -19,16 +19,24 @@ namespace DB
 
 struct AsynchronousInsertQueue::InsertData
 {
-    InsertData(ASTPtr query_, const Settings & settings_)
-        : query(std::move(query_)), settings(settings_)
+    InsertData(ASTPtr query_, const Settings & settings_, const Block & header_)
+        : query(std::move(query_)), settings(settings_), header(header_)
     {
     }
 
     ASTPtr query;
     Settings settings;
+    Block header;
+    String query_id;
+
+    struct Data
+    {
+        String bytes;
+        String query_id;
+    };
 
     std::mutex mutex;
-    std::list<std::string> data;
+    std::list<Data> data;
     size_t size = 0;
 
     /// Timestamp of the first insert into queue, or after the last queue dump.
@@ -112,32 +120,58 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     pool.wait();
 }
 
-void AsynchronousInsertQueue::push(const ASTPtr & query, const Settings & settings)
+bool AsynchronousInsertQueue::push(
+    const ASTPtr & query, const Settings & settings, const String & query_id)
 {
     auto write_lock = lock->getLock(RWLockImpl::Write, String());
+    InsertQuery key{query, settings};
 
+    auto it = queue->find(key);
+    if (it != queue->end())
+    {
+        std::unique_lock<std::mutex> data_lock(it->second->mutex);
+        if (it->second->is_reset)
+            return false;
+
+        pushImpl(query, query_id, it);
+        return true;
+    }
+
+    return false;
+}
+
+void AsynchronousInsertQueue::push(
+    const ASTPtr & query, const Settings & settings, const String & query_id, const Block & header)
+{
+    auto write_lock = lock->getLock(RWLockImpl::Write, String());
     InsertQuery key{query, settings};
 
     auto it = queue->find(key);
     if (it == queue->end())
-        it = queue->insert({key, std::make_shared<InsertData>(query, settings)}).first;
+        it = queue->emplace(key, std::make_shared<InsertData>(query, settings, header)).first;
     else if (it->second->is_reset)
-        it->second = std::make_shared<InsertData>(query, settings);
+        it->second = std::make_shared<InsertData>(query, settings, header);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Entry for query '{}' already exists and not reset", queryToString(query));
 
     std::unique_lock<std::mutex> data_lock(it->second->mutex);
+    pushImpl(query, query_id, it);
+}
 
-    auto read_buffers = getReadBuffersFromASTInsertQuery(query);
-    ConcatReadBuffer concat_buf(std::move(read_buffers));
-
-    /// NOTE: must not read from |query->tail| before read all between |query->data| and |query->end|.
+void AsynchronousInsertQueue::pushImpl(const ASTPtr & query, const String & query_id, QueueIterator it)
+{
+    auto read_buf = getReadBufferFromASTInsertQuery(query);
 
     /// It's important to read the whole data per query as a single chunk, so we can safely drop it in case of parsing failure.
     auto & new_data = it->second->data.emplace_back();
-    new_data.reserve(concat_buf.totalSize());
-    WriteBufferFromString write_buf(new_data);
 
-    copyData(concat_buf, write_buf);
-    it->second->size += concat_buf.count();
+    new_data.query_id = query_id;
+    new_data.bytes.reserve(read_buf->totalSize());
+    WriteBufferFromString write_buf(new_data.bytes);
+
+    copyData(*read_buf, write_buf);
+    it->second->size += read_buf->count();
     it->second->last_update = std::chrono::steady_clock::now();
 
     LOG_INFO(&Poco::Logger::get("AsynchronousInsertQueue"),
@@ -204,27 +238,84 @@ try
     if (data->is_reset)
         return;
 
-    ReadBuffers read_buffers;
-    for (const auto & datum : data->data)
-        read_buffers.emplace_back(std::make_unique<ReadBufferFromString>(datum));
+    // ReadBuffers read_buffers;
+    // for (const auto & datum : data->data)
+    //     read_buffers.emplace_back(std::make_unique<ReadBufferFromString>(datum));
+
+    // auto insert_context = Context::createCopy(global_context);
+    // insert_context->makeQueryContext();
+    // insert_context->setSettings(data->settings);
+
+    // InterpreterInsertQuery interpreter(data->query, std::move(read_buffers), insert_context);
+    // auto io = interpreter.execute();
+    // assert(io.pipeline.initialized());
+
+    // auto log_progress = [&](const Progress & progress)
+    // {
+    //     LOG_INFO(&Poco::Logger::get("AsynchronousInsertQueue"),
+    //         "Flushed {} rows, {} bytes", progress.written_rows, progress.written_bytes);
+    // };
+
+    // io.pipeline.setProgressCallback(log_progress);
+    // auto executor = io.pipeline.execute();
+    // executor->execute(io.pipeline.getNumThreads());
 
     auto insert_context = Context::createCopy(global_context);
+    /// 'resetParser' doesn't work for parallel parsing.
+    data->settings.set("input_format_parallel_parsing", false);
     insert_context->makeQueryContext();
     insert_context->setSettings(data->settings);
 
-    InterpreterInsertQuery interpreter(data->query, std::move(read_buffers), insert_context);
-    auto io = interpreter.execute();
-    assert(io.pipeline.initialized());
+    auto [format, pipe] = getSourceFromASTInsertQuery(data->query, false, data->header, insert_context, nullptr);
 
-    auto log_progress = [&](const Progress & progress)
+    MutableColumns input_columns = data->header.cloneEmptyColumns();
+    size_t total_rows = 0;
+    for (const auto & datum : data->data)
     {
-        LOG_INFO(&Poco::Logger::get("AsynchronousInsertQueue"),
-            "Flushed {} rows, {} bytes", progress.written_rows, progress.written_bytes);
-    };
+        ReadBufferFromString buf(datum.bytes);
+        format->setReadBuffer(buf);
+        size_t current_rows = 0;
 
-    io.pipeline.setProgressCallback(log_progress);
-    auto executor = io.pipeline.execute();
-    executor->execute(io.pipeline.getNumThreads());
+        try
+        {
+            Chunk chunk;
+            QueryPipeline pipeline;
+            pipeline.init(std::move(pipe));
+            PullingPipelineExecutor executor(pipeline);
+            while (executor.pull(chunk))
+            {
+                assert(chunk.getNumColumns() == input_chunk.getNumColumns());
+                const auto & columns = chunk.getColumns();
+                for (size_t i = 0; i < chunk.getNumColumns(); ++i)
+                    input_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+
+                current_rows += chunk.getNumRows();
+            }
+        }
+        catch (const Exception & e)
+        {
+            LOG_INFO(&Poco::Logger::get("AsynchronousInsertQueue"),
+                "Failed query '{}' with query id {}. {}",
+                queryToString(data->query), datum.query_id, e.displayText());
+
+            for (const auto & column : input_columns)
+                if (column->size() > total_rows)
+                    column->popBack(column->size() - total_rows);
+
+            continue;
+        }
+
+        LOG_INFO(&Poco::Logger::get("AsynchronousInsertQueue"),
+                "Succeded query '{}' with query id {}",
+                queryToString(data->query), datum.query_id);
+
+        format->resetParser();
+        total_rows += current_rows;
+    }
+
+    std::cerr << "should be inserted query: " << queryToString(data->query) << "\n";
+    auto block = data->header.cloneWithColumns(std::move(input_columns));
+    std::cerr << "insert block: " << block.dumpStructure() << "\n";
 
     data->reset();
 }

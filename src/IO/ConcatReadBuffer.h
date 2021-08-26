@@ -38,6 +38,7 @@ public:
 
 protected:
     Buffers buffers;
+    bool own_buffers = false;
     Buffers::iterator current;
 
     bool nextImpl() override

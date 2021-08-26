@@ -53,4 +53,8 @@ BlockIO executeQuery(
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete
 );
 
+/// Executes BlockIO returned from executeQuery(...)
+/// if built pipeline does not require any input and does not produce any output.
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context);
+
 }

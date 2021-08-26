@@ -271,7 +271,7 @@ mark_cache_size: 5368709120
 # The amount of data in mapped files can be monitored
 # in system.metrics, system.metric_log by the MMappedFiles, MMappedFileBytes metrics
 # and in system.asynchronous_metrics, system.asynchronous_metrics_log by the MMapCacheCells metric,
-# and also in system.events, system.processes, system.query_log, system.query_thread_log by the
+# and also in system.events, system.processes, system.query_log, system.query_thread_log, system.query_views_log by the
 # CreatedReadBufferMMap, CreatedReadBufferMMapFailed, MMappedFileCacheHits, MMappedFileCacheMisses events.
 # Note that the amount of data in mapped files does not consume memory directly and is not accounted
 # in query or server memory usage - because this memory can be discarded similar to OS page cache.
@@ -731,12 +731,21 @@ query_thread_log:
     partition_by: toYYYYMM(event_date)
     flush_interval_milliseconds: 7500
 
+# Query views log. Has information about all dependent views associated with a query.
+# Used only for queries with setting log_query_views = 1.
+query_views_log:
+    database: system
+    table: query_views_log
+    partition_by: toYYYYMM(event_date)
+    flush_interval_milliseconds: 7500
+
 # Uncomment if use part log.
 # Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).
-# part_log:
-#     database: system
-#     table: part_log
-#     flush_interval_milliseconds: 7500
+part_log:
+    database: system
+    table: part_log
+    partition_by: toYYYYMM(event_date)
+    flush_interval_milliseconds: 7500
 
 # Uncomment to write text log into table.
 # Text log contains all information from usual server log but stores it in structured and efficient way.

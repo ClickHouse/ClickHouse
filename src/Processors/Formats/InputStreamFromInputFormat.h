@@ -9,9 +9,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class IInputFormat;
-using InputFormatPtr = std::shared_ptr<IInputFormat>;
-
 class InputStreamFromInputFormat : public IBlockInputStream
 {
 public:

@@ -174,8 +174,10 @@ public:
         UInt64 absolute_delay;
         UInt8 total_replicas;
         UInt8 active_replicas;
+        String last_queue_update_exception;
         /// If the error has happened fetching the info from ZooKeeper, this field will be set.
         String zookeeper_exception;
+        std::unordered_map<std::string, bool> replica_is_active;
     };
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
@@ -329,6 +331,10 @@ private:
     ReplicatedMergeTreeQueue queue;
     std::atomic<time_t> last_queue_update_start_time{0};
     std::atomic<time_t> last_queue_update_finish_time{0};
+
+    mutable std::mutex last_queue_update_exception_lock;
+    String last_queue_update_exception;
+    String getLastQueueUpdateException() const;
 
     DataPartsExchange::Fetcher fetcher;
 
