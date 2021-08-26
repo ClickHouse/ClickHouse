@@ -636,13 +636,13 @@ void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const I
     if (null_as_default)
     {
         expr->setAlias("_expression");
-        auto default_value = makeASTFunction("defaultValueOfTypeName", std::make_shared<ASTIdentifier>(result_column_type.getName()));
-        auto cast_default_value = makeASTFunction("_CAST", std::move(default_value));
 
+        auto default_value = makeASTFunction("defaultValueOfTypeName", std::make_shared<ASTIdentifier>(result_column_type.getName()));
         auto not_nullable = makeASTFunction("assumeNotNull", std::make_shared<ASTIdentifier>("_expression"));
         auto expression_not_nullable = makeASTFunction("toTypeName", std::move(not_nullable));
+        auto cast_default_value = makeASTFunction("_CAST", std::move(default_value), std::move(expression_not_nullable));
 
-        expr = makeASTFunction("ifNull", std::move(expr), std::move(cast_default_value), std::move(expression_not_nullable));
+        expr = makeASTFunction("ifNull", std::move(expr), std::move(cast_default_value), std::make_shared<ASTIdentifier>(result_column_type.getName()));
     }
 
     expr = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
