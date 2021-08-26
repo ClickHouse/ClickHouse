@@ -661,13 +661,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.client_info = client_info;
 
-            std::bernoulli_distribution should_write_log{
-                            settings.log_queries_probability};
-
-            context->setSetting("log_queries", settings.log_queries && should_write_log(thread_local_rng));
-            context->setSetting("log_queries_probability", 1.0);
-
             bool log_queries = settings.log_queries && !internal;
+
+            /// There is an option of probablistic logging of queries.
+            /// If it is used - do the random sampling and "collapse" the settings.
+            /// It allows to consistently log queries with all the subqueries in distributed query processing
+            /// (subqueries on remote nodes will receive these "collapsed" settings)
+            if (log_queries && settings.log_queries_probability < 1.0)
+            {
+                std::bernoulli_distribution should_write_log{settings.log_queries_probability};
+
+                context->setSetting("log_queries", settings.log_queries && should_write_log(thread_local_rng));
+                context->setSetting("log_queries_probability", 1.0);
+            }
 
             /// Log into system table start of query execution, if need.
             if (log_queries)
