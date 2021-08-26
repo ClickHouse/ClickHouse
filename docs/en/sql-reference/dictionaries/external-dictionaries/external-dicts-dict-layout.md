@@ -274,7 +274,7 @@ RANGE(MIN StartTimeStamp MAX EndTimeStamp)
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values (see [range_hashed](#range-hashed)). This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md).
 
-Example:
+Configuration example:
 
 ``` sql
 CREATE DICTIONARY range_dictionary
