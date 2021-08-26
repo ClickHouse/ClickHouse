@@ -180,28 +180,6 @@ def avro_confluent_message(schema_registry_client, value):
     })
     return serializer.encode_record_with_schema('test_subject', schema, value)
 
-# Fixtures
-
-@pytest.fixture(scope="module")
-def kafka_cluster():
-    try:
-        global kafka_id
-        cluster.start()
-        kafka_id = instance.cluster.kafka_docker_id
-        print(("kafka_id is {}".format(kafka_id)))
-        yield cluster
-
-    finally:
-        cluster.shutdown()
-
-@pytest.fixture(autouse=True)
-def kafka_setup_teardown():
-    instance.query('DROP DATABASE IF EXISTS test; CREATE DATABASE test;')
-    wait_kafka_is_available() # ensure kafka is alive
-    kafka_producer_send_heartbeat_msg() # ensure python kafka client is ok
-    # print("kafka is available - running test")
-    yield  # run test
-
 # Tests
 
 def test_kafka_settings_old_syntax(kafka_cluster):
@@ -282,6 +260,11 @@ def test_kafka_settings_new_syntax(kafka_cluster):
 def test_kafka_json_as_string(kafka_cluster):
     kafka_produce(kafka_cluster, 'kafka_json_as_string', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }',
                                            '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
+
+    # 'tombstone' record (null value) = marker of deleted record
+    producer = KafkaProducer(bootstrap_servers="localhost:{}".format(cluster.kafka_port), value_serializer=producer_serializer, key_serializer=producer_serializer)
+    producer.send(topic='kafka_json_as_string', key='xxx')
+    producer.flush()
 
     instance.query('''
         CREATE TABLE test.kafka (field String)
@@ -694,6 +677,8 @@ def describe_consumer_group(kafka_cluster, name):
 def kafka_cluster():
     try:
         cluster.start()
+        kafka_id = instance.cluster.kafka_docker_id
+        print(("kafka_id is {}".format(kafka_id)))
         yield cluster
     finally:
         cluster.shutdown()
@@ -1124,6 +1109,7 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
 
 
 def test_kafka_materialized_view(kafka_cluster):
+
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
@@ -2753,7 +2739,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 "(0,'BAD','AM',0.5,1)",
             ],
-            'expected':r'''{"raw_message":"(0,'BAD','AM',0.5,1)","error":"Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero\/NULL instead of throwing exception.: while executing 'FUNCTION CAST(assumeNotNull(_dummy_0) :: 2, 'UInt16' :: 1) -> CAST(assumeNotNull(_dummy_0), 'UInt16') UInt16 : 4'"}''',
+            'expected':r'''{"raw_message":"(0,'BAD','AM',0.5,1)","error":"Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero\/NULL instead of throwing exception.: while executing 'FUNCTION _CAST(assumeNotNull(_dummy_0) :: 2, 'UInt16' :: 1) -> _CAST(assumeNotNull(_dummy_0), 'UInt16') UInt16 : 4'"}''',
             'supports_empty_value': True,
             'printable':True,
         },

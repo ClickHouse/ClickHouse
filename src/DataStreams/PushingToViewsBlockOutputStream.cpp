@@ -70,7 +70,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
         // Do not deduplicate insertions into MV if the main insertion is Ok
         if (disable_deduplication_for_children)
-            insert_context->setSetting("insert_deduplicate", Field{false});
+            insert_context->setSetting("insert_deduplicate", false);
 
         // Separate min_insert_block_size_rows/min_insert_block_size_bytes for children
         if (insert_settings.min_insert_block_size_rows_for_materialized_views)
@@ -342,19 +342,7 @@ void PushingToViewsBlockOutputStream::writeSuffix()
 
                 runViewStage(view, stage_step, [&] { process_suffix(view); });
                 if (view.exception)
-                {
                     exception_count.fetch_add(1, std::memory_order_relaxed);
-                }
-                else
-                {
-                    LOG_TRACE(
-                        log,
-                        "Pushing (parallel {}) from {} to {} took {} ms.",
-                        max_threads,
-                        storage->getStorageID().getNameForLogs(),
-                        view.table_id.getNameForLogs(),
-                        view.runtime_stats.elapsed_ms);
-                }
             });
         }
         pool.wait();
@@ -371,20 +359,22 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             }
             runViewStage(view, stage_step, [&] { process_suffix(view); });
             if (view.exception)
-            {
                 exception_happened = true;
-            }
-            else
-            {
-                LOG_TRACE(
-                    log,
-                    "Pushing (sequentially) from {} to {} took {} ms.",
-                    storage->getStorageID().getNameForLogs(),
-                    view.table_id.getNameForLogs(),
-                    view.runtime_stats.elapsed_ms);
-            }
         }
     }
+
+    for (auto & view : views)
+    {
+        if (!view.exception)
+            LOG_TRACE(
+                log,
+                "Pushing ({}) from {} to {} took {} ms.",
+                max_threads <= 1 ? "sequentially" : ("parallel " + std::to_string(max_threads)),
+                storage->getStorageID().getNameForLogs(),
+                view.table_id.getNameForLogs(),
+                view.runtime_stats.elapsed_ms);
+    }
+
     if (exception_happened)
         checkExceptionsInViews();
 
