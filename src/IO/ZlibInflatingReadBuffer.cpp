@@ -48,7 +48,7 @@ ZlibInflatingReadBuffer::~ZlibInflatingReadBuffer()
 
 bool ZlibInflatingReadBuffer::nextImpl()
 {
-    /// Need do-while loop to prevent situation, when 
+    /// Need do-while loop to prevent situation, when
     /// eof was not reached, but working buffer became empty (when nothing was decompressed in current iteration)
     /// (this happens with compression algorithms, same idea is implemented in ZstdInflatingReadBuffer)
     do
@@ -78,7 +78,7 @@ bool ZlibInflatingReadBuffer::nextImpl()
         /// If end was reached, it can be end of file or end of part (for example, chunk)
         if (rc == Z_STREAM_END)
         {
-            /// if it is end of file, remember this and return 
+            /// if it is end of file, remember this and return
             /// * true if we can work with working buffer (we still have something to read, so next must return true)
             /// * false if there is no data in working buffer
             if (in->eof())
