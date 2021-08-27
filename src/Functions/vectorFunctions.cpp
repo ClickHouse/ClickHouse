@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 /// str starts from the lowercase letter; not constexpr due to the compiler version
-/*constexpr*/ std::string MakeFirstLetterUppercase(std::string && str)
+/*constexpr*/ std::string makeFirstLetterUppercase(std::string && str)
 {
     std::string res(str);
     res[0] += 'A' - 'a';
@@ -22,14 +22,14 @@ namespace ErrorCodes
 }
 
 template <const char * func_name>
-class TuplesToTupleFunction : public TupleIFunction
+class FunctionTupleOperator : public TupleIFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
-    static inline auto name = "tuple" + MakeFirstLetterUppercase(func_name);
+    static inline auto name = "tuple" + makeFirstLetterUppercase(func_name);
 
-    explicit TuplesToTupleFunction(ContextPtr context_) : TupleIFunction(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<TuplesToTupleFunction>(context_); }
+    explicit FunctionTupleOperator(ContextPtr context_) : TupleIFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperator>(context_); }
 
     String getName() const override { return name; }
 
@@ -117,16 +117,16 @@ public:
 };
 
 static const char PLUS_NAME[] = "plus";
-using FunctionTuplePlus = TuplesToTupleFunction<PLUS_NAME>;
+using FunctionTuplePlus = FunctionTupleOperator<PLUS_NAME>;
 
 static const char MINUS_NAME[] = "minus";
-using FunctionTupleMinus = TuplesToTupleFunction<MINUS_NAME>;
+using FunctionTupleMinus = FunctionTupleOperator<MINUS_NAME>;
 
 static const char MULTIPLY_NAME[] = "multiply";
-using FunctionTupleMultiply = TuplesToTupleFunction<MULTIPLY_NAME>;
+using FunctionTupleMultiply = FunctionTupleOperator<MULTIPLY_NAME>;
 
 static const char DIVIDE_NAME[] = "divide";
-using FunctionTupleDivide = TuplesToTupleFunction<DIVIDE_NAME>;
+using FunctionTupleDivide = FunctionTupleOperator<DIVIDE_NAME>;
 
 class FunctionTupleNegate : public TupleIFunction
 {
@@ -193,13 +193,94 @@ public:
         for (size_t i = 0; i < tuple_size; ++i)
         {
             ColumnWithTypeAndName cur{cur_elements[i], cur_types[i], {}};
-            auto elem_negate= negate->build(ColumnsWithTypeAndName{cur});
+            auto elem_negate = negate->build(ColumnsWithTypeAndName{cur});
             columns[i] = elem_negate->execute({cur}, elem_negate->getResultType(), input_rows_count);
         }
 
         return ColumnTuple::create(columns);
     }
 };
+
+template <const char * func_name>
+class FunctionTupleOperatorByNumber : public TupleIFunction
+{
+public:
+    /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
+    static inline auto name = "tuple" + makeFirstLetterUppercase(func_name) + "ByNumber";
+
+    explicit FunctionTupleOperatorByNumber(ContextPtr context_) : TupleIFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleOperatorByNumber>(context_); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuples, got {}",
+                            getName(), arguments[0].type->getName());
+
+        const auto & cur_types = cur_tuple->getElements();
+
+        Columns cur_elements;
+        if (arguments[0].column)
+            cur_elements = getTupleElements(*arguments[0].column);
+
+        size_t tuple_size = cur_types.size();
+        if (tuple_size == 0)
+            return std::make_shared<DataTypeUInt8>();
+
+        const auto & p_column = arguments[1];
+        auto func = FunctionFactory::instance().get(func_name, context);
+        DataTypes types(tuple_size);
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            try
+            {
+                ColumnWithTypeAndName cur{cur_elements.empty() ? nullptr : cur_elements[i], cur_types[i], {}};
+                auto elem_func = func->build(ColumnsWithTypeAndName{cur, p_column});
+                types[i] = elem_func->getResultType();
+            }
+            catch (DB::Exception & e)
+            {
+                e.addMessage("While executing function {} for tuple element {}", getName(), i);
+                throw;
+            }
+        }
+
+        return std::make_shared<DataTypeTuple>(types);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+        const auto & cur_types = cur_tuple->getElements();
+        auto cur_elements = getTupleElements(*arguments[0].column);
+
+        size_t tuple_size = cur_elements.size();
+        if (tuple_size == 0)
+            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
+
+        const auto & p_column = arguments[1];
+        auto func = FunctionFactory::instance().get(func_name, context);
+        Columns columns(tuple_size);
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            ColumnWithTypeAndName cur{cur_elements[i], cur_types[i], {}};
+            auto elem_func = func->build(ColumnsWithTypeAndName{cur, p_column});
+            columns[i] = elem_func->execute({cur, p_column}, elem_func->getResultType(), input_rows_count);
+        }
+
+        return ColumnTuple::create(columns);
+    }
+};
+
+using FunctionTupleMultiplyByNumber = FunctionTupleOperatorByNumber<MULTIPLY_NAME>;
+
+using FunctionTupleDivideByNumber = FunctionTupleOperatorByNumber<DIVIDE_NAME>;
 
 class FunctionDotProduct : public TupleIFunction
 {
@@ -749,14 +830,14 @@ public:
 };
 
 template <const char * func_label>
-class VectorDistance : public TupleIFunction
+class FunctionVectorDistance : public TupleIFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
     static inline auto name = "L" + std::string(func_label) + "Distance";
 
-    explicit VectorDistance(ContextPtr context_) : TupleIFunction(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<VectorDistance>(context_); }
+    explicit FunctionVectorDistance(ContextPtr context_) : TupleIFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionVectorDistance>(context_); }
 
     String getName() const override { return name; }
 
@@ -806,16 +887,16 @@ public:
 };
 
 static constexpr char L1DISTANCE_LABEL[] = "1";
-using FunctionL1Distance = VectorDistance<L1DISTANCE_LABEL>;
+using FunctionL1Distance = FunctionVectorDistance<L1DISTANCE_LABEL>;
 
 static constexpr char L2DISTANCE_LABEL[] = "2";
-using FunctionL2Distance = VectorDistance<L2DISTANCE_LABEL>;
+using FunctionL2Distance = FunctionVectorDistance<L2DISTANCE_LABEL>;
 
 static constexpr char LinfDISTANCE_LABEL[] = "inf";
-using FunctionLinfDistance = VectorDistance<LinfDISTANCE_LABEL>;
+using FunctionLinfDistance = FunctionVectorDistance<LinfDISTANCE_LABEL>;
 
 static constexpr char LpDISTANCE_LABEL[] = "p";
-using FunctionLpDistance = VectorDistance<LpDISTANCE_LABEL>;
+using FunctionLpDistance = FunctionVectorDistance<LpDISTANCE_LABEL>;
 
 void registerVectorFunctions(FunctionFactory & factory)
 {
@@ -827,8 +908,8 @@ void registerVectorFunctions(FunctionFactory & factory)
     factory.registerFunction<FunctionTupleDivide>();
     factory.registerFunction<FunctionTupleNegate>();
 
-    //factory.registerFunction<FunctionTupleMultiplyByNumber>();
-    //factory.registerFunction<FunctionTupleDivideByNumber>();
+    factory.registerFunction<FunctionTupleMultiplyByNumber>();
+    factory.registerFunction<FunctionTupleDivideByNumber>();
 
     factory.registerFunction<FunctionDotProduct>();
     factory.registerAlias("scalarProduct", FunctionDotProduct::name, FunctionFactory::CaseInsensitive);
