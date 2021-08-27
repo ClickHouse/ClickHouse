@@ -1,13 +1,11 @@
 #pragma once
 
-#include <Interpreters/InterserverCredentials.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Common/CurrentMetrics.h>
 
 #include <Poco/Logger.h>
 
 #include <memory>
-#include <string>
 
 
 namespace CurrentMetrics

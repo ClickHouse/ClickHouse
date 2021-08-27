@@ -24,17 +24,13 @@ RUN apt-get update -y \
             python3-pip \
             qemu-user-static \
             sudo \
-            # golang version 1.13 on Ubuntu 20 is enough for tests
-            golang \
             telnet \
             tree \
             unixodbc \
             wget \
-            mysql-client=5.7* \
-            postgresql-client \
-            sqlite3
+            mysql-client=5.7*
 
-RUN pip3 install numpy scipy pandas Jinja2
+RUN pip3 install numpy scipy pandas
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
@@ -50,5 +46,4 @@ ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
 
 COPY run.sh /
-COPY process_functional_tests_result.py /
 CMD ["/bin/bash", "/run.sh"]

@@ -5,7 +5,6 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -31,14 +30,12 @@ FinishSortingStep::FinishSortingStep(
     SortDescription prefix_description_,
     SortDescription result_description_,
     size_t max_block_size_,
-    UInt64 limit_,
-    bool has_filtration_)
+    UInt64 limit_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
-    , has_filtration(has_filtration_)
 {
     /// TODO: check input_stream is sorted by prefix_description.
     output_stream->sort_description = result_description;
@@ -50,24 +47,21 @@ void FinishSortingStep::updateLimit(size_t limit_)
     if (limit_ && (limit == 0 || limit_ < limit))
     {
         limit = limit_;
-        transform_traits.preserves_number_of_rows = false;
+        transform_traits.preserves_number_of_rows = limit == 0;
     }
 }
 
-void FinishSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void FinishSortingStep::transformPipeline(QueryPipeline & pipeline)
 {
     bool need_finish_sorting = (prefix_description.size() < result_description.size());
     if (pipeline.getNumStreams() > 1)
     {
         UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
-        bool has_limit_below_one_block = !has_filtration && limit_for_merging && limit_for_merging < max_block_size;
         auto transform = std::make_shared<MergingSortedTransform>(
                 pipeline.getHeader(),
                 pipeline.getNumStreams(),
                 prefix_description,
-                max_block_size,
-                limit_for_merging,
-                has_limit_below_one_block);
+                max_block_size, limit_for_merging);
 
         pipeline.addTransform(std::move(transform));
     }
@@ -105,15 +99,6 @@ void FinishSortingStep::describeActions(FormatSettings & settings) const
 
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
-}
-
-void FinishSortingStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    map.add("Prefix Sort Description", explainSortDescription(prefix_description, input_streams.front().header));
-    map.add("Result Sort Description", explainSortDescription(result_description, input_streams.front().header));
-
-    if (limit)
-        map.add("Limit", limit);
 }
 
 }

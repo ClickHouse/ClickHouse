@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void TableFunctionNull::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionNull::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (!function || !function->arguments)
@@ -30,15 +30,15 @@ void TableFunctionNull::parseArguments(const ASTPtr & ast_function, ContextPtr c
     structure = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], context)->as<ASTLiteral>()->value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionNull::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionNull::getActualTableStructure(const Context & context) const
 {
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
-    auto res = StorageNull::create(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription(), String{});
+    auto res = StorageNull::create(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription());
     res->startup();
     return res;
 }

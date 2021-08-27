@@ -2,18 +2,19 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
+#include <optional>
 
 
 namespace DB
 {
-
 class ASTCreateRowPolicyQuery;
 struct RowPolicy;
 
-class InterpreterCreateRowPolicyQuery : public IInterpreter, WithMutableContext
+
+class InterpreterCreateRowPolicyQuery : public IInterpreter
 {
 public:
-    InterpreterCreateRowPolicyQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
+    InterpreterCreateRowPolicyQuery(const ASTPtr & query_ptr_, Context & context_) : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
@@ -21,6 +22,6 @@ public:
 
 private:
     ASTPtr query_ptr;
+    Context & context;
 };
-
 }
