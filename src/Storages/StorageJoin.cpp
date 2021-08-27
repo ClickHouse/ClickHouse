@@ -6,6 +6,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnNumbers.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/joinDispatch.h>
@@ -67,7 +68,7 @@ StorageJoin::StorageJoin(
     restore();
 }
 
-SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+BlockOutputStreamPtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::lock_guard mutate_lock(mutate_mutex);
     return StorageSetOrJoinBase::write(query, metadata_snapshot, context);
@@ -96,8 +97,8 @@ void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, con
 
 void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 {
-    /// Firstly acquire lock for mutation, that locks changes of data.
-    /// We cannot acquire rwlock here, because read lock is needed
+    /// Firstly accuire lock for mutation, that locks changes of data.
+    /// We cannot accuire rwlock here, because read lock is needed
     /// for execution of mutation interpreter.
     std::lock_guard mutate_lock(mutate_mutex);
 
@@ -127,7 +128,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         in->readSuffix();
     }
 
-    /// Now acquire exclusive lock and modify storage.
+    /// Now accuire exclusive lock and modify storage.
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     join = std::move(new_data);

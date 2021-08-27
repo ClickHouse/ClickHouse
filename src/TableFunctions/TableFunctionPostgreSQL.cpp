@@ -1,9 +1,6 @@
 #include <TableFunctions/TableFunctionPostgreSQL.h>
 
 #if USE_LIBPQXX
-#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
-#include <Storages/StoragePostgreSQL.h>
-
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -12,8 +9,10 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include "registerTableFunctions.h"
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
 #include <Common/parseRemoteDescription.h>
+#include <Storages/StoragePostgreSQL.h>
 
 
 namespace DB
@@ -37,8 +36,7 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
         columns,
         ConstraintsDescription{},
         String{},
-        remote_table_schema,
-        on_conflict);
+        remote_table_schema);
 
     result->startup();
     return result;
@@ -48,12 +46,11 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context) const
 {
     const bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
-    auto connection_holder = connection_pool->get();
     auto columns = fetchPostgreSQLTableStructure(
-            connection_holder->get(),
+            connection_pool->get(),
             remote_table_schema.empty() ? doubleQuoteString(remote_table_name)
                                         : doubleQuoteString(remote_table_schema) + '.' + doubleQuoteString(remote_table_name),
-            use_nulls).columns;
+            use_nulls);
 
     return ColumnsDescription{*columns};
 }
@@ -68,9 +65,9 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
 
     ASTs & args = func_args.arguments->children;
 
-    if (args.size() < 5 || args.size() > 7)
-        throw Exception("Table function 'PostgreSQL' requires from 5 to 7 parameters: "
-                        "PostgreSQL('host:port', 'database', 'table', 'user', 'password', [, 'schema', 'ON CONFLICT ...']).",
+    if (args.size() < 5 || args.size() > 6)
+        throw Exception("Table function 'PostgreSQL' requires from 5 to 6 parameters: "
+                        "PostgreSQL('host:port', 'database', 'table', 'user', 'password', [, 'schema']).",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
@@ -83,10 +80,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
 
     remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
-    if (args.size() >= 6)
+    if (args.size() == 6)
         remote_table_schema = args[5]->as<ASTLiteral &>().value.safeGet<String>();
-    if (args.size() >= 7)
-        on_conflict = args[6]->as<ASTLiteral &>().value.safeGet<String>();
 
     connection_pool = std::make_shared<postgres::PoolWithFailover>(
         args[1]->as<ASTLiteral &>().value.safeGet<String>(),
