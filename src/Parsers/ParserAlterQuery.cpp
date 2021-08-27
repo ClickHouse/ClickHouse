@@ -141,12 +141,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 if (!parser_settings.parse(pos, command->settings_changes, expected))
                     return false;
-                command->type = ASTAlterCommand::MODIFY_SETTING;
+                command->type = ASTAlterCommand::MODIFY_DATABASE_SETTING;
             }
             else
                 return false;
             break;
         }
+        default:
+            break;
         case ASTAlterQuery::AlterObjectType::TABLE:
         {
             if (s_add_column.ignore(pos, expected))
@@ -828,16 +830,27 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
-    if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))
-        return false;
-
-    String cluster_str;
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    if (alter_object_type == ASTAlterQuery::AlterObjectType::DATABASE)
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        std::cerr << "\n\n\nOK!\n\n";
+        if (!parseDatabase(pos, expected, query->database))
             return false;
+        std::cerr << "database name: " << query->database << std::endl;
     }
-    query->cluster = cluster_str;
+    else
+    {
+        std::cerr << "\n\n\nNOT OK!\n\n";
+        if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))
+            return false;
+
+        String cluster_str;
+        if (ParserKeyword{"ON"}.ignore(pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                return false;
+        }
+        query->cluster = cluster_str;
+    }
 
     ParserAlterCommandList p_command_list(alter_object_type);
     ASTPtr command_list;
@@ -845,6 +858,8 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     query->set(query->command_list, command_list);
+    query->alter_object = alter_object_type;
+    std::cerr << "\n\n\nalter query: " << query->dumpTree() << std::endl;
 
     return true;
 }

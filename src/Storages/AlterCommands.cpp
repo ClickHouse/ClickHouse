@@ -312,6 +312,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_DATABASE_SETTING;
+        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::RESET_SETTING)
     {
         AlterCommand command;
@@ -347,6 +355,21 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     }
     else
         return {};
+}
+
+
+void AlterCommands::apply(DatabasePtr database, ContextPtr context) const
+{
+    for (const AlterCommand & command : *this)
+    {
+        if (!command.ignore)
+        {
+            if (command.type == AlterCommand::MODIFY_DATABASE_SETTING)
+                database->modifySettings(command.settings_changes, context);
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported alter command");
+        }
+    }
 }
 
 
@@ -877,6 +900,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "MODIFY SETTING";
     case AlterCommand::Type::RESET_SETTING:
         return "RESET SETTING";
+    case AlterCommand::Type::MODIFY_DATABASE_SETTING:
+        return "MODIFY DATABASE SETTING";
     case AlterCommand::Type::MODIFY_QUERY:
         return "MODIFY QUERY";
     case AlterCommand::Type::RENAME_COLUMN:
@@ -1006,6 +1031,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     }
     prepared = true;
 }
+
 
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {

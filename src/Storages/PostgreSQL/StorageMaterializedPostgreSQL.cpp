@@ -51,6 +51,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(remote_database_name, remote_table_name) + ")"))
     , is_materialized_postgresql_database(false)
     , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
@@ -72,19 +73,26 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             getContext(),
             is_attach,
             replication_settings->materialized_postgresql_max_block_size.value,
-            /* allow_automatic_update */ false, /* is_materialized_postgresql_database */false);
+            /* allow_automatic_update */ false, /* is_materialized_postgresql_database */false,
+            remote_table_name_);
 }
 
 
 /// For the case of MaterializePosgreSQL database engine.
 /// It is used when nested ReplacingMergeeTree table has not yet be created by replication thread.
 /// In this case this storage can't be used for read queries.
-StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_)
+StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const String & postgres_database_name,
+        const String & postgres_table_name)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(postgres_database_name, postgres_table_name) + ")"))
     , is_materialized_postgresql_database(true)
     , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
+    , nested_table_id(table_id_)
 {
 }
 
@@ -92,9 +100,14 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(const StorageID & t
 /// Constructor for MaterializedPostgreSQL table engine - for the case of MaterializePosgreSQL database engine.
 /// It is used when nested ReplacingMergeeTree table has already been created by replication thread.
 /// This storage is ready to handle read queries.
-StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_)
+StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
+        StoragePtr nested_storage_,
+        ContextPtr context_,
+        const String & postgres_database_name,
+        const String & postgres_table_name)
     : IStorage(nested_storage_->getStorageID())
     , WithContext(context_->getGlobalContext())
+    , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(postgres_database_name, postgres_table_name) + ")"))
     , is_materialized_postgresql_database(true)
     , has_nested(true)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
@@ -120,7 +133,7 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
     }
 
     auto new_context = Context::createCopy(context);
-    return StorageMaterializedPostgreSQL::create(tmp_table_id, new_context);
+    return StorageMaterializedPostgreSQL::create(tmp_table_id, new_context, "", table_id.table_name);
 }
 
 
@@ -163,6 +176,7 @@ void StorageMaterializedPostgreSQL::createNestedIfNeeded(PostgreSQLTableStructur
     const auto ast_create = getCreateNestedTableQuery(std::move(table_structure));
     auto table_id = getStorageID();
     auto tmp_nested_table_id = StorageID(table_id.database_name, getNestedTableName());
+    LOG_DEBUG(log, "Creating clickhouse table for postgresql table {}", table_id.getNameForLogs());
 
     try
     {

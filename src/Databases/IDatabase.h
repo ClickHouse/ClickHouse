@@ -24,6 +24,8 @@ struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
+class AlterCommands;
+class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 
 namespace ErrorCodes
@@ -271,6 +273,21 @@ public:
 
     /// Delete data and metadata stored inside the database, if exists.
     virtual void drop(ContextPtr /*context*/) {}
+
+    virtual void checkAlterIsPossible(const AlterCommands & /* commands */, ContextPtr /* context */) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter is not supported by database engine {}", getEngineName());
+    }
+
+    virtual void modifySettings(const SettingsChanges &, ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database engine {} does not support settings", getEngineName());
+    }
+
+    virtual void applySettings(const SettingsChanges &, ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database engine {} does not support settings", getEngineName());
+    }
 
     virtual ~IDatabase() = default;
 

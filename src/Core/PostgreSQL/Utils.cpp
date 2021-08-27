@@ -19,6 +19,15 @@ ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, S
     return std::make_pair(out.str(), host + ':' + DB::toString(port));
 }
 
+String formatNameForLogs(const String & postgres_database_name, const String & postgres_table_name)
+{
+    if (postgres_database_name.empty())
+        return postgres_table_name;
+    if (postgres_table_name.empty())
+        return postgres_database_name;
+    return fmt::format("{}.{}", postgres_database_name, postgres_table_name);
+}
+
 }
 
 #endif
