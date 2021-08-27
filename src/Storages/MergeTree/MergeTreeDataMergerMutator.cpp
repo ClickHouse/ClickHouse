@@ -1362,7 +1362,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
             String destination = new_part_tmp_path;
             String file_name = it->name();
-            auto rename_it = std::find_if(files_to_rename.begin(), files_to_rename.end(), [&file_name](const auto & rename_pair) { return rename_pair.first == file_name; });
+            auto rename_it = std::find_if(files_to_rename.begin(), files_to_rename.end(), [&file_name](const auto & rename_pair)
+            {
+                return rename_pair.first == file_name;
+            });
             if (rename_it != files_to_rename.end())
             {
                 if (rename_it->second.empty())
@@ -1723,7 +1726,7 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
     const Block & updated_header,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
     const String & mrk_extension,
-    const std::set<MergeTreeProjectionPtr> & projections_to_recalc)
+    const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
@@ -1740,16 +1743,16 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
         auto serialization = source_part->getSerializationForColumn({entry.name, entry.type});
         serialization->enumerateStreams(callback);
     }
+
     for (const auto & index : indices_to_recalc)
     {
         files_to_skip.insert(index->getFileName() + ".idx");
         files_to_skip.insert(index->getFileName() + ".idx2");
         files_to_skip.insert(index->getFileName() + mrk_extension);
     }
+
     for (const auto & projection : projections_to_recalc)
-    {
         files_to_skip.insert(projection->getDirectoryName());
-    }
 
     return files_to_skip;
 }
@@ -1853,7 +1856,7 @@ MergeTreeIndices MergeTreeDataMergerMutator::getIndicesForNewDataPart(
     return new_indices;
 }
 
-MergeTreeProjections MergeTreeDataMergerMutator::getProjectionsForNewDataPart(
+std::vector<ProjectionDescriptionRawPtr> MergeTreeDataMergerMutator::getProjectionsForNewDataPart(
     const ProjectionsDescription & all_projections,
     const MutationCommands & commands_for_removes)
 {
@@ -1862,10 +1865,10 @@ MergeTreeProjections MergeTreeDataMergerMutator::getProjectionsForNewDataPart(
         if (command.type == MutationCommand::DROP_PROJECTION)
             removed_projections.insert(command.column_name);
 
-    MergeTreeProjections new_projections;
+    std::vector<ProjectionDescriptionRawPtr> new_projections;
     for (const auto & projection : all_projections)
         if (!removed_projections.count(projection.name))
-            new_projections.push_back(MergeTreeProjectionFactory::instance().get(projection));
+            new_projections.push_back(&projection);
 
     return new_projections;
 }
@@ -1941,21 +1944,20 @@ std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     return indices_to_recalc;
 }
 
-std::set<MergeTreeProjectionPtr> MergeTreeDataMergerMutator::getProjectionsToRecalculate(
+std::set<ProjectionDescriptionRawPtr> MergeTreeDataMergerMutator::getProjectionsToRecalculate(
     const NameSet & updated_columns,
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & materialized_projections,
     const MergeTreeData::DataPartPtr & source_part)
 {
     /// Checks if columns used in projections modified.
-    const auto & projection_factory = MergeTreeProjectionFactory::instance();
-    std::set<MergeTreeProjectionPtr> projections_to_recalc;
+    std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         // If we ask to materialize and it doesn't exist
         if (!source_part->checksums.has(projection.name + ".proj") && materialized_projections.count(projection.name))
         {
-            projections_to_recalc.insert(projection_factory.get(projection));
+            projections_to_recalc.insert(&projection);
         }
         else
         {
@@ -1971,7 +1973,7 @@ std::set<MergeTreeProjectionPtr> MergeTreeDataMergerMutator::getProjectionsToRec
                 }
             }
             if (mutate)
-                projections_to_recalc.insert(projection_factory.get(projection));
+                projections_to_recalc.insert(&projection);
         }
     }
     return projections_to_recalc;
@@ -2001,7 +2003,7 @@ ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadat
 void MergeTreeDataMergerMutator::writeWithProjections(
     MergeTreeData::MutableDataPartPtr new_data_part,
     const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreeProjections & projections_to_build,
+    const std::vector<ProjectionDescriptionRawPtr> & projections_to_build,
     BlockInputStreamPtr mutating_stream,
     IMergedBlockOutputStream & out,
     time_t time_of_mutation,
@@ -2037,7 +2039,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
 
         for (size_t i = 0, size = projections_to_build.size(); i < size; ++i)
         {
-            const auto & projection = projections_to_build[i]->projection;
+            const auto & projection = *projections_to_build[i];
             auto projection_block = projection_squashes[i].add(projection.calculate(block, context));
             if (projection_block)
                 projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
@@ -2051,7 +2053,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
     // Write the last block
     for (size_t i = 0, size = projections_to_build.size(); i < size; ++i)
     {
-        const auto & projection = projections_to_build[i]->projection;
+        const auto & projection = *projections_to_build[i];
         auto & projection_squash = projection_squashes[i];
         auto projection_block = projection_squash.add({});
         if (projection_block)
@@ -2154,7 +2156,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     MergeTreeData::MutableDataPartPtr new_data_part,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeIndices & skip_indices,
-    const MergeTreeProjections & projections_to_build,
+    const std::vector<ProjectionDescriptionRawPtr> & projections_to_build,
     BlockInputStreamPtr mutating_stream,
     time_t time_of_mutation,
     const CompressionCodecPtr & compression_codec,
@@ -2212,7 +2214,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     const MergeTreeDataPartPtr & source_part,
     const StorageMetadataPtr & metadata_snapshot,
     const std::set<MergeTreeIndexPtr> & indices_to_recalc,
-    const std::set<MergeTreeProjectionPtr> & projections_to_recalc,
+    const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc,
     const Block & mutation_header,
     MergeTreeData::MutableDataPartPtr new_data_part,
     BlockInputStreamPtr mutating_stream,
@@ -2249,7 +2251,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     mutating_stream->readPrefix();
     out.writePrefix();
 
-    std::vector<MergeTreeProjectionPtr> projections_to_build(projections_to_recalc.begin(), projections_to_recalc.end());
+    std::vector<ProjectionDescriptionRawPtr> projections_to_build(projections_to_recalc.begin(), projections_to_recalc.end());
     writeWithProjections(
         new_data_part,
         metadata_snapshot,
