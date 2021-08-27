@@ -32,7 +32,7 @@ public:
         ContextPtr context_,
         const String & metadata_path_,
         UUID uuid_,
-        const ASTStorage * database_engine_define_,
+        ASTPtr storage_def_,
         bool is_attach_,
         const String & database_name_,
         const String & postgres_database_name,
@@ -52,18 +52,26 @@ public:
 
     void createTable(ContextPtr context, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
+    void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path) override;
+
     void dropTable(ContextPtr local_context, const String & name, bool no_delay) override;
 
     void drop(ContextPtr local_context) override;
 
     void stopReplication();
 
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
+    void applySettings(const SettingsChanges & settings_changes, ContextPtr context) override;
+
     void shutdown() override;
+
+protected:
+    ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
 
 private:
     void startSynchronization();
 
-    ASTPtr database_engine_define;
     bool is_attach;
     String remote_database_name;
     postgres::ConnectionInfo connection_info;

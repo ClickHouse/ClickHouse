@@ -3,6 +3,7 @@
 #if USE_LIBPQXX
 
 #include <common/logger_useful.h>
+#include <iostream>
 
 namespace postgres
 {
@@ -42,7 +43,6 @@ void Connection::execWithRetry(const std::function<void(pqxx::nontransaction &)>
 pqxx::connection & Connection::getRef()
 {
     connect();
-    assert(connection != nullptr);
     return *connection;
 }
 
