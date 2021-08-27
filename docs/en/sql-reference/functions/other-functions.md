@@ -2236,3 +2236,74 @@ defaultRoles()
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
+## queryID {#query-id}
+
+Returns the ID of the current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `query_id`.
+
+In contrast to [initialQueryID](#initial-query-id) function, `queryID` can return different results on different shards (see example).
+
+**Syntax**
+
+``` sql
+queryID()
+```
+
+**Returned value**
+
+-   The ID of the current query.
+
+Type: [String](../../sql-reference/data-types/string.md)
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE tmp (str String) ENGINE = Log;
+INSERT INTO tmp (*) VALUES ('a');
+SELECT count(DISTINCT t) FROM (SELECT queryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
+```
+
+Result:
+
+``` text
+┌─count()─┐
+│ 3       │
+└─────────┘
+```
+
+## initialQueryID {#initial-query-id}
+
+Returns the ID of the initial current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `initial_query_id`.
+
+In contrast to [queryID](#query-id) function, `initialQueryID` returns the same results on different shards (see example).
+
+**Syntax**
+
+``` sql
+initialQueryID()
+```
+
+**Returned value**
+
+-   The ID of the initial current query.
+
+Type: [String](../../sql-reference/data-types/string.md)
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE tmp (str String) ENGINE = Log;
+INSERT INTO tmp (*) VALUES ('a');
+SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
+```
+
+Result:
+
+``` text
+┌─count()─┐
+│ 1       │
+└─────────┘
+```
