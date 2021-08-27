@@ -31,11 +31,6 @@ LocalConnection::~LocalConnection()
     }
 }
 
-void LocalConnection::setDefaultDatabase(const String & database)
-{
-    default_database = database;
-}
-
 bool LocalConnection::hasReadPendingData() const
 {
     return !state->is_finished;
@@ -361,15 +356,13 @@ Packet LocalConnection::receivePacket()
 }
 
 void LocalConnection::getServerVersion(
-    const ConnectionTimeouts & /* timeouts */, String & name,
-    UInt64 & version_major, UInt64 & version_minor,
-    UInt64 & version_patch, UInt64 & revision)
+    const ConnectionTimeouts & /* timeouts */, String & /* name */,
+    UInt64 & /* version_major */, UInt64 & /* version_minor */,
+    UInt64 & /* version_patch */, UInt64 & /* revision */) { }
+
+void LocalConnection::setDefaultDatabase(const String & name)
 {
-    name = server_name;
-    version_major = server_version_major;
-    version_minor = server_version_minor;
-    version_patch = server_version_patch;
-    revision = server_revision;
+    default_database = name;
 }
 
 UInt64 LocalConnection::getServerRevision(const ConnectionTimeouts &)

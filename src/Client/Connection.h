@@ -102,22 +102,25 @@ public:
     Protocol::Compression getCompression() const { return compression; }
 
     void sendQuery(
-        const ConnectionTimeouts & timeouts, const String & query,
-        const String & query_id_, UInt64 stage,
-        const Settings * settings, const ClientInfo * client_info,
-        bool with_pending_database) override;
+        const ConnectionTimeouts & timeouts,
+        const String & query,
+        const String & query_id_ = "",
+        UInt64 stage = QueryProcessingStage::Complete,
+        const Settings * settings = nullptr,
+        const ClientInfo * client_info = nullptr,
+        bool with_pending_data  = false) override;
 
     void sendCancel() override;
 
-    void sendData(const Block & block, const String & name, bool scalar) override;
+    void sendData(const Block & block, const String & name = "", bool scalar = false) override;
 
     void sendExternalTablesData(ExternalTablesData & data) override;
 
-    bool poll(size_t timeout_microseconds) override;
+    bool poll(size_t timeout_microseconds = 0) override;
 
     bool hasReadPendingData() const override;
 
-    std::optional<UInt64> checkPacket(size_t timeout_microseconds) override;
+    std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0) override;
 
     Packet receivePacket() override;
 

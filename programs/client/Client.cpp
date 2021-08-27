@@ -391,7 +391,7 @@ bool Client::processMultiQuery(const String & all_queries_text)
 std::vector<String> Client::loadWarningMessages()
 {
     std::vector<String> messages;
-    connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false);
+    connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */);
     while (true)
     {
         Packet packet = connection->receivePacket();
