@@ -103,7 +103,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                     SYS_preadv2, fd,
                     &io_vec, 1,
                     /// This is kind of weird calling convention for syscall.
-                    static_cast<long>(request.offset), static_cast<long>(request.offset >> 32),
+                    static_cast<int64_t>(request.offset), static_cast<int64_t>(request.offset >> 32),
                     /// This flag forces read from page cache or returning EAGAIN.
                     RWF_NOWAIT);
             }

@@ -18,6 +18,7 @@ const char * toString(ReadMethod read_method)
     FOR_EACH_READ_METHOD(CASE_READ_METHOD)
 #undef CASE_READ_METHOD
     }
+    __builtin_unreachable();
 }
 
 ReadMethod parseReadMethod(const std::string & name)
