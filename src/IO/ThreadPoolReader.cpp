@@ -80,8 +80,6 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 #if defined(__linux__)
     /// Check if data is already in page cache with preadv2 syscall.
 
-    /// TODO ProfileEvents for page cache hits and misses.
-
     /// We don't want to depend on new Linux kernel.
     static std::atomic<bool> has_pread_nowait_support{true};
 
