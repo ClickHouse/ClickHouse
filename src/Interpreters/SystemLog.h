@@ -23,6 +23,8 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <IO/WriteHelpers.h>
@@ -482,11 +484,19 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         insert_context->makeQueryContext();
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
-        BlockIO io = interpreter.execute();
+        auto sinks = interpreter.getSinks();
+        assert(sinks.size() == 1);
 
-        io.out->writePrefix();
-        io.out->write(block);
-        io.out->writeSuffix();
+        auto chunk = Chunk(block.getColumns(), block.rows());
+        auto source = std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk));
+
+        QueryPipeline pipeline;
+        pipeline.init(Pipe(source));
+        pipeline.resize(1);
+        pipeline.setSinks([&](const Block &, Pipe::StreamType) { return sinks.at(0); });
+
+        auto executor = pipeline.execute();
+        executor->execute(pipeline.getNumThreads());
     }
     catch (...)
     {

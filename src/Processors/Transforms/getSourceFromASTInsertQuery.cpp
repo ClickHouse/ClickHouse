@@ -5,6 +5,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/EmptyReadBuffer.h>
 #include <DataStreams/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -26,8 +27,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE_OF_QUERY;
 }
 
-
-std::pair<InputFormatPtr, Pipe> getSourceFromASTInsertQuery(
+InputFormatPtr getInputFormatFromASTInsertQuery(
     const ASTPtr & ast,
     bool with_buffers,
     const Block & header,
@@ -57,12 +57,24 @@ std::pair<InputFormatPtr, Pipe> getSourceFromASTInsertQuery(
 
     std::unique_ptr<ReadBuffer> input_buffer = with_buffers
         ? getReadBufferFromASTInsertQuery(ast)
-        : std::make_unique<ConcatReadBuffer>();
+        : std::make_unique<EmptyReadBuffer>();
 
     auto source = FormatFactory::instance().getInput(format, *input_buffer, header, context, context->getSettings().max_insert_block_size);
     source->addBuffer(std::move(input_buffer));
+    return source;
+}
+
+Pipe getSourceFromASTInsertQuery(
+    const ASTPtr & ast,
+    bool with_buffers,
+    const Block & header,
+    ContextPtr context,
+    const ASTPtr & input_function)
+{
+    auto source = getInputFormatFromASTInsertQuery(ast, with_buffers, header, context, input_function);
     Pipe pipe(source);
 
+    const auto * ast_insert_query = ast->as<ASTInsertQuery>();
     if (context->getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
     {
         StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
@@ -77,7 +89,7 @@ std::pair<InputFormatPtr, Pipe> getSourceFromASTInsertQuery(
         }
     }
 
-    return {std::move(source), std::move(pipe)};
+    return pipe;
 }
 
 std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)

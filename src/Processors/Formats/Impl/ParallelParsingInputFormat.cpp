@@ -37,7 +37,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
             // Segmentating the original input.
             unit.segment.resize(0);
 
-            auto [have_more_data, currently_read_rows] = file_segmentation_engine(in, unit.segment, min_chunk_bytes);
+            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes);
 
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;
