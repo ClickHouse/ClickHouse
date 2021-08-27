@@ -7,6 +7,7 @@
 #if USE_AWS_S3
 
 #include <atomic>
+#include <optional>
 #include <common/logger_useful.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
@@ -132,7 +133,15 @@ private:
 
     Aws::S3::Model::HeadObjectResult headObject(const String & source_bucket, const String & key) const;
     void listObjects(const String & source_bucket, const String & source_path, std::function<bool(const Aws::S3::Model::ListObjectsV2Result &)> callback) const;
-    void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key) const;
+    void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt) const;
+
+    void copyObjectImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        std::optional<std::reference_wrapper<const ObjectMetadata>> metadata = std::nullopt) const;
+    void copyObjectMultipartImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        std::optional<std::reference_wrapper<const ObjectMetadata>> metadata = std::nullopt) const;
 
     /// Restore S3 metadata files on file system.
     void restore();
