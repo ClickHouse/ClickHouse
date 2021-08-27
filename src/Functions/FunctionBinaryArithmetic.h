@@ -668,7 +668,7 @@ class FunctionBinaryArithmetic : public IFunction
         }
         else
         {
-            function_name = "tupleMultiply";
+            function_name = "dotProduct";
         }
 
         return FunctionFactory::instance().get(function_name, context);
