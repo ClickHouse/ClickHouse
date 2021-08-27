@@ -220,7 +220,7 @@ try
     insert_context->makeQueryContext();
     insert_context->setSettings(data->settings);
 
-    InterpreterInsertQuery interpreter(data->query, insert_context, data->settings.insert_allow_materialized_columns, false);
+    InterpreterInsertQuery interpreter(data->query, insert_context, data->settings.insert_allow_materialized_columns);
     auto sinks = interpreter.getSinks();
     assert(sinks.size() == 1);
 
@@ -241,12 +241,7 @@ try
             if (column->size() > total_rows)
                 column->popBack(column->size() - total_rows);
 
-        std::lock_guard info_lock(current_info->mutex);
-
-        current_info->finished = true;
-        current_info->exception = std::current_exception();
-        current_info->cv.notify_all();
-
+        current_info->complete(std::current_exception());
         return 0;
     };
 
@@ -286,17 +281,18 @@ try
         total_rows, total_bytes, queryToString(data->query));
 
     for (const auto & datum : data->data)
-    {
-        std::lock_guard info_lock(datum.info->mutex);
-        datum.info->finished = true;
-        datum.info->cv.notify_all();
-    }
+        datum.info->complete();
 
     data->reset();
 }
 catch (...)
 {
     tryLogCurrentException("AsynchronousInsertQueue", __PRETTY_FUNCTION__);
+
+    for (const auto & datum : data->data)
+        datum.info->complete(std::current_exception());
+
+    data->reset();
 }
 
 }
