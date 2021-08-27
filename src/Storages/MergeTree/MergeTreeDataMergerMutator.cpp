@@ -89,6 +89,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
         future_part_type = std::min(future_part_type, part->getType());
     }
 
+    /// NOTE: We don't support merging into an in-memory part yet.
     auto chosen_type = parts_.front()->storage.choosePartTypeOnDisk(sum_bytes_uncompressed, sum_rows);
     future_part_type = std::min(future_part_type, chosen_type);
     assign(std::move(parts_), future_part_type);
@@ -2014,10 +2015,19 @@ void MergeTreeDataMergerMutator::writeWithProjections(
     std::map<String, MergeTreeData::MutableDataPartsVector> projection_parts;
     Block block;
     std::vector<SquashingTransform> projection_squashes;
+    const auto & settings = context->getSettingsRef();
     for (size_t i = 0, size = projections_to_build.size(); i < size; ++i)
     {
-        projection_squashes.emplace_back(65536, 65536 * 256);
+        // If the parent part is an in-memory part, squash projection output into one block and
+        // build in-memory projection because we don't support merging into a new in-memory part.
+        // Otherwise we split the materialization into multiple stages similar to the process of
+        // INSERT SELECT query.
+        if (new_data_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+            projection_squashes.emplace_back(0, 0);
+        else
+            projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
     }
+
     while (checkOperationIsNotCanceled(merge_entry) && (block = mutating_stream->read()))
     {
         if (minmax_idx)
@@ -2028,26 +2038,10 @@ void MergeTreeDataMergerMutator::writeWithProjections(
         for (size_t i = 0, size = projections_to_build.size(); i < size; ++i)
         {
             const auto & projection = projections_to_build[i]->projection;
-            auto in = InterpreterSelectQuery(
-                          projection.query_ast,
-                          context,
-                          Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
-                          SelectQueryOptions{
-                              projection.type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns : QueryProcessingStage::WithMergeableState})
-                          .execute()
-                          .getInputStream();
-            in = std::make_shared<SquashingBlockInputStream>(in, block.rows(), std::numeric_limits<UInt64>::max());
-            in->readPrefix();
-            auto & projection_squash = projection_squashes[i];
-            auto projection_block = projection_squash.add(in->read());
-            if (in->read())
-                throw Exception("Projection cannot increase the number of rows in a block", ErrorCodes::LOGICAL_ERROR);
-            in->readSuffix();
+            auto projection_block = projection_squashes[i].add(projection.calculate(block, context));
             if (projection_block)
-            {
-                projection_parts[projection.name].emplace_back(
-                    MergeTreeDataWriter::writeTempProjectionPart(data, log, projection_block, projection, new_data_part.get(), ++block_num));
-            }
+                projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
+                    data, log, projection_block, projection, new_data_part.get(), ++block_num));
         }
 
         merge_entry->rows_written += block.rows();
