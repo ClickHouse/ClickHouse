@@ -34,6 +34,7 @@ struct AsynchronousInsertQueue::InsertData
     {
         String bytes;
         String query_id;
+        Context::AsyncInsertInfoPtr info;
     };
 
     std::mutex mutex;
@@ -88,8 +89,8 @@ bool AsynchronousInsertQueue::InsertQueryEquality::operator() (const InsertQuery
     return true;
 }
 
-AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, size_t max_data_size_, const Timeout & timeouts)
-    : WithContext(context_)
+AsynchronousInsertQueue::AsynchronousInsertQueue(ContextMutablePtr context_, size_t pool_size, size_t max_data_size_, const Timeout & timeouts)
+    : WithMutableContext(context_)
     , max_data_size(max_data_size_)
     , busy_timeout(timeouts.busy)
     , stale_timeout(timeouts.stale)
@@ -139,6 +140,8 @@ void AsynchronousInsertQueue::push(const ASTPtr & query, const Settings & settin
 
     new_data.query_id = query_id;
     new_data.bytes.reserve(read_buf->totalSize());
+    new_data.info = getContext()->addAsyncInsertQueryId(query_id);
+
     WriteBufferFromString write_buf(new_data.bytes);
 
     copyData(*read_buf, write_buf);
@@ -226,6 +229,7 @@ try
 
     size_t total_rows = 0;
     std::string_view current_query_id;
+    Context::AsyncInsertInfoPtr current_info;
 
     auto on_error = [&](const MutableColumns & result_columns, Exception & e)
     {
@@ -237,21 +241,30 @@ try
             if (column->size() > total_rows)
                 column->popBack(column->size() - total_rows);
 
+        std::lock_guard info_lock(current_info->mutex);
+
+        current_info->finished = true;
+        current_info->exception = std::current_exception();
+        current_info->cv.notify_all();
+
         return 0;
     };
 
     StreamingFormatExecutor executor(header, format, std::move(on_error));
 
-    std::vector<std::pair<std::string_view, std::unique_ptr<ReadBuffer>>> prepared_data;
+    std::vector<std::tuple<std::unique_ptr<ReadBuffer>,
+        std::string_view, Context::AsyncInsertInfoPtr>> prepared_data;
+
     prepared_data.reserve(data->data.size());
     for (const auto & datum : data->data)
-        prepared_data.emplace_back(datum.query_id, std::make_unique<ReadBufferFromString>(datum.bytes));
+        prepared_data.emplace_back(std::make_unique<ReadBufferFromString>(datum.bytes), datum.query_id, datum.info);
 
-    for (const auto & [query_id, buffer] : prepared_data)
+    for (const auto & [buffer, query_id, info] : prepared_data)
     {
         format->resetParser();
         format->setReadBuffer(*buffer);
         current_query_id = query_id;
+        current_info = info;
         total_rows += executor.execute();
     }
 
@@ -271,6 +284,13 @@ try
 
     LOG_DEBUG(log, "Flushed {} rows, {} bytes for query '{}'",
         total_rows, total_bytes, queryToString(data->query));
+
+    for (const auto & datum : data->data)
+    {
+        std::lock_guard info_lock(datum.info->mutex);
+        datum.info->finished = true;
+        datum.info->cv.notify_all();
+    }
 
     data->reset();
 }

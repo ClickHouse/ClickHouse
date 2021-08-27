@@ -56,6 +56,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SinkToOutputStream.h>
+#include <Processors/Sources/WaitForAsyncInsertSource.h>
 
 
 namespace ProfileEvents
@@ -555,11 +556,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (async_insert)
         {
-            queue->push(ast, settings, context->getCurrentQueryId());
+            auto query_id = context->getCurrentQueryId();
+            queue->push(ast, settings, query_id);
 
-            /// Shortcut for already processed similar insert-queries.
-            /// Similarity is defined by hashing query text and some settings.
-            return std::make_tuple(ast, BlockIO());
+            BlockIO io;
+            if (settings.wait_for_async_insert)
+            {
+                auto timeout = settings.wait_for_async_insert_timeout.totalMilliseconds();
+                auto source = std::make_shared<WaitForAsyncInsertSource>(Block(), query_id, timeout, context->getGlobalContext());
+                io.pipeline.init(Pipe(source));
+            }
+
+            return std::make_tuple(ast, std::move(io));
         }
 
         auto interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));

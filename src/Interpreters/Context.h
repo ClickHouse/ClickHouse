@@ -24,6 +24,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <exception>
 
 
 namespace Poco::Net { class IPAddress; }
@@ -285,6 +286,19 @@ public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
 
+    struct AsyncInsertInfo
+    {
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool finished = false;
+        std::exception_ptr exception;
+    };
+
+    using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
+
+    AsyncInsertInfoPtr addAsyncInsertQueryId(const String & query_id);
+    void waitForProcessingAsyncInsert(const String & query_id, const std::chrono::milliseconds & timeout) const;
+
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
@@ -306,6 +320,8 @@ private:
                                                     /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
+
+    std::unordered_map<String, AsyncInsertInfoPtr> processing_async_inserts;
 
     Context();
     Context(const Context &);
@@ -467,6 +483,7 @@ public:
         const Names & column_names,
         const String & projection_name = {},
         const String & view_name = {});
+
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories

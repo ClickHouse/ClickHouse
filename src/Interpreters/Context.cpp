@@ -120,6 +120,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int INVALID_SETTING_VALUE;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -926,6 +927,35 @@ void Context::addQueryAccessInfo(
         query_access_info.views.emplace(view_name);
 }
 
+Context::AsyncInsertInfoPtr Context::addAsyncInsertQueryId(const String & query_id)
+{
+    auto lock = getLock();
+    auto it = processing_async_inserts.emplace(query_id, std::make_shared<AsyncInsertInfo>()).first;
+    return it->second;
+}
+
+void Context::waitForProcessingAsyncInsert(const String & query_id, const std::chrono::milliseconds & timeout) const
+{
+    AsyncInsertInfoPtr wait_data;
+
+    {
+        auto lock = getLock();
+        auto it = processing_async_inserts.find(query_id);
+        if (it == processing_async_inserts.end())
+            return;
+
+        wait_data = it->second;
+    }
+
+    std::unique_lock lock(wait_data->mutex);
+    auto finished = wait_data->cv.wait_for(lock, timeout, [&] { return wait_data->finished; });
+
+    if (!finished)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout.count());
+
+    if (wait_data->exception)
+        std::rethrow_exception(wait_data->exception);
+}
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
