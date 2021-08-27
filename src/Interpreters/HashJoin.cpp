@@ -792,10 +792,6 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 
     Block structured_block = structureRightBlock(block);
     bool multiple_disjuncts = disjuncts_num > 1;
-    if (nullable_right_side && multiple_disjuncts)
-    {
-        JoinCommon::convertColumnsToNullable(structured_block);
-    }
 
     std::vector<ColumnPtr> join_mask_col_vector(disjuncts_num);
     for (size_t d = 0; d < disjuncts_num; ++d)
