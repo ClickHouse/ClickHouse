@@ -95,7 +95,7 @@ void AsynchronousReadBufferFromFile::close()
 }
 
 
-AsynchronousReadBufferFromFileWithCache::~AsynchronousReadBufferFromFileWithCache()
+AsynchronousReadBufferFromFileWithDescriptorsCache::~AsynchronousReadBufferFromFileWithDescriptorsCache()
 {
     /// Must wait for events in flight before potentially closing the file by destroying OpenedFilePtr.
     finalize();
