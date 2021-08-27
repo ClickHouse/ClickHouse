@@ -5,6 +5,9 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
+#include <common/logger_useful.h>
+#include <Common/Macros.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Databases/DatabaseOrdinary.h>
@@ -21,9 +24,6 @@
 #include <Common/escapeForFileName.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-#include <Common/Macros.h>
-#include <common/logger_useful.h>
-
 
 namespace DB
 {
@@ -145,10 +145,20 @@ void DatabaseMaterializedPostgreSQL::applySettings(const SettingsChanges & setti
         if (!settings->has(change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} does not support setting `{}`", getEngineName(), change.name);
 
-        if (change.name == "materialized_postgresql_tables_list")
+        if ((change.name == "materialized_postgresql_tables_list"))
         {
-            if (local_context->isInternalQuery() || materialized_tables.empty())
-                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changin settings `{}` is allowed only internally. Use CREATE TABLE query", change.name);
+            if (!local_context->isInternalQuery())
+                throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changing setting `{}` is not allowed", change.name);
+        }
+        else if (change.name == "materialized_postgresql_allow_automatic_update")
+        {
+        }
+        else if (change.name == "materialized_postgresql_max_block_size")
+        {
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting");
         }
 
         settings->applyChange(change);
@@ -192,7 +202,44 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
         return;
     }
 
-    throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "CREATE TABLE is not allowed for database engine {}", getEngineName());
+    const auto & create = query->as<ASTCreateQuery>();
+    if (!create->attach)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
+
+    /// Create ReplacingMergeTree table.
+    auto query_copy = query->clone();
+    auto create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
+    create_query->attach = false;
+    create_query->attach_short_syntax = false;
+    DatabaseAtomic::createTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, table, query_copy);
+
+    /// Attach MaterializedPostgreSQL table.
+    attachTable(table_name, table, {});
+}
+
+
+String DatabaseMaterializedPostgreSQL::getTablesList() const
+{
+    String tables_list;
+    for (const auto & table : materialized_tables)
+    {
+        if (!tables_list.empty())
+            tables_list += ',';
+        tables_list += table.first;
+    }
+    return tables_list;
+}
+
+
+ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
+{
+    if (!local_context->hasQueryContext())
+        return DatabaseAtomic::getCreateTableQueryImpl(table_name, local_context, throw_on_error);
+
+    auto storage = StorageMaterializedPostgreSQL::create(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
+    auto ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
+    assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
+    return ast_storage;
 }
 
 
@@ -202,21 +249,34 @@ void DatabaseMaterializedPostgreSQL::attachTable(const String & table_name, cons
     {
         auto set = std::make_shared<ASTSetQuery>();
         set->is_standalone = false;
+
         auto tables_to_replicate = settings->materialized_postgresql_tables_list.value;
-        set->changes = {SettingChange("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name))};
+        if (tables_to_replicate.empty())
+            tables_to_replicate = getTablesList();
+
+        /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+        set->changes = {SettingChange("materialized_postgresql_tables_list",
+                                      tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name))};
 
         auto command = std::make_shared<ASTAlterCommand>();
         command->type = ASTAlterCommand::Type::MODIFY_DATABASE_SETTING;
-        command->children.emplace_back(std::move(set));
+        command->settings_changes = std::move(set);
 
-        auto expr = std::make_shared<ASTExpressionList>();
-        expr->children.push_back(command);
+        auto command_list = std::make_shared<ASTExpressionList>();
+        command_list->children.push_back(command);
 
-        ASTAlterQuery alter;
-        alter.alter_object = ASTAlterQuery::AlterObjectType::DATABASE;
-        alter.children.emplace_back(std::move(expr));
+        auto query = std::make_shared<ASTAlterQuery>();
+        auto * alter = query->as<ASTAlterQuery>();
 
-        auto storage = StorageMaterializedPostgreSQL::create(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
+        alter->alter_object = ASTAlterQuery::AlterObjectType::DATABASE;
+        alter->database = database_name;
+        alter->set(alter->command_list, command_list);
+
+        auto current_context = Context::createCopy(getContext()->getGlobalContext());
+        current_context->setInternalQuery(true);
+        InterpreterAlterQuery(query, current_context).execute();
+
+        auto storage = StorageMaterializedPostgreSQL::create(table, getContext(), remote_database_name, table_name);
         materialized_tables[table_name] = storage;
         replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
     }
@@ -266,64 +326,6 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
     /// Modify context into nested_context and pass query to Atomic database.
     return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
 }
-
-static ASTPtr getColumnDeclaration(const DataTypePtr & data_type)
-{
-    WhichDataType which(data_type);
-
-    if (which.isNullable())
-        return makeASTFunction("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
-
-    if (which.isArray())
-        return makeASTFunction("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
-
-    return std::make_shared<ASTIdentifier>(data_type->getName());
-}
-
-
-ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
-{
-    if (!local_context->hasQueryContext())
-        return DatabaseAtomic::getCreateTableQueryImpl(table_name, local_context, throw_on_error);
-
-    /// Note: here we make an assumption that table structure will not change between call to this method and to attachTable().
-    auto storage = StorageMaterializedPostgreSQL::create(StorageID(database_name, table_name), getContext(), remote_database_name, table_name);
-    replication_handler->addStructureToMaterializedStorage(storage.get(), table_name);
-
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
-    auto table_storage_define = storage_def->clone();
-    create_table_query->set(create_table_query->storage, table_storage_define);
-
-    auto columns_declare_list = std::make_shared<ASTColumns>();
-    auto columns_expression_list = std::make_shared<ASTExpressionList>();
-
-    columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
-    create_table_query->set(create_table_query->columns_list, columns_declare_list);
-
-    /// init create query.
-    auto table_id = storage->getStorageID();
-    create_table_query->table = table_id.table_name;
-    create_table_query->database = table_id.database_name;
-
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-    for (const auto & column_type_and_name : metadata_snapshot->getColumns().getAllPhysical())
-    {
-        const auto & column_declaration = std::make_shared<ASTColumnDeclaration>();
-        column_declaration->name = column_type_and_name.name;
-        column_declaration->type = getColumnDeclaration(column_type_and_name.type);
-        columns_expression_list->children.emplace_back(column_declaration);
-    }
-
-    ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
-    ASTs storage_children = ast_storage->children;
-    auto storage_engine_arguments = ast_storage->engine->arguments;
-    /// Add table_name to engine arguments
-    storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, std::make_shared<ASTLiteral>(table_id.table_name));
-
-    return create_table_query;
-}
-
-
 
 }
 

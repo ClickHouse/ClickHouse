@@ -173,6 +173,9 @@ StorageID StorageMaterializedPostgreSQL::getNestedStorageID() const
 
 void StorageMaterializedPostgreSQL::createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure)
 {
+    if (tryGetNested())
+        return;
+
     const auto ast_create = getCreateNestedTableQuery(std::move(table_structure));
     auto table_id = getStorageID();
     auto tmp_nested_table_id = StorageID(table_id.database_name, getNestedTableName());
@@ -477,9 +480,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
         if (engine_args.size() != 5)
-            throw Exception("Storage MaterializedPostgreSQL requires 5 parameters: "
-                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password'",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Storage MaterializedPostgreSQL requires 5 parameters: "
+                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password'. Got {}",
+                            engine_args.size());
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getContext());

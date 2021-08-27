@@ -206,24 +206,12 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 }
 
 
-void PostgreSQLReplicationHandler::addStructureToMaterializedStorage(StorageMaterializedPostgreSQL * storage, const String & table_name, ASTPtr database_def)
+ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name)
 {
     postgres::Connection connection(connection_info);
     pqxx::nontransaction tx(connection.getRef());
     auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, true, true, true));
-
-    auto engine = std::make_shared<ASTFunction>();
-    engine->name = "MaterializedPostgreSQL";
-    engine->arguments = args;
-
-    auto ast_storage = std::make_shared<ASTStorage>();
-    storage->set(storage->engine, engine);
-
-    auto storage_def = storage->getCreateNestedTableQuery(std::move(table_structure));
-    ContextMutablePtr local_context = Context::createCopy(context);
-    auto table = createTableFromAST(*assert_cast<ASTCreateQuery *>(storage_def.get()), remote_database_name, "", local_context, false).second;
-
-    storage->setInMemoryMetadata(table->getInMemoryMetadata());
+    return storage->getCreateNestedTableQuery(std::move(table_structure));
 }
 
 
@@ -622,26 +610,28 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
 {
     /// Note: we have to ensure that replication consumer task is stopped when we reload table, because otherwise
     /// it can read wal beyond start lsn position (from which this table is being loaded), which will result in loosing data.
-    /// Therefore we wait here for it to finish current reading stream. We have to wait, because we cannot return OK to client right now.
     consumer_task->deactivate();
-
     try
     {
+        LOG_TRACE(log, "Adding table `{}` to replication", postgres_table_name);
         postgres::Connection replication_connection(connection_info, /* replication */true);
         String snapshot_name, start_lsn;
         StoragePtr nested_storage;
 
         {
             pqxx::nontransaction tx(replication_connection.getRef());
-            auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, postgres_table_name, true, true, true));
-
             if (isReplicationSlotExist(tx, start_lsn, /* temporary */true))
                 dropReplicationSlot(tx, /* temporary */true);
             createReplicationSlot(tx, start_lsn, snapshot_name, /* temporary */true);
 
+            /// Protect against deadlock.
+            auto nested = DatabaseCatalog::instance().tryGetTable(materialized_storage->getNestedStorageID(), materialized_storage->getNestedTableContext());
+            if (!nested)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal table was not created");
+
             {
                 postgres::Connection tmp_connection(connection_info);
-                nested_storage = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage->as <StorageMaterializedPostgreSQL>());
+                nested_storage = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage);
             }
             auto nested_table_id = nested_storage->getStorageID();
             materialized_storage->setNestedStorageID(nested_table_id);
@@ -655,6 +645,7 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
 
         /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
         consumer->addNested(postgres_table_name, nested_storage, start_lsn);
+        LOG_TRACE(log, "Table `{}` successfully added to replication", postgres_table_name);
     }
     catch (...)
     {
@@ -664,7 +655,6 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                         "Failed to add table `{}` to replication. Info: {}", postgres_table_name, error_message);
     }
-
     consumer_task->schedule();
 }
 

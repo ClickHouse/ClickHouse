@@ -1,9 +1,8 @@
 #include "Connection.h"
 
 #if USE_LIBPQXX
-
 #include <common/logger_useful.h>
-#include <iostream>
+
 
 namespace postgres
 {

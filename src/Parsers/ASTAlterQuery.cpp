@@ -494,6 +494,11 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
         }
         settings.ostr << indent_str << backQuoteIfNeed(table);
     }
+    else if (alter_object == AlterObjectType::DATABASE && !database.empty())
+    {
+        settings.ostr << indent_str << backQuoteIfNeed(database);
+    }
+
     formatOnCluster(settings);
     settings.ostr << settings.nl_or_ws;
 

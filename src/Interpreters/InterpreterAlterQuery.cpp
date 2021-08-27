@@ -43,14 +43,12 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextP
 BlockIO InterpreterAlterQuery::execute()
 {
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
-    std::cerr << "\n\n\n" << query_ptr->dumpTree() << std::endl;
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
         return executeToDatabase(alter);
-    else if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
+    else if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE
+            || alter.alter_object == ASTAlterQuery::AlterObjectType::LIVE_VIEW)
         return executeToTable(alter);
-    else if (alter.alter_object == ASTAlterQuery::AlterObjectType::LIVE_VIEW)
-        return executeToTable(alter);
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown alter");
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown alter object type");
 }
 
 

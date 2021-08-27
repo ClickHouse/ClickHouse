@@ -361,8 +361,6 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             constexpr size_t transaction_commit_timestamp_len = 8;
             pos += unused_flags_len + commit_lsn_len + transaction_end_lsn_len + transaction_commit_timestamp_len;
 
-            // LOG_DEBUG(log, "Current lsn: {} = {}", current_lsn, getLSNValue(current_lsn)); /// Will be removed
-
             final_lsn = current_lsn;
             break;
         }
@@ -606,7 +604,7 @@ void MaterializedPostgreSQLConsumer::addNested(const String & postgres_table_nam
     buffers.emplace(postgres_table_name, Buffer(nested_storage));
 
     /// Replication consumer will read wall and check for currently processed table whether it is allowed to start applying
-    /// changed to this table.
+    /// changes to this table.
     waiting_list[postgres_table_name] = table_start_lsn;
 }
 
@@ -749,7 +747,9 @@ bool MaterializedPostgreSQLConsumer::consume(std::vector<std::pair<Int32, String
     /// Read up to max_block_size changed (approximately - in same cases might be more).
     /// false: no data was read, reschedule.
     /// true: some data was read, schedule as soon as possible.
-    return readFromReplicationSlot();
+    auto read_next = readFromReplicationSlot();
+    LOG_TRACE(log, "LSN: {}", final_lsn);
+    return read_next;
 }
 
 
