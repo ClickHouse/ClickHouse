@@ -147,7 +147,7 @@ static bool isTrivialSelect(const ASTPtr & select)
 };
 
 
-std::pair<BlockIO, Processors> InterpreterInsertQuery::executeImpl(
+std::pair<BlockIO, BlockOutputStreams> InterpreterInsertQuery::executeImpl(
     const StoragePtr & table, Block & sample_block)
 {
     const auto & settings = getContext()->getSettingsRef();
@@ -158,7 +158,7 @@ std::pair<BlockIO, Processors> InterpreterInsertQuery::executeImpl(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
 
     BlockIO res;
-    Processors sinks;
+    BlockOutputStreams out_streams;
 
     bool is_distributed_insert_select = false;
     if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
@@ -303,11 +303,11 @@ std::pair<BlockIO, Processors> InterpreterInsertQuery::executeImpl(
 
             auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
             out_wrapper->setProcessListElement(getContext()->getProcessListElement());
-            sinks.emplace_back(std::make_shared<SinkToOutputStream>(std::move(out_wrapper)));
+            out_streams.emplace_back(std::move(out_wrapper));
         }
     }
 
-    return {std::move(res), std::move(sinks)};
+    return {std::move(res), std::move(out_streams)};
 }
 
 BlockIO InterpreterInsertQuery::execute()
@@ -324,11 +324,11 @@ BlockIO InterpreterInsertQuery::execute()
         getContext()->checkAccess(AccessType::INSERT, query.table_id, sample_block.getNames());
 
     BlockIO res;
-    Processors sinks;
-    std::tie(res, sinks) = executeImpl(table, sample_block);
+    BlockOutputStreams out_streams;
+    std::tie(res, out_streams) = executeImpl(table, sample_block);
 
     /// What type of query: INSERT or INSERT SELECT or INSERT WATCH?
-    if (sinks.empty())
+    if (out_streams.empty())
     {
         /// Pipeline was already built.
     }
@@ -336,7 +336,7 @@ BlockIO InterpreterInsertQuery::execute()
     {
         /// XXX: is this branch also triggered for select+input() case?
 
-        const auto & header = sinks.at(0)->getInputs().front().getHeader();
+        const auto & header = out_streams.at(0)->getHeader();
         auto actions_dag = ActionsDAG::makeConvertingActions(
                 res.pipeline.getHeader().getColumnsWithTypeAndName(),
                 header.getColumnsWithTypeAndName(),
@@ -348,13 +348,15 @@ BlockIO InterpreterInsertQuery::execute()
             return std::make_shared<ExpressionTransform>(in_header, actions);
         });
 
-        auto it = sinks.rbegin();
-        res.pipeline.setSinks([&it](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
+        res.pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
         {
             if (type != QueryPipeline::StreamType::Main)
                 return nullptr;
 
-            return *it++;
+            auto stream = std::move(out_streams.back());
+            out_streams.pop_back();
+
+            return std::make_shared<SinkToOutputStream>(std::move(stream));
         });
 
         if (!allow_materialized)
@@ -364,16 +366,18 @@ BlockIO InterpreterInsertQuery::execute()
                     throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
-    else
+    else if (!query.expectNativeData())
     {
         auto pipe = getSourceFromASTInsertQuery(query_ptr, true, sample_block, getContext(), nullptr);
         res.pipeline.init(std::move(pipe));
         res.pipeline.resize(1);
         res.pipeline.setSinks([&](const Block &, Pipe::StreamType)
         {
-            return sinks.at(0);
+            return std::make_shared<SinkToOutputStream>(out_streams.at(0));
         });
     }
+    else
+        res.out = std::move(out_streams.at(0));
 
     res.pipeline.addStorageHolder(table);
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
@@ -398,7 +402,14 @@ Processors InterpreterInsertQuery::getSinks()
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, sample_block.getNames());
 
-    return executeImpl(table, sample_block).second;
+    auto out_streams = executeImpl(table, sample_block).second;
+
+    Processors sinks;
+    sinks.reserve(out_streams.size());
+    for (const auto & out : out_streams)
+        sinks.emplace_back(std::make_shared<SinkToOutputStream>(out));
+
+    return sinks;
 }
 
 StorageID InterpreterInsertQuery::getDatabaseTable() const

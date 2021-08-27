@@ -14,16 +14,17 @@ namespace DB
 class ASTInsertQuery;
 struct BlockIO;
 
-class AsynchronousInsertQueue : public WithContext
+class AsynchronousInsertQueue : public WithMutableContext
 {
     public:
         /// Using structure to allow and benefit from designated initialization and not mess with a positional arguments in ctor.
         struct Timeout
         {
-            std::chrono::seconds busy, stale;
+            std::chrono::seconds busy;
+            std::chrono::seconds stale;
         };
 
-        AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, size_t max_data_size, const Timeout & timeouts);
+        AsynchronousInsertQueue(ContextMutablePtr context_, size_t pool_size, size_t max_data_size, const Timeout & timeouts);
         ~AsynchronousInsertQueue();
 
         void push(const ASTPtr & query, const Settings & settings, const String & query_id);
@@ -35,6 +36,7 @@ class AsynchronousInsertQueue : public WithContext
             ASTPtr query;
             Settings settings;
         };
+
         struct InsertData;
 
         struct InsertQueryHash
