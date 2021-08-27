@@ -22,6 +22,13 @@ SELECT LinfNorm(tuple(1, -2.3, 1.7));
 
 SELECT LpNorm(tuple(-1), 3);
 SELECT LpNorm(tuple(-1.1), 3);
+SELECT LpNorm(tuple(95800, 217519, 414560), 4);
 SELECT LpNorm(tuple(13, -84.4, 91, 63.1), 2) = L2Norm(tuple(13, -84.4, 91, 63.1));
 SELECT LpNorm(tuple(13, -84.4, 91, 63.1), 1) = L1Norm(tuple(13, -84.4, 91, 63.1));
 SELECT LpNorm(tuple(-1, -2), 11);
+
+SELECT L1Distance(tuple(1, 2, 3), tuple(2, 3, 1));
+SELECT L2Distance(tuple(1, 1), tuple(3, -1));
+SELECT LinfDistance(tuple(1, 1), tuple(1, 2));
+SELECT L2Distance(tuple(5, 5), tuple(5, 5));
+SELECT LpDistance(tuple(1800, 1900), tuple(18, 59), 12) - LpDistance(tuple(-22), tuple(1900), 12); 

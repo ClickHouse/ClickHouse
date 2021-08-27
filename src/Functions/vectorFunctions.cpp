@@ -94,7 +94,8 @@ public:
             ColumnWithTypeAndName left{left_elements[i], left_types[i], {}};
             ColumnWithTypeAndName right{right_elements[i], right_types[i], {}};
             auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
-            columns[i] = elem_func->execute({left, right}, elem_func->getResultType(), input_rows_count);
+            columns[i] = elem_func->execute({left, right}, elem_func->getResultType(), input_rows_count)
+                                  ->convertToFullColumnIfConst();
         }
 
         return ColumnTuple::create(columns);
@@ -769,6 +770,105 @@ public:
     }
 };
 
+template <const char * func_label>
+class VectorDistance : public TupleIFunction
+{
+public:
+    explicit VectorDistance(ContextPtr context_) : TupleIFunction(context_) {}
+
+    size_t getNumberOfArguments() const override
+    {
+        if constexpr (func_label[0] == 'p')
+            return 3;
+        else
+            return 2;
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        FunctionTupleMinus tuple_minus(context);
+        auto type = tuple_minus.getReturnTypeImpl(arguments);
+        auto column = tuple_minus.executeImpl(arguments, DataTypePtr(), 1);
+
+        ColumnWithTypeAndName minus_res{column, type, {}};
+
+        auto func = FunctionFactory::instance().get("L" + std::string(func_label) + "Norm", context);
+        if constexpr (func_label[0] == 'p')
+            return func->build({minus_res, arguments[2]})->getResultType();
+        else
+            return func->build({minus_res})->getResultType();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        FunctionTupleMinus tuple_minus(context);
+        auto type = tuple_minus.getReturnTypeImpl(arguments);
+        auto column = tuple_minus.executeImpl(arguments, DataTypePtr(), input_rows_count);
+
+        ColumnWithTypeAndName minus_res{column, type, {}};
+
+        auto func = FunctionFactory::instance().get("L" + std::string(func_label) + "Norm", context);
+        if constexpr (func_label[0] == 'p')
+        {
+            auto func_elem = func->build({minus_res, arguments[2]});
+            return func_elem->execute({minus_res, arguments[2]}, func_elem->getResultType(), input_rows_count);
+        }
+        else
+        {
+            auto func_elem = func->build({minus_res});
+            return func_elem->execute({minus_res}, func_elem->getResultType(), input_rows_count);
+        }
+    }
+};
+
+static constexpr char L1DISTANCE_LABEL[] = "1";
+class FunctionL1Distance : public VectorDistance<L1DISTANCE_LABEL>
+{
+public:
+    static constexpr auto name = "L1Distance";
+
+    explicit FunctionL1Distance(ContextPtr context_) : VectorDistance(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionL1Distance>(context_); }
+
+    String getName() const override { return name; }
+};
+
+static constexpr char L2DISTANCE_LABEL[] = "2";
+class FunctionL2Distance : public VectorDistance<L2DISTANCE_LABEL>
+{
+public:
+    static constexpr auto name = "L2Distance";
+
+    explicit FunctionL2Distance(ContextPtr context_) : VectorDistance(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionL2Distance>(context_); }
+
+    String getName() const override { return name; }
+};
+
+static constexpr char LinfDISTANCE_LABEL[] = "inf";
+class FunctionLinfDistance : public VectorDistance<LinfDISTANCE_LABEL>
+{
+public:
+    static constexpr auto name = "LinfDistance";
+
+    explicit FunctionLinfDistance(ContextPtr context_) : VectorDistance(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLinfDistance>(context_); }
+
+    String getName() const override { return name; }
+};
+
+static constexpr char LpDISTANCE_LABEL[] = "p";
+class FunctionLpDistance : public VectorDistance<LpDISTANCE_LABEL>
+{
+public:
+    static constexpr auto name = "LpDistance";
+
+    explicit FunctionLpDistance(ContextPtr context_) : VectorDistance(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLpDistance>(context_); }
+
+    String getName() const override { return name; }
+};
+
 void registerVectorFunctions(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTuplePlus>();
@@ -789,18 +889,17 @@ void registerVectorFunctions(FunctionFactory & factory)
     factory.registerFunction<FunctionL2Norm>();
     factory.registerFunction<FunctionLinfNorm>();
     factory.registerFunction<FunctionLpNorm>();
-    /*factory.registerFunction<FunctionL1Distance>();
-    factory.registerFunction<FunctionL1Normalize>();
 
+    factory.registerFunction<FunctionL1Distance>();
     factory.registerFunction<FunctionL2Distance>();
-    factory.registerFunction<FunctionL2Normalize>();
-
     factory.registerFunction<FunctionLinfDistance>();
-    factory.registerFunction<FunctionLinfNormalize>();
-
     factory.registerFunction<FunctionLpDistance>();
-    factory.registerFunction<FunctionLpNormalize>();
 
-    factory.registerFunction<FunctionCosineDistance>();*/
+//    factory.registerFunction<FunctionL1Normalize>();
+//    factory.registerFunction<FunctionL2Normalize>();
+//    factory.registerFunction<FunctionLinfNormalize>();
+//    factory.registerFunction<FunctionLpNormalize>();
+//
+//    factory.registerFunction<FunctionCosineDistance>();
 }
 }
