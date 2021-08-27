@@ -378,7 +378,16 @@ function run_tests
 
         start_server
 
+
+        # needs s3
+        01944_insert_partition_by
+
+        # depends on Go
+        02013_zlib_read_after_eof
+    )
+
         echo "Going to run again: ${FAILED_TESTS[*]}"
+
 
         clickhouse-test --hung-check --order=random --no-long --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_log.txt"
     else
