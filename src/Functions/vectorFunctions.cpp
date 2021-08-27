@@ -774,7 +774,13 @@ template <const char * func_label>
 class VectorDistance : public TupleIFunction
 {
 public:
+    /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
+    static inline auto name = "L" + std::string(func_label) + "Distance";
+
     explicit VectorDistance(ContextPtr context_) : TupleIFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<VectorDistance>(context_); }
+
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override
     {
@@ -822,52 +828,16 @@ public:
 };
 
 static constexpr char L1DISTANCE_LABEL[] = "1";
-class FunctionL1Distance : public VectorDistance<L1DISTANCE_LABEL>
-{
-public:
-    static constexpr auto name = "L1Distance";
-
-    explicit FunctionL1Distance(ContextPtr context_) : VectorDistance(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionL1Distance>(context_); }
-
-    String getName() const override { return name; }
-};
+using FunctionL1Distance = VectorDistance<L1DISTANCE_LABEL>;
 
 static constexpr char L2DISTANCE_LABEL[] = "2";
-class FunctionL2Distance : public VectorDistance<L2DISTANCE_LABEL>
-{
-public:
-    static constexpr auto name = "L2Distance";
-
-    explicit FunctionL2Distance(ContextPtr context_) : VectorDistance(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionL2Distance>(context_); }
-
-    String getName() const override { return name; }
-};
+using FunctionL2Distance = VectorDistance<L2DISTANCE_LABEL>;
 
 static constexpr char LinfDISTANCE_LABEL[] = "inf";
-class FunctionLinfDistance : public VectorDistance<LinfDISTANCE_LABEL>
-{
-public:
-    static constexpr auto name = "LinfDistance";
-
-    explicit FunctionLinfDistance(ContextPtr context_) : VectorDistance(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLinfDistance>(context_); }
-
-    String getName() const override { return name; }
-};
+using FunctionLinfDistance = VectorDistance<LinfDISTANCE_LABEL>;
 
 static constexpr char LpDISTANCE_LABEL[] = "p";
-class FunctionLpDistance : public VectorDistance<LpDISTANCE_LABEL>
-{
-public:
-    static constexpr auto name = "LpDistance";
-
-    explicit FunctionLpDistance(ContextPtr context_) : VectorDistance(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLpDistance>(context_); }
-
-    String getName() const override { return name; }
-};
+using FunctionLpDistance = VectorDistance<LpDISTANCE_LABEL>;
 
 void registerVectorFunctions(FunctionFactory & factory)
 {
