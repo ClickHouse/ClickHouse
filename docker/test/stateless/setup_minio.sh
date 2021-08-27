@@ -24,5 +24,5 @@ cd /usr/share/clickhouse-test/queries/0_stateless/test_minio
 FILES=$(ls .)
 for FILE in $FILES; do
     echo $FILE;
-    ./mc cp $FILE myminio/test/$FILE;
+    ./mc cp $FILE clickminio/test/$FILE;
 done
