@@ -112,6 +112,22 @@ public:
         }
     }
 
+    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t) const override
+    {
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const UInt8 * null_map = column->getNullMapData().data();
+        const IColumn * nested_column = &column->getNestedColumn();
+        const IColumn * filter_column = columns[num_arguments - 1];
+        if (const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(filter_column))
+            filter_column = &nullable_column->getNestedColumn();
+        const IColumn * column_param[] = {nested_column, filter_column};
+
+        this->nested_function->addBatchSinglePlaceNotNull(batch_size, this->nestedPlace(place), column_param, null_map, arena, 1);
+        if constexpr (result_is_nullable)
+            if (!memoryIsByte(null_map, batch_size, 1))
+                this->setFlag(place);
+    }
+
 #if USE_EMBEDDED_COMPILER
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
