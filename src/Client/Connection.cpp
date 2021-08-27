@@ -499,7 +499,7 @@ void Connection::sendQuery(
     /// Send empty block which means end of data.
     if (!with_pending_data)
     {
-        sendData(Block(), /* name */"", /* scalar */false);
+        sendData(Block());
         out->next();
     }
 }
@@ -654,7 +654,7 @@ protected:
         num_rows += chunk.getNumRows();
 
         auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        connection.sendData(block, table_data.table_name, /* scalar */false);
+        connection.sendData(block, table_data.table_name);
     }
 
 private:
@@ -670,7 +670,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     if (data.empty())
     {
         /// Send empty block, which means end of data transfer.
-        sendData(Block(), "", false);
+        sendData(Block());
         return;
     }
 
@@ -702,16 +702,17 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         });
         executor = pipeline.execute();
         executor->execute(/*num_threads = */ 1);
-auto read_rows = sink->getNumReadRows();
+
+        auto read_rows = sink->getNumReadRows();
         rows += read_rows;
 
         /// If table is empty, send empty block with name.
         if (read_rows == 0)
-            sendData(sink->getPort().getHeader(), elem->table_name, /* scalar */false);
+            sendData(sink->getPort().getHeader(), elem->table_name);
     }
 
     /// Send empty block, which means end of data transfer.
-    sendData(Block(), /* name */"", /* scalar */false);
+    sendData(Block());
 
     out_bytes = out->count() - out_bytes;
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
