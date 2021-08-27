@@ -14,6 +14,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <common/getFQDNOrHostName.h>
 #include <common/scope_guard_safe.h>
+#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/Session.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -592,6 +593,12 @@ void LocalServer::processConfig()
 
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+
+        fs::create_directories(fs::path(path) / "user_defined/");
+        LOG_DEBUG(log, "Loading user defined objects from {}", path);
+        Poco::File(path + "user_defined/").createDirectories();
+        UserDefinedObjectsLoader::instance().loadObjects(global_context);
+        LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         fs::create_directories(fs::path(path) / "data/");

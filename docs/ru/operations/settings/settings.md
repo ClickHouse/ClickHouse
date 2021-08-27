@@ -3252,3 +3252,25 @@ SETTINGS index_granularity = 8192 │
 -   1 — таблица обновляется автоматически в фоновом режиме при обнаружении изменений схемы.
 
 Значение по умолчанию: `0`.
+
+## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
+
+Включает или отключает поддержку [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) при обработке запросов `SELECT`.
+
+Возможные значения:
+
+-   0 — Проекции не поддерживаются.
+-   1 — Проекции поддерживаются.
+
+Значение по умолчанию: `0`.
+
+## force_optimize_projection {#force-optimize-projection}
+
+Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)). 
+
+Возможные значения:
+
+-   0 — Проекции используются опционально.
+-   1 — Проекции обязательно используются.
+
+Значение по умолчанию: `0`.
