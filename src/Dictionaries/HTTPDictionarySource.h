@@ -22,20 +22,10 @@ namespace DB
 class HTTPDictionarySource final : public IDictionarySource
 {
 public:
-
-    struct Configuration
-    {
-        const std::string url;
-        const std::string format;
-        const std::string update_field;
-        const UInt64 update_lag;
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
-    };
-
     HTTPDictionarySource(
         const DictionaryStructure & dict_struct_,
-        const Configuration & configuration,
-        const Poco::Net::HTTPBasicCredentials & credentials_,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
         Block & sample_block_,
         ContextPtr context_,
         bool created_from_ddl);
@@ -43,13 +33,13 @@ public:
     HTTPDictionarySource(const HTTPDictionarySource & other);
     HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
 
-    Pipe loadAll() override;
+    BlockInputStreamPtr loadAll() override;
 
-    Pipe loadUpdatedAll() override;
+    BlockInputStreamPtr loadUpdatedAll() override;
 
-    Pipe loadIds(const std::vector<UInt64> & ids) override;
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
-    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -65,7 +55,7 @@ private:
     void getUpdateFieldAndDate(Poco::URI & uri);
 
     // wrap buffer using encoding from made request
-    Pipe createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer);
+    BlockInputStreamPtr createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer);
 
     Poco::Logger * log;
 
@@ -73,11 +63,15 @@ private:
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
-    const Configuration configuration;
+    const std::string url;
     Poco::Net::HTTPBasicCredentials credentials;
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
+    std::string update_field;
+    const std::string format;
     Block sample_block;
     ContextPtr context;
     ConnectionTimeouts timeouts;
 };
 
 }
+

@@ -49,7 +49,6 @@ public:
         Array,
         Tuple,
     };
-
     IPolygonDictionary(
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
@@ -86,7 +85,7 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override { return dict_struct.getAttribute(attribute_name).injective; }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -97,7 +96,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
     /** Single coordinate type. */
     using Coord = Float32;
@@ -139,10 +138,10 @@ private:
     size_t getAttributeIndex(const std::string & attribute_name) const;
 
     /** Helper function for retrieving the value of an attribute by key. */
-    template <typename AttributeType, typename ValueGetter, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
-        const std::vector<IPolygonDictionary::Point> & requested_key_points,
-        ValueGetter && get_value,
+        size_t attribute_ind,
+        const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
@@ -167,3 +166,4 @@ private:
 };
 
 }
+

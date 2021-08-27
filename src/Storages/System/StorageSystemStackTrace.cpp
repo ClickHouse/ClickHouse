@@ -6,7 +6,7 @@
 #include <mutex>
 #include <filesystem>
 
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <DataTypes/DataTypeString.h>

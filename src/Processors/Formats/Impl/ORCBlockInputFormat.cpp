@@ -9,7 +9,6 @@
 #include <arrow/io/memory.h>
 #include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
-#include <DataTypes/NestedUtils.h>
 
 namespace DB
 {
@@ -27,14 +26,14 @@ namespace ErrorCodes
             throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
-ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
-    : IInputFormat(std::move(header_), in_), format_settings(format_settings_)
+ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_) : IInputFormat(std::move(header_), in_)
 {
 }
 
 Chunk ORCBlockInputFormat::generate()
 {
     Chunk res;
+    const Block & header = getPort().getHeader();
 
     if (!file_reader)
         prepareReader();
@@ -55,7 +54,7 @@ Chunk ORCBlockInputFormat::generate()
 
     ++stripe_current;
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result);
+    ArrowColumnToCHColumn::arrowTableToCHChunk(res, *table_result, header, "ORC");
     return res;
 }
 
@@ -68,25 +67,10 @@ void ORCBlockInputFormat::resetParser()
     stripe_current = 0;
 }
 
-static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
+size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 {
     if (type->id() == arrow::Type::LIST)
         return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type()) + 1;
-
-    if (type->id() == arrow::Type::STRUCT)
-    {
-        int indices = 1;
-        auto * struct_type = static_cast<arrow::StructType *>(type.get());
-        for (int i = 0; i != struct_type->num_fields(); ++i)
-            indices += countIndicesForType(struct_type->field(i)->type());
-        return indices;
-    }
-
-    if (type->id() == arrow::Type::MAP)
-    {
-        auto * map_type = static_cast<arrow::MapType *>(type.get());
-        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type());
-    }
 
     return 1;
 }
@@ -100,27 +84,17 @@ void ORCBlockInputFormat::prepareReader()
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(file_reader->ReadSchema(&schema));
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "ORC", format_settings.orc.import_nested);
-
-    std::unordered_set<String> nested_table_names;
-    if (format_settings.orc.import_nested)
-        nested_table_names = Nested::getAllTableNames(getPort().getHeader());
-
-    /// In ReadStripe column indices should be started from 1,
-    /// because 0 indicates to select all columns.
-    int index = 1;
+    int index = 0;
     for (int i = 0; i < schema->num_fields(); ++i)
     {
-        /// LIST type require 2 indices, STRUCT - the number of elements + 1,
-        /// so we should recursively count the number of indices we need for this type.
-        int indexes_count = countIndicesForType(schema->field(i)->type());
-        const auto & name = schema->field(i)->name();
-        if (getPort().getHeader().has(name) || nested_table_names.contains(name))
+        if (getPort().getHeader().has(schema->field(i)->name()))
         {
+            /// LIST type require 2 indices, so we should recursively
+            /// count the number of indices we need for this type.
+            int indexes_count = countIndicesForType(schema->field(i)->type());
             for (int j = 0; j != indexes_count; ++j)
-                include_indices.push_back(index + j);
+                include_indices.push_back(index++);
         }
-        index += indexes_count;
     }
 }
 
@@ -131,9 +105,9 @@ void registerInputFormatProcessorORC(FormatFactory &factory)
             [](ReadBuffer &buf,
                 const Block &sample,
                 const RowInputFormatParams &,
-                const FormatSettings & settings)
+                const FormatSettings & /* settings */)
             {
-                return std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
+                return std::make_shared<ORCBlockInputFormat>(buf, sample);
             });
     factory.markFormatAsColumnOriented("ORC");
 }

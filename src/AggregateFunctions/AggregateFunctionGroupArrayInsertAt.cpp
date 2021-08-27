@@ -6,8 +6,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -17,7 +15,7 @@ namespace
 {
 
 AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertBinary(name, argument_types);
 
