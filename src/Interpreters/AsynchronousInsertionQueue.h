@@ -26,8 +26,7 @@ class AsynchronousInsertQueue : public WithContext
         AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, size_t max_data_size, const Timeout & timeouts);
         ~AsynchronousInsertQueue();
 
-        bool push(const ASTPtr & query, const Settings & settings, const String & query_id);
-        void push(const ASTPtr & query, const Settings & settings, const String & query_id, const Block & header);
+        void push(const ASTPtr & query, const Settings & settings, const String & query_id);
 
     private:
 

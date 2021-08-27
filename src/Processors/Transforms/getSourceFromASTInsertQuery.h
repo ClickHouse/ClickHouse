@@ -17,7 +17,14 @@ namespace DB
 
 class Pipe;
 
-std::pair<InputFormatPtr, Pipe> getSourceFromASTInsertQuery(
+InputFormatPtr getInputFormatFromASTInsertQuery(
+        const ASTPtr & ast,
+        bool with_buffers,
+        const Block & header,
+        ContextPtr context,
+        const ASTPtr & input_function);
+
+Pipe getSourceFromASTInsertQuery(
         const ASTPtr & ast,
         bool with_buffers,
         const Block & header,

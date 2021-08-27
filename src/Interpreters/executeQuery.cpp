@@ -540,7 +540,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
                     auto pipe = getSourceFromASTInsertQuery(
-                        ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function).second;
+                        ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
                     input_storage.setPipe(std::move(pipe));
                 }
             }
@@ -553,8 +553,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         const bool async_insert
             = queue && insert_query && !insert_query->select && !insert_query->expectNativeData() && settings.async_insert_mode;
 
-        if (async_insert && queue->push(ast, settings, context->getCurrentQueryId()))
+        if (async_insert)
         {
+            queue->push(ast, settings, context->getCurrentQueryId());
+
             /// Shortcut for already processed similar insert-queries.
             /// Similarity is defined by hashing query text and some settings.
             return std::make_tuple(ast, BlockIO());
@@ -924,13 +926,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             res.finish_callback = std::move(finish_callback);
             res.exception_callback = std::move(exception_callback);
         }
-
-        if (async_insert)
-        {
-            assert(res.pipeline.initialized());
-            queue->push(ast, settings, context->getCurrentQueryId(), res.pipeline.getHeader());
-            return std::make_tuple(ast, BlockIO());
-        }
     }
     catch (...)
     {
@@ -1036,7 +1031,7 @@ void executeQuery(
     {
         if (streams.out)
         {
-            auto pipe = getSourceFromASTInsertQuery(ast, true, streams.out->getHeader(), context, nullptr).second;
+            auto pipe = getSourceFromASTInsertQuery(ast, true, streams.out->getHeader(), context, nullptr);
 
             pipeline.init(std::move(pipe));
             pipeline.resize(1);

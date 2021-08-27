@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Processors/ISource.h>
-
-#include <memory>
+#include <IO/ReadBuffer.h>
 
 
 namespace DB
@@ -31,8 +30,6 @@ struct ColumnMapping
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
-class ReadBuffer;
-
 /** Input format is a source, that reads data from ReadBuffer.
   */
 class IInputFormat : public ISource
@@ -43,7 +40,7 @@ protected:
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wattributes"
 
-    ReadBuffer & in [[maybe_unused]];
+    ReadBuffer * in [[maybe_unused]];
 
 #pragma GCC diagnostic pop
 
