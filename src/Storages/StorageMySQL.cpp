@@ -271,9 +271,7 @@ void registerStorageMySQL(StorageFactory & factory)
             username, password,
             MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
             mysql_settings.connection_pool_size,
-            mysql_settings.connection_max_tries,
-            args.getContext()->getSettingsRef().external_storage_connect_timeout,
-            args.getContext()->getSettingsRef().external_storage_rw_timeout);
+            mysql_settings.connection_max_tries);
 
         bool replace_query = false;
         std::string on_duplicate_clause;
