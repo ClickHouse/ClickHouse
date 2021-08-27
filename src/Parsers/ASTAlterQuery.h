@@ -218,7 +218,6 @@ public:
         UNKNOWN,
     };
 
-    // bool is_live_view{false}; /// true for ALTER LIVE VIEW
     AlterObjectType alter_object = AlterObjectType::UNKNOWN;
 
     ASTExpressionList * command_list = nullptr;

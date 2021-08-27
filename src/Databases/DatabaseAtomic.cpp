@@ -578,11 +578,11 @@ void DatabaseAtomic::modifySettings(const SettingsChanges & settings_changes, Co
     create.uuid = getUUID();
     create.if_not_exists = false;
     create.storage = assert_cast<ASTStorage *>(storage_def.get());
-    auto * ast_set_query = create.storage->settings;
+    auto * settings = create.storage->settings;
 
-    if (ast_set_query)
+    if (settings)
     {
-        auto & previous_settings = ast_set_query->changes;
+        auto & previous_settings = settings->changes;
         for (const auto & change : settings_changes)
         {
             auto it = std::find_if(previous_settings.begin(), previous_settings.end(),
@@ -614,7 +614,6 @@ void DatabaseAtomic::modifySettings(const SettingsChanges & settings_changes, Co
     fs::path metadata_file_tmp_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql");
 
-    /// Exclusive flag guarantees, that database is not created right now in another thread.
     WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
     writeString(statement, out);
 

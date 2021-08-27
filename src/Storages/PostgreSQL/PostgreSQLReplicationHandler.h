@@ -3,6 +3,7 @@
 #include "MaterializedPostgreSQLConsumer.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Core/PostgreSQL/Utils.h>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
@@ -43,9 +44,9 @@ public:
     /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);
 
-    void addTableToReplication(StorageMaterializedPostgreSQL * storage, const String & postgres_table_name);
+    ASTPtr getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name);
 
-    void addStructureToMaterializedStorage(StorageMaterializedPostgreSQL * storage, const String & table_name);
+    void addTableToReplication(StorageMaterializedPostgreSQL * storage, const String & postgres_table_name);
 
 private:
     using MaterializedStorages = std::unordered_map<String, StorageMaterializedPostgreSQL *>;
