@@ -9,6 +9,17 @@
 #include <IO/WriteHelpers.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event AsynchronousReadWaitMicroseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric AsynchronousReadWait;
+}
+
+
 namespace DB
 {
 
@@ -54,7 +65,14 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     {
         /// Read request already in flight. Wait for its completion.
 
-        auto size = prefetch_future.get();
+        size_t size = 0;
+        {
+            Stopwatch watch;
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
+            size = prefetch_future.get();
+            ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
+        }
+
         prefetch_future = {};
         file_offset_of_buffer_end += size;
 
