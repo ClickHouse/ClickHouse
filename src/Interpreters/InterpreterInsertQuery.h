@@ -10,6 +10,7 @@
 namespace DB
 {
 
+
 /** Interprets the INSERT query.
   */
 class InterpreterInsertQuery : public IInterpreter, WithContext
@@ -28,7 +29,7 @@ public:
       * Or nothing if the request INSERT SELECT (self-sufficient query - does not accept the input data, does not return the result).
       */
     BlockIO execute() override;
-
+    Processors getSinks();
     StorageID getDatabaseTable() const;
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
@@ -36,6 +37,7 @@ public:
 private:
     StoragePtr getTable(ASTInsertQuery & query);
     Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
+    std::pair<BlockIO, Processors> executeImpl(const StoragePtr & table, Block & sample_block);
 
     ASTPtr query_ptr;
     const bool allow_materialized;
