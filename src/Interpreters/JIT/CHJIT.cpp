@@ -2,6 +2,8 @@
 
 #if USE_EMBEDDED_COMPILER
 
+#include <sys/mman.h>
+
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
@@ -22,7 +24,10 @@
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
+#include <common/getPageSize.h>
 #include <Common/Exception.h>
+#include <Common/formatReadable.h>
+
 
 namespace DB
 {
@@ -31,6 +36,8 @@ namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_CODE;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_MPROTECT;
 }
 
 /** Simple module to object file compiler.
@@ -91,25 +98,128 @@ class JITModuleMemoryManager
     {
     public:
         llvm::sys::MemoryBlock allocateMappedMemory(
-            llvm::SectionMemoryManager::AllocationPurpose Purpose [[maybe_unused]],
+            llvm::SectionMemoryManager::AllocationPurpose,
             size_t NumBytes,
-            const llvm::sys::MemoryBlock * const NearBlock,
+            const llvm::sys::MemoryBlock * const,
             unsigned Flags,
             std::error_code & EC) override
         {
-            auto allocated_memory_block = llvm::sys::Memory::allocateMappedMemory(NumBytes, NearBlock, Flags, EC);
-            allocated_size += allocated_memory_block.allocatedSize();
-            return allocated_memory_block;
+            EC = std::error_code();
+            if (NumBytes == 0)
+                return llvm::sys::MemoryBlock();
+
+            int protection_flags = getPosixProtectionFlags(Flags);
+
+#if defined(__NetBSD__) && defined(PROT_MPROTECT)
+            protection_flags |= PROT_MPROTECT(PROT_READ | PROT_WRITE | PROT_EXEC);
+#endif
+
+            auto page_size = getPageSize();
+            auto num_pages = (NumBytes + page_size - 1) / page_size;
+            auto allocate_size = num_pages * page_size;
+
+            void * buf = nullptr;
+            int res = posix_memalign(&buf, page_size, allocate_size);
+
+            if (res != 0)
+                throwFromErrno(fmt::format("Cannot allocate memory (posix_memalign) alignment {} size {}.",
+                    page_size,
+                    ReadableSize(allocate_size)),
+                    ErrorCodes::CANNOT_ALLOCATE_MEMORY,
+                    res);
+
+            auto result = llvm::sys::MemoryBlock(buf, allocate_size);
+            protectBlock(result, protection_flags);
+            allocated_size += result.allocatedSize();
+
+            return result;
         }
 
         std::error_code protectMappedMemory(const llvm::sys::MemoryBlock & Block, unsigned Flags) override
         {
-            return llvm::sys::Memory::protectMappedMemory(Block, Flags);
+            int protection_flags = getPosixProtectionFlags(Flags);
+            bool invalidate_cache = (Flags & llvm::sys::Memory::MF_EXEC);
+
+#if defined(__arm__) || defined(__aarch64__)
+            // Certain ARM implementations treat icache clear instruction as a memory read,
+            // and CPU segfaults on trying to clear cache on !PROT_READ page.  Therefore we need
+            // to temporarily add PROT_READ for the sake of flushing the instruction caches.
+            if (invalidate_cache && !(protection_flags & PROT_READ)) {
+                protectBlock(Block, protection_flags | PROT_READ);
+                Memory::InvalidateInstructionCache(M.Address, M.AllocatedSize);
+                InvalidateCache = false;
+            }
+#endif
+
+            protectBlock(Block, protection_flags);
+
+            if (invalidate_cache)
+                llvm::sys::Memory::InvalidateInstructionCache(Block.base(), Block.allocatedSize());
+
+            return std::error_code();
         }
 
-        std::error_code releaseMappedMemory(llvm::sys::MemoryBlock & M) override { return llvm::sys::Memory::releaseMappedMemory(M); }
+        std::error_code releaseMappedMemory(llvm::sys::MemoryBlock & M) override
+        {
+            if (M.base() == nullptr || M.allocatedSize() == 0)
+                return std::error_code();
+
+            protectBlock(M, PROT_READ | PROT_WRITE);
+
+            free(M.base());
+            allocated_size -= M.allocatedSize();
+
+            return std::error_code();
+        }
 
         size_t allocated_size = 0;
+
+    private:
+
+        static void protectBlock(const llvm::sys::MemoryBlock & block, int protection_flags)
+        {
+            int res = ::mprotect(block.base(), block.allocatedSize(), protection_flags);
+            if (res != 0)
+                throwFromErrno(fmt::format("Cannot protect memory (m_protect) alignment {} size {}.",
+                    block.base(),
+                    block.allocatedSize()),
+                    ErrorCodes::CANNOT_MPROTECT,
+                    res);
+        }
+
+        static int getPosixProtectionFlags(unsigned flags)
+        {
+            switch (flags & llvm::sys::Memory::MF_RWE_MASK)
+            {
+            case llvm::sys::Memory::MF_READ:
+                return PROT_READ;
+            case llvm::sys::Memory::MF_WRITE:
+                return PROT_WRITE;
+            case llvm::sys::Memory::MF_READ | llvm::sys::Memory::MF_WRITE:
+                return PROT_READ | PROT_WRITE;
+            case llvm::sys::Memory::MF_READ | llvm::sys::Memory::MF_EXEC:
+                return PROT_READ | PROT_EXEC;
+            case llvm::sys::Memory::MF_READ | llvm::sys::Memory::MF_WRITE |
+                llvm::sys::Memory::MF_EXEC:
+                return PROT_READ | PROT_WRITE | PROT_EXEC;
+            case llvm::sys::Memory::MF_EXEC:
+            #if (defined(__FreeBSD__) || defined(__POWERPC__) || defined (__ppc__) || \
+                defined(_POWER) || defined(_ARCH_PPC))
+                // On PowerPC, having an executable page that has no read permission
+                // can have unintended consequences.  The function InvalidateInstruction-
+                // Cache uses instructions dcbf and icbi, both of which are treated by
+                // the processor as loads.  If the page has no read permissions,
+                // executing these instructions will result in a segmentation fault.
+                return PROT_READ | PROT_EXEC;
+            #else
+                return PROT_EXEC;
+            #endif
+            default:
+                __builtin_unreachable();
+            }
+            // Provide a default return value as required by some compilers.
+            return PROT_NONE;
+        }
     };
 
 public:
