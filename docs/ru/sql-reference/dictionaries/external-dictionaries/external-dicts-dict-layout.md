@@ -271,7 +271,7 @@ RANGE(MIN StartTimeStamp MAX EndTimeStamp)
 
 ### complex_key_range_hashed {#complex-key-range-hashed}
 
-Словарь хранится в оперативной памяти в виде хэш-таблицы с упорядоченным массивом диапазонов и соответствующих им значений (см. [range_hashed](#range-hashed)). Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md).
+Словарь хранится в оперативной памяти в виде хэш-таблицы с упорядоченным массивом диапазонов и соответствующих им значений (см. [range_hashed](#range-hashed)). Данный тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md).
 
 Пример конфигурации:
 
