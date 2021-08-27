@@ -64,6 +64,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         {
             res = std::make_unique<ReadBufferFromFilePReadWithCache>(filename, buffer_size, actual_flags, existing_memory, alignment);
         }
+        else if (settings.local_fs_method == ReadMethod::pread_fake_async)
+        {
+            static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
+            res = std::make_unique<AsynchronousReadBufferFromFileWithCache>(
+                reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment);
+        }
         else if (settings.local_fs_method == ReadMethod::pread_threadpool)
         {
             static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);

@@ -2697,16 +2697,7 @@ ReadSettings Context::getReadSettings() const
 {
     ReadSettings res;
 
-    if (settings.local_filesystem_read_method.value == "read")
-        res.local_fs_method = ReadMethod::read;
-    else if (settings.local_filesystem_read_method.value == "pread")
-        res.local_fs_method = ReadMethod::pread;
-    else if (settings.local_filesystem_read_method.value == "mmap")
-        res.local_fs_method = ReadMethod::mmap;
-    else if (settings.local_filesystem_read_method.value == "pread_threadpool")
-        res.local_fs_method = ReadMethod::pread_threadpool;
-    else
-        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}'", settings.local_filesystem_read_method.value);
+    res.local_fs_method = parseReadMethod(settings.local_filesystem_read_method.value);
 
     res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
     res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
