@@ -82,6 +82,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         return res;
     };
 
+    if (flags == -1)
+        flags = O_RDONLY | O_CLOEXEC;
+
 #if defined(OS_LINUX) || defined(__FreeBSD__)
     if (settings.direct_io_threshold && estimated_size >= settings.direct_io_threshold)
     {
@@ -115,10 +118,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
             buffer_size = align_up(buffer_size);
         }
 
-        if (flags == -1)
-            flags = O_RDONLY | O_CLOEXEC;
-        flags |= O_DIRECT;
-
         if (reinterpret_cast<uintptr_t>(existing_memory) % min_alignment)
         {
             existing_memory = nullptr;  /// Cannot reuse existing memory is it has unaligned offset.
@@ -127,7 +126,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         /// Attempt to open a file with O_DIRECT
         try
         {
-            std::unique_ptr<ReadBufferFromFileBase> res = create(buffer_size, flags);
+            std::unique_ptr<ReadBufferFromFileBase> res = create(buffer_size, flags | O_DIRECT);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
             return res;
         }
