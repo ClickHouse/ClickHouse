@@ -40,14 +40,14 @@ public:
 
 /** Similar to AsynchronousReadBufferFromFile but also transparently shares open file descriptors.
   */
-class AsynchronousReadBufferFromFileWithCache : public AsynchronousReadBufferFromFileDescriptor
+class AsynchronousReadBufferFromFileWithDescriptorsCache : public AsynchronousReadBufferFromFileDescriptor
 {
 private:
     std::string file_name;
     OpenedFileCache::OpenedFilePtr file;
 
 public:
-    AsynchronousReadBufferFromFileWithCache(
+    AsynchronousReadBufferFromFileWithDescriptorsCache(
         AsynchronousReaderPtr reader_, Int32 priority_,
         const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
         char * existing_memory = nullptr, size_t alignment = 0)
@@ -58,7 +58,7 @@ public:
         fd = file->getFD();
     }
 
-    ~AsynchronousReadBufferFromFileWithCache() override;
+    ~AsynchronousReadBufferFromFileWithDescriptorsCache() override;
 
     std::string getFileName() const override
     {

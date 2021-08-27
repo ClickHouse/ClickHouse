@@ -61,14 +61,14 @@ public:
 
 /** Similar to ReadBufferFromFilePRead but also transparently shares open file descriptors.
   */
-class ReadBufferFromFilePReadWithCache : public ReadBufferFromFileDescriptorPRead
+class ReadBufferFromFilePReadWithDescriptorsCache : public ReadBufferFromFileDescriptorPRead
 {
 private:
     std::string file_name;
     OpenedFileCache::OpenedFilePtr file;
 
 public:
-    ReadBufferFromFilePReadWithCache(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
+    ReadBufferFromFilePReadWithDescriptorsCache(const std::string & file_name_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, int flags = -1,
         char * existing_memory = nullptr, size_t alignment = 0)
         : ReadBufferFromFileDescriptorPRead(-1, buf_size, existing_memory, alignment),
         file_name(file_name_)
