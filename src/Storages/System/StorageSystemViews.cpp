@@ -22,8 +22,8 @@ NamesAndTypesList StorageSystemViews::getNamesAndTypes()
     return {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
         {"table_database", std::make_shared<DataTypeString>()},
+        {"table", std::make_shared<DataTypeString>()},
         {"type", std::move(view_type_datatype)},
     };
 }
@@ -46,20 +46,20 @@ void StorageSystemViews::fillData(MutableColumns & res_columns, ContextPtr conte
             auto view_ptr = DatabaseCatalog::instance().getTable(view_id, context);
             QueryViewsLogElement::ViewType type = QueryViewsLogElement::ViewType::DEFAULT;
 
-            if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view_ptr.get()))
+            if (typeid_cast<const StorageMaterializedView *>(view_ptr.get()))
             {
                 type = QueryViewsLogElement::ViewType::MATERIALIZED;
             }
-            else if (const auto * live_view = dynamic_cast<const StorageLiveView *>(view_ptr.get()))
+            else if (typeid_cast<const StorageLiveView *>(view_ptr.get()))
             {
                 type = QueryViewsLogElement::ViewType::LIVE;
             }
 
             col_num = 0;
-            res_columns[col_num++]->insert(table_id.database_name);
-            res_columns[col_num++]->insert(table_id.table_name);
             res_columns[col_num++]->insert(view_id.database_name);
             res_columns[col_num++]->insert(view_id.table_name);
+            res_columns[col_num++]->insert(table_id.database_name);
+            res_columns[col_num++]->insert(table_id.table_name);
             res_columns[col_num++]->insert(type);
         }
     }
