@@ -1,9 +1,0 @@
-<?xml version="1.0"?>
-<yandex>
-    <profiles>
-        <default>
-            <external_storage_connect_timeout>3</external_storage_connect_timeout>
-            <external_storage_rw_timeout>3</external_storage_rw_timeout>
-        </default>
-    </profiles>
-</yandex>
