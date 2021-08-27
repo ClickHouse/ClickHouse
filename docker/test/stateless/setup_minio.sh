@@ -15,5 +15,14 @@ chmod +x ./mc
 ./mc admin policy set clickminio readwrite user=test
 ./mc mb clickminio/test
 
-echo -e "a b c\na b c\na b c\n" > a.txt
-./mc cp a.txt clickminio/test
+
+# Upload data to Minio. By default after unpacking all tests will in
+# /usr/share/clickhouse-test/queries
+
+cd /usr/share/clickhouse-test/queries/0_stateless/test_minio
+
+FILES=$(ls .)
+for FILE in $FILES; do
+    echo $FILE;
+    ./mc cp $FILE myminio/test/$FILE;
+done
