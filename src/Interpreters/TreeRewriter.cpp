@@ -14,7 +14,6 @@
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
-#include <Interpreters/UserDefinedFunctionsVisitor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
@@ -533,12 +532,9 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-        if (analyzed_join.keyNamesLeft().empty())
-        {
+        if (!data.has_some)
             throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
-        }
-
         if (is_asof)
             data.asofToJoinKeys();
     }
@@ -1046,9 +1042,6 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases)
 {
-    UserDefinedFunctionsVisitor::Data data_user_defined_functions_visitor;
-    UserDefinedFunctionsVisitor(data_user_defined_functions_visitor).visit(query);
-
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
 
