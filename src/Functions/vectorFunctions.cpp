@@ -13,11 +13,25 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+/// str starts from the lowercase letter; not constexpr due to the compiler version
+/*constexpr*/ std::string MakeFirstLetterUppercase(std::string && str)
+{
+    std::string res(str);
+    res[0] += 'A' - 'a';
+    return res;
+}
+
 template <const char * func_name>
 class TuplesToTupleFunction : public TupleIFunction
 {
 public:
+    /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
+    static inline auto name = "tuple" + MakeFirstLetterUppercase(func_name);
+
     explicit TuplesToTupleFunction(ContextPtr context_) : TupleIFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<TuplesToTupleFunction>(context_); }
+
+    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -103,52 +117,16 @@ public:
 };
 
 static const char PLUS_NAME[] = "plus";
-class FunctionTuplePlus : public TuplesToTupleFunction<PLUS_NAME>
-{
-public:
-    static constexpr auto name = "tuplePlus";
-
-    explicit FunctionTuplePlus(ContextPtr context_) : TuplesToTupleFunction(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTuplePlus>(context_); }
-
-    String getName() const override { return name; }
-};
+using FunctionTuplePlus = TuplesToTupleFunction<PLUS_NAME>;
 
 static const char MINUS_NAME[] = "minus";
-class FunctionTupleMinus : public TuplesToTupleFunction<MINUS_NAME>
-{
-public:
-    static constexpr auto name = "tupleMinus";
-
-    explicit FunctionTupleMinus(ContextPtr context_) : TuplesToTupleFunction(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleMinus>(context_); }
-
-    String getName() const override { return name; }
-};
+using FunctionTupleMinus = TuplesToTupleFunction<MINUS_NAME>;
 
 static const char MULTIPLY_NAME[] = "multiply";
-class FunctionTupleMultiply : public TuplesToTupleFunction<MULTIPLY_NAME>
-{
-public:
-    static constexpr auto name = "tupleMultiply";
-
-    explicit FunctionTupleMultiply(ContextPtr context_) : TuplesToTupleFunction(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleMultiply>(context_); }
-
-    String getName() const override { return name; }
-};
+using FunctionTupleMultiply = TuplesToTupleFunction<MULTIPLY_NAME>;
 
 static const char DIVIDE_NAME[] = "divide";
-class FunctionTupleDivide : public TuplesToTupleFunction<DIVIDE_NAME>
-{
-public:
-    static constexpr auto name = "tupleDivide";
-
-    explicit FunctionTupleDivide(ContextPtr context_) : TuplesToTupleFunction(context_) {}
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTupleDivide>(context_); }
-
-    String getName() const override { return name; }
-};
+using FunctionTupleDivide = TuplesToTupleFunction<DIVIDE_NAME>;
 
 class FunctionTupleNegate : public TupleIFunction
 {
