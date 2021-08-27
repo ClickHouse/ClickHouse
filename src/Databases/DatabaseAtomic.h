@@ -19,8 +19,8 @@ namespace DB
 class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
-    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_);
-    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, ContextPtr context_);
+    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_, ASTPtr storage_def_);
+    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, ContextPtr context_, ASTPtr storage_def_);
 
     String getEngineName() const override { return "Atomic"; }
     UUID getUUID() const override { return db_uuid; }
@@ -61,6 +61,8 @@ public:
     void checkDetachedTableNotInUse(const UUID & uuid) override;
     void setDetachedTableNotInUseForce(const UUID & uuid);
 
+    void modifySettings(const SettingsChanges & settings_changes, ContextPtr local_context) override;
+
 protected:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, ContextPtr query_context) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -80,6 +82,7 @@ protected:
     String path_to_table_symlinks;
     String path_to_metadata_symlink;
     const UUID db_uuid;
+    ASTPtr storage_def;
 };
 
 }

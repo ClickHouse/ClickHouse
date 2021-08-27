@@ -25,7 +25,7 @@ public:
     DatabaseMaterializedMySQL(
         ContextPtr context, const String & database_name_, const String & metadata_path_, UUID uuid,
         const String & mysql_database_name_, mysqlxx::Pool && pool_,
-        MySQLClient && client_, std::unique_ptr<MaterializedMySQLSettings> settings_);
+        MySQLClient && client_, std::unique_ptr<MaterializedMySQLSettings> settings_, ASTPtr storage_def_);
 
     void rethrowExceptionIfNeed() const;
 

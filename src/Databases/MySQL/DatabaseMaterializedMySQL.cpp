@@ -37,7 +37,8 @@ DatabaseMaterializedMySQL<DatabaseOrdinary>::DatabaseMaterializedMySQL(
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
-    std::unique_ptr<MaterializedMySQLSettings> settings_)
+    std::unique_ptr<MaterializedMySQLSettings> settings_,
+    ASTPtr)
     : DatabaseOrdinary(
         database_name_,
         metadata_path_,
@@ -58,8 +59,9 @@ DatabaseMaterializedMySQL<DatabaseAtomic>::DatabaseMaterializedMySQL(
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
-    std::unique_ptr<MaterializedMySQLSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializedMySQL<Atomic> (" + database_name_ + ")", context_)
+    std::unique_ptr<MaterializedMySQLSettings> settings_,
+    ASTPtr storage_def_)
+    : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializedMySQL<Atomic> (" + database_name_ + ")", context_, storage_def_)
     , settings(std::move(settings_))
     , materialize_thread(context_, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
 {

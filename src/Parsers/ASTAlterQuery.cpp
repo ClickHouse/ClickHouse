@@ -389,6 +389,11 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "RESET SETTING " << (settings.hilite ? hilite_none : "");
         settings_resets->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY SETTING " << (settings.hilite ? hilite_none : "");
+        settings_changes->formatImpl(settings, state, frame);
+    }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY QUERY " << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
@@ -473,6 +478,8 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
             break;
         case AlterObjectType::LIVE_VIEW:
             settings.ostr << "ALTER LIVE VIEW ";
+            break;
+        default:
             break;
     }
 

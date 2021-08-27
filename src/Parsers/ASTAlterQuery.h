@@ -68,6 +68,8 @@ public:
         NO_TYPE,
 
         LIVE_VIEW_REFRESH,
+
+        MODIFY_DATABASE_SETTING,
     };
 
     Type type = NO_TYPE;
@@ -212,11 +214,12 @@ public:
     {
         TABLE,
         DATABASE,
-        LIVE_VIEW
+        LIVE_VIEW,
+        UNKNOWN,
     };
 
     // bool is_live_view{false}; /// true for ALTER LIVE VIEW
-    AlterObjectType alter_object = AlterObjectType::TABLE;
+    AlterObjectType alter_object = AlterObjectType::UNKNOWN;
 
     ASTExpressionList * command_list = nullptr;
 
