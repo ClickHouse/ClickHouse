@@ -21,11 +21,12 @@ ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, S
 
 String formatNameForLogs(const String & postgres_database_name, const String & postgres_table_name)
 {
-    if (postgres_database_name.empty())
-        return postgres_table_name;
+    /// Logger for StorageMaterializedPostgreSQL - both db and table names.
+    /// Logger for PostgreSQLReplicationHandler and Consumer - either both db and table names or only db name.
+    assert(!postgres_database_name.empty());
     if (postgres_table_name.empty())
         return postgres_database_name;
-    return fmt::format("{}.{}", postgres_database_name, postgres_table_name);
+    return postgres_database_name + '.' + postgres_table_name;
 }
 
 }

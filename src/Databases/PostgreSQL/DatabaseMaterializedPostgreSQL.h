@@ -66,11 +66,15 @@ public:
 
     void shutdown() override;
 
+    String getPostgreSQLDatabaseName() const { return remote_database_name; }
+
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
 
 private:
     void startSynchronization();
+
+    String getTablesList() const;
 
     bool is_attach;
     String remote_database_name;

@@ -832,14 +832,11 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (alter_object_type == ASTAlterQuery::AlterObjectType::DATABASE)
     {
-        std::cerr << "\n\n\nOK!\n\n";
         if (!parseDatabase(pos, expected, query->database))
             return false;
-        std::cerr << "database name: " << query->database << std::endl;
     }
     else
     {
-        std::cerr << "\n\n\nNOT OK!\n\n";
         if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))
             return false;
 
@@ -859,7 +856,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->set(query->command_list, command_list);
     query->alter_object = alter_object_type;
-    std::cerr << "\n\n\nalter query: " << query->dumpTree() << std::endl;
 
     return true;
 }
