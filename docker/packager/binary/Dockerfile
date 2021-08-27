@@ -62,6 +62,10 @@ RUN apt-get update \
         tzdata \
         --yes --no-install-recommends
 
+RUN wget https://apt.llvm.org/llvm.sh \
+    && chmod +x llvm.sh \
+    &&  ./llvm.sh 13
+
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 
