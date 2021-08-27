@@ -396,6 +396,9 @@ function run_tests
 
         # needs s3
         01944_insert_partition_by
+
+        # depends on Go
+        02013_zlib_read_after_eof
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
