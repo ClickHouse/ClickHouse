@@ -257,7 +257,7 @@ class ClickhouseIntegrationTestsRunner:
         return None, None
 
     def _compress_logs(self, dir, relpaths, result_path):
-        subprocess.check_call("tar czf {} -C {} {}".format(result_path, dir, ' '.join(relpaths)), shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+        subprocess.check_call("tar --warning=no-file-changed -czf {} -C {} {}".format(result_path, dir, ' '.join(relpaths)), shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
 
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
