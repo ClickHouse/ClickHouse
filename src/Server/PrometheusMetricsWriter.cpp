@@ -28,7 +28,7 @@ void writeOutLine(DB::WriteBuffer & wb, T && val, TArgs &&... args)
 bool replaceInvalidChars(std::string & metric_name)
 {
     /// dirty solution
-    metric_name = std::regex_replace(metric_name, std::regex("[^a-zA-Z0-9_:]"), "_");
+    metric_name = std::regex_replace(metric_name, std::regex("[^a-zA-Z0-9_:-]"), "_");
     metric_name = std::regex_replace(metric_name, std::regex("^[^a-zA-Z]*"), "");
     return !metric_name.empty();
 }
