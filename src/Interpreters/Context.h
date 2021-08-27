@@ -292,6 +292,8 @@ public:
         std::condition_variable cv;
         bool finished = false;
         std::exception_ptr exception;
+
+        void complete(std::exception_ptr exception_ = nullptr);
     };
 
     using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;

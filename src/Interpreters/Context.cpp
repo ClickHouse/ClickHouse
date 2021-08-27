@@ -927,6 +927,14 @@ void Context::addQueryAccessInfo(
         query_access_info.views.emplace(view_name);
 }
 
+void Context::AsyncInsertInfo::complete(std::exception_ptr exception_)
+{
+    std::lock_guard lock(mutex);
+    finished = true;
+    exception = exception_;
+    cv.notify_all();
+}
+
 Context::AsyncInsertInfoPtr Context::addAsyncInsertQueryId(const String & query_id)
 {
     auto lock = getLock();
@@ -936,7 +944,7 @@ Context::AsyncInsertInfoPtr Context::addAsyncInsertQueryId(const String & query_
 
 void Context::waitForProcessingAsyncInsert(const String & query_id, const std::chrono::milliseconds & timeout) const
 {
-    AsyncInsertInfoPtr wait_data;
+    AsyncInsertInfoPtr async_info;
 
     {
         auto lock = getLock();
@@ -944,17 +952,17 @@ void Context::waitForProcessingAsyncInsert(const String & query_id, const std::c
         if (it == processing_async_inserts.end())
             return;
 
-        wait_data = it->second;
+        async_info = it->second;
     }
 
-    std::unique_lock lock(wait_data->mutex);
-    auto finished = wait_data->cv.wait_for(lock, timeout, [&] { return wait_data->finished; });
+    std::unique_lock lock(async_info->mutex);
+    auto finished = async_info->cv.wait_for(lock, timeout, [&] { return async_info->finished; });
 
     if (!finished)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout.count());
 
-    if (wait_data->exception)
-        std::rethrow_exception(wait_data->exception);
+    if (async_info->exception)
+        std::rethrow_exception(async_info->exception);
 }
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
