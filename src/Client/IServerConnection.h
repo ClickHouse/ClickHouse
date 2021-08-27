@@ -75,28 +75,28 @@ public:
     virtual void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
-        const String & query_id_ /* = "" */,
-        UInt64 stage/* = QueryProcessingStage::Complete */,
-        const Settings * settings /* = nullptr */,
-        const ClientInfo * client_info /* = nullptr */,
-        bool with_pending_data /* = false */) = 0;
+        const String & query_id_ = "",
+        UInt64 stage = QueryProcessingStage::Complete,
+        const Settings * settings = nullptr,
+        const ClientInfo * client_info = nullptr,
+        bool with_pending_data  = false) = 0;
 
     virtual void sendCancel() = 0;
 
     /// Send block of data; if name is specified, server will write it to external (temporary) table of that name.
-    virtual void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) = 0;
+    virtual void sendData(const Block & block, const String & name = "", bool scalar = false) = 0;
 
     /// Send all contents of external (temporary) tables.
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;
 
     /// Check, if has data to read.
-    virtual bool poll(size_t timeout_microseconds /* = 0 */) = 0;
+    virtual bool poll(size_t timeout_microseconds = 0) = 0;
 
     /// Check, if has data in read buffer.
     virtual bool hasReadPendingData() const = 0;
 
     /// Checks if there is input data in connection and reads packet ID.
-    virtual std::optional<UInt64> checkPacket(size_t timeout_microseconds /* = 0 */) = 0;
+    virtual std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0) = 0;
 
     /// Receive packet from server.
     virtual Packet receivePacket() = 0;

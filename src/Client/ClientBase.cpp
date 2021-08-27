@@ -796,7 +796,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         receiveLogs(parsed_query);
 
         /// Check if server send Exception packet
-        auto packet_type = connection->checkPacket(/* timeout_milliseconds */0);
+        auto packet_type = connection->checkPacket();
         if (packet_type && *packet_type == Protocol::Server::Exception)
         {
             /*
@@ -826,7 +826,7 @@ void ClientBase::receiveLogs(ASTPtr parsed_query)
     while (packet_type && *packet_type == Protocol::Server::Log)
     {
         receiveAndProcessPacket(parsed_query, false);
-        packet_type = connection->checkPacket(/* timeout_milliseconds */0);
+        packet_type = connection->checkPacket();
     }
 }
 
