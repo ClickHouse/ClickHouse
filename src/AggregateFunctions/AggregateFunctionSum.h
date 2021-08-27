@@ -393,19 +393,22 @@ public:
     }
 
     void addBatchSinglePlaceNotNull(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena, ssize_t if_argument_pos)
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena *, ssize_t if_argument_pos)
         const override
     {
+        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
+            UInt8 final_flags[batch_size];
+            memcpy(final_flags, assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data(), batch_size * sizeof(UInt8));
             for (size_t i = 0; i < batch_size; ++i)
-                if (!null_map[i] && flags[i])
-                    add(place, columns, i, arena);
+                final_flags[i] = !null_map[i] && final_flags[i];
+
+            this->data(place).addManyConditional(column.getData().data(), final_flags, batch_size);
         }
         else
         {
-            const auto & column = assert_cast<const ColVecType &>(*columns[0]);
             this->data(place).addManyNotNull(column.getData().data(), null_map, batch_size);
         }
     }
