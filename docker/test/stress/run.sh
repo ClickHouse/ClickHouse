@@ -30,6 +30,10 @@ function configure()
     # Set maximum memory usage as half of total memory (less chance of OOM).
     echo "<yandex><max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio></yandex>" \
         > /etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml
+
+    # Avoid "The local set of parts of table" and similar errors.
+    # (this is possible if the previous run was terminated in the middle of some test)
+    touch /var/lib/clickhouse/flags/force_restore_data
 }
 
 function stop()
