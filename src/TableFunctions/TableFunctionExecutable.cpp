@@ -37,7 +37,7 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
     auto args = function->arguments->children;
 
-    if (!(args.size() == 3 || args.size() == 4))
+    if (args.size() < 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Table function '{}' requires minimum 3 arguments: script_name, format, structure, [input_query...]",
             getName());
@@ -47,7 +47,7 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
     file_path = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-    structure = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context)->as<ASTLiteral &>().value.safeGet<String>();
+    structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
     for (size_t i = 3; i < args.size(); ++i)
     {
