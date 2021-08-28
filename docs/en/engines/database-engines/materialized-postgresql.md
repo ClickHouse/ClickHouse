@@ -23,7 +23,7 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 
-## Dynamicaly adding new tables to replication
+## Dynamically adding new tables to replication
 
 ``` sql
 ATTACH TABLE postgres_database.new_table;
@@ -31,7 +31,7 @@ ATTACH TABLE postgres_database.new_table;
 
 It will work as well if there is a setting `materialized_postgresql_tables_list`.
 
-## Dynamicaly removing tables from replication
+## Dynamically removing tables from replication
 
 ``` sql
 DETACH TABLE postgres_database.table_to_remove;

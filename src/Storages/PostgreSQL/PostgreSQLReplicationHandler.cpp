@@ -166,7 +166,8 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
             try
             {
-                /// TODO: THIS IS INCORRENT, we might get here if there is no nested, need to check and reload.
+                /// FIXME: Looks like it is possible we might get here if there is no nested storage or at least nested storage id field might be empty.
+                ///        Caught it somehow when doing something else incorrectly, but do not see any reason how it could happen.
                 /// Try load nested table, set materialized table metadata.
                 nested_storages[table_name] = materialized_storage->prepare();
             }
@@ -617,7 +618,7 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
 void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name)
 {
     /// Note: we have to ensure that replication consumer task is stopped when we reload table, because otherwise
-    /// it can read wal beyond start lsn position (from which this table is being loaded), which will result in loosing data.
+    /// it can read wal beyond start lsn position (from which this table is being loaded), which will result in losing data.
     consumer_task->deactivate();
     try
     {
@@ -663,7 +664,7 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                         "Failed to add table `{}` to replication. Info: {}", postgres_table_name, error_message);
     }
-    consumer_task->schedule();
+    consumer_task->activateAndSchedule();
 }
 
 
