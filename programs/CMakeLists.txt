@@ -47,7 +47,7 @@ option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Li
 # https://presentations.clickhouse.tech/matemarketing_2020/
 option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories" ${ENABLE_CLICKHOUSE_ALL})
 
-option (ENABLE_CLICKHOUSE_WEB_SERVER_EXPORTER "A tool to put table data files to a web server" ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER "A tool to put table data files to a web server" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_KEEPER "ClickHouse alternative to ZooKeeper" ${ENABLE_CLICKHOUSE_ALL})
 
@@ -227,7 +227,7 @@ add_subdirectory (obfuscator)
 add_subdirectory (install)
 add_subdirectory (git-import)
 add_subdirectory (bash-completion)
-add_subdirectory (web-server-exporter)
+add_subdirectory (static-files-disk-uploader)
 
 if (ENABLE_CLICKHOUSE_KEEPER)
     add_subdirectory (keeper)
@@ -260,7 +260,7 @@ if (CLICKHOUSE_ONE_SHARED)
     ${CLICKHOUSE_ODBC_BRIDGE_SOURCES}
     ${CLICKHOUSE_KEEPER_SOURCES}
     ${CLICKHOUSE_KEEPER_CONVERTER_SOURCES}
-    ${CLICKHOUSE_WEB_SERVER_EXPORTER_SOURCES})
+    ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_SOURCES})
 
     target_link_libraries(clickhouse-lib
       ${CLICKHOUSE_SERVER_LINK}
@@ -276,7 +276,7 @@ if (CLICKHOUSE_ONE_SHARED)
       ${CLICKHOUSE_ODBC_BRIDGE_LINK}
       ${CLICKHOUSE_KEEPER_LINK}
       ${CLICKHOUSE_KEEPER_CONVERTER_LINK}
-      ${CLICKHOUSE_WEB_SERVER_EXPORTER_LINK})
+      ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_LINK})
 
     target_include_directories(clickhouse-lib
       ${CLICKHOUSE_SERVER_INCLUDE}
@@ -309,7 +309,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
         clickhouse-obfuscator
         clickhouse-git-import
         clickhouse-copier
-        clickhouse-web-server-exporter
+        clickhouse-static-files-disk-uploader
     )
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
@@ -375,8 +375,8 @@ else ()
     if (ENABLE_CLICKHOUSE_GIT_IMPORT)
         clickhouse_target_link_split_lib(clickhouse git-import)
     endif ()
-    if (ENABLE_CLICKHOUSE_WEB_SERVER_EXPORTER)
-        clickhouse_target_link_split_lib(clickhouse web-server-exporter)
+    if (ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER)
+        clickhouse_target_link_split_lib(clickhouse static-files-disk-uploader)
     endif ()
     if (ENABLE_CLICKHOUSE_KEEPER)
         clickhouse_target_link_split_lib(clickhouse keeper)
@@ -439,10 +439,10 @@ else ()
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-git-import" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-git-import)
     endif ()
-    if (ENABLE_CLICKHOUSE_WEB_SERVER_EXPORTER)
-        add_custom_target (clickhouse-web-server-exporter ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-web-server-exporter DEPENDS clickhouse)
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-web-server-exporter" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-        list(APPEND CLICKHOUSE_BUNDLE clickhouse-web-server-exporter)
+    if (ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER)
+        add_custom_target (clickhouse-static-files-disk-uploader ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-static-files-disk-uploader DEPENDS clickhouse)
+        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-static-files-disk-uploader" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        list(APPEND CLICKHOUSE_BUNDLE clickhouse-static-files-disk-uploader)
     endif ()
     if (ENABLE_CLICKHOUSE_KEEPER)
         add_custom_target (clickhouse-keeper ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper DEPENDS clickhouse)
