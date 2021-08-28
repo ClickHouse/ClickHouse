@@ -1,4 +1,4 @@
-#include <Coordination/KeeperStorageDispatcher.h>
+#include <Coordination/KeeperDispatcher.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <future>
@@ -9,19 +9,18 @@ namespace DB
 
 namespace ErrorCodes
 {
-
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
 }
 
-KeeperStorageDispatcher::KeeperStorageDispatcher()
+KeeperDispatcher::KeeperDispatcher()
     : coordination_settings(std::make_shared<CoordinationSettings>())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
 }
 
 
-void KeeperStorageDispatcher::requestThread()
+void KeeperDispatcher::requestThread()
 {
     setThreadName("KeeperReqT");
 
@@ -133,7 +132,7 @@ void KeeperStorageDispatcher::requestThread()
     }
 }
 
-void KeeperStorageDispatcher::responseThread()
+void KeeperDispatcher::responseThread()
 {
     setThreadName("KeeperRspT");
     while (!shutdown_called)
@@ -159,7 +158,7 @@ void KeeperStorageDispatcher::responseThread()
     }
 }
 
-void KeeperStorageDispatcher::snapshotThread()
+void KeeperDispatcher::snapshotThread()
 {
     setThreadName("KeeperSnpT");
     while (!shutdown_called)
@@ -181,9 +180,11 @@ void KeeperStorageDispatcher::snapshotThread()
     }
 }
 
-void KeeperStorageDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
+void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
+
+    /// Special new session response.
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::SessionID)
     {
         const Coordination::ZooKeeperSessionIDResponse & session_id_resp = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
@@ -196,25 +197,28 @@ void KeeperStorageDispatcher::setResponse(int64_t session_id, const Coordination
         callback(response);
         new_session_id_response_callback.erase(session_id_resp.internal_id);
     }
-    else
+    else /// Normal response, just write to client
     {
-        auto session_writer = session_to_response_callback.find(session_id);
-        if (session_writer == session_to_response_callback.end())
+        auto session_response_callback = session_to_response_callback.find(session_id);
+
+        /// Session was disconnected, just skip this response
+        if (session_response_callback == session_to_response_callback.end())
             return;
 
-        session_writer->second(response);
+        session_response_callback->second(response);
 
         /// Session closed, no more writes
         if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::Close)
         {
-            session_to_response_callback.erase(session_writer);
+            session_to_response_callback.erase(session_response_callback);
         }
     }
 }
 
-bool KeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
     {
+        /// If session was already disconnected than we will ignore requests
         std::lock_guard lock(session_to_response_callback_mutex);
         if (session_to_response_callback.count(session_id) == 0)
             return false;
@@ -237,7 +241,7 @@ bool KeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
     return true;
 }
 
-void KeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper)
+void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
     int myid = config.getInt("keeper_server.server_id");
@@ -251,6 +255,7 @@ void KeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration
 
     server = std::make_unique<KeeperServer>(
         myid, coordination_settings, config, responses_queue, snapshots_queue, standalone_keeper);
+
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
@@ -266,13 +271,13 @@ void KeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration
         throw;
     }
 
-
+    /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }
 
-void KeeperStorageDispatcher::shutdown()
+void KeeperDispatcher::shutdown()
 {
     try
     {
@@ -306,6 +311,8 @@ void KeeperStorageDispatcher::shutdown()
             server->shutdown();
 
         KeeperStorage::RequestForSession request_for_session;
+
+        /// Set session expired for all pending requests
         while (requests_queue->tryPop(request_for_session))
         {
             if (request_for_session.request)
@@ -320,6 +327,7 @@ void KeeperStorageDispatcher::shutdown()
             }
         }
 
+        /// Clear all registered sessions
         std::lock_guard lock(session_to_response_callback_mutex);
         session_to_response_callback.clear();
     }
@@ -331,19 +339,19 @@ void KeeperStorageDispatcher::shutdown()
     LOG_DEBUG(log, "Dispatcher shut down");
 }
 
-KeeperStorageDispatcher::~KeeperStorageDispatcher()
+KeeperDispatcher::~KeeperDispatcher()
 {
     shutdown();
 }
 
-void KeeperStorageDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
+void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
     if (!session_to_response_callback.try_emplace(session_id, callback).second)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
 }
 
-void KeeperStorageDispatcher::sessionCleanerTask()
+void KeeperDispatcher::sessionCleanerTask()
 {
     while (true)
     {
@@ -352,12 +360,16 @@ void KeeperStorageDispatcher::sessionCleanerTask()
 
         try
         {
+            /// Only leader node must check dead sessions
             if (isLeader())
             {
                 auto dead_sessions = server->getDeadSessions();
+
                 for (int64_t dead_session : dead_sessions)
                 {
                     LOG_INFO(log, "Found dead session {}, will try to close it", dead_session);
+
+                    /// Close session == send close request to raft server
                     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
                     KeeperStorage::RequestForSession request_info;
@@ -367,6 +379,8 @@ void KeeperStorageDispatcher::sessionCleanerTask()
                         std::lock_guard lock(push_request_mutex);
                         requests_queue->push(std::move(request_info));
                     }
+
+                    /// Remove session from registered sessions
                     finishSession(dead_session);
                     LOG_INFO(log, "Dead session close request pushed");
                 }
@@ -381,7 +395,7 @@ void KeeperStorageDispatcher::sessionCleanerTask()
     }
 }
 
-void KeeperStorageDispatcher::finishSession(int64_t session_id)
+void KeeperDispatcher::finishSession(int64_t session_id)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
     auto session_it = session_to_response_callback.find(session_id);
@@ -389,7 +403,7 @@ void KeeperStorageDispatcher::finishSession(int64_t session_id)
         session_to_response_callback.erase(session_it);
 }
 
-void KeeperStorageDispatcher::addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error)
+void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error)
 {
     for (const auto & [session_id, request] : requests_for_sessions)
     {
@@ -402,7 +416,7 @@ void KeeperStorageDispatcher::addErrorResponses(const KeeperStorage::RequestsFor
     }
 }
 
-void KeeperStorageDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions)
+void KeeperDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions)
 {
     if (!result->has_result())
         result->get();
@@ -417,10 +431,14 @@ void KeeperStorageDispatcher::forceWaitAndProcessResult(RaftAppendResult & resul
     requests_for_sessions.clear();
 }
 
-int64_t KeeperStorageDispatcher::getSessionID(int64_t session_timeout_ms)
+int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 {
+    /// New session id allocation is a special request, because we cannot process it in normal
+    /// way: get request -> put to raft -> set response for registered callback.
     KeeperStorage::RequestForSession request_info;
     std::shared_ptr<Coordination::ZooKeeperSessionIDRequest> request = std::make_shared<Coordination::ZooKeeperSessionIDRequest>();
+    /// Internal session id. It's a temporary number which is unique for each client on this server
+    /// but can be same on different servers.
     request->internal_id = internal_session_id_counter.fetch_add(1);
     request->session_timeout_ms = session_timeout_ms;
     request->server_id = server->getServerID();
@@ -430,6 +448,7 @@ int64_t KeeperStorageDispatcher::getSessionID(int64_t session_timeout_ms)
 
     auto promise = std::make_shared<std::promise<int64_t>>();
     auto future = promise->get_future();
+
     {
         std::lock_guard lock(session_to_response_callback_mutex);
         new_session_id_response_callback[request->internal_id] = [promise, internal_id = request->internal_id] (const Coordination::ZooKeeperResponsePtr & response)
@@ -452,6 +471,7 @@ int64_t KeeperStorageDispatcher::getSessionID(int64_t session_timeout_ms)
         };
     }
 
+    /// Push new session request to queue
     {
         std::lock_guard lock(push_request_mutex);
         if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
@@ -461,6 +481,8 @@ int64_t KeeperStorageDispatcher::getSessionID(int64_t session_timeout_ms)
     if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)
         throw Exception("Cannot receive session id within session timeout", ErrorCodes::TIMEOUT_EXCEEDED);
 
+    /// Forcefully wait for request execution because we cannot process any other
+    /// requests for this client until it get new session id.
     return future.get();
 }
 

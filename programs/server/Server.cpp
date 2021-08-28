@@ -996,7 +996,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
 #if USE_NURAFT
         /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperStorageDispatcher();
+        global_context->initializeKeeperDispatcher();
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -1079,7 +1079,7 @@ if (ThreadFuzzer::instance().isEffective())
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
 
-            global_context->shutdownKeeperStorageDispatcher();
+            global_context->shutdownKeeperDispatcher();
         }
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
@@ -1116,15 +1116,15 @@ if (ThreadFuzzer::instance().isEffective())
 
     try
     {
+        auto & database_catalog = DatabaseCatalog::instance();
+        /// We load temporary database first, because projections need it.
+        database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
-        auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
-        /// We load temporary database first, because projections need it.
-        database_catalog.initializeAndLoadTemporaryDatabase();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         database_catalog.loadDatabases();
