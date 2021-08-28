@@ -51,7 +51,7 @@ Chunk GroupingSetsTransform::generate()
 
     Chunk gen_chunk;
 
-    if (keys_vector_idx < keys_vector.size())
+    if (!current_columns.empty() && keys_vector_idx < keys_vector.size())
     {
         auto columns = current_columns;
         std::set<size_t> key_vector(keys_vector[keys_vector_idx].begin(), keys_vector[keys_vector_idx].end());
