@@ -247,7 +247,7 @@ SELECT
 
 ## serverUUID() {#server-uuid}
 
-Returns the random and unique UUID, which is generated when the server is first started and stored forever. Writes it to a file in the data directory of the server. The resultant file written is UUID and is at the same level as the status file in the ClickHouse server directory.
+Returns the random and unique UUID, which is generated when the server is first started and stored forever. The result writes to the file `uuid` created in the ClickHouse server directory `/var/lib/clickhouse/`. 
 
 **Syntax**
 
