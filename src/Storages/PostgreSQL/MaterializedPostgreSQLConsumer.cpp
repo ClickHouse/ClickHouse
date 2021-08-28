@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
@@ -631,6 +632,15 @@ void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_
     storages.erase(postgres_table_name);
     buffers.erase(postgres_table_name);
     deleted_tables.insert(postgres_table_name);
+}
+
+
+void MaterializedPostgreSQLConsumer::setSetting(const SettingChange & setting)
+{
+    if (setting.name == "materialized_postgresql_max_block_size")
+        max_block_size = setting.value.safeGet<UInt64>();
+    else if (setting.name == "materialized_postgresql_allow_automatic_update")
+        allow_automatic_update = setting.value.safeGet<bool>();
 }
 
 

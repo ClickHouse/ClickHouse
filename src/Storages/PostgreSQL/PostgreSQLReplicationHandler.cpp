@@ -451,6 +451,14 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
 }
 
 
+void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
+{
+    consumer_task->deactivate();
+    consumer->setSetting(setting);
+    consumer_task->schedule();
+}
+
+
 void PostgreSQLReplicationHandler::shutdownFinal()
 {
     try
