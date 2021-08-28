@@ -28,14 +28,14 @@ namespace ErrorCodes
 }
 
 /*
- * A tool to collect files on local fs as is (into current directory or into path from --output-dir option).
+ * A tool to collect table data files on local fs as is (into current directory or into path from --output-dir option).
  * If test-mode option is added, files will be put by given url via PUT request.
  */
 
-void processTableFiles(const fs::path & path, const String & files_prefix, String uuid, WriteBuffer & metadata_buf, std::function<std::shared_ptr<WriteBuffer>(const String &)> create_dst_buf)
+void processTableFiles(const fs::path & path, const String & files_prefix, String uuid,
+        WriteBuffer & metadata_buf, std::function<std::shared_ptr<WriteBuffer>(const String &)> create_dst_buf)
 {
     fs::directory_iterator dir_end;
-
     auto process_file = [&](const String & file_name, const String & file_path)
     {
         auto remote_file_name = files_prefix + "-" + uuid + "-" + file_name;
@@ -58,9 +58,7 @@ void processTableFiles(const fs::path & path, const String & files_prefix, Strin
         {
             fs::directory_iterator files_end;
             for (fs::directory_iterator file_it(dir_it->path()); file_it != files_end; ++file_it)
-            {
                 process_file(dir_it->path().filename().string() + "-" + file_it->path().filename().string(), file_it->path());
-            }
         }
         else
         {
@@ -70,8 +68,7 @@ void processTableFiles(const fs::path & path, const String & files_prefix, Strin
 }
 }
 
-
-int mainEntryClickHouseWebServerExporter(int argc, char ** argv)
+int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv)
 try
 {
     using namespace DB;

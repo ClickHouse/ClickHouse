@@ -27,6 +27,30 @@ struct DiskWebServerSettings
 
 
 /*
+ * Quick ready test - you can try this disk, by using these queries (disk has two tables) and this endpoint:
+ *
+ *  ATTACH TABLE contributors UUID 'a563f7d8-fb00-4d50-a563-f7d8fb007d50' (good_person_name String) engine=MergeTree() order by good_person_name settings storage_policy='web';
+ *  ATTACH TABLE test UUID '11c7a2f9-a949-4c88-91c7-a2f9a949ec88' (a Int32) engine=MergeTree() order by a settings storage_policy='web';
+ *
+ *   <storage_configuration>
+ *       <disks>
+ *           <web>
+ *               <type>web</type>
+ *               <endpoint>https://clickhouse-datasets.s3.yandex.net/kssenii-static-files-disk-test/kssenii-disk-tests/test1/</endpoint>
+ *               <files_prefix>data</files_prefix>
+ *           </web>
+ *       </disks>
+ *       <policies>
+ *           <web>
+ *               <volumes>
+ *                   <main>
+ *                       <disk>web</disk>
+ *                   </main>
+ *               </volumes>
+ *           </web>
+ *       </policies>
+ *   </storage_configuration>
+ *
  * If url is not reachable on disk load when server is starting up tables, then all errors are caught.
  * If in this case there were errors, tables can be reloaded (become visible) via detach table table_name -> attach table table_name.
  * If metadata was successfully loaded at server startup, then tables are available straight away.
