@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int UNKNOWN_TABLE;
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -218,13 +219,17 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
 }
 
 
-String DatabaseMaterializedPostgreSQL::getTablesList() const
+String DatabaseMaterializedPostgreSQL::getTablesList(const String & except) const
 {
     String tables_list;
     for (const auto & table : materialized_tables)
     {
+        if (table.first == except)
+            continue;
+
         if (!tables_list.empty())
             tables_list += ',';
+
         tables_list += table.first;
     }
     return tables_list;
@@ -243,38 +248,45 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
 }
 
 
+ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingChange & new_setting)
+{
+    auto set = std::make_shared<ASTSetQuery>();
+    set->is_standalone = false;
+    set->changes = {new_setting};
+
+    auto command = std::make_shared<ASTAlterCommand>();
+    command->type = ASTAlterCommand::Type::MODIFY_DATABASE_SETTING;
+    command->settings_changes = std::move(set);
+
+    auto command_list = std::make_shared<ASTExpressionList>();
+    command_list->children.push_back(command);
+
+    auto query = std::make_shared<ASTAlterQuery>();
+    auto * alter = query->as<ASTAlterQuery>();
+
+    alter->alter_object = ASTAlterQuery::AlterObjectType::DATABASE;
+    alter->database = database_name;
+    alter->set(alter->command_list, command_list);
+
+    return query;
+}
+
+
 void DatabaseMaterializedPostgreSQL::attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path)
 {
     if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
     {
-        auto set = std::make_shared<ASTSetQuery>();
-        set->is_standalone = false;
-
         auto tables_to_replicate = settings->materialized_postgresql_tables_list.value;
         if (tables_to_replicate.empty())
             tables_to_replicate = getTablesList();
 
         /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-        set->changes = {SettingChange("materialized_postgresql_tables_list",
-                                      tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name))};
-
-        auto command = std::make_shared<ASTAlterCommand>();
-        command->type = ASTAlterCommand::Type::MODIFY_DATABASE_SETTING;
-        command->settings_changes = std::move(set);
-
-        auto command_list = std::make_shared<ASTExpressionList>();
-        command_list->children.push_back(command);
-
-        auto query = std::make_shared<ASTAlterQuery>();
-        auto * alter = query->as<ASTAlterQuery>();
-
-        alter->alter_object = ASTAlterQuery::AlterObjectType::DATABASE;
-        alter->database = database_name;
-        alter->set(alter->command_list, command_list);
+        SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
+        auto alter_query = createAlterSettingsQuery(new_setting);
 
         auto current_context = Context::createCopy(getContext()->getGlobalContext());
         current_context->setInternalQuery(true);
-        InterpreterAlterQuery(query, current_context).execute();
+        InterpreterAlterQuery(alter_query, current_context).execute();
 
         auto storage = StorageMaterializedPostgreSQL::create(table, getContext(), remote_database_name, table_name);
         materialized_tables[table_name] = storage;
@@ -283,6 +295,54 @@ void DatabaseMaterializedPostgreSQL::attachTable(const String & table_name, cons
     else
     {
         DatabaseAtomic::attachTable(table_name, table, relative_table_path);
+    }
+}
+
+
+StoragePtr DatabaseMaterializedPostgreSQL::detachTable(const String & table_name)
+{
+    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
+    {
+        auto & table_to_delete = materialized_tables[table_name];
+        if (!table_to_delete)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Materialized table `{}` does not exist", table_name);
+
+        auto tables_to_replicate = getTablesList(table_name);
+
+        /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+        SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
+        auto alter_query = createAlterSettingsQuery(new_setting);
+
+        {
+            auto current_context = Context::createCopy(getContext()->getGlobalContext());
+            current_context->setInternalQuery(true);
+            InterpreterAlterQuery(alter_query, current_context).execute();
+        }
+
+        auto nested = table_to_delete->as<StorageMaterializedPostgreSQL>()->getNested();
+        if (!nested)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Inner table `{}` does not exist", table_name);
+
+        replication_handler->removeTableFromReplication(table_name);
+
+        try
+        {
+            auto current_context = Context::createCopy(getContext()->getGlobalContext());
+            current_context->makeQueryContext();
+            DatabaseAtomic::dropTable(current_context, table_name, true);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("while removing table `" + table_name + "` from replication");
+            throw;
+        }
+
+        materialized_tables.erase(table_name);
+        return nullptr;
+    }
+    else
+    {
+        return DatabaseAtomic::detachTable(table_name);
     }
 }
 

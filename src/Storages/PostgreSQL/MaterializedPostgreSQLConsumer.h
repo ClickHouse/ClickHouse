@@ -38,6 +38,8 @@ public:
 
     void addNested(const String & postgres_table_name, StoragePtr nested_storage, const String & table_start_lsn);
 
+    void removeNested(const String & postgres_table_name);
+
 private:
     /// Read approximarely up to max_block_size changes from WAL.
     bool readFromReplicationSlot();
@@ -157,5 +159,8 @@ private:
     /// while the process of adding a table to replication is not finished,
     /// because we might go beyond this start lsn position before consumer knows that a new table was added.
     std::unordered_map<String, String> waiting_list;
+
+    /// Since replication may be some time behind, we need to ensure that replication messages for deleted tables are ignored.
+    std::unordered_set<String> deleted_tables;
 };
 }
