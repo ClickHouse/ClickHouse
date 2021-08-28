@@ -520,7 +520,7 @@ WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartU
 ClickHouse集群是一个同质集群。 设置步骤:
 
 1.  在群集的所有机器上安装ClickHouse服务端
-2.  在配置文件中设置群集配置
+2.  在配置文件中设置集群配置
 3.  在每个实例上创建本地表
 4.  创建一个[分布式表](../engines/table-engines/special/distributed.md)
 
