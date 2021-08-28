@@ -21,8 +21,6 @@
 namespace DB
 {
 
-static const UInt64 max_block_size = 8192;
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -74,8 +72,8 @@ Pipe ExecutableDictionarySource::loadAll()
 
     ShellCommand::Config config(configuration.command);
     auto process = ShellCommand::execute(config);
-    Pipe pipe(FormatFactory::instance().getInput(configuration.format, process->out, sample_block, context, max_block_size));
-    pipe.addTransform(std::make_shared<ShellCommandOwningTransform>(pipe.getHeader(), log, std::move(process)));
+
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log));
     return pipe;
 }
 
@@ -94,8 +92,7 @@ Pipe ExecutableDictionarySource::loadUpdatedAll()
     LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
     ShellCommand::Config config(command_with_update_field);
     auto process = ShellCommand::execute(config);
-    Pipe pipe(FormatFactory::instance().getInput(configuration.format, process->out, sample_block, context, max_block_size));
-    pipe.addTransform(std::make_shared<ShellCommandOwningTransform>(pipe.getHeader(), log, std::move(process)));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log));
     return pipe;
 }
 
@@ -119,15 +116,19 @@ Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
 {
     ShellCommand::Config config(configuration.command);
     auto process = ShellCommand::execute(config);
-    Pipe pipe(std::make_unique<ShellCommandSourceWithBackgroundThread>(
-        context, configuration.format, sample_block, std::move(process), log,
-        [block, this](ShellCommand & command) mutable
-        {
-            auto & out = command.in;
-            auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
-            formatBlock(output_stream, block);
-            out.close();
-        }));
+    auto * process_in = &process->in;
+
+    ShellCommandSource::SendDataTask task = {[process_in, block, this]()
+    {
+        auto & out = *process_in;
+        auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
+        formatBlock(output_stream, block);
+        out.close();
+    }};
+
+    std::vector<ShellCommandSource::SendDataTask> tasks = {task};
+
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log, std::move(tasks)));
 
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));

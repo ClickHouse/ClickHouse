@@ -57,9 +57,9 @@ public:
 
         std::vector<std::string> arguments;
 
-        std::vector<int> read_descriptors;
+        std::vector<int> read_fds;
 
-        std::vector<int> write_descriptors;
+        std::vector<int> write_fds;
 
         bool pipe_stdin_only = false;
 
@@ -85,15 +85,15 @@ public:
     ReadBufferFromFile out;
     ReadBufferFromFile err;
 
-    std::unordered_map<int, ReadBufferFromFile> read_descriptors;
-    std::unordered_map<int, WriteBufferFromFile> write_descriptors;
+    std::unordered_map<int, ReadBufferFromFile> read_fds;
+    std::unordered_map<int, WriteBufferFromFile> write_fds;
 private:
 
     pid_t pid;
-    DestructorStrategy destructor_strategy;
+    Config config;
     bool wait_called = false;
 
-    ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, DestructorStrategy destructor_strategy_);
+    ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 
     bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);
 
