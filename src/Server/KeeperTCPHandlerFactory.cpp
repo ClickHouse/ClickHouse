@@ -8,6 +8,7 @@
 #include <Poco/Net/NetException.h>
 #include <common/logger_useful.h>
 #include <string>
+#include <Common/MemoryTracker.h>
 #include <Server/IServer.h>
 #include <Server/KeeperTCPHandler.h>
 #include <Server/KeeperTCPHandlerFactory.h>
@@ -30,6 +31,11 @@ KeeperTCPHandlerFactory::KeeperTCPHandlerFactory(IServer & server_, bool secure)
 
 Poco::Net::TCPServerConnection * KeeperTCPHandlerFactory::createConnection(const Poco::Net::StreamSocket & socket)
 {
+    /// Query connection does not requires too much memory, and it is better to
+    /// accept connection to at least respond something to the client, instead
+    /// of simply ignoring.
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+
     try
     {
         LOG_TRACE(log, "Keeper request. Address: {}", socket.peerAddress().toString());
