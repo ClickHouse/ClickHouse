@@ -51,6 +51,10 @@ struct DiskWebServerSettings
  *       </policies>
  *   </storage_configuration>
  *
+ * To get files for upload run:
+ * clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir> --files-prefix data
+ * (--metadata-path can be found in query: `select data_paths from system.tables where name='<table_name>';`)
+ *
  * If url is not reachable on disk load when server is starting up tables, then all errors are caught.
  * If in this case there were errors, tables can be reloaded (become visible) via detach table table_name -> attach table table_name.
  * If metadata was successfully loaded at server startup, then tables are available straight away.
