@@ -1005,6 +1005,65 @@ def test_add_new_table_to_replication(started_cluster):
         cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
 
+def test_remove_table_from_replication(started_cluster):
+    drop_materialized_db()
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
+    cursor = conn.cursor()
+    NUM_TABLES = 5
+
+    for i in range(NUM_TABLES):
+        create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
+        instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT number, {} from numbers(10000)".format(i, i))
+
+    create_materialized_db(ip=started_cluster.postgres_ip,
+                           port=started_cluster.postgres_port)
+
+    for i in range(NUM_TABLES):
+        table_name = 'postgresql_replica_{}'.format(i)
+        check_tables_are_synchronized(table_name);
+
+    result = instance.query("SHOW TABLES FROM test_database")
+    assert(result == "postgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\npostgresql_replica_4\n")
+
+    result = instance.query('SHOW CREATE DATABASE test_database')
+    assert(result[:63] == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL(")
+    assert(result[-59:] == "\\'postgres_database\\', \\'postgres\\', \\'mysecretpassword\\')\n")
+
+    table_name = 'postgresql_replica_4'
+    instance.query('DETACH TABLE test_database.{}'.format(table_name));
+    result = instance.query_and_get_error('SELECT * FROM test_database.{}'.format(table_name))
+    assert("doesn't exist" in result)
+
+    result = instance.query("SHOW TABLES FROM test_database")
+    assert(result == "postgresql_replica_0\npostgresql_replica_1\npostgresql_replica_2\npostgresql_replica_3\n")
+
+    result = instance.query('SHOW CREATE DATABASE test_database')
+    assert(result[:63] == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL(")
+    assert(result[-138:] == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3\\'\n")
+
+    instance.query('ATTACH TABLE test_database.{}'.format(table_name));
+    check_tables_are_synchronized(table_name);
+
+    for i in range(NUM_TABLES):
+        table_name = 'postgresql_replica_{}'.format(i)
+        check_tables_are_synchronized(table_name);
+
+    result = instance.query('SHOW CREATE DATABASE test_database')
+    assert(result[:63] == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL(")
+    assert(result[-159:] == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_1,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4\\'\n")
+
+    table_name = 'postgresql_replica_1'
+    instance.query('DETACH TABLE test_database.{}'.format(table_name));
+    result = instance.query('SHOW CREATE DATABASE test_database')
+    assert(result[:63] == "CREATE DATABASE test_database\\nENGINE = MaterializedPostgreSQL(")
+    assert(result[-138:] == ")\\nSETTINGS materialized_postgresql_tables_list = \\'postgresql_replica_0,postgresql_replica_2,postgresql_replica_3,postgresql_replica_4\\'\n")
+
+    for i in range(NUM_TABLES):
+        cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

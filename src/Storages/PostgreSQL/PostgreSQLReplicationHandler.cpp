@@ -659,6 +659,33 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
 }
 
 
+void PostgreSQLReplicationHandler::removeTableFromReplication(const String & postgres_table_name)
+{
+    consumer_task->deactivate();
+    try
+    {
+        postgres::Connection replication_connection(connection_info, /* replication */true);
+
+        {
+            pqxx::nontransaction tx(replication_connection.getRef());
+            removeTableFromPublication(tx, postgres_table_name);
+        }
+
+        /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
+        consumer->removeNested(postgres_table_name);
+    }
+    catch (...)
+    {
+        consumer_task->scheduleAfter(RESCHEDULE_MS);
+
+        auto error_message = getCurrentExceptionMessage(false);
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                        "Failed to remove table `{}` from replication. Info: {}", postgres_table_name, error_message);
+    }
+    consumer_task->schedule();
+}
+
+
 void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data)
 {
     /// If table schema has changed, the table stops consuming changes from replication stream.

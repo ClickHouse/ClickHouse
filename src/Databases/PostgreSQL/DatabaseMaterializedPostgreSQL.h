@@ -50,9 +50,11 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
-    void createTable(ContextPtr context, const String & name, const StoragePtr & table, const ASTPtr & query) override;
+    void createTable(ContextPtr context, const String & table_name, const StoragePtr & table, const ASTPtr & query) override;
 
-    void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path) override;
+    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
+
+    StoragePtr detachTable(const String & table_name) override;
 
     void dropTable(ContextPtr local_context, const String & name, bool no_delay) override;
 
@@ -74,7 +76,9 @@ protected:
 private:
     void startSynchronization();
 
-    String getTablesList() const;
+    ASTPtr createAlterSettingsQuery(const SettingChange & change);
+
+    String getTablesList(const String & except = {}) const;
 
     bool is_attach;
     String remote_database_name;

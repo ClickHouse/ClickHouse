@@ -528,6 +528,9 @@ String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontrans
 ///    read wal up to the lsn position of snapshot, from which table was loaded.
 bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const String & relation_name)
 {
+    if (deleted_tables.contains(relation_name))
+        return false;
+
     auto new_table_with_lsn = waiting_list.find(relation_name);
 
     if (new_table_with_lsn != waiting_list.end())
@@ -620,6 +623,14 @@ void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, Sto
 
     /// Set start position to valid lsn. Before it was an empty string. Further read for table allowed, if it has a valid lsn.
     skip_list[table_id] = table_start_lsn;
+}
+
+
+void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_name)
+{
+    storages.erase(postgres_table_name);
+    buffers.erase(postgres_table_name);
+    deleted_tables.insert(postgres_table_name);
 }
 
 
