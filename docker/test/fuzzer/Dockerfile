@@ -16,6 +16,8 @@ RUN apt-get update \
             p7zip-full \
             parallel \
             psmisc \
+            python3 \
+            python3-pip \
             rsync \
             tree \
             tzdata \
@@ -24,6 +26,8 @@ RUN apt-get update \
     && apt-get autoremove --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install Jinja2
 
 COPY * /
 
