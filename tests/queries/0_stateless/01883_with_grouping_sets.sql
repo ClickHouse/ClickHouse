@@ -35,4 +35,8 @@ FROM grouping_sets
 GROUP BY grouping sets(fact_1_id, (fact_1_id, fact_3_id)) WITH TOTALS
 ORDER BY fact_1_id, fact_3_id;
 
+truncate grouping_sets;
+
+SELECT a, b, sum(s), count() from grouping_sets GROUP BY GROUPING SETS(a, b) ORDER BY a, b;
+
 DROP TABLE grouping_sets;
