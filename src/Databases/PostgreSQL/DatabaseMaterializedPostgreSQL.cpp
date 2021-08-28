@@ -151,11 +151,9 @@ void DatabaseMaterializedPostgreSQL::applySettings(const SettingsChanges & setti
             if (!local_context->isInternalQuery())
                 throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changing setting `{}` is not allowed", change.name);
         }
-        else if (change.name == "materialized_postgresql_allow_automatic_update")
+        else if ((change.name == "materialized_postgresql_allow_automatic_update") || (change.name == "materialized_postgresql_max_block_size"))
         {
-        }
-        else if (change.name == "materialized_postgresql_max_block_size")
-        {
+            replication_handler->setSetting(change);
         }
         else
         {

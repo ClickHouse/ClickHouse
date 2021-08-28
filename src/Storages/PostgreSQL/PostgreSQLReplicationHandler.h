@@ -10,6 +10,7 @@ namespace DB
 {
 
 class StorageMaterializedPostgreSQL;
+struct SettingChange;
 
 class PostgreSQLReplicationHandler
 {
@@ -49,6 +50,8 @@ public:
     void addTableToReplication(StorageMaterializedPostgreSQL * storage, const String & postgres_table_name);
 
     void removeTableFromReplication(const String & postgres_table_name);
+
+    void setSetting(const SettingChange & setting);
 
 private:
     using MaterializedStorages = std::unordered_map<String, StorageMaterializedPostgreSQL *>;
