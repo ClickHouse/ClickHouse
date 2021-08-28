@@ -62,8 +62,8 @@ int mainEntryClickHouseKeeper(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_WEB_SERVER_EXPORTER
-int mainEntryClickHouseWebServerExporter(int argc, char ** argv);
+#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
+int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
@@ -135,8 +135,8 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
 #endif
-#if ENABLE_CLICKHOUSE_WEB_SERVER_EXPORTER
-    {"web-server-exporter", mainEntryClickHouseWebServerExporter},
+#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
+    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
 #endif
     {"hash-binary", mainEntryClickHouseHashBinary},
 };
