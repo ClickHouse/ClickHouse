@@ -41,12 +41,12 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_CHILD_PROCESS;
 }
 
-ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, ShellCommand::DestructorStrategy destructor_strategy_)
+ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
     : in(in_fd_)
     , out(out_fd_)
     , err(err_fd_)
     , pid(pid_)
-    , destructor_strategy(destructor_strategy_)
+    , config(config_)
 {
 }
 
@@ -60,9 +60,9 @@ ShellCommand::~ShellCommand()
     if (wait_called)
         return;
 
-    if (destructor_strategy.terminate_in_destructor)
+    if (config.terminate_in_destructor_strategy.terminate_in_destructor)
     {
-        size_t try_wait_timeout = destructor_strategy.wait_for_normal_exit_before_termination_seconds;
+        size_t try_wait_timeout = config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds;
         bool process_terminated_normally = tryWaitProcessWithTimeout(try_wait_timeout);
 
         if (!process_terminated_normally)
@@ -169,12 +169,19 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     PipeFDs pipe_stdout;
     PipeFDs pipe_stderr;
 
+    std::vector<std::unique_ptr<PipeFDs>> read_pipe_fds;
+    std::vector<std::unique_ptr<PipeFDs>> write_pipe_fds;
+
+    for (size_t i = 0; i < config.read_fds.size(); ++i)
+        read_pipe_fds.emplace_back(std::make_unique<PipeFDs>());
+
+    for (size_t i = 0; i < config.write_fds.size(); ++i)
+        write_pipe_fds.emplace_back(std::make_unique<PipeFDs>());
+
     pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 
-    if (-1 == pid)
+    if (pid == -1)
         throwFromErrno("Cannot vfork", ErrorCodes::CANNOT_FORK);
-
-    // std::vector<PipeFDs> read_fds;
 
     if (0 == pid)
     {
@@ -196,19 +203,23 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
                 _exit(int(ReturnCodes::CANNOT_DUP_STDERR));
         }
 
-        // for (const auto & read_fd : config.read_descriptors)
-        // {
-        //     auto & fds = read_fds.emplace_back();
-        //     if (read_fd != dup2(fds.fds_rw[1], read_fd))
-        //         _exit(int(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
-        // }
+        for (size_t i = 0; i < config.read_fds.size(); ++i)
+        {
+            auto & fds = *read_pipe_fds[i];
+            auto fd = config.read_fds[i];
 
-        // for (const auto & write_fd : config.write_descriptors)
-        // {
-        //     auto & fds = read_fds.emplace_back();
-        //     if (write_fd != dup2(fds.fds_rw[0], write_fd))
-        //         _exit(int(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
-        // }
+            if (fd != dup2(fds.fds_rw[1], fd))
+                _exit(int(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
+        }
+
+        for (size_t i = 0; i < config.write_fds.size(); ++i)
+        {
+            auto & fds = *write_pipe_fds[i];
+            auto fd = config.write_fds[i];
+
+            if (fd != dup2(fds.fds_rw[0], fd))
+                _exit(int(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
+        }
 
         // Reset the signal mask: it may be non-empty and will be inherited
         // by the child process, which might not expect this.
@@ -228,13 +239,21 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         pipe_stdin.fds_rw[1],
         pipe_stdout.fds_rw[0],
         pipe_stderr.fds_rw[0],
-        config.terminate_in_destructor_strategy));
+        config));
 
-    // for (const auto & read_fd : config.read_descriptors)
-    //     res->read_descriptors.emplace(read_fd, read_fd);
+    for (size_t i = 0; i < config.read_fds.size(); ++i)
+    {
+        auto & fds = *read_pipe_fds[i];
+        auto fd = config.read_fds[i];
+        res->read_fds.emplace(fd, fds.fds_rw[0]);
+    }
 
-    // for (const auto & write_fd : config.write_descriptors)
-    //     res->read_descriptors.emplace(write_fd, write_fd);
+    for (size_t i = 0; i < config.write_fds.size(); ++i)
+    {
+        auto & fds = *write_pipe_fds[i];
+        auto fd = config.write_fds[i];
+        res->write_fds.emplace(fd, fds.fds_rw[1]);
+    }
 
     LOG_TRACE(getLogger(), "Started shell command '{}' with pid {}", filename, pid);
     return res;

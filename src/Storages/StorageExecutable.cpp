@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 StorageExecutable::StorageExecutable(
@@ -59,66 +60,55 @@ Pipe StorageExecutable::read(
 
     ShellCommand::Config config(script_path);
 
-    for (size_t i = 0; i < inputs.size() - 1; ++i)
-        config.write_descriptors.emplace_back(i + 3);
+    for (size_t i = 1; i < inputs.size(); ++i)
+        config.write_fds.emplace_back(i + 2);
 
     auto process = ShellCommand::execute(config);
 
-    Pipe result;
-    if (inputs.empty())
+    std::vector<ShellCommandSource::SendDataTask> tasks;
+    tasks.reserve(inputs.size());
+
+    for (size_t i = 0; i < inputs.size(); ++i)
     {
-        Pipe pipe(FormatFactory::instance().getInput(format, process->out, std::move(sample_block), context, max_block_size));
-        pipe.addTransform(std::make_shared<ShellCommandOwningTransform>(pipe.getHeader(), log, std::move(process)));
+        BlockInputStreamPtr input_stream = inputs[i];
+        WriteBufferFromFile * write_buffer;
 
-        result = std::move(pipe);
-    }
-    else
-    {
-        Pipe pipe(std::make_unique<ShellCommandSourceWithBackgroundThread>(context, format, std::move(sample_block), std::move(process), log,
-            [context, config, this](ShellCommand & command) mutable
-            {
-                std::vector<std::pair<BlockInputStreamPtr, BlockOutputStreamPtr>> input_output_streams;
+        if (i == 0)
+        {
+            write_buffer = &process->in;
+        }
+        else
+        {
+            auto descriptor = i + 2;
+            auto it = process->write_fds.find(descriptor);
+            if (it == process->write_fds.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Process does not contain descriptor to write {}", descriptor);
 
-                size_t inputs_size = inputs.size();
-                input_output_streams.reserve(inputs_size);
+            write_buffer = &it->second;
+        }
 
-                auto & out = command.in;
-                auto & stdin_input_stream = inputs[0];
-                auto stdin_output_stream = context->getOutputStream(format, out, stdin_input_stream->getHeader().cloneEmpty());
-                input_output_streams.emplace_back(stdin_input_stream, stdin_output_stream);
+        ShellCommandSource::SendDataTask task = [input_stream, write_buffer, context, this]()
+        {
+            auto output_stream = context->getOutputStream(format, *write_buffer, input_stream->getHeader().cloneEmpty());
+            input_stream->readPrefix();
+            output_stream->writePrefix();
 
-                for (size_t i = 0; i < config.write_descriptors.size(); ++i)
-                {
-                    auto write_descriptor = config.write_descriptors[i];
-                    auto it = command.write_descriptors.find(write_descriptor);
-                    if (it == command.write_descriptors.end())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Process does not contain descriptor to write {}", write_descriptor);
+            while (auto block = input_stream->read())
+                output_stream->write(block);
 
-                    auto input_stream = inputs[i];
-                    auto output_stream = context->getOutputStream(format, it->second, input_stream->getHeader().cloneEmpty());
-                    input_output_streams.emplace_back(input_stream, output_stream);
-                }
+            input_stream->readSuffix();
+            output_stream->writeSuffix();
 
-                for (auto & [input_stream, output_stream] : input_output_streams)
-                {
-                    input_stream->readPrefix();
-                    output_stream->writePrefix();
+            output_stream->flush();
+            write_buffer->close();
+        };
 
-                    while (auto block = input_stream->read())
-                        output_stream->write(block);
-
-                    input_stream->readSuffix();
-                    output_stream->writeSuffix();
-
-                    output_stream->flush();
-                    out.close();
-                }
-            }));
-
-        result = std::move(pipe);
+        tasks.emplace_back(std::move(task));
     }
 
-    return result;
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, format, sample_block, std::move(process), log, std::move(tasks), max_block_size));
+    return pipe;
 }
+
 };
 

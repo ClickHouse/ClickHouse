@@ -31,6 +31,6 @@ def started_cluster():
 
 def test_executable_function_no_input(started_cluster):
     assert node.query("SELECT * FROM executable('test_no_input.sh', 'TabSeparated', 'value UInt64')") == '1\n'
+
+def test_executable_function_input(started_cluster):
     assert node.query("SELECT * FROM executable('test_input.sh', 'TabSeparated', 'value String', 'SELECT 1')") == 'Key 1\n'
-
-
