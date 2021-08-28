@@ -13,6 +13,7 @@
 
 namespace DB
 {
+struct SettingChange;
 
 class MaterializedPostgreSQLConsumer
 {
@@ -39,6 +40,8 @@ public:
     void addNested(const String & postgres_table_name, StoragePtr nested_storage, const String & table_start_lsn);
 
     void removeNested(const String & postgres_table_name);
+
+    void setSetting(const SettingChange & setting);
 
 private:
     /// Read approximarely up to max_block_size changes from WAL.
@@ -110,7 +113,7 @@ private:
     /// current_lsn converted from String to Int64 via getLSNValue().
     UInt64 lsn_value;
 
-    const size_t max_block_size;
+    size_t max_block_size;
     bool allow_automatic_update;
 
     String table_to_insert;
