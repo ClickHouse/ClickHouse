@@ -23,6 +23,20 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 
+## Dynamicaly adding new tables to replication
+
+``` sql
+ATTACH TABLE postgres_database.new_table;
+```
+
+It will work as well if there is a setting `materialized_postgresql_tables_list`.
+
+## Dynamicaly removing tables from replication
+
+``` sql
+DETACH TABLE postgres_database.table_to_remove;
+```
+
 ## Settings {#settings}
 
 -   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
@@ -38,6 +52,12 @@ SETTINGS materialized_postgresql_max_block_size = 65536,
          materialized_postgresql_tables_list = 'table1,table2,table3';
 
 SELECT * FROM database1.table1;
+```
+
+It is also possible to change settings at run time.
+
+``` sql
+ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
 ## Requirements {#requirements}
@@ -73,7 +93,7 @@ WHERE oid = 'postgres_table'::regclass;
 
 !!! warning "Warning"
     Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
-	
+
 ## Example of Use {#example-of-use}
 
 ``` sql

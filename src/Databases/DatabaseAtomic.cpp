@@ -572,14 +572,9 @@ void DatabaseAtomic::modifySettings(const SettingsChanges & settings_changes, Co
 {
     applySettings(settings_changes, local_context);
 
-    ASTCreateQuery create;
-    create.attach = true;
-    create.database = "_";
-    create.uuid = getUUID();
-    create.if_not_exists = false;
-    create.storage = assert_cast<ASTStorage *>(storage_def.get());
-    auto * settings = create.storage->settings;
-
+    auto create_query = getCreateDatabaseQuery()->clone();
+    auto create = create_query->as<ASTCreateQuery>();
+    auto * settings = create->storage->settings;
     if (settings)
     {
         auto & previous_settings = settings->changes;
@@ -598,14 +593,14 @@ void DatabaseAtomic::modifySettings(const SettingsChanges & settings_changes, Co
         auto settings = std::make_shared<ASTSetQuery>();
         settings->is_standalone = false;
         settings->changes = settings_changes;
-        create.storage->set(create.storage->settings, settings->clone());
+        create->storage->set(create->storage->settings, settings->clone());
     }
 
-    create.attach = true;
-    create.if_not_exists = false;
+    create->attach = true;
+    create->if_not_exists = false;
 
     WriteBufferFromOwnString statement_buf;
-    formatAST(create, statement_buf, false);
+    formatAST(*create, statement_buf, false);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
