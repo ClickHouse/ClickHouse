@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_NOT_ALLOWED;
     extern const int UNKNOWN_TABLE;
+    extern const int BAD_ARGUMENTS;
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(

@@ -48,7 +48,7 @@ BlockIO InterpreterAlterQuery::execute()
     else if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE
             || alter.alter_object == ASTAlterQuery::AlterObjectType::LIVE_VIEW)
         return executeToTable(alter);
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown alter object type");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown alter object type");
 }
 
 
