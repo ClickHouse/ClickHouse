@@ -3,7 +3,7 @@ set (CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_SOURCES clickhouse-static-files-disk-
 set (CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_LINK
     PRIVATE
         boost::program_options
-        common
+        clickhouse_common_io
         dbms
 )
 
