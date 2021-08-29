@@ -52,7 +52,7 @@ static String formatFloat(const Float64 x)
 }
 
 
-String FieldVisitorToString::operator() (const Null & x) const { return x.is_negative_infinity ? "-Inf" : (x.is_positive_infinity ? "+Inf" : "NULL"); }
+String FieldVisitorToString::operator() (const Null & x) const { return x.isNegativeInfinity() ? "-Inf" : (x.isPositiveInfinity() ? "+Inf" : "NULL"); }
 String FieldVisitorToString::operator() (const UInt64 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Int64 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Float64 & x) const { return formatFloat(x); }

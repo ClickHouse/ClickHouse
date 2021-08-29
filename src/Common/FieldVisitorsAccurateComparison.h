@@ -81,15 +81,15 @@ public:
     {
         if constexpr (std::is_same_v<T, Null> && std::is_same_v<U, Null>)
         {
-            return l.is_negative_infinity && r.is_positive_infinity;
+            return l.isNegativeInfinity() && r.isPositiveInfinity();
         }
         else if constexpr (std::is_same_v<T, Null>)
         {
-            return l.is_negative_infinity;
+            return l.isNegativeInfinity();
         }
         else if constexpr (std::is_same_v<U, Null>)
         {
-            return r.is_positive_infinity;
+            return r.isPositiveInfinity();
         }
         else
         {

@@ -28,8 +28,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-constexpr Null NEGATIVE_INFINITY{true, false};
-constexpr Null POSITIVE_INFINITY{false, true};
+constexpr Null NEGATIVE_INFINITY{Null::Value::NegativeInfinity};
+constexpr Null POSITIVE_INFINITY{Null::Value::PositiveInfinity};
 
 class Field;
 using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
@@ -430,8 +430,8 @@ public:
         return mutable_this->get<T>();
     }
 
-    bool isNegativeInfinity() const { return which == Types::Null && get<Null>().is_negative_infinity; }
-    bool isPositiveInfinity() const { return which == Types::Null && get<Null>().is_positive_infinity; }
+    bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
+    bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
 
     template <typename T>
     T & reinterpret();
