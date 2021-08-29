@@ -55,7 +55,6 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/UserDefinedObjectsOnDisk.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>

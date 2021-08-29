@@ -14,7 +14,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/Session.h>
-#include <Interpreters/UserDefinedObjectsOnDisk.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>

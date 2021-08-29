@@ -11,8 +11,11 @@ namespace DB
 
 enum class UserDefinedObjectType
 {
-    Function
+    Function,
+    DataType
 };
+
+String userDefinedObjecTypeToString(UserDefinedObjectType object_type);
 
 class UserDefinedObjectsLoader : private boost::noncopyable
 {
@@ -25,7 +28,7 @@ public:
     void removeObject(ContextPtr context, UserDefinedObjectType object_type, const String & object_name);
 
 private:
-
+    String makeFilePath(ContextPtr context, UserDefinedObjectType object_type, const String & name);
     void loadUserDefinedObject(ContextPtr context, UserDefinedObjectType object_type, const std::string_view & object_name, const String & file_path);
     Poco::Logger * log;
 };

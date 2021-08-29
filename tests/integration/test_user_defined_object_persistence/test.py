@@ -15,7 +15,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_persistence():
+def test_function_persistence():
     create_function_query1 = "CREATE FUNCTION MySum1 AS (a, b) -> a + b"
     create_function_query2 = "CREATE FUNCTION MySum2 AS (a, b) -> MySum1(a, b) + b"
 
@@ -37,3 +37,15 @@ def test_persistence():
 
     assert "Unknown function MySum1" in instance.query_and_get_error("SELECT MySum1(1, 2)")
     assert "Unknown function MySum2" in instance.query_and_get_error("SELECT MySum2(1, 2)")
+
+
+def test_data_type_persistence():
+    instance.query("CREATE DATA TYPE MyType AS int")
+    instance.query("CREATE TABLE TestTable (first MyType) ENGINE = MergeTree() ORDER BY first")
+    instance.query("INSERT INTO TestTable VALUES(10)")
+
+    instance.restart_clickhouse()
+
+    instance.query("INSERT INTO TestTable VALUES(20)")
+    assert instance.query("SELECT * FROM TestTable") == "10\n20\n"
+

@@ -13,6 +13,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
+#include <Interpreters/InterpreterCreateDataTypeQuery.h>
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
@@ -32,6 +33,21 @@ namespace ErrorCodes
     extern const int OBJECT_WAS_NOT_STORED_ON_DISK;
 }
 
+String userDefinedObjecTypeToString(UserDefinedObjectType object_type)
+{
+    switch (object_type)
+    {
+        case UserDefinedObjectType::Function:
+        {
+            return "function";
+        }
+        case UserDefinedObjectType::DataType:
+        {
+            return "data_type";
+        }
+    }
+}
+
 UserDefinedObjectsLoader & UserDefinedObjectsLoader::instance()
 {
     static UserDefinedObjectsLoader ret;
@@ -41,6 +57,13 @@ UserDefinedObjectsLoader & UserDefinedObjectsLoader::instance()
 UserDefinedObjectsLoader::UserDefinedObjectsLoader()
     : log(&Poco::Logger::get("UserDefinedObjectsLoader"))
 {}
+
+String UserDefinedObjectsLoader::makeFilePath(ContextPtr context, UserDefinedObjectType object_type, const String & name)
+{
+    String dir_path = context->getPath() + "user_defined/";
+    String object_type_str = userDefinedObjecTypeToString(object_type);
+    return dir_path + object_type_str + "_" + escapeForFileName(name) + ".sql";
+}
 
 void UserDefinedObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDefinedObjectType object_type, const std::string_view & name, const String & path)
 {
@@ -53,23 +76,30 @@ void UserDefinedObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDef
     String object_create_query;
     readStringUntilEOF(object_create_query, in);
 
+    ParserCreateFunctionQuery parser;
+    ASTPtr ast = parseQuery(
+        parser,
+        object_create_query.data(),
+        object_create_query.data() + object_create_query.size(),
+        "in file " + path,
+        0,
+        context->getSettingsRef().max_parser_depth);
+
     try
     {
         switch (object_type)
         {
             case UserDefinedObjectType::Function:
             {
-                ParserCreateFunctionQuery parser;
-                ASTPtr ast = parseQuery(
-                    parser,
-                    object_create_query.data(),
-                    object_create_query.data() + object_create_query.size(),
-                    "in file " + path,
-                    0,
-                    context->getSettingsRef().max_parser_depth);
-
                 InterpreterCreateFunctionQuery interpreter(ast, context, true /*is internal*/);
                 interpreter.execute();
+                break;
+            }
+            case UserDefinedObjectType::DataType:
+            {
+                InterpreterCreateDataTypeQuery interpreter(ast, context, true /*is internal*/);
+                interpreter.execute();
+                break;
             }
         }
     }
@@ -101,24 +131,23 @@ void UserDefinedObjectsLoader::loadObjects(ContextPtr context)
         {
             std::string_view object_name = file_name;
             object_name.remove_suffix(strlen(".sql"));
-            object_name.remove_prefix(strlen("function_"));
-            loadUserDefinedObject(context, UserDefinedObjectType::Function, object_name, dir_path + it.name());
+            if (object_name.starts_with("function_"))
+            {
+                object_name.remove_prefix(strlen("function_"));
+                loadUserDefinedObject(context, UserDefinedObjectType::Function, object_name, dir_path + it.name());
+            }
+            else if (object_name.starts_with("data_type_"))
+            {
+                object_name.remove_prefix(strlen("data_type_"));
+                loadUserDefinedObject(context, UserDefinedObjectType::DataType, object_name, dir_path + it.name());
+            }
         }
     }
 }
 
 void UserDefinedObjectsLoader::storeObject(ContextPtr context, UserDefinedObjectType object_type, const String & object_name, const IAST & ast)
 {
-    String dir_path = context->getPath() + "user_defined/";
-    String file_path;
-
-    switch (object_type)
-    {
-        case UserDefinedObjectType::Function:
-        {
-            file_path = dir_path + "function_" + escapeForFileName(object_name) + ".sql";
-        }
-    }
+    String file_path = makeFilePath(context, object_type, object_name);
 
     if (std::filesystem::exists(file_path))
         throw Exception(ErrorCodes::OBJECT_ALREADY_STORED_ON_DISK, "User defined object {} already stored on disk", backQuote(file_path));
@@ -142,23 +171,16 @@ void UserDefinedObjectsLoader::storeObject(ContextPtr context, UserDefinedObject
 
 void UserDefinedObjectsLoader::removeObject(ContextPtr context, UserDefinedObjectType object_type, const String & object_name)
 {
-    String dir_path = context->getPath() + "user_defined/";
-    LOG_DEBUG(log, "Removing file for user defined object {} from {}", backQuote(object_name), dir_path);
-
-    std::filesystem::path file_path;
-
-    switch (object_type)
-    {
-        case UserDefinedObjectType::Function:
-        {
-            file_path = dir_path + "function_" + escapeForFileName(object_name) + ".sql";
-        }
-    }
+    String file_path = makeFilePath(context, object_type, object_name);
 
     if (!std::filesystem::exists(file_path))
-        throw Exception(ErrorCodes::OBJECT_WAS_NOT_STORED_ON_DISK, "User defined object {} was not stored on disk", backQuote(file_path.string()));
+        throw Exception(ErrorCodes::OBJECT_WAS_NOT_STORED_ON_DISK, "User defined object {} was not stored on disk", backQuote(file_path));
+
+    LOG_DEBUG(log, "Removing user defined object {} in file {}", backQuote(object_name), file_path);
 
     std::filesystem::remove(file_path);
+
+    LOG_DEBUG(log, "Removed object {}", backQuote(object_name));
 }
 
 }
