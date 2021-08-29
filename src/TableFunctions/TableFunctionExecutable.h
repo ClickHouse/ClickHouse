@@ -8,7 +8,7 @@ namespace DB
 
 class Context;
 
-/* executable(path, format, structure, input_query) - creates a temporary storage from executable file
+/* executable(script_name_optional_arguments, format, structure, input_query) - creates a temporary storage from executable file
  *
  *
  * The file must be in the clickhouse data directory.
@@ -28,9 +28,10 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    String file_path;
+    String script_name;
+    std::vector<String> arguments;
     String format;
     String structure;
-    std::vector<BlockInputStreamPtr> inputs;
+    std::vector<ASTPtr> input_queries;
 };
 }
