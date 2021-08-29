@@ -1,5 +1,7 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateDataTypeQuery.h>
+#include <Parsers/ParserCreateFunctionQuery.h>
+#include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateQuotaQuery.h>
 #include <Parsers/ParserCreateRoleQuery.h>
@@ -8,6 +10,7 @@
 #include <Parsers/ParserCreateUserQuery.h>
 #include <Parsers/ParserDropAccessEntityQuery.h>
 #include <Parsers/ParserDropDataTypeQuery.h>
+#include <Parsers/ParserDropFunctionQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserGrantQuery.h>
 #include <Parsers/ParserInsertQuery.h>
@@ -40,10 +43,13 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateSettingsProfileQuery create_settings_profile_p;
     ParserCreateDataTypeQuery create_data_type_p;
     ParserDropDataTypeQuery drop_data_type_p;
+    ParserCreateFunctionQuery create_function_p;
+    ParserDropFunctionQuery drop_function_p;
     ParserDropAccessEntityQuery drop_access_entity_p;
     ParserGrantQuery grant_p;
     ParserSetRoleQuery set_role_p;
     ParserExternalDDLQuery external_ddl_p;
+    ParserBackupQuery backup_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -58,9 +64,12 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || create_data_type_p.parse(pos, node, expected)
         || drop_data_type_p.parse(pos, node, expected)
+        || create_function_p.parse(pos, node, expected)
+        || drop_function_p.parse(pos, node, expected)
         || drop_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
-        || external_ddl_p.parse(pos, node, expected);
+        || external_ddl_p.parse(pos, node, expected)
+        || backup_p.parse(pos, node, expected);
 
     return res;
 }
