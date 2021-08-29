@@ -294,7 +294,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     }
     else if (query->as<ASTCreateDataTypeQuery>())
     {
-        return std::make_unique<InterpreterCreateDataTypeQuery>(query, context);
+        return std::make_unique<InterpreterCreateDataTypeQuery>(query, context, false /*is_internal*/);
     }
     else if (query->as<ASTDropDataTypeQuery>())
     {

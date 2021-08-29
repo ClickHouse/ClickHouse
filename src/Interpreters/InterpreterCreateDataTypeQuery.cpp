@@ -1,6 +1,7 @@
+#include <Access/ContextAccess.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterCreateDataTypeQuery.h>
-#include <Interpreters/UserDefinedObjectsOnDisk.h>
+#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/ASTCreateDataTypeQuery.h>
 #include <Common/quoteString.h>
@@ -10,28 +11,32 @@ namespace DB
 
 BlockIO InterpreterCreateDataTypeQuery::execute()
 {
+    auto current_context = getContext();
+    current_context->checkAccess(AccessType::CREATE_DATA_TYPE);
+
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & create_data_type_query = query_ptr->as<ASTCreateDataTypeQuery &>();
     registerUserDefinedDataType(DataTypeFactory::instance(), create_data_type_query);
-    if (!internal)
+    auto data_type_name = create_data_type_query.type_name;
+    if (!is_internal)
     {
         try
         {
-            UserDefinedObjectsOnDisk::instance().storeUserDefinedDataType(getContext(), create_data_type_query);
+            UserDefinedObjectsLoader::instance().storeObject(current_context, UserDefinedObjectType::DataType, data_type_name, *query_ptr);
         }
         catch (Exception & e)
         {
-            DataTypeFactory::instance().unregisterUserDefinedDataType(create_data_type_query.type_name);
-            e.addMessage(fmt::format("while storing user defined type {} on disk", backQuote(create_data_type_query.type_name)));
+            DataTypeFactory::instance().unregisterUserDefinedDataType(data_type_name);
+            e.addMessage(fmt::format("while storing user defined type {} on disk", backQuote(data_type_name)));
             throw;
         }
     }
     return {};
 }
 
-void InterpreterCreateDataTypeQuery::setInternal(bool internal_)
+void InterpreterCreateDataTypeQuery::setInternal(bool is_internal_)
 {
-    internal = internal_;
+    is_internal = is_internal_;
 }
 
 }

@@ -10,17 +10,20 @@ class ASTCreateDataTypeQuery;
 class InterpreterCreateDataTypeQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterCreateDataTypeQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
+    InterpreterCreateDataTypeQuery(const ASTPtr & query_ptr_, ContextPtr context_, bool is_internal_) 
+        : WithContext(context_)
+        , query_ptr(query_ptr_)
+        , is_internal(is_internal_) {}
 
     BlockIO execute() override;
 
-    void setInternal(bool internal_);
+    void setInternal(bool is_internal_);
 
 private:
     ASTPtr query_ptr;
 
     /// Is this an internal query - not from the user.
-    bool internal = false;
+    bool is_internal = false;
 };
 
 }
