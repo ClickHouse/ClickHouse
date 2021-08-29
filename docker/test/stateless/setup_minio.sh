@@ -25,10 +25,15 @@ lsof -i :11111
 # Upload data to Minio. By default after unpacking all tests will in
 # /usr/share/clickhouse-test/queries
 
-cd /usr/share/clickhouse-test/queries/0_stateless/test_minio
+ls -lha /usr/share
+ls -lha /usr/share/clickhouse-test
+ls -lha /usr/share/clickhouse-test/queries
+ls -lha /usr/share/clickhouse-test/queries/0_stateless
 
-FILES=$(ls .)
-for FILE in $FILES; do
-    echo $FILE;
-    /mc cp $FILE clickminio/test/$FILE;
-done
+# cd /usr/share/clickhouse-test/queries/0_stateless/test_minio
+
+# FILES=$(ls .)
+# for FILE in $FILES; do
+#     echo $FILE;
+#     /mc cp $FILE clickminio/test/$FILE;
+# done
