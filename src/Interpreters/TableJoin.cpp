@@ -371,7 +371,7 @@ bool TableJoin::inferJoinKeyCommonType(const NamesAndTypesList & left, const Nam
             return false;
         }
 
-        if (JoinCommon::typesEqualUpToNullability(ltype->second, rtype->second))
+        if (ltype->second->equals(*rtype->second))
             continue;
 
         DataTypePtr supertype;
