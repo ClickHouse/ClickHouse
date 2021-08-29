@@ -4,7 +4,7 @@ CREATE TABLE grouping_sets(fact_1_id Int32, fact_2_id Int32, fact_3_id Int32, fa
 
 INSERT INTO grouping_sets
 SELECT
-       number % 2 + 1 AS fact_1_id,
+    number % 2 + 1 AS fact_1_id,
        number % 5 + 1 AS fact_2_id,
        number % 10 + 1 AS fact_3_id,
        number % 10 + 1 AS fact_4_id,
@@ -37,6 +37,6 @@ ORDER BY fact_1_id, fact_3_id;
 
 truncate grouping_sets;
 
-SELECT a, b, sum(s), count() from grouping_sets GROUP BY GROUPING SETS(a, b) ORDER BY a, b;
+SELECT fact_1_id, fact_3_id, sum(sales_value), count() from grouping_sets GROUP BY GROUPING SETS(fact_1_id, fact_3_id) ORDER BY fact_1_id, fact_3_id;
 
 DROP TABLE grouping_sets;
