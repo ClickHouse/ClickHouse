@@ -136,6 +136,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    bool supportsPartitionBy() const override;
+
 private:
 
     friend class StorageS3Cluster;

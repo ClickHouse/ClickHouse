@@ -22,7 +22,9 @@ namespace DB
 
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response)>;
 
-class KeeperStorageDispatcher
+/// Highlevel wrapper for ClickHouse Keeper.
+/// Process user requests via consensus and return responses.
+class KeeperDispatcher
 {
 
 private:
@@ -45,6 +47,7 @@ private:
     /// (get, set, list, etc.). Dispatcher determines callback for each response
     /// using session id from this map.
     SessionToResponseCallback session_to_response_callback;
+
     /// But when client connects to the server for the first time it doesn't
     /// have session_id. It request it from server. We give temporary
     /// internal id for such requests just to much client with its response.
@@ -60,7 +63,7 @@ private:
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
 
-    /// RAFT wrapper. Most important class.
+    /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
 
     Poco::Logger * log;
@@ -69,10 +72,15 @@ private:
     std::atomic<int64_t> internal_session_id_counter{0};
 
 private:
+    /// Thread put requests to raft
     void requestThread();
+    /// Thread put responses for subscribed sessions
     void responseThread();
+    /// Thread clean disconnected sessions from memory
     void sessionCleanerTask();
+    /// Thread create snapshots in the background
     void snapshotThread();
+
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
     /// Add error responses for requests to responses queue.
@@ -84,16 +92,23 @@ private:
     void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
 public:
-    KeeperStorageDispatcher();
+    /// Just allocate some objects, real initialization is done by `intialize method`
+    KeeperDispatcher();
 
+    /// Call shutdown
+    ~KeeperDispatcher();
+
+    /// Initialization from config.
+    /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
     void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper);
 
+    /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
 
-    ~KeeperStorageDispatcher();
-
+    /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
+    /// Are we leader
     bool isLeader() const
     {
         return server->isLeader();
@@ -104,9 +119,12 @@ public:
         return server->isLeaderAlive();
     }
 
+    /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
 
+    /// Register session and subscribe for responses with callback
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
+
     /// Call if we don't need any responses for this session no more (session was expired)
     void finishSession(int64_t session_id);
 };

@@ -13,6 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -21,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
@@ -555,6 +557,35 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
         window_definition->formatImpl(settings, state, frame);
         settings.ostr << ")";
     }
+}
+
+String getFunctionName(const IAST * ast)
+{
+    String res;
+    if (tryGetFunctionNameInto(ast, res))
+        return res;
+    throw Exception(ast ? queryToString(*ast) + " is not an function" : "AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+}
+
+std::optional<String> tryGetFunctionName(const IAST * ast)
+{
+    String res;
+    if (tryGetFunctionNameInto(ast, res))
+        return res;
+    return {};
+}
+
+bool tryGetFunctionNameInto(const IAST * ast, String & name)
+{
+    if (ast)
+    {
+        if (const auto * node = ast->as<ASTFunction>())
+        {
+            name = node->name;
+            return true;
+        }
+    }
+    return false;
 }
 
 }
