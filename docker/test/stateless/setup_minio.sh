@@ -2,12 +2,24 @@
 
 set -e -x -a
 
-/minio server --address ":11111" ./data > /dev/null &
+ls -lha
 
-/mc alias set clickminio http://localhost:11111 clickhouse clickhouse
-/mc admin user add clickminio test testtest
-/mc admin policy set clickminio readwrite user=test
-/mc mb clickminio/test
+mkdir -p ./data
+./minio server --address ":11111" ./data &
+
+while ! curl http://localhost:11111
+do
+  echo "Trying to connect to minio"
+  sleep 1
+done
+
+ps aux | grep minio
+lsof -i :11111
+
+./mc alias set clickminio http://localhost:11111 clickhouse clickhouse
+./mc admin user add clickminio test testtest
+./mc admin policy set clickminio readwrite user=test
+./mc mb clickminio/test
 
 
 # Upload data to Minio. By default after unpacking all tests will in

@@ -51,13 +51,13 @@ ENV MAX_RUN_TIME=0
 
 
 # Download Minio-related binaries
-RUN wget 'https://dl.min.io/server/minio/release/linux-amd64/minio' -o /minio \
-    && chmod +x /minio \
-    && wget 'https://dl.min.io/client/mc/release/linux-amd64/mc' -o /minio \
-    && chmod +x /mc
+RUN wget 'https://dl.min.io/server/minio/release/linux-amd64/minio' \
+    && chmod +x ./minio \
+    && wget 'https://dl.min.io/client/mc/release/linux-amd64/mc' \
+    && chmod +x ./mc
 
-ENV MINIO_ROOT_USER=clickhouse
-ENV MINIO_ROOT_PASSWORD=clickhouse
+ENV MINIO_ROOT_USER="clickhouse"
+ENV MINIO_ROOT_PASSWORD="clickhouse"
 
 COPY run.sh /
 COPY process_functional_tests_result.py /
