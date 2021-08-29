@@ -279,12 +279,12 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter is not supported by database engine {}", getEngineName());
     }
 
-    virtual void modifySettings(const SettingsChanges &, ContextPtr)
+    virtual void modifySettingsMetadata(const SettingsChanges &, ContextPtr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database engine {} does not support settings", getEngineName());
     }
 
-    virtual void applySettings(const SettingsChanges &, ContextPtr)
+    virtual void tryApplySettings(const SettingsChanges &, ContextPtr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database engine {} does not support settings", getEngineName());
     }

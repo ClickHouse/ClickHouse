@@ -61,7 +61,7 @@ public:
     void checkDetachedTableNotInUse(const UUID & uuid) override;
     void setDetachedTableNotInUseForce(const UUID & uuid);
 
-    void modifySettings(const SettingsChanges & settings_changes, ContextPtr local_context) override;
+    void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr local_context) override;
 
 protected:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, ContextPtr query_context) override;
