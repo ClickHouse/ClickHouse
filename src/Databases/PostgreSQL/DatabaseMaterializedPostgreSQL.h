@@ -64,7 +64,7 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-    void applySettings(const SettingsChanges & settings_changes, ContextPtr context) override;
+    void tryApplySettings(const SettingsChanges & settings_changes, ContextPtr context) override;
 
     void shutdown() override;
 
@@ -76,7 +76,7 @@ protected:
 private:
     void startSynchronization();
 
-    ASTPtr createAlterSettingsQuery(const SettingChange & change);
+    ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
 
     String getTablesList(const String & except = {}) const;
 
