@@ -13,7 +13,6 @@ do
   sleep 1
 done
 
-ps aux | grep minio
 lsof -i :11111
 
 ./mc alias set clickminio http://localhost:11111 clickhouse clickhouse
@@ -25,15 +24,10 @@ lsof -i :11111
 # Upload data to Minio. By default after unpacking all tests will in
 # /usr/share/clickhouse-test/queries
 
-ls -lha /usr/share
-ls -lha /usr/share/clickhouse-test
-ls -lha /usr/share/clickhouse-test/queries
-ls -lha /usr/share/clickhouse-test/queries/0_stateless
+cd /usr/share/clickhouse-test/queries/0_stateless/data_minio
 
-# cd /usr/share/clickhouse-test/queries/0_stateless/test_minio
-
-# FILES=$(ls .)
-# for FILE in $FILES; do
-#     echo $FILE;
-#     /mc cp $FILE clickminio/test/$FILE;
-# done
+FILES=$(ls .)
+for FILE in $FILES; do
+    echo $FILE;
+    /mc cp $FILE clickminio/test/$FILE;
+done
