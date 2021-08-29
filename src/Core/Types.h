@@ -17,12 +17,22 @@ namespace DB
 /// comparison which is used for nullable KeyCondition.
 struct Null
 {
-    bool is_negative_infinity = false;
-    bool is_positive_infinity = false;
+    enum class Value
+    {
+        Null,
+        PositiveInfinity,
+        NegativeInfinity,
+    };
+
+    Value value{Value::Null};
+
+    bool isNull() const { return value == Value::Null; }
+    bool isPositiveInfinity() const { return value == Value::PositiveInfinity; }
+    bool isNegativeInfinity() const { return value == Value::NegativeInfinity; }
 
     bool operator==(const Null & other) const
     {
-        return is_negative_infinity == other.is_negative_infinity && is_positive_infinity == other.is_positive_infinity;
+        return value == other.value;
     }
 
     bool operator!=(const Null & other) const
