@@ -105,7 +105,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
     static const std::unordered_set<std::string_view> database_engines{"Ordinary", "Atomic", "Memory",
         "Dictionary", "Lazy", "Replicated", "MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
+        "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
 
     if (!database_engines.contains(engine_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine name `{}` does not exist", engine_name);

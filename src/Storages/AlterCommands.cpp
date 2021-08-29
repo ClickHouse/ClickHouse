@@ -365,7 +365,10 @@ void AlterCommands::apply(DatabasePtr database, ContextPtr context) const
         if (!command.ignore)
         {
             if (command.type == AlterCommand::MODIFY_DATABASE_SETTING)
-                database->modifySettings(command.settings_changes, context);
+            {
+                database->tryApplySettings(command.settings_changes, context);
+                database->modifySettingsMetadata(command.settings_changes, context);
+            }
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported alter command");
         }

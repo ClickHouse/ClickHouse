@@ -568,12 +568,10 @@ void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)
     assertDetachedTableNotInUse(uuid);
 }
 
-void DatabaseAtomic::modifySettings(const SettingsChanges & settings_changes, ContextPtr local_context)
+void DatabaseAtomic::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr local_context)
 {
-    applySettings(settings_changes, local_context);
-
     auto create_query = getCreateDatabaseQuery()->clone();
-    auto create = create_query->as<ASTCreateQuery>();
+    auto * create = create_query->as<ASTCreateQuery>();
     auto * settings = create->storage->settings;
     if (settings)
     {

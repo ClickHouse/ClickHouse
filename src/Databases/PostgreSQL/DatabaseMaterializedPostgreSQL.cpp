@@ -140,7 +140,7 @@ void DatabaseMaterializedPostgreSQL::checkAlterIsPossible(const AlterCommands & 
 }
 
 
-void DatabaseMaterializedPostgreSQL::applySettings(const SettingsChanges & settings_changes, ContextPtr local_context)
+void DatabaseMaterializedPostgreSQL::tryApplySettings(const SettingsChanges & settings_changes, ContextPtr local_context)
 {
     for (const auto & change : settings_changes)
     {
@@ -208,7 +208,7 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
 
     /// Create ReplacingMergeTree table.
     auto query_copy = query->clone();
-    auto create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
+    auto * create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
     create_query->attach = false;
     create_query->attach_short_syntax = false;
     DatabaseAtomic::createTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, table, query_copy);
@@ -273,6 +273,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingCha
 
 void DatabaseMaterializedPostgreSQL::attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path)
 {
+    /// TODO: If attach fails, need to delete nested...
     if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
     {
         auto tables_to_replicate = settings->materialized_postgresql_tables_list.value;

@@ -51,7 +51,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(remote_database_name, remote_table_name) + ")"))
+    , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(remote_database_name, remote_table_name_) + ")"))
     , is_materialized_postgresql_database(false)
     , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
