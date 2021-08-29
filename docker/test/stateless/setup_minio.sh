@@ -15,6 +15,8 @@ done
 
 lsof -i :11111
 
+sleep 5
+
 ./mc alias set clickminio http://localhost:11111 clickhouse clickhouse
 ./mc admin user add clickminio test testtest
 ./mc admin policy set clickminio readwrite user=test
