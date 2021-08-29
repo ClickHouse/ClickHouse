@@ -13,6 +13,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 
 #include <DataTypes/NestedUtils.h>
 
@@ -27,6 +28,11 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
+
+#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromSmallFile.h>
+#include <Backups/IBackup.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <cassert>
 #include <chrono>
@@ -789,6 +795,104 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
     }
 
     return column_sizes;
+}
+
+
+BackupEntries StorageLog::backup(const ASTs & partitions, ContextPtr context) const
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    ReadLock lock{rwlock, getLockTimeout(context)};
+
+    if (!file_count)
+        return {};
+
+    BackupEntries backup_entries;
+
+    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_");
+    auto temp_dir = temp_dir_owner->getPath();
+    disk->createDirectories(temp_dir);
+
+    FileChecker::Map file_sizes = file_checker.getFileSizes();
+    for (const auto & [file_name, file_size] : file_sizes)
+    {
+        String temp_file_path = temp_dir + "/" + file_name;
+        disk->copy(table_path + file_name, disk, temp_file_path);
+        backup_entries.emplace_back(
+            file_name, std::make_unique<BackupEntryFromImmutableFile>(disk, temp_file_path, file_size, std::nullopt, temp_dir_owner));
+    }
+
+    backup_entries.emplace_back("sizes.json", std::make_unique<BackupEntryFromSmallFile>(disk, table_path + "sizes.json"));
+
+    return backup_entries;
+}
+
+
+RestoreDataTasks StorageLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    auto restore_task = [this, backup, data_path_in_backup, context]
+    {
+        if (backup->list(data_path_in_backup).empty())
+            return; /// no files in backup
+
+        WriteLock lock{rwlock, getLockTimeout(context)};
+        loadMarks(lock);
+        saveFileSizes(lock);
+
+        bool done = false;
+        SCOPE_EXIT({
+            if (!done)
+            {
+                file_checker.repair();
+                removeUnsavedMarks(lock);
+            }
+        });
+
+        for (auto * file : files)
+        {
+            auto entry = backup->read(data_path_in_backup + fileName(file->data_file_path));
+            auto read_buffer = entry->getReadBuffer();
+            auto write_buffer = disk->writeFile(file->data_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+            copyData(*read_buffer, *write_buffer);
+        }
+
+        if (use_marks_file)
+        {
+            auto entry = backup->read(data_path_in_backup + fileName(marks_file_path));
+            auto read_buffer = entry->getReadBuffer();
+
+            const auto & file_sizes = file_checker.getFileSizes();
+            std::vector<size_t> initial_offset(file_count);
+            for (size_t i = 0; i != file_count; ++i)
+                initial_offset[i] = file_sizes.at(fileName(files[i]->data_file_path));
+            size_t initial_rows = file_count ? files[0]->marks.back().rows : 0;
+
+            while (!read_buffer->eof())
+            {
+                for (size_t i = 0; i != file_count; ++i)
+                {
+                    Mark mark;
+                    mark.read(*read_buffer);
+                    if (num_marks_saved)
+                    {
+                        mark.offset += initial_offset[i];
+                        mark.rows += initial_rows;
+                    }
+                    files[i]->marks.emplace_back(mark);
+                }
+            }
+        }
+
+        saveMarks(lock);
+        saveFileSizes(lock);
+        done = true;
+    };
+
+    return {restore_task};
 }
 
 

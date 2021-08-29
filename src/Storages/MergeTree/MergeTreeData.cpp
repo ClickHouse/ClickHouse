@@ -3258,7 +3258,7 @@ BackupEntries MergeTreeData::backupDataParts(const DataPartsVector & data_parts)
 
         auto temp_dir_it = temp_dirs.find(disk);
         if (temp_dir_it == temp_dirs.end())
-            temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp_backup_")).first;
+            temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_")).first;
         auto temp_dir_owner = temp_dir_it->second;
         fs::path temp_dir = temp_dir_owner->getPath();
 

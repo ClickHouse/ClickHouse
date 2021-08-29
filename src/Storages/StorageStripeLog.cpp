@@ -13,6 +13,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
@@ -33,6 +34,11 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
+
+#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromSmallFile.h>
+#include <Backups/IBackup.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <cassert>
 
@@ -400,6 +406,95 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     index.clear();
     indices_loaded = false;
     num_indices_saved = 0;
+}
+
+
+BackupEntries StorageStripeLog::backup(const ASTs & partitions, ContextPtr context) const
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    ReadLock lock{rwlock, getLockTimeout(context)};
+    if (file_checker.empty())
+        return {};
+
+    BackupEntries backup_entries;
+
+    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_");
+    auto temp_dir = temp_dir_owner->getPath();
+    disk->createDirectories(temp_dir);
+
+    FileChecker::Map file_sizes = file_checker.getFileSizes();
+    for (const auto & [file_name, file_size] : file_sizes)
+    {
+        String temp_file_path = temp_dir + "/" + file_name;
+        disk->copy(table_path + file_name, disk, temp_file_path);
+        backup_entries.emplace_back(
+            file_name, std::make_unique<BackupEntryFromImmutableFile>(disk, temp_file_path, file_size, std::nullopt, temp_dir_owner));
+    }
+
+    backup_entries.emplace_back("sizes.json", std::make_unique<BackupEntryFromSmallFile>(disk, table_path + "sizes.json"));
+
+    return backup_entries;
+}
+
+
+RestoreDataTasks StorageStripeLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    auto restore_task = [this, backup, data_path_in_backup, context]
+    {
+        if (backup->list(data_path_in_backup).empty())
+            return; /// no files in backup
+
+        WriteLock lock{rwlock, getLockTimeout(context)};
+        loadIndices(lock);
+        saveFileSizes(lock);
+
+        bool done = false;
+        SCOPE_EXIT({
+            if (!done)
+            {
+                file_checker.repair();
+                removeUnsavedIndices(lock);
+            }
+        });
+
+        {
+            auto entry = backup->read(data_path_in_backup + fileName(data_file_path));
+            auto read_buffer = entry->getReadBuffer();
+            auto write_buffer = disk->writeFile(data_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+            copyData(*read_buffer, *write_buffer);
+        }
+
+        {
+            auto entry = backup->read(data_path_in_backup + fileName(index_file_path));
+            auto read_buffer = entry->getReadBuffer();
+
+            const auto & file_sizes = file_checker.getFileSizes();
+            size_t initial_data_size = file_sizes.at(fileName(data_file_path));
+
+            while (!read_buffer->eof())
+            {
+                IndexOfBlockForNativeFormat index_block;
+                index_block.read(*read_buffer);
+                if (num_indices_saved)
+                {
+                    for (auto & column : index_block.columns)
+                        column.location.offset_in_compressed_file += initial_data_size;
+                }
+                index.blocks.emplace_back(index_block);
+            }
+        }
+
+        saveIndices(lock);
+        saveFileSizes(lock);
+        done = true;
+    };
+
+    return {restore_task};
 }
 
 
