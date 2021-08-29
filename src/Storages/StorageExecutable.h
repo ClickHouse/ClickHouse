@@ -30,15 +30,17 @@ protected:
     StorageExecutable(
         const StorageID & table_id,
         const String & script_name_,
+        const std::vector<String> & arguments_,
         const String & format_,
-        const std::vector<BlockInputStreamPtr> & inputs_,
+        const std::vector<ASTPtr> & input_queries_,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints);
 
 private:
     String script_name;
+    std::vector<String> arguments;
     String format;
-    std::vector<BlockInputStreamPtr> inputs;
+    std::vector<ASTPtr> input_queries;
     Poco::Logger * log;
 };
 }

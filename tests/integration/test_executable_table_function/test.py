@@ -33,4 +33,16 @@ def test_executable_function_no_input(started_cluster):
     assert node.query("SELECT * FROM executable('test_no_input.sh', 'TabSeparated', 'value UInt64')") == '1\n'
 
 def test_executable_function_input(started_cluster):
-    assert node.query("SELECT * FROM executable('test_input.sh', 'TabSeparated', 'value String', 'SELECT 1')") == 'Key 1\n'
+    assert node.query("SELECT * FROM executable('test_input.sh', 'TabSeparated', 'value String', (SELECT 1))") == 'Key 1\n'
+
+def test_executable_storage_no_input(started_cluster):
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query("CREATE TABLE test_table (value UInt64) ENGINE=Executable('test_no_input.sh', 'TabSeparated')")
+    assert node.query("SELECT * FROM test_table") == '1\n'
+    node.query("DROP TABLE test_table")
+
+def test_executable_storage_input(started_cluster):
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query("CREATE TABLE test_table (value String) ENGINE=Executable('test_no_input.sh', 'TabSeparated', (SELECT 1))")
+    assert node.query("SELECT * FROM test_table") == '1\n'
+    node.query("DROP TABLE test_table")
