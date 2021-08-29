@@ -5,9 +5,6 @@
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Storages/StorageExecutable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -45,26 +42,27 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
     for (size_t i = 0; i <= 2; ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
-    file_path = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    auto scipt_name_with_arguments_value = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+
+    std::vector<String> script_name_with_arguments;
+    boost::split(script_name_with_arguments, scipt_name_with_arguments_value, [](char c){ return c == ' '; });
+
+    script_name = script_name_with_arguments[0];
+    script_name_with_arguments.erase(script_name_with_arguments.begin());
+    arguments = std::move(script_name_with_arguments);
     format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
     for (size_t i = 3; i < args.size(); ++i)
     {
-        auto query_value = args[i]->as<ASTLiteral &>().value.safeGet<String>();
-
-        ParserSelectWithUnionQuery parser;
-        ASTPtr query = parseQuery(parser, query_value, 1000, 1000);
-
-        if (!query)
+        ASTPtr query = args[i]->children.at(0);
+        if (!query->as<ASTSelectWithUnionQuery>())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Table function '{}' argument is invalid input query {}",
                 getName(),
-                query_value);
+                query->formatForErrorMessage());
 
-        InterpreterSelectWithUnionQuery interpreter(query, context, {});
-        auto input = interpreter.execute().getInputStream();
-        inputs.emplace_back(std::move(input));
+        input_queries.emplace_back(std::move(query));
     }
 }
 
@@ -76,7 +74,7 @@ ColumnsDescription TableFunctionExecutable::getActualTableStructure(ContextPtr c
 StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto storage_id = StorageID(getDatabaseName(), table_name);
-    auto storage = StorageExecutable::create(storage_id, file_path, format, inputs, getActualTableStructure(context), ConstraintsDescription{});
+    auto storage = StorageExecutable::create(storage_id, script_name, arguments, format, input_queries, getActualTableStructure(context), ConstraintsDescription{});
     storage->startup();
     return storage;
 }
