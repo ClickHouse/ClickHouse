@@ -75,12 +75,11 @@ Pipe StorageExecutable::read(
     }
 
     ShellCommand::Config config(script_path);
-
     config.arguments = arguments;
     for (size_t i = 1; i < inputs.size(); ++i)
         config.write_fds.emplace_back(i + 2);
 
-    auto process = ShellCommand::execute(config);
+    auto process = ShellCommand::executeDirect(config);
 
     std::vector<ShellCommandSource::SendDataTask> tasks;
     tasks.reserve(inputs.size());
@@ -88,7 +87,7 @@ Pipe StorageExecutable::read(
     for (size_t i = 0; i < inputs.size(); ++i)
     {
         BlockInputStreamPtr input_stream = inputs[i];
-        WriteBufferFromFile * write_buffer;
+        WriteBufferFromFile * write_buffer = nullptr;
 
         if (i == 0)
         {
