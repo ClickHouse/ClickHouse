@@ -36,6 +36,7 @@ namespace DB
 struct ViewsData
 {
     std::vector<ViewRuntimeData> views;
+    ContextPtr context;
 
     /// In case of exception happened while inserting into main table, it is pushed to pipeline.
     /// Remember the first one, we should keep them after view processing.
@@ -111,6 +112,8 @@ private:
     InputPort & input;
     ViewsDataPtr views_data;
 };
+
+static void logQueryViews(std::vector<ViewRuntimeData> & views, ContextPtr context);
 
 class FinalizingViewsTransform final : public IProcessor
 {
@@ -202,6 +205,9 @@ public:
                 view.setException(std::move(status.exception));
             }
         }
+
+        logQueryViews(views_data->views, views_data->context);
+
         statuses.clear();
     }
 

@@ -5,6 +5,8 @@
 namespace DB
 {
 
+class ThreadStatus;
+
 /// Has one input and one output.
 /// Works similarly to ISimpleTransform, but with much care about exceptions.
 ///
@@ -46,6 +48,20 @@ public:
 
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }
+
+    struct RuntimeData
+    {
+        std::unique_ptr<ThreadStatus> thread_status = nullptr;
+        UInt64 elapsed_ms = 0;
+        std::string additional_exception_message;
+    };
+
+    using RuntimeDataPtr = std::shared_ptr<RuntimeData>;
+
+    void setRuntimeData(RuntimeDataPtr runtime_data_) { runtime_data = std::move(runtime_data_); }
+
+private:
+    RuntimeDataPtr runtime_data;
 };
 
 
