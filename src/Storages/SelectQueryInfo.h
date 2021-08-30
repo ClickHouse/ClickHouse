@@ -163,6 +163,7 @@ struct SelectQueryInfo
     std::optional<ProjectionCandidate> projection;
     bool ignore_projections = false;
     bool is_projection_query = false;
+    bool merge_tree_empty_result = false;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 };
 

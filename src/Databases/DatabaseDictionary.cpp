@@ -52,7 +52,7 @@ DatabaseDictionary::DatabaseDictionary(const String & name_, ContextPtr context_
 {
 }
 
-Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_name)
+Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_name) const
 {
     Tables tables;
     auto load_results = getContext()->getExternalDictionariesLoader().getLoadResults(filter_by_name);
@@ -77,7 +77,7 @@ StoragePtr DatabaseDictionary::tryGetTable(const String & table_name, ContextPtr
     return createStorageDictionary(getDatabaseName(), load_result, getContext());
 }
 
-DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(filter_by_table_name), getDatabaseName());
 }

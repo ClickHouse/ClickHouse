@@ -109,9 +109,10 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 }
 
 
-void DatabaseMaterializedPostgreSQL::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseMaterializedPostgreSQL::loadStoredObjects(
+    ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables)
 {
-    DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
+    DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach, skip_startup_tables);
 
     try
     {
@@ -124,7 +125,6 @@ void DatabaseMaterializedPostgreSQL::loadStoredObjects(ContextMutablePtr local_c
         if (!force_attach)
             throw;
     }
-
 }
 
 
@@ -203,7 +203,7 @@ void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 
 
 DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
-        ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name)
+    ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
 {
     /// Modify context into nested_context and pass query to Atomic database.
     return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);

@@ -34,6 +34,7 @@ The table structure can differ from the original PostgreSQL table structure:
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 -   `schema` — Non-default table schema. Optional.
+-   `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
 ## Implementation Details {#implementation-details}
 
