@@ -57,7 +57,6 @@
 #include <Processors/Sources/SinkToOutputStream.h>
 
 #include <random>
-#include <common/logger_useful.h>
 
 
 namespace ProfileEvents
