@@ -29,13 +29,15 @@ public:
 
     ~ReadBufferFromHDFS() override;
 
-    bool nextImpl() override;
-
     off_t seek(off_t offset_, int whence) override;
 
     off_t getPosition() override;
 
+    void prefetch() override;
+
 private:
+    bool nextImpl() override;
+
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
 };
 }

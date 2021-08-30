@@ -41,22 +41,28 @@ ReadBufferFromS3::ReadBufferFromS3(
 {
 }
 
+void ReadBufferFromS3::prefetch()
+{
+    if (!impl)
+    {
+        impl = initialize();
+    }
+}
+
 bool ReadBufferFromS3::nextImpl()
 {
-    bool next_result = false;
-
     if (impl)
     {
         /// `impl` has been initialized earlier and now we're at the end of the current portion of data.
         impl->position() = position();
-        assert(!impl->hasPendingData());
     }
     else
     {
         /// `impl` is not initialized and we're about to read the first portion of data.
         impl = initialize();
-        next_result = impl->hasPendingData();
     }
+
+    bool next_result = impl->hasPendingData();
 
     auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
     for (size_t attempt = 0; (attempt < max_single_read_retries) && !next_result; ++attempt)
@@ -64,7 +70,7 @@ bool ReadBufferFromS3::nextImpl()
         Stopwatch watch;
         try
         {
-            /// Try to read a next portion of data.
+            /// Try to read next portion of data.
             next_result = impl->next();
             watch.stop();
             ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());

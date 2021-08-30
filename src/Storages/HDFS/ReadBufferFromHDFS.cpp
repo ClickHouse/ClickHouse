@@ -61,8 +61,12 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         hdfsCloseFile(fs.get(), fin);
     }
 
-    void initialize() const
+    void initialize()
     {
+        if (initialized)
+            return;
+        initialized = true;
+
         if (!offset)
             return;
 
@@ -71,13 +75,14 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
     }
 
+    void prefetch() override
+    {
+        initialize();
+    }
+
     bool nextImpl() override
     {
-        if (!initialized)
-        {
-            initialize();
-            initialized = true;
-        }
+        initialize();
 
         int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), internal_buffer.size());
         if (bytes_read < 0)
@@ -124,6 +129,12 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
     : SeekableReadBuffer(nullptr, 0)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_))
 {
+}
+
+
+void ReadBufferFromHDFS::prefetch()
+{
+    impl->prefetch();
 }
 
 

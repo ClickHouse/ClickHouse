@@ -37,6 +37,8 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
 
+    bool nextImpl() override;
+
 public:
     explicit ReadBufferFromS3(
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
@@ -45,7 +47,7 @@ public:
         UInt64 max_single_read_retries_,
         size_t buffer_size_);
 
-    bool nextImpl() override;
+    void prefetch() override;
 
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;

@@ -29,6 +29,8 @@ public:
 
     virtual std::unique_ptr<T> createReadBuffer(const String & path) = 0;
 
+    void prefetch() override;
+
 protected:
     IDiskRemote::Metadata metadata;
 

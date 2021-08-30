@@ -66,7 +66,7 @@ template<typename T>
 std::unique_ptr<T> ReadIndirectBufferFromRemoteFS<T>::initialize()
 {
     size_t offset = absolute_position;
-    for (size_t i = 0; i < metadata.remote_fs_objects.size(); ++i)
+    for (size_t i = 0, num_objects = metadata.remote_fs_objects.size(); i < num_objects; ++i)
     {
         current_buf_idx = i;
         const auto & [file_path, size] = metadata.remote_fs_objects[i];
@@ -79,6 +79,16 @@ std::unique_ptr<T> ReadIndirectBufferFromRemoteFS<T>::initialize()
         offset -= size;
     }
     return nullptr;
+}
+
+
+template<typename T>
+void ReadIndirectBufferFromRemoteFS<T>::prefetch()
+{
+    if (!current_buf)
+        current_buf = initialize();
+    if (current_buf)
+        current_buf->prefetch();
 }
 
 
