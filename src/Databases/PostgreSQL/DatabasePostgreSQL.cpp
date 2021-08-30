@@ -88,7 +88,7 @@ bool DatabasePostgreSQL::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */) const
+DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */)
 {
     std::lock_guard<std::mutex> lock(mutex);
 

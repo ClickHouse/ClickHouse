@@ -129,7 +129,6 @@ namespace ErrorCodes
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int TOO_DEEP_RECURSION;
-    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -774,50 +773,31 @@ private:
                       << connection_parameters.host << ":" << connection_parameters.port
                       << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
 
+        connection = std::make_unique<Connection>(
+            connection_parameters.host,
+            connection_parameters.port,
+            connection_parameters.default_database,
+            connection_parameters.user,
+            connection_parameters.password,
+            "", /* cluster */
+            "", /* cluster_secret */
+            "client",
+            connection_parameters.compression,
+            connection_parameters.security);
+
         String server_name;
         UInt64 server_version_major = 0;
         UInt64 server_version_minor = 0;
         UInt64 server_version_patch = 0;
 
-        try
+        if (max_client_network_bandwidth)
         {
-            connection = std::make_unique<Connection>(
-                connection_parameters.host,
-                connection_parameters.port,
-                connection_parameters.default_database,
-                connection_parameters.user,
-                connection_parameters.password,
-                "", /* cluster */
-                "", /* cluster_secret */
-                "client",
-                connection_parameters.compression,
-                connection_parameters.security);
-
-            if (max_client_network_bandwidth)
-            {
-                ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
-                connection->setThrottler(throttler);
-            }
-
-            connection->getServerVersion(
-                connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
+            connection->setThrottler(throttler);
         }
-        catch (const Exception & e)
-        {
-            /// It is typical when users install ClickHouse, type some password and instantly forget it.
-            if ((connection_parameters.user.empty() || connection_parameters.user == "default")
-                && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
-            {
-                std::cerr << std::endl
-                    << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
-                    << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
-                    << "and deleting this file will reset the password." << std::endl
-                    << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
-                    << std::endl;
-            }
 
-            throw;
-        }
+        connection->getServerVersion(
+            connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 

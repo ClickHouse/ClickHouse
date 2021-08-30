@@ -279,7 +279,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr global_context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
@@ -289,15 +289,17 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
-        if (created_from_ddl && global_context->getApplicationType() != Context::ApplicationType::LOCAL)
+        if (created_from_ddl && context->getApplicationType() != Context::ApplicationType::LOCAL)
             throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable pool dictionary source are not allowed to be created from DDL query");
 
-        ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+        auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
         /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
          *  so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
          */
-        context->setSetting("input_format_parallel_parsing", false);
+        auto settings_no_parallel_parsing = context_local_copy->getSettings();
+        settings_no_parallel_parsing.input_format_parallel_parsing = false;
+        context_local_copy->setSettings(settings_no_parallel_parsing);
 
         String settings_config_prefix = config_prefix + ".executable_pool";
 
@@ -317,7 +319,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
         };
 
-        return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, context);
+        return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, context_local_copy);
     };
 
     factory.registerSource("executable_pool", create_table_source);

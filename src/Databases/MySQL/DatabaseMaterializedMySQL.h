@@ -61,7 +61,7 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context_) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) override;
 
     void assertCalledFromSyncThreadOrDrop(const char * method) const;
 

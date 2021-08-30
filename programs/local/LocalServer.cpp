@@ -12,8 +12,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/UserDefinedObjectsLoader.h>
-#include <Interpreters/Session.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -271,9 +269,6 @@ try
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
-    /// We load temporary database first, because projections need it.
-    DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
-
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
       * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
@@ -290,12 +285,6 @@ try
 
         /// Lock path directory before read
         status.emplace(path + "status", StatusFile::write_full_info);
-
-        fs::create_directories(fs::path(path) / "user_defined/");
-        LOG_DEBUG(log, "Loading user defined objects from {}", path);
-        Poco::File(path + "user_defined/").createDirectories();
-        UserDefinedObjectsLoader::instance().loadObjects(global_context);
-        LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         fs::create_directories(fs::path(path) / "data/");
@@ -385,13 +374,14 @@ void LocalServer::processQueries()
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
-    /// Authenticate and create a context to execute queries.
-    Session session{global_context, ClientInfo::Interface::LOCAL};
-    session.authenticate("default", "", {});
+    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
+    /// so we can't reuse it safely as a query context and need a copy here
+    auto context = Context::createCopy(global_context);
 
-    /// Use the same context for all queries.
-    auto context = session.makeQueryContext();
-    context->makeSessionContext(); /// initial_create_query requires a session context to be set.
+    context->makeSessionContext();
+    context->makeQueryContext();
+
+    context->authenticate("default", "", Poco::Net::SocketAddress{});
     context->setCurrentQueryId("");
     applyCmdSettings(context);
 

@@ -267,4 +267,3 @@
 01428_h3_range_check
 01442_h3kring_range_check
 01906_h3_to_geo
-01944_insert_partition_by
