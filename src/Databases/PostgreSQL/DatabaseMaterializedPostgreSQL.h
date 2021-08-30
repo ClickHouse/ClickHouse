@@ -46,7 +46,7 @@ public:
     void loadStoredObjects(ContextMutablePtr, bool, bool force_attach) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(
-            ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
+            ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) override;
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 

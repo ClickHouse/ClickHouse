@@ -14,7 +14,6 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
-#include <DataStreams/SquashingBlockInputStream.h>
 
 namespace DB
 {
@@ -24,7 +23,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int ILLEGAL_PROJECTION;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 };
 
 const char * ProjectionDescription::typeToString(Type type)
@@ -193,28 +191,6 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
 {
     *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
-
-
-Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
-{
-    auto in = InterpreterSelectQuery(
-                  query_ast,
-                  context,
-                  Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
-                  SelectQueryOptions{
-                      type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
-                                                                  : QueryProcessingStage::WithMergeableState})
-                  .execute()
-                  .getInputStream();
-    in = std::make_shared<SquashingBlockInputStream>(in, block.rows(), 0);
-    in->readPrefix();
-    auto ret = in->read();
-    if (in->read())
-        throw Exception("Projection cannot increase the number of rows in a block", ErrorCodes::LOGICAL_ERROR);
-    in->readSuffix();
-    return ret;
-}
-
 
 String ProjectionsDescription::toString() const
 {
