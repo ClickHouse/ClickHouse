@@ -66,21 +66,13 @@ See `tests/integration/README.md` on how to run these tests.
 
 Note that integration of ClickHouse with third-party drivers is not tested. Also, we currently do not have integration tests with our JDBC and ODBC drivers.
 
-## Модульные тесты {#unit-tests}
+## Unit Tests {#unit-tests}
 
-Модульные тесты полезны, когда вы хотите протестировать не ClickHouse в целом, а отдельную изолированную библиотеку или класс. Вы можете включить или отключить выполнение тестов при сборке с помощью опции CMake `ENABLE_TESTS`. Модульные тесты (как и другие тестовые программы) расположены в подкаталогах `tests` по всему репозиторию.
+Unit tests are useful when you want to test not the ClickHouse as a whole, but a single isolated library or class. You can enable or disable build of tests with `ENABLE_TESTS` CMake option. Unit tests (and other test programs) are located in `tests` subdirectories across the code. To run unit tests, type `ninja test`. Some tests use `gtest`, but some are just programs that return non-zero exit code on test failure.
 
-Чтобы запустить модульные тесты введите:
+It’s not necessary to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
 
-```bash
-ninja test
-```
-
-Некоторые тесты используют `gtest`, но некоторые из них — это просто программы, которые возвращают ненулевой код выхода при сбое теста.
-
-Нет необходимости в модульных тестах, если код уже охвачен функциональными тестами (ведь функциональные тесты обычно намного проще в использовании).
-
-Вы можете запускать отдельные проверки `gtest`, вызвав исполняемый файл напрямую, например:
+You can run individual gtest checks by calling the executable directly, for example:
 
 ```bash
 $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
