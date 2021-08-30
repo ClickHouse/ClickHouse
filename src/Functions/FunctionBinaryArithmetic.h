@@ -1106,6 +1106,9 @@ public:
 
     bool useDefaultImplementationForNulls() const override
     {
+        /// We shouldn't use default implementation for nulls for the case when operation is divide,
+        /// intDiv or modulo and denominator is Nullable(Something), because it may cause division
+        /// by zero error (when value is Null we store default value 0 in nested column).
         return !division_by_nullable;
     }
 
@@ -1593,6 +1596,8 @@ public:
         const auto & left_argument = arguments[0];
         const auto & right_argument = arguments[1];
 
+        /// Process special case when operation is divide, intDiv or modulo and denominator
+        /// is Nullable(Something) to prevent division by zero error.
         if (division_by_nullable && !right_nullmap)
         {
             assert(right_argument.type->isNullable());
@@ -1600,8 +1605,6 @@ public:
             bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(*right_argument.column);
-
-            assert(nullable_column);
 
             const auto & null_bytemap = nullable_column->getNullMapData();
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
@@ -1915,7 +1918,9 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        bool division_by_nullable = arguments[1].type->isNullable()
+        /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
+        /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
+        bool division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
             && (IsOperation<Op>::div_int || IsOperation<Op>::modulo
                 || (IsOperation<Op>::div_floating
                     && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
