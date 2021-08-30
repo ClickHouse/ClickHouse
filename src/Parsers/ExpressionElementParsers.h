@@ -171,6 +171,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+// Allows to make queries like SELECT SUM(<expr>) FILTER(WHERE <cond>) FROM ...
+class ParserFilterClause : public IParserBase
+{
+    const char * getName() const override { return "filter"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 // Window reference (the thing that goes after OVER) for window function.
 // Can be either window name or window definition.
 class ParserWindowReference : public IParserBase
