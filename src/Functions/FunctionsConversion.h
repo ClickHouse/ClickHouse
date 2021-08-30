@@ -116,7 +116,7 @@ struct ConvertDefaultBehaviorTag {};
 struct ConvertReturnNullOnErrorTag {};
 
 template <typename FromType>
-static inline NO_SANITIZE_UNDEFINED bool isLtZero(const FromType & from)
+static inline NO_SANITIZE_UNDEFINED bool isNegative(const FromType & from)
 {
     return from < 0;
 }
@@ -277,7 +277,7 @@ struct ConvertImpl
                         {
                             if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDateOrDateTime<ToDataType>)
                             {
-                                if (isLtZero(vec_from[i]))
+                                if (isNegative(vec_from[i]))
                                 {
                                     vec_to[i] = 0;
 
@@ -601,7 +601,54 @@ struct ToDateTime64TransformFloat
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
+template <typename FromDataType, typename ToDataType, typename FromType>
+static bool toDateTypeOrDateTimeTypeIsOverflow(const FromType & from, const DateLUTImpl & time_zone)
+{
+    if constexpr (std::is_same_v<ToDataType, DataTypeDate> &&
+    (std::is_same_v<FromDataType, DataTypeInt32>
+    || std::is_same_v<FromDataType, DataTypeInt64>
+    || std::is_same_v<FromDataType, DataTypeFloat32>
+    || std::is_same_v<FromDataType, DataTypeFloat64>))
+    {
+        return static_cast<bool>(from < 0 || from > DATE_LUT_MAX_DAY_NUM);
+    }
+    else if constexpr (std::is_same_v<ToDataType, DataTypeDate> &&
+    (std::is_same_v<FromDataType, DataTypeInt8>
+    || std::is_same_v<FromDataType, DataTypeInt16>))
+    {
+        return static_cast<bool>(from < 0);
+    }
+    else if constexpr (std::is_same_v<ToDataType, DataTypeDate32> &&
+    (std::is_same_v<FromDataType, DataTypeUInt32>
+    ||std::is_same_v<FromDataType, DataTypeUInt64>))
+    {
+        return static_cast<bool>(from > DATE_LUT_MAX_EXTEND_DAY_NUM);
+    }
+    else if constexpr (std::is_same_v<ToDataType, DataTypeDate32> &&
+    (std::is_same_v<FromDataType, DataTypeInt32>
+    || std::is_same_v<FromDataType, DataTypeInt64>
+    || std::is_same_v<FromDataType, DataTypeFloat32>
+    || std::is_same_v<FromDataType, DataTypeFloat64>))
+    {
+        static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch());
+        return static_cast<bool>(from < daynum_min_offset || from > DATE_LUT_MAX_EXTEND_DAY_NUM);
+    }
+    else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> &&
+    (std::is_same_v<FromDataType, DataTypeInt8>
+    || std::is_same_v<FromDataType, DataTypeInt16>
+    || std::is_same_v<FromDataType, DataTypeInt32>))
+    {
+        return static_cast<bool>(from < 0);
+    }
+    else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> &&
+    (std::is_same_v<FromDataType, DataTypeInt64>
+    || std::is_same_v<FromDataType, DataTypeFloat32>
+    || std::is_same_v<FromDataType, DataTypeFloat64>))
+    {
+        return static_cast<bool>(from < 0);
+    }
 
+}
 template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDateTime64, Name>
     : DateTimeTransformImpl<DataTypeInt8, DataTypeDateTime64, ToDateTime64TransformSigned<Int8>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDateTime64, Name>
@@ -1916,6 +1963,7 @@ public:
 
         if constexpr (exception_mode == ConvertExceptionMode::Null)
         {
+            if (!(std::is_same_v<ToDataType, DataTypeDate32> && isInteger(arguments[0].type)))
                 res = std::make_shared<DataTypeNullable>(res);
         }
 
@@ -1946,10 +1994,19 @@ public:
                 using Types = std::decay_t<decltype(types)>;
                 using FromDataType = typename Types::LeftType;
 
-                if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDateOrDateTime<ConvertToDataType>)
+                if constexpr (!IsDataTypeNumber<FromDataType>)
+                    return false;
+
+                if constexpr (std::is_same_v<ConvertToDataType, DataTypeDate32> && IsDataTypeNumber<FromDataType>)
+                {
+                    result_column = ConvertImpl<FromDataType, ConvertToDataType, Name, ConvertDefaultBehaviorTag>::execute(
+                        arguments, result_type, input_rows_count);
+                    return true;
+                }
+                else if constexpr (IsDataTypeDateOrDateTime<ConvertToDataType> && IsDataTypeNumber<FromDataType>)
                 {
                     if constexpr (exception_mode == ConvertExceptionMode::Null)
-                        result_column = ConvertImpl<FromDataType, ConvertToDataType, Name, ConvertDefaultBehaviorTag()>::execute(
+                    result_column = ConvertImpl<FromDataType, ConvertToDataType, Name, ConvertDefaultBehaviorTag()>::execute(
                             arguments, result_type, input_rows_count, DateOrNullConvertStrategyAdditions());
                     else
                         result_column =  ConvertImpl<FromDataType, ConvertToDataType, Name, ConvertDefaultBehaviorTag()>::execute(
@@ -2248,6 +2305,7 @@ using FunctionToInt128 = FunctionConvert<DataTypeInt128, NameToInt128, ToNumberM
 using FunctionToInt256 = FunctionConvert<DataTypeInt256, NameToInt256, ToNumberMonotonicity<Int256>>;
 using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, ToNumberMonotonicity<Float32>>;
 using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, ToNumberMonotonicity<Float64>>;
+
 using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToDateMonotonicity>;
 using FunctionToDate32 = FunctionConvert<DataTypeDate32, NameToDate32, ToDateMonotonicity>;
 using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity>;
