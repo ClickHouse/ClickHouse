@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <experimental/type_traits>
 #include <type_traits>
 
@@ -400,12 +401,12 @@ public:
         if (if_argument_pos >= 0)
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
-            UInt8 final_flags[batch_size];
-            memcpy(final_flags, assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data(), batch_size * sizeof(UInt8));
+            const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+            auto final_flags = std::make_unique<UInt8[]>(batch_size);
             for (size_t i = 0; i < batch_size; ++i)
-                final_flags[i] = !null_map[i] && final_flags[i];
+                final_flags[i] = !null_map[i] && if_flags[i];
 
-            this->data(place).addManyConditional(column.getData().data(), final_flags, batch_size);
+            this->data(place).addManyConditional(column.getData().data(), final_flags.get(), batch_size);
         }
         else
         {
