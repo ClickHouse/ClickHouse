@@ -16,6 +16,7 @@ SRCS(
     DiskMemory.cpp
     DiskRestartProxy.cpp
     DiskSelector.cpp
+    DiskWebServer.cpp
     IDisk.cpp
     IDiskRemote.cpp
     IVolume.cpp
