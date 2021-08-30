@@ -38,7 +38,7 @@ struct BitShiftRightImpl
         else
         {
             UInt8 word_size = 8;
-            if (b >= static_cast<B>((end - pos) * word_size))
+            if (b >= static_cast<B>((end - pos) * word_size) || b < 0)
             {
                 // insert default value
                 out_vec.push_back(0);
