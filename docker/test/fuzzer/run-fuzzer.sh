@@ -76,7 +76,7 @@ function filter_exists_and_template
     local path
     for path in "$@"; do
         if [ -e "$path" ]; then
-            echo "$path" | sed -n 's/\.sql\.j2$/.gen.sql/'
+            echo "$path" | sed 's/\.sql\.j2$/.gen.sql/'
         else
             echo "'$path' does not exists" >&2
         fi
