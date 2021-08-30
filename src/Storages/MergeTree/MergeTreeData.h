@@ -1143,6 +1143,21 @@ private:
 
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
+
+    void loadDataPartsFromDisk(
+        DataPartsVector & broken_parts_to_detach,
+        DataPartsVector & duplicate_parts_to_remove,
+        ThreadPool & pool,
+        size_t num_parts,
+        std::queue<std::vector<std::pair<String, DiskPtr>>> & parts_queue,
+        bool skip_sanity_checks,
+        const MergeTreeSettingsPtr & settings);
+
+    void loadDataPartsFromWAL(
+        DataPartsVector & broken_parts_to_detach,
+        DataPartsVector & duplicate_parts_to_remove,
+        MutableDataPartsVector & parts_from_wal,
+        DataPartsLock & part_lock);
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
