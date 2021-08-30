@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
+#include "Core/Protocol.h"
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/IStorage.h>
@@ -388,6 +389,9 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
             /// Pass logs from remote server to client
             if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
                 log_queue->pushBlock(std::move(packet.block));
+            break;
+
+        case Protocol::Server::ProfileEvents:
             break;
 
         default:
