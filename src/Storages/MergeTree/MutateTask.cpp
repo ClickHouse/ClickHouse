@@ -784,9 +784,9 @@ void PartMergerWriter::prepare()
         // Otherwise we split the materialization into multiple stages similar to the process of
         // INSERT SELECT query.
         if (ctx->new_data_part->getType() == MergeTreeDataPartType::IN_MEMORY)
-            ctx->projection_squashes.emplace_back(0, 0);
+            projection_squashes.emplace_back(0, 0);
         else
-            ctx->projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
+            projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
     }
 }
 
@@ -803,10 +803,10 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
             const auto & projection = ctx->projections_to_build[i]->projection;
-            auto projection_block = ctx->projection_squashes[i].add(projection.calculate(block, ctx->context));
+            auto projection_block = projection_squashes[i].add(projection.calculate(block, ctx->context));
             if (projection_block)
-                ctx->projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
-                    data, log, projection_block, projection, new_data_part.get(), ++block_num));
+                projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
+                    *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
         }
 
         (*ctx->mutate_entry)->rows_written += block.rows();
