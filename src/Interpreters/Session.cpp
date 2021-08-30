@@ -309,7 +309,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     {
         user_id = global_context->getAccessControlManager().login(credentials_, address.host());
     }
-    catch(const Exception & e)
+    catch (const Exception & e)
     {
         if (auto session_log = getSessionLog())
             session_log->addLoginFailure(session_id, *prepared_client_info, credentials_.getUserName(), e);

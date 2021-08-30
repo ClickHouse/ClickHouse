@@ -54,10 +54,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DNSCacheUpdater.h>
-#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Access/AccessControlManager.h>
