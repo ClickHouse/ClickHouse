@@ -51,9 +51,6 @@ class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
-class SinkToStorage;
-using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
-
 class QueryPipeline;
 using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
@@ -264,7 +261,7 @@ public:
      *
      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
      */
-    virtual Pipe watch(
+    virtual BlockInputStreams watch(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,
@@ -329,7 +326,7 @@ public:
       * changed during lifetime of the returned streams, but the snapshot is
       * guaranteed to be immutable.
       */
-    virtual SinkToStoragePtr write(
+    virtual BlockOutputStreamPtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/)

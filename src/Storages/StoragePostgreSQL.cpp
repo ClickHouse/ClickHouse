@@ -1,7 +1,7 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <DataStreams/PostgreSQLSource.h>
+#include <DataStreams/PostgreSQLBlockInputStream.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -27,7 +27,6 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Common/parseRemoteDescription.h>
 #include <Processors/Pipe.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -88,31 +87,30 @@ Pipe StoragePostgreSQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size_));
+    return Pipe(std::make_shared<SourceFromInputStream>(
+            std::make_shared<PostgreSQLBlockInputStream<>>(pool->get(), query, sample_block, max_block_size_)));
 }
 
 
-class PostgreSQLSink : public SinkToStorage
+class PostgreSQLBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit PostgreSQLSink(
+    explicit PostgreSQLBlockOutputStream(
         const StorageMetadataPtr & metadata_snapshot_,
         postgres::ConnectionHolderPtr connection_holder_,
         const String & remote_table_name_,
         const String & remote_table_schema_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , metadata_snapshot(metadata_snapshot_)
+        : metadata_snapshot(metadata_snapshot_)
         , connection_holder(std::move(connection_holder_))
         , remote_table_name(remote_table_name_)
         , remote_table_schema(remote_table_schema_)
     {
     }
 
-    String getName() const override { return "PostgreSQLSink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override
+    void write(const Block & block) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
         if (!inserter)
             inserter = std::make_unique<StreamTo>(connection_holder->get(),
                                                   remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
@@ -155,7 +153,7 @@ public:
         }
     }
 
-    void onFinish() override
+    void writeSuffix() override
     {
         if (inserter)
             inserter->complete();
@@ -234,10 +232,6 @@ public:
         else if (which.isFloat64())                      nested_column = ColumnFloat64::create();
         else if (which.isDate())                         nested_column = ColumnUInt16::create();
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
-        else if (which.isDateTime64())
-        {
-            nested_column = ColumnDecimal<DateTime64>::create(0, 6);
-        }
         else if (which.isDecimal32())
         {
             const auto & type = typeid_cast<const DataTypeDecimal<Decimal32> *>(nested.get());
@@ -295,10 +289,10 @@ private:
 };
 
 
-SinkToStoragePtr StoragePostgreSQL::write(
+BlockOutputStreamPtr StoragePostgreSQL::write(
         const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
 {
-    return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema);
+    return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema);
 }
 
 

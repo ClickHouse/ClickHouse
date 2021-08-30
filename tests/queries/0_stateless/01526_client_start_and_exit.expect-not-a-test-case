@@ -4,7 +4,7 @@ log_user 1
 set timeout 5
 match_max 100000
 
-spawn bash -c "$env(CLICKHOUSE_CLIENT_BINARY) --no-warnings $env(CLICKHOUSE_CLIENT_OPT)"
+spawn bash -c "$env(CLICKHOUSE_CLIENT_BINARY) $env(CLICKHOUSE_CLIENT_OPT)"
 expect ":) "
 send -- "\4"
 expect eof

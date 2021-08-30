@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Parsers/ASTDatabaseOrNone.h>
 #include <Access/Authentication.h>
 #include <Access/AllowedClientHosts.h>
 
@@ -11,14 +10,12 @@ namespace DB
 {
 class ASTUserNamesWithHost;
 class ASTRolesOrUsersSet;
-class ASTDatabaseOrNone;
 class ASTSettingsProfileElements;
 
 /** CREATE USER [IF NOT EXISTS | OR REPLACE] name
   *     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash}] BY {'password'|'hash'}}|{WITH ldap SERVER 'server_name'}|{WITH kerberos [REALM 'realm']}]
   *     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...]]
-  *     [DEFAULT DATABASE database | NONE]
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   *     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
   *
@@ -27,7 +24,6 @@ class ASTSettingsProfileElements;
   *     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash}] BY {'password'|'hash'}}|{WITH ldap SERVER 'server_name'}|{WITH kerberos [REALM 'realm']}]
   *     [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
-  *     [DEFAULT DATABASE database | NONE]
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   *     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
   */
@@ -54,8 +50,6 @@ public:
     std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
     std::shared_ptr<ASTRolesOrUsersSet> grantees;
-
-    std::shared_ptr<ASTDatabaseOrNone> default_database;
 
     String getID(char) const override;
     ASTPtr clone() const override;

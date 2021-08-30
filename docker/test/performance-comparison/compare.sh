@@ -628,9 +628,6 @@ cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
 
 clickhouse-local --query "
--- We use decimals specifically to get fixed-point, fixed-width formatting.
-set output_format_decimal_trailing_zeros = 1;
-
 create view query_display_names as select * from
     file('analyze/query-display-names.tsv', TSV,
         'test text, query_index int, query_display_name text')
@@ -978,9 +975,6 @@ for version in {right,left}
 do
     rm -rf data
     clickhouse-local --query "
--- We use decimals specifically to get fixed-point, fixed-width formatting.
-set output_format_decimal_trailing_zeros = 1;
-
 create view query_profiles as
     with 0 as left, 1 as right
     select * from file('analyze/query-profiles.tsv', TSV,
@@ -1176,9 +1170,6 @@ rm -rf metrics ||:
 mkdir metrics
 
 clickhouse-local --query "
--- We use decimals specifically to get fixed-point, fixed-width formatting.
-set output_format_decimal_trailing_zeros = 1;
-
 create view right_async_metric_log as
     select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes,
         '$(cat right-async-metric-log.tsv.columns)')
@@ -1205,7 +1196,7 @@ create table changes engine File(TSV, 'metrics/changes.tsv') as
             if(left > right, left / right, right / left) times_diff
         from metrics
         group by metric
-        having abs(diff) > 0.05 and isFinite(diff) and isFinite(times_diff)
+        having abs(diff) > 0.05 and isFinite(diff)
     )
     order by diff desc
     ;

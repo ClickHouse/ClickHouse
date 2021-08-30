@@ -58,10 +58,6 @@ def sensitive_tables(self, node=None):
             output = node.query("SELECT count(*) FROM system.query_thread_log", settings = [("user",user_name)]).output
             assert output == 0, error()
 
-        with And("I select from query_views_log"):
-            output = node.query("SELECT count(*) FROM system.query_views_log", settings = [("user",user_name)]).output
-            assert output == 0, error()
-
         with And("I select from clusters"):
             output = node.query("SELECT count(*) FROM system.clusters", settings = [("user",user_name)]).output
             assert output == 0, error()

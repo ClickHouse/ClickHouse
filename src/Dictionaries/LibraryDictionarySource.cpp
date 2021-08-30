@@ -108,21 +108,21 @@ bool LibraryDictionarySource::supportsSelectiveLoad() const
 }
 
 
-Pipe LibraryDictionarySource::loadAll()
+BlockInputStreamPtr LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
     return bridge_helper->loadAll();
 }
 
 
-Pipe LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
     return bridge_helper->loadIds(ids);
 }
 
 
-Pipe LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);

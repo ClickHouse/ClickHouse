@@ -102,7 +102,6 @@ SRCS(
     ZooKeeper/ZooKeeperNodeCache.cpp
     checkStackSize.cpp
     clearPasswordFromCommandLine.cpp
-    clickhouse_malloc.cpp
     createHardLink.cpp
     escapeForFileName.cpp
     filesystemHelpers.cpp
@@ -117,7 +116,6 @@ SRCS(
     hex.cpp
     isLocalAddress.cpp
     malloc.cpp
-    memory.cpp
     new_delete.cpp
     parseAddress.cpp
     parseGlobs.cpp
