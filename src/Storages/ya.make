@@ -213,6 +213,7 @@ SRCS(
     System/StorageSystemTables.cpp
     System/StorageSystemUserDirectories.cpp
     System/StorageSystemUsers.cpp
+    System/StorageSystemViews.cpp
     System/StorageSystemWarnings.cpp
     System/StorageSystemZeros.cpp
     System/StorageSystemZooKeeper.cpp
@@ -220,6 +221,8 @@ SRCS(
     TTLDescription.cpp
     VirtualColumnUtils.cpp
     extractKeyExpressionList.cpp
+    fuzzers/columns_description_fuzzer.cpp
+    fuzzers/mergetree_checksum_fuzzer.cpp
     getStructureOfRemoteTable.cpp
     registerStorages.cpp
     transformQueryForExternalDatabase.cpp
