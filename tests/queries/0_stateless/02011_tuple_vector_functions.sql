@@ -8,6 +8,8 @@ SELECT tupleDivide((5, 8, 11), (-2, 2, 4));
 SELECT tuple(1) + tuple(2);
 
 SELECT tupleNegate((1, 0, 3.5));
+SELECT -(1, 2, 3);
+SELECT -tuple(1);
 
 SELECT tupleMultiplyByNumber((1, 2, 3), 0.5);
 SELECT tupleDivideByNumber((1, 2.5, 3), 0.5);
