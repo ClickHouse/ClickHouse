@@ -222,13 +222,13 @@ For integer arguments, it prints bin digits from the most significant to least s
 
 Values of type [Date](../../sql-reference/data-types/date.md) and [DateTime](../../sql-reference/data-types/datetime.md) are formatted as corresponding integers (the number of days since Epoch for `Date` and the value of Unix Timestamp for `DateTime`).
 
-For `String` and `FixedString`, all bytes are simply encoded as eight binary numbers. Zero bytes are not omitted.
+For [String](../../sql-reference/data-types/string.md) and [FixedString](../../sql-reference/data-types/fixedstring.md), all bytes are simply encoded as eight binary numbers. Zero bytes are not omitted.
 
-Values of `floating-point` and `Decimal` types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
+Values of [Float](../../sql-reference/data-types/float) and [Decimal](../../sql-reference/data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
 
 **Arguments**
 
--   `arg` — A value to convert to binary. [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md), or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `arg` — A value to convert to binary. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md), or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
