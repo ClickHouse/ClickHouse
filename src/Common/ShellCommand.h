@@ -68,7 +68,6 @@ public:
 
     /// Run the command using /bin/sh -c.
     /// If terminate_in_destructor is true, send terminate signal in destructor and don't wait process.
-    /// Config arguments are not used in execute.
     static std::unique_ptr<ShellCommand> execute(const Config & config);
 
     /// Run the executable with the specified arguments. `arguments` - without argv[0].
