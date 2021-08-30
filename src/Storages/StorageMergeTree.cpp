@@ -82,8 +82,8 @@ StorageMergeTree::StorageMergeTree(
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, getContext()->getSettingsRef().background_pool_size)
-    , background_executor(*this, getContext())
-    , background_moves_executor(*this, getContext())
+    , background_executor(*this, BackgroundJobAssignee::Type::DataProcessing, getContext())
+    , background_moves_executor(*this, BackgroundJobAssignee::Type::Moving, getContext())
 
 {
     loadDataParts(has_force_restore_data_flag);
@@ -414,7 +414,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
 
         LOG_INFO(log, "Added mutation: {}", mutation_file_name);
     }
-    background_executor.triggerTask();
+    background_executor.trigger();
     return version;
 }
 
@@ -640,7 +640,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     }
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
-    background_executor.triggerTask();
+    background_executor.trigger();
 
     return CancellationCode::CancelSent;
 }
@@ -1044,7 +1044,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & executor) //-V657
+bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobAssignee & executor) //-V657
 {
     if (shutdown_called)
         return false;
@@ -1076,42 +1076,46 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
 
     if (merge_entry)
     {
-        executor.execute({[this, metadata_snapshot, merge_entry, share_lock] () mutable
-        {
-            return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
-        }, PoolType::MERGE_MUTATE});
+        executor.scheduleMergeMutateTask(LambdaAdapter::create(
+            [this, metadata_snapshot, merge_entry, share_lock] () mutable
+            {
+                return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
+            }, *this));
         return true;
     }
     if (mutate_entry)
     {
-        executor.execute({[this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
-        {
+        executor.scheduleMergeMutateTask(LambdaAdapter::create(
+            [this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
+            {
             return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
-        }, PoolType::MERGE_MUTATE});
+            }, *this));
         return true;
     }
     bool executed = false;
     if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
     {
-        executor.execute({[this, share_lock] ()
-        {
-            clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
-            return true;
-        }, PoolType::MERGE_MUTATE});
+        executor.scheduleMergeMutateTask(LambdaAdapter::create(
+            [this, share_lock] ()
+            {
+                clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
+                return true;
+            }, *this));
         executed = true;
     }
     if (time_after_previous_cleanup_parts.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
     {
-        executor.execute({[this, share_lock] ()
-        {
-            /// All use relative_data_path which changes during rename
-            /// so execute under share lock.
-            clearOldPartsFromFilesystem();
-            clearOldWriteAheadLogs();
-            clearOldMutations();
-            clearEmptyParts();
-            return true;
-        }, PoolType::MERGE_MUTATE});
+        executor.scheduleMergeMutateTask(LambdaAdapter::create(
+            [this, share_lock] ()
+            {
+                /// All use relative_data_path which changes during rename
+                /// so execute under share lock.
+                clearOldPartsFromFilesystem();
+                clearOldWriteAheadLogs();
+                clearOldMutations();
+                clearEmptyParts();
+                return true;
+            }, *this));
         executed = true;
      }
 
@@ -1566,9 +1570,9 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge ||  action_type == ActionLocks::PartsTTLMerge)
-        background_executor.triggerTask();
+        background_executor.trigger();
     else if (action_type == ActionLocks::PartsMove)
-        background_moves_executor.triggerTask();
+        background_moves_executor.trigger();
 }
 
 CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
