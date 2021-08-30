@@ -10,6 +10,7 @@
             <startup_timeout>240000</startup_timeout>
             <!-- we want all logs for complex problems investigation -->
             <reserved_log_items>1000000000000000</reserved_log_items>
+            <snapshot_distance>10000</snapshot_distance>
         </coordination_settings>
 
         <raft_configuration>
