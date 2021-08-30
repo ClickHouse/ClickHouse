@@ -281,11 +281,6 @@ struct StringSource
         return offsets[row_num] - prev_offset - 1;
     }
 
-    size_t getColumnSize() const
-    {
-        return offsets.size();
-    }
-
     Slice getWhole() const
     {
         return {&elements[prev_offset], offsets[row_num] - prev_offset - 1};
@@ -422,7 +417,6 @@ struct FixedStringSource
     const UInt8 * end;
     size_t string_size;
     size_t row_num = 0;
-    size_t column_size = 0;
 
     explicit FixedStringSource(const ColumnFixedString & col)
             : string_size(col.getN())
@@ -430,7 +424,6 @@ struct FixedStringSource
         const auto & chars = col.getChars();
         pos = chars.data();
         end = pos + chars.size();
-        column_size = col.size();
     }
 
     void next()
@@ -457,11 +450,6 @@ struct FixedStringSource
     size_t getElementSize() const
     {
         return string_size;
-    }
-
-    size_t getColumnSize() const
-    {
-        return column_size;
     }
 
     Slice getWhole() const
@@ -767,7 +755,6 @@ struct GenericValueSource : public ValueSourceImpl<GenericValueSource>
 {
     using Slice = GenericValueSlice;
     using SinkType = GenericArraySink;
-    using Column = IColumn;
 
     const IColumn * column;
     size_t total_rows;

@@ -76,7 +76,6 @@ RUN python3 -m pip install \
     pytest \
     pytest-timeout \
     pytest-xdist \
-    pytest-repeat \
     redis \
     tzlocal \
     urllib3 \
