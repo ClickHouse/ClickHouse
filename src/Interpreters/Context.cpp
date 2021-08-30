@@ -14,7 +14,7 @@
 #include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
-#include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -46,7 +46,6 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
-#include <Backups/BackupFactory.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -146,7 +145,7 @@ struct ContextSharedPart
 
 #if USE_NURAFT
     mutable std::mutex keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_storage_dispatcher;
+    mutable std::shared_ptr<KeeperStorageDispatcher> keeper_storage_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -165,8 +164,6 @@ struct ContextSharedPart
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
     mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
-
-    mutable VolumePtr backups_volume;                       /// Volume for all the backups.
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -230,8 +227,6 @@ struct ContextSharedPart
     std::shared_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
-
-    std::map<String, UInt16> server_ports;
 
     bool shutdown_called = false;
 
@@ -523,35 +518,6 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     return shared->tmp_volume;
 }
 
-void Context::setBackupsVolume(const String & path, const String & policy_name)
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-    if (policy_name.empty())
-    {
-        String path_with_separator = path;
-        if (!path_with_separator.ends_with('/'))
-            path_with_separator += '/';
-        auto disk = std::make_shared<DiskLocal>("_backups_default", path_with_separator, 0);
-        shared->backups_volume = std::make_shared<SingleDiskVolume>("_backups_default", disk, 0);
-    }
-    else
-    {
-        StoragePolicyPtr policy = getStoragePolicySelector(lock)->get(policy_name);
-        if (policy->getVolumes().size() != 1)
-             throw Exception("Policy " + policy_name + " is used for backups, such policy should have exactly one volume",
-                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-        shared->backups_volume = policy->getVolume(0);
-    }
-
-    BackupFactory::instance().setBackupsVolume(shared->backups_volume);
-}
-
-VolumePtr Context::getBackupsVolume() const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-    return shared->backups_volume;
-}
-
 void Context::setFlagsPath(const String & path)
 {
     auto lock = getLock();
@@ -625,6 +591,27 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
+
+void Context::authenticate(const String & name, const String & password, const Poco::Net::SocketAddress & address)
+{
+    authenticate(BasicCredentials(name, password), address);
+}
+
+void Context::authenticate(const Credentials & credentials, const Poco::Net::SocketAddress & address)
+{
+    auto authenticated_user_id = getAccessControlManager().login(credentials, address.host());
+
+    client_info.current_user = credentials.getUserName();
+    client_info.current_address = address;
+
+#if defined(ARCADIA_BUILD)
+    /// This is harmful field that is used only in foreign "Arcadia" build.
+    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
+        client_info.current_password = basic_credentials->getPassword();
+#endif
+
+    setUser(authenticated_user_id);
+}
 
 void Context::setUser(const UUID & user_id_)
 {
@@ -1649,7 +1636,7 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
         zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
 }
 
-void Context::initializeKeeperDispatcher() const
+void Context::initializeKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
@@ -1660,14 +1647,14 @@ void Context::initializeKeeperDispatcher() const
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
-        shared->keeper_storage_dispatcher = std::make_shared<KeeperDispatcher>();
+        shared->keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
         shared->keeper_storage_dispatcher->initialize(config, getApplicationType() == ApplicationType::KEEPER);
     }
 #endif
 }
 
 #if USE_NURAFT
-std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
+std::shared_ptr<KeeperStorageDispatcher> & Context::getKeeperStorageDispatcher() const
 {
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
     if (!shared->keeper_storage_dispatcher)
@@ -1677,7 +1664,7 @@ std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
 }
 #endif
 
-void Context::shutdownKeeperDispatcher() const
+void Context::shutdownKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
@@ -1830,20 +1817,6 @@ std::optional<UInt16> Context::getTCPPortSecure() const
     if (config.has("tcp_port_secure"))
         return config.getInt("tcp_port_secure");
     return {};
-}
-
-void Context::registerServerPort(String port_name, UInt16 port)
-{
-    shared->server_ports.emplace(std::move(port_name), port);
-}
-
-UInt16 Context::getServerPort(const String & port_name) const
-{
-    auto it = shared->server_ports.find(port_name);
-    if (it == shared->server_ports.end())
-        throw Exception(ErrorCodes::BAD_GET, "There is no port named {}", port_name);
-    else
-        return it->second;
 }
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const

@@ -203,7 +203,7 @@ void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 
 
 DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
-    ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
+        ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name)
 {
     /// Modify context into nested_context and pass query to Atomic database.
     return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);

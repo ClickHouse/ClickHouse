@@ -62,13 +62,7 @@ public:
     /// static constexpr bool is_parametric = false;
 
     /// Name of data type (examples: UInt64, Array(String)).
-    String getName() const
-    {
-      if (custom_name)
-          return custom_name->getName();
-      else
-          return doGetName();
-    }
+    String getName() const;
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
@@ -111,7 +105,7 @@ public:
     void enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback) const { enumerateStreams(serialization, callback, {}); }
 
 protected:
-    virtual String doGetName() const { return getFamilyName(); }
+    virtual String doGetName() const;
     virtual SerializationPtr doGetDefaultSerialization() const = 0;
 
     DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const;
