@@ -202,11 +202,11 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(auth_failure_reason.data(), auth_failure_reason.length());
 }
 
-void SessionLog::addLoginSuccess(const UUID & session_id, std::optional<String> session_name, const Context & context)
+void SessionLog::addLoginSuccess(const UUID & session_id, std::optional<String> session_name, const Context & login_context)
 {
-    const auto access = context.getAccess();
-    const auto & settings = context.getSettingsRef();
-    const auto & client_info = context.getClientInfo();
+    const auto access = login_context.getAccess();
+    const auto & settings = login_context.getSettingsRef();
+    const auto & client_info = login_context.getClientInfo();
 
     DB::SessionLogElement log_entry(session_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
