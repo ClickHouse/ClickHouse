@@ -404,7 +404,7 @@ public:
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
             auto final_flags = std::make_unique<UInt8[]>(batch_size);
             for (size_t i = 0; i < batch_size; ++i)
-                final_flags[i] = !null_map[i] && if_flags[i];
+                final_flags[i] = (!null_map[i]) & if_flags[i];
 
             this->data(place).addManyConditional(column.getData().data(), final_flags.get(), batch_size);
         }
