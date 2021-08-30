@@ -6,14 +6,9 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
-#include <Interpreters/SystemLog.h>
+#include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
-#include <Interpreters/CrashLog.h>
-#include <Interpreters/MetricLog.h>
-#include <Interpreters/SessionLog.h>
-#include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
