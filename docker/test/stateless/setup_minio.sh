@@ -27,7 +27,7 @@ MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-clickhouse}
 
 ./minio server --address ":11111" ./minio_data &
 
-while ! curl http://localhost:11111
+while ! curl -v --silent http://localhost:11111 2>&1 | grep AccessDenied
 do
   echo "Trying to connect to minio"
   sleep 1
