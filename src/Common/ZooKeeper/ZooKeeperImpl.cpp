@@ -387,6 +387,7 @@ void ZooKeeper::connect(
                 }
 
                 socket.connect(node.address, connection_timeout);
+                socket_address = socket.peerAddress();
 
                 socket.setReceiveTimeout(operation_timeout);
                 socket.setSendTimeout(operation_timeout);
@@ -1255,7 +1256,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
     {
         elem.type = log_type;
         elem.event_time = event_time;
-        elem.address = socket.peerAddress();
+        elem.address = socket_address;
         elem.session_id = session_id;
         maybe_zk_log->add(elem);
     }

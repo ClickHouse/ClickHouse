@@ -156,4 +156,9 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
     });
 }
 
+CompressionCodecPtr getCompressionCodecZSTD(int level)
+{
+    return std::make_shared<CompressionCodecZSTD>(level);
+}
+
 }
