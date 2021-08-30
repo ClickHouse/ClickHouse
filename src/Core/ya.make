@@ -44,7 +44,6 @@ SRCS(
     SettingsQuirks.cpp
     SortDescription.cpp
     UUID.cpp
-    fuzzers/names_and_types_fuzzer.cpp
     iostream_debug_helpers.cpp
 
 )

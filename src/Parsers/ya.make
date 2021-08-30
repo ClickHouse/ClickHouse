@@ -145,9 +145,6 @@ SRCS(
     TokenIterator.cpp
     formatAST.cpp
     formatSettingName.cpp
-    fuzzers/create_parser_fuzzer.cpp
-    fuzzers/lexer_fuzzer.cpp
-    fuzzers/select_parser_fuzzer.cpp
     getInsertQuery.cpp
     iostream_debug_helpers.cpp
     makeASTForLogicalFunction.cpp
