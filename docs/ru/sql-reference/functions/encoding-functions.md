@@ -224,16 +224,13 @@ bin(arg)
 
 Значения типа [Date](../../sql-reference/data-types/date.md) и [DateTime](../../sql-reference/data-types/datetime.md) форматируются как соответствующие целые числа (количество дней с момента unix-эпохи для `Date` и значение Unix Timestamp для `DateTime`).
 
-Для `String` и `FixedString` все байты кодируются как восемь двоичных чисел. Нулевые байты не опущены.
+Для [String](../../sql-reference/data-types/string.md) и [FixedString](../../sql-reference/data-types/fixedstring.md) все байты кодируются как восемь двоичных чисел. Нулевые байты не опущены.
 
-Значения `floating-point` and `Decimal` кодируются как их представление в памяти. Поскольку мы поддерживаем архитектуру `little-endian`, они кодируются от младшего к старшему байту. Нулевые начальные конечные байты не опущены.
-
-
-
+Значения [Float](../../sql-reference/data-types/float) and [Decimal](../../sql-reference/data-types/decimal.md) кодируются как их представление в памяти. Поскольку мы поддерживаем архитектуру `little-endian`, они кодируются от младшего к старшему байту. Нулевые начальные конечные байты не опущены.
 
 **Аргументы**
 
--   `arg` — значение для преобразования в двоичный код. [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
+-   `arg` — значение для преобразования в двоичный код. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Возвращаемое значение**
 
@@ -301,14 +298,14 @@ unbin(arg)
 
 Если вы хотите преобразовать результат в число, вы можете использовать [reverse](../../sql-reference/functions/string-functions.md#reverse)и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) функции.
 
-!!! note "Note"
+!!! note "Примечание"
     Если `unbin` вызывается из клиента `clickhouse-client`, бинарная строка возвращается в кодировке UTF-8.
 
-Поддерживает двоичные цифры `0-1`. Количество двоичных цифр не обязательно должно быть кратно восьми. Если строка аргумента содержит что-либо, кроме двоичных цифр, возвращается некоторый результат, определенный реализацией (ошибки не возникает). Для числового аргумента обратное значение bin(N), функцией unbin() не выполняется.
+Поддерживает двоичные цифры `0-1`. Количество двоичных цифр не обязательно должно быть кратно восьми. Если строка аргумента содержит что-либо, кроме двоичных цифр, возвращается некоторый результат, определенный реализацией (ошибки не возникает). Для числового аргумента обратное значение `bin(N)`, функцией `unbin()` не выполняется.
 
 **Аргументы**
 
--   `arg` — 
+-   `arg` — строка, содержащая любое количество двоичных цифр. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
@@ -346,9 +343,6 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num;
 │  14 │
 └─────┘
 ```
-
-
-
 
 ## UUIDStringToNum(str) {#uuidstringtonumstr}
 
