@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/convertMySQLDataType.h>
-#include <Formats/MySQLSource.h>
+#include <Formats/MySQLBlockInputStream.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
