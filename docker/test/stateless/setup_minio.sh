@@ -1,11 +1,31 @@
 #!/bin/bash
 
-set -e -x -a
+# Usage for local run:
+#
+# ./docker/test/stateless/setup_minio.sh ./tests/
+#
+
+set -e -x -a -u
 
 ls -lha
 
-mkdir -p ./data
-./minio server --address ":11111" ./data &
+mkdir -p ./minio_data
+
+if [ ! -f ./minio ]; then
+  echo 'MinIO binary not found, downloading...'
+
+  BINARY_TYPE=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+  wget "https://dl.min.io/server/minio/release/${BINARY_TYPE}-amd64/minio" \
+    && chmod +x ./minio \
+    && wget "https://dl.min.io/client/mc/release/${BINARY_TYPE}-amd64/mc" \
+    && chmod +x ./mc
+fi
+
+MINIO_ROOT_USER=${MINIO_ROOT_USER:-clickhouse}
+MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-clickhouse}
+
+./minio server --address ":11111" ./minio_data &
 
 while ! curl http://localhost:11111
 do
@@ -26,10 +46,10 @@ sleep 5
 # Upload data to Minio. By default after unpacking all tests will in
 # /usr/share/clickhouse-test/queries
 
-cd /usr/share/clickhouse-test/queries/0_stateless/data_minio
+TEST_PATH=${1:-/usr/share/clickhouse-test}
+MINIO_DATA_PATH=${TEST_PATH}/queries/0_stateless/data_minio
 
-FILES=$(ls .)
-for FILE in $FILES; do
+for FILE in $(ls ${MINIO_DATA_PATH}); do
     echo $FILE;
-    /mc cp $FILE clickminio/test/$FILE;
+    ./mc cp ${MINIO_DATA_PATH}/$FILE clickminio/test/$FILE;
 done
