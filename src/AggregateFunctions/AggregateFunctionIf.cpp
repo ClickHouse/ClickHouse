@@ -2,7 +2,6 @@
 #include <AggregateFunctions/AggregateFunctionIf.h>
 #include "AggregateFunctionNull.h"
 
-
 namespace DB
 {
 
@@ -45,6 +44,29 @@ public:
         return std::make_shared<AggregateFunctionIf>(nested_function, arguments, params);
     }
 };
+
+/** Given an array of flags, checks if it's all zeros
+ *  When the buffer is all zeros, this is slightly faster than doing a memcmp since doesn't require allocating memory
+ *  When the buffer has values, this is much faster since it avoids visiting all memory (and the allocation and function calls)
+ */
+bool ALWAYS_INLINE is_all_zeros(const UInt8 * flags, size_t size)
+{
+    size_t unroll_size = size - size % 8;
+    size_t i = 0;
+    while (i < unroll_size)
+    {
+        UInt64 v = *reinterpret_cast<const UInt64 *>(&flags[i]);
+        if (v)
+            return false;
+        i += 8;
+    }
+
+    for (; i < size; i++)
+        if (flags[i])
+            return false;
+
+    return true;
+}
 
 /** There are two cases: for single argument and variadic.
   * Code for single argument is much more efficient.
@@ -116,13 +138,29 @@ public:
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const UInt8 * null_map = column->getNullMapData().data();
-        const IColumn * nested_column = &column->getNestedColumn();
+        const IColumn * columns_param[] = {&column->getNestedColumn()};
+
         const IColumn * filter_column = columns[num_arguments - 1];
         if (const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(filter_column))
-            filter_column = &nullable_column->getNestedColumn();
-        const IColumn * column_param[] = {nested_column, filter_column};
+            filter_column = nullable_column->getNestedColumnPtr().get();
+        if constexpr (result_is_nullable)
+        {
+            /// We need to check if there is work to do as otherwise setting the flag would be a mistake,
+            /// it would mean that the return value would be the default value of the nested type instead of NULL
+            if (is_all_zeros(assert_cast<const ColumnUInt8 *>(filter_column)->getData().data(), batch_size))
+                return;
+        }
 
-        this->nested_function->addBatchSinglePlaceNotNull(batch_size, this->nestedPlace(place), column_param, null_map, arena, 1);
+        /// Combine the 2 flag arrays so we can call a simplified version (one check vs 2)
+        /// Note that now the null map will contain 0 if not null and not filtered, or 1 for null or filtered (or both)
+        const auto * filter_flags = assert_cast<const ColumnUInt8 *>(filter_column)->getData().data();
+        auto final_nulls = std::make_unique<UInt8[]>(batch_size);
+        for (size_t i = 0; i < batch_size; ++i)
+            final_nulls[i] = null_map[i] | !filter_flags[i];
+
+        this->nested_function->addBatchSinglePlaceNotNull(
+            batch_size, this->nestedPlace(place), columns_param, final_nulls.get(), arena, -1);
+
         if constexpr (result_is_nullable)
             if (!memoryIsByte(null_map, batch_size, 1))
                 this->setFlag(place);
