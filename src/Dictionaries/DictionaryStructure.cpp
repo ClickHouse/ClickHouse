@@ -12,6 +12,7 @@
 #include <numeric>
 #include <unordered_map>
 #include <unordered_set>
+#include <ext/range.h>
 
 
 namespace DB
@@ -78,7 +79,9 @@ AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
 
         case TypeIndex::String:         return AttributeUnderlyingType::String;
 
-        case TypeIndex::Array:          return AttributeUnderlyingType::Array;
+        // Temporary hack to allow arrays in keys, since they are never retrieved for polygon dictionaries.
+        // TODO: This should be fixed by fully supporting arrays in dictionaries.
+        case TypeIndex::Array:          return AttributeUnderlyingType::String;
 
         default: break;
     }
@@ -122,7 +125,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         id.emplace(config, structure_prefix + ".id");
     else if (has_key)
     {
-        key.emplace(getAttributes(config, structure_prefix + ".key", /*complex_key_attributes =*/ true));
+        key.emplace(getAttributes(config, structure_prefix + ".key", true));
         if (key->empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'key' supplied");
     }
@@ -134,12 +137,43 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         if (id->name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'id' cannot be empty");
 
-        if (!id->expression.empty())
+        const char * range_default_type = "Date";
+        if (config.has(structure_prefix + ".range_min"))
+            range_min.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_min", range_default_type));
+
+        if (config.has(structure_prefix + ".range_max"))
+            range_max.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_max", range_default_type));
+
+        if (range_min.has_value() != range_max.has_value())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary structure should have both 'range_min' and 'range_max' either specified or not.");
+        }
+
+        if (range_min && range_max && !range_min->type->equals(*range_max->type))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dictionary structure 'range_min' and 'range_max' should have same type, "
+                "'range_min' type: {},"
+                "'range_max' type: {}",
+                range_min->type->getName(),
+                range_max->type->getName());
+        }
+
+        if (range_min)
+        {
+            if (!range_min->type->isValueRepresentedByInteger())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Dictionary structure type of 'range_min' and 'range_max' should be an integer, Date, DateTime, or Enum."
+                    " Actual 'range_min' and 'range_max' type is {}",
+                    range_min->type->getName());
+        }
+
+        if (!id->expression.empty() || (range_min && !range_min->expression.empty()) || (range_max && !range_max->expression.empty()))
             has_expressions = true;
     }
 
-    parseRangeConfiguration(config, structure_prefix);
-    attributes = getAttributes(config, structure_prefix, /*complex_key_attributes =*/ false);
+    attributes = getAttributes(config, structure_prefix, false);
 
     for (size_t i = 0; i < attributes.size(); ++i)
     {
@@ -174,7 +208,7 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
     if (key_types.size() != key->size())
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Key structure does not match, expected {}", getKeyDescription());
 
-    for (size_t i = 0; i < key_types.size(); ++i)
+    for (const auto i : ext::range(0, key_types.size()))
     {
         const auto & expected_type = (*key)[i].type;
         const auto & actual_type = key_types[i];
@@ -341,11 +375,17 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         const auto type_string = config.getString(prefix + "type");
         const auto initial_type = DataTypeFactory::instance().get(type_string);
-        const auto initial_type_serialization = initial_type->getDefaultSerialization();
-        bool is_nullable = initial_type->isNullable();
+        auto type = initial_type;
+        bool is_array = false;
+        bool is_nullable = false;
 
-        auto non_nullable_type = removeNullable(initial_type);
-        const auto underlying_type = getAttributeUnderlyingType(non_nullable_type);
+        if (type->isNullable())
+        {
+            is_nullable = true;
+            type = removeNullable(type);
+        }
+
+        const auto underlying_type = getAttributeUnderlyingType(type);
 
         const auto expression = config.getString(prefix + "expression", "");
         if (!expression.empty())
@@ -355,25 +395,25 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         if (allow_null_values)
         {
             const auto null_value_string = config.getString(prefix + "null_value");
-
             try
             {
                 if (null_value_string.empty())
                 {
-                    null_value = initial_type->getDefault();
+                    null_value = type->getDefault();
                 }
                 else
                 {
                     ReadBufferFromString null_value_buffer{null_value_string};
-                    auto column_with_null_value = initial_type->createColumn();
-                    initial_type_serialization->deserializeWholeText(*column_with_null_value, null_value_buffer, format_settings);
+                    auto column_with_null_value = type->createColumn();
+                    type->getDefaultSerialization()->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
                     null_value = (*column_with_null_value)[0];
                 }
             }
             catch (Exception & e)
             {
                 String dictionary_name = config.getString(".dictionary.name", "");
-                e.addMessage(fmt::format("While parsing null_value for attribute with name {} in dictionary {}", name, dictionary_name));
+                e.addMessage("While parsing null_value for attribute with name " + name
+                    + " in dictionary " + dictionary_name);
                 throw;
             }
         }
@@ -396,54 +436,18 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             name,
             underlying_type,
             initial_type,
-            initial_type_serialization,
+            initial_type->getDefaultSerialization(),
+            type,
             expression,
             null_value,
             hierarchical,
             injective,
             is_object_id,
-            is_nullable});
+            is_nullable,
+            is_array});
     }
 
     return res_attributes;
-}
-
-void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConfiguration & config, const std::string & structure_prefix)
-{
-    const char * range_default_type = "Date";
-    if (config.has(structure_prefix + ".range_min"))
-        range_min.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_min", range_default_type));
-
-    if (config.has(structure_prefix + ".range_max"))
-        range_max.emplace(makeDictionaryTypedSpecialAttribute(config, structure_prefix + ".range_max", range_default_type));
-
-    if (range_min.has_value() != range_max.has_value())
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Dictionary structure should have both 'range_min' and 'range_max' either specified or not.");
-    }
-
-    if (range_min && range_max && !range_min->type->equals(*range_max->type))
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Dictionary structure 'range_min' and 'range_max' should have same type, "
-            "'range_min' type: {},"
-            "'range_max' type: {}",
-            range_min->type->getName(),
-            range_max->type->getName());
-    }
-
-    if (range_min)
-    {
-        if (!range_min->type->isValueRepresentedByInteger())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary structure type of 'range_min' and 'range_max' should be an integer, Date, DateTime, or Enum."
-                " Actual 'range_min' and 'range_max' type is {}",
-                range_min->type->getName());
-    }
-
-    if ((range_min && !range_min->expression.empty()) || (range_max && !range_max->expression.empty()))
-        has_expressions = true;
 }
 
 }

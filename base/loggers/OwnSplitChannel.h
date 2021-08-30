@@ -24,7 +24,6 @@ public:
 
 private:
     void logSplit(const Poco::Message & msg);
-    void tryLogSplit(const Poco::Message & msg);
 
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
     /// Handler and its pointer casted to extended interface

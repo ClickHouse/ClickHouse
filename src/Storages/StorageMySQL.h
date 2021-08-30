@@ -6,10 +6,9 @@
 
 #if USE_MYSQL
 
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/MySQL/MySQLSettings.h>
 #include <mysqlxx/PoolWithFailover.h>
 
 
@@ -20,9 +19,9 @@ namespace DB
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
   * Read only.
   */
-class StorageMySQL final : public shared_ptr_helper<StorageMySQL>, public IStorage, WithContext
+class StorageMySQL final : public ext::shared_ptr_helper<StorageMySQL>, public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageMySQL>;
+    friend struct ext::shared_ptr_helper<StorageMySQL>;
 public:
     StorageMySQL(
         const StorageID & table_id_,
@@ -34,8 +33,7 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_,
-        const MySQLSettings & mysql_settings_);
+        ContextPtr context_);
 
     std::string getName() const override { return "MySQL"; }
 
@@ -48,17 +46,15 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 private:
-    friend class StorageMySQLSink;
+    friend class StorageMySQLBlockOutputStream;
 
     std::string remote_database_name;
     std::string remote_table_name;
     bool replace_query;
     std::string on_duplicate_clause;
-
-    MySQLSettings mysql_settings;
 
     mysqlxx::PoolWithFailoverPtr pool;
 };

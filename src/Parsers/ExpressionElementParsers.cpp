@@ -244,26 +244,17 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ParserKeyword s_uuid("UUID");
     UUID uuid = UUIDHelpers::Nil;
 
-    if (table_name_with_optional_uuid)
+    if (table_name_with_optional_uuid && parts.size() <= 2 && s_uuid.ignore(pos, expected))
     {
-        if (parts.size() > 2)
+        ParserStringLiteral uuid_p;
+        ASTPtr ast_uuid;
+        if (!uuid_p.parse(pos, ast_uuid, expected))
             return false;
-
-        if (s_uuid.ignore(pos, expected))
-        {
-            ParserStringLiteral uuid_p;
-            ASTPtr ast_uuid;
-            if (!uuid_p.parse(pos, ast_uuid, expected))
-                return false;
-            uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
-        }
-
-        if (parts.size() == 1) node = std::make_shared<ASTTableIdentifier>(parts[0], std::move(params));
-        else node = std::make_shared<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
-        node->as<ASTTableIdentifier>()->uuid = uuid;
+        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
     }
-    else
-        node = std::make_shared<ASTIdentifier>(std::move(parts), false, std::move(params));
+
+    node = std::make_shared<ASTIdentifier>(std::move(parts), false, std::move(params));
+    node->as<ASTIdentifier>()->uuid = uuid;
 
     return true;
 }
@@ -511,6 +502,9 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     // Variant 1:
     // function_name ( * ) OVER window_name
+    // FIXME doesn't work anyway for now -- never used anywhere, window names
+    // can't be defined, and TreeRewriter thinks the window name is a column so
+    // the query fails.
     if (pos->type != TokenType::OpeningRoundBracket)
     {
         ASTPtr window_name_ast;
@@ -539,23 +533,23 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     ParserKeyword keyword_groups("GROUPS");
     ParserKeyword keyword_range("RANGE");
 
-    node->frame_is_default = false;
+    node->frame.is_default = false;
     if (keyword_rows.ignore(pos, expected))
     {
-        node->frame_type = WindowFrame::FrameType::Rows;
+        node->frame.type = WindowFrame::FrameType::Rows;
     }
     else if (keyword_groups.ignore(pos, expected))
     {
-        node->frame_type = WindowFrame::FrameType::Groups;
+        node->frame.type = WindowFrame::FrameType::Groups;
     }
     else if (keyword_range.ignore(pos, expected))
     {
-        node->frame_type = WindowFrame::FrameType::Range;
+        node->frame.type = WindowFrame::FrameType::Range;
     }
     else
     {
         /* No frame clause. */
-        node->frame_is_default = true;
+        node->frame.is_default = true;
         return true;
     }
 
@@ -574,19 +568,21 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
     if (keyword_current_row.ignore(pos, expected))
     {
-        node->frame_begin_type = WindowFrame::BoundaryType::Current;
+        node->frame.begin_type = WindowFrame::BoundaryType::Current;
     }
     else
     {
-        ParserExpression parser_expression;
+        ParserLiteral parser_literal;
+        ASTPtr ast_literal;
         if (keyword_unbounded.ignore(pos, expected))
         {
-            node->frame_begin_type = WindowFrame::BoundaryType::Unbounded;
+            node->frame.begin_type = WindowFrame::BoundaryType::Unbounded;
         }
-        else if (parser_expression.parse(pos, node->frame_begin_offset, expected))
+        else if (parser_literal.parse(pos, ast_literal, expected))
         {
-            // We will evaluate the expression for offset expression later.
-            node->frame_begin_type = WindowFrame::BoundaryType::Offset;
+            const Field & value = ast_literal->as<ASTLiteral &>().value;
+            node->frame.begin_offset = value;
+            node->frame.begin_type = WindowFrame::BoundaryType::Offset;
         }
         else
         {
@@ -595,12 +591,12 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
         if (keyword_preceding.ignore(pos, expected))
         {
-            node->frame_begin_preceding = true;
+            node->frame.begin_preceding = true;
         }
         else if (keyword_following.ignore(pos, expected))
         {
-            node->frame_begin_preceding = false;
-            if (node->frame_begin_type == WindowFrame::BoundaryType::Unbounded)
+            node->frame.begin_preceding = false;
+            if (node->frame.begin_type == WindowFrame::BoundaryType::Unbounded)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Frame start cannot be UNBOUNDED FOLLOWING");
@@ -621,19 +617,21 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
         if (keyword_current_row.ignore(pos, expected))
         {
-            node->frame_end_type = WindowFrame::BoundaryType::Current;
+            node->frame.end_type = WindowFrame::BoundaryType::Current;
         }
         else
         {
-            ParserExpression parser_expression;
+            ParserLiteral parser_literal;
+            ASTPtr ast_literal;
             if (keyword_unbounded.ignore(pos, expected))
             {
-                node->frame_end_type = WindowFrame::BoundaryType::Unbounded;
+                node->frame.end_type = WindowFrame::BoundaryType::Unbounded;
             }
-            else if (parser_expression.parse(pos, node->frame_end_offset, expected))
+            else if (parser_literal.parse(pos, ast_literal, expected))
             {
-                // We will evaluate the expression for offset expression later.
-                node->frame_end_type = WindowFrame::BoundaryType::Offset;
+                const Field & value = ast_literal->as<ASTLiteral &>().value;
+                node->frame.end_offset = value;
+                node->frame.end_type = WindowFrame::BoundaryType::Offset;
             }
             else
             {
@@ -642,8 +640,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
 
             if (keyword_preceding.ignore(pos, expected))
             {
-                node->frame_end_preceding = true;
-                if (node->frame_end_type == WindowFrame::BoundaryType::Unbounded)
+                node->frame.end_preceding = true;
+                if (node->frame.end_type == WindowFrame::BoundaryType::Unbounded)
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Frame end cannot be UNBOUNDED PRECEDING");
@@ -652,7 +650,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             else if (keyword_following.ignore(pos, expected))
             {
                 // Positive offset or UNBOUNDED FOLLOWING.
-                node->frame_end_preceding = false;
+                node->frame.end_preceding = false;
             }
             else
             {
@@ -662,47 +660,6 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     }
 
     return true;
-}
-
-// All except parent window name.
-static bool parseWindowDefinitionParts(IParser::Pos & pos,
-    ASTWindowDefinition & node, Expected & expected)
-{
-    ParserKeyword keyword_partition_by("PARTITION BY");
-    ParserNotEmptyExpressionList columns_partition_by(
-        false /* we don't allow declaring aliases here*/);
-    ParserKeyword keyword_order_by("ORDER BY");
-    ParserOrderByExpressionList columns_order_by;
-
-    if (keyword_partition_by.ignore(pos, expected))
-    {
-        ASTPtr partition_by_ast;
-        if (columns_partition_by.parse(pos, partition_by_ast, expected))
-        {
-            node.children.push_back(partition_by_ast);
-            node.partition_by = partition_by_ast;
-        }
-        else
-        {
-            return false;
-        }
-    }
-
-    if (keyword_order_by.ignore(pos, expected))
-    {
-        ASTPtr order_by_ast;
-        if (columns_order_by.parse(pos, order_by_ast, expected))
-        {
-            node.children.push_back(order_by_ast);
-            node.order_by = order_by_ast;
-        }
-        else
-        {
-            return false;
-        }
-    }
-
-    return tryParseFrameDefinition(&node, pos, expected);
 }
 
 bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -715,32 +672,43 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
     }
 
-    // We can have a parent window name specified before all other things. No
-    // easy way to distinguish identifier from keywords, so just try to parse it
-    // both ways.
-    if (parseWindowDefinitionParts(pos, *result, expected))
+    ParserKeyword keyword_partition_by("PARTITION BY");
+    ParserNotEmptyExpressionList columns_partition_by(
+        false /* we don't allow declaring aliases here*/);
+    ParserKeyword keyword_order_by("ORDER BY");
+    ParserOrderByExpressionList columns_order_by;
+
+    if (keyword_partition_by.ignore(pos, expected))
     {
-        // Successfully parsed without parent window specifier. It can be empty,
-        // so check that it is followed by the closing bracket.
-        ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
-        if (parser_closing_bracket.ignore(pos, expected))
+        ASTPtr partition_by_ast;
+        if (columns_partition_by.parse(pos, partition_by_ast, expected))
         {
-            node = result;
-            return true;
+            result->children.push_back(partition_by_ast);
+            result->partition_by = partition_by_ast;
+        }
+        else
+        {
+            return false;
         }
     }
 
-    // Try to parse with parent window specifier.
-    ParserIdentifier parser_parent_window;
-    ASTPtr window_name_identifier;
-    if (!parser_parent_window.parse(pos, window_name_identifier, expected))
+    if (keyword_order_by.ignore(pos, expected))
     {
-        return false;
+        ASTPtr order_by_ast;
+        if (columns_order_by.parse(pos, order_by_ast, expected))
+        {
+            result->children.push_back(order_by_ast);
+            result->order_by = order_by_ast;
+        }
+        else
+        {
+            return false;
+        }
     }
-    result->parent_window_name = window_name_identifier->as<const ASTIdentifier &>().name();
 
-    if (!parseWindowDefinitionParts(pos, *result, expected))
+    if (!tryParseFrameDefinition(result.get(), pos, expected))
     {
+        /* Broken frame definition. */
         return false;
     }
 
@@ -1555,37 +1523,26 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (pos->type != TokenType::StringLiteral && pos->type != TokenType::HereDoc)
+    if (pos->type != TokenType::StringLiteral)
         return false;
 
     String s;
+    ReadBufferFromMemory in(pos->begin, pos->size());
 
-    if (pos->type == TokenType::StringLiteral)
+    try
     {
-        ReadBufferFromMemory in(pos->begin, pos->size());
-
-        try
-        {
-            readQuotedStringWithSQLStyle(s, in);
-        }
-        catch (const Exception &)
-        {
-            expected.add(pos, "string literal");
-            return false;
-        }
-
-        if (in.count() != pos->size())
-        {
-            expected.add(pos, "string literal");
-            return false;
-        }
+        readQuotedStringWithSQLStyle(s, in);
     }
-    else if (pos->type == TokenType::HereDoc)
+    catch (const Exception &)
     {
-        std::string_view here_doc(pos->begin, pos->size());
-        size_t heredoc_size = here_doc.find('$', 1) + 1;
-        assert(heredoc_size != std::string_view::npos);
-        s = String(pos->begin + heredoc_size, pos->size() - heredoc_size * 2);
+        expected.add(pos, "string literal");
+        return false;
+    }
+
+    if (in.count() != pos->size())
+    {
+        expected.add(pos, "string literal");
+        return false;
     }
 
     auto literal = std::make_shared<ASTLiteral>(s);
@@ -1713,8 +1670,6 @@ const char * ParserAlias::restricted_keywords[] =
     "WHERE",
     "WINDOW",
     "WITH",
-    "INTERSECT",
-    "EXCEPT",
     nullptr
 };
 
@@ -1751,7 +1706,7 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword columns("COLUMNS");
-    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(false, true), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(true), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserStringLiteral regex;
 
     if (!columns.ignore(pos, expected))
@@ -1977,7 +1932,7 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserCompoundIdentifier(true, true).parse(pos, node, expected))
+    if (!ParserCompoundIdentifier(false, true).parse(pos, node, expected))
         return false;
 
     if (pos->type != TokenType::Dot)

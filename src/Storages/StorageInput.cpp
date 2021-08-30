@@ -3,6 +3,7 @@
 
 #include <Interpreters/Context.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <memory>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
@@ -45,9 +46,9 @@ public:
 };
 
 
-void StorageInput::setPipe(Pipe pipe_)
+void StorageInput::setInputStream(BlockInputStreamPtr input_stream_)
 {
-    pipe = std::move(pipe_);
+    input_stream = input_stream_;
 }
 
 
@@ -70,10 +71,10 @@ Pipe StorageInput::read(
         return Pipe(std::make_shared<StorageInputSource>(query_context, metadata_snapshot->getSampleBlock()));
     }
 
-    if (pipe.empty())
+    if (!input_stream)
         throw Exception("Input stream is not initialized, input() must be used only in INSERT SELECT query", ErrorCodes::INVALID_USAGE_OF_INPUT);
 
-    return std::move(pipe);
+    return Pipe(std::make_shared<SourceFromInputStream>(input_stream));
 }
 
 }
