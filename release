@@ -71,6 +71,9 @@ then
     export DEB_CC=${DEB_CC=clang-10}
     export DEB_CXX=${DEB_CXX=clang++-10}
     EXTRAPACKAGES="$EXTRAPACKAGES clang-10 lld-10"
+elif [[ $BUILD_TYPE == 'valgrind' ]]; then
+    MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
+    VERSION_POSTFIX+="+valgrind"
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     CMAKE_BUILD_TYPE=Debug
     VERSION_POSTFIX+="+debug"

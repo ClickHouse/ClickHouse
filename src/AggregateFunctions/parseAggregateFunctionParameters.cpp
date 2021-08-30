@@ -4,8 +4,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
-#include <Interpreters/evaluateConstantExpression.h>
-
 
 namespace DB
 {
@@ -17,7 +15,7 @@ namespace ErrorCodes
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
 }
 
-Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const std::string & error_context, ContextPtr context)
+Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const std::string & error_context)
 {
     const ASTs & parameters = expression_list->children;
     if (parameters.empty())
@@ -27,25 +25,25 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
 
     for (size_t i = 0; i < parameters.size(); ++i)
     {
-        ASTPtr literal;
-        try
-        {
-            literal = evaluateConstantExpressionAsLiteral(parameters[i], context);
-        }
-        catch (Exception & e)
-        {
-            if (e.code() == ErrorCodes::BAD_ARGUMENTS)
-                throw Exception(
-                    ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
-                    "Parameters to aggregate functions must be literals. "
-                    "Got parameter '{}'{}",
-                    parameters[i]->formatForErrorMessage(),
-                    (error_context.empty() ? "" : " (in " + error_context +")"));
+        const auto * literal = parameters[i]->as<ASTLiteral>();
 
-            throw;
+        ASTPtr func_literal;
+        if (!literal)
+            if (const auto * func = parameters[i]->as<ASTFunction>())
+                if ((func_literal = func->toLiteral()))
+                    literal = func_literal->as<ASTLiteral>();
+
+        if (!literal)
+        {
+            throw Exception(
+                ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
+                "Parameters to aggregate functions must be literals. "
+                "Got parameter '{}'{}",
+                parameters[i]->formatForErrorMessage(),
+                (error_context.empty() ? "" : " (in " + error_context +")"));
         }
 
-        params_row[i] = literal->as<ASTLiteral>()->value;
+        params_row[i] = literal->value;
     }
 
     return params_row;
@@ -56,8 +54,7 @@ void getAggregateFunctionNameAndParametersArray(
     const std::string & aggregate_function_name_with_params,
     std::string & aggregate_function_name,
     Array & aggregate_function_parameters,
-    const std::string & error_context,
-    ContextPtr context)
+    const std::string & error_context)
 {
     if (aggregate_function_name_with_params.back() != ')')
     {
@@ -87,7 +84,7 @@ void getAggregateFunctionNameAndParametersArray(
         throw Exception("Incorrect list of parameters to aggregate function "
             + aggregate_function_name, ErrorCodes::BAD_ARGUMENTS);
 
-    aggregate_function_parameters = getAggregateFunctionParametersArray(args_ast, error_context, context);
+    aggregate_function_parameters = getAggregateFunctionParametersArray(args_ast);
 }
 
 }

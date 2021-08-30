@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/SymbolIndex.h>
-#include <Common/Stopwatch.h>
 
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config_version.h>
@@ -19,21 +18,21 @@ namespace DB
 std::weak_ptr<CrashLog> CrashLog::crash_log;
 
 
-NamesAndTypesList CrashLogElement::getNamesAndTypes()
+Block CrashLogElement::createBlock()
 {
     return
     {
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"timestamp_ns", std::make_shared<DataTypeUInt64>()},
-        {"signal", std::make_shared<DataTypeInt32>()},
-        {"thread_id", std::make_shared<DataTypeUInt64>()},
-        {"query_id", std::make_shared<DataTypeString>()},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"trace_full", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"version", std::make_shared<DataTypeString>()},
-        {"revision", std::make_shared<DataTypeUInt32>()},
-        {"build_id", std::make_shared<DataTypeString>()},
+        {std::make_shared<DataTypeDate>(),                                    "event_date"},
+        {std::make_shared<DataTypeDateTime>(),                                "event_time"},
+        {std::make_shared<DataTypeUInt64>(),                                  "timestamp_ns"},
+        {std::make_shared<DataTypeInt32>(),                                   "signal"},
+        {std::make_shared<DataTypeUInt64>(),                                  "thread_id"},
+        {std::make_shared<DataTypeString>(),                                  "query_id"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "trace"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "trace_full"},
+        {std::make_shared<DataTypeString>(),                                  "version"},
+        {std::make_shared<DataTypeUInt32>(),                                  "revision"},
+        {std::make_shared<DataTypeString>(),                                  "build_id"},
     };
 }
 
@@ -60,6 +59,7 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
 }
 
 }
+
 
 void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace)
 {

@@ -59,9 +59,6 @@ int mainEntryClickHouseGitImport(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeper(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_KEEPER
-int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
-#endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
@@ -121,9 +118,6 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_KEEPER
     {"keeper", mainEntryClickHouseKeeper},
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
-    {"keeper-converter", mainEntryClickHouseKeeperConverter},
 #endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
@@ -322,7 +316,7 @@ struct Checker
     {
         checkRequiredInstructions();
     }
-} checker __attribute__((init_priority(101)));  /// Run before other static initializers.
+} checker;
 
 }
 

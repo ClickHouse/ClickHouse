@@ -34,8 +34,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     Columns getTupleElements(const IColumn & column) const
     {
         if (const auto * const_column = typeid_cast<const ColumnConst *>(&column))
