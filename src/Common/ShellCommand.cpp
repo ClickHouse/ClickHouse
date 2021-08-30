@@ -262,17 +262,14 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
 std::unique_ptr<ShellCommand> ShellCommand::execute(const ShellCommand::Config & config)
 {
-    const auto & command = config.command;
+    auto config_copy = config;
+    config_copy.command = "/bin/sh";
+    config_copy.arguments = {"-c", config.command};
 
-    /// Arguments in non-constant chunks of memory (as required for `execv`).
-    /// Moreover, their copying must be done before calling `vfork`, so after `vfork` do a minimum of things.
-    std::vector<char> argv0("sh", &("sh"[3]));
-    std::vector<char> argv1("-c", &("-c"[3]));
-    std::vector<char> argv2(command.data(), command.data() + command.size() + 1);
+    for (const auto & argument : config.arguments)
+        config_copy.arguments.emplace_back(argument);
 
-    char * const argv[] = { argv0.data(), argv1.data(), argv2.data(), nullptr };
-
-    return executeImpl("/bin/sh", argv, config);
+    return executeDirect(config_copy);
 }
 
 
