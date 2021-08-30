@@ -828,7 +828,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     UInt64 watch_prev_elapsed = 0;
 
     /// We count total amount of bytes in parts
-    /// and use direct_io if there is more than min_merge_bytes_to_use_direct_io
+    /// and use direct_io + aio if there is more than min_merge_bytes_to_use_direct_io
     bool read_with_direct_io = false;
     if (data_settings->min_merge_bytes_to_use_direct_io != 0)
     {
@@ -894,7 +894,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_transform = std::make_unique<MergingSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size, 0, false, rows_sources_write_buf.get(), true, blocks_are_granules_size);
+                header, pipes.size(), sort_description, merge_block_size, 0, rows_sources_write_buf.get(), true, blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:
@@ -1211,8 +1211,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
     context_for_reading->setSetting("max_threads", 1);
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
-    context_for_reading->setSetting("force_index_by_date", false);
-    context_for_reading->setSetting("force_primary_key", false);
+    context_for_reading->setSetting("force_index_by_date", Field(0));
+    context_for_reading->setSetting("force_primary_key", Field(0));
 
     MutationCommands commands_for_part;
     for (const auto & command : commands)
@@ -1659,12 +1659,7 @@ NameToNameVector MergeTreeDataMergerMutator::collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx2"))
-            {
-                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + ".idx2", "");
-                rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
-            }
-            else if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
+            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
             {
                 rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
                 rename_vector.emplace_back(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
@@ -1750,7 +1745,6 @@ NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
     for (const auto & index : indices_to_recalc)
     {
         files_to_skip.insert(index->getFileName() + ".idx");
-        files_to_skip.insert(index->getFileName() + ".idx2");
         files_to_skip.insert(index->getFileName() + mrk_extension);
     }
     for (const auto & projection : projections_to_recalc)
@@ -1895,11 +1889,8 @@ std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     {
         const auto & index = indices[i];
 
-        bool has_index =
-            source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") ||
-            source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx2");
         // If we ask to materialize and it already exists
-        if (!has_index && materialized_indices.count(index.name))
+        if (!source_part->checksums.has(INDEX_FILE_PREFIX + index.name + ".idx") && materialized_indices.count(index.name))
         {
             if (indices_to_recalc.insert(index_factory.get(index)).second)
             {
