@@ -78,8 +78,9 @@ RUN python3 -m pip install \
     pymongo \
     pytest \
     pytest-timeout \
+    pytz \
     redis \
-    tzlocal \
+    tzlocal==2.1 \
     urllib3 \
     requests-kerberos
 
