@@ -14,7 +14,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Poco/URI.h>
 #include <common/logger_useful.h>
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
@@ -27,7 +27,6 @@ namespace Aws::S3
 namespace DB
 {
 
-class PullingPipelineExecutor;
 class StorageS3SequentialSource;
 class StorageS3Source : public SourceWithProgress, WithContext
 {
@@ -56,7 +55,7 @@ public:
         ContextPtr context_,
         const ColumnsDescription & columns_,
         UInt64 max_block_size_,
-        UInt64 max_single_read_retries_,
+        UInt64 s3_max_single_read_retries_,
         const String compression_hint_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
@@ -73,15 +72,14 @@ private:
     String format;
     ColumnsDescription columns_desc;
     UInt64 max_block_size;
-    UInt64 max_single_read_retries;
+    UInt64 s3_max_single_read_retries;
     String compression_hint;
     std::shared_ptr<Aws::S3::S3Client> client;
     Block sample_block;
 
 
     std::unique_ptr<ReadBuffer> read_buf;
-    std::unique_ptr<QueryPipeline> pipeline;
-    std::unique_ptr<PullingPipelineExecutor> reader;
+    BlockInputStreamPtr reader;
     bool initialized = false;
     bool with_file_column = false;
     bool with_path_column = false;
@@ -96,7 +94,7 @@ private:
  * It sends HTTP GET to server when select is called and
  * HTTP PUT when insert is called.
  */
-class StorageS3 : public shared_ptr_helper<StorageS3>, public IStorage, WithContext
+class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorage, WithContext
 {
 public:
     StorageS3(
@@ -105,7 +103,7 @@ public:
         const String & secret_access_key,
         const StorageID & table_id_,
         const String & format_name_,
-        UInt64 max_single_read_retries_,
+        UInt64 s3_max_single_read_retries_,
         UInt64 min_upload_part_size_,
         UInt64 max_single_part_upload_size_,
         UInt64 max_connections_,
@@ -130,20 +128,16 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
-
-    void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     NamesAndTypesList getVirtuals() const override;
-
-    bool supportsPartitionBy() const override;
 
 private:
 
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
 
-    struct ClientAuthentication
+    struct ClientAuthentificaiton
     {
         const S3::URI uri;
         const String access_key_id;
@@ -153,17 +147,17 @@ private:
         S3AuthSettings auth_settings;
     };
 
-    ClientAuthentication client_auth;
+    ClientAuthentificaiton client_auth;
 
     String format_name;
-    UInt64 max_single_read_retries;
+    UInt64 s3_max_single_read_retries;
     size_t min_upload_part_size;
     size_t max_single_part_upload_size;
     String compression_method;
     String name;
     const bool distributed_processing;
 
-    static void updateClientAndAuthSettings(ContextPtr, ClientAuthentication &);
+    static void updateClientAndAuthSettings(ContextPtr, ClientAuthentificaiton &);
 };
 
 }

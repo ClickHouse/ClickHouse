@@ -3,9 +3,6 @@
 #if USE_AWS_S3
 
 #    include <IO/S3Common.h>
-
-#    include <Common/quoteString.h>
-
 #    include <IO/WriteBufferFromString.h>
 #    include <Storages/StorageS3Settings.h>
 
@@ -431,6 +428,8 @@ public:
                 /// EC2MetadataService throttles by delaying the response so the service client should set a large read timeout.
                 /// EC2MetadataService delay is in order of seconds so it only make sense to retry after a couple of seconds.
                 aws_client_configuration.connectTimeoutMs = 1000;
+
+                /// FIXME. Somehow this timeout does not work in docker without --net=host.
                 aws_client_configuration.requestTimeoutMs = 1000;
 
                 aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
@@ -618,7 +617,7 @@ namespace S3
         storage_name = S3;
 
         if (uri.getHost().empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
+            throw Exception("Host is empty in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
         String name;
         String endpoint_authority_from_uri;
@@ -627,7 +626,12 @@ namespace S3
         {
             is_virtual_hosted_style = true;
             endpoint = uri.getScheme() + "://" + name + endpoint_authority_from_uri;
-            validateBucket(bucket, uri);
+
+            /// S3 specification requires at least 3 and at most 63 characters in bucket name.
+            /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
+            if (bucket.length() < 3 || bucket.length() > 63)
+                throw Exception(
+                    "Bucket name length is out of bounds in virtual hosted style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
 
             if (!uri.getPath().empty())
             {
@@ -638,7 +642,7 @@ namespace S3
             boost::to_upper(name);
             if (name != S3 && name != COS)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
+                throw Exception("Object storage system name is unrecognized in virtual hosted style S3 URI: " + name + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
             }
             if (name == S3)
             {
@@ -653,19 +657,15 @@ namespace S3
         {
             is_virtual_hosted_style = false;
             endpoint = uri.getScheme() + "://" + uri.getAuthority();
-            validateBucket(bucket, uri);
+
+            /// S3 specification requires at least 3 and at most 63 characters in bucket name.
+            /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
+            if (bucket.length() < 3 || bucket.length() > 63)
+                throw Exception(
+                    "Bucket name length is out of bounds in path style S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
         }
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
-    }
-
-    void URI::validateBucket(const String & bucket, const Poco::URI & uri)
-    {
-        /// S3 specification requires at least 3 and at most 63 characters in bucket name.
-        /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
-        if (bucket.length() < 3 || bucket.length() > 63)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI:     {}{}",
-                            quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
+            throw Exception("Bucket or key name are invalid in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
     }
 }
 

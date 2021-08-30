@@ -19,7 +19,7 @@ It can take one of two values: `throw` or `break`. Restrictions on aggregation (
 
 `break` – Stop executing the query and return the partial result, as if the source data ran out.
 
-`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but do not add new keys to the set.
+`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don’t add new keys to the set.
 
 ## max_memory_usage {#settings_max_memory_usage}
 
@@ -27,7 +27,7 @@ The maximum amount of RAM to use for running a query on a single server.
 
 In the default configuration file, the maximum is 10 GB.
 
-The setting does not consider the volume of available memory or the total volume of memory on the machine.
+The setting doesn’t consider the volume of available memory or the total volume of memory on the machine.
 The restriction applies to a single query within a single server.
 You can use `SHOW PROCESSLIST` to see the current memory consumption for each query.
 Besides, the peak memory consumption is tracked for each query and written to the log.
@@ -65,20 +65,20 @@ What to do when the volume of data read exceeds one of the limits: ‘throw’ o
 The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
 
 A maximum number of rows that can be read from a local table on a leaf node when running a distributed query. While
-distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will be checked only on the read
-stage on the leaf nodes and ignored on results merging stage on the root node. For example, cluster consists of 2 shards
-and each shard contains a table with 100 rows. Then distributed query which suppose to read all the data from both
-tables with setting `max_rows_to_read=150` will fail as in total it will be 200 rows. While query
+distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will be checked only on the read 
+stage on the leaf nodes and ignored on results merging stage on the root node. For example, cluster consists of 2 shards 
+and each shard contains a table with 100 rows. Then distributed query which suppose to read all the data from both 
+tables with setting `max_rows_to_read=150` will fail as in total it will be 200 rows. While query 
 with `max_rows_to_read_leaf=150` will succeed since leaf nodes will read 100 rows at max.
 
 ## max_bytes_to_read_leaf {#max-bytes-to-read-leaf}
 
-A maximum number of bytes (uncompressed data) that can be read from a local table on a leaf node when running
-a distributed query. While distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will
-be checked only on the read stage on the leaf nodes and ignored on results merging stage on the root node.
-For example, cluster consists of 2 shards and each shard contains a table with 100 bytes of data.
-Then distributed query which suppose to read all the data from both tables with setting `max_bytes_to_read=150` will fail
-as in total it will be 200 bytes. While query with `max_bytes_to_read_leaf=150` will succeed since leaf nodes will read
+A maximum number of bytes (uncompressed data) that can be read from a local table on a leaf node when running 
+a distributed query. While distributed queries can issue a multiple sub-queries to each shard (leaf) - this limit will 
+be checked only on the read stage on the leaf nodes and ignored on results merging stage on the root node. 
+For example, cluster consists of 2 shards and each shard contains a table with 100 bytes of data. 
+Then distributed query which suppose to read all the data from both tables with setting `max_bytes_to_read=150` will fail 
+as in total it will be 200 bytes. While query with `max_bytes_to_read_leaf=150` will succeed since leaf nodes will read 
 100 bytes at max.
 
 ## read_overflow_mode_leaf {#read-overflow-mode-leaf}
@@ -288,7 +288,7 @@ Defines what action ClickHouse performs when any of the following join limits is
 Possible values:
 
 -   `THROW` — ClickHouse throws an exception and breaks operation.
--   `BREAK` — ClickHouse breaks operation and does not throw an exception.
+-   `BREAK` — ClickHouse breaks operation and doesn’t throw an exception.
 
 Default value: `THROW`.
 

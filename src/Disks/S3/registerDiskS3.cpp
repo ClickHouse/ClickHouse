@@ -2,18 +2,19 @@
     #include <Common/config.h>
 #endif
 
-#include <common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include "Disks/DiskFactory.h"
+#include <common/logger_useful.h>
+
 
 #if USE_AWS_S3
 
-#include <aws/core/client/DefaultRetryStrategy.h> // Y_IGNORE
+#include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
+#include "Disks/DiskFactory.h"
 #include "Storages/StorageS3Settings.h"
 #include "ProxyConfiguration.h"
 #include "ProxyListConfiguration.h"
@@ -56,12 +57,11 @@ std::shared_ptr<S3::ProxyResolverConfiguration> getProxyResolverConfiguration(
     if (proxy_scheme != "http" && proxy_scheme != "https")
         throw Exception("Only HTTP/HTTPS schemas allowed in proxy resolver config: " + proxy_scheme, ErrorCodes::BAD_ARGUMENTS);
     auto proxy_port = proxy_resolver_config.getUInt(prefix + ".proxy_port");
-    auto cache_ttl = proxy_resolver_config.getUInt(prefix + ".proxy_cache_time", 10);
 
     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Configured proxy resolver: {}, Scheme: {}, Port: {}",
         endpoint.toString(), proxy_scheme, proxy_port);
 
-    return std::make_shared<S3::ProxyResolverConfiguration>(endpoint, proxy_scheme, proxy_port, cache_ttl);
+    return std::make_shared<S3::ProxyResolverConfiguration>(endpoint, proxy_scheme, proxy_port);
 }
 
 std::shared_ptr<S3::ProxyListConfiguration> getProxyListConfiguration(
@@ -112,7 +112,7 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
 }
 
 std::shared_ptr<Aws::S3::S3Client>
-getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+getClient(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextConstPtr context)
 {
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         config.getString(config_prefix + ".region", ""),
@@ -129,12 +129,8 @@ getClient(const Poco::Util::AbstractConfiguration & config, const String & confi
 
     auto proxy_config = getProxyConfiguration(config_prefix, config);
     if (proxy_config)
-    {
         client_configuration.perRequestConfiguration
             = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
-        client_configuration.error_report
-            = [proxy_config](const auto & request_config) { proxy_config->errorReport(request_config); };
-    }
 
     client_configuration.retryStrategy
         = std::make_shared<Aws::Client::DefaultRetryStrategy>(config.getUInt(config_prefix + ".retry_attempts", 10));
@@ -150,7 +146,7 @@ getClient(const Poco::Util::AbstractConfiguration & config, const String & confi
         config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)));
 }
 
-std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextConstPtr context)
 {
     return std::make_unique<DiskS3Settings>(
         getClient(config, config_prefix, context),
@@ -160,8 +156,7 @@ std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfigurat
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getBool(config_prefix + ".send_metadata", false),
         config.getInt(config_prefix + ".thread_pool_size", 16),
-        config.getInt(config_prefix + ".list_object_keys_size", 1000),
-        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
+        config.getInt(config_prefix + ".list_object_keys_size", 1000));
 }
 
 }
@@ -172,14 +167,13 @@ void registerDiskS3(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr {
+                      ContextConstPtr context) -> DiskPtr {
         S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
         if (uri.key.back() != '/')
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
         String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
-        fs::create_directories(metadata_path);
+        Poco::File (metadata_path).createDirectories();
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
@@ -231,3 +225,4 @@ void registerDiskS3(DiskFactory & factory)
 void registerDiskS3(DiskFactory &) {}
 
 #endif
+

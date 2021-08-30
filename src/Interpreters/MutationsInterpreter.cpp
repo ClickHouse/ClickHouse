@@ -17,7 +17,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
-#include <Processors/Transforms/CheckSortedTransform.h>
+#include <DataStreams/CheckSortedBlockInputStream.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -179,7 +179,7 @@ bool isStorageTouchedByMutations(
     const StoragePtr & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextMutablePtr context_copy)
+    ContextPtr context_copy)
 {
     if (commands.empty())
         return false;
@@ -272,7 +272,7 @@ MutationsInterpreter::MutationsInterpreter(
     : storage(std::move(storage_))
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
-    , context(Context::createCopy(context_))
+    , context(context_)
     , can_execute(can_execute_)
     , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits())
 {
@@ -503,10 +503,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     }
                 }
 
-                auto updated_column = makeASTFunction("_CAST",
+                auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
                         condition,
-                        makeASTFunction("_CAST",
+                        makeASTFunction("CAST",
                             update_expr->clone(),
                             type_literal),
                         std::make_shared<ASTIdentifier>(column)),
@@ -847,11 +847,8 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
         }
     }
 
-    QueryPlanOptimizationSettings do_not_optimize_plan;
-    do_not_optimize_plan.optimize_plan = false;
-
     auto pipeline = plan.buildQueryPipeline(
-        do_not_optimize_plan,
+        QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
 
     pipeline->addSimpleTransform([&](const Block & header)
@@ -901,18 +898,12 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     select_interpreter->buildQueryPlan(plan);
 
     auto pipeline = addStreamsForLaterStages(stages, plan);
+    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(pipeline->getHeader()))
-    {
-        pipeline->addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<CheckSortedTransform>(header, *sort_desc);
-        });
-    }
-
-    BlockInputStreamPtr result_stream = std::make_shared<PipelineExecutingBlockInputStream>(std::move(*pipeline));
+    if (auto sort_desc = getStorageSortDescriptionIfPossible(result_stream->getHeader()))
+        result_stream = std::make_shared<CheckSortedBlockInputStream>(result_stream, *sort_desc);
 
     if (!updated_header)
         updated_header = std::make_unique<Block>(result_stream->getHeader());

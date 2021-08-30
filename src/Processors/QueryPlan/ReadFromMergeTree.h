@@ -1,25 +1,11 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/Pipe.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 
 namespace DB
 {
-
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-
-class Pipe;
-
-struct MergeTreeDataSelectSamplingData
-{
-    bool use_sampling = false;
-    bool read_nothing = false;
-    Float64 used_sample_factor = 1.0;
-    std::shared_ptr<ASTFunction> filter_function;
-    ActionsDAGPtr filter_expression;
-};
-
-struct MergeTreeDataSelectAnalysisResult;
-using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
@@ -50,6 +36,20 @@ public:
     };
 
     using IndexStats = std::vector<IndexStat>;
+    using IndexStatPtr = std::unique_ptr<IndexStats>;
+
+    /// Part of settings which are needed for reading.
+    struct Settings
+    {
+        UInt64 max_block_size;
+        size_t preferred_block_size_bytes;
+        size_t preferred_max_column_in_block_size_bytes;
+        size_t min_marks_for_concurrent_read;
+        bool use_uncompressed_cache;
+
+        MergeTreeReaderSettings reader_settings;
+        MergeTreeReadPool::BackoffSettings backoff_settings;
+    };
 
     enum class ReadType
     {
@@ -66,38 +66,18 @@ public:
         InReverseOrder,
     };
 
-    struct AnalysisResult
-    {
-        RangesInDataParts parts_with_ranges;
-        MergeTreeDataSelectSamplingData sampling;
-        IndexStats index_stats;
-        Names column_names_to_read;
-        ReadFromMergeTree::ReadType read_type = ReadFromMergeTree::ReadType::Default;
-        UInt64 total_parts = 0;
-        UInt64 parts_before_pk = 0;
-        UInt64 selected_parts = 0;
-        UInt64 selected_ranges = 0;
-        UInt64 selected_marks = 0;
-        UInt64 selected_marks_pk = 0;
-        UInt64 total_marks_pk = 0;
-        UInt64 selected_rows = 0;
-    };
-
     ReadFromMergeTree(
-        MergeTreeData::DataPartsVector parts_,
-        Names real_column_names_,
-        Names virt_column_names_,
-        const MergeTreeData & data_,
-        const SelectQueryInfo & query_info_,
+        const MergeTreeData & storage_,
         StorageMetadataPtr metadata_snapshot_,
-        StorageMetadataPtr metadata_snapshot_base_,
-        ContextPtr context_,
-        size_t max_block_size_,
+        String query_id_,
+        Names required_columns_,
+        RangesInDataParts parts_,
+        IndexStatPtr index_stats_,
+        PrewhereInfoPtr prewhere_info_,
+        Names virt_column_names_,
+        Settings settings_,
         size_t num_streams_,
-        bool sample_factor_column_queried_,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
-        Poco::Logger * log_,
-        MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_
+        ReadType read_type_
     );
 
     String getName() const override { return "ReadFromMergeTree"; }
@@ -110,88 +90,27 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
-    const StorageID getStorageID() const { return data.getStorageID(); }
-    UInt64 getSelectedParts() const { return selected_parts; }
-    UInt64 getSelectedRows() const { return selected_rows; }
-    UInt64 getSelectedMarks() const { return selected_marks; }
-
-    static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
-        MergeTreeData::DataPartsVector parts,
-        const StorageMetadataPtr & metadata_snapshot_base,
-        const StorageMetadataPtr & metadata_snapshot,
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        unsigned num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
-        const MergeTreeData & data,
-        const Names & real_column_names,
-        bool sample_factor_column_queried,
-        Poco::Logger * log);
-
 private:
-    const MergeTreeReaderSettings reader_settings;
-
-    MergeTreeData::DataPartsVector prepared_parts;
-    Names real_column_names;
-    Names virt_column_names;
-
-    const MergeTreeData & data;
-    SelectQueryInfo query_info;
-    PrewhereInfoPtr prewhere_info;
-    ExpressionActionsSettings actions_settings;
-
+    const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
-    StorageMetadataPtr metadata_snapshot_base;
+    String query_id;
 
-    ContextPtr context;
+    Names required_columns;
+    RangesInDataParts parts;
+    IndexStatPtr index_stats;
+    PrewhereInfoPtr prewhere_info;
+    Names virt_column_names;
+    Settings settings;
 
-    const size_t max_block_size;
-    const size_t requested_num_streams;
-    const size_t preferred_block_size_bytes;
-    const size_t preferred_max_column_in_block_size_bytes;
-    const bool sample_factor_column_queried;
+    size_t num_streams;
+    ReadType read_type;
 
-    std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
-
-    Poco::Logger * log;
-    UInt64 selected_parts = 0;
-    UInt64 selected_rows = 0;
-    UInt64 selected_marks = 0;
-
-    Pipe read(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
-    Pipe readFromPool(RangesInDataParts parts_with_ranges, Names required_columns, size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache);
-    Pipe readInOrder(RangesInDataParts parts_with_range, Names required_columns, ReadType read_type, bool use_uncompressed_cache, UInt64 limit);
+    Pipe read();
+    Pipe readFromPool();
+    Pipe readInOrder();
 
     template<typename TSource>
-    ProcessorPtr createSource(const RangesInDataPart & part, const Names & required_columns, bool use_uncompressed_cache, bool has_limit_below_one_block);
-
-    Pipe spreadMarkRangesAmongStreams(
-        RangesInDataParts && parts_with_ranges,
-        const Names & column_names);
-
-    Pipe spreadMarkRangesAmongStreamsWithOrder(
-        RangesInDataParts && parts_with_ranges,
-        const Names & column_names,
-        const ActionsDAGPtr & sorting_key_prefix_expr,
-        ActionsDAGPtr & out_projection,
-        const InputOrderInfoPtr & input_order_info);
-
-    Pipe spreadMarkRangesAmongStreamsFinal(
-        RangesInDataParts && parts,
-        const Names & column_names,
-        ActionsDAGPtr & out_projection);
-
-    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
-    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
-    MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
-};
-
-struct MergeTreeDataSelectAnalysisResult
-{
-    std::variant<std::exception_ptr, ReadFromMergeTree::AnalysisResult> result;
-
-    bool error() const;
-    size_t marks() const;
+    ProcessorPtr createSource(const RangesInDataPart & part);
 };
 
 }

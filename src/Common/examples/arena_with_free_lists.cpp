@@ -12,11 +12,11 @@
 #include <memory>
 #include <array>
 #include <sys/resource.h>
-#include <common/bit_cast.h>
+#include <ext/bit_cast.h>
+#include <ext/size.h>
+#include <Common/Arena.h>
 
 #include <common/StringRef.h>
-#include <common/arraySize.h>
-#include <Common/Arena.h>
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -68,7 +68,7 @@ private:
     static auto getMaxFixedBlockSize() { return getSizes().back(); }
 
     Arena pool;
-    const std::unique_ptr<Block * []> free_lists = std::make_unique<Block * []>(arraySize(getSizes()));
+    const std::unique_ptr<Block * []> free_lists = std::make_unique<Block * []>(ext::size(getSizes()));
 
     static size_t findFreeListIndex(const size_t size)
     {
@@ -96,7 +96,7 @@ public:
 
         if (auto & block = free_lists[list_idx])
         {
-            const auto res = bit_cast<char *>(block);
+            const auto res = ext::bit_cast<char *>(block);
             block = block->next;
             return res;
         }
@@ -115,7 +115,7 @@ public:
 
         auto & block = free_lists[list_idx];
         const auto old = block;
-        block = bit_cast<Block *>(ptr);
+        block = ext::bit_cast<Block *>(ptr);
         block->next = old;
     }
 

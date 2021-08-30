@@ -12,6 +12,7 @@
 #include <Poco/Net/IPAddress.h>
 #include <common/StringRef.h>
 #include <common/logger_useful.h>
+#include <ext/range.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -64,10 +65,10 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.getAttribute(attribute_name).injective;
+        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -78,7 +79,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
 
@@ -115,8 +116,7 @@ private:
             Float32,
             Float64,
             UUID,
-            String,
-            Array>
+            String>
             null_values;
         std::variant<
             ContainerType<UInt8>,
@@ -138,8 +138,7 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
-            ContainerType<StringRef>,
-            ContainerType<Array>>
+            ContainerType<StringRef>>
             maps;
         std::unique_ptr<Arena> string_arena;
     };
@@ -158,14 +157,14 @@ private:
 
     static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
-    template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsByTwoKeyColumnsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType,typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,

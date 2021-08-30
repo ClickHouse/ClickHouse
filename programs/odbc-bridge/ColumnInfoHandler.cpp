@@ -13,8 +13,8 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/NumberParser.h>
 #include <common/logger_useful.h>
-#include <common/scope_guard.h>
 #include <Common/quoteString.h>
+#include <ext/scope_guard.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
 #include "ODBCConnectionFactory.h"
@@ -69,7 +69,7 @@ namespace
 
 void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    HTMLForm params(getContext()->getSettingsRef(), request, request.getStream());
+    HTMLForm params(request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
