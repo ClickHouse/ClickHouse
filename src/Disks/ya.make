@@ -23,6 +23,7 @@ SRCS(
     ReadIndirectBufferFromRemoteFS.cpp
     SingleDiskVolume.cpp
     StoragePolicy.cpp
+    TemporaryFileOnDisk.cpp
     VolumeJBOD.cpp
     VolumeRAID1.cpp
     WriteIndirectBufferFromRemoteFS.cpp

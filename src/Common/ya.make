@@ -116,8 +116,8 @@ SRCS(
     hasLinuxCapability.cpp
     hex.cpp
     isLocalAddress.cpp
+    isValidUTF8.cpp
     malloc.cpp
-    memory.cpp
     new_delete.cpp
     parseAddress.cpp
     parseGlobs.cpp
