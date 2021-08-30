@@ -49,7 +49,7 @@ public:
  *  When the buffer is all zeros, this is slightly faster than doing a memcmp since doesn't require allocating memory
  *  When the buffer has values, this is much faster since it avoids visiting all memory (and the allocation and function calls)
  */
-bool ALWAYS_INLINE is_all_zeros(const UInt8 * flags, size_t size)
+static bool ALWAYS_INLINE inline is_all_zeros(const UInt8 * flags, size_t size)
 {
     size_t unroll_size = size - size % 8;
     size_t i = 0;
