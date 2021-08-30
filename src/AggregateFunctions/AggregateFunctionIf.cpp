@@ -156,7 +156,7 @@ public:
         const auto * filter_flags = assert_cast<const ColumnUInt8 *>(filter_column)->getData().data();
         auto final_nulls = std::make_unique<UInt8[]>(batch_size);
         for (size_t i = 0; i < batch_size; ++i)
-            final_nulls[i] = null_map[i] | !filter_flags[i];
+            final_nulls[i] = (!!null_map[i]) | (!filter_flags[i]);
 
         this->nested_function->addBatchSinglePlaceNotNull(
             batch_size, this->nestedPlace(place), columns_param, final_nulls.get(), arena, -1);
