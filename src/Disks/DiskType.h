@@ -11,7 +11,8 @@ enum class DiskType
     RAM,
     S3,
     HDFS,
-    Encrypted
+    Encrypted,
+    WebServer,
 };
 
 inline String toString(DiskType disk_type)
@@ -28,6 +29,8 @@ inline String toString(DiskType disk_type)
             return "hdfs";
         case DiskType::Encrypted:
             return "encrypted";
+        case DiskType::WebServer:
+            return "web";
     }
     __builtin_unreachable();
 }

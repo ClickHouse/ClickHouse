@@ -226,6 +226,8 @@ public:
     /// Overrode in remote fs disks.
     virtual bool supportZeroCopyReplication() const = 0;
 
+    virtual bool isReadOnly() const { return false; }
+
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
