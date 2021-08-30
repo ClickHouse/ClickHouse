@@ -513,11 +513,15 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
 void Changelog::compact(uint64_t up_to_log_index)
 {
+    LOG_INFO(log, "Compact logs up to log index {}", up_to_log_index);
     for (auto itr = existing_changelogs.begin(); itr != existing_changelogs.end();)
     {
         /// Remove all completely outdated changelog files
         if (itr->second.to_log_index <= up_to_log_index)
         {
+            if (current_writer && itr->second.from_log_index == current_writer->getStartIndex())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove log {} which is current active log for write. It's a bug.", itr->second.path);
+
             LOG_INFO(log, "Removing changelog {} because of compaction", itr->second.path);
             std::erase_if(index_to_start_pos, [right_index = itr->second.to_log_index] (const auto & item) { return item.first <= right_index; });
             std::filesystem::remove(itr->second.path);
