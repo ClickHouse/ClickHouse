@@ -123,6 +123,7 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
 
         /// NOTE: thread may be attached multiple times if it is reused from a thread pool.
         thread_group->thread_ids.emplace_back(thread_id);
+        thread_group->threads.insert(this);
 
         logs_queue_ptr = thread_group->logs_queue_ptr;
         fatal_error_callback = thread_group->fatal_error_callback;
