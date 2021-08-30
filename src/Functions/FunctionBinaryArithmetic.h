@@ -631,7 +631,7 @@ private:
 using namespace traits_;
 using namespace impl_;
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool special_implementation_for_nulls = false>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
 class FunctionBinaryArithmetic : public IFunction
 {
     static constexpr const bool is_plus = IsOperation<Op>::plus;
@@ -1106,7 +1106,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override
     {
-        return !special_implementation_for_nulls;
+        return !division_by_nullable;
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
@@ -1593,7 +1593,7 @@ public:
         const auto & left_argument = arguments[0];
         const auto & right_argument = arguments[1];
 
-        if (special_implementation_for_nulls && !right_nullmap)
+        if (division_by_nullable && !right_nullmap)
         {
             assert(right_argument.type->isNullable());
 
@@ -1712,11 +1712,11 @@ public:
 };
 
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool special_implementation_for_nulls = false>
-class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, special_implementation_for_nulls>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
+class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
 {
 public:
-    using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, special_implementation_for_nulls>;
+    using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>;
     using Monotonicity = typename Base::Monotonicity;
 
     static FunctionPtr create(
@@ -1915,7 +1915,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        bool special_implementation_for_nulls = arguments[1].type->isNullable()
+        bool division_by_nullable = arguments[1].type->isNullable()
             && (IsOperation<Op>::div_int || IsOperation<Op>::modulo
                 || (IsOperation<Op>::div_floating
                     && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
@@ -1925,22 +1925,22 @@ public:
             && ((arguments[0].column && isColumnConst(*arguments[0].column))
                 || (arguments[1].column && isColumnConst(*arguments[1].column))))
         {
-            auto func = special_implementation_for_nulls ? FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(
+            auto function = division_by_nullable ? FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(
                     arguments[0], arguments[1], return_type, context)
                 : FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(
                     arguments[0], arguments[1], return_type, context);
 
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                func,
+                function,
                 collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         }
-        auto func = special_implementation_for_nulls
+        auto function = division_by_nullable
             ? FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, true>::create(context)
             : FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, false>::create(context);
 
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            func,
+            function,
             collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
             return_type);
 
