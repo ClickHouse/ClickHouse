@@ -962,7 +962,7 @@ using FunctionLinfNormalize = FunctionLNormalize<Linf_LABEL>;
 
 using FunctionLpNormalize = FunctionLNormalize<Lp_LABEL>;
 
-/*class FunctionCosineDistance : public TupleIFunction
+class FunctionCosineDistance : public TupleIFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
@@ -984,39 +984,52 @@ public:
         ColumnWithTypeAndName first_norm{norm.getReturnTypeImpl({arguments[0]}), {}};
         ColumnWithTypeAndName second_norm{norm.getReturnTypeImpl({arguments[1]}), {}};
 
+        auto minus = FunctionFactory::instance().get("minus", context);
         auto multiply = FunctionFactory::instance().get("multiply", context);
         auto divide = FunctionFactory::instance().get("divide", context);
 
-        auto elem_multiply
+        ColumnWithTypeAndName one{std::make_shared<DataTypeUInt8>(), {}};
 
-            auto elem_abs = abs->build(ColumnsWithTypeAndName{cur});
-        cur.column = elem_abs->execute({cur}, elem_abs->getResultType(), 1);
-        cur.type = elem_abs->getResultType();
-
-        return func->build({minus_res, arguments[2]})->getResultType();
+        ColumnWithTypeAndName multiply_result{multiply->build({first_norm, second_norm})->getResultType(), {}};
+        ColumnWithTypeAndName divide_result{divide->build({dot_result, multiply_result})->getResultType(), {}};
+        return minus->build({one, divide_result})->getResultType();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        FunctionTupleMinus tuple_minus(context);
-        auto type = tuple_minus.getReturnTypeImpl(arguments);
-        auto column = tuple_minus.executeImpl(arguments, DataTypePtr(), input_rows_count);
+        FunctionDotProduct dot(context);
+        ColumnWithTypeAndName dot_result{dot.executeImpl(arguments, DataTypePtr(), input_rows_count),
+                                         dot.getReturnTypeImpl(arguments), {}};
 
-        ColumnWithTypeAndName minus_res{column, type, {}};
+        FunctionL2Norm norm(context);
+        ColumnWithTypeAndName first_norm{norm.executeImpl({arguments[0]}, DataTypePtr(), input_rows_count),
+                                         norm.getReturnTypeImpl({arguments[0]}), {}};
+        ColumnWithTypeAndName second_norm{norm.executeImpl({arguments[1]}, DataTypePtr(), input_rows_count),
+                                          norm.getReturnTypeImpl({arguments[1]}), {}};
 
-        auto func = FunctionFactory::instance().get("L" + std::string(func_label) + "Norm", context);
-        if constexpr (func_label[0] == 'p')
-        {
-            auto func_elem = func->build({minus_res, arguments[2]});
-            return func_elem->execute({minus_res, arguments[2]}, func_elem->getResultType(), input_rows_count);
-        }
-        else
-        {
-            auto func_elem = func->build({minus_res});
-            return func_elem->execute({minus_res}, func_elem->getResultType(), input_rows_count);
-        }
+        auto minus = FunctionFactory::instance().get("minus", context);
+        auto multiply = FunctionFactory::instance().get("multiply", context);
+        auto divide = FunctionFactory::instance().get("divide", context);
+
+        ColumnWithTypeAndName one{DataTypeUInt8().createColumnConst(input_rows_count, 1)->convertToFullColumnIfConst(),
+                                  std::make_shared<DataTypeUInt8>(), {}};
+
+        auto multiply_elem = multiply->build({first_norm, second_norm});
+        ColumnWithTypeAndName multiply_result;
+        multiply_result.type = multiply_elem->getResultType();
+        multiply_result.column = multiply_elem->execute({first_norm, second_norm},
+                                                        multiply_result.type, input_rows_count);
+
+        auto divide_elem = divide->build({dot_result, multiply_result});
+        ColumnWithTypeAndName divide_result;
+        divide_result.type = divide_elem->getResultType();
+        divide_result.column = divide_elem->execute({dot_result, multiply_result},
+                                                    divide_result.type, input_rows_count);
+
+        auto minus_elem = minus->build({one, divide_result});
+        return minus_elem->execute({one, divide_result}, minus_elem->getResultType(), {});
     }
-};*/
+};
 
 void registerVectorFunctions(FunctionFactory & factory)
 {
@@ -1048,7 +1061,7 @@ void registerVectorFunctions(FunctionFactory & factory)
     factory.registerFunction<FunctionL2Normalize>();
     factory.registerFunction<FunctionLinfNormalize>();
     factory.registerFunction<FunctionLpNormalize>();
-//
-//    factory.registerFunction<FunctionCosineDistance>();
+
+    factory.registerFunction<FunctionCosineDistance>();
 }
 }
