@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086
+# shellcheck disable=SC2086,SC2001
 
 set -eux
 set -o pipefail
@@ -76,6 +76,9 @@ function filter_exists_and_template
     local path
     for path in "$@"; do
         if [ -e "$path" ]; then
+            # SC2001 shellcheck suggests:
+            # echo ${path//.sql.j2/.gen.sql}
+            # but it doesn't allow to use regex
             echo "$path" | sed 's/\.sql\.j2$/.gen.sql/'
         else
             echo "'$path' does not exists" >&2
