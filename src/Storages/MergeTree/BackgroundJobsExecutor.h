@@ -56,9 +56,6 @@ class BackgroundJobExecutor : protected WithContext
 {
 
 private:
-
-
-
     MergeTreeData & data;
 
     /// Name for task in background scheduling pool

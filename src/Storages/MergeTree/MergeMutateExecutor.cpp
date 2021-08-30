@@ -45,6 +45,7 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
             catch(...)
             {
                 decrementTasksCount();
+                task->onCompleted();
                 std::lock_guard guard(mutex);
                 has_tasks.notify_one();
                 tryLogCurrentException(__PRETTY_FUNCTION__);

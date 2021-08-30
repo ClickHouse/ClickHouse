@@ -2877,7 +2877,8 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobExecutor
     }
     else
     {
-        executor.executeFetchTask(LambdaAdapter::create([this, selected_entry] () mutable
+        // Execute in big pool
+        executor.executeMergeMutateTask(LambdaAdapter::create([this, selected_entry] () mutable
         {
             return processQueueEntry(selected_entry);
         }, *this));
