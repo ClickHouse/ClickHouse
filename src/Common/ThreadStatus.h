@@ -15,6 +15,7 @@
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
+#include <unordered_set>
 
 
 namespace Poco
@@ -41,7 +42,7 @@ struct ViewRuntimeData;
 class QueryViewsLog;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
-
+using ThreadStatusPtr = ThreadStatus *;
 
 /** Thread group is a collection of threads dedicated to single task
   * (query or other process like background merge).
@@ -66,6 +67,7 @@ public:
     std::function<void()> fatal_error_callback;
 
     std::vector<UInt64> thread_ids;
+    std::unordered_set<ThreadStatusPtr> threads;
 
     /// The first thread created this thread group
     UInt64 master_thread_id = 0;
