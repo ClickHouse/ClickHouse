@@ -78,8 +78,9 @@ RUN python3 -m pip install \
     pytest \
     pytest-timeout \
     pytest-xdist \
+    pytz \
     redis \
-    tzlocal \
+    tzlocal==2.1 \
     urllib3 \
     requests-kerberos \
     pyhdfs
