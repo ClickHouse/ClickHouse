@@ -1,3 +1,4 @@
+#include <memory>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -870,6 +871,10 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
+            case Protocol::Server::ProfileEvents:
+                res.block = receiveProfileEvents();
+                return res;
+
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -923,6 +928,13 @@ Block Connection::receiveDataImpl(NativeReader & reader)
 }
 
 
+Block Connection::receiveProfileEvents()
+{
+    initBlockProfileEventsInput();
+    return receiveDataImpl(*block_profile_events_in);
+}
+
+
 void Connection::initInputBuffers()
 {
 
@@ -952,6 +964,15 @@ void Connection::initBlockLogsInput()
     {
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
         block_logs_in = std::make_unique<NativeReader>(*in, server_revision);
+    }
+}
+
+
+void Connection::initBlockProfileEventsInput()
+{
+    if (!block_profile_events_in)
+    {
+        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision);
     }
 }
 

@@ -30,6 +30,7 @@
 #include <Access/Credentials.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Compression/CompressionFactory.h>
 #include <base/logger_useful.h>
 #include <Common/CurrentMetrics.h>
@@ -812,6 +813,128 @@ void TCPHandler::sendExtremes(const Block & extremes)
 }
 
 
+namespace
+{
+    using namespace ProfileEvents;
+
+    enum ProfileEventTypes : int8_t
+    {
+        INCREMENT = 1,
+        GAUGE     = 2,
+    };
+
+    constexpr size_t NAME_COLUMN_INDEX  = 4;
+    constexpr size_t VALUE_COLUMN_INDEX = 5;
+
+    /*
+     * Add records about provided non-zero ProfileEvents::Counters.
+     */
+    void dumpProfileEvents(
+        ProfileEvents::Counters const & snapshot,
+        MutableColumns & columns,
+        String const & host_name,
+        time_t current_time,
+        UInt64 thread_id)
+    {
+        size_t rows = 0;
+        auto & name_column = columns[NAME_COLUMN_INDEX];
+        auto & value_column = columns[VALUE_COLUMN_INDEX];
+        for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
+        {
+            UInt64 value = snapshot[event].load(std::memory_order_relaxed);
+
+            if (value == 0)
+                continue;
+
+            const char * desc = ProfileEvents::getName(event);
+            name_column->insertData(desc, strlen(desc));
+            value_column->insert(value);
+            rows++;
+        }
+
+        // Fill the rest of the columns with data
+        for (size_t row = 0; row < rows; ++row)
+        {
+            size_t i = 0;
+            columns[i++]->insertData(host_name.data(), host_name.size());
+            columns[i++]->insert(UInt64(current_time));
+            columns[i++]->insert(UInt64{thread_id});
+            columns[i++]->insert(ProfileEventTypes::INCREMENT);
+        }
+    }
+
+    void dumpMemoryTracker(
+        MemoryTracker * memoryTracker,
+        MutableColumns & columns,
+        String const & host_name,
+        time_t current_time,
+        UInt64 thread_id)
+    {
+        auto metric = memoryTracker->getMetric();
+        if (metric == CurrentMetrics::end())
+            return;
+
+        size_t i = 0;
+        columns[i++]->insertData(host_name.data(), host_name.size());
+        columns[i++]->insert(UInt64(current_time));
+        columns[i++]->insert(UInt64{thread_id});
+        columns[i++]->insert(ProfileEventTypes::GAUGE);
+
+        auto const * metric_name = CurrentMetrics::getName(metric);
+        columns[i++]->insertData(metric_name, strlen(metric_name));
+        auto metric_value = CurrentMetrics::get(metric);
+        columns[i++]->insert(metric_value);
+    }
+}
+
+
+void TCPHandler::sendProfileEvents()
+{
+    auto thread_group = CurrentThread::getGroup();
+    auto const counters_snapshot = CurrentThread::getProfileEvents().getPartiallyAtomicSnapshot();
+    auto current_time = time(nullptr);
+    auto * memory_tracker = CurrentThread::getMemoryTracker();
+
+    auto const thread_id = CurrentThread::get().thread_id;
+
+    auto profile_event_type = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            { "increment", static_cast<Int8>(INCREMENT)},
+            { "gauge",     static_cast<Int8>(GAUGE)},
+        });
+
+    NamesAndTypesList column_names_and_types = {
+        { "host_name",    std::make_shared<DataTypeString>()   },
+        { "current_time", std::make_shared<DataTypeDateTime>() },
+        { "thread_id",    std::make_shared<DataTypeUInt64>()   },
+        { "type",         profile_event_type                   },
+        { "name",         std::make_shared<DataTypeString>()   },
+        { "value",        std::make_shared<DataTypeUInt64>()   },
+    };
+
+    ColumnsWithTypeAndName temp_columns;
+    for (auto const & name_and_type : column_names_and_types)
+        temp_columns.emplace_back(name_and_type.type, name_and_type.name);
+
+    Block block(std::move(temp_columns));
+
+    MutableColumns columns = block.mutateColumns();
+    dumpProfileEvents(counters_snapshot, columns, server_display_name, current_time, thread_id);
+    dumpMemoryTracker(memory_tracker, columns, server_display_name, current_time, thread_id);
+
+    block.setColumns(std::move(columns));
+
+    initProfileEventsBlockOutput(block);
+
+    writeVarUInt(Protocol::Server::ProfileEvents, *out);
+    writeStringBinary("", *out);
+
+    state.logs_block_out->write(block);
+    out->next();
+}
+
+
 bool TCPHandler::receiveProxyHeader()
 {
     if (in->eof())
@@ -1445,6 +1568,20 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = query_context->getSettingsRef();
         state.logs_block_out = std::make_unique<NativeWriter>(
+            *out,
+            client_tcp_protocol_version,
+            block.cloneEmpty(),
+            !query_settings.low_cardinality_allow_in_native_format);
+    }
+}
+
+
+void TCPHandler::initProfileEventsBlockOutput(const Block & block)
+{
+    if (!state.profile_events_block_out)
+    {
+        const Settings & query_settings = query_context->getSettingsRef();
+        state.profile_events_block_out = std::make_unique<NativeWriter>(
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
