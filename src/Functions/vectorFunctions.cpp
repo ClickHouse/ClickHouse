@@ -762,8 +762,8 @@ public:
             {
                 ColumnWithTypeAndName cur{cur_elements.empty() ? nullptr : cur_elements[i], cur_types[i], {}};
                 auto elem_abs = abs->build(ColumnsWithTypeAndName{cur});
-                cur.column = elem_abs->execute({cur}, elem_abs->getResultType(), 1);
                 cur.type = elem_abs->getResultType();
+                cur.column = cur.type->createColumn();
 
                 auto elem_pow = pow->build(ColumnsWithTypeAndName{cur, p_column});
 
@@ -786,11 +786,9 @@ public:
         }
 
         auto divide = FunctionFactory::instance().get("divide", context);
-        ColumnWithTypeAndName one{DataTypeFloat64().createColumnConst(1, 1.), std::make_shared<DataTypeFloat64>(), {}};
+        ColumnWithTypeAndName one{std::make_shared<DataTypeUInt8>(), {}};
         auto div_elem = divide->build({one, p_column});
-        ColumnWithTypeAndName inv_p_column;
-        inv_p_column.type = div_elem->getResultType();
-        inv_p_column.column = div_elem->execute({one, p_column}, inv_p_column.type, 1);
+        ColumnWithTypeAndName inv_p_column{div_elem->getResultType(), {}};
         return pow->build({ColumnWithTypeAndName{res_type, {}}, inv_p_column})->getResultType();
     }
 
@@ -836,7 +834,8 @@ public:
         }
 
         auto divide = FunctionFactory::instance().get("divide", context);
-        ColumnWithTypeAndName one{DataTypeFloat64().createColumnConst(input_rows_count, 1.)->convertToFullColumnIfConst(), std::make_shared<DataTypeFloat64>(), {}};
+        ColumnWithTypeAndName one{DataTypeUInt8().createColumnConst(input_rows_count, 1)->convertToFullColumnIfConst(),
+                                  std::make_shared<DataTypeUInt8>(), {}};
         auto div_elem = divide->build({one, p_column});
         ColumnWithTypeAndName inv_p_column;
         inv_p_column.type = div_elem->getResultType();
@@ -871,9 +870,8 @@ public:
     {
         FunctionTupleMinus tuple_minus(context);
         auto type = tuple_minus.getReturnTypeImpl(arguments);
-        auto column = tuple_minus.executeImpl(arguments, DataTypePtr(), 1);
 
-        ColumnWithTypeAndName minus_res{column, type, {}};
+        ColumnWithTypeAndName minus_res{type, {}};
 
         auto func = FunctionFactory::instance().get("L" + std::string(func_label) + "Norm", context);
         if constexpr (func_label[0] == 'p')
@@ -936,9 +934,8 @@ public:
     {
         FunctionLNorm<func_label> norm(context);
         auto type = norm.getReturnTypeImpl(arguments);
-        auto column = norm.executeImpl(arguments, DataTypePtr(), 1);
 
-        ColumnWithTypeAndName norm_res{column, type, {}};
+        ColumnWithTypeAndName norm_res{type, {}};
 
         FunctionTupleDivideByNumber divide(context);
         return divide.getReturnTypeImpl({arguments[0], norm_res});
@@ -964,6 +961,62 @@ using FunctionL2Normalize = FunctionLNormalize<L2_LABEL>;
 using FunctionLinfNormalize = FunctionLNormalize<Linf_LABEL>;
 
 using FunctionLpNormalize = FunctionLNormalize<Lp_LABEL>;
+
+/*class FunctionCosineDistance : public TupleIFunction
+{
+public:
+    /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
+    static inline auto name = "cosineDistance";
+
+    explicit FunctionCosineDistance(ContextPtr context_) : TupleIFunction(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCosineDistance>(context_); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        FunctionDotProduct dot(context);
+        ColumnWithTypeAndName dot_result{dot.getReturnTypeImpl(arguments), {}};
+
+        FunctionL2Norm norm(context);
+        ColumnWithTypeAndName first_norm{norm.getReturnTypeImpl({arguments[0]}), {}};
+        ColumnWithTypeAndName second_norm{norm.getReturnTypeImpl({arguments[1]}), {}};
+
+        auto multiply = FunctionFactory::instance().get("multiply", context);
+        auto divide = FunctionFactory::instance().get("divide", context);
+
+        auto elem_multiply
+
+            auto elem_abs = abs->build(ColumnsWithTypeAndName{cur});
+        cur.column = elem_abs->execute({cur}, elem_abs->getResultType(), 1);
+        cur.type = elem_abs->getResultType();
+
+        return func->build({minus_res, arguments[2]})->getResultType();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        FunctionTupleMinus tuple_minus(context);
+        auto type = tuple_minus.getReturnTypeImpl(arguments);
+        auto column = tuple_minus.executeImpl(arguments, DataTypePtr(), input_rows_count);
+
+        ColumnWithTypeAndName minus_res{column, type, {}};
+
+        auto func = FunctionFactory::instance().get("L" + std::string(func_label) + "Norm", context);
+        if constexpr (func_label[0] == 'p')
+        {
+            auto func_elem = func->build({minus_res, arguments[2]});
+            return func_elem->execute({minus_res, arguments[2]}, func_elem->getResultType(), input_rows_count);
+        }
+        else
+        {
+            auto func_elem = func->build({minus_res});
+            return func_elem->execute({minus_res}, func_elem->getResultType(), input_rows_count);
+        }
+    }
+};*/
 
 void registerVectorFunctions(FunctionFactory & factory)
 {
