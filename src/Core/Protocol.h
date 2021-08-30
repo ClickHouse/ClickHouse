@@ -80,7 +80,7 @@ namespace Protocol
             ReadTaskRequest = 13,     /// String (UUID) describes a request for which next task is needed
                                       /// This is such an inverted logic, where server sends requests
                                       /// And client returns back response
-            ProfileEvents = 14,
+            ProfileEvents = 14,       /// Packet with profile events from server.
             MAX = ProfileEvents,
         };
 
