@@ -70,6 +70,7 @@ SRCS(
     InJoinSubqueriesPreprocessor.cpp
     InternalTextLogsQueue.cpp
     InterpreterAlterQuery.cpp
+    InterpreterBackupQuery.cpp
     InterpreterCheckQuery.cpp
     InterpreterCreateFunctionQuery.cpp
     InterpreterCreateQuery.cpp
@@ -146,6 +147,7 @@ SRCS(
     RewriteSumIfFunctionVisitor.cpp
     RowRefs.cpp
     SelectIntersectExceptQueryVisitor.cpp
+    Session.cpp
     Set.cpp
     SetVariants.cpp
     SortedBlocksWriter.cpp
