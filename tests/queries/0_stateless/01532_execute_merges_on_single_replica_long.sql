@@ -98,6 +98,7 @@ SELECT '*** disable the feature';
 ALTER TABLE execute_on_single_replica_r1 MODIFY SETTING execute_merges_on_single_replica_time_threshold=0;
 ALTER TABLE execute_on_single_replica_r2 MODIFY SETTING execute_merges_on_single_replica_time_threshold=0;
 
+SET replication_alter_partitions_sync=2;
 /* all_0_0_6 - we disabled the feature, both replicas will merge */
 OPTIMIZE TABLE execute_on_single_replica_r2 FINAL;
 /* all_0_0_7 - same */
