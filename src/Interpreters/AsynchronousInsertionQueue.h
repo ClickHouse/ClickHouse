@@ -65,7 +65,7 @@ class AsynchronousInsertQueue : public WithMutableContext
         const size_t max_data_size;  /// in bytes
         const std::chrono::seconds busy_timeout, stale_timeout;
 
-        RWLock lock;
+        std::shared_mutex rwlock;
         std::unique_ptr<Queue> queue;
 
         std::atomic<bool> shutdown{false};
