@@ -1,4 +1,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Common/ThreadStatus.h>
+#include <Common/Scope
 
 namespace DB
 {
@@ -62,6 +64,12 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
     }
 
     return Status::Ready;
+}
+
+static std::exception_ptr runStep(std::function<void()> func, ExceptionKeepingTransform::RuntimeData * runtime_data)
+{
+    auto * original_thread = current_thread;
+    SCOPE_EXIT({ current_thread = original_thread; });
 }
 
 void ExceptionKeepingTransform::work()
