@@ -284,8 +284,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , merge_strategy_picker(*this)
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
-    , background_executor(*this, getContext())
-    , background_moves_executor(*this, getContext())
+    , background_executor(*this, BackgroundJobAssignee::Type::DataProcessing, getContext())
+    , background_moves_executor(*this, BackgroundJobAssignee::Type::Moving, getContext())
     , cleanup_thread(*this)
     , part_check_thread(*this)
     , restarting_thread(*this)
@@ -3210,7 +3210,7 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
     });
 }
 
-bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & executor)
+bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobAssignee & executor)
 {
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
@@ -3225,18 +3225,20 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(IBackgroundJobExecuto
     /// Depending on entry type execute in fetches (small) pool or big merge_mutate pool
     if (selected_entry->log_entry->type == LogEntry::GET_PART)
     {
-        executor.execute({[this, selected_entry] () mutable
-        {
-            return processQueueEntry(selected_entry);
-        }, PoolType::FETCH});
+        executor.scheduleFetchTask(LambdaAdapter::create(
+            [this, selected_entry] () mutable
+            {
+                return processQueueEntry(selected_entry);
+            }, *this));
         return true;
     }
     else
     {
-        executor.execute({[this, selected_entry] () mutable
-        {
-            return processQueueEntry(selected_entry);
-        }, PoolType::MERGE_MUTATE});
+        executor.scheduleMergeMutateTask(LambdaAdapter::create(
+            [this, selected_entry] () mutable
+            {
+                return processQueueEntry(selected_entry);
+            }, *this));
         return true;
     }
 }
@@ -6982,9 +6984,9 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
     if (action_type == ActionLocks::PartsMerge || action_type == ActionLocks::PartsTTLMerge
         || action_type == ActionLocks::PartsFetch || action_type == ActionLocks::PartsSend
         || action_type == ActionLocks::ReplicationQueue)
-        background_executor.triggerTask();
+        background_executor.trigger();
     else if (action_type == ActionLocks::PartsMove)
-        background_moves_executor.triggerTask();
+        background_moves_executor.trigger();
 }
 
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
@@ -6996,7 +6998,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
-    background_executor.triggerTask();
+    background_executor.trigger();
 
     Poco::Event target_size_event;
     auto callback = [&target_size_event, queue_size] (size_t new_queue_size)

@@ -246,6 +246,8 @@ try
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
 
+    global_context->initializeBackgroundExecutors();
+
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
