@@ -439,6 +439,9 @@ void StorageStripeLog::saveIndices(const WriteLock & /* already locked for writi
         return;
 
     size_t start = num_indices_saved;
+    if (!disk->supportsAppendWithoutFragmentations())
+        start = 0; /// We don't the index file to be splitted into multiple parts because it slows down the reading.
+
     WriteMode write_mode = start ? WriteMode::Append : WriteMode::Rewrite;
     auto index_out_compressed = disk->writeFile(index_file_path, DBMS_DEFAULT_BUFFER_SIZE, write_mode);
     auto index_out = std::make_unique<CompressedWriteBuffer>(*index_out_compressed);

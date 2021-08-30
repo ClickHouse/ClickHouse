@@ -592,6 +592,9 @@ void StorageLog::saveMarks(const WriteLock & /* already locked for writing */)
     }
 
     size_t start = num_marks_saved;
+    if (!disk->supportsAppendWithoutFragmentations())
+        start = 0; /// We don't the marks file to be splitted into multiple parts because it slows down the reading.
+
     auto write_mode = start ? WriteMode::Append : WriteMode::Rewrite;
     auto marks_stream = disk->writeFile(marks_file_path, 4096, write_mode);
 

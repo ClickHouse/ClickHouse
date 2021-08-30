@@ -216,6 +216,11 @@ public:
     /// Overrode in remote fs disks.
     virtual bool supportZeroCopyReplication() const = 0;
 
+    /// Whether this disk supports writing to the end of a currently existing file without splitting the file into fragments.
+    /// This is how some of remote disks work (e.g. s3) - they doesn't support appenging natively and have to simulate that
+    /// with using metadata and splitting the file into fragments.
+    virtual bool supportsAppendWithoutFragmentations() const = 0;
+
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 

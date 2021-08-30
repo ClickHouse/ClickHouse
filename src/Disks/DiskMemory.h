@@ -94,6 +94,8 @@ public:
 
     bool supportZeroCopyReplication() const override { return false; }
 
+    bool supportsAppendWithoutFragmentations() const { return true; }
+
 private:
     void createDirectoriesImpl(const String & path);
     void replaceFileImpl(const String & from_path, const String & to_path);

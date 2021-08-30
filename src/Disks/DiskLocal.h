@@ -103,6 +103,8 @@ public:
 
     bool supportZeroCopyReplication() const override { return false; }
 
+    bool supportsAppendWithoutFragmentations() const { return true; }
+
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
