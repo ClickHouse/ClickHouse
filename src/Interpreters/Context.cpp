@@ -100,6 +100,13 @@ namespace CurrentMetrics
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
+
+
+    extern const Metric DelayedInserts;
+    extern const Metric BackgroundPoolTask;
+    extern const Metric BackgroundMovePoolTask;
+    extern const Metric BackgroundFetchesPoolTask;
+
 }
 
 namespace DB
@@ -1503,9 +1510,9 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
     return *shared->buffer_flush_schedule_pool;
 }
 
-BackgroundTaskSchedulingSettings Context::getBackgroundProcessingTaskSchedulingSettings() const
+ExecutableTaskSchedulingSettings Context::getBackgroundProcessingTaskSchedulingSettings() const
 {
-    BackgroundTaskSchedulingSettings task_settings;
+    ExecutableTaskSchedulingSettings task_settings;
 
     const auto & config = getConfigRef();
     task_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
@@ -1518,9 +1525,9 @@ BackgroundTaskSchedulingSettings Context::getBackgroundProcessingTaskSchedulingS
     return task_settings;
 }
 
-BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSettings() const
+ExecutableTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSettings() const
 {
-    BackgroundTaskSchedulingSettings task_settings;
+    ExecutableTaskSchedulingSettings task_settings;
 
     const auto & config = getConfigRef();
     task_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
@@ -2690,5 +2697,42 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 
     return ignored_part_uuids;
 }
+
+
+void Context::initializeBackgroundExecutors()
+{
+    merge_mutate_executor = MergeTreeBackgroundExecutor::create();
+    moves_executor = MergeTreeBackgroundExecutor::create();
+    fetch_executor = MergeTreeBackgroundExecutor::create();
+
+    merge_mutate_executor->setThreadsCount([this] () { return getSettingsRef().background_pool_size; });
+    merge_mutate_executor->setTasksCount([this] () { return getSettingsRef().background_pool_size; });
+    merge_mutate_executor->setMetric(CurrentMetrics::BackgroundPoolTask);
+
+    moves_executor->setThreadsCount([this] () { return getSettingsRef().background_move_pool_size; });
+    moves_executor->setTasksCount([this] () { return getSettingsRef().background_move_pool_size; });
+    moves_executor->setMetric(CurrentMetrics::BackgroundMovePoolTask);
+
+    fetch_executor->setThreadsCount([this] () { return getSettingsRef().background_fetches_pool_size; });
+    fetch_executor->setTasksCount([this] () { return getSettingsRef().background_fetches_pool_size; });
+    fetch_executor->setMetric(CurrentMetrics::BackgroundFetchesPoolTask);
+}
+
+
+MergeTreeBackgroundExecutorPtr Context::getMergeMutateExecutor() const
+{
+    return merge_mutate_executor;
+}
+
+MergeTreeBackgroundExecutorPtr Context::getMovesExecutor() const
+{
+    return moves_executor;
+}
+
+MergeTreeBackgroundExecutorPtr Context::getFetchesExecutor() const
+{
+    return fetch_executor;
+}
+
 
 }

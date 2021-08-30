@@ -4889,7 +4889,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     }
 }
 
-bool MergeTreeData::scheduleDataMovingJob(IBackgroundJobExecutor & executor)
+bool MergeTreeData::scheduleDataMovingJob(BackgroundJobAssignee & executor)
 {
     if (parts_mover.moves_blocker.isCancelled())
         return false;
@@ -4898,10 +4898,11 @@ bool MergeTreeData::scheduleDataMovingJob(IBackgroundJobExecutor & executor)
     if (moving_tagger->parts_to_move.empty())
         return false;
 
-    executor.execute({[this, moving_tagger] () mutable
-    {
-        return moveParts(moving_tagger);
-    }, PoolType::MOVE});
+    executor.scheduleMoveTask(LambdaAdapter::create(
+        [this, moving_tagger] () mutable
+        {
+            return moveParts(moving_tagger);
+        }, *this));
     return true;
 }
 

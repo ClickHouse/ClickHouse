@@ -549,6 +549,8 @@ if (ThreadFuzzer::instance().isEffective())
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
+    global_context->initializeBackgroundExecutors();
+
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
     bool has_zookeeper = config().has("zookeeper");

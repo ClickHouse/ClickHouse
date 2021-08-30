@@ -96,9 +96,23 @@ public:
 
     RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
 
-    bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
+    bool scheduleDataProcessingJob(BackgroundJobAssignee & executor) override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
+
+    void triggerBackgroundOperationTask(bool delay) override
+    {
+        if (delay)
+            background_executor.postpone();
+        else
+            background_executor.trigger();
+
+        if (delay)
+            background_moves_executor.postpone();
+        else
+            background_moves_executor.trigger();
+    }
+
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -108,8 +122,8 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
-    BackgroundJobsExecutor background_executor;
-    BackgroundMovesExecutor background_moves_executor;
+    BackgroundJobAssignee background_executor;
+    BackgroundJobAssignee background_moves_executor;
 
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 
