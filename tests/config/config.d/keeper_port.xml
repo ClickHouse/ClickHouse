@@ -10,7 +10,7 @@
             <startup_timeout>60000</startup_timeout>
             <!-- we want all logs for complex problems investigation -->
             <reserved_log_items>10000</reserved_log_items>
-            <rotate_log_interval>33333</rotate_log_interval>
+            <rotate_log_storage_interval>33333</rotate_log_storage_interval>
         </coordination_settings>
 
         <raft_configuration>
