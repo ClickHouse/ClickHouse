@@ -14,6 +14,11 @@ SELECT tupleDivideByNumber((1, 2.5, 3), 0.5);
 SELECT tupleMultiplyByNumber(tuple(1), 1);
 SELECT tupleDivideByNumber(tuple(1), 1);
 
+SELECT (1, 2.0, 3.1) * 3;
+SELECT 5.5 * (2, 4);
+SELECT (1, 2) / 2;
+SELECT 2 / (1, 1); -- { serverError 43 }
+
 SELECT tuple(1, 2, 3) * tuple(2, 3, 4);
 SELECT dotProduct((-1, 2, 3.002), (2, 3.4, 4));
 SELECT scalarProduct(tuple(1), tuple(0));

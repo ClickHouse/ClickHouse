@@ -674,6 +674,35 @@ class FunctionBinaryArithmetic : public IFunction
         return FunctionFactory::instance().get(function_name, context);
     }
 
+    static FunctionOverloadResolverPtr
+    getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    {
+        if (!(isTuple(type0) && isNumber(type1)) && !(isTuple(type1) && isNumber(type0)))
+            return {};
+
+        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
+        /// We construct another function (example: tupleMultiplyByNumber) and call it.
+
+        if constexpr (!is_multiply && !is_division)
+            return {};
+
+        if (isNumber(type0) && is_division)
+            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of numeric type cannot be first.",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        std::string function_name;
+        if (is_multiply)
+        {
+            function_name = "tupleMultiplyByNumber";
+        }
+        else
+        {
+            function_name = "tupleDivideByNumber";
+        }
+
+        return FunctionFactory::instance().get(function_name, context);
+    }
+
     static bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1)
     {
         if constexpr (!is_multiply)
@@ -808,6 +837,20 @@ class FunctionBinaryArithmetic : public IFunction
 
         /// Change interval argument type to its representation
         new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+
+        auto function = function_builder->build(new_arguments);
+
+        return function->execute(new_arguments, result_type, input_rows_count);
+    }
+
+    ColumnPtr executeTupleNumberOperator(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+                                               size_t input_rows_count, const FunctionOverloadResolverPtr & function_builder) const
+    {
+        ColumnsWithTypeAndName new_arguments = arguments;
+
+        /// Number argument must be second.
+        if (isNumber(arguments[0].type))
+            std::swap(new_arguments[0], new_arguments[1]);
 
         auto function = function_builder->build(new_arguments);
 
@@ -1041,6 +1084,22 @@ public:
 
             for (size_t i = 0; i < 2; ++i)
                 new_arguments[i].type = arguments[i];
+
+            auto function = function_builder->build(new_arguments);
+            return function->getResultType();
+        }
+
+        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
+        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0], arguments[1], context))
+        {
+            ColumnsWithTypeAndName new_arguments(2);
+
+            for (size_t i = 0; i < 2; ++i)
+                new_arguments[i].type = arguments[i];
+
+            /// Number argument must be second.
+            if (isNumber(new_arguments[0].type))
+                std::swap(new_arguments[0], new_arguments[1]);
 
             auto function = function_builder->build(new_arguments);
             return function->getResultType();
@@ -1322,6 +1381,13 @@ public:
             = getFunctionForTupleArithmetic(arguments[0].type, arguments[1].type, context))
         {
             return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
+        }
+
+        /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
+        if (auto function_builder
+            = getFunctionForTupleAndNumberArithmetic(arguments[0].type, arguments[1].type, context))
+        {
+            return executeTupleNumberOperator(arguments, result_type, input_rows_count, function_builder);
         }
 
         const auto & left_argument = arguments[0];
