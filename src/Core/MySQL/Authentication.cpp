@@ -2,7 +2,6 @@
 #include <Core/MySQL/PacketsConnection.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
-#include <Interpreters/Session.h>
 #include <Access/User.h>
 #include <Access/AccessControlManager.h>
 #include <Interpreters/Session.h>
