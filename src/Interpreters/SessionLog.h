@@ -66,7 +66,7 @@ class SessionLog : public SystemLog<SessionLogElement>
     using SystemLog<SessionLogElement>::SystemLog;
 
 public:
-    void addLoginSuccess(const UUID & session_id, std::optional<String> session_name, const Context & context);
+    void addLoginSuccess(const UUID & session_id, std::optional<String> session_name, const Context & login_context);
     void addLoginFailure(const UUID & session_id, const ClientInfo & info, const String & user, const Exception & reason);
     void addLogOut(const UUID & session_id, const String & user, const ClientInfo & client_info);
 };
