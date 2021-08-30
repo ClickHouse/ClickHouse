@@ -9,6 +9,7 @@
 #include <base/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include "Core/Protocol.h"
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -611,6 +612,10 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             onEndOfStream();
             return false;
 
+        case Protocol::Server::ProfileEvents:
+            onProfileEvents();
+            return true;
+
         default:
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
@@ -649,6 +654,10 @@ void ClientBase::onEndOfStream()
         std::cout << "Ok." << std::endl;
     }
 }
+
+
+void ClientBase::onProfileEvents()
+{}
 
 
 /// Flush all buffers.

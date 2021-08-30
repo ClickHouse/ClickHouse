@@ -143,6 +143,11 @@ public:
         metric.store(metric_, std::memory_order_relaxed);
     }
 
+    CurrentMetrics::Metric getMetric()
+    {
+        return metric.load(std::memory_order_relaxed);
+    }
+
     void setDescription(const char * description)
     {
         description_ptr.store(description, std::memory_order_relaxed);
