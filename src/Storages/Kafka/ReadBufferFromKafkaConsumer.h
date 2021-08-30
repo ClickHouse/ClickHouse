@@ -63,7 +63,6 @@ public:
     auto currentPartition() const { return current[-1].get_partition(); }
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
-    String currentPayload() const { return current[-1].get_payload(); }
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -97,7 +96,7 @@ private:
     Messages::const_iterator current;
 
     // order is important, need to be destructed before consumer
-    std::optional<cppkafka::TopicPartitionList> assignment;
+    cppkafka::TopicPartitionList assignment;
     const Names topics;
 
     void drain();

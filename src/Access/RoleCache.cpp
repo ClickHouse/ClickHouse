@@ -46,10 +46,10 @@ namespace
         roles_info.access.makeUnion(role->access);
         roles_info.settings_from_enabled_roles.merge(role->settings);
 
-        for (const auto & granted_role : role->granted_roles.getGranted())
+        for (const auto & granted_role : role->granted_roles.roles)
             collectRoles(roles_info, skip_ids, get_role_function, granted_role, false, false);
 
-        for (const auto & granted_role : role->granted_roles.getGrantedWithAdminOption())
+        for (const auto & granted_role : role->granted_roles.roles_with_admin_option)
             collectRoles(roles_info, skip_ids, get_role_function, granted_role, false, true);
     }
 }
@@ -63,15 +63,15 @@ RoleCache::~RoleCache() = default;
 
 
 std::shared_ptr<const EnabledRoles>
-RoleCache::getEnabledRoles(const std::vector<UUID> & roles, const std::vector<UUID> & roles_with_admin_option)
+RoleCache::getEnabledRoles(const boost::container::flat_set<UUID> & roles, const boost::container::flat_set<UUID> & roles_with_admin_option)
 {
     /// Declared before `lock` to send notifications after the mutex will be unlocked.
-    scope_guard notifications;
+    ext::scope_guard notifications;
 
     std::lock_guard lock{mutex};
     EnabledRoles::Params params;
-    params.current_roles.insert(roles.begin(), roles.end());
-    params.current_roles_with_admin_option.insert(roles_with_admin_option.begin(), roles_with_admin_option.end());
+    params.current_roles = roles;
+    params.current_roles_with_admin_option = roles_with_admin_option;
     auto it = enabled_roles.find(params);
     if (it != enabled_roles.end())
     {
@@ -88,7 +88,7 @@ RoleCache::getEnabledRoles(const std::vector<UUID> & roles, const std::vector<UU
 }
 
 
-void RoleCache::collectEnabledRoles(scope_guard & notifications)
+void RoleCache::collectEnabledRoles(ext::scope_guard & notifications)
 {
     /// `mutex` is already locked.
 
@@ -106,7 +106,7 @@ void RoleCache::collectEnabledRoles(scope_guard & notifications)
 }
 
 
-void RoleCache::collectEnabledRoles(EnabledRoles & enabled, scope_guard & notifications)
+void RoleCache::collectEnabledRoles(EnabledRoles & enabled, ext::scope_guard & notifications)
 {
     /// `mutex` is already locked.
 
@@ -146,8 +146,8 @@ RolePtr RoleCache::getRole(const UUID & role_id)
     auto role = manager.tryRead<Role>(role_id);
     if (role)
     {
-        auto cache_value = Poco::SharedPtr<std::pair<RolePtr, scope_guard>>(
-            new std::pair<RolePtr, scope_guard>{role, std::move(subscription)});
+        auto cache_value = Poco::SharedPtr<std::pair<RolePtr, ext::scope_guard>>(
+            new std::pair<RolePtr, ext::scope_guard>{role, std::move(subscription)});
         cache.add(role_id, cache_value);
         return role;
     }
@@ -159,7 +159,7 @@ RolePtr RoleCache::getRole(const UUID & role_id)
 void RoleCache::roleChanged(const UUID & role_id, const RolePtr & changed_role)
 {
     /// Declared before `lock` to send notifications after the mutex will be unlocked.
-    scope_guard notifications;
+    ext::scope_guard notifications;
 
     std::lock_guard lock{mutex};
     auto role_from_cache = cache.get(role_id);
@@ -174,7 +174,7 @@ void RoleCache::roleChanged(const UUID & role_id, const RolePtr & changed_role)
 void RoleCache::roleRemoved(const UUID & role_id)
 {
     /// Declared before `lock` to send notifications after the mutex will be unlocked.
-    scope_guard notifications;
+    ext::scope_guard notifications;
 
     std::lock_guard lock{mutex};
     cache.remove(role_id);

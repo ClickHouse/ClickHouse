@@ -30,8 +30,6 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "DROP MARK CACHE";
         case Type::DROP_UNCOMPRESSED_CACHE:
             return "DROP UNCOMPRESSED CACHE";
-        case Type::DROP_MMAP_CACHE:
-            return "DROP MMAP CACHE";
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             return "DROP COMPILED EXPRESSION CACHE";
@@ -44,8 +42,6 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RESTART REPLICAS";
         case Type::RESTART_REPLICA:
             return "RESTART REPLICA";
-        case Type::RESTORE_REPLICA:
-            return "RESTORE REPLICA";
         case Type::DROP_REPLICA:
             return "DROP REPLICA";
         case Type::SYNC_REPLICA:
@@ -56,10 +52,6 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RELOAD DICTIONARY";
         case Type::RELOAD_DICTIONARIES:
             return "RELOAD DICTIONARIES";
-        case Type::RELOAD_MODEL:
-            return "RELOAD MODEL";
-        case Type::RELOAD_MODELS:
-            return "RELOAD MODELS";
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
             return "RELOAD EMBEDDED DICTIONARIES";
         case Type::RELOAD_CONFIG:
@@ -96,8 +88,6 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "START DISTRIBUTED SENDS";
         case Type::FLUSH_LOGS:
             return "FLUSH LOGS";
-        case Type::RESTART_DISK:
-            return "RESTART DISK";
         default:
             throw Exception("Unknown SYSTEM query command", ErrorCodes::LOGICAL_ERROR);
     }
@@ -118,6 +108,18 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                           << (settings.hilite ? hilite_none : "") << ".";
         }
         settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(table)
+                      << (settings.hilite ? hilite_none : "");
+    };
+
+    auto print_database_dictionary = [&]
+    {
+        settings.ostr << " ";
+        if (!database.empty())
+        {
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
+                          << (settings.hilite ? hilite_none : "") << ".";
+        }
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_dictionary)
                       << (settings.hilite ? hilite_none : "");
     };
 
@@ -177,13 +179,13 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         else if (!volume.empty())
             print_on_volume();
     }
-    else if (  type == Type::RESTART_REPLICA
-            || type == Type::RESTORE_REPLICA
-            || type == Type::SYNC_REPLICA
-            || type == Type::FLUSH_DISTRIBUTED
-            || type == Type::RELOAD_DICTIONARY)
+    else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA || type == Type::FLUSH_DISTRIBUTED)
     {
         print_database_table();
+    }
+    else if (type == Type::RELOAD_DICTIONARY)
+    {
+        print_database_dictionary();
     }
     else if (type == Type::DROP_REPLICA)
     {

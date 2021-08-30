@@ -159,12 +159,12 @@ private:
     /// The number of bytes read.
     size_t read_count = 0;
     /// The content in the current position.
-    UInt8 value_l = 0;
-    UInt8 value_r = 0;
+    UInt8 value_l;
+    UInt8 value_r;
     ///
     bool is_eof = false;
     /// Does the cell fully fit into one byte?
-    bool fits_in_byte = false;
+    bool fits_in_byte;
 };
 
 /** TODO This code looks very suboptimal.

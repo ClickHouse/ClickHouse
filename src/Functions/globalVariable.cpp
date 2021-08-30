@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -30,7 +30,7 @@ class FunctionGlobalVariable : public IFunction
 {
 public:
     static constexpr auto name = "globalVariable";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionGlobalVariable>();
     }
@@ -44,8 +44,6 @@ public:
     {
         return 1;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

@@ -168,7 +168,7 @@ class FunctionBayesAB : public IFunction
 public:
     static constexpr auto name = "bayesAB";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionBayesAB>();
     }
@@ -180,7 +180,6 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 5; }
 

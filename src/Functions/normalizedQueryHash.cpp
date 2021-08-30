@@ -51,7 +51,7 @@ class FunctionNormalizedQueryHash : public IFunction
 {
 public:
     static constexpr auto name = keep_names ? "normalizedQueryHashKeepNames" : "normalizedQueryHash";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionNormalizedQueryHash>();
     }
@@ -75,8 +75,6 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {

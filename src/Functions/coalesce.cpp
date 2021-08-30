@@ -1,18 +1,17 @@
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnNullable.h>
-#include <Core/ColumnNumbers.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Core/ColumnNumbers.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 
 
 namespace DB
 {
-
 namespace
 {
 
@@ -24,12 +23,12 @@ class FunctionCoalesce : public IFunction
 public:
     static constexpr auto name = "coalesce";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    explicit FunctionCoalesce(ContextPtr context_) : context(context_) {}
+    explicit FunctionCoalesce(const Context & context_) : context(context_) {}
 
     std::string getName() const override
     {
@@ -38,7 +37,6 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
@@ -161,7 +159,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    const Context & context;
 };
 
 }
