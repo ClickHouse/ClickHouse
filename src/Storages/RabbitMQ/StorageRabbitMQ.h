@@ -107,6 +107,8 @@ private:
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
     String vhost;
+    String connection_string;
+    bool secure;
 
     UVLoop loop;
     std::shared_ptr<RabbitMQHandler> event_handler;
