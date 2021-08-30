@@ -472,29 +472,29 @@ void HTTPHandler::Output::multipart_setup(HTTPServerResponse & response)
     response.setContentType("multipart/form-data; boundary=\"" + boundary + "\"");
 }
 
-void HTTPHandler::Output::multipart_add_form_boundary()
+void HTTPHandler::Output::multipart_add_form_boundary() const
 {
     std::string boundary_str = "\r\n--" + boundary + "\r\n";
-    writeString(boundary_str, *out_maybe_delayed_and_compressed);
+    DB::writeString(boundary_str, *out_maybe_delayed_and_compressed);
 }
 
-void HTTPHandler::Output::multipart_add_form_closing_boundary()
+void HTTPHandler::Output::multipart_add_form_closing_boundary() const
 {
     std::string boundary_str = "\r\n--" + boundary + "--\r\n";
-    writeString(boundary_str, *out_maybe_delayed_and_compressed);
+    DB::writeString(boundary_str, *out_maybe_delayed_and_compressed);
 }
 
-void HTTPHandler::Output::multipart_add_data_headers(const std::string & content_type)
+void HTTPHandler::Output::multipart_add_data_headers(const std::string & content_type) const
 {
     multipart_add_form_boundary();
     std::string form_content_name = "Content-Disposition: form-data; name=\"data\"\r\n";
     std::string form_content_type = "Content-Type: " + content_type + "\r\n\r\n";
 
-    writeString(form_content_name, *out_maybe_delayed_and_compressed);
-    writeString(form_content_type, *out_maybe_delayed_and_compressed);
+    DB::writeString(form_content_name, *out_maybe_delayed_and_compressed);
+    DB::writeString(form_content_type, *out_maybe_delayed_and_compressed);
 }
 
-void HTTPHandler::Output::multipart_add_logs()
+void HTTPHandler::Output::multipart_add_logs() const
 {
     if (multipart && logs_queue && !logs_queue->empty())
     {
@@ -557,7 +557,7 @@ void HTTPHandler::Output::multipart_add_logs()
     }
 }
 
-void HTTPHandler::Output::multipart_add_error(const std::string & s)
+void HTTPHandler::Output::multipart_add_error(const std::string & s) const
 {
     auto & wb = *out_maybe_delayed_and_compressed;
 

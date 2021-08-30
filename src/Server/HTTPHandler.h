@@ -73,11 +73,11 @@ private:
         }
 
         void multipart_setup(HTTPServerResponse & response);
-        void multipart_add_form_boundary();
-        void multipart_add_form_closing_boundary();
-        void multipart_add_data_headers(const std::string & content_type);
-        void multipart_add_logs();
-        void multipart_add_error(const std::string & s);
+        void multipart_add_form_boundary() const;
+        void multipart_add_form_closing_boundary() const;
+        void multipart_add_data_headers(const std::string & content_type) const;
+        void multipart_add_logs() const;
+        void multipart_add_error(const std::string & s) const;
     };
 
     IServer & server;
