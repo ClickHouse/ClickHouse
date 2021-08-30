@@ -20,8 +20,8 @@ SELECT scalarProduct(tuple(1), tuple(0));
 
 SELECT L1Norm((-1, 2, -3));
 SELECT L1Norm((-1, 2.5, -3.6));
-SELECT L2Norm((1, 1));
-SELECT L2Norm((3, 4));
+SELECT L2Norm((1, 1.0));
+SELECT L2Norm((-12, 5));
 
 SELECT max2(1, 1.5);
 SELECT min2(-1, -3);
@@ -38,4 +38,9 @@ SELECT L1Distance((1, 2, 3), (2, 3, 1));
 SELECT L2Distance((1, 1), (3, -1));
 SELECT LinfDistance((1, 1), (1, 2));
 SELECT L2Distance((5, 5), (5, 5));
-SELECT LpDistance((1800, 1900), (18, 59), 12) - LpDistance(tuple(-22), tuple(1900), 12); 
+SELECT LpDistance((1800, 1900), (18, 59), 12) - LpDistance(tuple(-22), tuple(1900), 12);
+
+SELECT L1Normalize((1, -4));
+SELECT L2Normalize((3, 4));
+SELECT LinfNormalize((5, -5, 5.0));
+SELECT LpNormalize((1, 1.98734075466445795857), 5);
