@@ -17,7 +17,7 @@ char(number_1, [number_2, ..., number_n]);
 
 **Аргументы**
 
--   `number_1, number_2, ..., number_n` — числовые аргументы, которые интерпретируются как целые числа. Типы: [Int](../../sql-reference/functions/encoding-functions.md), [Float](../../sql-reference/functions/encoding-functions.md).
+-   `number_1, number_2, ..., number_n` — числовые аргументы, которые интерпретируются как целые числа. Типы: [Int](../../sql-reference/functions/encoding-functions.md), [Float](../../sql-reference/data-types/float.md).
 
 **Возвращаемое значение**
 
