@@ -170,6 +170,7 @@ private:
 
             std::optional<Float64> new_y;
             std::vector<std::optional<Float64>> newPoints;
+            newPoints.reserve(width);
 
             std::pair<size_t, Float64> bound{0, 0.0};
             size_t cur_bucket_num = 0;
@@ -194,7 +195,7 @@ private:
                     {
                         Float64 avg_y = new_y.value() / multiple_d;
 
-                        newPoints.template emplace_back(avg_y);
+                        newPoints.emplace_back(avg_y);
                         // If min_y has no value, or if the avg_y of the current bucket is less than min_y, update it.
                         if (!min_y || avg_y < min_y)
                             min_y = avg_y;
@@ -203,7 +204,7 @@ private:
                     }
                     else
                     {
-                        newPoints.template emplace_back(std::optional<Float64>());
+                        newPoints.emplace_back();
                     }
 
                     // next bucket
