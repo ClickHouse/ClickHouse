@@ -199,9 +199,8 @@ void MergeTask::prepare()
         }
         case MergeAlgorithm::Vertical :
         {
-            tmp_disk->createDirectories(new_part_tmp_path);
-            rows_sources_file_path = new_part_tmp_path + "rows_sources";
-            rows_sources_uncompressed_write_buf = tmp_disk->writeFile(rows_sources_file_path);
+            rows_sources_file = createTemporaryFile(tmp_disk->getPath());
+            rows_sources_uncompressed_write_buf = tmp_disk->writeFile(fileName(rows_sources_file->path()));
             rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*rows_sources_uncompressed_write_buf);
 
             MergeTreeDataPartInMemory::ColumnToSize merged_column_to_size;
@@ -328,7 +327,7 @@ void MergeTask::prepareVertical()
             + ") differs from number of bytes written to rows_sources file (" + toString(rows_sources_count)
             + "). It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    rows_sources_read_buf = std::make_unique<CompressedReadBufferFromFile>(tmp_disk->readFile(rows_sources_file_path));
+    rows_sources_read_buf = std::make_unique<CompressedReadBufferFromFile>(tmp_disk->readFile(fileName(rows_sources_file->path())));
 
     /// For external cycle
     gathering_column_names_size = gathering_column_names.size();
@@ -433,8 +432,6 @@ void MergeTask::finalizeVerticalMergeForAllColumns()
     /// No need to execute this part if it is horizontal merge.
     if (chosen_merge_algorithm != MergeAlgorithm::Vertical)
         return;
-
-    tmp_disk->removeFile(rows_sources_file_path);
 }
 
 

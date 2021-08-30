@@ -192,7 +192,7 @@ private:
     std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
     std::unique_ptr<MergeStageProgress> column_progress{nullptr};
 
-    String rows_sources_file_path;
+    std::unique_ptr<TemporaryFile> rows_sources_file;
     std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
     std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
     std::optional<ColumnSizeEstimator> column_sizes;

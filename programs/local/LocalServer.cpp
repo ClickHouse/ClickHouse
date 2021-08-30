@@ -273,6 +273,9 @@ try
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
+    /// We load temporary database first, because projections need it.
+    DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
+
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
       * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;

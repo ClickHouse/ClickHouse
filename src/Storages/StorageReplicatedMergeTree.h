@@ -651,22 +651,27 @@ private:
         const String & zookeeper_block_id_path = "", const String & zookeeper_path_prefix = "") const;
 
     /** Wait until all replicas, including this, execute the specified action from the log.
-      * If replicas are added at the same time, it can not wait the added replica .
+      * If replicas are added at the same time, it can not wait the added replica.
+      *
+      * Waits for inactive replicas no more than wait_for_inactive_timeout.
+      * Returns list of inactive replicas that have not executed entry or throws exception.
       *
       * NOTE: This method must be called without table lock held.
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
-      * TODO: There are wrong usages of this method that are not fixed yet.
-      *
-      * One method for convenient use on current table, another for waiting on foreign shards.
       */
-    Strings waitForAllTableReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
-    Strings waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
+    void waitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
+                                             Int64 wait_for_inactive_timeout, const String & error_context = {});
+    Strings tryWaitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
+                                                   Int64 wait_for_inactive_timeout);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
-    bool waitForTableReplicaToProcessLogEntry(const String & table_zookeeper_path, const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
-    bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
+    bool tryWaitForReplicaToProcessLogEntry(const String & table_zookeeper_path, const String & replica_name,
+                                            const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout = 0);
+
+    /// Depending on settings, do nothing or wait for this replica or all replicas process log entry.
+    void waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, const String & error_context = {});
 
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;

@@ -37,6 +37,7 @@ SRCS(
     PostgreSQL/insertPostgreSQLValue.cpp
     PostgreSQLProtocol.cpp
     QueryProcessingStage.cpp
+    ServerUUID.cpp
     Settings.cpp
     SettingsEnums.cpp
     SettingsFields.cpp

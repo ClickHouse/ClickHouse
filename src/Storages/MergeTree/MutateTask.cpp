@@ -775,9 +775,18 @@ private:
 
 void PartMergerWriter::prepare()
 {
+    const auto & settings = ctx->context->getSettingsRef();
+
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
-        projection_squashes.emplace_back(65536, 65536 * 256);
+        // If the parent part is an in-memory part, squash projection output into one block and
+        // build in-memory projection because we don't support merging into a new in-memory part.
+        // Otherwise we split the materialization into multiple stages similar to the process of
+        // INSERT SELECT query.
+        if (ctx->new_data_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+            ctx->projection_squashes.emplace_back(0, 0);
+        else
+            ctx->projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
     }
 }
 
@@ -794,26 +803,10 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
             const auto & projection = ctx->projections_to_build[i]->projection;
-            auto in = InterpreterSelectQuery(
-                          projection.query_ast,
-                          ctx->context,
-                          Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
-                          SelectQueryOptions{
-                              projection.type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns : QueryProcessingStage::WithMergeableState})
-                          .execute()
-                          .getInputStream();
-            in = std::make_shared<SquashingBlockInputStream>(in, block.rows(), std::numeric_limits<UInt64>::max());
-            in->readPrefix();
-            auto & projection_squash = projection_squashes[i];
-            auto projection_block = projection_squash.add(in->read());
-            if (in->read())
-                throw Exception("Projection cannot increase the number of rows in a block", ErrorCodes::LOGICAL_ERROR);
-            in->readSuffix();
+            auto projection_block = ctx->projection_squashes[i].add(projection.calculate(block, ctx->context));
             if (projection_block)
-            {
-                projection_parts[projection.name].emplace_back(
-                    MergeTreeDataWriter::writeTempProjectionPart(*ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
-            }
+                ctx->projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
+                    data, log, projection_block, projection, new_data_part.get(), ++block_num));
         }
 
         (*ctx->mutate_entry)->rows_written += block.rows();
