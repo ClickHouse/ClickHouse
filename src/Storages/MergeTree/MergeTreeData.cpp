@@ -2358,7 +2358,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
         /// It's a DROP PART and it's already executed by fetching some covering part
         bool is_drop_part = !drop_range.isFakeDropRangePart() && drop_range.min_block;
 
-        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block))
+        if (is_drop_part && (part->info.min_block != drop_range.min_block || part->info.max_block != drop_range.max_block || part->info.getMutationVersion() != drop_range.getMutationVersion()))
         {
             /// Why we check only min and max blocks here without checking merge
             /// level? It's a tricky situation which can happen on a stale
@@ -2375,9 +2375,8 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
             /// So here we just check that all_1_3_1 covers blocks from drop
             /// all_2_2_2.
             ///
-            /// NOTE: this helps only to avoid logical error during drop part.
-            /// We still get intersecting "parts" in queue.
-            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block;
+            bool is_covered_by_min_max_block = part->info.min_block <= drop_range.min_block && part->info.max_block >= drop_range.max_block && part->info.getMutationVersion() >= drop_range.getMutationVersion();
+
             if (is_covered_by_min_max_block)
             {
                 LOG_INFO(log, "Skipping drop range for part {} because covering part {} already exists", drop_range.getPartName(), part->name);
