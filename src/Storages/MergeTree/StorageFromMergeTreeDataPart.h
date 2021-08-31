@@ -73,6 +73,11 @@ public:
         return storage.getPartitionIDFromQuery(ast, context);
     }
 
+    bool materializeTTLRecalculateOnly() const
+    {
+        return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
+    }
+
 protected:
     /// Used in part mutation.
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
