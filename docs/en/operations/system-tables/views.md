@@ -16,7 +16,6 @@ Columns:
     -   `'Default' = 1` — [Default views](../../sql-reference/statements/create/view.md#normal). Should not appear in this log.
     -   `'Materialized' = 2` — [Materialized views](../../sql-reference/statements/create/view.md#materialized).
     -   `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
--   `metadata_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table metadata in the file system.
 
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
