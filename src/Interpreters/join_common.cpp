@@ -31,7 +31,6 @@ namespace
 
 void insertFromNullableOrDefault(MutableColumnPtr & dst, const ColumnNullable * nullable_col)
 {
-
     const auto & nested = nullable_col->getNestedColumn();
     const auto & nullmap = nullable_col->getNullMapColumn().getData();
     if (auto * lc = typeid_cast<ColumnLowCardinality *>(dst.get()); lc && !nested.lowCardinality())
