@@ -91,6 +91,8 @@ private:
     bool sync_scheduled = false;
 
     mutable std::mutex write_mutex;
+
+    Poco::Logger * log;
 };
 
 }

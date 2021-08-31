@@ -20,7 +20,6 @@ PEERDIR(
 
 SRCS(
     AIO.cpp
-    AIOContextPool.cpp
     BrotliReadBuffer.cpp
     BrotliWriteBuffer.cpp
     Bzip2ReadBuffer.cpp

@@ -220,9 +220,9 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
     std::unique_ptr<ShellCommand> process;
     bool result = process_pool->tryBorrowObject(process, [this]()
     {
-        bool terminate_in_destructor = true;
-        ShellCommandDestructorStrategy strategy { terminate_in_destructor, configuration.command_termination_timeout };
-        auto shell_command = ShellCommand::execute(configuration.command, false, strategy);
+        ShellCommand::Config config(configuration.command);
+        config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, configuration.command_termination_timeout };
+        auto shell_command = ShellCommand::execute(config);
         return shell_command;
     }, configuration.max_command_execution_time * 10000);
 
@@ -297,7 +297,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
          *  so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
          */
-        context->setSetting("input_format_parallel_parsing", Field{false});
+        context->setSetting("input_format_parallel_parsing", false);
 
         String settings_config_prefix = config_prefix + ".executable_pool";
 
