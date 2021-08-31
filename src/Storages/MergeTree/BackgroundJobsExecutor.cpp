@@ -13,7 +13,6 @@ BackgroundJobAssignee::BackgroundJobAssignee(MergeTreeData & data_, BackgroundJo
     , data(data_)
     , sleep_settings(global_context_->getBackgroundMoveTaskSchedulingSettings())
     , rng(randomSeed())
-    , storage_id(data.getStorageID())
     , type(type_)
 {
 }
@@ -107,6 +106,7 @@ void BackgroundJobAssignee::finish()
         holder->deactivate();
 
         auto context = getContext();
+        auto storage_id = data.getStorageID();
 
         context->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         context->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
