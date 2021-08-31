@@ -19,9 +19,7 @@ class ThreadStatus;
 /// It is expected that output port won't be closed from the other side before all data is processed.
 ///
 /// Method onStart() is called before reading any data.
-/// Exception from it is not pushed into pipeline, but thrown immediately.
-///
-/// Method onFinish() is called after all data from input is processed.
+/// Method onFinish() is called after all data from input is processed, if no exception happened.
 /// In case of exception, it is additionally pushed into pipeline.
 class ExceptionKeepingTransform : public IProcessor
 {
@@ -32,6 +30,7 @@ private:
 
     bool ready_input = false;
     bool ready_output = false;
+    bool has_exception = false;
     bool was_on_start_called = false;
     bool was_on_finish_called = false;
 
@@ -76,6 +75,7 @@ public:
 
 protected:
     virtual void consume(Chunk chunk) = 0;
+    virtual bool lastBlockIsDuplicate() const { return false; }
 
 private:
     std::vector<TableLockHolder> table_locks;
