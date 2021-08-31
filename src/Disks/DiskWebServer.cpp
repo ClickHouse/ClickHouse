@@ -2,6 +2,7 @@
 
 #include <common/logger_useful.h>
 
+#include <Common/escapeForFileName.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Disks/ReadIndirectBufferFromWebServer.h>
 #include <IO/SeekAvoidingReadBuffer.h>
@@ -19,10 +20,11 @@
 #define UUID_PATTERN "[\\w]{8}-[\\w]{4}-[\\w]{4}-[\\w]{4}-[\\w]{12}"
 #define EXTRACT_UUID_PATTERN fmt::format(".*/({})/.*", UUID_PATTERN)
 
-#define DIRECTORY_FILE_PATTERN(prefix) fmt::format("{}-({})-(\\w+)-(\\w+\\.\\w+)", prefix, UUID_PATTERN)
+#define DIRECTORY_FILE_PATTERN(prefix) fmt::format("{}-({})-(\\w+)-(.*)", prefix, UUID_PATTERN)
 #define ROOT_FILE_PATTERN(prefix) fmt::format("{}-({})-(\\w+\\.\\w+)", prefix, UUID_PATTERN)
 
-#define MATCH_DIRECTORY_FILE_PATTERN fmt::format(".*/({})/(\\w+)/(\\w+\\.\\w+)", UUID_PATTERN)
+#define MATCH_DIRECTORY_FILE_PATTERN fmt::format(".*/({})/(\\w+)/(.*)", UUID_PATTERN)
+#define MATCH_DIRECTORY_PATTERN fmt::format(".*/({})/(\\w+)/", UUID_PATTERN)
 #define MATCH_ROOT_FILE_PATTERN fmt::format(".*/({})/(\\w+\\.\\w+)", UUID_PATTERN)
 
 
@@ -67,14 +69,14 @@ void DiskWebServer::Metadata::initialize(const String & uri_with_path, const Str
             if (uuid != table_uuid)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uuid: {}, expected: {}", uuid, table_uuid);
 
-            tables_data[uuid][directory].emplace(File(file, file_size));
+            tables_data[uuid][directory].emplace(std::make_pair(file, file_size));
         }
         else if (RE2::FullMatch(remote_file_name, ROOT_FILE_PATTERN(files_prefix), &uuid, &file))
         {
             if (uuid != table_uuid)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uuid: {}, expected: {}", uuid, table_uuid);
 
-            tables_data[uuid][file].emplace(File(file, file_size));
+            tables_data[uuid][file].emplace(std::make_pair(file, file_size));
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected file: {}", remote_file_name);
@@ -82,11 +84,10 @@ void DiskWebServer::Metadata::initialize(const String & uri_with_path, const Str
 }
 
 
-template <typename T>
+template <typename Directory>
 class DiskWebDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
-    using Directory = std::unordered_map<String, T>;
 
     DiskWebDirectoryIterator(Directory & directory_, const String & directory_root_)
         : directory(directory_), iter(directory.begin()), directory_root(directory_root_)
@@ -193,7 +194,8 @@ bool DiskWebServer::findFileInMetadata(const String & path, File & file_info) co
     String table_uuid, directory_name, file_name;
 
     if (RE2::FullMatch(path, MATCH_DIRECTORY_FILE_PATTERN, &table_uuid, &directory_name, &file_name)
-       || RE2::FullMatch(path, MATCH_ROOT_FILE_PATTERN, &table_uuid, &file_name))
+       || RE2::FullMatch(path, MATCH_ROOT_FILE_PATTERN, &table_uuid, &file_name)
+       || RE2::FullMatch(path, MATCH_DIRECTORY_PATTERN, &table_uuid, &directory_name))
     {
         if (directory_name.empty())
             directory_name = file_name;
@@ -204,12 +206,15 @@ bool DiskWebServer::findFileInMetadata(const String & path, File & file_info) co
         if (!metadata.tables_data[table_uuid].count(directory_name))
             return false;
 
+        if (file_name.empty())
+            return true;
+
         const auto & files = metadata.tables_data[table_uuid][directory_name];
-        auto file = files.find(File(file_name));
+        auto file = files.find(file_name);
         if (file == files.end())
             return false;
 
-        file_info = *file;
+        file_info = File(file->first, file->second);
         return true;
     }
 
@@ -228,14 +233,17 @@ bool DiskWebServer::exists(const String & path) const
 
 std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, size_t) const
 {
-    LOG_DEBUG(log, "Read from file by path: {}", path);
 
     File file;
     if (!findFileInMetadata(path, file))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} not found", path);
 
-    RemoteMetadata meta(uri, fs::path(path).parent_path() / fs::path(path).filename());
-    meta.remote_fs_objects.emplace_back(std::make_pair(getFileName(path), file.size));
+    auto file_name = escapeForFileName(fs::path(path).stem()) + fs::path(path).extension().string();
+    auto remote_path = fs::path(path).parent_path() / file_name;
+    LOG_DEBUG(log, "Read from file by path: {}", remote_path.string());
+
+    RemoteMetadata meta(uri, remote_path);
+    meta.remote_fs_objects.emplace_back(std::make_pair(getFileName(remote_path), file.size));
 
     auto reader = std::make_unique<ReadBufferFromWebServer>(uri, meta, getContext(), settings->max_read_tries, read_settings.remote_fs_buffer_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
@@ -257,7 +265,7 @@ DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
     String uuid;
 
     if (RE2::FullMatch(path, ".*/store/"))
-        return std::make_unique<DiskWebDirectoryIterator<RootDirectory>>(metadata.tables_data, path);
+        return std::make_unique<DiskWebDirectoryIterator<UUIDDirectoryListing>>(metadata.tables_data, path);
 
     if (!RE2::Extract(path, EXTRACT_UUID_PATTERN, "\\1", &uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot extract uuid for: {}", path);
@@ -280,10 +288,18 @@ DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
 
         LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Cannot load disk metadata. Error: {}", message);
         /// Empty iterator.
-        return std::make_unique<DiskWebDirectoryIterator<Directory>>(metadata.tables_data[""], path);
+        return std::make_unique<DiskWebDirectoryIterator<RootDirectoryListing>>(metadata.tables_data[""], path);
     }
 
-    return std::make_unique<DiskWebDirectoryIterator<Directory>>(metadata.tables_data[uuid], path);
+    String directory_name;
+    if (RE2::FullMatch(path, MATCH_DIRECTORY_PATTERN, &uuid, &directory_name))
+    {
+        if (can_throw && !metadata.tables_data[uuid].contains(directory_name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory {} does not exist. (uuid: {})", directory_name, uuid);
+        return std::make_unique<DiskWebDirectoryIterator<DirectoryListing>>(metadata.tables_data[uuid][directory_name], path);
+    }
+
+    return std::make_unique<DiskWebDirectoryIterator<RootDirectoryListing>>(metadata.tables_data[uuid], path);
 }
 
 
