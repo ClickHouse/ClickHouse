@@ -124,6 +124,7 @@ private:
     void staleCheck();
     void cleanup();
 
+    void scheduleProcessJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
 };
 
