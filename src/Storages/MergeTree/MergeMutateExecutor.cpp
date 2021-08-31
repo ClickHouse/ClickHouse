@@ -6,6 +6,32 @@
 namespace DB
 {
 
+
+/// This is a RAII class which only decrements metric.
+/// It is added because after all other fixes a bug non-executing merges was occurred again.
+/// Last hypothesis: task was successfully added to pool, however, was not executed because of internal exception in it.
+class ParanoidMetricDecrementor
+{
+public:
+    explicit ParanoidMetricDecrementor(CurrentMetrics::Metric metric_) : metric(metric_) {}
+    void alarm() { is_alarmed = true; }
+    void decrement()
+    {
+        if (is_alarmed.exchange(false))
+        {
+            CurrentMetrics::values[metric]--;
+        }
+    }
+
+    ~ParanoidMetricDecrementor() { decrement(); }
+
+private:
+
+    CurrentMetrics::Metric metric;
+    std::atomic_bool is_alarmed = false;
+};
+
+
 void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id)
 {
     std::lock_guard remove_lock(remove_mutex);
@@ -66,6 +92,9 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
 
         bool res = pool.trySchedule([this, task = current, promise = current_promise] () mutable
         {
+            auto metric_decrementor = std::make_shared<ParanoidMetricDecrementor>(metric);
+            metric_decrementor->alarm();
+
             auto on_exit = [&] ()
             {
                 promise->set_value();
@@ -89,7 +118,7 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
                     return;
                 }
 
-                decrementTasksCount();
+                metric_decrementor->decrement();
                 task->onCompleted();
 
                 std::lock_guard guard(mutex);
@@ -97,7 +126,7 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
             }
             catch(...)
             {
-                decrementTasksCount();
+                metric_decrementor->decrement();
                 task->onCompleted();
                 std::lock_guard guard(mutex);
                 has_tasks.notify_one();
