@@ -593,7 +593,7 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & me
 ///    rewrite to : SELECT quantiles(0.5, 0.9, 0.95)(x)[1], quantiles(0.5, 0.9, 0.95)(x)[2], quantiles(0.5, 0.9, 0.95)(x)[3] FROM ...
 void fuseCandidate(std::unordered_map<String, GatherFunctionQuantileData::FuseQuantileAggregatesData> & fuse_quantile)
 {
-    for (auto candidate : fuse_quantile)
+    for (const auto & candidate : fuse_quantile)
     {
         String func_name = candidate.first;
         GatherFunctionQuantileData::FuseQuantileAggregatesData args_to_functions = candidate.second;
