@@ -90,9 +90,7 @@ public:
         if (value.load() >= static_cast<int64_t>(max_task_count_getter()))
             return false;
 
-        CurrentMetrics::add(metric);
-
-        tasks.emplace_back(task);
+        tasks.emplace_back(std::make_shared<Item>(std::move(task), metric));
         has_tasks.notify_one();
         return true;
     }
@@ -141,12 +139,25 @@ private:
     CountGetter max_task_count_getter;
     CurrentMetrics::Metric metric;
 
-    std::deque<ExecutableTaskPtr> tasks;
+    struct Item
+    {
+        explicit Item(ExecutableTaskPtr && task_, CurrentMetrics::Metric && metric_)
+            : task(std::move(task_)), increment(std::move(metric_)) {}
+
+        ExecutableTaskPtr task;
+        CurrentMetrics::Increment increment;
+
+        std::promise<void> promise;
+    };
+
+    using ItemPtr = std::shared_ptr<Item>;
+
+    std::deque<ItemPtr> tasks;
 
     std::mutex remove_mutex;
 
     std::mutex currently_executing_mutex;
-    std::map<ExecutableTaskPtr, std::future<void>> currently_executing;
+    std::set<ItemPtr> currently_executing;
 
     std::mutex mutex;
     std::condition_variable has_tasks;
