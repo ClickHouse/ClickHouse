@@ -54,7 +54,7 @@ TEST(Executor, Simple)
     executor->setTasksCount([] () { return tasks_kinds * batch; });
     executor->setMetric(CurrentMetrics::BackgroundPoolTask);
 
-    for (size_t i = 0; i < 4; ++i)
+    for (size_t i = 0; i < batch; ++i)
     {
         for (size_t j = 0; j < tasks_kinds; ++j)
         {
