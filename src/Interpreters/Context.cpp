@@ -927,44 +927,6 @@ void Context::addQueryAccessInfo(
         query_access_info.views.emplace(view_name);
 }
 
-void Context::AsyncInsertInfo::complete(std::exception_ptr exception_)
-{
-    std::lock_guard lock(mutex);
-    finished = true;
-    exception = exception_;
-    cv.notify_all();
-}
-
-Context::AsyncInsertInfoPtr Context::addAsyncInsertQueryId(const String & query_id)
-{
-    auto lock = getLock();
-    auto it = processing_async_inserts.emplace(query_id, std::make_shared<AsyncInsertInfo>()).first;
-    return it->second;
-}
-
-void Context::waitForProcessingAsyncInsert(const String & query_id, const std::chrono::milliseconds & timeout) const
-{
-    AsyncInsertInfoPtr async_info;
-
-    {
-        auto lock = getLock();
-        auto it = processing_async_inserts.find(query_id);
-        if (it == processing_async_inserts.end())
-            return;
-
-        async_info = it->second;
-    }
-
-    std::unique_lock lock(async_info->mutex);
-    auto finished = async_info->cv.wait_for(lock, timeout, [&] { return async_info->finished; });
-
-    if (!finished)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout.count());
-
-    if (async_info->exception)
-        std::rethrow_exception(async_info->exception);
-}
-
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);

@@ -25,7 +25,9 @@ protected:
     Chunk generate() override
     {
         auto context = getContext();
-        context->waitForProcessingAsyncInsert(query_id, std::chrono::milliseconds(timeout_ms));
+        auto * queue = context->getAsynchronousInsertQueue();
+        assert(queue);
+        queue->waitForProcessingQuery(query_id, std::chrono::milliseconds(timeout_ms));
         return Chunk();
     }
 
