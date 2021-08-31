@@ -92,7 +92,6 @@ public:
         CurrentMetrics::add(metric);
 
         tasks.emplace_back(task);
-        ++scheduled_tasks_count;
         has_tasks.notify_one();
         return true;
     }
@@ -123,12 +122,6 @@ private:
         pool.setQueueSize(max_threads);
     }
 
-    void decrementTasksCount()
-    {
-        --scheduled_tasks_count;
-        CurrentMetrics::sub(metric);
-    }
-
     void schedulerThreadFunction();
 
 
@@ -146,7 +139,6 @@ private:
     std::mutex mutex;
     std::condition_variable has_tasks;
 
-    std::atomic_size_t scheduled_tasks_count{0};
     std::atomic_bool shutdown_suspend{false};
 
     ThreadPool pool;
