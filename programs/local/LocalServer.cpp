@@ -12,6 +12,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/Session.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -275,6 +276,9 @@ try
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
+    /// We load temporary database first, because projections need it.
+    DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
+
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
       * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
@@ -291,6 +295,12 @@ try
 
         /// Lock path directory before read
         status.emplace(path + "status", StatusFile::write_full_info);
+
+        fs::create_directories(fs::path(path) / "user_defined/");
+        LOG_DEBUG(log, "Loading user defined objects from {}", path);
+        Poco::File(path + "user_defined/").createDirectories();
+        UserDefinedObjectsLoader::instance().loadObjects(global_context);
+        LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         fs::create_directories(fs::path(path) / "data/");
@@ -357,8 +367,8 @@ try
 
     first_time = false;
     /// Authenticate and create a context to execute queries.
-    Session session{global_context, ClientInfo::Interface::TCP};
-    session.authenticate("default", "", Poco::Net::SocketAddress{});
+    Session session{global_context, ClientInfo::Interface::LOCAL};
+    session.authenticate("default", "", {});
 
     /// Use the same context for all queries.
     auto context = session.makeQueryContext();
