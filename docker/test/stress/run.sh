@@ -80,7 +80,7 @@ function start()
             echo "Cannot start clickhouse-server"
             cat /var/log/clickhouse-server/stdout.log
             tail -n1000 /var/log/clickhouse-server/stderr.log
-            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | grep -F -v '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
+            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | grep -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
             break
         fi
         # use root to match with current uid

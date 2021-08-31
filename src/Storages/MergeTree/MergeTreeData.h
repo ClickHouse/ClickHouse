@@ -741,7 +741,7 @@ public:
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() const { return getStoragePolicy()->makeEmptyReservationOnLargestDisk(); }
 
-    Disks getDisksByType(DiskType::Type type) const { return getStoragePolicy()->getDisksByType(type); }
+    Disks getDisks() const { return getStoragePolicy()->getDisks(); }
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(MergeTreeDataPartPtr part) const;
@@ -794,6 +794,9 @@ public:
 
     /// Return the partition expression types as a Tuple type. Return DataTypeUInt8 if partition expression is empty.
     DataTypePtr getPartitionValueType() const;
+
+    /// Construct a sample block of virtual columns.
+    Block getSampleBlockWithVirtualColumns() const;
 
     /// Construct a block consisting only of possible virtual columns for part pruning.
     /// If one_part is true, fill in at most one part.
