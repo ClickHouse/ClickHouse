@@ -285,8 +285,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , merge_strategy_picker(*this)
     , queue(*this, merge_strategy_picker)
     , fetcher(*this)
-    , background_executor(*this, BackgroundJobAssignee::Type::DataProcessing, getContext())
-    , background_moves_executor(*this, BackgroundJobAssignee::Type::Moving, getContext())
     , cleanup_thread(*this)
     , part_check_thread(*this)
     , restarting_thread(*this)
@@ -295,6 +293,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_fetches_pool_size(getContext()->getSettingsRef().background_fetches_pool_size)
     , replicated_fetches_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_fetches_network_bandwidth, getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_sends_network_bandwidth, getContext()->getReplicatedSendsThrottler()))
+    , background_executor(*this, BackgroundJobAssignee::Type::DataProcessing, getContext())
+    , background_moves_executor(*this, BackgroundJobAssignee::Type::Moving, getContext())
 {
     queue_updating_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });

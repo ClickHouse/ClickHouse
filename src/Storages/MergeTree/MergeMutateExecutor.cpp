@@ -71,6 +71,7 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
     {
         ExecutableTaskPtr current;
         auto current_promise = std::make_shared<std::promise<void>>();
+
         {
             std::unique_lock lock(mutex);
             has_tasks.wait(lock, [this](){ return !tasks.empty() || shutdown_suspend; });
@@ -90,7 +91,7 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
             currently_executing.emplace(current, current_promise->get_future());
         }
 
-        bool res = pool.trySchedule([this, task = current, promise = current_promise] () mutable
+        bool res = pool.trySchedule([this, task = current, promise = current_promise] ()
         {
             auto metric_decrementor = std::make_shared<ParanoidMetricDecrementor>(metric);
             metric_decrementor->alarm();
