@@ -70,11 +70,11 @@ public:
         size_t block_size_,
         const NamesAndTypesList & columns_,
         StorageTinyLog & storage_,
-        size_t max_read_buffer_size_,
+        ReadSettings read_settings_,
         FileChecker::Map file_sizes_)
         : SourceWithProgress(getHeader(columns_))
         , block_size(block_size_), columns(columns_), storage(storage_)
-        , max_read_buffer_size(max_read_buffer_size_), file_sizes(std::move(file_sizes_))
+        , read_settings(std::move(read_settings_)), file_sizes(std::move(file_sizes_))
     {
     }
 
@@ -88,13 +88,15 @@ private:
     NamesAndTypesList columns;
     StorageTinyLog & storage;
     bool is_finished = false;
-    size_t max_read_buffer_size;
+    ReadSettings read_settings;
     FileChecker::Map file_sizes;
 
     struct Stream
     {
-        Stream(const DiskPtr & disk, const String & data_path, size_t max_read_buffer_size_, size_t file_size)
-            : plain(file_size ? disk->readFile(data_path, std::min(max_read_buffer_size_, file_size)) : std::make_unique<ReadBuffer>(nullptr, 0)),
+        Stream(const DiskPtr & disk, const String & data_path, ReadSettings read_settings_, size_t file_size)
+            : plain(file_size
+                ? disk->readFile(data_path, read_settings_.adjustBufferSize(file_size))
+                : std::make_unique<ReadBuffer>(nullptr, 0)),
             limited(std::make_unique<LimitReadBuffer>(*plain, file_size, false)),
             compressed(*limited)
         {
@@ -178,7 +180,7 @@ void TinyLogSource::readData(const NameAndTypePair & name_and_type,
         {
             String file_path = storage.files[stream_name].data_file_path;
             stream = std::make_unique<Stream>(
-                storage.disk, file_path, max_read_buffer_size, file_sizes[fileName(file_path)]);
+                storage.disk, file_path, read_settings, file_sizes[fileName(file_path)]);
         }
 
         return &stream->compressed;
@@ -493,8 +495,6 @@ Pipe StorageTinyLog::read(
 
     // When reading, we lock the entire storage, because we only have one file
     // per column and can't modify it concurrently.
-    const Settings & settings = context->getSettingsRef();
-
     std::shared_lock lock{rwlock, getLockTimeout(context)};
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
@@ -504,7 +504,7 @@ Pipe StorageTinyLog::read(
         max_block_size,
         Nested::convertToSubcolumns(all_columns),
         *this,
-        settings.max_read_buffer_size,
+        context->getReadSettings(),
         file_checker.getFileSizes()));
 }
 
