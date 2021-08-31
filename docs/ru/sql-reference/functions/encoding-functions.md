@@ -296,7 +296,7 @@ unbin(arg)
 
 Алиас: `UNBIN`.
 
-Если вы хотите преобразовать результат в число, вы можете использовать [reverse](../../sql-reference/functions/string-functions.md#reverse)и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) функции.
+Для числового аргумента `unbin()` не возвращает значение, обратное результату `bin()`. Чтобы преобразовать результат в число, используйте функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264).
 
 !!! note "Примечание"
     Если `unbin` вызывается из клиента `clickhouse-client`, бинарная строка возвращается в кодировке UTF-8.
