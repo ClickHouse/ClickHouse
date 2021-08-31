@@ -111,7 +111,7 @@ Values of floating point and Decimal types are encoded as their representation i
 
 **Parameters**
 
--   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/functions/encoding-functions.md), [UInt](../../sql-reference/functions/encoding-functions.md), [Float](../../sql-reference/functions/encoding-functions.md), [Decimal](../../sql-reference/functions/encoding-functions.md), [Date](../../sql-reference/functions/encoding-functions.md) or [DateTime](../../sql-reference/functions/encoding-functions.md).
+-   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
