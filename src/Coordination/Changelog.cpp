@@ -142,8 +142,12 @@ private:
 
 struct ChangelogReadResult
 {
+    /// Total entries read from log including skipped
     uint64_t entries_read;
+    /// First entry actually read log (not including skipped)
     uint64_t first_read_index;
+    /// Last entry read from log
+    uint64_t last_read_index;
     off_t last_position;
     bool error;
 };
@@ -224,6 +228,7 @@ public:
                 /// Put it into in memory structure
                 logs.emplace(record.header.index, log_entry);
                 index_to_offset[record.header.index] = result.last_position;
+                result.last_read_index = record.header.index;
 
                 if (result.entries_read % 50000 == 0)
                     LOG_TRACE(log, "Reading changelog from path {}, entries {}", filepath, result.entries_read);
@@ -282,14 +287,11 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 {
     uint64_t total_read = 0;
 
-    /// Amount of entries in last log index
-    uint64_t entries_in_last = 0;
     /// Log idx of the first incomplete log (key in existing_changelogs)
+    /// There must be no other logs after incomplete one.
     int64_t first_incomplete_log_start_index = -1; /// if -1 then no incomplete log exists
 
-    ChangelogReadResult result{};
-    /// First log index which was read from all changelogs
-    uint64_t first_read_index = 0;
+    ChangelogReadResult last_log_read_result{};
 
     /// We must start to read from this log index
     uint64_t start_to_read_from = last_commited_log_index;
@@ -307,7 +309,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     for (const auto & [changelog_start_index, changelog_description] : existing_changelogs)
     {
         /// How many entries we have in the last changelog
-        entries_in_last = changelog_description.expectedEntriesCountInLog();
+        uint64_t expected_entries_in_log = changelog_description.expectedEntriesCountInLog();
 
         /// [from_log_index.>=.......start_to_read_from.....<=.to_log_index]
         if (changelog_description.to_log_index >= start_to_read_from)
@@ -332,18 +334,26 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
 
             ChangelogReader reader(changelog_description.path);
-            result = reader.readChangelog(logs, start_to_read_from, index_to_start_pos, log);
+            last_log_read_result = reader.readChangelog(logs, start_to_read_from, index_to_start_pos, log);
 
             started = true;
 
             /// Otherwise we have already initialized it
-            if (first_read_index == 0)
-                first_read_index = result.first_read_index;
+            if (min_log_id == 0)
+                min_log_id = last_log_read_result.first_read_index;
 
-            total_read += result.entries_read;
+            total_read += last_log_read_result.entries_read;
+
+            if (last_log_read_result.last_read_index != 0)
+            {
+                /// Entries in logs goes one by one so our max log entry is
+                /// first_read_index of the last log + total entries in this last log.
+                max_log_id = last_log_read_result.last_read_index;
+            }
+
 
             /// May happen after truncate, crash or simply unfinished log
-            if (result.entries_read < entries_in_last)
+            if (last_log_read_result.entries_read < expected_entries_in_log)
             {
                 first_incomplete_log_start_index = changelog_start_index;
                 break;
@@ -351,10 +361,11 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         }
     }
 
-    if (first_read_index != 0)
-        start_index = first_read_index;
-    else /// We just may have no logs (only snapshot)
-        start_index = last_commited_log_index;
+    if (min_log_id == 0) /// We just may have no logs (only snapshot or nothing)
+    {
+        min_log_id = last_commited_log_index;
+        max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
+    }
 
     /// Found some broken or non finished logs
     /// We have to remove broken data and continue to write into incomplete log.
@@ -381,20 +392,20 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
             LOG_TRACE(log, "Continue to write into {}", description.path);
             current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, description.from_log_index);
-            current_writer->setEntriesWritten(result.entries_read);
+            current_writer->setEntriesWritten(last_log_read_result.entries_read);
 
             /// Truncate all broken entries from log
-            if (result.error)
+            if (last_log_read_result.error)
             {
                 LOG_WARNING(log, "Read finished with error, truncating all broken log entries");
-                current_writer->truncateToLength(result.last_position);
+                current_writer->truncateToLength(last_log_read_result.last_position);
             }
         }
     }
 
     /// Start new log if we don't initialize writer from previous log
     if (!current_writer)
-        rotate(start_index + total_read);
+        rotate(max_log_id + 1);
 }
 
 void Changelog::rotate(uint64_t new_start_log_index)
@@ -439,7 +450,7 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before appending records");
 
     if (logs.empty())
-        start_index = index;
+        min_log_id = index;
 
     const auto & current_changelog_description = existing_changelogs[current_writer->getStartIndex()];
     const bool log_is_complete = current_writer->getEntriesWritten() == current_changelog_description.expectedEntriesCountInLog();
@@ -452,6 +463,7 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Record with index {} already exists", index);
 
     logs[index] = makeClone(log_entry);
+    max_log_id = index;
 }
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
@@ -513,11 +525,14 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
 void Changelog::compact(uint64_t up_to_log_index)
 {
+    if (up_to_log_index > max_log_id)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to compact logs up to {}, but our max log is {}. It's a bug", up_to_log_index, max_log_id);
+
     LOG_INFO(log, "Compact logs up to log index {}", up_to_log_index);
     for (auto itr = existing_changelogs.begin(); itr != existing_changelogs.end();)
     {
         /// Remove all completely outdated changelog files
-        if (itr->second.to_log_index <= up_to_log_index)
+        if (itr->second.to_log_index < up_to_log_index)
         {
             if (current_writer && itr->second.from_log_index == current_writer->getStartIndex())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove log {} which is current active log for write. It's a bug.", itr->second.path);
@@ -530,8 +545,10 @@ void Changelog::compact(uint64_t up_to_log_index)
         else /// Files are ordered, so all subsequent should exist
             break;
     }
-    start_index = up_to_log_index + 1;
+    min_log_id = std::max(min_log_id, up_to_log_index + 1);
     std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
+
+    LOG_INFO(log, "Compaction up to {} finished new start index {}", up_to_log_index, min_log_id);
 }
 
 LogEntryPtr Changelog::getLastEntry() const
@@ -539,10 +556,13 @@ LogEntryPtr Changelog::getLastEntry() const
     /// This entry treaded in special way by NuRaft
     static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(sizeof(uint64_t)));
 
-    const uint64_t next_index = getNextEntryIndex() - 1;
-    auto entry = logs.find(next_index);
+    std::cerr << "MAX LOG ID:" << max_log_id <<    std::endl;
+    auto entry = logs.find(max_log_id);
     if (entry == logs.end())
+    {
+        std::cerr << "MAX LOG ID NOT FOUND" << std::endl;
         return fake_entry;
+    }
 
     return entry->second;
 }
