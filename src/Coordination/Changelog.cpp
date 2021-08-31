@@ -520,17 +520,28 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
 void Changelog::compact(uint64_t up_to_log_index)
 {
-    if (up_to_log_index > max_log_id)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to compact logs up to {}, but our max log is {}. It's a bug", up_to_log_index, max_log_id);
+    LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id);
 
-    LOG_INFO(log, "Compact logs up to log index {}", up_to_log_index);
+    bool remove_all_logs = false;
+    if (up_to_log_index > max_log_id)
+    {
+        LOG_INFO(log, "Seems like this node recovers from leaders snapshot, removing all logs");
+        remove_all_logs = true;
+    }
+
+    bool need_rotate = false;
+
     for (auto itr = existing_changelogs.begin(); itr != existing_changelogs.end();)
     {
         /// Remove all completely outdated changelog files
-        if (itr->second.to_log_index < up_to_log_index)
+        if (remove_all_logs || itr->second.to_log_index <= up_to_log_index)
         {
             if (current_writer && itr->second.from_log_index == current_writer->getStartIndex())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove log {} which is current active log for write. It's a bug.", itr->second.path);
+            {
+                LOG_INFO(log, "Trying to remove log {} which is current active log for write. Possibly this node recovers from snapshot", itr->second.path);
+                need_rotate = true;
+                current_writer.reset();
+            }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", itr->second.path);
             std::erase_if(index_to_start_pos, [right_index = itr->second.to_log_index] (const auto & item) { return item.first <= right_index; });
@@ -542,9 +553,17 @@ void Changelog::compact(uint64_t up_to_log_index)
     }
     /// Compaction from the past is possible, so don't make our min_log_id smaller.
     min_log_id = std::max(min_log_id, up_to_log_index + 1);
+
+    /// If we received snapshot from leader we may compact up to more fresh log
+    if (up_to_log_index > max_log_id)
+        max_log_id = up_to_log_index;
+
     std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
 
-    LOG_INFO(log, "Compaction up to {} finished new start index {}", up_to_log_index, min_log_id);
+    if (need_rotate)
+        rotate(up_to_log_index + 1);
+
+    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}", up_to_log_index, min_log_id, max_log_id);
 }
 
 LogEntryPtr Changelog::getLastEntry() const
