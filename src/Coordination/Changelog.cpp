@@ -556,11 +556,9 @@ LogEntryPtr Changelog::getLastEntry() const
     /// This entry treaded in special way by NuRaft
     static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(sizeof(uint64_t)));
 
-    std::cerr << "MAX LOG ID:" << max_log_id <<    std::endl;
     auto entry = logs.find(max_log_id);
     if (entry == logs.end())
     {
-        std::cerr << "MAX LOG ID NOT FOUND" << std::endl;
         return fake_entry;
     }
 
