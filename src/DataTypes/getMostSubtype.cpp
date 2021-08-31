@@ -23,8 +23,7 @@ extern const int NO_COMMON_TYPE;
 
 namespace
 {
-
-String getExceptionMessage(const DataTypes & types, const std::string & reason)
+String getExceptionMessagePrefix(const DataTypes & types)
 {
     WriteBufferFromOwnString res;
     res << "There is no subtype for types ";
@@ -38,18 +37,19 @@ String getExceptionMessage(const DataTypes & types, const std::string & reason)
 
         res << type->getName();
     }
-    res << reason;
+
     return res.str();
 }
 
 }
 
-DataTypePtr getMostSubtype(const DataTypes & types, bool throw_on_no_common_type, bool force_support_conversion)
+
+DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_nothing, bool force_support_conversion)
 {
-    auto get_nothing_or_throw = [throw_on_no_common_type, & types](const std::string & reason) -> DataTypePtr
+    auto get_nothing_or_throw = [throw_if_result_is_nothing, & types](const std::string & reason)
     {
-        if (throw_on_no_common_type)
-            throw Exception(getExceptionMessage(types, reason), ErrorCodes::NO_COMMON_TYPE);
+        if (throw_if_result_is_nothing)
+            throw Exception(getExceptionMessagePrefix(types) + reason, ErrorCodes::NO_COMMON_TYPE);
         return std::make_shared<DataTypeNothing>();
     };
 
@@ -57,14 +57,14 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_on_no_common_type
 
     if (types.empty())
     {
-        if (throw_on_no_common_type)
+        if (throw_if_result_is_nothing)
             throw Exception("There is no common type for empty type list", ErrorCodes::NO_COMMON_TYPE);
         return std::make_shared<DataTypeNothing>();
     }
 
     if (types.size() == 1)
     {
-        if (throw_on_no_common_type && typeid_cast<const DataTypeNothing *>(types[0].get()))
+        if (throw_if_result_is_nothing && typeid_cast<const DataTypeNothing *>(types[0].get()))
             throw Exception("There is no common type for type Nothing", ErrorCodes::NO_COMMON_TYPE);
         return types[0];
     }
@@ -118,7 +118,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_on_no_common_type
             if (!all_arrays)
                 return get_nothing_or_throw(" because some of them are Array and some of them are not");
 
-            return std::make_shared<DataTypeArray>(getMostSubtype(nested_types, throw_on_no_common_type, force_support_conversion));
+            return std::make_shared<DataTypeArray>(getMostSubtype(nested_types, false, force_support_conversion));
         }
     }
 
@@ -161,7 +161,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_on_no_common_type
             DataTypes common_tuple_types(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
                 common_tuple_types[elem_idx] =
-                        getMostSubtype(nested_types[elem_idx], throw_on_no_common_type, force_support_conversion);
+                        getMostSubtype(nested_types[elem_idx], throw_if_result_is_nothing, force_support_conversion);
 
             return std::make_shared<DataTypeTuple>(common_tuple_types);
         }
@@ -192,9 +192,9 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_on_no_common_type
         if (have_nullable)
         {
             if (all_nullable || force_support_conversion)
-                return std::make_shared<DataTypeNullable>(getMostSubtype(nested_types, throw_on_no_common_type, force_support_conversion));
+                return std::make_shared<DataTypeNullable>(getMostSubtype(nested_types, false, force_support_conversion));
 
-            return getMostSubtype(nested_types, throw_on_no_common_type, force_support_conversion);
+            return getMostSubtype(nested_types, throw_if_result_is_nothing, force_support_conversion);
         }
     }
 
@@ -309,10 +309,8 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_on_no_common_type
                 else if (min_mantissa_bits_of_floating <= 53)
                     return std::make_shared<DataTypeFloat64>();
                 else
-                    throw Exception(
-                        ErrorCodes::NO_COMMON_TYPE,
-                        "Logical error: " +
-                            getExceptionMessage(types, " but as all data types are floats, we must have found maximum float type"));
+                    throw Exception("Logical error: " + getExceptionMessagePrefix(types)
+                                    + " but as all data types are floats, we must have found maximum float type", ErrorCodes::NO_COMMON_TYPE);
             }
 
             /// If there are signed and unsigned types of same bit-width, the result must be unsigned number.
@@ -328,10 +326,8 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_on_no_common_type
                 else if (min_bits_of_unsigned_integer <= 64)
                     return std::make_shared<DataTypeUInt64>();
                 else
-                    throw Exception(
-                        ErrorCodes::NO_COMMON_TYPE,
-                        "Logical error: " +
-                            getExceptionMessage(types, " but as all data types are integers, we must have found maximum unsigned integer type"));
+                    throw Exception("Logical error: " + getExceptionMessagePrefix(types)
+                                    + " but as all data types are integers, we must have found maximum unsigned integer type", ErrorCodes::NO_COMMON_TYPE);
             }
 
             /// All signed.
@@ -345,10 +341,8 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_on_no_common_type
                 else if (min_bits_of_signed_integer <= 64)
                     return std::make_shared<DataTypeInt64>();
                 else
-                    throw Exception(
-                        ErrorCodes::NO_COMMON_TYPE,
-                        "Logical error: " +
-                            getExceptionMessage(types, " but as all data types are integers, we must have found maximum signed integer type"));
+                    throw Exception("Logical error: " + getExceptionMessagePrefix(types)
+                                    + " but as all data types are integers, we must have found maximum signed integer type", ErrorCodes::NO_COMMON_TYPE);
             }
         }
     }

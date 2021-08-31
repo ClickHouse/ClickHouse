@@ -13,9 +13,7 @@
 
 #include <Interpreters/DictionaryReader.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/TableJoin.h>
 
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
@@ -423,14 +421,19 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         if (JoinCommon::typesEqualUpToNullability(ltype->second, rtype->second))
             continue;
 
-        /// TODO(vdimir): use getMostSubtype if possible
-        auto common_type = DB::getLeastSupertype({ltype->second, rtype->second}, false);
-        if (common_type == nullptr || isNothing(common_type))
+        DataTypePtr common_type;
+        try
+        {
+            /// TODO(vdimir): use getMostSubtype if possible
+            common_type = DB::getLeastSupertype({ltype->second, rtype->second});
+        }
+        catch (DB::Exception & ex)
         {
             throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
-                "Can't infer supertype for joined columns: {}: {} at left, {}: {} at right.",
+                "Can't infer common type for joined columns: {}: {} at left, {}: {} at right. {}",
                 key_names_left[i], ltype->second->getName(),
-                key_names_right[i], rtype->second->getName());
+                key_names_right[i], rtype->second->getName(),
+                ex.message());
         }
 
         if (!allow_right && !common_type->equals(*rtype->second))
