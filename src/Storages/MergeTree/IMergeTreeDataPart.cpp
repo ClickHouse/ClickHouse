@@ -82,9 +82,9 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
 
         // NULL_LAST
         if (min_val.isNull())
-            min_val = PositiveInfinity();
+            min_val = POSITIVE_INFINITY;
         if (max_val.isNull())
-            max_val = PositiveInfinity();
+            max_val = POSITIVE_INFINITY;
 
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
