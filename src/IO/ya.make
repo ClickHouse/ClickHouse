@@ -20,7 +20,6 @@ PEERDIR(
 
 SRCS(
     AIO.cpp
-    AIOContextPool.cpp
     BrotliReadBuffer.cpp
     BrotliWriteBuffer.cpp
     Bzip2ReadBuffer.cpp
@@ -57,7 +56,6 @@ SRCS(
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
-    ReadIndirectBufferFromWebServer.cpp
     SeekAvoidingReadBuffer.cpp
     TimeoutSetter.cpp
     UseSSL.cpp
