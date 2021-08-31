@@ -112,28 +112,8 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
-    static std::atomic_uint total_sends {0};
-
-    if ((data_settings->replicated_max_parallel_sends
-            && total_sends >= data_settings->replicated_max_parallel_sends)
-        || (data_settings->replicated_max_parallel_sends_for_table
-            && data.current_table_sends >= data_settings->replicated_max_parallel_sends_for_table))
-    {
-        response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
-        response.setReason("Too many concurrent fetches, try again later");
-        response.set("Retry-After", "10");
-        response.setChunkedTransferEncoding(false);
-        return;
-    }
-
     /// We pretend to work as older server version, to be sure that client will correctly process our version
     response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION))});
-
-    ++total_sends;
-    SCOPE_EXIT({--total_sends;});
-
-    ++data.current_table_sends;
-    SCOPE_EXIT({--data.current_table_sends;});
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
