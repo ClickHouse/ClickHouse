@@ -404,6 +404,7 @@ TEST(CoordinationTest, ChangelogTestCompaction)
     /// And we able to read it
     DB::KeeperLogStore changelog_reader("./logs", 5, true);
     changelog_reader.init(7, 0);
+
     EXPECT_EQ(changelog_reader.size(), 1);
     EXPECT_EQ(changelog_reader.start_index(), 7);
     EXPECT_EQ(changelog_reader.next_slot(), 8);
