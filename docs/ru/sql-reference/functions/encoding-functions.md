@@ -226,7 +226,7 @@ bin(arg)
 
 Для [String](../../sql-reference/data-types/string.md) и [FixedString](../../sql-reference/data-types/fixedstring.md) все байты кодируются как восемь двоичных чисел. Нулевые байты не опущены.
 
-Значения [Float](../../sql-reference/data-types/float.md) и [Decimal](../../sql-reference/data-types/decimal.md) кодируются как их представление в памяти. Поскольку ClickHouse поддерживает архитектуру `little-endian`, они кодируются от младшего к старшему байту. Нулевые начальные конечные байты не опущены.
+Значения [Float](../../sql-reference/data-types/float.md) и [Decimal](../../sql-reference/data-types/decimal.md) кодируются как их представление в памяти. Поскольку ClickHouse поддерживает архитектуру `little-endian`, они кодируются от младшего к старшему байту. Нулевые начальные/конечные байты не опущены.
 
 **Аргументы**
 
