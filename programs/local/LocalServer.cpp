@@ -213,6 +213,8 @@ try
         throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
     }
 
+    std::optional<StatusFile> status;
+
     // Non-fuzzer mode: main function runs only one time,
     // so first_time clauses does not affect anything
     static bool first_time = true;
@@ -223,8 +225,6 @@ try
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();
-
-    std::optional<StatusFile> status;
 
     /// Skip temp path installation
 
@@ -315,7 +315,6 @@ try
     {
         attachSystemTables(global_context);
     }
-    status.reset();
     }
 
     /// processing queries
@@ -443,6 +442,7 @@ try
     global_context->shutdown();
     global_context.reset();
 
+    status.reset();
     cleanup();
 #endif
     return Application::EXIT_OK;
