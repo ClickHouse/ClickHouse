@@ -126,11 +126,8 @@ SRCS(
     StorageBuffer.cpp
     StorageDictionary.cpp
     StorageDistributed.cpp
-<<<<<<< add-executable-table-function
     StorageExecutable.cpp
-=======
     StorageExternalDistributed.cpp
->>>>>>> executable-table-function
     StorageFactory.cpp
     StorageFile.cpp
     StorageGenerateRandom.cpp
