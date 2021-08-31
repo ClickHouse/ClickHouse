@@ -1,6 +1,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Common/ThreadStatus.h>
-#include <Common/Scope
+#include <Common/Stopwatch.h>
+#include <common/scope_guard.h>
 
 namespace DB
 {
@@ -40,7 +41,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
     {
         if (input.isFinished())
         {
-            if (!was_on_finish_called)
+            if (!was_on_finish_called && !has_exception)
                 return Status::Ready;
 
             output.finish();
@@ -56,6 +57,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
 
         if (data.exception)
         {
+            has_exception = true;
             output.pushData(std::move(data));
             return Status::PortFull;
         }
@@ -66,10 +68,46 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
     return Status::Ready;
 }
 
-static std::exception_ptr runStep(std::function<void()> func, ExceptionKeepingTransform::RuntimeData * runtime_data)
+static std::exception_ptr runStep(std::function<void()> step, ExceptionKeepingTransform::RuntimeData * runtime_data)
 {
     auto * original_thread = current_thread;
     SCOPE_EXIT({ current_thread = original_thread; });
+
+    if (runtime_data && runtime_data->thread_status)
+    {
+        /// Change thread context to store individual metrics. Once the work in done, go back to the original thread
+        runtime_data->thread_status->resetPerformanceCountersLastUsage();
+        current_thread = runtime_data->thread_status.get();
+    }
+
+    std::exception_ptr res;
+    Stopwatch watch;
+
+    try
+    {
+        step();
+    }
+    catch (Exception & exception)
+    {
+        if (runtime_data && !runtime_data->additional_exception_message.empty())
+            exception.addMessage(runtime_data->additional_exception_message);
+
+        res = std::current_exception();
+    }
+    catch (...)
+    {
+        res = std::current_exception();
+    }
+
+    if (runtime_data)
+    {
+        if (runtime_data->thread_status)
+            runtime_data->thread_status->updatePerformanceCounters();
+
+        runtime_data->elapsed_ms += watch.elapsedMilliseconds();
+    }
+
+    return res;
 }
 
 void ExceptionKeepingTransform::work()
@@ -77,35 +115,37 @@ void ExceptionKeepingTransform::work()
     if (!was_on_start_called)
     {
         was_on_start_called = true;
-        onStart();
-    }
 
-    if (ready_input)
+        if (auto exception = runStep([this] { onStart(); }, runtime_data.get()))
+        {
+            has_exception = true;
+            ready_output = true;
+            data.exception = std::move(exception);
+        }
+    }
+    else if (ready_input)
     {
         ready_input = false;
-        ready_output = true;
 
-        try
+        if (auto exception = runStep([this] { transform(data.chunk); }, runtime_data.get()))
         {
-            transform(data.chunk);
-        }
-        catch (...)
-        {
+            has_exception = true;
             data.chunk.clear();
-            data.exception = std::current_exception();
+            data.exception = std::move(exception);
         }
+
+        if (data.chunk || data.exception)
+            ready_output = true;
     }
     else if (!was_on_finish_called)
     {
         was_on_finish_called = true;
-        try
+
+        if (auto exception = runStep([this] { onFinish(); }, runtime_data.get()))
         {
-            onFinish();
-        }
-        catch (...)
-        {
-            ready_input = true;
-            data.exception = std::current_exception();
+            has_exception = true;
+            ready_output = true;
+            data.exception = std::move(exception);
         }
     }
 }
@@ -115,6 +155,8 @@ SinkToStorage::SinkToStorage(const Block & header) : ExceptionKeepingTransform(h
 void SinkToStorage::transform(Chunk & chunk)
 {
     consume(chunk.clone());
+    if (lastBlockIsDuplicate())
+        chunk.clear();
 }
 
 }

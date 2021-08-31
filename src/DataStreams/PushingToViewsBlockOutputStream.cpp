@@ -35,13 +35,18 @@ namespace DB
 
 struct ViewsData
 {
-    std::vector<ViewRuntimeData> views;
+    std::list<ViewRuntimeData> views;
     ContextPtr context;
 
     /// In case of exception happened while inserting into main table, it is pushed to pipeline.
     /// Remember the first one, we should keep them after view processing.
     std::atomic_bool has_exception = false;
     std::exception_ptr first_exception;
+
+    ViewsData(std::list<ViewRuntimeData> views_, ContextPtr context_)
+        : views(std::move(views_)), context(std::move(context_))
+    {
+    }
 };
 
 using ViewsDataPtr = std::shared_ptr<ViewsData>;
@@ -113,7 +118,7 @@ private:
     ViewsDataPtr views_data;
 };
 
-static void logQueryViews(std::vector<ViewRuntimeData> & views, ContextPtr context);
+static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context);
 
 class FinalizingViewsTransform final : public IProcessor
 {
@@ -192,11 +197,12 @@ public:
 
     void work() override
     {
-        size_t num_views = statuses.size();
-        for (size_t i = 0; i < num_views; ++i)
+        size_t i = 0;
+        for (auto & view : views_data->views)
         {
-            auto & view = views_data->views[i];
             auto & status = statuses[i];
+            ++i;
+
             if (status.exception)
             {
                 if (!any_exception)
@@ -268,6 +274,11 @@ Drain buildPushingToViewsDrainImpl(
 {
     checkStackSize();
 
+    /// If we don't write directly to the destination
+    /// then expect that we're inserting with precalculated virtual columns
+    auto storage_header = no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals())
+                                         : metadata_snapshot->getSampleBlock();
+
     /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
@@ -304,7 +315,8 @@ Drain buildPushingToViewsDrainImpl(
             insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
     }
 
-    std::vector<ViewRuntimeData> views;
+    std::list<ViewRuntimeData> views;
+    std::vector<Drain> drains;
 
     for (const auto & database_table : dependencies)
     {
@@ -349,7 +361,7 @@ Drain buildPushingToViewsDrainImpl(
             ASTPtr insert_query_ptr(insert.release());
             InterpreterInsertQuery interpreter(insert_query_ptr, insert_context);
             BlockIO io = interpreter.execute();
-            out = io.out;
+            out = std::move(io.out);
         }
         else if (const auto * live_view = dynamic_cast<const StorageLiveView *>(dependent_table.get()))
         {
@@ -393,8 +405,21 @@ Drain buildPushingToViewsDrainImpl(
             0,
             std::chrono::system_clock::now(),
             QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START};
-        views.emplace_back(ViewRuntimeData{std::move(query), database_table, std::move(out), nullptr, std::move(runtime_stats)});
 
+        views.emplace_back(ViewRuntimeData{
+            std::move(query),
+            out.getHeader(),
+            database_table,
+            dependent_table,
+            dependent_metadata_snapshot,
+            select_context,
+            nullptr,
+            std::move(runtime_stats)});
+
+        auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(storage_header, views.back());
+        out.addTransform(std::move(executing_inner_query));
+
+        drains.emplace_back(std::move(out));
 
         /// Add the view to the query access info so it can appear in system.query_log
         if (!no_destination)
@@ -404,14 +429,24 @@ Drain buildPushingToViewsDrainImpl(
         }
     }
 
+    size_t num_views = views.size();
+    if (num_views != 0)
+    {
+        auto views_data = std::make_shared<ViewsData>(std::move(views), context);
+        auto copying_data = std::make_shared<CopyingDataToViewsTransform>(storage_header, std::move(views_data));
+        auto it = copying_data->getOutputs().begin();
+        for (auto & drain : drains)
+            connect(*it, drain.getPort());
+
+
+    }
+
     /// Do not push to destination table if the flag is set
     if (!no_destination)
     {
         auto sink = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), context);
 
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
-
-        auto replicated_output = dynamic_cast<ReplicatedMergeTreeSink *>(sink.get());
     }
 }
 
@@ -632,8 +667,6 @@ void PushingToViewsBlockOutputStream::flush()
 
 static void process(Block & block, ViewRuntimeData & view)
 {
-    const auto & storage = view.storage;
-    const auto & metadata_snapshot = view.metadata_snapshot;
     const auto & context = view.context;
 
     /// We create a table with the same name as original table and the same alias columns,
@@ -641,10 +674,10 @@ static void process(Block & block, ViewRuntimeData & view)
     /// InterpreterSelectQuery will do processing of alias columns.
     auto local_context = Context::createCopy(context);
     local_context->addViewSource(StorageValues::create(
-        storage->getStorageID(),
-        metadata_snapshot->getColumns(),
+        view.table_id,
+        view.metadata_snapshot->getColumns(),
         block,
-        storage->getVirtuals()));
+        view.storage->getVirtuals()));
 
     /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
     ///
@@ -716,7 +749,7 @@ void PushingToViewsBlockOutputStream::checkExceptionsInViews()
     }
 }
 
-static void logQueryViews(std::vector<ViewRuntimeData> & views, ContextPtr context)
+static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
     const UInt64 min_query_duration = settings.log_queries_min_query_duration_ms.totalMilliseconds();

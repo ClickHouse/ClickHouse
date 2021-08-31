@@ -81,7 +81,7 @@ private:
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
 {
 public:
-    ExecutingInnerQueryFromViewTransform(const Block & header, ViewRuntimeData view_data)
+    ExecutingInnerQueryFromViewTransform(const Block & header, ViewRuntimeData & view_data)
         : ExceptionKeepingTransform(header, view_data.sample_block)
         , view(std::move(view_data))
     {
@@ -94,7 +94,7 @@ protected:
     void onFinish() override;
 
 private:
-    ViewRuntimeData view;
+    ViewRuntimeData & view;
 };
 
 }
