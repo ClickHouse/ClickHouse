@@ -4,8 +4,12 @@
 #include "Slices.h"
 #include "sliceEqualElements.h"
 
-#if defined(__AVX2__) || defined(__SSE4_2__)
-#include <immintrin.h>
+#if defined(__SSE4_2__)
+    #include <emmintrin.h>
+    #include <nmmintrin.h>
+#endif
+#if defined(__AVX2__)
+    #include <immintrin.h>
 #endif
 
 namespace DB::GatherUtils
@@ -124,7 +128,7 @@ inline ALWAYS_INLINE bool hasAllIntegralLoopRemainder(
 #endif
 
 #if defined(__AVX2__)
-// AVX2 Int specialization
+// AVX2 Int specialization of sliceHasImplAnyAll
 template <>
 inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArraySlice<int>, NumericArraySlice<int>, sliceEqualElements<int,int> >(
     const NumericArraySlice<int> & first, const NumericArraySlice<int> & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
