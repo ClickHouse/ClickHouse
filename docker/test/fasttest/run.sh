@@ -8,9 +8,6 @@ trap 'kill $(jobs -pr) ||:' EXIT
 # that we can run the "everything else" stage from the cloned source.
 stage=${stage:-}
 
-# Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-11}
-
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
 # it being undefined. Also read it as array so that we can pass an empty list
@@ -73,7 +70,7 @@ function start_server
         --path "$FASTTEST_DATA"
         --user_files_path "$FASTTEST_DATA/user_files"
         --top_level_domains_path "$FASTTEST_DATA/top_level_domains"
-        --keeper_server.storage_path "$FASTTEST_DATA/coordination"
+        --test_keeper_server.log_storage_path "$FASTTEST_DATA/coordination"
     )
     clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
     server_pid=$!
@@ -113,7 +110,6 @@ function start_server
     echo "ClickHouse server pid '$server_pid' started and responded"
 
     echo "
-set follow-fork-mode child
 handle all noprint
 handle SIGSEGV stop print
 handle SIGBUS stop print
@@ -128,26 +124,22 @@ continue
 
 function clone_root
 {
-    git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
+    git clone https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
 
     (
         cd "$FASTTEST_SOURCE"
         if [ "$PULL_REQUEST_NUMBER" != "0" ]; then
-            if git fetch --depth 1 origin "+refs/pull/$PULL_REQUEST_NUMBER/merge"; then
+            if git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/merge"; then
                 git checkout FETCH_HEAD
-                echo "Checked out pull/$PULL_REQUEST_NUMBER/merge ($(git rev-parse FETCH_HEAD))"
+                echo 'Clonned merge head'
             else
-                git fetch --depth 1 origin "+refs/pull/$PULL_REQUEST_NUMBER/head"
+                git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/head"
                 git checkout "$COMMIT_SHA"
-                echo "Checked out nominal SHA $COMMIT_SHA for PR $PULL_REQUEST_NUMBER"
+                echo 'Checked out to commit'
             fi
         else
             if [ -v COMMIT_SHA ]; then
-                git fetch --depth 1 origin "$COMMIT_SHA"
                 git checkout "$COMMIT_SHA"
-                echo "Checked out nominal SHA $COMMIT_SHA for master"
-            else
-                echo  "Using default repository head $(git rev-parse HEAD)"
             fi
         fi
     )
@@ -159,7 +151,7 @@ function clone_submodules
         cd "$FASTTEST_SOURCE"
 
         SUBMODULES_TO_UPDATE=(
-            contrib/abseil-cpp
+            contrib/antlr4-runtime
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
@@ -188,7 +180,7 @@ function clone_submodules
         )
 
         git submodule sync
-        git submodule update --depth 1 --init --recursive "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule update --init --recursive "${SUBMODULES_TO_UPDATE[@]}"
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -222,7 +214,7 @@ function run_cmake
 
     (
         cd "$FASTTEST_BUILD"
-        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
+        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_C_COMPILER=clang-10 "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
     )
 }
 
@@ -230,7 +222,7 @@ function build
 {
     (
         cd "$FASTTEST_BUILD"
-        time ninja clickhouse-bundle 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
+        time ninja clickhouse-bundle | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
             cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
         fi
@@ -279,7 +271,6 @@ function run_tests
         00926_multimatch
         00929_multi_match_edit_distance
         01681_hyperscan_debug_assertion
-        02004_max_hyperscan_regex_length
 
         01176_mysql_client_interactive          # requires mysql client
         01031_mutations_interpreter_and_context
@@ -300,10 +291,7 @@ function run_tests
         01318_decrypt                           # Depends on OpenSSL
         01663_aes_msan                          # Depends on OpenSSL
         01667_aes_args_check                    # Depends on OpenSSL
-        01683_codec_encrypted                   # Depends on OpenSSL
         01776_decrypt_aead_size_check           # Depends on OpenSSL
-        01811_filter_by_null                    # Depends on OpenSSL
-        02012_sha512_fixedstring                # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent
@@ -311,10 +299,6 @@ function run_tests
         01354_order_by_tuple_collate_const
         01355_ilike
         01411_bayesian_ab_testing
-        01798_uniq_theta_sketch
-        01799_long_uniq_theta_sketch
-        01890_stem                               # depends on libstemmer_c
-        02003_compress_bz2                       # depends on bzip2
         collate
         collation
         _orc_
@@ -371,28 +355,29 @@ function run_tests
 
         # JSON functions
         01666_blns
+    )
 
-        # Requires postgresql-client
-        01802_test_postgresql_protocol_with_row_policy
+    (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
 
-        # Depends on AWS
-        01801_s3_cluster
+    # substr is to remove semicolon after test name
+    readarray -t FAILED_TESTS < <(awk '/\[ FAIL|TIMEOUT|ERROR \]/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")
 
-        # needs psql
-        01889_postgresql_protocol_null_fields
+    # We will rerun sequentially any tests that have failed during parallel run.
+    # They might have failed because there was some interference from other tests
+    # running concurrently. If they fail even in seqential mode, we will report them.
+    # FIXME All tests that require exclusive access to the server must be
+    # explicitly marked as `sequential`, and `clickhouse-test` must detect them and
+    # run them in a separate group after all other tests. This is faster and also
+    # explicit instead of guessing.
+    if [[ -n "${FAILED_TESTS[*]}" ]]
+    then
+        stop_server ||:
 
-        # needs pv
-        01923_network_receive_time_metric_insert
+        # Clean the data so that there is no interference from the previous test run.
+        rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files,coordination} ||:
 
-        01889_sqlite_read_write
+        start_server
 
-        # needs s2
-        01849_geoToS2
-        01851_s2_to_geo
-        01852_s2_get_neighbours
-        01853_s2_cells_intersect
-        01854_s2_cap_contains
-        01854_s2_cap_union
 
         # needs s3
         01944_insert_partition_by
@@ -401,11 +386,13 @@ function run_tests
         02013_zlib_read_after_eof
     )
 
-    time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
-            --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" \
-            -- "$FASTTEST_FOCUS" 2>&1 \
-        | ts '%Y-%m-%d %H:%M:%S' \
-        | tee "$FASTTEST_OUTPUT/test_log.txt"
+        echo "Going to run again: ${FAILED_TESTS[*]}"
+
+
+        clickhouse-test --hung-check --order=random --no-long --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_log.txt"
+    else
+        echo "No failed tests"
+    fi
 }
 
 case "$stage" in
@@ -439,7 +426,7 @@ case "$stage" in
     # See the compatibility hacks in `clone_root` stage above. Remove at the same time,
     # after Nov 1, 2020.
     cd "$FASTTEST_WORKSPACE"
-    clone_submodules 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/submodule_log.txt"
+    clone_submodules | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/submodule_log.txt"
     ;&
 "run_cmake")
     run_cmake
@@ -450,7 +437,7 @@ case "$stage" in
 "configure")
     # The `install_log.txt` is also needed for compatibility with old CI task --
     # if there is no log, it will decide that build failed.
-    configure 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/install_log.txt"
+    configure | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/install_log.txt"
     ;&
 "run_tests")
     run_tests

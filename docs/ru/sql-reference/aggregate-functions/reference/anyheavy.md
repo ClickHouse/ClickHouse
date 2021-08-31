@@ -29,3 +29,4 @@ FROM ontime
 └───────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/anyheavy/) <!--hide-->

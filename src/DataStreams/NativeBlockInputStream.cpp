@@ -6,7 +6,7 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/typeid_cast.h>
-#include <common/range.h>
+#include <ext/range.h>
 
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -73,16 +73,14 @@ void NativeBlockInputStream::resetParser()
 
 void NativeBlockInputStream::readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
-    ISerialization::DeserializeBinaryBulkSettings settings;
-    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
+    IDataType::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
 
-    ISerialization::DeserializeBinaryBulkStatePtr state;
-    auto serialization = type.getDefaultSerialization();
-
-    serialization->deserializeBinaryBulkStatePrefix(settings, state);
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
+    IDataType::DeserializeBinaryBulkStatePtr state;
+    type.deserializeBinaryBulkStatePrefix(settings, state);
+    type.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state);
 
     if (column->size() != rows)
         throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column->size()) + ". Rows expected: " + toString(rows) + ".",
@@ -222,7 +220,7 @@ void NativeBlockInputStream::updateAvgValueSizeHints(const Block & block)
 
     avg_value_size_hints.resize_fill(block.columns(), 0);
 
-    for (auto idx : collections::range(0, block.columns()))
+    for (auto idx : ext::range(0, block.columns()))
     {
         auto & avg_value_size_hint = avg_value_size_hints[idx];
         IDataType::updateAvgValueSizeHint(*block.getByPosition(idx).column, avg_value_size_hint);
