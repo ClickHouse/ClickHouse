@@ -149,7 +149,7 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
             throw KeeperException(code, "/");
 
         if (code == Coordination::Error::ZNONODE)
-            throw KeeperException("Zookeeper root doesn't exist. You should create root node " + chroot + " before start.", Coordination::Error::ZNONODE);
+            throw KeeperException("ZooKeeper root doesn't exist. You should create root node " + chroot + " before start.", Coordination::Error::ZNONODE);
     }
 }
 
