@@ -1800,14 +1800,20 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
                 ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
                 LOG_ERROR(log,
-                    "{}. Data after merge is not byte-identical to data on another replicas. There could be several"
-                    " reasons: 1. Using newer version of compression library after server update. 2. Using another"
-                    " compression method. 3. Non-deterministic compression algorithm (highly unlikely). 4."
-                    " Non-deterministic merge algorithm due to logical error in code. 5. Data corruption in memory due"
-                    " to bug in code. 6. Data corruption in memory due to hardware issue. 7. Manual modification of"
-                    " source data after server startup. 8. Manual modification of checksums stored in ZooKeeper. 9."
-                    " Part format related settings like 'enable_mixed_granularity_parts' are different on different"
-                    " replicas. We will download merged part from replica to force byte-identical result.",
+                    "{}. "
+                    "Data after merge is not byte-identical to data on another replicas. "
+                    "There could be several reasons: "
+                    "1. Using newer version of compression library after server update. "
+                    "2. Using another compression method. "
+                    "3. Non-deterministic compression algorithm (highly unlikely). "
+                    "4. Non-deterministic merge algorithm due to logical error (bug) in code. "
+                    "5. Data corruption in memory due to bug in code. "
+                    "6. Data corruption in memory due to hardware issue. "
+                    "7. Manual modification of source data after server startup. "
+                    "8. Manual modification of checksums stored in ZooKeeper. "
+                    "9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas. "
+                    "10. There is ADD/DROP COLUMN/INDEX mutation in progress and one replica already applied mutation, while another did not. "
+                    "We will download merged part from replica to force byte-identical result.",
                     getCurrentExceptionMessage(false));
 
                 write_part_log(ExecutionStatus::fromCurrentException());
