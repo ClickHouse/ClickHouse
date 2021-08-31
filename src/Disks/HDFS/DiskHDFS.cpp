@@ -93,15 +93,15 @@ DiskHDFS::DiskHDFS(
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *) const
+std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, const ReadSettings & read_settings, size_t) const
 {
     auto metadata = readMeta(path);
 
-    LOG_DEBUG(log,
+    LOG_TRACE(log,
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    auto reader = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, metadata, buf_size);
+    auto reader = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, metadata, read_settings.remote_fs_buffer_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
 }
 
@@ -114,7 +114,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
     auto file_name = getRandomName();
     auto hdfs_path = remote_fs_root_path + file_name;
 
-    LOG_DEBUG(log, "{} to file by path: {}. HDFS path: {}", mode == WriteMode::Rewrite ? "Write" : "Append",
+    LOG_TRACE(log, "{} to file by path: {}. HDFS path: {}", mode == WriteMode::Rewrite ? "Write" : "Append",
               backQuote(metadata_path + path), hdfs_path);
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
