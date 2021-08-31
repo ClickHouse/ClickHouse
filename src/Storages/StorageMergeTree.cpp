@@ -1117,7 +1117,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
 
     bool executed = false;
 
-    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
+    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
+        getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
     {
         executor.execute({[this, share_lock]
         {

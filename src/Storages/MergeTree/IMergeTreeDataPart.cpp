@@ -1016,16 +1016,21 @@ void IMergeTreeDataPart::loadUUID()
     }
 }
 
-void IMergeTreeDataPart::loadSkipIndex()
+void IMergeTreeDataPart::loadDeletedMask()
 {
-    const String path = fs::path(getFullRelativePath()) / SKIP_INDEX_FILE_NAME;
+    const String path = fs::path(getFullRelativePath()) / MergeTreeDataPartDeletedMask::FILE_NAME;
 
-    if (!volume->getDisk()->exists(path))
+    if (volume->getDisk()->exists(path))
+    {
+        auto in = openForReading(volume->getDisk(), path);
+        deleted_mask.read(*in);
         return;
+    }
 
-    auto in = openForReading(volume->getDisk(), path);
+    LOG_WARNING(storage.log, "Deleted mask for part {} not found, assuming empty", name);
 
-    readVectorBinary(skip_index.skipped_rows, *in);
+    auto out = volume->getDisk()->writeFile(path, 4096);
+    deleted_mask.write(*out);
 }
 
 void IMergeTreeDataPart::loadColumns(bool require)

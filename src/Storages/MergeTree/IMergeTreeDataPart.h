@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Storages/MergeTree/MergeTreeDataPartDeletedMask.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include "../../../contrib/magic_enum/include/magic_enum.hpp" //FIXME
@@ -41,13 +42,6 @@ class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
-
-/// Rows that were deleted by DELETE query.
-struct MergeTreePartSkipIndex {
-    std::vector<size_t> skipped_rows;
-};
-
-static constexpr auto SKIP_INDEX_FILE_NAME = "skip_index.bin";
 
 /// Description of the data part.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
@@ -397,11 +391,10 @@ public:
     /// Required for distinguish different copies of the same part on S3
     String getUniqueId() const;
 
-    const MergeTreePartSkipIndex& getSkipIndex() const { return skip_index; }
+    const MergeTreeDataPartDeletedMask& getDeletedMask() const { return deleted_mask; }
 
 protected:
-    // TODO empty constructor as for now
-    MergeTreePartSkipIndex skip_index {};
+    MergeTreeDataPartDeletedMask deleted_mask {};
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
@@ -442,8 +435,7 @@ private:
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
-    /// Reads part skip index (rows deleted by DELETE statement)
-    void loadSkipIndex();
+    void loadDeletedMask();
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);

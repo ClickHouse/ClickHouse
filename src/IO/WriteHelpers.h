@@ -1056,6 +1056,16 @@ inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
+template <typename It>
+void writeBinary(It begin, It end, WriteBuffer & buf)
+{
+    const size_t size = end - begin;
+    writeVarUInt(size, buf);
+
+    for (size_t i = 0; i < size; ++i)
+        writeBinary(begin + i, buf);
+}
+
 template <typename T>
 void writeBinary(const std::vector<T> & x, WriteBuffer & buf)
 {
