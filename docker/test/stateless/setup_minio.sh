@@ -49,7 +49,9 @@ sleep 5
 TEST_PATH=${1:-/usr/share/clickhouse-test}
 MINIO_DATA_PATH=${TEST_PATH}/queries/0_stateless/data_minio
 
-for FILE in $(ls ${MINIO_DATA_PATH}); do
-    echo $FILE;
-    ./mc cp ${MINIO_DATA_PATH}/$FILE clickminio/test/$FILE;
+# Iterating over globs will cause redudant FILE variale to be a path to a file, not a filename
+# shellcheck disable=SC2045
+for FILE in $(ls "${MINIO_DATA_PATH}"); do
+    echo "$FILE";
+    ./mc cp "${MINIO_DATA_PATH}"/"$FILE" clickminio/test/"$FILE";
 done
