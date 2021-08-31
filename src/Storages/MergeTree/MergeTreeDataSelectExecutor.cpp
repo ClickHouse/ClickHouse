@@ -132,6 +132,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     QueryProcessingStage::Enum processed_stage,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
 {
+    if (query_info.merge_tree_empty_result)
+        return std::make_unique<QueryPlan>();
+
     const auto & settings = context->getSettingsRef();
     auto parts = data.getDataPartsVector();
     if (!query_info.projection)
@@ -192,7 +195,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             num_streams,
             max_block_numbers_to_read);
 
-        if (plan)
+        if (plan->isInitialized())
         {
             // If `before_where` is not empty, transform input blocks by adding needed columns
             // originated from key columns. We already project the block at the end, using
@@ -247,7 +250,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             ordinary_query_plan.addStep(std::move(where_step));
         }
 
-        ordinary_pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
+        ordinary_pipe = ordinary_query_plan.convertToPipe(
+            QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     }
 
     if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
@@ -361,12 +365,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     pipes.emplace_back(std::move(projection_pipe));
     pipes.emplace_back(std::move(ordinary_pipe));
     auto pipe = Pipe::unitePipes(std::move(pipes));
-    pipe.resize(1);
+    auto plan = std::make_unique<QueryPlan>();
+    if (pipe.empty())
+        return plan;
 
+    pipe.resize(1);
     auto step = std::make_unique<ReadFromStorageStep>(
         std::move(pipe),
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name));
-    auto plan = std::make_unique<QueryPlan>();
     plan->addStep(std::move(step));
     return plan;
 }

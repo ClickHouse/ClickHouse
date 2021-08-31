@@ -783,6 +783,9 @@ public:
     /// Return the partition expression types as a Tuple type. Return DataTypeUInt8 if partition expression is empty.
     DataTypePtr getPartitionValueType() const;
 
+    /// Construct a sample block of virtual columns.
+    Block getSampleBlockWithVirtualColumns() const;
+
     /// Construct a block consisting only of possible virtual columns for part pruning.
     /// If one_part is true, fill in at most one part.
     Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part) const;

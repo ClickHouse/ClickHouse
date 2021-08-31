@@ -547,7 +547,7 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(const A
 }
 
 
-InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(ASTCreateQuery & create) const
+InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const
 {
     TableProperties properties;
     TableLockHolder as_storage_lock;
@@ -586,10 +586,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
         properties.columns = as_storage_metadata->getColumns();
 
-        /// Secondary indices make sense only for MergeTree family of storage engines.
+        /// Secondary indices and projections make sense only for MergeTree family of storage engines.
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
+        {
             properties.indices = as_storage_metadata->getSecondaryIndices();
+            properties.projections = as_storage_metadata->getProjections().clone();
+        }
 
         properties.constraints = as_storage_metadata->getConstraints();
     }
@@ -937,7 +940,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
-    TableProperties properties = setProperties(create);
+    TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
