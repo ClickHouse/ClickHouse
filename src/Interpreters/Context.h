@@ -325,6 +325,7 @@ public:
     String getFlagsPath() const;
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
+    String getUserScriptsPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     std::vector<String> getWarnings() const;
@@ -335,6 +336,7 @@ public:
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
+    void setUserScriptsPath(const String & path);
 
     void addWarningMessage(const String & msg);
 

@@ -161,6 +161,7 @@ struct ContextSharedPart
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
+    String user_scripts_path;                               /// Path to the directory with user provided scripts.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
@@ -464,6 +465,12 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
+String Context::getUserScriptsPath() const
+{
+    auto lock = getLock();
+    return shared->user_scripts_path;
+}
+
 std::vector<String> Context::getWarnings() const
 {
     auto lock = getLock();
@@ -493,6 +500,9 @@ void Context::setPath(const String & path)
 
     if (shared->dictionaries_lib_path.empty())
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
+
+    if (shared->user_scripts_path.empty())
+        shared->user_scripts_path = shared->path + "user_scripts/";
 }
 
 VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
@@ -568,6 +578,12 @@ void Context::setDictionariesLibPath(const String & path)
 {
     auto lock = getLock();
     shared->dictionaries_lib_path = path;
+}
+
+void Context::setUserScriptsPath(const String & path)
+{
+    auto lock = getLock();
+    shared->user_scripts_path = path;
 }
 
 void Context::addWarningMessage(const String & msg)
