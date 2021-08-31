@@ -25,6 +25,7 @@ public:
     bool execute() override
     {
         res = inner();
+        inner = {};
         return false;
     }
 
@@ -110,6 +111,17 @@ public:
             scheduler.join();
 
         pool.wait();
+    }
+
+    size_t active()
+    {
+        return pool.active();
+    }
+
+    size_t pending()
+    {
+        std::lock_guard lock(mutex);
+        return tasks.size();
     }
 
 private:

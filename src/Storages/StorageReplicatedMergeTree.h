@@ -370,9 +370,6 @@ private:
     int metadata_version = 0;
     /// Threads.
 
-    BackgroundJobAssignee background_executor;
-    BackgroundJobAssignee background_moves_executor;
-
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
     BackgroundSchedulePool::TaskHolder queue_updating_task;
@@ -410,6 +407,10 @@ private:
     /// speed.
     ThrottlerPtr replicated_fetches_throttler;
     ThrottlerPtr replicated_sends_throttler;
+
+    /// Must be the last to be destroyed first
+    BackgroundJobAssignee background_executor;
+    BackgroundJobAssignee background_moves_executor;
 
     template <class Func>
     void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;
