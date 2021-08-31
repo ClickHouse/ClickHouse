@@ -416,38 +416,47 @@ UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
+void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool has_force_restore_data_flag, bool /*force_attach*/)
+{
+    if (!has_force_restore_data_flag)
+        return;
+
+    /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
+    for (const auto & table_path : fs::directory_iterator(path_to_table_symlinks))
+    {
+        if (!fs::is_symlink(table_path))
+        {
+            throw Exception(ErrorCodes::ABORTED,
+                "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path.path()));
+        }
+
+        fs::remove(table_path);
+    }
+}
+
 void DatabaseAtomic::loadStoredObjects(
     ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables)
 {
-    /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
-    if (has_force_restore_data_flag)
-    {
-        for (const auto & table_path : fs::directory_iterator(path_to_table_symlinks))
-        {
-            if (!fs::is_symlink(table_path))
-            {
-                throw Exception(ErrorCodes::ABORTED,
-                    "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path.path()));
-            }
-
-            fs::remove(table_path);
-        }
-    }
-
+    beforeLoadingMetadata(local_context, has_force_restore_data_flag, force_attach);
     DatabaseOrdinary::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach, skip_startup_tables);
+}
 
-    if (has_force_restore_data_flag)
+void DatabaseAtomic::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
+{
+    DatabaseOrdinary::startupTables(thread_pool, force_restore, force_attach);
+
+    if (!force_restore)
+        return;
+
+    NameToPathMap table_names;
     {
-        NameToPathMap table_names;
-        {
-            std::lock_guard lock{mutex};
-            table_names = table_name_to_path;
-        }
-
-        fs::create_directories(path_to_table_symlinks);
-        for (const auto & table : table_names)
-            tryCreateSymlink(table.first, table.second, true);
+        std::lock_guard lock{mutex};
+        table_names = table_name_to_path;
     }
+
+    fs::create_directories(path_to_table_symlinks);
+    for (const auto & table : table_names)
+        tryCreateSymlink(table.first, table.second, true);
 }
 
 void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)

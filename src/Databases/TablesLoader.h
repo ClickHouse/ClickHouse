@@ -1,19 +1,26 @@
 #pragma once
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
-#include <Databases/IDatabase.h>
+#include <Core/Types.h>
 #include <Core/QualifiedTableName.h>
-#include <common/logger_useful.h>
-#include <Common/Stopwatch.h>
+#include <Parsers/IAST_fwd.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/ThreadPool.h>
+#include <map>
+#include <unordered_map>
+#include <unordered_set>
+#include <mutex>
+
+namespace Poco
+{
+    class Logger;
+}
+
+class AtomicStopwatch;
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INFINITE_LOOP;
-}
+class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
 
 void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch);
 

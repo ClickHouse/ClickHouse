@@ -75,7 +75,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 }
 
 void DatabaseOrdinary::loadStoredObjects(
-    ContextMutablePtr local_context, bool has_force_restore_data_flag, bool /*force_attach*/, bool skip_startup_tables)
+    ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -147,7 +147,7 @@ void DatabaseOrdinary::loadStoredObjects(
     if (!skip_startup_tables)
     {
         /// After all tables was basically initialized, startup them.
-        startupTablesImpl(pool);
+        startupTables(pool, has_force_restore_data_flag, force_attach);
     }
 }
 
@@ -224,18 +224,9 @@ void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, co
         name.database,
         file_path,
         force_restore);
-
-    /// Messages, so that it's not boring to wait for the server to load for a long time.
-    //logAboutProgress(log, ++tables_processed, total_tables, watch);
 }
 
-void DatabaseOrdinary::startupTables()
-{
-    ThreadPool pool;
-    startupTablesImpl(pool);
-}
-
-void DatabaseOrdinary::startupTablesImpl(ThreadPool & thread_pool)
+void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, bool /*force_restore*/, bool /*force_attach*/)
 {
     LOG_INFO(log, "Starting up tables.");
 
