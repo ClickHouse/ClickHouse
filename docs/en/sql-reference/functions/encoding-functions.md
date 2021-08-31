@@ -299,7 +299,7 @@ For a numeric argument `unbin()` does not return the inverse of `bin()`. If you 
 !!! note "Note"
     If `unbin` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
 
-Supports binary digits `0-1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of `bin(N)` is not performed by `unbin()`.
+Supports binary digits `0-1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown). 
 
 **Arguments**
 
