@@ -284,7 +284,7 @@ Result:
 
 ## unbin {#unbinstr}
 
-Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation of [bin](#bin).
+Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation to [bin](#bin).
 
 **Syntax**
 
