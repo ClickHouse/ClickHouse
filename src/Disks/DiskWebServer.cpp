@@ -226,7 +226,7 @@ bool DiskWebServer::exists(const String & path) const
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *) const
+std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, size_t) const
 {
     LOG_DEBUG(log, "Read from file by path: {}", path);
 
@@ -237,7 +237,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     RemoteMetadata meta(uri, fs::path(path).parent_path() / fs::path(path).filename());
     meta.remote_fs_objects.emplace_back(std::make_pair(getFileName(path), file.size));
 
-    auto reader = std::make_unique<ReadBufferFromWebServer>(uri, meta, getContext(), settings->max_read_tries, buf_size);
+    auto reader = std::make_unique<ReadBufferFromWebServer>(uri, meta, getContext(), settings->max_read_tries, read_settings.remote_fs_buffer_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
 }
 
