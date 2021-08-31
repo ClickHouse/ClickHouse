@@ -2285,7 +2285,10 @@ private:
             if (!pager.empty())
             {
                 signal(SIGPIPE, SIG_IGN);
-                pager_cmd = ShellCommand::execute(pager, true);
+
+                ShellCommand::Config config(pager);
+                config.pipe_stdin_only = true;
+                pager_cmd = ShellCommand::execute(config);
                 out_buf = &pager_cmd->in;
             }
             else
