@@ -13,6 +13,7 @@ void registerTableFunctions()
     registerTableFunctionNumbers(factory);
     registerTableFunctionNull(factory);
     registerTableFunctionZeros(factory);
+    registerTableFunctionExecutable(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
     registerTableFunctionValues(factory);
