@@ -183,7 +183,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
             auto disk = part->volume->getDisk();
-            auto disk_type = DiskType::toString(disk->getType());
+            auto disk_type = toString(disk->getType());
             if (disk->supportZeroCopyReplication() && std::find(capability.begin(), capability.end(), disk_type) != capability.end())
             {
                 /// Send metadata if the receiver's capability covers the source disk type.
@@ -364,7 +364,7 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
         writeStringBinary(it.first, out);
         writeBinary(file_size, out);
 
-        auto file_in = createReadBufferFromFileBase(metadata_file, 0, 0, 0, nullptr, DBMS_DEFAULT_BUFFER_SIZE);
+        auto file_in = createReadBufferFromFileBase(metadata_file, {}, 0);
         HashingWriteBuffer hashing_out(out);
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
         if (blocker.isCancelled())
@@ -431,23 +431,20 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         if (!disk)
         {
-            DiskType::Type zero_copy_disk_types[] = {DiskType::Type::S3, DiskType::Type::HDFS};
-            for (auto disk_type: zero_copy_disk_types)
-            {
-                Disks disks = data.getDisksByType(disk_type);
-                if (!disks.empty())
-                {
-                    capability.push_back(DiskType::toString(disk_type));
-                }
-            }
+            Disks disks = data.getDisks();
+            for (const auto & data_disk : disks)
+                if (data_disk->supportZeroCopyReplication())
+                    capability.push_back(toString(data_disk->getType()));
         }
         else if (disk->supportZeroCopyReplication())
         {
-            capability.push_back(DiskType::toString(disk->getType()));
+            capability.push_back(toString(disk->getType()));
         }
     }
     if (!capability.empty())
     {
+        std::sort(capability.begin(), capability.end());
+        capability.erase(std::unique(capability.begin(), capability.end()), capability.end());
         const String & remote_fs_metadata = boost::algorithm::join(capability, ", ");
         uri.addQueryParameter("remote_fs_metadata", remote_fs_metadata);
     }
