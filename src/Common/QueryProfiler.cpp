@@ -173,7 +173,7 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 }
 
 template class QueryProfilerBase<QueryProfilerReal>;
-template class QueryProfilerBase<QueryProfilerCpu>;
+template class QueryProfilerBase<QueryProfilerCPU>;
 
 QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, SIGUSR1)
@@ -185,11 +185,11 @@ void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
     writeTraceInfo(TraceType::Real, sig, info, context);
 }
 
-QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
+QueryProfilerCPU::QueryProfilerCPU(const UInt64 thread_id, const UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, SIGUSR2)
 {}
 
-void QueryProfilerCpu::signalHandler(int sig, siginfo_t * info, void * context)
+void QueryProfilerCPU::signalHandler(int sig, siginfo_t * info, void * context)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::CPU, sig, info, context);
