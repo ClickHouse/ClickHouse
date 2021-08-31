@@ -11,32 +11,33 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
 {
     std::lock_guard remove_lock(remove_mutex);
 
-    /// First stop the scheduler thread
+    std::vector<ItemPtr> tasks_to_wait;
     {
-        std::unique_lock lock(mutex);
-        shutdown_suspend = true;
-        has_tasks.notify_one();
+        std::lock_guard lock(mutex);
+
+        /// Mark this StorageID as deleting
+        currently_deleting.emplace(id);
+
+        std::erase_if(pending, [&] (auto item) -> bool { return item->task->getStorageID() == id; });
+
+        /// Find pending to wait
+        for (auto & item : active)
+            if (item->task->getStorageID() == id)
+                tasks_to_wait.emplace_back(item);
     }
 
-    scheduler.join();
 
-    /// Remove tasks
+    for (auto & item : tasks_to_wait)
     {
-        std::lock_guard lock(currently_executing_mutex);
-
-        for (auto & [task, future] : currently_executing)
-        {
-            if (task->getStorageID() == id)
-                future.wait();
-        }
-
-        /// Remove tasks from original queue
-        size_t erased_count = std::erase_if(tasks, [id = std::move(id)] (auto task) -> bool { return task->getStorageID() == id; });
-        CurrentMetrics::sub(metric, erased_count);
+        assert(item->future.valid());
+        item->future.wait();
     }
 
-    shutdown_suspend = false;
-    scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
+
+    {
+        std::lock_guard lock(mutex);
+        currently_deleting.erase(id);
+    }
 }
 
 
@@ -44,47 +45,54 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
 {
     while (true)
     {
-        ItemPtr item;
-        {
-            std::unique_lock lock(mutex);
-            has_tasks.wait(lock, [this](){ return !tasks.empty() || shutdown_suspend; });
+        std::unique_lock lock(mutex);
 
-            if (shutdown_suspend)
-                break;
+        has_tasks.wait(lock, [this](){ return !pending.empty() || shutdown_suspend; });
 
-            item = std::move(tasks.front());
-            tasks.pop_front();
+        if (shutdown_suspend)
+            break;
 
-            /// This is needed to increase / decrease the number of threads at runtime
-            updatePoolConfiguration();
-        }
+        auto item = std::move(pending.front());
+        pending.pop_front();
 
-        {
-            std::lock_guard lock(currently_executing_mutex);
-            currently_executing.emplace(item);
-        }
+        active.emplace(item);
+
+        /// This is needed to increase / decrease the number of threads at runtime
+        updatePoolConfiguration();
 
         bool res = pool.trySchedule([this, item] ()
         {
-            auto on_exit = [&] ()
+            auto check_if_deleting = [&] () -> bool
             {
-                item->promise.set_value();
+                active.erase(item);
+
+                for (auto & id : currently_deleting)
                 {
-                    std::lock_guard lock(currently_executing_mutex);
-                    currently_executing.erase(item);
+                    if (item->task->getStorageID() == id)
+                    {
+                        item->promise.set_value();
+                        return true;
+                    }
                 }
+
+                return false;
             };
 
-            SCOPE_EXIT({ on_exit(); });
+            SCOPE_EXIT({
+                std::lock_guard guard(mutex);
+                check_if_deleting();
+            });
 
             try
             {
-                bool result = item->task->execute();
-
-                if (result)
+                if (item->task->execute())
                 {
                     std::lock_guard guard(mutex);
-                    tasks.emplace_back(item);
+
+                    if (check_if_deleting())
+                        return;
+
+                    pending.emplace_back(item);
                     has_tasks.notify_one();
                     return;
                 }
@@ -101,13 +109,15 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
                 has_tasks.notify_one();
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
+
         });
 
         if (!res)
         {
-            std::lock_guard guard(mutex);
-            tasks.emplace_back(item);
+            active.erase(item);
+            pending.emplace_back(item);
         }
+
     }
 }
 

@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <barrier>
 #include <memory>
+#include <random>
 
 #include <Storages/MergeTree/ExecutableTask.h>
 #include <Storages/MergeTree/MergeMutateExecutor.h>
@@ -13,16 +15,24 @@ namespace CurrentMetrics
     extern const Metric BackgroundPoolTask;
 }
 
+std::random_device device;
+
 class FakeExecutableTask : public ExecutableTask
 {
 public:
-    explicit FakeExecutableTask(String name_, std::function<void()> on_completed_) : name(name_), on_completed(on_completed_)
+    explicit FakeExecutableTask(String name_) : generator(device()), distribution(0, 5), name(name_)
     {
     }
 
     bool execute() override
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        auto sleep_time = distribution(generator);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5 * sleep_time));
+
+        auto choice = distribution(generator);
+        if (choice == 0)
+            throw std::runtime_error("Unlucky...");
+
         return false;
     }
 
@@ -31,55 +41,106 @@ public:
         return {"test", name};
     }
 
-    void onCompleted() override
-    {
-        on_completed();
-    }
+    void onCompleted() override {}
 
 private:
+    std::mt19937 generator;
+    std::uniform_int_distribution<> distribution;
 
     String name;
     std::function<void()> on_completed;
 };
 
 
-TEST(Executor, Simple)
+TEST(Executor, RemoveTasks)
 {
     auto executor = DB::MergeTreeBackgroundExecutor::create();
 
     const size_t tasks_kinds = 25;
     const size_t batch = 100;
 
-    executor->setThreadsCount([]() { return 25; });
+    executor->setThreadsCount([]() { return tasks_kinds; });
     executor->setTasksCount([] () { return tasks_kinds * batch; });
     executor->setMetric(CurrentMetrics::BackgroundPoolTask);
 
     for (size_t i = 0; i < batch; ++i)
-    {
         for (size_t j = 0; j < tasks_kinds; ++j)
-        {
-            bool res = executor->trySchedule(std::make_shared<FakeExecutableTask>(std::to_string(j), [](){}));
-            ASSERT_TRUE(res);
-        }
-    }
+            ASSERT_TRUE(
+                executor->trySchedule(std::make_shared<FakeExecutableTask>(std::to_string(j)))
+            );
 
     std::vector<std::thread> threads(batch);
 
-    for (auto & thread : threads)
-        thread = std::thread([&] ()
-        {
-            for (size_t j = 0; j < tasks_kinds; ++j)
-                executor->removeTasksCorrespondingToStorage({"test", std::to_string(j)});
+    auto remover_routine = [&] ()
+    {
+        for (size_t j = 0; j < tasks_kinds; ++j)
+            executor->removeTasksCorrespondingToStorage({"test", std::to_string(j)});
+    };
 
-        });
+    for (auto & thread : threads)
+        thread = std::thread(remover_routine);
 
     for (auto & thread : threads)
         thread.join();
 
-    ASSERT_EQ(executor->active(), 0);
-    ASSERT_EQ(executor->pending(), 0);
+    ASSERT_EQ(executor->activeCount(), 0);
+    ASSERT_EQ(executor->pendingCount(), 0);
     ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask], 0);
 
     executor->wait();
+}
 
+
+TEST(Executor, RemoveTasksStress)
+{
+    auto executor = DB::MergeTreeBackgroundExecutor::create();
+
+    const size_t tasks_kinds = 25;
+    const size_t batch = 100;
+    const size_t schedulers_count = 5;
+    const size_t removers_count = 5;
+
+    executor->setThreadsCount([]() { return tasks_kinds; });
+    executor->setTasksCount([] () { return tasks_kinds * batch * (schedulers_count + removers_count); });
+    executor->setMetric(CurrentMetrics::BackgroundPoolTask);
+
+    std::barrier barrier(schedulers_count + removers_count);
+
+    auto scheduler_routine = [&] ()
+    {
+        barrier.arrive_and_wait();
+        for (size_t i = 0; i < batch; ++i)
+            for (size_t j = 0; j < tasks_kinds; ++j)
+                executor->trySchedule(std::make_shared<FakeExecutableTask>(std::to_string(j)));
+    };
+
+    auto remover_routine = [&] ()
+    {
+        barrier.arrive_and_wait();
+        for (size_t j = 0; j < tasks_kinds; ++j)
+            executor->removeTasksCorrespondingToStorage({"test", std::to_string(j)});
+    };
+
+    std::vector<std::thread> schedulers(schedulers_count);
+    for (auto & scheduler : schedulers)
+        scheduler = std::thread(scheduler_routine);
+
+    std::vector<std::thread> removers(removers_count);
+    for (auto & remover : removers)
+        remover = std::thread(remover_routine);
+
+    for (auto & scheduler : schedulers)
+        scheduler.join();
+
+    for (auto & remover : removers)
+        remover.join();
+
+    for (size_t j = 0; j < tasks_kinds; ++j)
+        executor->removeTasksCorrespondingToStorage({"test", std::to_string(j)});
+
+    ASSERT_EQ(executor->activeCount(), 0);
+    ASSERT_EQ(executor->pendingCount(), 0);
+    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask], 0);
+
+    executor->wait();
 }
