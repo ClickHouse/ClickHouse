@@ -545,6 +545,7 @@ void Changelog::compact(uint64_t up_to_log_index)
         else /// Files are ordered, so all subsequent should exist
             break;
     }
+    /// Compaction from the past is possible, so don't make our min_log_id smaller.
     min_log_id = std::max(min_log_id, up_to_log_index + 1);
     std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
 
