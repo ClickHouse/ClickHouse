@@ -394,9 +394,9 @@ try
 
         /// Set finalizing callback for progress, which is called right before finalizing query output.
         finalize_progress = [&]()
-            {
+        {
             progress_indication.clearProgressOutput();
-            };
+        };
 
         /// Set callback for file processing progress.
         progress_indication.setFileProgressCallback(context);
@@ -427,9 +427,7 @@ try
         catch (...)
         {
             if (!config().hasOption("ignore-error"))
-            {
                 throw;
-            }
 
             if (!exception)
                 exception = std::current_exception();
