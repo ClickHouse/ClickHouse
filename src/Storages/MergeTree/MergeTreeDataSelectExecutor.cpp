@@ -632,7 +632,8 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 {
     std::unordered_set<String> part_values;
     ASTPtr expression_ast;
-    auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, true /* one_part */);
+
+    Block virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
     // Generate valid expressions for filtering
     VirtualColumnUtils::prepareFilterBlockWithQuery(query, context, virtual_columns_block, expression_ast);
@@ -660,9 +661,12 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     ReadFromMergeTree::IndexStats & index_stats)
 {
     const Settings & settings = context->getSettingsRef();
+
     std::optional<PartitionPruner> partition_pruner;
     std::optional<KeyCondition> minmax_idx_condition;
+
     DataTypes minmax_columns_types;
+
     if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -673,7 +677,9 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
         partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
-        if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
+        if (settings.force_index_by_date
+            && minmax_idx_condition->alwaysUnknownOrTrue() 
+            && partition_pruner->isUseless())
             throw Exception(ErrorCodes::INDEX_NOT_USED,
                 "Neither MinMax index by columns ({}) nor partition expression is used and setting "
                 "'force_index_by_date' is set",
@@ -681,7 +687,9 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     }
 
     auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
+
     PartFilterCounters part_filter_counters;
+
     if (query_context->getSettingsRef().allow_experimental_query_deduplication)
         selectPartsToReadWithUUIDFilter(
             parts,
@@ -733,6 +741,20 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     }
 }
 
+namespace
+{
+struct DataSkippingIndexAndCondition
+{
+    MergeTreeIndexPtr index;
+    MergeTreeIndexConditionPtr condition;
+
+    std::atomic_size_t total_granules{0};
+    std::atomic_size_t granules_dropped{0};
+    std::atomic_size_t total_parts{0};
+    std::atomic_size_t parts_dropped{0};
+};
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
     MergeTreeData::DataPartsVector && parts,
     StorageMetadataPtr metadata_snapshot,
@@ -750,20 +772,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     /// Let's start analyzing all useful indices
 
-    struct DataSkippingIndexAndCondition
-    {
-        MergeTreeIndexPtr index;
-        MergeTreeIndexConditionPtr condition;
-        std::atomic<size_t> total_granules{0};
-        std::atomic<size_t> granules_dropped{0};
-        std::atomic<size_t> total_parts{0};
-        std::atomic<size_t> parts_dropped{0};
-
-        DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
-            : index(index_), condition(condition_)
-        {
-        }
-    };
     std::list<DataSkippingIndexAndCondition> useful_indices;
 
     if (use_skip_indexes)
@@ -943,6 +951,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     for (const auto & index_and_condition : useful_indices)
     {
         const auto & index_name = index_and_condition.index->index.name;
+
         LOG_DEBUG(
             log,
             "Index {} has dropped {}/{} granules.",
@@ -950,8 +959,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             index_and_condition.granules_dropped,
             index_and_condition.total_granules);
 
-        std::string description
-            = index_and_condition.index->index.type + " GRANULARITY " + std::to_string(index_and_condition.index->index.granularity);
+        std::string description = fmt::format("{} GRANULARITY {}",
+            index_and_condition.index->index.type,
+            index_and_condition.index->index.granularity);
 
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Skip,
@@ -1484,8 +1494,11 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     std::swap(prev_parts, parts);
     for (const auto & part_or_projection : prev_parts)
     {
-        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-        if (part_values && part_values->find(part->name) == part_values->end())
+        const auto * part = part_or_projection->isProjectionPart()
+            ? part_or_projection->getParentPart() 
+            : part_or_projection.get();
+
+        if (part_values && !part_values->contains(part->name))
             continue;
 
         if (part->isEmpty())
