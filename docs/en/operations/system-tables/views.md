@@ -17,8 +17,6 @@ Columns:
     -   `'Materialized' = 2` — [Materialized views](../../sql-reference/statements/create/view.md#materialized).
     -   `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
 
-The `system.tables` table is used in `SHOW TABLES` query implementation.
-
 **Example**
 
 ```sql
