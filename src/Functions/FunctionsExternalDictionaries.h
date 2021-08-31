@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
     extern const int TYPE_MISMATCH;
 }
 
@@ -145,8 +146,6 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     bool useDefaultImplementationForConstants() const final { return true; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
@@ -181,16 +180,15 @@ public:
 
         auto dictionary = helper.getDictionary(arguments[0].column);
         auto dictionary_key_type = dictionary->getKeyType();
-        auto dictionary_special_key_type = dictionary->getSpecialKeyType();
 
-        const auto & key_column_with_type = arguments[1];
+        const ColumnWithTypeAndName & key_column_with_type = arguments[1];
         auto key_column = key_column_with_type.column;
         auto key_column_type = key_column_with_type.type;
 
-        ColumnPtr range_col;
-        DataTypePtr range_col_type;
+        ColumnPtr range_col = nullptr;
+        DataTypePtr range_col_type = nullptr;
 
-        if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
+        if (dictionary_key_type == DictionaryKeyType::range)
         {
             if (arguments.size() != 3)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -207,10 +205,7 @@ public:
                     getName());
         }
 
-        Columns key_columns;
-        DataTypes key_types;
-
-        if (dictionary_key_type == DictionaryKeyType::Simple)
+        if (dictionary_key_type == DictionaryKeyType::simple)
         {
             if (!WhichDataType(key_column_type).isUInt64())
                  throw Exception(
@@ -219,23 +214,16 @@ public:
                      getName(),
                      key_column_with_type.type->getName());
 
-            key_columns = {key_column};
-            key_types = {std::make_shared<DataTypeUInt64>()};
+            return dictionary->hasKeys({key_column}, {std::make_shared<DataTypeUInt64>()});
         }
-        else if (dictionary_key_type == DictionaryKeyType::Complex)
+        else if (dictionary_key_type == DictionaryKeyType::complex)
         {
             /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
             key_column = key_column->convertToFullColumnIfConst();
+            size_t keys_size = dictionary->getStructure().getKeysSize();
 
-            if (isTuple(key_column_type))
+            if (!isTuple(key_column_type))
             {
-                key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
-                key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
-            }
-            else
-            {
-                size_t keys_size = dictionary->getStructure().getKeysSize();
-
                 if (keys_size > 1)
                 {
                     throw Exception(
@@ -247,19 +235,30 @@ public:
                 }
                 else
                 {
-                    key_columns = {key_column};
-                    key_types = {key_column_type};
+                    Columns tuple_columns = {std::move(key_column)};
+                    key_column = ColumnTuple::create(tuple_columns);
+
+                    DataTypes tuple_types = {key_column_type};
+                    key_column_type = std::make_shared<DataTypeTuple>(tuple_types);
                 }
             }
-        }
 
-        if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
+            const auto & key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
+
+            return dictionary->hasKeys(key_columns, key_types);
+        }
+        else
         {
-            key_columns.emplace_back(range_col);
-            key_types.emplace_back(range_col_type);
-        }
+            if (!WhichDataType(key_column_type).isUInt64())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument of function {} must be UInt64 when dictionary is range. Actual type {}.",
+                    getName(),
+                    key_column_with_type.type->getName());
 
-        return dictionary->hasKeys(key_columns, key_types);
+            return dictionary->hasKeys({key_column, range_col}, {std::make_shared<DataTypeUInt64>(), range_col_type});
+        }
     }
 
 private:
@@ -289,7 +288,6 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
@@ -357,14 +355,13 @@ public:
 
         auto dictionary = helper.getDictionary(dictionary_name);
         auto dictionary_key_type = dictionary->getKeyType();
-        auto dictionary_special_key_type = dictionary->getSpecialKeyType();
 
         size_t current_arguments_index = 3;
 
         ColumnPtr range_col = nullptr;
         DataTypePtr range_col_type = nullptr;
 
-        if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
+        if (dictionary_key_type == DictionaryKeyType::range)
         {
             if (current_arguments_index >= arguments.size())
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -426,13 +423,12 @@ public:
                 default_cols.emplace_back(nullptr);
         }
 
-        const auto & key_col_with_type = arguments[2];
-        auto key_column = key_col_with_type.column;
+        ColumnPtr result;
 
-        Columns key_columns;
-        DataTypes key_types;
+        const ColumnWithTypeAndName & key_col_with_type = arguments[2];
+        const auto key_column = key_col_with_type.column;
 
-        if (dictionary_key_type == DictionaryKeyType::Simple)
+        if (dictionary_key_type == DictionaryKeyType::simple)
         {
             if (!WhichDataType(key_col_with_type.type).isUInt64())
                  throw Exception(
@@ -441,24 +437,24 @@ public:
                      getName(),
                      key_col_with_type.type->getName());
 
-            key_columns = {key_column};
-            key_types = {std::make_shared<DataTypeUInt64>()};
+            result = executeDictionaryRequest(
+                dictionary,
+                attribute_names,
+                {key_column},
+                {std::make_shared<DataTypeUInt64>()},
+                result_type,
+                default_cols);
         }
-        else if (dictionary_key_type == DictionaryKeyType::Complex)
+        else if (dictionary_key_type == DictionaryKeyType::complex)
         {
             /// Functions in external dictionaries_loader only support full-value (not constant) columns with keys.
-            key_column = key_column->convertToFullColumnIfConst();
+            ColumnPtr key_column = key_col_with_type.column->convertToFullColumnIfConst();
             DataTypePtr key_column_type = key_col_with_type.type;
 
-            if (isTuple(key_column_type))
-            {
-                key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
-                key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
-            }
-            else if (!isTuple(key_column_type))
-            {
-                size_t keys_size = dictionary->getStructure().getKeysSize();
+            size_t keys_size = dictionary->getStructure().getKeysSize();
 
+            if (!isTuple(key_column_type))
+            {
                 if (keys_size > 1)
                 {
                     throw Exception(
@@ -470,19 +466,46 @@ public:
                 }
                 else
                 {
-                    key_columns = {std::move(key_column)};
-                    key_types = {std::move(key_column_type)};
+                    Columns tuple_columns = {std::move(key_column)};
+                    key_column = ColumnTuple::create(tuple_columns);
+
+                    DataTypes tuple_types = {key_column_type};
+                    key_column_type = std::make_shared<DataTypeTuple>(tuple_types);
                 }
             }
-        }
 
-        if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
+            const auto & key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
+            const auto & key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
+
+            result = executeDictionaryRequest(
+                dictionary,
+                attribute_names,
+                key_columns,
+                key_types,
+                result_type,
+                default_cols);
+        }
+        else if (dictionary_key_type == DictionaryKeyType::range)
         {
-            key_columns.emplace_back(range_col);
-            key_types.emplace_back(range_col_type);
-        }
+            if (!WhichDataType(key_col_with_type.type).isUInt64())
+                 throw Exception(
+                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                     "Third argument of function {} must be UInt64 when dictionary is range. Actual type {}.",
+                     getName(),
+                     key_col_with_type.type->getName());
 
-        return executeDictionaryRequest(dictionary, attribute_names, key_columns, key_types, result_type, default_cols);
+            result = executeDictionaryRequest(
+                dictionary,
+                attribute_names,
+                {key_column, range_col},
+                {std::make_shared<DataTypeUInt64>(), range_col_type},
+                result_type,
+                default_cols);
+        }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown dictionary identifier type");
+
+        return result;
     }
 
 private:
@@ -587,8 +610,6 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
 
     bool isDeterministic() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
@@ -728,8 +749,6 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool isVariadic() const override { return true; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -888,7 +907,6 @@ public:
 private:
     size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
@@ -951,7 +969,6 @@ private:
     size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -1020,7 +1037,6 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
     bool isDeterministic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1081,7 +1097,6 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
     bool isDeterministic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

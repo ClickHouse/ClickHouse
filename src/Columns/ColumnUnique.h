@@ -301,7 +301,7 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
-    if (x.isNull())
+    if (x.getType() == Field::Types::Null)
         return getNullValueIndex();
 
     if (valuesHaveFixedSize())
