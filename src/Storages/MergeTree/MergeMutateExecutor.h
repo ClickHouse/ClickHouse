@@ -97,17 +97,7 @@ public:
         return true;
     }
 
-    void removeTasksCorrespondingToStorage(StorageID id)
-    {
-        /// Stop scheduler thread and pool
-        auto lock = getUniqueLock();
-        /// Get lock to the tasks
-        std::lock_guard second_lock(mutex);
-
-        size_t erased_count = std::erase_if(tasks, [id = std::move(id)] (auto task) -> bool { return task->getStorageID() == id; });
-        CurrentMetrics::sub(metric, erased_count);
-    }
-
+    void removeTasksCorrespondingToStorage(StorageID id);
 
     void wait()
     {
@@ -124,48 +114,6 @@ public:
     }
 
 private:
-
-    using ExecutorSuspender = std::unique_lock<MergeTreeBackgroundExecutor>;
-    friend class std::unique_lock<MergeTreeBackgroundExecutor>;
-
-    ExecutorSuspender getUniqueLock()
-    {
-        return ExecutorSuspender(*this);
-    }
-
-    /// This is needed to achive mutual exclusion
-    std::mutex lock_mutex;
-
-    void lock()
-    {
-        lock_mutex.lock();
-        suspend();
-    }
-
-    void unlock()
-    {
-        resume();
-        lock_mutex.unlock();
-    }
-
-    void suspend()
-    {
-        {
-            std::unique_lock lock(mutex);
-            shutdown_suspend = true;
-            has_tasks.notify_one();
-        }
-        scheduler.join();
-        pool.wait();
-    }
-
-
-    void resume()
-    {
-        shutdown_suspend = false;
-        scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
-    }
-
 
     void updatePoolConfiguration()
     {
@@ -188,8 +136,12 @@ private:
     CountGetter max_task_count_getter;
     CurrentMetrics::Metric metric;
 
-    using TasksQueue = std::deque<ExecutableTaskPtr>;
-    TasksQueue tasks;
+    std::deque<ExecutableTaskPtr> tasks;
+
+    std::mutex remove_mutex;
+
+    std::mutex currently_executing_mutex;
+    std::map<ExecutableTaskPtr, std::future<void>> currently_executing;
 
     std::mutex mutex;
     std::condition_variable has_tasks;
