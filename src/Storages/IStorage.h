@@ -539,6 +539,9 @@ public:
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
+    /// Returns true if all disks of storage are read-only.
+    virtual bool isReadOnly() const;
+
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
     /// - Simple count() optimization

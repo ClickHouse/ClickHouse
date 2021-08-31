@@ -220,9 +220,9 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
     std::unique_ptr<ShellCommand> process;
     bool result = process_pool->tryBorrowObject(process, [this]()
     {
-        bool terminate_in_destructor = true;
-        ShellCommandDestructorStrategy strategy { terminate_in_destructor, configuration.command_termination_timeout };
-        auto shell_command = ShellCommand::execute(configuration.command, false, strategy);
+        ShellCommand::Config config(configuration.command);
+        config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, configuration.command_termination_timeout };
+        auto shell_command = ShellCommand::execute(config);
         return shell_command;
     }, configuration.max_command_execution_time * 10000);
 
