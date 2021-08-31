@@ -333,6 +333,7 @@ public:
     String getFlagsPath() const;
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
+    String getUserScriptsPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     std::vector<String> getWarnings() const;
@@ -343,6 +344,7 @@ public:
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
+    void setUserScriptsPath(const String & path);
 
     void addWarningMessage(const String & msg);
 
@@ -833,14 +835,15 @@ public:
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);
 
-
     /// Background executors related methods
-
     void initializeBackgroundExecutors();
 
     MergeTreeBackgroundExecutorPtr getMergeMutateExecutor() const;
     MergeTreeBackgroundExecutorPtr getMovesExecutor() const;
     MergeTreeBackgroundExecutorPtr getFetchesExecutor() const;
+
+    /** Get settings for reading from filesystem. */
+    ReadSettings getReadSettings() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
