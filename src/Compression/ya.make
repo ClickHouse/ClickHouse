@@ -32,8 +32,14 @@ SRCS(
     CompressionCodecT64.cpp
     CompressionCodecZSTD.cpp
     CompressionFactory.cpp
+    CompressionFactoryAdditions.cpp
     ICompressionCodec.cpp
     LZ4_decompress_faster.cpp
+    fuzzers/compressed_buffer_fuzzer.cpp
+    fuzzers/delta_decompress_fuzzer.cpp
+    fuzzers/double_delta_decompress_fuzzer.cpp
+    fuzzers/encrypted_decompress_fuzzer.cpp
+    fuzzers/lz4_decompress_fuzzer.cpp
     getCompressionCodecForFile.cpp
 
 )

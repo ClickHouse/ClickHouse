@@ -3,6 +3,7 @@
 #include <string>
 #include <Common/config.h>
 #include "Common/Exception.h"
+#include "common/defines.h"
 #include "common/types.h"
 #include "IO/VarInt.h"
 #if !defined(ARCADIA_BUILD)
@@ -32,11 +33,13 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
 {
 
+/// Get string name for method. Return empty string for undefined Method
 String getMethodName(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
@@ -53,6 +56,7 @@ String getMethodName(EncryptionMethod Method)
     }
 }
 
+/// Get encryption/decryption algorithms.
 auto getMethod(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
@@ -69,6 +73,7 @@ auto getMethod(EncryptionMethod Method)
     }
 }
 
+/// Find out key size for each algorithm
 UInt64 methodKeySize(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
@@ -92,8 +97,13 @@ std::string lastErrorString()
     return std::string(buffer.data());
 }
 
+/// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
+/// This function get key and nonce and encrypt text with their help.
+/// If somthing went wrong (can't init context or can't encrypt data) it throws exception.
+/// It returns length of encrypted text.
 size_t encrypt(const std::string_view & plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String& current_key, const String& nonce)
 {
+    /// Init context for encryption, using key.
     EVP_AEAD_CTX encrypt_ctx;
     EVP_AEAD_CTX_zero(&encrypt_ctx);
     const int ok_init = EVP_AEAD_CTX_init(&encrypt_ctx, getMethod(method)(),
@@ -102,6 +112,7 @@ size_t encrypt(const std::string_view & plaintext, char * ciphertext_and_tag, En
     if (!ok_init)
         throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
+    /// encrypt data using context and given nonce.
     size_t out_len;
     const int ok_open = EVP_AEAD_CTX_seal(&encrypt_ctx,
                                             reinterpret_cast<uint8_t *>(ciphertext_and_tag),
@@ -115,8 +126,13 @@ size_t encrypt(const std::string_view & plaintext, char * ciphertext_and_tag, En
     return out_len;
 }
 
+/// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
+/// This function get key and nonce and encrypt text with their help.
+/// If somthing went wrong (can't init context or can't encrypt data) it throws exception.
+/// It returns length of encrypted text.
 size_t decrypt(const std::string_view & ciphertext, char * plaintext, EncryptionMethod method, const String& current_key, const String& nonce)
 {
+    /// Init context for decryption with given key.
     EVP_AEAD_CTX decrypt_ctx;
     EVP_AEAD_CTX_zero(&decrypt_ctx);
 
@@ -126,6 +142,7 @@ size_t decrypt(const std::string_view & ciphertext, char * plaintext, Encryption
     if (!ok_init)
         throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
 
+    /// decrypt data using given nonce
     size_t out_len;
     const int ok_open = EVP_AEAD_CTX_open(&decrypt_ctx,
                                           reinterpret_cast<uint8_t *>(plaintext),
@@ -139,6 +156,7 @@ size_t decrypt(const std::string_view & ciphertext, char * plaintext, Encryption
     return out_len;
 }
 
+/// Get method code (used for codec, to understand which one we are using)
 uint8_t getMethodCode(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
@@ -155,9 +173,10 @@ uint8_t getMethodCode(EncryptionMethod Method)
     }
 }
 
+/// Refister codec in factory
 void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod Method)
 {
-    const auto method_code = getMethodCode(Method);
+    const auto method_code = getMethodCode(Method); /// Codec need to know its code
     factory.registerCompressionCodec(getMethodName(Method), method_code, [&, Method](const ASTPtr & arguments) -> CompressionCodecPtr
     {
         if (arguments)
@@ -183,6 +202,48 @@ String unhexKey(const String & hex)
     }
 }
 
+/// Firstly, write a byte, which shows if the nonce will be put in text (if it was defined in config)
+/// Secondly, write nonce in text (this step depends from first step)
+/// return new position to write
+inline char* writeNonce(const String& nonce, char* dest)
+{
+    /// If nonce consists of nul bytes, it shouldn't be in dest. Zero byte is the only byte that should be written.
+    /// Otherwise, 1 is written and data from nonce is copied
+    if (nonce != String("\0\0\0\0\0\0\0\0\0\0\0\0", 12))
+    {
+        *dest = 1;
+        ++dest;
+        size_t copied_symbols = nonce.copy(dest, nonce.size());
+        if (copied_symbols != nonce.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Can't copy nonce into destination. Count of copied symbols {}, need to copy {}", copied_symbols, nonce.size());
+        dest += copied_symbols;
+        return dest;
+    }
+    else
+    {
+        *dest = 0;
+        return ++dest;
+    }
+}
+
+/// Firstly, read a byte, which shows if the nonce will be put in text (if it was defined in config)
+/// Secondly, read nonce in text (this step depends from first step)
+/// return new position to read
+inline const char* readNonce(String& nonce, const char* source)
+{
+    /// If first is zero byte: move source and set zero-bytes nonce
+    if (!*source)
+    {
+        nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", 12};
+        return ++source;
+    }
+
+    /// Otherwise, use data from source in nonce
+    nonce = {source, 12};
+    source += 12;
+    return source;
+}
+
 }
 
 CompressionCodecEncrypted::Configuration & CompressionCodecEncrypted::Configuration::instance()
@@ -194,9 +255,12 @@ CompressionCodecEncrypted::Configuration & CompressionCodecEncrypted::Configurat
 void CompressionCodecEncrypted::Configuration::loadImpl(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix, EncryptionMethod method, std::unique_ptr<Params>& new_params)
 {
-    if (method == MAX_ENCRYPTION_METHOD)
+    // if method is not smaller than MAX_ENCRYPTION_METHOD it is incorrect
+    if (method >= MAX_ENCRYPTION_METHOD)
         throw Exception("Wrong argument for loading configurations.", ErrorCodes::BAD_ARGUMENTS);
 
+    /// Scan all keys in config and add them into storage. If key is in hex, transform it.
+    /// Remember key ID for each key, because it will be used in encryption/decryption
     Strings config_keys;
     config.keys(config_prefix, config_keys);
     for (const std::string & config_key : config_keys)
@@ -217,23 +281,33 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
         else
             continue;
 
+        /// For each key its id should be unique.
         if (new_params->keys_storage[method].contains(key_id))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple keys have the same ID {}", key_id);
+
+        /// Check size of key. Its length depends on encryption algorithm.
+        if (new_params->keys_storage[method][new_params->current_key_id[method]].size() != methodKeySize(method))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Got an encryption key with unexpected size {}, the size should be {}",
+                new_params->keys_storage[method][new_params->current_key_id[method]].size(), methodKeySize(method));
+
         new_params->keys_storage[method][key_id] = key;
     }
 
+    /// Check that we have at least one key for this method (otherwise it is incorrect to use it).
     if (new_params->keys_storage[method].empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No keys, an encrypted disk needs keys to work");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No keys, an encryption needs keys to work");
 
+    /// Try to find which key will be used for encryption. If there is no current_key,
+    /// first key will be used for encryption (its index equals to zero).
     new_params->current_key_id[method] = config.getUInt64(config_prefix + ".current_key_id", 0);
+
+    /// Check that we have current key. Otherwise config is incorrect.
     if (!new_params->keys_storage[method].contains(new_params->current_key_id[method]))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", new_params->current_key_id[method]);
-    if (new_params->keys_storage[method][new_params->current_key_id[method]].size() != methodKeySize(method))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Got an encryption key with unexpected size {}, the size should be {}",
-            new_params->keys_storage[method][new_params->current_key_id[method]].size(), methodKeySize(method));
 
+    /// Read nonce (in hex or in string). Its length should be 12 bytes.
     if (config.has(config_prefix + ".nonce_hex"))
         new_params->nonce[method] = unhexKey(config.getString(config_prefix + ".nonce_hex"));
     else
@@ -245,6 +319,9 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
 
 void CompressionCodecEncrypted::Configuration::tryload(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
+    /// Try to create new parameters and fill them from config.
+    /// If there will be some errors, print their message to notify user that
+    /// something went wrong and new parameters are not available
     try
     {
         std::unique_ptr<Params> new_params(new Params);
@@ -254,7 +331,7 @@ void CompressionCodecEncrypted::Configuration::tryload(const Poco::Util::Abstrac
         }
         if (config.has(config_prefix + ".aes_256_gcm_siv"))
         {
-        loadImpl(config, config_prefix + ".aes_256_gcm_siv", AES_256_GCM_SIV, new_params);
+            loadImpl(config, config_prefix + ".aes_256_gcm_siv", AES_256_GCM_SIV, new_params);
         }
 
         params.set(std::move(new_params));
@@ -267,10 +344,16 @@ void CompressionCodecEncrypted::Configuration::tryload(const Poco::Util::Abstrac
 
 void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionMethod method, UInt64 &current_key_id, String &current_key, String &nonce) const
 {
+    /// It parameters were not set, throw excpetion
     if (!params.get())
         throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
+
+    /// Save parameters in variable, because they can always change.
+    /// As this function not atomic, we should be certain that we get information from one particular version for correct work.
     const auto current_params = params.get();
     current_key_id = current_params->current_key_id[method];
+
+    /// As parameters can be created empty, we need to check that this key is available.
     try
     {
         current_key = current_params->keys_storage[method].at(current_key_id);
@@ -279,6 +362,11 @@ void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionM
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no current_key {} in config. Please, put it in config and reload.", current_key);
     }
+
+    /// If there is no nonce in config, we need to generate particular one,
+    /// because all encryptions should have nonce and random nonce generation will lead to cases
+    /// when nonce after config reload (nonce is not defined in config) will differ from previously generated one.
+    /// This will lead to data loss.
     nonce = current_params->nonce[method];
     if (nonce.empty())
         nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", 12};
@@ -286,6 +374,7 @@ void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionM
 
 void CompressionCodecEncrypted::Configuration::getKeyAndNonce(EncryptionMethod method, const UInt64 &key_id, String &key, String &nonce) const
 {
+    /// See description of previous finction, logic is the same.
     if (!params.get())
         throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
     const auto current_params = params.get();
@@ -323,7 +412,9 @@ UInt32 CompressionCodecEncrypted::getMaxCompressedDataSize(UInt32 uncompressed_s
     // The GCM mode is a stream cipher. No paddings are
     // involved. There will be a tag at the end of ciphertext (16
     // octets). Also it has not more than 8 bytes for key_id in the beginning
-    return uncompressed_size + tag_size + key_id_max_size;
+    // KeyID is followed by byte, that shows if nonce was set in config (and also will be put into data)
+    // and 12 bytes nonce or this byte will be equal to zero and no nonce will follow it.
+    return uncompressed_size + tag_size + key_id_max_size + nonce_max_size;
 }
 
 UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -331,44 +422,64 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
     // Generate an IV out of the data block and the key-generation
     // key. It is completely deterministic, but does not leak any
     // information about the data block except for equivalence of
-    // identical blocks (under the same master key). The IV will
-    // be used as an authentication tag. The ciphertext and the
-    // tag will be written directly in the dest buffer.
+    // identical blocks (under the same key). 
+
     const std::string_view plaintext = std::string_view(source, source_size);
 
+    /// Get key and nonce for encryption
     UInt64 current_key_id;
     String current_key, nonce;
     Configuration::instance().getCurrentKeyAndNonce(encryption_method, current_key_id, current_key, nonce);
 
-    char* ciphertext = writeVarUInt(current_key_id, dest);
-    size_t keyid_size = ciphertext - dest;
+    /// Write current key id to support multiple keys.
+    /// (key id in the beginning will help to decrypt data after changing current key)
+    char* ciphertext_with_nonce = writeVarUInt(current_key_id, dest);
+    size_t keyid_size = ciphertext_with_nonce - dest;
 
+    /// write nonce in data. This will help to read data even after changing nonce in config
+    char* ciphertext = writeNonce(nonce, ciphertext_with_nonce);
+    UInt64 nonce_size = ciphertext - ciphertext_with_nonce;
+
+    // The IV will be used as an authentication tag. The ciphertext and the
+    // tag will be written directly in the dest buffer.
     size_t out_len = encrypt(plaintext, ciphertext, encryption_method, current_key, nonce);
 
+    /// Length of encrypted text should be equal to text length plus tag_size (which was added by algorithm).
     if (out_len != source_size + tag_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't encrypt data, length after encryption {} is wrong, expected {}", out_len, source_size + tag_size);
 
-    return out_len + keyid_size;
+    return out_len + keyid_size + nonce_size;
 }
 
 void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
+    /// The key is needed for decrypting. That's why it is read at the beginning of process.
     UInt64 key_id;
-    const char * ciphertext = readVarUInt(key_id, source, source_size);
-    size_t keyid_size = ciphertext - source;
-    size_t ciphertext_size = source_size - keyid_size;
+    const char * ciphertext_with_nonce = readVarUInt(key_id, source, source_size);
+
+    /// Size of text should be decreased by key_size, because key_size bytes were not participating in encryption process.
+    size_t keyid_size = ciphertext_with_nonce - source;
+    String key, nonce;
+    Configuration::instance().getKeyAndNonce(encryption_method, key_id, key, nonce);
+
+    /// try to read nonce from file (if it was set while encrypting)
+    const char * ciphertext = readNonce(nonce, source);
+
+    /// Size of text should be decreased by nonce_size, because nonce_size bytes were not participating in encryption process.
+    UInt64 nonce_size = ciphertext - ciphertext_with_nonce;
+
+    /// Count text size (nonce and key_id was read from source)
+    size_t ciphertext_size = source_size - keyid_size - nonce_size;
     if (ciphertext_size != uncompressed_size + tag_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, uncompressed_size {} is wrong, expected {}", uncompressed_size, ciphertext_size - tag_size);
 
-    String key, nonce;
-    Configuration::instance().getKeyAndNonce(encryption_method, key_id, key, nonce);
 
     size_t out_len = decrypt({ciphertext, ciphertext_size}, dest, encryption_method, key, nonce);
     if (out_len != ciphertext_size - tag_size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, out length after decryption {} is wrong, expected {}", out_len, ciphertext_size - tag_size);
 }
 
-
+/// Register codecs for all algorithms
 void registerCodecEncrypted(CompressionCodecFactory & factory)
 {
     registerEncryptionCodec(factory, AES_128_GCM_SIV);

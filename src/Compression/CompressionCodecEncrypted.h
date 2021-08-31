@@ -16,6 +16,8 @@
 
 namespace DB
 {
+
+/// Now we have two algorithms. 
 enum EncryptionMethod
 {
     AES_128_GCM_SIV,
@@ -69,12 +71,27 @@ public:
     class Configuration
     {
     public:
+        /// Configuration should be singleton. Instance method 
         static Configuration & instance();
 
+        /// Try to load data from config.
         void tryload(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+        /// Get current key and nonce (they will be set in variables, which are pass in this function).
+        /// All data sets at the same time to prevent situations,
+        /// when config changes and key and nonce are read from different versions
+        /// If nonce is empty, it will return 12 null bytes.
         void getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, String & current_key, String & nonce) const;
+
+        /// Same as getCurrentKeyAndNonce. It is used to get key and nonce using key_id. (need for correct decryption)
         void getKeyAndNonce(EncryptionMethod method, const UInt64 & key_id, String & key, String & nonce) const;
     private:
+        /// struct Params consists of:
+        /// 1) hash-table of keys and their ids
+        /// 2) current key for encryption
+        /// 3) nonce for encryption
+        /// All this parameters have MAX_ENCRYPTION_METHOD count of versions, 
+        /// because all algorithms can be desribed in config and used for different tables.
         struct Params
         {
             std::unordered_map<UInt64, String> keys_storage[MAX_ENCRYPTION_METHOD];
@@ -108,11 +125,18 @@ public:
 protected:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
+    /// Encrypt data with chosen method. 
+    /// Throws exception if encryption is impossible or size of encrypted text is incorrect
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
+
+    /// Decrypt data with chosen method
+    /// Throws exception if decryption is impossible or size of decrypted text is incorrect
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 private:
-    static constexpr size_t tag_size = 16;       /// AES-GCM-SIV always uses a tag of 16 bytes length
-    static constexpr size_t key_id_max_size = 8; /// Max size of varint.
+    static constexpr size_t tag_size        = 16;   /// AES-GCM-SIV always uses a tag of 16 bytes length
+    static constexpr size_t key_id_max_size = 8;    /// Max size of varint.
+    static constexpr size_t nonce_max_size  = 13;   /// Nonce size and one byte to show if nonce in in text
+
     EncryptionMethod encryption_method;
 };
 
