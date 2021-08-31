@@ -5,6 +5,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Exception.h>
+#include <Common/ThreadPool.h>
 #include <Core/UUID.h>
 
 #include <Core/QualifiedTableName.h> //FIXME
@@ -33,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 class IDatabaseTablesIterator
@@ -136,6 +138,13 @@ public:
 
     virtual bool supportsLoadingInTopologicalOrder() const { return false; }
 
+    virtual void beforeLoadingMetadata(
+        ContextMutablePtr /*context*/,
+        bool /*has_force_restore_data_flag*/,
+        bool /*force_attach*/)
+    {
+    }
+
     virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
@@ -146,7 +155,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    virtual void startupTables() {}
+    virtual void startupTables(ThreadPool & /*thread_pool*/, bool /*force_restore*/, bool /*force_attach*/) {}
 
     /// Check the existence of the table.
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;

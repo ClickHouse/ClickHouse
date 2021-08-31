@@ -28,7 +28,7 @@ public:
 
     void loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore) override;
 
-    void startupTables() override;
+    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
 
     void alterTable(
         ContextPtr context,
@@ -42,8 +42,6 @@ protected:
         const String & table_metadata_path,
         const String & statement,
         ContextPtr query_context);
-
-    void startupTablesImpl(ThreadPool & thread_pool);
 };
 
 }

@@ -49,6 +49,10 @@ public:
 
     void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables) override;
 
+    void beforeLoadingMetadata(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach) override;
+
+    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+
     /// Atomic database cannot be detached if there is detached table which still in use
     void assertCanBeDetached(bool cleanup) override;
 

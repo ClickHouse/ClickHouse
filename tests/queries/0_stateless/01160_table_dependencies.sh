@@ -30,7 +30,7 @@ s String default dictGet($CLICKHOUSE_DATABASE.dict1, 's', 42::UInt64)) engine=Me
 
 CLICKHOUSE_CLIENT_DEFAULT_DB=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--database=${CLICKHOUSE_DATABASE}"'/--database=default/g')
 
-for i in {1..10}; do
+for _ in {1..10}; do
   $CLICKHOUSE_CLIENT_DEFAULT_DB -q "detach database $CLICKHOUSE_DATABASE;"
   $CLICKHOUSE_CLIENT_DEFAULT_DB -q "attach database $CLICKHOUSE_DATABASE;"
 done
