@@ -145,6 +145,7 @@ SRCS(
     TokenIterator.cpp
     formatAST.cpp
     formatSettingName.cpp
+    getInsertQuery.cpp
     iostream_debug_helpers.cpp
     makeASTForLogicalFunction.cpp
     obfuscateQueries.cpp
