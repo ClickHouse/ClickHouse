@@ -43,7 +43,7 @@ protected:
 public:
     String getEngineName() const override { return "MaterializedMySQL"; }
 
-    void loadStoredObjects(ContextMutablePtr context_, bool has_force_restore_data_flag, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr context_, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables) override;
 
     void createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
@@ -61,7 +61,7 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context_) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
 
     void assertCalledFromSyncThreadOrDrop(const char * method) const;
 
