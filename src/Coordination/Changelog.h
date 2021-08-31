@@ -87,12 +87,12 @@ public:
 
     uint64_t getNextEntryIndex() const
     {
-        return start_index + logs.size();
+        return max_log_id + 1;
     }
 
     uint64_t getStartIndex() const
     {
-        return start_index;
+        return min_log_id;
     }
 
     /// Last entry in log, or fake entry with term 0 if log is empty
@@ -144,7 +144,8 @@ private:
     /// Mapping log_id -> log_entry
     IndexToLogEntry logs;
     /// Start log_id which exists in all "active" logs
-    uint64_t start_index = 0;
+    uint64_t min_log_id = 0;
+    uint64_t max_log_id = 0;
 };
 
 }
