@@ -107,14 +107,14 @@ public:
 
     String getFileName(const String & path) const;
 
-    DiskType::Type getType() const override { return DiskType::Type::WebServer; }
+    DiskType getType() const override { return DiskType::WebServer; }
+
+    bool isRemote() const override { return true; }
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & path,
-                                                     size_t buf_size,
-                                                     size_t estimated_size,
-                                                     size_t aio_threshold,
-                                                     size_t mmap_threshold,
-                                                     MMappedFileCache * mmap_cache) const override;
+                                                     const ReadSettings & settings,
+                                                     size_t estimated_size) const override;
+
     /// Disk info
 
     const String & getName() const final override { return name; }
