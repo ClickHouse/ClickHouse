@@ -48,6 +48,7 @@ SRCS(
     AggregateFunctionSequenceNextNode.cpp
     AggregateFunctionSimpleLinearRegression.cpp
     AggregateFunctionSimpleState.cpp
+    AggregateFunctionSingleValueOrNull.cpp
     AggregateFunctionState.cpp
     AggregateFunctionStatistics.cpp
     AggregateFunctionStatisticsSimple.cpp
