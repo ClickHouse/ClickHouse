@@ -9,8 +9,7 @@
             <force_sync>false</force_sync>
             <startup_timeout>60000</startup_timeout>
             <!-- we want all logs for complex problems investigation -->
-            <reserved_log_items>10000</reserved_log_items>
-            <rotate_log_storage_interval>33333</rotate_log_storage_interval>
+            <reserved_log_items>1000000000000000</reserved_log_items>
         </coordination_settings>
 
         <raft_configuration>
