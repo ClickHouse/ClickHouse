@@ -294,9 +294,11 @@ DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
     String directory_name;
     if (RE2::FullMatch(path, MATCH_DIRECTORY_PATTERN, &uuid, &directory_name))
     {
-        if (can_throw && !metadata.tables_data[uuid].contains(directory_name))
+        if (metadata.tables_data[uuid].contains(directory_name))
+            return std::make_unique<DiskWebDirectoryIterator<DirectoryListing>>(metadata.tables_data[uuid][directory_name], path);
+        if (can_throw)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory {} does not exist. (uuid: {})", directory_name, uuid);
-        return std::make_unique<DiskWebDirectoryIterator<DirectoryListing>>(metadata.tables_data[uuid][directory_name], path);
+        return std::make_unique<DiskWebDirectoryIterator<RootDirectoryListing>>(metadata.tables_data[""], path); /// Empty directory.
     }
 
     return std::make_unique<DiskWebDirectoryIterator<RootDirectoryListing>>(metadata.tables_data[uuid], path);
