@@ -75,6 +75,13 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     }
 }
 
+void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(table_id.getFullTableName());
+    hash_state.update(format);
+    IAST::updateTreeHashImpl(hash_state);
+}
+
 
 static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function)
 {
