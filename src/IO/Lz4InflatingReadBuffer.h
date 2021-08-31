@@ -10,9 +10,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-}
 
 class Lz4InflatingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
