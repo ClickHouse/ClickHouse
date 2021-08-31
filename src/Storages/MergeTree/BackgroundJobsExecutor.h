@@ -48,9 +48,6 @@ private:
     /// Mutex for thread safety
     std::mutex holder_mutex;
 
-    /// Save storage id to prevent use-after-free in destructor
-    StorageID storage_id;
-
 public:
     enum class Type
     {
