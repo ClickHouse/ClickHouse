@@ -90,7 +90,7 @@ public:
         if (value.load() >= static_cast<int64_t>(max_task_count_getter()))
             return false;
 
-        tasks.emplace_back(std::make_shared<Item>(std::move(task), metric));
+        pending.emplace_back(std::make_shared<Item>(std::move(task), metric));
         has_tasks.notify_one();
         return true;
     }
@@ -111,15 +111,16 @@ public:
         pool.wait();
     }
 
-    size_t active()
-    {
-        return pool.active();
-    }
-
-    size_t pending()
+    size_t activeCount()
     {
         std::lock_guard lock(mutex);
-        return tasks.size();
+        return active.size();
+    }
+
+    size_t pendingCount()
+    {
+        std::lock_guard lock(mutex);
+        return pending.size();
     }
 
 private:
@@ -141,24 +142,27 @@ private:
 
     struct Item
     {
-        explicit Item(ExecutableTaskPtr && task_, CurrentMetrics::Metric && metric_)
-            : task(std::move(task_)), increment(std::move(metric_)) {}
+        explicit Item(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_)
+            : task(std::move(task_))
+            , increment(std::move(metric_))
+            , future(promise.get_future())
+        {
+        }
 
         ExecutableTaskPtr task;
         CurrentMetrics::Increment increment;
 
         std::promise<void> promise;
+        std::future<void> future;
     };
 
     using ItemPtr = std::shared_ptr<Item>;
 
-    std::deque<ItemPtr> tasks;
+    std::deque<ItemPtr> pending;
+    std::set<ItemPtr> active;
+    std::set<StorageID> currently_deleting;
 
     std::mutex remove_mutex;
-
-    std::mutex currently_executing_mutex;
-    std::set<ItemPtr> currently_executing;
-
     std::mutex mutex;
     std::condition_variable has_tasks;
 
