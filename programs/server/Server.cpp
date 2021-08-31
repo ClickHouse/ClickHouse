@@ -53,6 +53,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/InterserverCredentials.h>
+#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -765,6 +766,12 @@ if (ThreadFuzzer::instance().isEffective())
         fs::create_directories(dictionaries_lib_path);
     }
 
+    {
+        std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
+        global_context->setUserScriptsPath(user_scripts_path);
+        fs::create_directories(user_scripts_path);
+    }
+
     /// top_level_domains_lists
     {
         const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
@@ -774,6 +781,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
         fs::create_directories(path / "data/");
         fs::create_directories(path / "metadata/");
+        fs::create_directories(path / "user_defined/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         fs::create_directories(path / "metadata_dropped/");
@@ -994,7 +1002,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
 #if USE_NURAFT
         /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperStorageDispatcher();
+        global_context->initializeKeeperDispatcher();
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -1077,7 +1085,7 @@ if (ThreadFuzzer::instance().isEffective())
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
 
-            global_context->shutdownKeeperStorageDispatcher();
+            global_context->shutdownKeeperDispatcher();
         }
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
@@ -1098,19 +1106,31 @@ if (ThreadFuzzer::instance().isEffective())
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
+    LOG_INFO(log, "Loading user defined objects from {}", path_str);
+    try
+    {
+        UserDefinedObjectsLoader::instance().loadObjects(global_context);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Caught exception while loading user defined objects");
+        throw;
+    }
+    LOG_DEBUG(log, "Loaded user defined objects");
+
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     try
     {
+        auto & database_catalog = DatabaseCatalog::instance();
+        /// We load temporary database first, because projections need it.
+        database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
-        auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
-        /// We load temporary database first, because projections need it.
-        database_catalog.initializeAndLoadTemporaryDatabase();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         database_catalog.loadDatabases();

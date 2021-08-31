@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -31,6 +32,7 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     , name(name_)
     , path(storage.getRelativeDataPath() + name_)
     , pool(storage.getContext()->getSchedulePool())
+    , log(&Poco::Logger::get(storage.getLogName() + " (WriteAheadLog)"))
 {
     init();
     sync_task = pool.createTask("MergeTreeWriteAheadLog::sync", [this]
@@ -116,7 +118,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
     std::unique_lock lock(write_mutex);
 
     MergeTreeData::MutableDataPartsVector parts;
-    auto in = disk->readFile(path, DBMS_DEFAULT_BUFFER_SIZE);
+    auto in = disk->readFile(path, {}, 0);
     NativeBlockInputStream block_in(*in, 0);
     NameSet dropped_parts;
 
@@ -172,8 +174,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 || e.code() == ErrorCodes::BAD_DATA_PART_NAME
                 || e.code() == ErrorCodes::CORRUPTED_DATA)
             {
-                LOG_WARNING(&Poco::Logger::get(storage.getLogName() + " (WriteAheadLog)"),
-                    "WAL file '{}' is broken. {}", path, e.displayText());
+                LOG_WARNING(log, "WAL file '{}' is broken. {}", path, e.displayText());
 
                 /// If file is broken, do not write new parts to it.
                 /// But if it contains any part rotate and save them.
@@ -203,6 +204,15 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
 
             part_out.writePrefix();
             part_out.write(block);
+
+            for (const auto & projection : metadata_snapshot->getProjections())
+            {
+                auto projection_block = projection.calculate(block, context);
+                if (projection_block.rows())
+                    part->addProjectionPart(
+                        projection.name,
+                        MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, part.get()));
+            }
             part_out.writeSuffixAndFinalizePart(part);
 
             min_block_number = std::min(min_block_number, part->info.min_block);
