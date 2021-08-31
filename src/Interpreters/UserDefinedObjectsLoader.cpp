@@ -19,6 +19,7 @@
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
+#include <Parsers/ParserCreateDataTypeQuery.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Logger.h>
@@ -76,14 +77,16 @@ void UserDefinedObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDef
     String object_create_query;
     readStringUntilEOF(object_create_query, in);
 
-    ParserCreateFunctionQuery parser;
-    ASTPtr ast = parseQuery(
-        parser,
-        object_create_query.data(),
-        object_create_query.data() + object_create_query.size(),
-        "in file " + path,
-        0,
-        context->getSettingsRef().max_parser_depth);
+    auto parse = [&context, &object_create_query, &path](DB::IParser & parser) 
+    {
+        return parseQuery(
+            parser,
+            object_create_query.data(),
+            object_create_query.data() + object_create_query.size(),
+            "in file " + path,
+            0,
+            context->getSettingsRef().max_parser_depth);
+    };
 
     try
     {
@@ -91,12 +94,16 @@ void UserDefinedObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDef
         {
             case UserDefinedObjectType::Function:
             {
+                ParserCreateFunctionQuery functionParser;
+                ASTPtr ast = parse(functionParser);
                 InterpreterCreateFunctionQuery interpreter(ast, context, true /*is internal*/);
                 interpreter.execute();
                 break;
             }
             case UserDefinedObjectType::DataType:
             {
+                ParserCreateDataTypeQuery dataTypeParser;
+                ASTPtr ast = parse(dataTypeParser);
                 InterpreterCreateDataTypeQuery interpreter(ast, context, true /*is internal*/);
                 interpreter.execute();
                 break;
