@@ -37,7 +37,7 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip3 install urllib3 testflows==1.6.72 docker-compose docker dicttoxml kazoo tzlocal
+RUN pip3 install urllib3 testflows==1.6.72 docker-compose docker dicttoxml kazoo tzlocal==2.1 pytz
 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 17.09.1-ce
