@@ -35,10 +35,10 @@ struct RowOutputFormatParams;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
-FormatSettings getFormatSettings(ContextPtr context);
+FormatSettings getFormatSettings(ContextConstPtr context);
 
 template <typename T>
-FormatSettings getFormatSettings(ContextPtr context, const T & settings);
+FormatSettings getFormatSettings(ContextConstPtr context, const T & settings);
 
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
@@ -93,11 +93,6 @@ private:
             const RowOutputFormatParams & params,
             const FormatSettings & settings)>;
 
-    /// Some input formats can have non trivial readPrefix() and readSuffix(),
-    /// so in some cases there is no possibility to use parallel parsing.
-    /// The checker should return true if parallel parsing should be disabled.
-    using NonTrivialPrefixAndSuffixChecker = std::function<bool(ReadBuffer & buf)>;
-
     struct Creators
     {
         InputCreator input_creator;
@@ -107,7 +102,6 @@ private:
         FileSegmentationEngine file_segmentation_engine;
         bool supports_parallel_formatting{false};
         bool is_column_oriented{false};
-        NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -119,7 +113,7 @@ public:
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
-        ContextPtr context,
+        ContextConstPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -129,7 +123,7 @@ public:
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
-        ContextPtr context,
+        ContextConstPtr context,
         WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -138,7 +132,7 @@ public:
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
-        ContextPtr context,
+        ContextConstPtr context,
         WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -146,7 +140,7 @@ public:
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
-        ContextPtr context,
+        ContextConstPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -155,7 +149,7 @@ public:
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
-        ContextPtr context,
+        ContextConstPtr context,
         WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -163,7 +157,7 @@ public:
         const String & name,
         WriteBuffer & buf,
         const Block & sample,
-        ContextPtr context,
+        ContextConstPtr context,
         WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -171,8 +165,6 @@ public:
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
-
-    void registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker);
 
     void registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator);
     void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);

@@ -10,11 +10,10 @@
 #include <Storages/IStorage.h>
 
 #include <common/logger_useful.h>
-#include <common/scope_guard_safe.h>
+#include <ext/scope_guard_safe.h>
 #include <iomanip>
-#include <filesystem>
+#include <Poco/File.h>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -36,14 +35,16 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 
 void DatabaseLazy::loadStoredObjects(
-    ContextMutablePtr local_context, bool /* has_force_restore_data_flag */, bool /*force_attach*/, bool /* skip_startup_tables */)
+    ContextPtr local_context,
+    bool /* has_force_restore_data_flag */,
+    bool /*force_attach*/)
 {
     iterateMetadataFiles(local_context, [this](const String & file_name)
     {
         const std::string table_name = file_name.substr(0, file_name.size() - 4);
 
-        fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
-        if (fs::exists(detached_permanently_flag))
+        auto detached_permanently_flag = Poco::File(getMetadataPath() + "/" + file_name + detached_suffix);
+        if (detached_permanently_flag.exists())
         {
             LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
             return;
@@ -141,7 +142,7 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
     return loadTable(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
     Strings filtered_tables;
@@ -227,7 +228,7 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
 
     LOG_DEBUG(log, "Load table {} to cache.", backQuote(table_name));
 
-    const String table_metadata_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + ".sql");
+    const String table_metadata_path = getMetadataPath() + "/" + escapeForFileName(table_name) + ".sql";
 
     try
     {
@@ -244,8 +245,6 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
 
         if (!ast || !endsWith(table->getName(), "Log"))
             throw Exception("Only *Log tables can be used with Lazy database engine.", ErrorCodes::LOGICAL_ERROR);
-
-        table->startup();
         {
             std::lock_guard lock(mutex);
             auto it = tables_cache.find(table_name);
@@ -304,13 +303,13 @@ void DatabaseLazy::clearExpiredTables() const
 }
 
 
-DatabaseLazyIterator::DatabaseLazyIterator(const DatabaseLazy & database_, Strings && table_names_)
-    : IDatabaseTablesIterator(database_.database_name)
-    , database(database_)
+DatabaseLazyIterator::DatabaseLazyIterator(DatabaseLazy & database_, Strings && table_names_)
+    : database(database_)
     , table_names(std::move(table_names_))
     , iterator(table_names.begin())
     , current_storage(nullptr)
 {
+    database_name = database.database_name;
 }
 
 void DatabaseLazyIterator::next()

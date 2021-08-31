@@ -14,7 +14,6 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
-#include <DataStreams/SquashingBlockInputStream.h>
 
 namespace DB
 {
@@ -24,7 +23,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int ILLEGAL_PROJECTION;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
 };
 
 const char * ProjectionDescription::typeToString(Type type)
@@ -174,15 +172,15 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
             metadata.sorting_key = KeyDescription::getSortingKeyFromAST({}, metadata.columns, query_context, {});
             metadata.primary_key = KeyDescription::getKeyFromAST({}, metadata.columns, query_context);
         }
-        if (query.orderBy())
+        if (query_select.orderBy())
             throw Exception(
                 "When aggregation is used in projection, ORDER BY cannot be specified", ErrorCodes::ILLEGAL_PROJECTION);
     }
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), metadata.columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), metadata.columns, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query_select.orderBy(), metadata.columns, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(query_select.orderBy(), metadata.columns, query_context);
     }
     metadata.primary_key.definition_ast = nullptr;
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
@@ -193,28 +191,6 @@ void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription &
 {
     *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
-
-
-Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
-{
-    auto in = InterpreterSelectQuery(
-                  query_ast,
-                  context,
-                  Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
-                  SelectQueryOptions{
-                      type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
-                                                                  : QueryProcessingStage::WithMergeableState})
-                  .execute()
-                  .getInputStream();
-    in = std::make_shared<SquashingBlockInputStream>(in, block.rows(), 0);
-    in->readPrefix();
-    auto ret = in->read();
-    if (in->read())
-        throw Exception("Projection cannot increase the number of rows in a block", ErrorCodes::LOGICAL_ERROR);
-    in->readSuffix();
-    return ret;
-}
-
 
 String ProjectionsDescription::toString() const
 {
@@ -289,15 +265,11 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
     map[it->name] = it;
 }
 
-void ProjectionsDescription::remove(const String & projection_name, bool if_exists)
+void ProjectionsDescription::remove(const String & projection_name)
 {
     auto it = map.find(projection_name);
     if (it == map.end())
-    {
-        if (if_exists)
-            return;
         throw Exception("There is no projection " + projection_name + " in table.", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
-    }
 
     projections.erase(it->second);
     map.erase(it);

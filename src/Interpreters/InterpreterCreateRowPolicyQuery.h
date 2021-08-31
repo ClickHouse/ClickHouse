@@ -10,10 +10,10 @@ namespace DB
 class ASTCreateRowPolicyQuery;
 struct RowPolicy;
 
-class InterpreterCreateRowPolicyQuery : public IInterpreter, WithMutableContext
+class InterpreterCreateRowPolicyQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterCreateRowPolicyQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
+    InterpreterCreateRowPolicyQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 

@@ -85,8 +85,6 @@ struct ProjectionDescription
     void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context);
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
-
-    Block calculate(const Block & block, ContextPtr context) const;
 };
 
 /// All projections in storage
@@ -120,7 +118,7 @@ struct ProjectionsDescription
 
     void
     add(ProjectionDescription && projection, const String & after_projection = String(), bool first = false, bool if_not_exists = false);
-    void remove(const String & projection_name, bool if_exists);
+    void remove(const String & projection_name);
 
 private:
     /// Keep the sequence of columns and allow to lookup by name.

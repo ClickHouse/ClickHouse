@@ -911,7 +911,7 @@ TEST(CoordinationTest, TestStorageSnapshotSimple)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3);
 
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500);
     addNode(storage, "/hello", "world", 1);
     addNode(storage, "/hello/somepath", "somedata", 3);
     storage.session_id_counter = 5;
@@ -958,7 +958,7 @@ TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3);
 
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500);
     storage.getSessionID(130);
 
     for (size_t i = 0; i < 50; ++i)
@@ -998,7 +998,7 @@ TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3);
 
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500);
     storage.getSessionID(130);
 
     for (size_t j = 1; j <= 5; ++j)
@@ -1035,7 +1035,7 @@ TEST(CoordinationTest, TestStorageSnapshotMode)
 {
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3);
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500);
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
@@ -1086,7 +1086,7 @@ TEST(CoordinationTest, TestStorageSnapshotBroken)
 {
     ChangelogDirTest test("./snapshots");
     DB::KeeperSnapshotManager manager("./snapshots", 3);
-    DB::KeeperStorage storage(500, "");
+    DB::KeeperStorage storage(500);
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
@@ -1296,82 +1296,6 @@ TEST(CoordinationTest, TestEphemeralNodeRemove)
     state_machine->commit(2, entry_d->get_buf());
 
     EXPECT_EQ(storage.ephemerals.size(), 0);
-}
-
-
-TEST(CoordinationTest, TestRotateIntervalChanges)
-{
-    using namespace Coordination;
-    ChangelogDirTest snapshots("./logs");
-    {
-        DB::KeeperLogStore changelog("./logs", 100, true);
-
-        changelog.init(0, 3);
-        for (size_t i = 1; i < 55; ++i)
-        {
-            std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-            request->path = "/hello_" + std::to_string(i);
-            auto entry = getLogEntryFromZKRequest(0, 1, request);
-            changelog.append(entry);
-            changelog.end_of_append_batch(0, 0);
-        }
-    }
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_0_99.bin"));
-
-    DB::KeeperLogStore changelog_1("./logs", 10, true);
-    changelog_1.init(0, 50);
-    for (size_t i = 0; i < 55; ++i)
-    {
-        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = "/hello_" + std::to_string(100 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
-        changelog_1.append(entry);
-        changelog_1.end_of_append_batch(0, 0);
-    }
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_0_99.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_100_109.bin"));
-
-    DB::KeeperLogStore changelog_2("./logs", 7, true);
-    changelog_2.init(98, 55);
-
-    for (size_t i = 0; i < 17; ++i)
-    {
-        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = "/hello_" + std::to_string(200 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
-        changelog_2.append(entry);
-        changelog_2.end_of_append_batch(0, 0);
-    }
-
-    changelog_2.compact(105);
-    EXPECT_FALSE(fs::exists("./logs/changelog_0_99.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_100_109.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_110_116.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_117_123.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_124_130.bin"));
-
-    DB::KeeperLogStore changelog_3("./logs", 5, true);
-    changelog_3.init(116, 3);
-    for (size_t i = 0; i < 17; ++i)
-    {
-        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
-        request->path = "/hello_" + std::to_string(300 + i);
-        auto entry = getLogEntryFromZKRequest(0, 1, request);
-        changelog_3.append(entry);
-        changelog_3.end_of_append_batch(0, 0);
-    }
-
-    changelog_3.compact(125);
-    EXPECT_FALSE(fs::exists("./logs/changelog_100_109.bin"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_110_116.bin"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_117_123.bin"));
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_124_130.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_131_135.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_136_140.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_141_145.bin"));
 }
 
 

@@ -50,11 +50,11 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Implementation Details {#implementation-details}
 
--   Reads and writes can be parallel.
--   [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is supported.  
+-   Reads and writes can be parallel
 -   Not supported:
     -   `ALTER` and `SELECT...SAMPLE` operations.
     -   Indexes.
+    -   Replication.
 
 **Globs in path**
 
@@ -71,12 +71,12 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 1.  Suppose we have several files in TSV format with the following URIs on HDFS:
 
--   'hdfs://hdfs1:9000/some_dir/some_file_1'
--   'hdfs://hdfs1:9000/some_dir/some_file_2'
--   'hdfs://hdfs1:9000/some_dir/some_file_3'
--   'hdfs://hdfs1:9000/another_dir/some_file_1'
--   'hdfs://hdfs1:9000/another_dir/some_file_2'
--   'hdfs://hdfs1:9000/another_dir/some_file_3'
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
 
 1.  There are several ways to make a table consisting of all six files:
 
@@ -126,9 +126,8 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
   </hdfs_root>
 ```
 
-### Configuration Options {#configuration-options}
-
-#### Supported by libhdfs3 {#supported-by-libhdfs3}
+### List of possible configuration options with default values
+#### Supported by libhdfs3
 
 
 | **parameter**                                         | **default value**       |
@@ -184,10 +183,9 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 |hadoop\_kerberos\_keytab                               | ""                      |
 |hadoop\_kerberos\_principal                            | ""                      |
 |hadoop\_kerberos\_kinit\_command                       | kinit                   |
-|libhdfs3\_conf                                         | ""                      |
 
-### Limitations {#limitations}
-  * hadoop\_security\_kerberos\_ticket\_cache\_path and libhdfs3\_conf can be global only, not user specific
+#### Limitations {#limitations}
+  * hadoop\_security\_kerberos\_ticket\_cache\_path can be global only, not user specific
 
 ## Kerberos support {#kerberos-support}
 
@@ -198,22 +196,6 @@ datanode communications are not secured by SASL (HADOOP\_SECURE\_DN\_USER is a r
 security approach). Use tests/integration/test\_storage\_kerberized\_hdfs/hdfs_configs/bootstrap.sh for reference.
 
 If hadoop\_kerberos\_keytab, hadoop\_kerberos\_principal or hadoop\_kerberos\_kinit\_command is specified, kinit will be invoked. hadoop\_kerberos\_keytab and hadoop\_kerberos\_principal are mandatory in this case. kinit tool and krb5 configuration files are required.
-
-## HDFS Namenode HA support{#namenode-ha}
-
-libhdfs3 support HDFS namenode HA.
-
-- Copy `hdfs-site.xml` from an HDFS node to `/etc/clickhouse-server/`.
-- Add following piece to ClickHouse config file:
-
-``` xml
-  <hdfs>
-    <libhdfs3_conf>/etc/clickhouse-server/hdfs-site.xml</libhdfs3_conf>
-  </hdfs>
-```
-
-- Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
-
 
 ## Virtual Columns {#virtual-columns}
 

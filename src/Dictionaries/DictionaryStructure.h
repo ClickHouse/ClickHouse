@@ -39,7 +39,6 @@
     M(Decimal256) \
     M(UUID) \
     M(String) \
-    M(Array) \
 
 
 namespace DB
@@ -67,22 +66,23 @@ using DictionaryLifetime = ExternalLoadableLifetime;
 *    - null_value, used as a default value for non-existent entries in the dictionary,
 *        decimal representation for numeric attributes;
 *    - hierarchical, whether this attribute defines a hierarchy;
-*    - injective, whether the mapping to parent is injective (can be used for optimization of GROUP BY?);
-*    - is_object_id, used in mongo dictionary, converts string key to objectid;
-*    - is_nullable, is attribute nullable;
+*    - injective, whether the mapping to parent is injective (can be used for optimization of GROUP BY?)
+*    - is_object_id, used in mongo dictionary, converts string key to objectid
 */
 struct DictionaryAttribute final
 {
     const std::string name;
     const AttributeUnderlyingType underlying_type;
     const DataTypePtr type;
-    const SerializationPtr type_serialization;
+    const SerializationPtr serialization;
+    const DataTypePtr nested_type;
     const std::string expression;
     const Field null_value;
     const bool hierarchical;
     const bool injective;
     const bool is_object_id;
     const bool is_nullable;
+    const bool is_array;
 };
 
 template <typename Type>
@@ -92,7 +92,7 @@ struct DictionaryAttributeType
 };
 
 template <typename F>
-void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
+void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
 {
     switch (type)
     {
@@ -154,10 +154,6 @@ private:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         bool complex_key_attributes);
-
-    /// parse range_min and range_max
-    void parseRangeConfiguration(const Poco::Util::AbstractConfiguration & config, const std::string & structure_prefix);
-
 };
 
 }

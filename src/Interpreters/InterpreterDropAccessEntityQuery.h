@@ -9,10 +9,10 @@ namespace DB
 
 class AccessRightsElements;
 
-class InterpreterDropAccessEntityQuery : public IInterpreter, WithMutableContext
+class InterpreterDropAccessEntityQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterDropAccessEntityQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_) {}
+    InterpreterDropAccessEntityQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 
