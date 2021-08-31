@@ -122,8 +122,6 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
-    BackgroundJobAssignee background_executor;
-    BackgroundJobAssignee background_moves_executor;
 
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 
@@ -149,6 +147,10 @@ private:
     std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
     std::atomic<bool> shutdown_called {false};
+
+    /// Must be the last to be destroyed first
+    BackgroundJobAssignee background_executor;
+    BackgroundJobAssignee background_moves_executor;
 
     void loadMutations();
 
