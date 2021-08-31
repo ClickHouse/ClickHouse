@@ -19,8 +19,6 @@ The following operations with [partitions](../../../engines/table-engines/merget
 -   [UNFREEZE PARTITION](#alter_unfreeze-partition) — Removes a backup of a partition.
 -   [FETCH PARTITION\|PART](#alter_fetch-partition) — Downloads a part or partition from another server.
 -   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
--   [UPDATE IN PARTITION](#update-in-partition) — Update data inside the partition by condition.
--   [DELETE IN PARTITION](#delete-in-partition) — Delete data inside the partition by condition.
 
 <!-- -->
 
@@ -88,7 +86,7 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-This query is replicated. The replica-initiator checks whether there is data in the `detached` directory.
+This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. 
 If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
 
 If the non-initiator replica, receiving the attach command, finds the part with the correct checksums in its own `detached` folder, it attaches the data without fetching it from other replicas.

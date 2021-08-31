@@ -4,7 +4,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Formats/MySQLSource.h>
+#include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -18,7 +18,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 
@@ -104,22 +103,22 @@ Pipe StorageMySQL::read(
 
     StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
         mysql_settings.connection_auto_close);
-    return Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query, sample_block, mysql_input_stream_settings));
+    return Pipe(std::make_shared<SourceFromInputStream>(
+            std::make_shared<MySQLWithFailoverBlockInputStream>(pool, query, sample_block, mysql_input_stream_settings)));
 }
 
 
-class StorageMySQLSink : public SinkToStorage
+class StorageMySQLBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit StorageMySQLSink(
+    explicit StorageMySQLBlockOutputStream(
         const StorageMySQL & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage{storage_}
+        : storage{storage_}
         , metadata_snapshot{metadata_snapshot_}
         , remote_database_name{remote_database_name_}
         , remote_table_name{remote_table_name_}
@@ -128,11 +127,10 @@ public:
     {
     }
 
-    String getName() const override { return "StorageMySQLSink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override
+    void write(const Block & block) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
         auto blocks = splitBlocks(block, max_batch_rows);
         mysqlxx::Transaction trans(entry);
         try
@@ -177,28 +175,28 @@ public:
         if (block.rows() <= max_rows)
             return Blocks{std::move(block)};
 
-        const size_t split_block_size = ceil(block.rows() * 1.0 / max_rows);
-        Blocks split_blocks(split_block_size);
+        const size_t splited_block_size = ceil(block.rows() * 1.0 / max_rows);
+        Blocks splitted_blocks(splited_block_size);
 
-        for (size_t idx = 0; idx < split_block_size; ++idx)
-            split_blocks[idx] = block.cloneEmpty();
+        for (size_t idx = 0; idx < splited_block_size; ++idx)
+            splitted_blocks[idx] = block.cloneEmpty();
 
         const size_t columns = block.columns();
         const size_t rows = block.rows();
         size_t offsets = 0;
         UInt64 limits = max_batch_rows;
-        for (size_t idx = 0; idx < split_block_size; ++idx)
+        for (size_t idx = 0; idx < splited_block_size; ++idx)
         {
             /// For last batch, limits should be the remain size
-            if (idx == split_block_size - 1) limits = rows - offsets;
+            if (idx == splited_block_size - 1) limits = rows - offsets;
             for (size_t col_idx = 0; col_idx < columns; ++col_idx)
             {
-                split_blocks[idx].getByPosition(col_idx).column = block.getByPosition(col_idx).column->cut(offsets, limits);
+                splitted_blocks[idx].getByPosition(col_idx).column = block.getByPosition(col_idx).column->cut(offsets, limits);
             }
             offsets += max_batch_rows;
         }
 
-        return split_blocks;
+        return splitted_blocks;
     }
 
     static std::string dumpNamesWithBackQuote(const Block & block)
@@ -223,9 +221,9 @@ private:
 };
 
 
-SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+BlockOutputStreamPtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    return std::make_shared<StorageMySQLSink>(
+    return std::make_shared<StorageMySQLBlockOutputStream>(
         *this,
         metadata_snapshot,
         remote_database_name,

@@ -277,4 +277,5 @@ GTEST_TEST(WideInteger, DecimalFormatting)
     Int128 fractional = DecimalUtils::getFractionalPart(x, 2);
 
     EXPECT_EQ(fractional, 40);
+    EXPECT_EQ(decimalFractional(fractional, 2), "40");
 }
