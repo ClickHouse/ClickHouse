@@ -144,6 +144,7 @@ private:
     /// Mapping log_id -> log_entry
     IndexToLogEntry logs;
     /// Start log_id which exists in all "active" logs
+    /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
     uint64_t min_log_id = 0;
     uint64_t max_log_id = 0;
 };
