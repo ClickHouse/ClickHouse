@@ -140,6 +140,13 @@ public:
     bool isView() const override { return false; }
     void checkTableCanBeDropped() const override {}
 
+    StoragePolicyPtr getStoragePolicy() const override
+    {
+        if (nested)
+            return StorageProxy::getStoragePolicy();
+        return IStorage::getStoragePolicy();
+    }
+
 private:
     mutable std::mutex nested_mutex;
     mutable GetNestedStorageFunc get_nested;
