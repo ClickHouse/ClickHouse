@@ -222,7 +222,7 @@ bin(arg)
 
 Для целочисленных аргументов возвращаются двоичные числа от наиболее значимого до наименее значимого (`big-endian` или в понятном человеку порядке). Порядок начинается с самого значимого ненулевого байта (начальные нулевые байты опущены), но всегда возвращает восемь цифр каждого байта, если начальная цифра равна нулю.
 
-Значения типа [Date](../../sql-reference/data-types/date.md) и [DateTime](../../sql-reference/data-types/datetime.md) форматируются как соответствующие целые числа (количество дней с момента unix-эпохи для `Date` и значение Unix Timestamp для `DateTime`).
+Значения типа [Date](../../sql-reference/data-types/date.md) и [DateTime](../../sql-reference/data-types/datetime.md) формируются как соответствующие целые числа (количество дней с момента Unix-эпохи для `Date` и значение Unix Timestamp для `DateTime`).
 
 Для [String](../../sql-reference/data-types/string.md) и [FixedString](../../sql-reference/data-types/fixedstring.md) все байты кодируются как восемь двоичных чисел. Нулевые байты не опущены.
 
