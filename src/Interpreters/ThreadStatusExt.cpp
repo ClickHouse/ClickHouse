@@ -1,3 +1,4 @@
+#include <mutex>
 #include <Common/ThreadStatus.h>
 
 #include <Processors/Transforms/buildPushingToViewsChain.h>
@@ -398,6 +399,10 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     finalizePerformanceCounters();
 
     /// Detach from thread group
+    {
+        std::lock_guard guard(thread_group->mutex);
+        thread_group->threads.erase(this);
+    }
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
 

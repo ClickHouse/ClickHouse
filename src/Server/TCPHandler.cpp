@@ -1,4 +1,8 @@
+#include <algorithm>
 #include <iomanip>
+#include <iterator>
+#include <mutex>
+#include <vector>
 #include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -916,7 +920,12 @@ void TCPHandler::sendProfileEvents()
 
     MutableColumns columns = block.mutateColumns();
     auto thread_group = CurrentThread::getGroup();
-    for (auto * thread : thread_group->threads)
+    std::vector<ThreadStatusPtr> threads;
+    {
+        std::lock_guard guard(thread_group->mutex);
+        std::copy(thread_group->threads.begin(), thread_group->threads.end(), std::back_inserter(threads));
+    }
+    for (auto * thread : threads)
     {
         auto const counters_snapshot = thread->performance_counters.getPartiallyAtomicSnapshot();
         auto current_time = time(nullptr);
@@ -933,7 +942,7 @@ void TCPHandler::sendProfileEvents()
     writeVarUInt(Protocol::Server::ProfileEvents, *out);
     writeStringBinary("", *out);
 
-    state.logs_block_out->write(block);
+    state.profile_events_block_out->write(block);
     out->next();
 }
 
