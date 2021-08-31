@@ -294,7 +294,7 @@ unbin(arg)
 
 Alias: `UNBIN`.
 
-For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
+For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions.md#reinterpretasuint8163264) functions.
 
 !!! note "Note"
     If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
