@@ -73,7 +73,7 @@ SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
 
 ## hex {#hex}
 
-Returns a string containing the argument’s hexadecimal representation.
+Возвращает строку, содержащую шестнадцатеричное представление аргумента.
 
 Синоним: `HEX`.
 
@@ -83,25 +83,10 @@ Returns a string containing the argument’s hexadecimal representation.
 hex(arg)
 ```
 
-The function is using uppercase letters `A-F` and not using any prefixes (like `0x`) or suffixes (like `h`).
+Функция использует прописные буквы `A-F` и не использует никаких префиксов (например, `0x`) или суффиксов (например, `h`).
 
-For integer arguments, it prints hex digits («nibbles») from the most significant to least significant (big endian or «human readable» order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if leading digit is zero.
+Для целочисленных аргументов возвращает шестнадцатеричные цифры ("кусочки") от наиболее значимых до наименее значимых (`big endian` или в порядке, понятному человеку).Он начинается с самого значимого ненулевого байта (начальные нулевые байты опущены), но всегда выводит обе цифры каждого байта, даже если начальная цифра равна нулю.
 
-Example:
-
-**Example**
-
-Query:
-
-``` sql
-SELECT hex(1);
-```
-
-Result:
-
-``` text
-01
-```
 
 Values of type `Date` and `DateTime` are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
 
@@ -109,25 +94,37 @@ For `String` and `FixedString`, all bytes are simply encoded as two hexadecimal 
 
 Values of floating point and Decimal types are encoded as their representation in memory. As we support little endian architecture, they are encoded in little endian. Zero leading/trailing bytes are not omitted.
 
-**Parameters**
+**Аргументы**
 
--   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `arg` — значение для преобразования в шестнадцатеричное. [String](../../sql-reference/functions/encoding-functions.md), [UInt](../../sql-reference/functions/encoding-functions.md), [Float](../../sql-reference/functions/encoding-functions.md), [Decimal](../../sql-reference/functions/encoding-functions.md), [Date](../../sql-reference/functions/encoding-functions.md) или [DateTime](../../sql-reference/functions/encoding-functions.md).
 
-**Returned value**
+**Возвращаемое значение**
 
--   A string with the hexadecimal representation of the argument.
+-   Строка — шестнадцатеричное представление аргумента.
 
-Type: `String`.
+Тип: [String](../../sql-reference/functions/encoding-functions.md).
 
-**Example**
+**Примеры**
 
-Query:
+Запрос:
 
 ``` sql
-SELECT hex(toFloat32(number)) as hex_presentation FROM numbers(15, 2);
+SELECT hex(1);
 ```
 
-Result:
+Результат:
+
+``` text
+01
+```
+
+Запрос:
+
+``` sql
+SELECT hex(toFloat32(number)) AS hex_presentation FROM numbers(15, 2);
+```
+
+Результат:
 
 ``` text
 ┌─hex_presentation─┐
@@ -136,13 +133,13 @@ Result:
 └──────────────────┘
 ```
 
-Query:
+Запрос:
 
 ``` sql
-SELECT hex(toFloat64(number)) as hex_presentation FROM numbers(15, 2);
+SELECT hex(toFloat64(number)) AS hex_presentation FROM numbers(15, 2);
 ```
 
-Result:
+Результат:
 
 ``` text
 ┌─hex_presentation─┐
