@@ -530,7 +530,6 @@ void Changelog::compact(uint64_t up_to_log_index)
     }
 
     bool need_rotate = false;
-
     for (auto itr = existing_changelogs.begin(); itr != existing_changelogs.end();)
     {
         /// Remove all completely outdated changelog files
