@@ -3,6 +3,8 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+# shellcheck source=./replication.lib
+. "$CURDIR"/replication.lib
 
 REPLICAS=5
 
@@ -111,6 +113,8 @@ echo "Finishing alters"
 while [[ $(timeout 120 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE concurrent_alter_mt_1 MODIFY COLUMN value1 String SETTINGS replication_alter_partitions_sync=2" 2>&1) ]]; do
     sleep 1
 done
+
+check_replication_consistency "concurrent_alter_mt_" "count(), sum(key), sum(cityHash64(value1)), sum(cityHash64(value2))"
 
 for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_alter_mt_$i"

@@ -89,6 +89,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
         future_part_type = std::min(future_part_type, part->getType());
     }
 
+    /// NOTE: We don't support merging into an in-memory part yet.
     auto chosen_type = parts_.front()->storage.choosePartTypeOnDisk(sum_bytes_uncompressed, sum_rows);
     future_part_type = std::min(future_part_type, chosen_type);
     assign(std::move(parts_), future_part_type);
@@ -494,7 +495,6 @@ static void extractMergingAndGatheringColumns(
     const NamesAndTypesList & storage_columns,
     const ExpressionActionsPtr & sorting_key_expr,
     const IndicesDescription & indexes,
-    const ProjectionsDescription & projections,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names)
@@ -505,13 +505,6 @@ static void extractMergingAndGatheringColumns(
     {
         Names index_columns_vec = index.expression->getRequiredColumns();
         std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
-                  std::inserter(key_columns, key_columns.end()));
-    }
-
-    for (const auto & projection : projections)
-    {
-        Names projection_columns_vec = projection.required_columns;
-        std::copy(projection_columns_vec.cbegin(), projection_columns_vec.cend(),
                   std::inserter(key_columns, key_columns.end()));
     }
 
@@ -728,7 +721,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         storage_columns,
         metadata_snapshot->getSortingKey().expression,
         metadata_snapshot->getSecondaryIndices(),
-        metadata_snapshot->getProjections(),
         merging_params,
         gathering_columns,
         gathering_column_names,
@@ -791,7 +783,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     auto compression_codec = data.getCompressionCodecForPart(merge_entry->total_size_bytes_compressed, new_data_part->ttl_infos, time_of_merge);
 
     auto tmp_disk = context->getTemporaryVolume()->getDisk();
-    String rows_sources_file_path;
+    std::unique_ptr<TemporaryFile> rows_sources_file;
     std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf;
     std::unique_ptr<WriteBuffer> rows_sources_write_buf;
     std::optional<ColumnSizeEstimator> column_sizes;
@@ -800,9 +792,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     if (chosen_merge_algorithm == MergeAlgorithm::Vertical)
     {
-        tmp_disk->createDirectories(new_part_tmp_path);
-        rows_sources_file_path = new_part_tmp_path + "rows_sources";
-        rows_sources_uncompressed_write_buf = tmp_disk->writeFile(rows_sources_file_path);
+        rows_sources_file = createTemporaryFile(tmp_disk->getPath());
+        rows_sources_uncompressed_write_buf = tmp_disk->writeFile(fileName(rows_sources_file->path()));
         rows_sources_write_buf = std::make_unique<CompressedWriteBuffer>(*rows_sources_uncompressed_write_buf);
 
         MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
@@ -1038,7 +1029,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 + ") differs from number of bytes written to rows_sources file (" + toString(rows_sources_count)
                 + "). It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        CompressedReadBufferFromFile rows_sources_read_buf(tmp_disk->readFile(rows_sources_file_path));
+        CompressedReadBufferFromFile rows_sources_read_buf(tmp_disk->readFile(fileName(rows_sources_file->path())));
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns;
 
         for (size_t column_num = 0, gathering_column_names_size = gathering_column_names.size();
@@ -1109,8 +1100,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             merge_entry->bytes_written_uncompressed += column_gathered_stream.getProfileInfo().bytes;
             merge_entry->progress.store(progress_before + column_sizes->columnWeight(column_name), std::memory_order_relaxed);
         }
-
-        tmp_disk->removeFile(rows_sources_file_path);
     }
 
     for (const auto & part : parts)
@@ -2023,10 +2012,19 @@ void MergeTreeDataMergerMutator::writeWithProjections(
     std::map<String, MergeTreeData::MutableDataPartsVector> projection_parts;
     Block block;
     std::vector<SquashingTransform> projection_squashes;
+    const auto & settings = context->getSettingsRef();
     for (size_t i = 0, size = projections_to_build.size(); i < size; ++i)
     {
-        projection_squashes.emplace_back(65536, 65536 * 256);
+        // If the parent part is an in-memory part, squash projection output into one block and
+        // build in-memory projection because we don't support merging into a new in-memory part.
+        // Otherwise we split the materialization into multiple stages similar to the process of
+        // INSERT SELECT query.
+        if (new_data_part->getType() == MergeTreeDataPartType::IN_MEMORY)
+            projection_squashes.emplace_back(0, 0);
+        else
+            projection_squashes.emplace_back(settings.min_insert_block_size_rows, settings.min_insert_block_size_bytes);
     }
+
     while (checkOperationIsNotCanceled(merge_entry) && (block = mutating_stream->read()))
     {
         if (minmax_idx)
@@ -2037,26 +2035,10 @@ void MergeTreeDataMergerMutator::writeWithProjections(
         for (size_t i = 0, size = projections_to_build.size(); i < size; ++i)
         {
             const auto & projection = projections_to_build[i]->projection;
-            auto in = InterpreterSelectQuery(
-                          projection.query_ast,
-                          context,
-                          Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
-                          SelectQueryOptions{
-                              projection.type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns : QueryProcessingStage::WithMergeableState})
-                          .execute()
-                          .getInputStream();
-            in = std::make_shared<SquashingBlockInputStream>(in, block.rows(), std::numeric_limits<UInt64>::max());
-            in->readPrefix();
-            auto & projection_squash = projection_squashes[i];
-            auto projection_block = projection_squash.add(in->read());
-            if (in->read())
-                throw Exception("Projection cannot increase the number of rows in a block", ErrorCodes::LOGICAL_ERROR);
-            in->readSuffix();
+            auto projection_block = projection_squashes[i].add(projection.calculate(block, context));
             if (projection_block)
-            {
-                projection_parts[projection.name].emplace_back(
-                    MergeTreeDataWriter::writeTempProjectionPart(data, log, projection_block, projection, new_data_part.get(), ++block_num));
-            }
+                projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
+                    data, log, projection_block, projection, new_data_part.get(), ++block_num));
         }
 
         merge_entry->rows_written += block.rows();
