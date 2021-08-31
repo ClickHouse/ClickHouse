@@ -43,7 +43,7 @@ public:
 
     String getMetadataPath() const override { return metadata_path; }
 
-    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach, bool skip_startup_tables) override;
+    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
 
     DatabaseTablesIteratorPtr
     getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;

@@ -109,11 +109,9 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 }
 
 
-void DatabaseMaterializedPostgreSQL::loadStoredObjects(
-    ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables)
+void DatabaseMaterializedPostgreSQL::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
 {
-    DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach, skip_startup_tables);
-
+    DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
     try
     {
         startSynchronization();
