@@ -345,12 +345,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             total_read += last_log_read_result.entries_read;
 
             if (last_log_read_result.last_read_index != 0)
-            {
-                /// Entries in logs goes one by one so our max log entry is
-                /// first_read_index of the last log + total entries in this last log.
                 max_log_id = last_log_read_result.last_read_index;
-            }
-
 
             /// May happen after truncate, crash or simply unfinished log
             if (last_log_read_result.entries_read < expected_entries_in_log)
