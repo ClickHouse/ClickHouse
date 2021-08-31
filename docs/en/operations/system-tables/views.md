@@ -41,4 +41,4 @@ main_dependency_table:    view_source_tb
 view_type:                Materialized
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/views) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-views/views) <!--hide-->
