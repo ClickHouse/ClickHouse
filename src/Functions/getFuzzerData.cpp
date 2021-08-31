@@ -29,7 +29,7 @@ public:
     }
 
     inline bool isDeterministic() const override { return false; }
-    
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &,
