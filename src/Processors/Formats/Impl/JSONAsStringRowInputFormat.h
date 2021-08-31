@@ -22,10 +22,17 @@ public:
     String getName() const override { return "JSONAsStringRowInputFormat"; }
     void resetParser() override;
 
+    void readPrefix() override;
+    void readSuffix() override;
+
 private:
     void readJSONObject(IColumn & column);
 
     PeekableReadBuffer buf;
+
+    /// This flag is needed to know if data is in square brackets.
+    bool data_in_square_brackets = false;
+    bool allow_new_rows = true;
 };
 
 }
