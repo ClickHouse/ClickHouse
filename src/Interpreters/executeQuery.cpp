@@ -563,7 +563,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (settings.wait_for_async_insert)
             {
                 auto timeout = settings.wait_for_async_insert_timeout.totalMilliseconds();
-                auto source = std::make_shared<WaitForAsyncInsertSource>(Block(), query_id, timeout, context->getGlobalContext());
+                auto source = std::make_shared<WaitForAsyncInsertSource>(query_id, timeout, context->getGlobalContext());
                 io.pipeline.init(Pipe(source));
             }
 
