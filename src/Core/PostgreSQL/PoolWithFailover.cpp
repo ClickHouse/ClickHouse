@@ -5,6 +5,8 @@
 #include "Utils.h"
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -50,14 +52,14 @@ PoolWithFailover::PoolWithFailover(
                 auto replica_password = config.getString(replica_name + ".password", password);
 
                 auto connection_string = formatConnectionString(db, replica_host, replica_port, replica_user, replica_password).first;
-                replicas_with_priority[priority].emplace_back(connection_string, pool_size);
+                replicas_with_priority[priority].emplace_back(connection_string, pool_size, getConnectionForLog(replica_host, replica_port));
             }
         }
     }
     else
     {
         auto connection_string = formatConnectionString(db, host, port, user, password).first;
-        replicas_with_priority[0].emplace_back(connection_string, pool_size);
+        replicas_with_priority[0].emplace_back(connection_string, pool_size, getConnectionForLog(host, port));
     }
 }
 
@@ -77,7 +79,7 @@ PoolWithFailover::PoolWithFailover(
     {
         LOG_DEBUG(&Poco::Logger::get("PostgreSQLPoolWithFailover"), "Adding address host: {}, port: {} to connection pool", host, port);
         auto connection_string = formatConnectionString(database, host, port, user, password).first;
-        replicas_with_priority[0].emplace_back(connection_string, pool_size);
+        replicas_with_priority[0].emplace_back(connection_string, pool_size, getConnectionForLog(host, port));
     }
 }
 
@@ -85,6 +87,7 @@ ConnectionHolderPtr PoolWithFailover::get()
 {
     std::lock_guard lock(mutex);
 
+    DB::WriteBufferFromOwnString error_message;
     for (size_t try_idx = 0; try_idx < max_tries; ++try_idx)
     {
         for (auto & priority : replicas_with_priority)
@@ -115,6 +118,7 @@ ConnectionHolderPtr PoolWithFailover::get()
                 catch (const pqxx::broken_connection & pqxx_error)
                 {
                     LOG_ERROR(log, "Connection error: {}", pqxx_error.what());
+                    error_message << "Try " << try_idx << ". Connection to `" << replica.name_for_log << "` failed: " << pqxx_error.what() << "\n";
 
                     replica.pool->returnObject(std::move(connection));
                     continue;
@@ -136,7 +140,7 @@ ConnectionHolderPtr PoolWithFailover::get()
         }
     }
 
-    throw DB::Exception(DB::ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, "Unable to connect to any of the replicas");
+    throw DB::Exception(DB::ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, error_message.str());
 }
 }
 
