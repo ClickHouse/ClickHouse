@@ -87,7 +87,23 @@ The function is using uppercase letters `A-F` and not using any prefixes (like `
 
 For integer arguments, it prints hex digits (“nibbles”) from the most significant to least significant (big-endian or “human-readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if the leading digit is zero.
 
-**Example**
+Values of type [Date](../../sql-reference/data-types/date.md) and [DateTime](../../sql-reference/data-types/datetime.md) are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
+
+For [String](../../sql-reference/data-types/string.md) and [FixedString](../../sql-reference/data-types/fixedstring.md), all bytes are simply encoded as two hexadecimal numbers. Zero bytes are not omitted.
+
+Values of [Float](../../sql-reference/data-types/float.md) and [Decimal](../../sql-reference/data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
+
+**Arguments**
+
+-   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Returned value**
+
+-   A string with the hexadecimal representation of the argument.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Examples**
 
 Query:
 
@@ -101,28 +117,10 @@ Result:
 01
 ```
 
-Values of type `Date` and `DateTime` are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
-
-For `String` and `FixedString`, all bytes are simply encoded as two hexadecimal numbers. Zero bytes are not omitted.
-
-Values of floating point and Decimal types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
-
-**Arguments**
-
--   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
-
-**Returned value**
-
--   A string with the hexadecimal representation of the argument.
-
-Type: `String`.
-
-**Example**
-
 Query:
 
 ``` sql
-SELECT hex(toFloat32(number)) as hex_presentation FROM numbers(15, 2);
+SELECT hex(toFloat32(number)) AS hex_presentation FROM numbers(15, 2);
 ```
 
 Result:
@@ -137,7 +135,7 @@ Result:
 Query:
 
 ``` sql
-SELECT hex(toFloat64(number)) as hex_presentation FROM numbers(15, 2);
+SELECT hex(toFloat64(number)) AS hex_presentation FROM numbers(15, 2);
 ```
 
 Result:
@@ -396,7 +394,7 @@ Result:
 Query:
 
 ``` sql
-select bitPositionsToArray(toInt8(-1)) as bit_positions;
+SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions;
 ```
 
 Result:

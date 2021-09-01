@@ -309,7 +309,6 @@ unbin(arg)
 
 Тип: [String](../../sql-reference/data-types/string.md).
 
-
 **Примеры**
 
 Запрос:
@@ -395,7 +394,7 @@ SELECT bitPositionsToArray(toInt8(1)) AS bit_positions;
 Запрос:
 
 ``` sql
-select bitPositionsToArray(toInt8(-1)) AS bit_positions;
+SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions;
 ```
 
 Результат:
