@@ -1066,11 +1066,11 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         if (!rabbitmq_settings->rabbitmq_host_port.changed
            && !rabbitmq_settings->rabbitmq_address.changed)
-                throw Exception("You must speicify either `rabbitmq_host_port` or `rabbitmq_address` settings",
+                throw Exception("You must specify either `rabbitmq_host_port` or `rabbitmq_address` settings",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!rabbitmq_settings->rabbitmq_format.changed)
-            throw Exception("You must speicify `rabbitmq_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception("You must specify `rabbitmq_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageRabbitMQ::create(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings));
     };
