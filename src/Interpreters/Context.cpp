@@ -2372,6 +2372,13 @@ void Context::shutdown()
         }
     }
 
+    if (merge_mutate_executor)
+        merge_mutate_executor->wait();
+    if (fetch_executor)
+        fetch_executor->wait();
+    if (moves_executor)
+        moves_executor->wait();
+
     shared->shutdown();
 }
 
