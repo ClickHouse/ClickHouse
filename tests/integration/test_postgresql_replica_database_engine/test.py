@@ -77,7 +77,7 @@ def drop_materialized_db(materialized_database='test_database'):
     assert materialized_database not in instance.query('SHOW DATABASES')
 
 def drop_postgres_table(cursor, table_name):
-    cursor.execute("""DROP DATABASE IF EXISTS "{}" """.format(table_name))
+    cursor.execute("""DROP TABLE IF EXISTS "{}" """.format(table_name))
 
 def create_postgres_table(cursor, table_name, replica_identity_full=False, template=postgres_table_template):
     drop_postgres_table(cursor, table_name)
