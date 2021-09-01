@@ -392,6 +392,7 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
             break;
 
         case Protocol::Server::ProfileEvents:
+            /// Pass profile events from remote server to client
             break;
 
         default:
