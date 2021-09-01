@@ -1,4 +1,4 @@
-#include <Interpreters/AsynchronousInsertionQueue.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Core/Settings.h>
 #include <DataStreams/BlockIO.h>
@@ -17,6 +17,7 @@
 #include <Storages/IStorage.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
+#include <Access/AccessFlags.h>
 
 
 namespace DB
@@ -55,10 +56,22 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
     cv.notify_all();
 }
 
-bool AsynchronousInsertQueue::InsertData::Entry::wait(const Milliseconds & timeout)
+bool AsynchronousInsertQueue::InsertData::Entry::wait(const Milliseconds & timeout) const
 {
     std::unique_lock lock(mutex);
     return cv.wait_for(lock, timeout, [&] { return finished; });
+}
+
+bool AsynchronousInsertQueue::InsertData::Entry::isFinished() const
+{
+    std::lock_guard lock(mutex);
+    return finished;
+}
+
+std::exception_ptr AsynchronousInsertQueue::InsertData::Entry::getException() const
+{
+    std::lock_guard lock(mutex);
+    return exception;
 }
 
 
@@ -99,7 +112,7 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     std::lock_guard lock(currently_processing_mutex);
     for (const auto & [_, entry] : currently_processing_queries)
     {
-        if (!entry->finished)
+        if (!entry->isFinished())
             entry->finish(std::make_exception_ptr(Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
                 "Wait for async insert timeout exceeded)")));
@@ -116,13 +129,23 @@ void AsynchronousInsertQueue::scheduleProcessDataJob(const InsertQuery & key, In
     });
 }
 
-void AsynchronousInsertQueue::push(const ASTPtr & query, const Settings & settings, const String & query_id)
+void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 {
+    query = query->clone();
+    const auto & settings = query_context->getSettingsRef();
+    auto & insert_query = query->as<ASTInsertQuery &>();
+
+    InterpreterInsertQuery interpreter(query, query_context, settings.insert_allow_materialized_columns);
+    auto table = interpreter.getTable(insert_query);
+    auto sample_block = interpreter.getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr());
+
+    query_context->checkAccess(AccessFlags(AccessType::INSERT), insert_query.table_id, sample_block.getNames());
+
     auto read_buf = getReadBufferFromASTInsertQuery(query);
 
     /// It's important to read the whole data per query as a single chunk, so we can safely drop it in case of parsing failure.
     auto entry = std::make_shared<InsertData::Entry>();
-    entry->query_id = query_id;
+    entry->query_id = query_context->getCurrentQueryId();
     entry->bytes.reserve(read_buf->totalSize());
 
     WriteBufferFromString write_buf(entry->bytes);
@@ -157,7 +180,7 @@ void AsynchronousInsertQueue::push(const ASTPtr & query, const Settings & settin
 
     {
         std::lock_guard currently_processing_lock(currently_processing_mutex);
-        currently_processing_queries.emplace(query_id, entry);
+        currently_processing_queries.emplace(entry->query_id, entry);
     }
 
     LOG_INFO(log, "Have {} pending inserts with total {} bytes of data for query '{}'",
@@ -185,8 +208,8 @@ void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, co
     if (!finished)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout.count());
 
-    if (entry->exception)
-        std::rethrow_exception(entry->exception);
+    if (auto exception = entry->getException())
+        std::rethrow_exception(exception);
 }
 
 void AsynchronousInsertQueue::busyCheck()
@@ -238,7 +261,7 @@ void AsynchronousInsertQueue::staleCheck()
 
 void AsynchronousInsertQueue::cleanup()
 {
-    auto timeout = busy_timeout * 3;
+    auto timeout = busy_timeout * 5;
 
     while (!shutdown)
     {
@@ -259,15 +282,37 @@ void AsynchronousInsertQueue::cleanup()
         if (!keys_to_remove.empty())
         {
             std::unique_lock write_lock(rwlock);
+            size_t total_removed = 0;
 
             for (const auto & key : keys_to_remove)
             {
                 auto it = queue.find(key);
-                if (it != queue.end() && !it->second)
+                if (it != queue.end() && !it->second->data)
+                {
                     queue.erase(it);
+                    ++total_removed;
+                }
             }
 
-            LOG_TRACE(log, "Removed stale entries for {} queries from asynchronous insertion queue", keys_to_remove.size());
+            if (total_removed)
+                LOG_TRACE(log, "Removed stale entries for {} queries from asynchronous insertion queue", keys_to_remove.size());
+        }
+
+        {
+            std::vector<String> ids_to_remove;
+            std::lock_guard lock(currently_processing_mutex);
+
+            for (const auto & [query_id, entry] : currently_processing_queries)
+                if (entry->isFinished())
+                    ids_to_remove.push_back(query_id);
+
+            if (!ids_to_remove.empty())
+            {
+                for (const auto & id : ids_to_remove)
+                    currently_processing_queries.erase(id);
+
+                LOG_TRACE(log, "Removed {} finished entries", ids_to_remove.size());
+            }
         }
     }
 }
@@ -341,7 +386,7 @@ try
         total_rows, total_bytes, queryToString(key.query));
 
     for (const auto & entry : data->entries)
-        if (!entry->finished)
+        if (!entry->isFinished())
             entry->finish();
 }
 catch (...)

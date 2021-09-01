@@ -3,7 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
 
-#include <Interpreters/AsynchronousInsertionQueue.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
@@ -556,14 +556,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (async_insert)
         {
-            auto query_id = context->getCurrentQueryId();
-            queue->push(ast, settings, query_id);
+            queue->push(ast, context);
 
             BlockIO io;
             if (settings.wait_for_async_insert)
             {
                 auto timeout = settings.wait_for_async_insert_timeout.totalMilliseconds();
-                auto source = std::make_shared<WaitForAsyncInsertSource>(query_id, timeout, context->getGlobalContext());
+                auto query_id = context->getCurrentQueryId();
+                auto source = std::make_shared<WaitForAsyncInsertSource>(query_id, timeout, *queue);
                 io.pipeline.init(Pipe(source));
             }
 
