@@ -77,7 +77,7 @@ SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
 
 Синоним: `HEX`.
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 hex(arg)
@@ -87,12 +87,11 @@ hex(arg)
 
 Для целочисленных аргументов возвращает шестнадцатеричные цифры ("кусочки") от наиболее значимых до наименее значимых (`big endian` или в порядке, понятному человеку).Он начинается с самого значимого ненулевого байта (начальные нулевые байты опущены), но всегда выводит обе цифры каждого байта, даже если начальная цифра равна нулю.
 
+Значения типа [Date](../../sql-reference/data-types/date.md) и [DateTime](../../sql-reference/data-types/datetime.md) формируются как соответствующие целые числа (количество дней с момента Unix-эпохи для `Date` и значение Unix Timestamp для `DateTime`).
 
-Values of type `Date` and `DateTime` are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
+Для [String](../../sql-reference/data-types/string.md) и [FixedString](../../sql-reference/data-types/fixedstring.md), все байты просто кодируются как два шестнадцатеричных числа. Нулевые байты не опущены.
 
-For `String` and `FixedString`, all bytes are simply encoded as two hexadecimal numbers. Zero bytes are not omitted.
-
-Values of floating point and Decimal types are encoded as their representation in memory. As we support little endian architecture, they are encoded in little endian. Zero leading/trailing bytes are not omitted.
+Значения [Float](../../sql-reference/data-types/float.md) и [Decimal](../../sql-reference/data-types/decimal.md) кодируются как их представление в памяти. Поскольку ClickHouse поддерживает архитектуру `little-endian`, они кодируются от младшего к старшему байту. Нулевые начальные/конечные байты не опущены.
 
 **Аргументы**
 
@@ -215,7 +214,7 @@ SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num;
 bin(arg)
 ```
 
-Алиас: `BIN`.
+Синоним: `BIN`.
 
 Для целочисленных аргументов возвращаются двоичные числа от наиболее значимого до наименее значимого (`big-endian` или в понятном человеку порядке). Порядок начинается с самого значимого ненулевого байта (начальные нулевые байты опущены), но всегда возвращает восемь цифр каждого байта, если начальная цифра равна нулю.
 
@@ -291,7 +290,7 @@ SELECT bin(toFloat64(number)) AS bin_presentation FROM numbers(15, 2);
 unbin(arg)
 ```
 
-Алиас: `UNBIN`.
+Синоним: `UNBIN`.
 
 Для числового аргумента `unbin()` не возвращает значение, обратное результату `bin()`. Чтобы преобразовать результат в число, используйте функции [reverse](../../sql-reference/functions/string-functions.md#reverse) и [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264).
 
@@ -396,7 +395,7 @@ SELECT bitPositionsToArray(toInt8(1)) AS bit_positions;
 Запрос:
 
 ``` sql
-select bitPositionsToArray(toInt8(-1)) as bit_positions;
+select bitPositionsToArray(toInt8(-1)) AS bit_positions;
 ```
 
 Результат:
