@@ -1258,7 +1258,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             field = {index_columns.get(), row, column};
             // NULL_LAST
             if (field.isNull())
-                field = PositiveInfinity{};
+                field = POSITIVE_INFINITY;
         };
     }
     else
@@ -1268,7 +1268,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             index[column]->get(row, field);
             // NULL_LAST
             if (field.isNull())
-                field = PositiveInfinity{};
+                field = POSITIVE_INFINITY;
         };
     }
 
@@ -1283,7 +1283,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             for (size_t i = 0; i < used_key_size; ++i)
             {
                 create_field_ref(range.begin, i, index_left[i]);
-                index_right[i] = PositiveInfinity{};
+                index_right[i] = POSITIVE_INFINITY;
             }
         }
         else

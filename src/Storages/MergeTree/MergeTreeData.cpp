@@ -1249,6 +1249,10 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         /// TODO: use data_parts iterators instead of pointers
         for (const auto & part : parts)
         {
+            /// Temporary does not present in data_parts_by_info.
+            if (part->getState() == DataPartState::Temporary)
+                continue;
+
             auto it = data_parts_by_info.find(part->info);
             if (it == data_parts_by_info.end())
                 throw Exception("Deleting data part " + part->name + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
@@ -2593,17 +2597,25 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
 
         LOG_TRACE(log, "Trying to immediately remove part {}", part->getNameWithState());
 
-        auto it = data_parts_by_info.find(part->info);
-        if (it == data_parts_by_info.end() || (*it).get() != part.get())
-            throw Exception("Part " + part->name + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
+        if (part->getState() != DataPartState::Temporary)
+        {
+            auto it = data_parts_by_info.find(part->info);
+            if (it == data_parts_by_info.end() || (*it).get() != part.get())
+                throw Exception("Part " + part->name + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
 
-        part.reset();
+            part.reset();
 
-        if (!((*it)->getState() == DataPartState::Outdated && it->unique()))
-            return;
+            if (!((*it)->getState() == DataPartState::Outdated && it->unique()))
+                return;
 
-        modifyPartState(it, DataPartState::Deleting);
-        part_to_delete = *it;
+            modifyPartState(it, DataPartState::Deleting);
+
+            part_to_delete = *it;
+        }
+        else
+        {
+            part_to_delete = std::move(part);
+        }
     }
 
     try
