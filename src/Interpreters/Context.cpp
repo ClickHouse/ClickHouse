@@ -14,7 +14,7 @@
 #include <Common/Throttler.h>
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
-#include <Coordination/KeeperStorageDispatcher.h>
+#include <Coordination/KeeperDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -46,6 +46,7 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
+#include <Backups/BackupFactory.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -145,7 +146,7 @@ struct ContextSharedPart
 
 #if USE_NURAFT
     mutable std::mutex keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperStorageDispatcher> keeper_storage_dispatcher;
+    mutable std::shared_ptr<KeeperDispatcher> keeper_storage_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -160,10 +161,13 @@ struct ContextSharedPart
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
+    String user_scripts_path;                               /// Path to the directory with user provided scripts.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
     mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
+
+    mutable VolumePtr backups_volume;                       /// Volume for all the backups.
 
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
@@ -461,6 +465,12 @@ String Context::getDictionariesLibPath() const
     return shared->dictionaries_lib_path;
 }
 
+String Context::getUserScriptsPath() const
+{
+    auto lock = getLock();
+    return shared->user_scripts_path;
+}
+
 std::vector<String> Context::getWarnings() const
 {
     auto lock = getLock();
@@ -490,6 +500,9 @@ void Context::setPath(const String & path)
 
     if (shared->dictionaries_lib_path.empty())
         shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
+
+    if (shared->user_scripts_path.empty())
+        shared->user_scripts_path = shared->path + "user_scripts/";
 }
 
 VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
@@ -520,6 +533,35 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
     return shared->tmp_volume;
 }
 
+void Context::setBackupsVolume(const String & path, const String & policy_name)
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    if (policy_name.empty())
+    {
+        String path_with_separator = path;
+        if (!path_with_separator.ends_with('/'))
+            path_with_separator += '/';
+        auto disk = std::make_shared<DiskLocal>("_backups_default", path_with_separator, 0);
+        shared->backups_volume = std::make_shared<SingleDiskVolume>("_backups_default", disk, 0);
+    }
+    else
+    {
+        StoragePolicyPtr policy = getStoragePolicySelector(lock)->get(policy_name);
+        if (policy->getVolumes().size() != 1)
+             throw Exception("Policy " + policy_name + " is used for backups, such policy should have exactly one volume",
+                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        shared->backups_volume = policy->getVolume(0);
+    }
+
+    BackupFactory::instance().setBackupsVolume(shared->backups_volume);
+}
+
+VolumePtr Context::getBackupsVolume() const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+    return shared->backups_volume;
+}
+
 void Context::setFlagsPath(const String & path)
 {
     auto lock = getLock();
@@ -536,6 +578,12 @@ void Context::setDictionariesLibPath(const String & path)
 {
     auto lock = getLock();
     shared->dictionaries_lib_path = path;
+}
+
+void Context::setUserScriptsPath(const String & path)
+{
+    auto lock = getLock();
+    shared->user_scripts_path = path;
 }
 
 void Context::addWarningMessage(const String & msg)
@@ -1617,7 +1665,7 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
         zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
 }
 
-void Context::initializeKeeperStorageDispatcher() const
+void Context::initializeKeeperDispatcher() const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
@@ -1628,14 +1676,14 @@ void Context::initializeKeeperStorageDispatcher() const
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
-        shared->keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
+        shared->keeper_storage_dispatcher = std::make_shared<KeeperDispatcher>();
         shared->keeper_storage_dispatcher->initialize(config, getApplicationType() == ApplicationType::KEEPER);
     }
 #endif
 }
 
 #if USE_NURAFT
-std::shared_ptr<KeeperStorageDispatcher> & Context::getKeeperStorageDispatcher() const
+std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
 {
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
     if (!shared->keeper_storage_dispatcher)
@@ -1645,7 +1693,7 @@ std::shared_ptr<KeeperStorageDispatcher> & Context::getKeeperStorageDispatcher()
 }
 #endif
 
-void Context::shutdownKeeperStorageDispatcher() const
+void Context::shutdownKeeperDispatcher() const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
@@ -2657,6 +2705,26 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
         const_cast<PartUUIDsPtr &>(ignored_part_uuids) = std::make_shared<PartUUIDs>();
 
     return ignored_part_uuids;
+}
+
+
+ReadSettings Context::getReadSettings() const
+{
+    ReadSettings res;
+
+    res.local_fs_method = parseReadMethod(settings.local_filesystem_read_method.value);
+
+    res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
+    res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
+
+    res.local_fs_buffer_size = settings.max_read_buffer_size;
+    res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
+    res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
+    res.priority = settings.read_priority;
+
+    res.mmap_cache = getMMappedFileCache().get();
+
+    return res;
 }
 
 }
