@@ -101,7 +101,7 @@ hex(arg)
 
 -   Строка — шестнадцатеричное представление аргумента.
 
-Тип: [String](../../sql-reference/functions/encoding-functions.md).
+Тип: [String](../../sql-reference/data-types/string.md).
 
 **Примеры**
 
