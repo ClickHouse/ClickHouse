@@ -1,6 +1,5 @@
 #pragma once
 
-#include <limits>
 #include <tuple>
 #include <vector>
 #include <common/types.h>
@@ -65,6 +64,12 @@ struct MergeTreePartInfo
             && mutation >= rhs.mutation;
     }
 
+    /// Return part mutation version, if part wasn't mutated return zero
+    Int64 getMutationVersion() const
+    {
+        return mutation ? mutation : 0;
+    }
+
     /// True if parts do not intersect in any way.
     bool isDisjoint(const MergeTreePartInfo & rhs) const
     {
@@ -88,7 +93,7 @@ struct MergeTreePartInfo
     }
 
     /// Simple sanity check for partition ID. Checking that it's not too long or too short, doesn't contain a lot of '_'.
-    static bool validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version);
+    static void validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version);
 
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);  // -V1071
 

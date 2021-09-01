@@ -13,6 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <ext/range.h>
 
 #include "DictionaryStructure.h"
 
@@ -91,8 +92,6 @@ namespace DB
                 case ValueType::vtFloat64:
                     insert<Float64>(column, string_value);
                     break;
-                case ValueType::vtEnum8:
-                case ValueType::vtEnum16:
                 case ValueType::vtString:
                     assert_cast<ColumnString &>(column).insert(parse<String>(string_value));
                     break;
@@ -132,7 +131,7 @@ namespace DB
         const size_t size = description.sample_block.columns();
         MutableColumns columns(size);
 
-        for (size_t i = 0; i < size; ++i)
+        for (const auto i : ext::range(0, size))
             columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
         const auto insert_value_by_idx = [this, &columns](size_t idx, const auto & value)

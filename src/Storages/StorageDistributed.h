@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -36,10 +36,10 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
+class StorageDistributed final : public ext::shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
 {
-    friend struct shared_ptr_helper<StorageDistributed>;
-    friend class DistributedSink;
+    friend struct ext::shared_ptr_helper<StorageDistributed>;
+    friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
     friend class StorageSystemDistributionQueue;
 
@@ -81,7 +81,7 @@ public:
     bool supportsParallelInsert() const override { return true; }
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     QueryPipelinePtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 
@@ -98,7 +98,6 @@ public:
 
     void startup() override;
     void shutdown() override;
-    void flush() override;
     void drop() override;
 
     bool storesDataOnDisk() const override { return true; }
@@ -136,7 +135,8 @@ private:
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
         bool attach_,
-        ClusterPtr owned_cluster_ = {});
+        ClusterPtr owned_cluster_ = {},
+        ASTPtr remote_table_function_ptr_ = {});
 
     StorageDistributed(
         const StorageID & id_,
@@ -161,7 +161,7 @@ private:
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors(const DiskPtr & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name, bool startup);
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name);
 
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)

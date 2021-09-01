@@ -45,9 +45,6 @@ public:
     /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
 
-    IDatabaseTablesIterator(const String & database_name_) : database_name(database_name_) { }
-    IDatabaseTablesIterator(String && database_name_) : database_name(std::move(database_name_)) { }
-
     virtual ~IDatabaseTablesIterator() = default;
 
     virtual UUID uuid() const { return UUIDHelpers::Nil; }
@@ -55,7 +52,7 @@ public:
     const String & databaseName() const { assert(!database_name.empty()); return database_name; }
 
 protected:
-    const String database_name;
+    String database_name;
 };
 
 /// Copies list of tables and iterates through such snapshot.
@@ -67,24 +64,26 @@ private:
 
 protected:
     DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other)
-    : IDatabaseTablesIterator(std::move(other.database_name))
     {
         size_t idx = std::distance(other.tables.begin(), other.it);
         std::swap(tables, other.tables);
         other.it = other.tables.end();
         it = tables.begin();
         std::advance(it, idx);
+        database_name = std::move(other.database_name);
     }
 
 public:
     DatabaseTablesSnapshotIterator(const Tables & tables_, const String & database_name_)
-    : IDatabaseTablesIterator(database_name_), tables(tables_), it(tables.begin())
+    : tables(tables_), it(tables.begin())
     {
+        database_name = database_name_;
     }
 
     DatabaseTablesSnapshotIterator(Tables && tables_, String && database_name_)
-    : IDatabaseTablesIterator(std::move(database_name_)), tables(std::move(tables_)), it(tables.begin())
+    : tables(std::move(tables_)), it(tables.begin())
     {
+        database_name = std::move(database_name_);
     }
 
     void next() override { ++it; }
@@ -123,7 +122,7 @@ public:
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
-    virtual void loadStoredObjects(ContextMutablePtr /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
+    virtual void loadStoredObjects(ContextPtr /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
 
     /// Check the existence of the table.
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;

@@ -49,7 +49,6 @@ public:
         Array,
         Tuple,
     };
-
     IPolygonDictionary(
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
@@ -139,10 +138,10 @@ private:
     size_t getAttributeIndex(const std::string & attribute_name) const;
 
     /** Helper function for retrieving the value of an attribute by key. */
-    template <typename AttributeType, typename ValueGetter, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
-        const std::vector<IPolygonDictionary::Point> & requested_key_points,
-        ValueGetter && get_value,
+        size_t attribute_ind,
+        const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 

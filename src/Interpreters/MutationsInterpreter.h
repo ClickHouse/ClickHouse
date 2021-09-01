@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -22,7 +23,7 @@ bool isStorageTouchedByMutations(
     const StoragePtr & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextMutablePtr context_copy
+    ContextPtr context_copy
 );
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
@@ -53,7 +54,7 @@ public:
     BlockInputStreamPtr execute();
 
     /// Only changed columns.
-    const Block & getUpdatedHeader() const;
+    Block getUpdatedHeader() const;
 
     const ColumnDependencies & getColumnDependencies() const;
 

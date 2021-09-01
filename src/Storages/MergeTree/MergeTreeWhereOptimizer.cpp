@@ -12,7 +12,7 @@
 #include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
-#include <common/map.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -34,7 +34,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
     Poco::Logger * log_)
-    : table_columns{collections::map<std::unordered_set>(
+    : table_columns{ext::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
     , queried_columns{queried_columns_}
     , sorting_key_names{NameSet(
@@ -47,8 +47,12 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     if (!primary_key.column_names.empty())
         first_primary_key_column = primary_key.column_names[0];
 
-    for (const auto & [_, size] : column_sizes)
-        total_size_of_queried_columns += size;
+    for (const auto & name : queried_columns)
+    {
+        auto it = column_sizes.find(name);
+        if (it != column_sizes.end())
+            total_size_of_queried_columns += it->second;
+    }
 
     determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
     optimize(query_info.query->as<ASTSelectQuery &>());

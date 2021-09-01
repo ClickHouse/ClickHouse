@@ -228,12 +228,12 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
 
     auto add_dependent_columns = [&updated_columns](const auto & expression, auto & to_set)
     {
-        auto required_columns = expression->getRequiredColumns();
-        for (const auto & dependency : required_columns)
+        auto requiered_columns = expression->getRequiredColumns();
+        for (const auto & dependency : requiered_columns)
         {
             if (updated_columns.count(dependency))
             {
-                to_set.insert(required_columns.begin(), required_columns.end());
+                to_set.insert(requiered_columns.begin(), requiered_columns.end());
                 return true;
             }
         }
@@ -320,12 +320,7 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 {
     Block res;
 
-#if !defined(ARCADIA_BUILD)
     google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
-#else
-    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
-#endif
-
     virtuals_map.set_empty_key(StringRef());
 
     /// Virtual columns must be appended after ordinary, because user can
