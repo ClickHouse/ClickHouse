@@ -303,6 +303,7 @@ try
         loadMetadataSystem(global_context);
         attachSystemTables(global_context);
         loadMetadata(global_context);
+        startupSystemTables();
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }

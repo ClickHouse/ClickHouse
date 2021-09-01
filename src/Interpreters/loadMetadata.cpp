@@ -44,8 +44,7 @@ static void executeCreateQuery(
     interpreter.setInternal(true);
     interpreter.setForceAttach(true);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
-    interpreter.setSkipStartupTables(true);
-    interpreter.setLoadDatabaseWithoutTables(database != DatabaseCatalog::SYSTEM_DATABASE);
+    interpreter.setLoadDatabaseWithoutTables(true);
     interpreter.execute();
 }
 
@@ -161,11 +160,12 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     for (const auto & [name, db_path] : databases)
     {
         loadDatabase(context, name, db_path, has_force_restore_data_flag);
-        loaded_databases.emplace_back(DatabaseCatalog::instance().getDatabase(name));
+        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
     }
 
     TablesLoader loader{context, std::move(loaded_databases), has_force_restore_data_flag, /* force_attach */ true};
     loader.loadTables();
+    loader.startupTables();
 
     if (has_force_restore_data_flag)
     {
@@ -199,6 +199,17 @@ void loadMetadataSystem(ContextMutablePtr context)
         executeCreateQuery(database_create_query, context, DatabaseCatalog::SYSTEM_DATABASE, "<no file>", true);
     }
 
+    TablesLoader loader{context, {{DatabaseCatalog::SYSTEM_DATABASE, DatabaseCatalog::instance().getSystemDatabase()}},
+                        /* force_restore */true, /* force_attach */ true};
+    loader.loadTables();
+    /// Will startup tables in system database after all databases are loaded.
+}
+
+
+void startupSystemTables()
+{
+    ThreadPool pool;
+    DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, /* force_restore */true, /* force_attach */ true);
 }
 
 }
