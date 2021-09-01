@@ -3,6 +3,7 @@
 #if USE_LIBPQXX
 
 #include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 
 namespace postgres
 {
@@ -19,6 +20,10 @@ ConnectionInfo formatConnectionString(String dbname, String host, UInt16 port, S
     return std::make_pair(out.str(), host + ':' + DB::toString(port));
 }
 
+String getConnectionForLog(const String & host, UInt16 port)
+{
+    return host + ":" + DB::toString(port);
+}
 }
 
 #endif

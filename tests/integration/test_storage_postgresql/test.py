@@ -5,7 +5,7 @@ from multiprocessing.dummy import Pool
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_postgres=True)
+node1 = cluster.add_instance('node1', main_configs=['configs/named_collections.xml'], with_postgres=True)
 node2 = cluster.add_instance('node2', with_postgres_cluster=True)
 
 
@@ -17,7 +17,6 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
-
 
 def test_postgres_select_insert(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
@@ -243,9 +242,9 @@ def test_postgres_distributed(started_cluster):
         cursors[i].execute(f"""INSERT INTO test_replicas select i, 'host{i+1}' from generate_series(0, 99) as t(i);""");
 
     # test multiple ports parsing
-    result = node2.query('''SELECT DISTINCT(name) FROM postgresql(`postgres{1|2|3}:5432`, 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
+    result = node2.query('''SELECT DISTINCT(name) FROM postgresql('postgres{1|2|3}:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
     assert(result == 'host1\n' or result == 'host2\n' or result == 'host3\n')
-    result = node2.query('''SELECT DISTINCT(name) FROM postgresql(`postgres2:5431|postgres3:5432`, 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
+    result = node2.query('''SELECT DISTINCT(name) FROM postgresql('postgres2:5431|postgres3:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
     assert(result == 'host3\n' or result == 'host2\n')
 
     # Create storage with with 3 replicas
@@ -269,7 +268,7 @@ def test_postgres_distributed(started_cluster):
     node2.query('''
         CREATE TABLE test_shards
         (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = ExternalDistributed('PostgreSQL', `postgres{1|2}:5432,postgres{3|4}:5432`, 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
+        ENGINE = ExternalDistributed('PostgreSQL', 'postgres{1|2}:5432,postgres{3|4}:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
 
     # Check only one replica in each shard is used
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
@@ -352,6 +351,63 @@ def test_postgres_on_conflict(started_cluster):
     assert (node1.query(check1)).rstrip() == '100'
 
     cursor.execute(f'DROP TABLE {table} ')
+
+
+def test_predefined_connection_configuration(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute(f'DROP TABLE IF EXISTS test_table')
+    cursor.execute(f'CREATE TABLE test_table (a integer PRIMARY KEY, b integer)')
+
+    node1.query('''
+        CREATE TABLE test_table (a UInt32, b Int32)
+        ENGINE PostgreSQL(postgres1);
+    ''')
+    node1.query(f''' INSERT INTO test_table SELECT number, number from numbers(100)''')
+    assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
+
+    node1.query('''
+        DROP TABLE test_table;
+        CREATE TABLE test_table (a UInt32, b Int32)
+        ENGINE PostgreSQL(postgres1, on_conflict='ON CONFLICT DO NOTHING');
+    ''')
+    node1.query(f''' INSERT INTO test_table SELECT number, number from numbers(100)''')
+    node1.query(f''' INSERT INTO test_table SELECT number, number from numbers(100)''')
+    assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
+
+    node1.query('DROP TABLE test_table;')
+    node1.query_and_get_error('''
+        CREATE TABLE test_table (a UInt32, b Int32)
+        ENGINE PostgreSQL(postgres1, 'ON CONFLICT DO NOTHING');
+    ''')
+    node1.query_and_get_error('''
+        CREATE TABLE test_table (a UInt32, b Int32)
+        ENGINE PostgreSQL(postgres2);
+    ''')
+
+    node1.query('''
+        CREATE TABLE test_table (a UInt32, b Int32)
+        ENGINE PostgreSQL(postgres1, port=5432, database='postgres', table='test_table');
+    ''')
+    assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
+
+    node1.query('''
+        DROP TABLE test_table;
+        CREATE TABLE test_table (a UInt32, b Int32)
+        ENGINE PostgreSQL(postgres1, port=5432);
+    ''')
+    assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
+
+    assert (node1.query(f"SELECT count() FROM postgresql(postgres1)").rstrip() == '100')
+    node1.query("INSERT INTO TABLE FUNCTION postgresql(postgres1, on_conflict='ON CONFLICT DO NOTHING') SELECT number, number from numbers(100)")
+    assert (node1.query(f"SELECT count() FROM postgresql(postgres1)").rstrip() == '100')
+
+    cursor.execute('DROP SCHEMA IF EXISTS test_schema')
+    cursor.execute('CREATE SCHEMA test_schema')
+    cursor.execute('CREATE TABLE test_schema.test_table (a integer)')
+    node1.query("INSERT INTO TABLE FUNCTION postgresql(postgres1, schema='test_schema', on_conflict='ON CONFLICT DO NOTHING') SELECT number from numbers(200)")
+    assert (node1.query(f"SELECT count() FROM postgresql(postgres1, schema='test_schema')").rstrip() == '200')
+
+    cursor.execute(f'DROP TABLE test_table ')
 
 
 if __name__ == '__main__':
