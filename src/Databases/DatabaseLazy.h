@@ -26,7 +26,9 @@ public:
 
     bool canContainDistributedTables() const override { return false; }
 
-    void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(
+        ContextMutablePtr context,
+        bool has_force_restore_data_flag, bool force_attach) override;
 
     void createTable(
         ContextPtr context,
@@ -62,7 +64,7 @@ public:
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
     void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
@@ -117,7 +119,7 @@ class DatabaseLazyIterator final : public IDatabaseTablesIterator
 {
 public:
     DatabaseLazyIterator(
-        const DatabaseLazy & database_,
+        DatabaseLazy & database_,
         Strings && table_names_);
 
     void next() override;

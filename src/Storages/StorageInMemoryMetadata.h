@@ -143,7 +143,7 @@ struct StorageInMemoryMetadata
 
     /// Returns columns, which will be needed to calculate dependencies (skip
     /// indices, TTL expressions) if we update @updated_columns set of columns.
-    ColumnDependencies getColumnDependencies(const NameSet & updated_columns, bool include_ttl_target) const;
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const;
 
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;

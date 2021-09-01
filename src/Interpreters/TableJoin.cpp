@@ -454,24 +454,6 @@ void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
         on_filter_condition_asts_right.push_back(ast);
 }
 
-std::unordered_map<String, String> TableJoin::leftToRightKeyRemap() const
-{
-    std::unordered_map<String, String> left_to_right_key_remap;
-    if (hasUsing())
-    {
-        const auto & required_right_keys = requiredRightKeys();
-        for (size_t i = 0; i < key_names_left.size(); ++i)
-        {
-            const String & left_key_name = key_names_left[i];
-            const String & right_key_name = key_names_right[i];
-
-            if (!required_right_keys.contains(right_key_name))
-                left_to_right_key_remap[left_key_name] = right_key_name;
-        }
-    }
-    return left_to_right_key_remap;
-}
-
 /// Returns all conditions related to one table joined with 'and' function
 static ASTPtr buildJoinConditionColumn(const ASTs & on_filter_condition_asts)
 {

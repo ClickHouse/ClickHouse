@@ -359,10 +359,4 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
     factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRowImpl);
 }
 
-void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory)
-{
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONStringsEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
-}
-
 }
