@@ -186,7 +186,7 @@
         /// Requires investigation
         "00953_zookeeper_suetin_deduplication_bug",
         "01783_http_chunk_size",
-        "00166_explain_estimate"
+        "00166_explain_estimate",
         "01852_create_simple_type"
     ],
     "polymorphic-parts": [
