@@ -6,6 +6,7 @@
 #include <common/BorrowedObjectPool.h>
 #include <unordered_map>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -28,8 +29,8 @@ class ConnectionHolder
 {
 public:
     ConnectionHolder(PoolPtr pool_,
-                     ConnectionPtr connection_,
-                     const String & connection_string_)
+                    ConnectionPtr connection_,
+                    const String & connection_string_)
         : pool(pool_)
         , connection(std::move(connection_))
         , connection_string(connection_string_)
@@ -57,7 +58,7 @@ public:
 private:
     PoolPtr pool;
     ConnectionPtr connection;
-    const String & connection_string;
+    String connection_string;
 };
 
 using ConnectionHolderPtr = std::shared_ptr<ConnectionHolder>;
