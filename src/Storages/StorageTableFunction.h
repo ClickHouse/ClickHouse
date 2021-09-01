@@ -142,7 +142,6 @@ public:
 
     StoragePolicyPtr getStoragePolicy() const override
     {
-        std::lock_guard lock{nested_mutex};
         if (nested)
             return StorageProxy::getStoragePolicy();
         return IStorage::getStoragePolicy();
