@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/ISimpleTransform.h>
 #include <Columns/ColumnConst.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -20,18 +20,17 @@ class Context;
   * Also the stream can substitute NULL into DEFAULT value in case of INSERT SELECT query (null_as_default) if according setting is 1.
   * All three types of columns are materialized (not constants).
   */
-class AddingDefaultBlockOutputStream : public IBlockOutputStream
+class AddingMissingDefaultsTransform : public ISimpleTransform
 {
 public:
-    AddingDefaultBlockOutputStream(
-        const BlockOutputStreamPtr & output_,
-        const Block & header_,
+    AddingMissingDefaultsTransform(
+        const Block & in_header,
+        const Block & out_header,
         const ColumnsDescription & columns_,
         ContextPtr context_,
         bool null_as_default_ = false);
 
-    Block getHeader() const override { return header; }
-    void write(const Block & block) override;
+    void transform(Chunk & chunk) override;
 
     void flush() override;
 
@@ -39,8 +38,6 @@ public:
     void writeSuffix() override;
 
 private:
-    BlockOutputStreamPtr output;
-    const Block header;
     ExpressionActionsPtr adding_defaults_actions;
 };
 

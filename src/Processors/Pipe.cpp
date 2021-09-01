@@ -667,6 +667,41 @@ void Pipe::addSimpleTransform(const ProcessorGetter & getter)
     addSimpleTransform([&](const Block & stream_header, StreamType) { return getter(stream_header); });
 }
 
+void Pipe::addChains(std::vector<Chain> chains)
+{
+    if (output_ports.size() != chains.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot add chains to Pipe because "
+                        "number of output ports ({}) is not equal to the number of chains ({})",
+                        output_ports.size(), chains.size());
+
+    dropTotals();
+    dropExtremes();
+
+    Block new_header;
+    for (size_t i = 0; i < output_ports.size(); ++i)
+    {
+        if (i == 0)
+            new_header = chains[i].getOutputHeader();
+        else
+            assertBlocksHaveEqualStructure(new_header, chains[i].getOutputHeader(), "QueryPipeline");
+
+        connect(*output_ports[i], chains[i].getInputPort());
+        output_ports[i] = &chains[i].getOutputPort();
+
+        auto added_processors = Chain::getProcessors(std::move(chains[i]));
+        for (auto & transform : added_processors)
+        {
+            if (collected_processors)
+                collected_processors->emplace_back(transform);
+
+            processors.emplace_back(std::move(transform));
+        }
+    }
+
+    header = std::move(new_header);
+}
+
 void Pipe::resize(size_t num_streams, bool force, bool strict)
 {
     if (output_ports.empty())

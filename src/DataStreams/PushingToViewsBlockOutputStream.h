@@ -3,10 +3,11 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/IStorage.h>
-#include <Common/Stopwatch.h>
-#include <Processors/Drain.h>
+#include <Processors/Chain.h>
 #include <Processors/ISimpleTransform.h>
+#include <Storages/IStorage.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Common/Stopwatch.h>
 
 namespace Poco
 {
@@ -17,6 +18,9 @@ namespace DB
 {
 
 class ReplicatedMergeTreeSink;
+
+struct ExceptionKeepingTransformRuntimeData;
+using ExceptionKeepingTransformRuntimeDataPtr = std::shared_ptr<ExceptionKeepingTransformRuntimeData>;
 
 struct ViewRuntimeData
 {
@@ -41,49 +45,22 @@ struct ViewRuntimeData
 
 /** Writes data to the specified table and to all dependent materialized views.
   */
-class PushingToViewsBlockOutputStream : public IBlockOutputStream, WithContext
-{
-public:
-    PushingToViewsBlockOutputStream(
-        const StoragePtr & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        ContextPtr context_,
-        const ASTPtr & query_ptr_,
-        bool no_destination = false);
+Chain buildPushingToViewsDrain(
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
+    const ASTPtr & query_ptr,
+    bool no_destination,
+    std::vector<TableLockHolder> & locks,
+    ExceptionKeepingTransformRuntimeDataPtr runtime_data);
 
-    Block getHeader() const override;
-    void write(const Block & block) override;
-
-    void flush() override;
-    void writePrefix() override;
-    void writeSuffix() override;
-    void onProgress(const Progress & progress) override;
-
-private:
-    StoragePtr storage;
-    StorageMetadataPtr metadata_snapshot;
-    BlockOutputStreamPtr output;
-    ReplicatedMergeTreeSink * replicated_output = nullptr;
-    Poco::Logger * log;
-
-    ASTPtr query_ptr;
-    Stopwatch main_watch;
-
-    std::vector<ViewRuntimeData> views;
-    ContextMutablePtr select_context;
-    ContextMutablePtr insert_context;
-
-    void process(const Block & block, ViewRuntimeData & view);
-    void checkExceptionsInViews();
-    void logQueryViews();
-};
 
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
 {
 public:
     ExecutingInnerQueryFromViewTransform(const Block & header, ViewRuntimeData & view_data)
         : ExceptionKeepingTransform(header, view_data.sample_block)
-        , view(std::move(view_data))
+        , view(view_data)
     {
     }
 
@@ -91,7 +68,6 @@ public:
 
 protected:
     void transform(Chunk & chunk) override;
-    void onFinish() override;
 
 private:
     ViewRuntimeData & view;

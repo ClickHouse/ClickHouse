@@ -12,11 +12,9 @@ namespace ProfileEvents
 namespace DB
 {
 
-void CountingBlockOutputStream::write(const Block & block)
+void CountingTransform::transform(Chunk & chunk)
 {
-    stream->write(block);
-
-    Progress local_progress(block.rows(), block.bytes(), 0);
+    Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     progress.incrementPiecewiseAtomically(local_progress);
 
     ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.read_rows);

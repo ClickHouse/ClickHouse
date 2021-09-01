@@ -5,6 +5,7 @@
 #include <functional>
 
 #include <Processors/QueryPipeline.h>
+#include <Processors/Chain.h>
 
 
 namespace DB
@@ -25,7 +26,7 @@ struct BlockIO
 
     std::shared_ptr<ProcessListEntry> process_list_entry;
 
-    BlockOutputStreamPtr out;
+    Chain out;
     BlockInputStreamPtr in;
 
     QueryPipeline pipeline;

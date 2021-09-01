@@ -3,6 +3,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Chain.h>
 #include <Access/EnabledQuota.h>
 #include <DataStreams/SizeLimits.h>
 #include <Storages/TableLockHolder.h>
@@ -85,6 +86,9 @@ public:
     /// Add transform with single input and single output for each port.
     void addSimpleTransform(const ProcessorGetter & getter);
     void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
+
+    /// Add chain to every output port.
+    void addChains(std::vector<Chain> chains);
 
     /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);

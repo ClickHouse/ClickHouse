@@ -9,6 +9,9 @@
 namespace DB
 {
 
+struct ExceptionKeepingTransformRuntimeData;
+using ExceptionKeepingTransformRuntimeDataPtr = std::shared_ptr<ExceptionKeepingTransformRuntimeData>;
+
 /** Interprets the INSERT query.
   */
 class InterpreterInsertQuery : public IInterpreter, WithContext
@@ -19,7 +22,8 @@ public:
         ContextPtr context_,
         bool allow_materialized_ = false,
         bool no_squash_ = false,
-        bool no_destination_ = false);
+        bool no_destination_ = false,
+        ExceptionKeepingTransformRuntimeDataPtr runtime_data = nullptr);
 
     /** Prepare a request for execution. Return block streams
       * - the stream into which you can write data to execute the query, if INSERT;
@@ -40,6 +44,7 @@ private:
     const bool allow_materialized;
     const bool no_squash;
     const bool no_destination;
+    ExceptionKeepingTransformRuntimeDataPtr runtime_data;
 };
 
 

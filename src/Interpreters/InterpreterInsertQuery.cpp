@@ -19,7 +19,9 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -28,6 +30,7 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/processColumnTransformers.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
 
@@ -43,12 +46,14 @@ namespace ErrorCodes
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_)
+    const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_,
+    ExceptionKeepingTransformRuntimeDataPtr runtime_data_)
     : WithContext(context_)
     , query_ptr(query_ptr_)
     , allow_materialized(allow_materialized_)
     , no_squash(no_squash_)
     , no_destination(no_destination_)
+    , runtime_data(runtime_data_)
 {
     checkStackSize();
 }
@@ -174,7 +179,7 @@ BlockIO InterpreterInsertQuery::execute()
         }
     }
 
-    BlockOutputStreams out_streams;
+    std::vector<Chain> out_chains;
     if (!is_distributed_insert_select || query.watch)
     {
         size_t out_streams_size = 1;
@@ -266,28 +271,45 @@ BlockIO InterpreterInsertQuery::execute()
         for (size_t i = 0; i < out_streams_size; i++)
         {
             /// We create a pipeline of several streams, into which we will write data.
-            BlockOutputStreamPtr out;
+            Chain out;
 
             /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
             ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
             if (table->noPushingToViews() && !no_destination)
-                out = std::make_shared<PushingToSinkBlockOutputStream>(table->write(query_ptr, metadata_snapshot, getContext()));
+            {
+                auto sink = table->write(query_ptr, metadata_snapshot, getContext());
+                sink->setRuntimeData(runtime_data);
+                out.addSource(std::move(sink));
+            }
             else
-                out = std::make_shared<PushingToViewsBlockOutputStream>(table, metadata_snapshot, getContext(), query_ptr, no_destination);
+            {
+                std::vector<TableLockHolder> locks;
+                out = buildPushingToViewsDrain(table, metadata_snapshot, getContext(), query_ptr, no_destination, locks, runtime_data);
+                for (auto & lock : locks)
+                    res.pipeline.addTableLock(std::move(lock));
+            }
 
             /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
 
             /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
             if (const auto & constraints = metadata_snapshot->getConstraints(); !constraints.empty())
-                out = std::make_shared<CheckConstraintsBlockOutputStream>(
-                    query.table_id, out, out->getHeader(), metadata_snapshot->getConstraints(), getContext());
+                out.addSource(std::make_shared<CheckConstraintsTransform>(
+                    query.table_id, out.getInputHeader(), metadata_snapshot->getConstraints(), getContext()));
 
             bool null_as_default = query.select && getContext()->getSettingsRef().insert_null_as_default;
 
+            auto adding_missing_defaults_dag = addMissingDefaults(
+                query_sample_block,
+                out.getInputHeader().getNamesAndTypesList(),
+                metadata_snapshot->getColumns(),
+                getContext(),
+                null_as_default);
+
+            auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
+
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
-            out = std::make_shared<AddingDefaultBlockOutputStream>(
-                out, query_sample_block, metadata_snapshot->getColumns(), getContext(), null_as_default);
+            out.addSource(std::make_shared<ExpressionTransform>(query_sample_block, adding_missing_defaults_actions));
 
             /// It's important to squash blocks as early as possible (before other transforms),
             ///  because other transforms may work inefficient if block size is small.
@@ -298,16 +320,17 @@ BlockIO InterpreterInsertQuery::execute()
             {
                 bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
-                out = std::make_shared<SquashingBlockOutputStream>(
-                    out,
-                    out->getHeader(),
+                out.addSource(std::make_shared<SquashingChunksTransform>(
+                    out.getInputHeader(),
                     table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
-                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0);
+                    table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
             }
 
-            auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
-            out_wrapper->setProcessListElement(getContext()->getProcessListElement());
-            out_streams.emplace_back(std::move(out_wrapper));
+            auto counting = std::make_shared<CountingTransform>(out.getInputHeader());
+            counting->setProcessListElement(getContext()->getProcessListElement());
+            out.addSource(std::move(counting));
+
+            out_chains.emplace_back(std::move(out));
         }
     }
 
@@ -318,7 +341,7 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (query.select || query.watch)
     {
-        const auto & header = out_streams.at(0)->getHeader();
+        const auto & header = out_chains.at(0).getInputHeader();
         auto actions_dag = ActionsDAG::makeConvertingActions(
                 res.pipeline.getHeader().getColumnsWithTypeAndName(),
                 header.getColumnsWithTypeAndName(),
@@ -330,15 +353,11 @@ BlockIO InterpreterInsertQuery::execute()
             return std::make_shared<ExpressionTransform>(in_header, actions);
         });
 
-        res.pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
+        res.pipeline.addChains(std::move(out_chains));
+
+        res.pipeline.setSinks([&](const Block & cur_header, QueryPipeline::StreamType) -> ProcessorPtr
         {
-            if (type != QueryPipeline::StreamType::Main)
-                return nullptr;
-
-            auto stream = std::move(out_streams.back());
-            out_streams.pop_back();
-
-            return std::make_shared<SinkToOutputStream>(std::move(stream));
+            return std::make_shared<EmptySink>(cur_header);
         });
 
         if (!allow_materialized)
@@ -353,13 +372,14 @@ BlockIO InterpreterInsertQuery::execute()
         auto pipe = getSourceFromFromASTInsertQuery(query_ptr, nullptr, query_sample_block, getContext(), nullptr);
         res.pipeline.init(std::move(pipe));
         res.pipeline.resize(1);
-        res.pipeline.setSinks([&](const Block &, Pipe::StreamType)
+        res.pipeline.addChains(std::move(out_chains));
+        res.pipeline.setSinks([&](const Block & cur_header, Pipe::StreamType)
         {
-            return std::make_shared<SinkToOutputStream>(out_streams.at(0));
+            return std::make_shared<EmptySink>(cur_header);
         });
     }
     else
-        res.out = std::move(out_streams.at(0));
+        res.out = std::move(out_chains.at(0));
 
     res.pipeline.addStorageHolder(table);
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))

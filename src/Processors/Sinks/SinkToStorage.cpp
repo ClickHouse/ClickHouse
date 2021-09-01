@@ -6,6 +6,13 @@
 namespace DB
 {
 
+ExceptionKeepingTransformRuntimeData::ExceptionKeepingTransformRuntimeData(
+    std::unique_ptr<ThreadStatus> thread_status_,
+    std::string additional_exception_message_)
+    : thread_status(std::move(thread_status_))
+    , additional_exception_message(std::move(additional_exception_message_))
+{
+}
 
 ExceptionKeepingTransform::ExceptionKeepingTransform(const Block & in_header, const Block & out_header)
     : IProcessor({in_header}, {out_header})
@@ -68,7 +75,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
     return Status::Ready;
 }
 
-static std::exception_ptr runStep(std::function<void()> step, ExceptionKeepingTransform::RuntimeData * runtime_data)
+static std::exception_ptr runStep(std::function<void()> step, ExceptionKeepingTransformRuntimeData * runtime_data)
 {
     auto * original_thread = current_thread;
     SCOPE_EXIT({ current_thread = original_thread; });

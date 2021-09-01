@@ -22,26 +22,24 @@ namespace ErrorCodes
 }
 
 
-CheckConstraintsBlockOutputStream::CheckConstraintsBlockOutputStream(
+CheckConstraintsTransform::CheckConstraintsTransform(
     const StorageID & table_id_,
-    const BlockOutputStreamPtr & output_,
-    const Block & header_,
+    const Block & header,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
-    : table_id(table_id_),
-    output(output_),
-    header(header_),
-    constraints(constraints_),
-    expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
+    : ISimpleTransform(header, header, false)
+    , table_id(table_id_)
+    , constraints(constraints_)
+    , expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
 {
 }
 
 
-void CheckConstraintsBlockOutputStream::write(const Block & block)
+void CheckConstraintsTransform::transform(Chunk & chunk)
 {
-    if (block.rows() > 0)
+    if (chunk.getNumRows() > 0)
     {
-        Block block_to_calculate = block;
+        Block block_to_calculate = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         for (size_t i = 0; i < expressions.size(); ++i)
         {
             auto constraint_expr = expressions[i];
@@ -101,7 +99,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
                 column_values_msg.reserve(approx_bytes_for_col * related_columns.size());
                 for (const auto & name : related_columns)
                 {
-                    const IColumn & column = *block.getByName(name).column;
+                    const IColumn & column = *chunk.getColumns()[getInputPort().getHeader().getPositionByName(name)];
                     assert(row_idx < column.size());
 
                     if (!first)
@@ -124,23 +122,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
         }
     }
 
-    output->write(block);
-    rows_written += block.rows();
-}
-
-void CheckConstraintsBlockOutputStream::flush()
-{
-    output->flush();
-}
-
-void CheckConstraintsBlockOutputStream::writePrefix()
-{
-    output->writePrefix();
-}
-
-void CheckConstraintsBlockOutputStream::writeSuffix()
-{
-    output->writeSuffix();
+    rows_written += chunk.getNumRows();
 }
 
 }
