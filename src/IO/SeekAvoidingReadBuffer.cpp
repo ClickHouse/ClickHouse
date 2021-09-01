@@ -7,9 +7,7 @@ namespace DB
 SeekAvoidingReadBuffer::SeekAvoidingReadBuffer(std::unique_ptr<ReadBufferFromFileBase> impl_, UInt64 min_bytes_for_seek_)
     : ReadBufferFromFileDecorator(std::move(impl_))
     , min_bytes_for_seek(min_bytes_for_seek_)
-{
-}
-
+{ }
 
 off_t SeekAvoidingReadBuffer::seek(off_t off, int whence)
 {
