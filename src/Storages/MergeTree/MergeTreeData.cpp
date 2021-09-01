@@ -1249,6 +1249,10 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         /// TODO: use data_parts iterators instead of pointers
         for (const auto & part : parts)
         {
+            /// Temporary does not present in data_parts_by_info.
+            if (part->getState() == DataPartState::Temporary)
+                continue;
+
             auto it = data_parts_by_info.find(part->info);
             if (it == data_parts_by_info.end())
                 throw Exception("Deleting data part " + part->name + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
