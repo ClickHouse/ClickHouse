@@ -23,7 +23,7 @@ char(number_1, [number_2, ..., number_n]);
 
 -   Строка из соответствующих байт.
 
-Тип: `String`.
+Тип: [String](../../sql-reference/data-types/string.md).
 
 **Пример**
 
