@@ -3457,3 +3457,27 @@ Possible values:
 -   1 — Projection optimization is obligatory.
 
 Default value: `0`.
+
+## replication_alter_partitions_sync {#replication-alter-partitions-sync}
+
+Allows to specify waiting for actions to manipulate the partitions.
+
+Possible values:
+
+-   0 — Do not wait.
+-   1 — To wait for own execution.
+-   2 — To wait for everyone.
+
+Default value: `1`.
+
+## replication_wait_for_inactive_replica_timeout {#replication-wait-for-inactive-replica-timeout}
+
+Allows to specify how long (in seconds) to wait for inactive replicas to execute [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+
+Possible values:
+
+-   0 — Do not wait.
+-   Negative integer — To wait for unlimited time.
+-   Positive integer — The number of seconds of waiting.
+
+Default value: `120`.

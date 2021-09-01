@@ -25,6 +25,10 @@ When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engin
 -   If you specify `FINAL`, optimization is performed even when all the data is already in one part. Also merge is forced even if concurrent merges are performed.
 -   If you specify `DEDUPLICATE`, then completely identical rows (unless by-clause is specified) will be deduplicated (all columns are compared), it makes sense only for the MergeTree engine.
 
+You can to specify how long (in seconds) to wait for inactive replicas to execute `OPTIMIZE` queries by the [replication_wait_for_inactive_replica_timeout seconds](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting.
+
+!!! warning "Warning"
+    If the [replication_alter_partitions_sync](../../../operations/settings/settings.md#replication-alter-partitions-sync) setting is `2` and some replicas are not active for more than the time specified by the [replication_wait_for_inactive_replica_timeout seconds](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting, then an exception `UNFINISHED` will be thrown.
 
 ## BY expression {#by-expression}
 
