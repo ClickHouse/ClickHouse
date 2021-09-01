@@ -383,6 +383,10 @@ def test_predefined_connection_configuration(started_cluster):
         CREATE TABLE test_table (a UInt32, b Int32)
         ENGINE PostgreSQL(postgres2);
     ''')
+    node1.query_and_get_error('''
+        CREATE TABLE test_table (a UInt32, b Int32)
+        ENGINE PostgreSQL(unknown_collection);
+    ''')
 
     node1.query('''
         CREATE TABLE test_table (a UInt32, b Int32)
@@ -393,7 +397,7 @@ def test_predefined_connection_configuration(started_cluster):
     node1.query('''
         DROP TABLE test_table;
         CREATE TABLE test_table (a UInt32, b Int32)
-        ENGINE PostgreSQL(postgres1, port=5432);
+        ENGINE PostgreSQL(postgres3, port=5432);
     ''')
     assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
 

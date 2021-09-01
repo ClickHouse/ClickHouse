@@ -393,9 +393,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
-            if (arg_name == "schema")
-                configuration.schema = arg_value.safeGet<String>();
-            else if (arg_name == "on_conflict")
+            if (arg_name == "on_conflict")
                 configuration.on_conflict = arg_value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -438,11 +436,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
-        auto pool = std::make_shared<postgres::PoolWithFailover>(
-            configuration.database,
-            configuration.addresses,
-            configuration.username,
-            configuration.password,
+        auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
             args.getContext()->getSettingsRef().postgresql_connection_pool_size,
             args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
 

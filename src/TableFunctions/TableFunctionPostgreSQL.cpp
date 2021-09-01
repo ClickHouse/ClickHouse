@@ -33,12 +33,12 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
     auto result = std::make_shared<StoragePostgreSQL>(
         StorageID(getDatabaseName(), table_name),
         connection_pool,
-        configuration.table,
+        configuration->table,
         columns,
         ConstraintsDescription{},
         String{},
-        configuration.schema,
-        configuration.on_conflict);
+        configuration->schema,
+        configuration->on_conflict);
 
     result->startup();
     return result;
@@ -51,8 +51,8 @@ ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr c
     auto connection_holder = connection_pool->get();
     auto columns = fetchPostgreSQLTableStructure(
             connection_holder->get(),
-            configuration.schema.empty() ? doubleQuoteString(configuration.table)
-                                         : doubleQuoteString(configuration.schema) + '.' + doubleQuoteString(configuration.table),
+            configuration->schema.empty() ? doubleQuoteString(configuration->table)
+                                          : doubleQuoteString(configuration->schema) + '.' + doubleQuoteString(configuration->table),
             use_nulls).columns;
 
     return ColumnsDescription{*columns};
@@ -65,12 +65,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
     if (!func_args.arguments)
         throw Exception("Table function 'PostgreSQL' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-    configuration = StoragePostgreSQL::getConfiguration(func_args.arguments->children, context);
-    connection_pool = std::make_shared<postgres::PoolWithFailover>(
-        configuration.database,
-        configuration.addresses,
-        configuration.username,
-        configuration.password,
+    configuration.emplace(StoragePostgreSQL::getConfiguration(func_args.arguments->children, context));
+    connection_pool = std::make_shared<postgres::PoolWithFailover>(*configuration,
         context->getSettingsRef().postgresql_connection_pool_size,
         context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 }

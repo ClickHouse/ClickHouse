@@ -89,16 +89,15 @@ StorageExternalDistributed::StorageExternalDistributed(
 
             case ExternalStorageEngine::PostgreSQL:
             {
-                addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
+                // StoragePostgreSQLConfiguration configuration;
+                // configuration.addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
 
-                auto pool = std::make_shared<postgres::PoolWithFailover>(
-                    remote_database,
-                    addresses,
-                    username, password,
-                    context->getSettingsRef().postgresql_connection_pool_size,
-                    context->getSettingsRef().postgresql_connection_pool_wait_timeout);
+                // auto pool = std::make_shared<postgres::PoolWithFailover>(
+                //     configuration,
+                //     context->getSettingsRef().postgresql_connection_pool_size,
+                //     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-                shard = StoragePostgreSQL::create(table_id_, std::move(pool), remote_table, columns_, constraints_, String{});
+                // shard = StoragePostgreSQL::create(table_id_, std::move(pool), remote_table, columns_, constraints_, String{});
                 break;
             }
 #endif
@@ -220,6 +219,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
         const String & addresses_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         StorageExternalDistributed::ExternalStorageEngine table_engine;
+        ExternalDataSourceConfigurationPtr configuration;
         if (engine_name == "URL")
         {
             table_engine = StorageExternalDistributed::ExternalStorageEngine::URL;
@@ -246,7 +246,10 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             if (engine_name == "MySQL")
                 table_engine = StorageExternalDistributed::ExternalStorageEngine::MySQL;
             else if (engine_name == "PostgreSQL")
+            {
+                configuration = std::make_shared<StoragePostgreSQLConfiguration>(StoragePostgreSQL::getConfiguration(engine_args, args.getContext()));
                 table_engine = StorageExternalDistributed::ExternalStorageEngine::PostgreSQL;
+            }
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL, URL",

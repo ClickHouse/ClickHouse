@@ -20,20 +20,28 @@ struct ExternalDataSourceConfiguration
     String password;
     String database;
     String table;
+    String schema;
 
     ExternalDataSourceConfiguration() = default;
     ExternalDataSourceConfiguration(const ExternalDataSourceConfiguration & configuration) = default;
+
+    String toString() const;
 };
+
+using ExternalDataSourceConfigurationPtr = std::shared_ptr<ExternalDataSourceConfiguration>;
+
+/// Highest priority is 0, the bigger the number in map, the less the priority.
+using ExternalDataSourcesConfigurationByPriority = std::map<size_t, std::vector<ExternalDataSourceConfiguration>>;
+
 
 struct StoragePostgreSQLConfiguration : ExternalDataSourceConfiguration
 {
     explicit StoragePostgreSQLConfiguration(
-            const ExternalDataSourceConfiguration & common_configuration = {},
-            const String & schema_ = "", const String & on_conflict_ = "")
+            const ExternalDataSourceConfiguration & common_configuration,
+            const String & on_conflict_ = "")
         : ExternalDataSourceConfiguration(common_configuration)
-        , schema(schema_), on_conflict(on_conflict_) {}
+        , on_conflict(on_conflict_) {}
 
-    String schema;
     String on_conflict;
     std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
 };
@@ -52,6 +60,9 @@ using EngineArgs = std::vector<std::pair<String, DB::Field>>;
  * i.e. storage-specific arguments, then return them back in a set: ExternalDataSource::EngineArgs.
  */
 std::tuple<ExternalDataSourceConfiguration, EngineArgs, bool>
-tryGetConfigurationAsNamedCollection(ASTs args, ContextPtr context);
+tryGetConfigurationAsNamedCollection(ASTs args, ContextPtr context, bool is_database_engine = false);
+
+ExternalDataSourcesConfigurationByPriority
+tryGetConfigurationsByPriorityAsNamedCollection(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
 
 }

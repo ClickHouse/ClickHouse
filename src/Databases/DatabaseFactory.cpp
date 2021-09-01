@@ -38,6 +38,7 @@
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
+#include <Storages/StoragePostgreSQL.h>
 #endif
 
 #if USE_SQLITE
@@ -236,43 +237,56 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     {
         const ASTFunction * engine = engine_define->engine;
 
-        if (!engine->arguments || engine->arguments->children.size() < 4 || engine->arguments->children.size() > 6)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "{} Database require `host:port`, `database_name`, `username`, `password` [, `schema` = "", `use_table_cache` = 0].",
-                            engine_name);
-
         ASTs & engine_args = engine->arguments->children;
+        auto [common_configuration, storage_specific_args, with_named_collection] = tryGetConfigurationAsNamedCollection(engine_args, context, true);
+        StoragePostgreSQLConfiguration configuration(common_configuration);
 
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+        if (with_named_collection)
+        {
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+            for (const auto & [arg_name, arg_value] : storage_specific_args)
+            {
+                if (arg_name == "on_conflict")
+                    configuration.on_conflict = arg_value.safeGet<String>();
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Unxpected argument name for key-value defined argument."
+                            "Got: {}, but expected one of:"
+                            "host, port, username, password, database, schema, on_conflict, use_table_cache.", arg_name);
+        }
+        }
+        else
+        {
+            if (!engine->arguments || engine->arguments->children.size() < 4 || engine->arguments->children.size() > 7)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "PostgreSQL Database require `host:port`, `database_name`, `username`, `password`"
+                                "[, `schema` = "", `use_table_cache` = 0, on_conflict='ON CONFLICT TO NOTHING'");
 
-        const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
-        const auto & postgres_database_name = safeGetLiteralValue<String>(engine_args[1], engine_name);
-        const auto & username = safeGetLiteralValue<String>(engine_args[2], engine_name);
-        const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+            for (auto & engine_arg : engine_args)
+                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        String schema;
-        if (engine->arguments->children.size() >= 5)
-            schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
+            const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
+            size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
+
+            configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
+            configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+
+            if (engine_args.size() >= 5)
+                configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
+        }
 
         auto use_table_cache = 0;
-        if (engine->arguments->children.size() >= 6)
+        if (engine_args.size() >= 6)
             use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
 
-        /// Split into replicas if needed.
-        size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
-
-        /// no connection is made here
-        auto connection_pool = std::make_shared<postgres::PoolWithFailover>(
-            postgres_database_name,
-            addresses,
-            username, password,
+        auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
             context->getSettingsRef().postgresql_connection_pool_size,
             context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return std::make_shared<DatabasePostgreSQL>(
-            context, metadata_path, engine_define, database_name, postgres_database_name, schema, connection_pool, use_table_cache);
+            context, metadata_path, engine_define, database_name, configuration, pool, use_table_cache);
     }
     else if (engine_name == "MaterializedPostgreSQL")
     {
