@@ -52,11 +52,6 @@ public:
         force_attach = force_attach_;
     }
 
-    void setSkipStartupTables(bool skip_startup_tables_)
-    {
-        skip_startup_tables = skip_startup_tables_;
-    }
-
     void setLoadDatabaseWithoutTables(bool load_database_without_tables_)
     {
         load_database_without_tables = load_database_without_tables_;
@@ -104,7 +99,6 @@ private:
     /// Is this an internal query - not from the user.
     bool internal = false;
     bool force_attach = false;
-    bool skip_startup_tables = false;
     bool load_database_without_tables = false;
 
     mutable String as_database_saved;

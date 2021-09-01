@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Databases/TablesLoader.h>
 
 
 namespace DB
@@ -12,5 +13,7 @@ void loadMetadataSystem(ContextMutablePtr context);
 
 /// Load tables from databases and add them to context. Database 'system' is ignored. Use separate function to load system tables.
 void loadMetadata(ContextMutablePtr context, const String & default_database_name = {});
+
+void startupSystemTables();
 
 }

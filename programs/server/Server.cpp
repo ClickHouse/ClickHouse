@@ -1127,6 +1127,7 @@ if (ThreadFuzzer::instance().isEffective())
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
+        startupSystemTables();
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);

@@ -5,6 +5,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Poco/Logger.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -30,6 +31,7 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context
     setConfigSettings({"dictionary", "name", "database", "uuid"});
     enableAsyncLoading(true);
     enablePeriodicUpdates(true);
+    log = &Poco::Logger::get("EDL");
 }
 
 ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
@@ -89,12 +91,14 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
 
 std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
 {
+    LOG_INFO(log, "Looking for {} ({})", dictionary_name, current_database_name);
     bool has_dictionary = has(dictionary_name);
     if (has_dictionary)
         return dictionary_name;
 
     std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name);
     has_dictionary = has(resolved_name);
+    LOG_INFO(log, "Got resolved name {}, {}", resolved_name, has_dictionary);
 
     if (!has_dictionary)
     {

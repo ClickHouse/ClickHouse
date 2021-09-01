@@ -275,8 +275,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (!load_database_without_tables)
         {
             /// We use global context here, because storages lifetime is bigger than query context lifetime
-            TablesLoader loader{getContext()->getGlobalContext(), {database}, has_force_restore_data_flag, create.attach && force_attach}; //-V560
+            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, has_force_restore_data_flag, create.attach && force_attach}; //-V560
             loader.loadTables();
+            loader.startupTables();
         }
     }
     catch (...)

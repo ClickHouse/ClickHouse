@@ -2,10 +2,11 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
-#include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <numeric>
 
 namespace DB
 {
@@ -42,94 +43,146 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
 void TablesLoader::loadTables()
 {
     bool need_resolve_dependencies = !global_context->getConfigRef().has("ignore_table_dependencies_on_metadata_loading");
+
+    /// Load all Lazy, MySQl, PostgreSQL, SQLite, etc databases first.
     for (auto & database : databases)
     {
-        if (need_resolve_dependencies && database->supportsLoadingInTopologicalOrder())
-            databases_to_load.emplace(database->getDatabaseName(), database);
+        if (need_resolve_dependencies && database.second->supportsLoadingInTopologicalOrder())
+            databases_to_load.push_back(database.first);
         else
-            database->loadStoredObjects(global_context, force_restore, force_attach, true);
+            database.second->loadStoredObjects(global_context, force_restore, force_attach, true);
     }
 
-    for (auto & database : databases_to_load)
+    /// Read and parse metadata from Ordinary, Atomic, Materialized*, Replicated, etc databases. Build dependency graph.
+    for (auto & database_name : databases_to_load)
     {
-        database.second->beforeLoadingMetadata(global_context, force_restore, force_attach);
-        database.second->loadTablesMetadata(global_context, all_tables);
+        databases[database_name]->beforeLoadingMetadata(global_context, force_restore, force_attach);
+        databases[database_name]->loadTablesMetadata(global_context, all_tables);
     }
 
-    auto table_does_not_exist = [this](const QualifiedTableName & table_name, const QualifiedTableName & dependency_name)
+    LOG_INFO(log, "Parsed metadata of {} tables in {} sec", all_tables.metadata.size(), stopwatch.elapsedSeconds());
+    stopwatch.restart();
+
+    logDependencyGraph();
+
+    /// Some tables were loaded by database with loadStoredObjects(...). Remove them from graph if necessary.
+    removeUnresolvableDependencies();
+
+    loadTablesInTopologicalOrder(pool);
+}
+
+void TablesLoader::startupTables()
+{
+    /// Startup tables after all tables are loaded. Background tasks (merges, mutations, etc) may slow down data parts loading.
+    for (auto & database : databases)
+        database.second->startupTables(pool, force_restore, force_attach);
+}
+
+
+void TablesLoader::removeUnresolvableDependencies()
+{
+    auto need_exclude_dependency = [this](const QualifiedTableName & dependency_name, const DependenciesInfo & info)
     {
+        /// Table exists and will be loaded
         if (all_tables.metadata.contains(dependency_name))
             return false;
+        /// Table exists and it's already loaded
         if (DatabaseCatalog::instance().isTableExist(StorageID(dependency_name.database, dependency_name.table), global_context))
             return false;
-        /// FIXME if XML dict
+        /// It's XML dictionary. It was loaded before tables and DDL dictionaries.
+        if (dependency_name.database == all_tables.default_database &&
+            global_context->getExternalDictionariesLoader().has(dependency_name.table))
+            return false;
 
-        LOG_WARNING(log, "Table {} depends on {}, but seems like the second one does not exist", table_name, dependency_name);
+        /// Some tables depends on table "dependency_name", but there is no such table in DatabaseCatalog and we don't have its metadata.
+        /// We will ignore it and try to load dependent tables without "dependency_name"
+        /// (but most likely dependent tables will fail to load).
+        LOG_WARNING(log, "Tables {} depend on {}, but seems like the it does not exist. Will ignore it and try to load existing tables",
+                    fmt::join(info.dependent_tables, ", "), dependency_name);
+
+        if (info.dependencies_count)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not exist, but we have seen its AST and found {} dependencies."
+                                                       "It's a bug", dependency_name, info.dependencies_count);
+        if (info.dependent_tables.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to."
+                                                       "It's a bug", dependency_name);
+
         return true;
     };
 
-    removeDependencies(table_does_not_exist, all_tables.independent_tables);
-
-    //LOG_TRACE(log, "Independent database objects: {}", fmt::join(all_tables.independent_tables, ", "));
-    //for (const auto & dependencies : all_tables.table_dependencies)
-    //    LOG_TRACE(log, "Database object {} depends on: {}", dependencies.first, fmt::join(dependencies.second, ", "));
-
-    auto is_dependency_loaded = [this](const QualifiedTableName & /*table_name*/, const QualifiedTableName & dependency_name)
+    auto table_it = all_tables.dependencies_info.begin();
+    while (table_it != all_tables.dependencies_info.end())
     {
-        return all_tables.independent_tables.contains(dependency_name);
-    };
+        auto & info = table_it->second;
+        if (need_exclude_dependency(table_it->first, info))
+            table_it = removeResolvedDependency(table_it, all_tables.independent_tables);
+        else
+            ++table_it;
+    }
+}
 
-    AtomicStopwatch watch;
-    ThreadPool pool;
+void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool)
+{
+    /// While we have some independent tables to load, load them in parallel.
+    /// Then remove independent tables from graph and find new ones.
     size_t level = 0;
     do
     {
-        assert(all_tables.metadata.size() == tables_processed + all_tables.independent_tables.size() + all_tables.table_dependencies.size());
-        startLoadingIndependentTables(pool, watch, level);
-        std::unordered_set<QualifiedTableName> new_independent_tables;
-        removeDependencies(is_dependency_loaded, new_independent_tables);
+        assert(all_tables.metadata.size() == tables_processed + all_tables.independent_tables.size() + getNumberOfTablesWithDependencies());
+        logDependencyGraph();
+
+        startLoadingIndependentTables(pool, level);
+
+        TableNames new_independent_tables;
+        for (const auto & table_name : all_tables.independent_tables)
+        {
+            auto info_it = all_tables.dependencies_info.find(table_name);
+            if (info_it == all_tables.dependencies_info.end())
+            {
+                /// No tables depend on table_name and it was not even added to dependencies_info
+                continue;
+            }
+            removeResolvedDependency(info_it, new_independent_tables);
+        }
+
         pool.wait();
+
         all_tables.independent_tables = std::move(new_independent_tables);
-        checkCyclicDependencies();
         ++level;
-        assert(all_tables.metadata.size() == tables_processed + all_tables.independent_tables.size() + all_tables.table_dependencies.size());
     } while (!all_tables.independent_tables.empty());
 
-    for (auto & database : databases_to_load)
-    {
-        database.second->startupTables(pool, force_restore, force_attach);
-    }
+    checkCyclicDependencies();
 }
 
-void TablesLoader::removeDependencies(RemoveDependencyPredicate need_remove_dependency, std::unordered_set<QualifiedTableName> & independent_tables)
+DependenciesInfosIter TablesLoader::removeResolvedDependency(const DependenciesInfosIter & info_it, TableNames & independent_tables)
 {
-    auto table_it = all_tables.table_dependencies.begin();
-    while (table_it != all_tables.table_dependencies.end())
-    {
-        auto & dependencies = table_it->second;
-        assert(!dependencies.empty());
-        auto dependency_it = dependencies.begin();
-        while (dependency_it != dependencies.end())
-        {
-            if (need_remove_dependency(table_it->first, *dependency_it))
-                dependency_it = dependencies.erase(dependency_it);
-            else
-                ++dependency_it;
-        }
+    auto & info = info_it->second;
+    if (info.dependencies_count)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} is in list of independent tables, but dependencies count is {}."
+                                                   "It's a bug", info_it->first, info.dependencies_count);
+    if (info.dependent_tables.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependent tables. It's a bug", info_it->first);
 
-        if (dependencies.empty())
+    /// Decrement number of dependencies for each dependent table
+    for (auto & dependent_table : info.dependent_tables)
+    {
+        auto & dependent_info = all_tables.dependencies_info[dependent_table];
+        auto & dependencies_count = dependent_info.dependencies_count;
+        if (dependencies_count == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to decrement 0 dependencies counter for {}. It's a bug", dependent_table);
+        --dependencies_count;
+        if (dependencies_count == 0)
         {
-            independent_tables.emplace(std::move(table_it->first));
-            table_it = all_tables.table_dependencies.erase(table_it);
-        }
-        else
-        {
-            ++table_it;
+            independent_tables.push_back(dependent_table);
+            if (dependent_info.dependent_tables.empty())
+                all_tables.dependencies_info.erase(dependent_table);
         }
     }
+
+    return all_tables.dependencies_info.erase(info_it);
 }
 
-void TablesLoader::startLoadingIndependentTables(ThreadPool & pool, AtomicStopwatch & watch, size_t level)
+void TablesLoader::startLoadingIndependentTables(ThreadPool & pool, size_t level)
 {
     size_t total_tables = all_tables.metadata.size();
 
@@ -137,32 +190,56 @@ void TablesLoader::startLoadingIndependentTables(ThreadPool & pool, AtomicStopwa
 
     for (const auto & table_name : all_tables.independent_tables)
     {
-        pool.scheduleOrThrowOnError([this, total_tables, &table_name, &watch]()
+        pool.scheduleOrThrowOnError([this, total_tables, &table_name]()
         {
             const auto & path_and_query = all_tables.metadata[table_name];
             const auto & path = path_and_query.first;
             const auto & ast = path_and_query.second;
-            databases_to_load[table_name.database]->loadTableFromMetadata(global_context, path, table_name, ast, force_restore);
-            logAboutProgress(log, ++tables_processed, total_tables, watch);
+            databases[table_name.database]->loadTableFromMetadata(global_context, path, table_name, ast, force_restore);
+            logAboutProgress(log, ++tables_processed, total_tables, stopwatch);
         });
     }
 }
 
+size_t TablesLoader::getNumberOfTablesWithDependencies() const
+{
+    size_t number_of_tables_with_dependencies = 0;
+    for (const auto & info : all_tables.dependencies_info)
+        if (info.second.dependencies_count)
+            ++number_of_tables_with_dependencies;
+    return number_of_tables_with_dependencies;
+}
+
 void TablesLoader::checkCyclicDependencies() const
 {
-    if (!all_tables.independent_tables.empty())
-        return;
-    if (all_tables.table_dependencies.empty())
+    /// Loading is finished if all dependencies are resolved
+    if (all_tables.dependencies_info.empty())
         return;
 
-    for (const auto & dependencies : all_tables.table_dependencies)
+    for (const auto & info : all_tables.dependencies_info)
     {
-        LOG_WARNING(log, "Cannot resolve dependencies: Table {} depends on {}", dependencies.first, fmt::join(dependencies.second, ", "));
+        LOG_WARNING(log, "Cannot resolve dependencies: Table {} have {} dependencies and {} dependent tables. List of dependent tables: {}",
+                    info.first, info.second.dependencies_count,
+                    info.second.dependent_tables.size(), fmt::join(info.second.dependent_tables, ", "));
+        assert(info.second.dependencies_count == 0);
     }
 
     throw Exception(ErrorCodes::INFINITE_LOOP, "Cannot attach {} tables due to cyclic dependencies. "
-                                               "See server log for details.", all_tables.table_dependencies.size());
+                                               "See server log for details.", all_tables.dependencies_info.size());
+}
+
+void TablesLoader::logDependencyGraph() const
+{
+    LOG_TRACE(log, "Have {} independent tables: {}", all_tables.independent_tables.size(), fmt::join(all_tables.independent_tables, ", "));
+    for (const auto & dependencies : all_tables.dependencies_info)
+    {
+        LOG_TRACE(log,
+            "Table {} have {} dependencies and {} dependent tables. List of dependent tables: {}",
+            dependencies.first,
+            dependencies.second.dependencies_count,
+            dependencies.second.dependent_tables.size(),
+            fmt::join(dependencies.second.dependent_tables, ", "));
+    }
 }
 
 }
-
