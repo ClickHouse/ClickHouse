@@ -197,9 +197,10 @@ public:
         return read(to, n);
     }
 
-    /// Returns total size of underlying object read by this buffer. May be helpful for a full allocations
-    /// before reading. Doesn't change after reading. Returns 0 if total size is unknown.
-    virtual size_t totalSize() const { return 0; }
+    /** Do something to allow faster subsequent call to 'nextImpl' if possible.
+      * It's used for asynchronous readers with double-buffering.
+      */
+    virtual void prefetch() {}
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`

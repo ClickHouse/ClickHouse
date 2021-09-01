@@ -158,7 +158,7 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     auto event_time_seconds = event_time / 1000000;
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
     columns[i++]->insert(event_time);
-    columns[i++]->insert(IPv6ToBinary(address.host()).data());
+    columns[i++]->insertData(IPv6ToBinary(address.host()).data(), 16);
     columns[i++]->insert(address.port());
     columns[i++]->insert(session_id);
 

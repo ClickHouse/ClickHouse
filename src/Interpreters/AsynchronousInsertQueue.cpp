@@ -146,7 +146,6 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     /// It's important to read the whole data per query as a single chunk, so we can safely drop it in case of parsing failure.
     auto entry = std::make_shared<InsertData::Entry>();
     entry->query_id = query_context->getCurrentQueryId();
-    entry->bytes.reserve(read_buf->totalSize());
 
     WriteBufferFromString write_buf(entry->bytes);
     copyData(*read_buf, write_buf);
