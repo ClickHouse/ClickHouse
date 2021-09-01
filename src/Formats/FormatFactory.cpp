@@ -161,14 +161,12 @@ InputFormatPtr FormatFactory::getInput(
     if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage_for_user)
         parallel_parsing = false;
 
-    if (parallel_parsing && name == "JSONEachRow")
+    if (parallel_parsing)
     {
-        /// FIXME ParallelParsingBlockInputStream doesn't support formats with non-trivial readPrefix() and readSuffix()
-
-        /// For JSONEachRow we can safely skip whitespace characters
-        skipWhitespaceIfAny(buf);
-        if (buf.eof() || *buf.position() == '[')
-            parallel_parsing = false; /// Disable it for JSONEachRow if data is in square brackets (see JSONEachRowRowInputFormat)
+        const auto & non_trivial_prefix_and_suffix_checker = getCreators(name).non_trivial_prefix_and_suffix_checker;
+        /// Disable parallel parsing for input formats with non-trivial readPrefix() and readSuffix().
+        if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(buf))
+            parallel_parsing = false;
     }
 
     if (parallel_parsing)
@@ -390,6 +388,14 @@ void FormatFactory::registerInputFormatProcessor(const String & name, InputProce
     if (target)
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
+}
+
+void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker)
+{
+    auto & target = dict[name].non_trivial_prefix_and_suffix_checker;
+    if (target)
+        throw Exception("FormatFactory: Non trivial prefix and suffix checker " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(non_trivial_prefix_and_suffix_checker);
 }
 
 void FormatFactory::registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator)

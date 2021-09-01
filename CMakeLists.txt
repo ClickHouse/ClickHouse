@@ -45,6 +45,7 @@ include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
 include (cmake/analysis.cmake)
+include (cmake/git_status.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -126,12 +127,13 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-# Implies ${WITH_COVERAGE}
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
 
 if (ENABLE_FUZZING)
+    # Also set WITH_COVERAGE=1 for better fuzzing process
+    # By default this is disabled, because fuzzers are built in CI with the clickhouse itself.
+    # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
-    set (WITH_COVERAGE ON)
     set (FUZZER "libfuzzer")
 endif()
 
