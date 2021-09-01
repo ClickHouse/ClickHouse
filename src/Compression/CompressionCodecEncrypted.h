@@ -75,7 +75,7 @@ public:
         static Configuration & instance();
 
         /// Try to load data from config.
-        void tryload(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+        void tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
         /// Get current key and nonce (they will be set in variables, which are pass in this function).
         /// All data sets at the same time to prevent situations,
@@ -83,8 +83,8 @@ public:
         /// If nonce is empty, it will return 12 null bytes.
         void getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, String & current_key, String & nonce) const;
 
-        /// Same as getCurrentKeyAndNonce. It is used to get key and nonce using key_id. (need for correct decryption)
-        void getKeyAndNonce(EncryptionMethod method, const UInt64 & key_id, String & key, String & nonce) const;
+        /// Same as getCurrentKeyAndNonce. It is used to get key. (need for correct decryption, that is why nonce is not necessary)
+        void getKey(EncryptionMethod method, const UInt64 & key_id, String & key) const;
     private:
         /// struct Params consists of:
         /// 1) hash-table of keys and their ids
@@ -133,10 +133,6 @@ protected:
     /// Throws exception if decryption is impossible or size of decrypted text is incorrect
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 private:
-    static constexpr size_t tag_size        = 16;   /// AES-GCM-SIV always uses a tag of 16 bytes length
-    static constexpr size_t key_id_max_size = 8;    /// Max size of varint.
-    static constexpr size_t nonce_max_size  = 13;   /// Nonce size and one byte to show if nonce in in text
-
     EncryptionMethod encryption_method;
 };
 

@@ -283,7 +283,7 @@ try
     auto config = generator.getResult();
     auto codec_128 = getCompressionCodecEncrypted(DB::AES_128_GCM_SIV);
     auto codec_256 = getCompressionCodecEncrypted(DB::AES_256_GCM_SIV);
-    DB::CompressionCodecEncrypted::Configuration::instance().tryload(*config, "");
+    DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "");
 
     size_t data_size = size - generator.keySize();
 
