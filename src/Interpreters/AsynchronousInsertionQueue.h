@@ -41,9 +41,6 @@ private:
         ASTPtr query;
         Settings settings;
 
-        InsertQuery(const ASTPtr & query_, const Settings & settings_);
-        InsertQuery(const InsertQuery & other);
-        InsertQuery & operator==(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
         struct Hash { UInt64 operator()(const InsertQuery & insert_query) const; };
     };
@@ -124,7 +121,7 @@ private:
     void staleCheck();
     void cleanup();
 
-    void scheduleProcessJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
+    void scheduleProcessDataJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
 };
 
