@@ -77,7 +77,7 @@ void UserDefinedObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDef
     String object_create_query;
     readStringUntilEOF(object_create_query, in);
 
-    auto parse = [&context, &object_create_query, &path](DB::IParser & parser) 
+    auto parse = [&context, &object_create_query, &path](DB::IParser & parser)
     {
         return parseQuery(
             parser,
