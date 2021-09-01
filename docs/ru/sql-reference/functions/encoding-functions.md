@@ -96,7 +96,7 @@ Values of floating point and Decimal types are encoded as their representation i
 
 **Аргументы**
 
--   `arg` — значение для преобразования в шестнадцатеричное. [String](../../sql-reference/functions/encoding-functions.md), [UInt](../../sql-reference/functions/encoding-functions.md), [Float](../../sql-reference/functions/encoding-functions.md), [Decimal](../../sql-reference/functions/encoding-functions.md), [Date](../../sql-reference/functions/encoding-functions.md) или [DateTime](../../sql-reference/functions/encoding-functions.md).
+-   `arg` — значение для преобразования в шестнадцатеричное. [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Возвращаемое значение**
 
