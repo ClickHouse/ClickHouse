@@ -526,6 +526,8 @@ void Changelog::compact(uint64_t up_to_log_index)
     if (up_to_log_index > max_log_id)
     {
         LOG_INFO(log, "Seems like this node recovers from leaders snapshot, removing all logs");
+        /// If we received snapshot from leader we may compact up to more fresh log
+        max_log_id = up_to_log_index;
         remove_all_logs = true;
     }
 
@@ -552,11 +554,6 @@ void Changelog::compact(uint64_t up_to_log_index)
     }
     /// Compaction from the past is possible, so don't make our min_log_id smaller.
     min_log_id = std::max(min_log_id, up_to_log_index + 1);
-
-    /// If we received snapshot from leader we may compact up to more fresh log
-    if (up_to_log_index > max_log_id)
-        max_log_id = up_to_log_index;
-
     std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
 
     if (need_rotate)
