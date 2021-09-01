@@ -190,9 +190,17 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 std::lock_guard lock{metadata.mutex};
                 metadata.metadata[qualified_name] = std::make_pair(full_path.string(), std::move(ast));
                 if (data.dependencies.empty())
-                    metadata.independent_tables.insert(std::move(qualified_name));
+                {
+                    metadata.independent_tables.emplace_back(std::move(qualified_name));
+                }
                 else
-                    metadata.table_dependencies.insert({std::move(qualified_name), std::move(data.dependencies)});
+                {
+                    for (const auto & dependency : data.dependencies)
+                    {
+                        metadata.dependencies_info[dependency].dependent_tables.push_back(qualified_name);
+                        ++metadata.dependencies_info[qualified_name].dependencies_count;
+                    }
+                }
                 metadata.total_dictionaries += create_query->is_dictionary;
             }
         }

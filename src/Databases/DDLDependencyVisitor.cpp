@@ -78,7 +78,7 @@ void DDLDependencyVisitor::extractTableNameFromArgument(const ASTFunction & func
 
     if (database_name.empty())
         database_name = data.default_database;
-    data.dependencies.push_back(QualifiedTableName{std::move(database_name), std::move(table_name)});
+    data.dependencies.emplace(QualifiedTableName{std::move(database_name), std::move(table_name)});
 }
 
 }

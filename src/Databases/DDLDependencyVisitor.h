@@ -14,9 +14,9 @@ class DDLDependencyVisitor
 public:
     struct Data
     {
-        using TableDependencies = std::vector<QualifiedTableName>;
+        using TableNamesSet = std::set<QualifiedTableName>;
         String default_database;
-        TableDependencies dependencies;
+        TableNamesSet dependencies;
     };
 
     using Visitor = ConstInDepthNodeVisitor<DDLDependencyVisitor, true>;
