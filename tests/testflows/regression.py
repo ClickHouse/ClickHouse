@@ -10,7 +10,7 @@ xfails = {
    "/clickhouse": [(Fail, "not stable"), (Error, "not stable")]
 }
 
-# comment to trigger ci #3
+# comment to trigger ci #4
 @TestModule
 @Name("clickhouse")
 @ArgumentParser(argparser)
