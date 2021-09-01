@@ -20,6 +20,7 @@ endif()
 
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
+    set (WITH_COVERAGE ON)
     add_executable(fuzz-clickhouse-local LocalServer.cpp ${SRCS})
     target_link_libraries(fuzz-clickhouse-local PRIVATE
             dbms

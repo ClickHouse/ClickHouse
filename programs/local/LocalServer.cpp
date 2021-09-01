@@ -319,8 +319,8 @@ try
 
     /// processing queries
 
-    static String initial_create_query = getInitialCreateTableQuery();
-    static String queries_str = initial_create_query;
+    String initial_create_query = getInitialCreateTableQuery();
+    String queries_str = initial_create_query;
 
     if (first_time)
     {
@@ -335,7 +335,7 @@ try
     }
     }
 
-    static const auto & settings = global_context->getSettingsRef();
+    const auto & settings = global_context->getSettingsRef();
 
     static std::vector<String> queries;
     if (first_time)
