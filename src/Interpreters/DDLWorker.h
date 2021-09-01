@@ -127,7 +127,7 @@ protected:
     std::list<DDLTaskPtr> current_tasks;
 
     Coordination::Stat queue_node_stat;
-    std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
+
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;
     std::atomic<bool> stop_flag = false;
@@ -149,6 +149,12 @@ protected:
     std::atomic<UInt64> max_id = 0;
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
+
+    /// Prevent zookeeper watch from being triggered in advance
+    std::mutex cv_mutex;
+    std::condition_variable cv;
+    bool queue_updated = false;
+
 };
 
 
