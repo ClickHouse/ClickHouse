@@ -13,6 +13,7 @@ Creates a user defined function from a lambda expression. The expression must co
 CREATE FUNCTION name AS (parameter0, ...) -> expression
 ```
 A function can have an arbitrary number of parameters.
+
 There are a few restrictions.
 
 -   The name of a function must be unique among user defined and system functions.
@@ -43,7 +44,7 @@ Result:
 A [conditional function](../../../sql-reference/functions/conditional-functions.md) is called in a user defined function in the following query:
 
 ```sql
-CREATE FUNCTION parity AS (n) -> if(number % 2, 'odd', 'even');
+CREATE FUNCTION parity AS (n) -> if(n % 2, 'odd', 'even');
 SELECT number, parity(number) FROM numbers(3);
 ```
 
