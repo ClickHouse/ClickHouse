@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/ISimpleTransform.h>
 #include <Interpreters/ProcessList.h>
 
 
@@ -9,11 +9,12 @@ namespace DB
 
 
 /// Proxy class which counts number of written block, rows, bytes
-class CountingBlockOutputStream : public IBlockOutputStream
+class CountingTransform final : public ISimpleTransform
 {
 public:
-    CountingBlockOutputStream(const BlockOutputStreamPtr & stream_)
-        : stream(stream_) {}
+    explicit CountingTransform(const Block & header) : ISimpleTransform(header, header, false) {}
+
+    String getName() const override { return "CountingTransform"; }
 
     void setProgressCallback(const ProgressCallback & callback)
     {
@@ -30,17 +31,9 @@ public:
         return progress;
     }
 
-    Block getHeader() const override { return stream->getHeader(); }
-    void write(const Block & block) override;
-
-    void writePrefix() override                         { stream->writePrefix(); }
-    void writeSuffix() override                         { stream->writeSuffix(); }
-    void flush() override                               { stream->flush(); }
-    void onProgress(const Progress & current_progress) override { stream->onProgress(current_progress); }
-    String getContentType() const override              { return stream->getContentType(); }
+    void transform(Chunk & chunk) override;
 
 protected:
-    BlockOutputStreamPtr stream;
     Progress progress;
     ProgressCallback progress_callback;
     QueryStatus * process_elem = nullptr;
