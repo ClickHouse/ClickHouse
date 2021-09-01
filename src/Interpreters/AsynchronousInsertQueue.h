@@ -31,7 +31,7 @@ public:
     AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, size_t max_data_size, const Timeout & timeouts);
     ~AsynchronousInsertQueue();
 
-    void push(const ASTPtr & query, const Settings & settings, const String & query_id);
+    void push(ASTPtr query, ContextPtr query_context);
     void waitForProcessingQuery(const String & query_id, const Milliseconds & timeout);
 
 private:
@@ -53,15 +53,17 @@ private:
             String bytes;
             String query_id;
 
-            bool finished = false;
-            std::exception_ptr exception;
-
             void finish(std::exception_ptr exception_ = nullptr);
-            bool wait(const Milliseconds & timeout);
+            bool wait(const Milliseconds & timeout) const;
+            bool isFinished() const;
+            std::exception_ptr getException() const;
 
         private:
-            std::mutex mutex;
-            std::condition_variable cv;
+            mutable std::mutex mutex;
+            mutable std::condition_variable cv;
+
+            bool finished = false;
+            std::exception_ptr exception;
         };
 
         using EntryPtr = std::shared_ptr<Entry>;
@@ -92,8 +94,9 @@ private:
     std::shared_mutex rwlock;
     Queue queue;
 
+    using QueryIdToEntry = std::unordered_map<String, InsertData::EntryPtr>;
     std::mutex currently_processing_mutex;
-    std::unordered_map<String, InsertData::EntryPtr> currently_processing_queries;
+    QueryIdToEntry currently_processing_queries;
 
     /// Logic and events behind queue are as follows:
     ///  - reset_timeout:  if queue is empty for some time, then we delete the queue and free all associated resources, e.g. tables.
@@ -123,6 +126,10 @@ private:
 
     void scheduleProcessDataJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
+
+public:
+    Queue getQueue() const { return queue; }
+    QueryIdToEntry getCurrentlyProcessingQueries() const { return currently_processing_queries; }
 };
 
 }
