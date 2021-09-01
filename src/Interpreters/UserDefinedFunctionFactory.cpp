@@ -27,6 +27,8 @@ void UserDefinedFunctionFactory::registerFunction(const String & function_name, 
     if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
 
+    std::lock_guard lock(mutex);
+
     auto [_, inserted] = function_name_to_create_query.emplace(function_name, std::move(create_function_query));
     if (!inserted)
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS,
@@ -40,6 +42,8 @@ void UserDefinedFunctionFactory::unregisterFunction(const String & function_name
         AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::CANNOT_DROP_SYSTEM_FUNCTION, "Cannot drop system function '{}'", function_name);
 
+    std::lock_guard lock(mutex);
+
     auto it = function_name_to_create_query.find(function_name);
     if (it == function_name_to_create_query.end())
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
@@ -51,6 +55,8 @@ void UserDefinedFunctionFactory::unregisterFunction(const String & function_name
 
 ASTPtr UserDefinedFunctionFactory::get(const String & function_name) const
 {
+    std::lock_guard lock(mutex);
+
     auto it = function_name_to_create_query.find(function_name);
     if (it == function_name_to_create_query.end())
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
@@ -62,6 +68,8 @@ ASTPtr UserDefinedFunctionFactory::get(const String & function_name) const
 
 ASTPtr UserDefinedFunctionFactory::tryGet(const std::string & function_name) const
 {
+    std::lock_guard lock(mutex);
+
     auto it = function_name_to_create_query.find(function_name);
     if (it == function_name_to_create_query.end())
         return nullptr;
@@ -72,6 +80,8 @@ ASTPtr UserDefinedFunctionFactory::tryGet(const std::string & function_name) con
 std::vector<std::string> UserDefinedFunctionFactory::getAllRegisteredNames() const
 {
     std::vector<std::string> registered_names;
+
+    std::lock_guard lock(mutex);
     registered_names.reserve(function_name_to_create_query.size());
 
     for (const auto & [name, _] : function_name_to_create_query)

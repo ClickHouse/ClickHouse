@@ -53,13 +53,19 @@ struct ChangelogFileDescription
     uint64_t to_log_index;
 
     std::string path;
+
+    /// How many entries should be stored in this log
+    uint64_t expectedEntriesCountInLog() const
+    {
+        return to_log_index - from_log_index + 1;
+    }
 };
 
 class ChangelogWriter;
 
 /// Simplest changelog with files rotation.
-/// No compression, no metadata, just entries with headers one by one
-/// Able to read broken files/entries and discard them.
+/// No compression, no metadata, just entries with headers one by one.
+/// Able to read broken files/entries and discard them. Not thread safe.
 class Changelog
 {
 
@@ -128,10 +134,16 @@ private:
     const bool force_sync;
     Poco::Logger * log;
 
+    /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
+
+    /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
+    /// Mapping log_id -> binary offset in log file
     IndexToOffset index_to_start_pos;
+    /// Mapping log_id -> log_entry
     IndexToLogEntry logs;
+    /// Start log_id which exists in all "active" logs
     uint64_t start_index = 0;
 };
 

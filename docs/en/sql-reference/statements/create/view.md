@@ -50,6 +50,9 @@ When creating a materialized view with `TO [db].[table]`, you must not use `POPU
 A materialized view is implemented as follows: when inserting data to the table specified in `SELECT`, part of the inserted data is converted by this `SELECT` query, and the result is inserted in the view.
 
 !!! important "Important"
+    Materialized views in ClickHouse use **column names** instead of column order during insertion into destination table. If some column names are not present in `SELECT`'s result ClickHouse will use a default value, even if column is not `Nullable`. A safe practice would be to add aliases for every column when using Materialized views.
+
+!!! important "Important"
     Materialized views in ClickHouse are implemented more like insert triggers. If there’s some aggregation in the view query, it’s applied only to the batch of freshly inserted data. Any changes to existing data of source table (like update, delete, drop partition, etc.) does not change the materialized view.
 
 If you specify `POPULATE`, the existing table data is inserted in the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using POPULATE, since data inserted in the table during the view creation will not be inserted in it.
