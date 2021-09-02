@@ -360,11 +360,10 @@ try
     for (const auto & entry : data->entries)
     {
         buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
-
-        format->resetParser();
         format->setReadBuffer(*buffer);
         current_entry = entry;
         total_rows += executor.execute();
+        format->resetParser();
     }
 
     auto chunk = Chunk(executor.getResultColumns(), total_rows);
