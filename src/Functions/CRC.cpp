@@ -1,3 +1,4 @@
+#define Z_TLS = __thread
 #include <zlib.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
