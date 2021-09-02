@@ -127,7 +127,7 @@ TEST(RingBuffer, removeElements)
     ASSERT_TRUE(buffer.tryPop(&value));
     ASSERT_TRUE(buffer.tryPop(&value));
 
-    buffer.removeElements([](int current) { return current % 2 == 0; });
+    buffer.eraseAll([](int current) { return current % 2 == 0; });
 
     ASSERT_EQ(buffer.size(), 4);
 

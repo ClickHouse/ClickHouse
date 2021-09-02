@@ -32,9 +32,8 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
         /// Mark this StorageID as deleting
         currently_deleting.emplace(id);
 
-        pending.removeElements([&] (auto item) -> bool { return item->task->getStorageID() == id; });
-
-        /// Find pending to wait
+        /// Erase storage related tasks from pending and select active tasks to wait for
+        pending.eraseAll([&] (auto item) -> bool { return item->task->getStorageID() == id; });
         tasks_to_wait = active.getAll([&] (auto item) -> bool { return item->task->getStorageID() == id; });
     }
 
@@ -44,7 +43,6 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
         assert(item->future.valid());
         item->future.wait();
     }
-
 
     {
         std::lock_guard lock(mutex);
@@ -70,7 +68,6 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
 
         active.tryPush(item);
 
-
         try
         {
             /// This is needed to increase / decrease the number of threads at runtime
@@ -89,7 +86,7 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
 
             auto check_if_deleting = [&] () -> bool
             {
-                active.tryErase(item);
+                active.eraseAll([&] (auto x) { return x == item; });
 
                 for (auto & id : currently_deleting)
                 {
@@ -139,7 +136,7 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
 
         if (!res)
         {
-            active.tryErase(item);
+            active.eraseAll([&] (auto x) { return x == item; });
             pending.tryPush(item);
         }
 

@@ -11,7 +11,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/RingBuffer.h>
-#include <Common/PlainMultiSet.h>
 #include <Storages/MergeTree/ExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -142,7 +141,7 @@ private:
         try
         {
             pending.resize(new_max_tasks_count);
-            active.reserve(new_max_tasks_count);
+            active.resize(new_max_tasks_count);
 
             pool.setMaxFreeThreads(0);
             pool.setMaxThreads(new_threads_count);
@@ -192,7 +191,7 @@ private:
 
     /// Initially it will be empty
     RingBuffer<ItemPtr> pending{0};
-    PlainMultiSet<ItemPtr> active{0};
+    RingBuffer<ItemPtr> active{0};
     std::set<StorageID> currently_deleting;
 
     std::mutex remove_mutex;
