@@ -62,22 +62,17 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
-    , key_names_left(1)
-    , key_names_right(1)
-    , on_filter_condition_asts_left(1)
-    , on_filter_condition_asts_right(1)
+    , left_clauses(1)
+    , right_clauses(1)
     , tmp_volume(tmp_volume_)
 {
 }
 
 void TableJoin::resetCollected()
 {
-    key_names_left.clear();
-    key_names_right.clear();
-    key_asts_left.clear();
-    key_asts_right.clear();
-    on_filter_condition_asts_left.clear();
-    on_filter_condition_asts_right.clear();
+    left_clauses = std::vector<JoinOnClause>(1);
+    right_clauses = std::vector<JoinOnClause>(1);
+
     columns_from_joined_table.clear();
     columns_added_by_join.clear();
     original_names.clear();
@@ -92,33 +87,21 @@ void TableJoin::resetCollected()
 
 void TableJoin::addUsingKey(const ASTPtr & ast)
 {
-    key_names_left.front().push_back(ast->getColumnName());
-    key_names_right.front().push_back(ast->getAliasOrColumnName());
-
-    key_asts_left.push_back(ast);
-    key_asts_right.push_back(ast);
-
-    auto & right_key = key_names_right.front().back();
-    if (renames.count(right_key))
-        right_key = renames[right_key];
+    left_clauses.back().addKey(ast->getColumnName(), ast);
+    right_clauses.back().addKey(renamedRightColumnName(ast->getAliasOrColumnName()), ast);
 }
 
-/// create new disjunct when see a child of a previously discovered OR
+/// create new disjunct when see a direct child of a previously discovered OR
 void TableJoin::addDisjunct(const ASTPtr & ast)
 {
     const IAST * addr = ast.get();
 
     if (std::find_if(disjuncts.begin(), disjuncts.end(), [addr](const ASTPtr & ast_){return ast_.get() == addr;}) != disjuncts.end())
     {
-        assert(key_names_left.size() == disjunct_num + 1);
-
-        if (!key_names_left[disjunct_num].empty() || !on_filter_condition_asts_left[disjunct_num].empty() || !on_filter_condition_asts_right[disjunct_num].empty())
+        if (!left_clauses.back().key_names.empty() || !left_clauses.back().on_filter_conditions.empty() || !right_clauses.back().on_filter_conditions.empty())
         {
-            disjunct_num++;
-            key_names_left.resize(disjunct_num + 1);
-            key_names_right.resize(disjunct_num + 1);
-            on_filter_condition_asts_left.resize(disjunct_num + 1);
-            on_filter_condition_asts_right.resize(disjunct_num + 1);
+            left_clauses.emplace_back();
+            right_clauses.emplace_back();
         }
     }
 }
@@ -131,11 +114,8 @@ void TableJoin::setDisjuncts(Disjuncts&& disjuncts_)
 
 void TableJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
 {
-    key_names_left[disjunct_num].push_back(left_table_ast->getColumnName());
-    key_names_right[disjunct_num].push_back(right_table_ast->getAliasOrColumnName());
-
-    key_asts_left.push_back(left_table_ast);
-    key_asts_right.push_back(right_table_ast);
+    left_clauses.back().addKey(left_table_ast->getColumnName(), left_table_ast);
+    right_clauses.back().addKey(right_table_ast->getAliasOrColumnName(), right_table_ast);
 }
 
 /// @return how many times right key appears in ON section.
@@ -145,9 +125,8 @@ size_t TableJoin::rightKeyInclusion(const String & name) const
         return 0;
 
     size_t count = 0;
-    for (const auto & key_names : key_names_right)
-        count += std::count(key_names.begin(), key_names.end(), name);
-
+    for (const auto & clause : right_clauses)
+        count += std::count(clause.key_names.begin(), clause.key_names.end(), name);
     return count;
 }
 
@@ -194,31 +173,39 @@ NamesWithAliases TableJoin::getNamesWithAliases(const NameSet & required_columns
 ASTPtr TableJoin::leftKeysList() const
 {
     ASTPtr keys_list = std::make_shared<ASTExpressionList>();
-    keys_list->children = key_asts_left;
-    const size_t disjuncts_num = key_names_left.size();
-    for (size_t d = 0; d < disjuncts_num; ++d)
-        if (ASTPtr extra_cond = joinConditionColumn(JoinTableSide::Left, d))
+    for (size_t i = 0; i < left_clauses.size(); ++i)
+    {
+        const auto & clause = left_clauses[i];
+        keys_list->children.insert(keys_list->children.end(), clause.key_asts.begin(), clause.key_asts.end());
+        if (ASTPtr extra_cond = joinConditionColumn(JoinTableSide::Left, i))
             keys_list->children.push_back(extra_cond);
+    }
     return keys_list;
 }
 
 ASTPtr TableJoin::rightKeysList() const
 {
     ASTPtr keys_list = std::make_shared<ASTExpressionList>();
-    if (hasOn())
-        keys_list->children = key_asts_right;
-    const size_t disjuncts_num = key_names_left.size();
-    for (size_t d = 0; d < disjuncts_num; ++d)
-        if (ASTPtr extra_cond = joinConditionColumn(JoinTableSide::Right, d))
+    for (size_t i = 0; i < right_clauses.size(); ++i)
+    {
+        if (hasOn())
+        {
+            const auto & clause = right_clauses[i];
+            keys_list->children.insert(keys_list->children.end(), clause.key_asts.begin(), clause.key_asts.end());
+        }
+
+        if (ASTPtr extra_cond = joinConditionColumn(JoinTableSide::Right, i))
             keys_list->children.push_back(extra_cond);
+    }
     return keys_list;
 }
 
 Names TableJoin::requiredJoinedNames() const
 {
     NameSet required_columns_set;
-    for (const auto& key_names_right_part : key_names_right)
-        required_columns_set.insert(key_names_right_part.begin(), key_names_right_part.end());
+    for (const auto & clause : right_clauses)
+        required_columns_set.insert(clause.key_names.begin(), clause.key_names.end());
+
     for (const auto & joined_column : columns_added_by_join)
         required_columns_set.insert(joined_column.name);
 
@@ -228,9 +215,9 @@ Names TableJoin::requiredJoinedNames() const
 NameSet TableJoin::requiredRightKeys() const
 {
     NameSet required;
-    for (const auto & key_names_right_part : key_names_right)
+    for (const auto & clause : right_clauses)
     {
-        for (const auto & name : key_names_right_part)
+        for (const auto & name : clause.key_names)
         {
             auto rename = renamedRightColumnName(name);
             for (const auto & column : columns_added_by_join)
@@ -369,7 +356,7 @@ bool TableJoin::allowMergeJoin() const
     bool all_join = is_all && (isInner(kind()) || isLeft(kind()) || isRight(kind()) || isFull(kind()));
     bool special_left = isLeft(kind()) && (is_any || is_semi);
 
-    bool no_ors = (key_names_right.size() == 1);
+    bool no_ors = (left_clauses.size() == 1);
 
     return (all_join || special_left) && no_ors;
 }
@@ -407,7 +394,7 @@ bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
     if (!allowed_inner && !allowed_left)
         return false;
 
-    const Names & right_keys = keyNamesRight().front();
+    const Names & right_keys = right_clauses.front().key_names;
     if (right_keys.size() != 1)
         return false;
 
@@ -470,12 +457,14 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     for (const auto & col : right)
         right_types[renamedRightColumnName(col.name)] = col.type;
 
-    for (size_t d = 0; d < key_names_left.size(); ++d)
+    for (size_t d = 0; d < left_clauses.size(); ++d)
     {
-        for (size_t i = 0; i < key_names_left[d].size(); ++i)
+        auto & key_names_left = left_clauses[d].key_names;
+        auto & key_names_right = right_clauses[d].key_names;
+        for (size_t i = 0; i < key_names_left.size(); ++i)
         {
-            auto ltype = left_types.find(key_names_left[d][i]);
-            auto rtype = right_types.find(key_names_right[d][i]);
+            auto ltype = left_types.find(key_names_left[i]);
+            auto rtype = right_types.find(key_names_right[i]);
             if (ltype == left_types.end() || rtype == right_types.end())
             {
                 /// Name mismatch, give up
@@ -495,13 +484,14 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
             }
             catch (DB::Exception & ex)
             {
-                throw DB::Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Can't infer common type for joined columns: {}: {} at left, {}: {} at right. {}",
-                    key_names_left[d][i], ltype->second->getName(),
-                    key_names_right[d][i], rtype->second->getName(),
-                    ex.message());
+                throw Exception(
+                    "Type mismatch of columns to JOIN by: " +
+                    key_names_left[d][i] + ": " + ltype->second->getName() + " at left, " +
+                    key_names_right[d][i] + ": " + rtype->second->getName() + " at right. " +
+                    "Can't get supertype: " + ex.message(),
+                    ErrorCodes::TYPE_MISMATCH);
             }
-            left_type_map[key_names_left[d][i]] = right_type_map[key_names_right[d][i]] = supertype;
+            left_type_map[key_names_left[i]] = right_type_map[key_names_right[i]] = supertype;
         }
     }
 
@@ -518,7 +508,7 @@ bool TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
 }
 
 ActionsDAGPtr TableJoin::applyKeyConvertToTable(
-    const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NamesVector & names_vector_to_rename) const
+    const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, std::vector<JoinOnClause> & join_clause) const
 {
     bool has_some_to_do = false;
 
@@ -540,9 +530,9 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
     auto dag = ActionsDAG::makeConvertingActions(
         cols_src, cols_dst, ActionsDAG::MatchColumnsMode::Name, true, !hasUsing(), &key_column_rename);
 
-    for (auto & disjunct_names : names_vector_to_rename)
+    for (auto & clause : join_clause)
     {
-        for (auto & name : disjunct_names)
+        for (auto & name : clause.key_names)
         {
             const auto it = key_column_rename.find(name);
             if (it != key_column_rename.end())
@@ -577,9 +567,9 @@ String TableJoin::renamedRightColumnName(const String & name) const
 void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
 {
     if (is_left)
-        on_filter_condition_asts_left[disjunct_num].push_back(ast);
+        left_clauses.back().on_filter_conditions.push_back(ast);
     else
-        on_filter_condition_asts_right[disjunct_num].push_back(ast);
+        right_clauses.back().on_filter_conditions.push_back(ast);
 }
 
 void TableJoin::leftToRightKeyRemap(
@@ -607,33 +597,34 @@ std::unordered_map<String, String> TableJoin::leftToRightKeyRemap() const
     if (hasUsing())
     {
         const auto & required_right_keys = requiredRightKeys();
-        for (size_t i = 0; i < key_names_left.size(); ++i)
-            TableJoin::leftToRightKeyRemap(key_names_left[i], key_names_right[i], required_right_keys, left_to_right_key_remap);
+        for (size_t i = 0; i < left_clauses.size(); ++i)
+            TableJoin::leftToRightKeyRemap(left_clauses[i].key_names, right_clauses[i].key_names, required_right_keys, left_to_right_key_remap);
     }
     return left_to_right_key_remap;
 }
 
 /// Returns all conditions related to one table joined with 'and' function
-static ASTPtr buildJoinConditionColumn(const ASTsVector & on_filter_condition_asts, size_t disjunct)
+static ASTPtr buildJoinConditionColumn(const ASTs & on_filter_condition_asts)
 {
-    if (on_filter_condition_asts[disjunct].empty())
+    if (on_filter_condition_asts.empty())
         return nullptr;
-    if (on_filter_condition_asts[disjunct].size() == 1)
-        return on_filter_condition_asts[disjunct][0];
+
+    if (on_filter_condition_asts.size() == 1)
+        return on_filter_condition_asts[0];
 
     auto function = std::make_shared<ASTFunction>();
     function->name = "and";
     function->arguments = std::make_shared<ASTExpressionList>();
     function->children.push_back(function->arguments);
-    function->arguments->children = on_filter_condition_asts[disjunct];
+    function->arguments->children = on_filter_condition_asts;
     return function;
 }
 
 ASTPtr TableJoin::joinConditionColumn(JoinTableSide side, size_t disjunct) const
 {
     if (side == JoinTableSide::Left)
-        return buildJoinConditionColumn(on_filter_condition_asts_left, disjunct);
-    return buildJoinConditionColumn(on_filter_condition_asts_right, disjunct);
+        return buildJoinConditionColumn(left_clauses[disjunct].on_filter_conditions);
+    return buildJoinConditionColumn(right_clauses[disjunct].on_filter_conditions);
 }
 
 std::pair<String, String> TableJoin::joinConditionColumnNames(size_t disjunct) const

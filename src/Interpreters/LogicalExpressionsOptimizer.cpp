@@ -1,4 +1,3 @@
-#include <common/logger_useful.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Core/Settings.h>
 
