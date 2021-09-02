@@ -133,7 +133,7 @@ private:
     void removeAllLogsAfter(uint64_t start_to_remove_from_id);
     /// Remove all logs from disk
     void removeAllLogs();
-    /// Init writer for exising log with some entries already written
+    /// Init writer for existing log with some entries already written
     void initWriter(const ChangelogFileDescription & description, uint64_t entries_already_written, std::optional<uint64_t> truncate_to_offset = {});
 
 private:
