@@ -13,7 +13,7 @@ Removes all data from a table. When the clause `IF EXISTS` is omitted, the query
 
 The `TRUNCATE` query is not supported for [View](../../engines/table-engines/special/view.md), [File](../../engines/table-engines/special/file.md), [URL](../../engines/table-engines/special/url.md), [Buffer](../../engines/table-engines/special/buffer.md) and [Null](../../engines/table-engines/special/null.md) table engines.
 
-You can to specify how long (in seconds) to wait for inactive replicas to execute `TRUNCATE` queries by the [replication_wait_for_inactive_replica_timeout seconds](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting.
+You can to specify how long (in seconds) to wait for inactive replicas to execute `TRUNCATE` queries by the [replication_wait_for_inactive_replica_timeout seconds](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting.
 
 !!! warning "Warning"
-    If the [replication_alter_partitions_sync](../../../operations/settings/settings.md#replication-alter-partitions-sync) setting is `2` and some replicas are not active for more than the time specified by the [replication_wait_for_inactive_replica_timeout seconds](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting, then an exception `UNFINISHED` will be thrown.
+    If the [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) setting is `2` and some replicas are not active for more than the time specified by the [replication_wait_for_inactive_replica_timeout seconds](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting, then an exception `UNFINISHED` will be thrown.
