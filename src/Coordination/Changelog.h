@@ -129,9 +129,11 @@ private:
     /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
     void rotate(uint64_t new_start_log_index);
 
+    /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
     void removeAllLogsAfter(uint64_t start_to_remove_from_id);
+    /// Remove all logs from disk
     void removeAllLogs();
-
+    /// Init writer for exising log with some entries already written
     void initWriter(const ChangelogFileDescription & description, uint64_t entries_already_written, std::optional<uint64_t> truncate_to_offset = {});
 
 private:
