@@ -6,6 +6,7 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
 #include <Common/isLocalAddress.h>
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -32,6 +33,11 @@ void DDLDependencyVisitor::visit(const ASTFunction & function, Data & data)
     {
         extractTableNameFromArgument(function, data, 0);
     }
+    else if (Poco::toLower(function.name) == "in")
+    {
+        extractTableNameFromArgument(function, data, 1);
+    }
+
 }
 
 void DDLDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data)
