@@ -49,7 +49,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     {
         /// We don't use preparsed AST `sorting_key.expression_list_ast` because
         /// it contain version column for VersionedCollapsingMergeTree, which
-        /// shouldn't be defined as a part of key definition AST. So the best
+        /// is not stored in ZooKeeper for compatibility reasons. So the best
         /// compatible way is just to convert definition_ast to list and
         /// serialize it. In all other places key.expression_list_ast should be
         /// used.
