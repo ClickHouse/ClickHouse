@@ -106,6 +106,7 @@ def test_load_ids(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
+    instance.query('DROP DICTIONARY IF EXISTS lib_dict_c')
     instance.query('''
         CREATE DICTIONARY lib_dict_c (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
         PRIMARY KEY key SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'))
@@ -271,6 +272,7 @@ def test_bridge_dies_with_parent(ch_cluster):
     assert clickhouse_pid is None
     assert bridge_pid is None
     instance.start_clickhouse(20)
+    instance.query('DROP DICTIONARY lib_dict_c')
 
 
 def test_path_validation(ch_cluster):
