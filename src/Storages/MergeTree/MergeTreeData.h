@@ -808,9 +808,6 @@ public:
     /// If one_part is true, fill in at most one part.
     Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part, bool ignore_empty = false) const;
 
-    /// Limiting parallel sends per one table, used in DataPartsExchange
-    std::atomic_uint current_table_sends {0};
-
     /// For generating names of temporary parts during insertion.
     SimpleIncrement insert_increment;
 
