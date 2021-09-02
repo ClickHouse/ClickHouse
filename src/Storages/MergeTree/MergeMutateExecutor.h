@@ -4,50 +4,19 @@
 #include <functional>
 #include <atomic>
 #include <mutex>
+#include <future>
 #include <condition_variable>
-#include <unordered_set>
+#include <set>
 
 #include <common/shared_ptr_helper.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/RingBuffer.h>
 #include <Storages/MergeTree/ExecutableTask.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 
 
 namespace DB
 {
-
-class LambdaAdapter : public shared_ptr_helper<LambdaAdapter>, public ExecutableTask
-{
-public:
-
-    template <typename T>
-    explicit LambdaAdapter(T && inner_, MergeTreeData & data_) : inner(inner_), data(data_) {}
-
-    bool execute() override
-    {
-        res = inner();
-        inner = {};
-        return false;
-    }
-
-    void onCompleted() override
-    {
-        data.triggerBackgroundOperationTask(!res);
-    }
-
-    StorageID getStorageID() override
-    {
-        return data.getStorageID();
-    }
-
-private:
-    bool res = false;
-    std::function<bool()> inner;
-    MergeTreeData & data;
-};
-
 
 class MergeTreeBackgroundExecutor : public shared_ptr_helper<MergeTreeBackgroundExecutor>
 {

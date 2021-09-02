@@ -3,6 +3,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -57,7 +58,6 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
-class BackgroundJobAssignee;
 
 namespace ErrorCodes
 {
@@ -849,9 +849,6 @@ public:
     /// Mutex for currently_submerging_parts and currently_emerging_parts
     mutable std::mutex currently_submerging_emerging_mutex;
 
-    /// Trigger merge scheduling task
-    virtual void triggerBackgroundOperationTask(bool delay) = 0;
-
 protected:
 
     friend class IMergeTreeDataPart;
@@ -922,6 +919,15 @@ protected:
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
 
     MergeTreePartsMover parts_mover;
+
+    /// Executors are common for both ReplicatedMergeTree and plain MergeTree
+    /// but they are being started and finished in derived classes, so let them be protected.
+    BackgroundJobAssignee background_executor;
+    BackgroundJobAssignee background_moves_executor;
+
+    /// Every task that is finished will ask to assign a new one into an executor.
+    std::function<void(bool)> common_assignee_trigger;
+    std::function<void(bool)> moves_assignee_trigger;
 
     using DataPartIteratorByInfo = DataPartsIndexes::index<TagByInfo>::type::iterator;
     using DataPartIteratorByStateAndInfo = DataPartsIndexes::index<TagByStateAndInfo>::type::iterator;

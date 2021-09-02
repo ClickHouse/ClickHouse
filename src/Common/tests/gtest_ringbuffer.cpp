@@ -41,7 +41,7 @@ TEST(RingBuffer, Random)
     std::random_device device;
     std::mt19937 generator(device());
 
-    std::uniform_int_distribution<> distribution(0, 1);
+    std::uniform_int_distribution<> distribution(0, 3);
 
     RingBuffer<int> buffer(10);
 

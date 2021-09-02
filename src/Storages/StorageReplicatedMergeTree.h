@@ -262,20 +262,6 @@ public:
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
-
-    void triggerBackgroundOperationTask(bool delay) override
-    {
-        if (delay)
-            background_executor.postpone();
-        else
-            background_executor.trigger();
-
-        if (delay)
-            background_moves_executor.postpone();
-        else
-            background_moves_executor.trigger();
-    }
-
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -407,10 +393,6 @@ private:
     /// speed.
     ThrottlerPtr replicated_fetches_throttler;
     ThrottlerPtr replicated_sends_throttler;
-
-    /// Must be the last to be destroyed first
-    BackgroundJobAssignee background_executor;
-    BackgroundJobAssignee background_moves_executor;
 
     template <class Func>
     void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;
