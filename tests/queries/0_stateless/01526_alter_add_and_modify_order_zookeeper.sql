@@ -12,7 +12,7 @@ CREATE TABLE table_for_alter
     `version` UInt64,
     `sign` Int8 DEFAULT 1
 )
-ENGINE = ReplicatedVersionedCollapsingMergeTree('/clickhouse/tables/01526_alter_add/t1', '1', sign, version)
+ENGINE = ReplicatedVersionedCollapsingMergeTree('/clickhouse/tables/{database}/01526_alter_add/t1', '1', sign, version)
 PARTITION BY y
 ORDER BY d
 SETTINGS index_granularity = 8192;
