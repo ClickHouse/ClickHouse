@@ -1049,7 +1049,7 @@ class ClickHouseCluster:
                 errors += [str(ex)]
                 time.sleep(interval)
 
-        run_and_check(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker', 'ps', '--all'])
         logging.error("Can't connect to URL:{}".format(errors))
         raise Exception("Cannot wait URL {}(interval={}, timeout={}, attempts={})".format(
             url, interval, timeout, attempts))
@@ -1757,6 +1757,7 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
+            - /run/xtables.lock:/run/xtables.lock:ro
             {binary_volume}
             {odbc_bridge_volume}
             {library_bridge_volume}
