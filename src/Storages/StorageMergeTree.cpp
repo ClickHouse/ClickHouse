@@ -82,9 +82,6 @@ StorageMergeTree::StorageMergeTree(
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, getContext()->getSettingsRef().background_pool_size)
-    , background_executor(*this, BackgroundJobAssignee::Type::DataProcessing, getContext())
-    , background_moves_executor(*this, BackgroundJobAssignee::Type::Moving, getContext())
-
 {
     loadDataParts(has_force_restore_data_flag);
 
@@ -1080,7 +1077,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobAssignee & executo
             [this, metadata_snapshot, merge_entry, share_lock] () mutable
             {
                 return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
-            }, *this));
+            }, common_assignee_trigger, getStorageID()));
         return true;
     }
     if (mutate_entry)
@@ -1089,7 +1086,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobAssignee & executo
             [this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
             {
             return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
-            }, *this));
+            }, common_assignee_trigger, getStorageID()));
         return true;
     }
     bool executed = false;
@@ -1100,7 +1097,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobAssignee & executo
             {
                 clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
                 return true;
-            }, *this));
+            }, common_assignee_trigger, getStorageID()));
         executed = true;
     }
     if (time_after_previous_cleanup_parts.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
@@ -1115,7 +1112,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobAssignee & executo
                 clearOldMutations();
                 clearEmptyParts();
                 return true;
-            }, *this));
+            }, common_assignee_trigger, getStorageID()));
         executed = true;
      }
 

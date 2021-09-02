@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeMutateExecutor.h>
 
+#include <Common/setThreadName.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
 
@@ -53,6 +54,10 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
 
 void MergeTreeBackgroundExecutor::schedulerThreadFunction()
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
+
+    bool status;
+
     while (true)
     {
         std::unique_lock lock(mutex);
@@ -66,7 +71,8 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
         if (!pending.tryPop(&item))
             continue;
 
-        active.tryPush(item);
+        status = active.tryPush(item);
+        assert(status);
 
         try
         {
@@ -137,7 +143,8 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
         if (!res)
         {
             active.eraseAll([&] (auto x) { return x == item; });
-            pending.tryPush(item);
+            status = pending.tryPush(item);
+            assert(status);
         }
 
     }

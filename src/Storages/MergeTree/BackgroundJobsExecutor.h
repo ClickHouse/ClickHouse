@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeMutateExecutor.h>
 #include <Common/ThreadPool.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -28,6 +27,7 @@ struct ExecutableTaskSchedulingSettings
     double task_sleep_seconds_when_no_work_min = 10;
 };
 
+class MergeTreeData;
 
 class BackgroundJobAssignee : protected WithContext
 {
@@ -47,6 +47,8 @@ private:
     BackgroundSchedulePool::TaskHolder holder;
     /// Mutex for thread safety
     std::mutex holder_mutex;
+
+    bool finished{false};
 
 public:
     enum class Type

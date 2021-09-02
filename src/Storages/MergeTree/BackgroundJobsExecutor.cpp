@@ -111,6 +111,8 @@ void BackgroundJobAssignee::finish()
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
     }
+
+    finished = true;
 }
 
 
@@ -139,7 +141,8 @@ catch (...) /// Catch any exception to avoid thread termination.
 
 BackgroundJobAssignee::~BackgroundJobAssignee()
 {
-    finish();
+    if (!finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "finish() method must be called before destructor")
 }
 
 }

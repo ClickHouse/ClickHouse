@@ -16,7 +16,6 @@
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
 
 namespace DB
@@ -100,19 +99,6 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
-    void triggerBackgroundOperationTask(bool delay) override
-    {
-        if (delay)
-            background_executor.postpone();
-        else
-            background_executor.trigger();
-
-        if (delay)
-            background_moves_executor.postpone();
-        else
-            background_moves_executor.trigger();
-    }
-
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -147,10 +133,6 @@ private:
     std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
     std::atomic<bool> shutdown_called {false};
-
-    /// Must be the last to be destroyed first
-    BackgroundJobAssignee background_executor;
-    BackgroundJobAssignee background_moves_executor;
 
     void loadMutations();
 
