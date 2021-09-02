@@ -210,7 +210,7 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(String & snapshot_name
 
     /// Load from snapshot, which will show table state before creation of replication slot.
     /// Already connected to needed database, no need to add it to query.
-    query_str = fmt::format("SELECT * FROM {}", table_name);
+    query_str = fmt::format("SELECT * FROM {}", doubleQuoteString(table_name));
 
     materialized_storage->createNestedIfNeeded(fetchTableStructure(*tx, table_name));
     auto nested_storage = materialized_storage->getNested();
@@ -311,7 +311,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx)
             {
                 if (!tables_list.empty())
                     tables_list += ", ";
-                tables_list += storage_data.first;
+                tables_list += doubleQuoteString(storage_data.first);
             }
         }
 
