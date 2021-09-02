@@ -146,7 +146,6 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 
 void DatabaseCatalog::loadDatabases()
 {
-    loadMarkedAsDroppedTables();
     auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
     (*drop_task)->activate();
