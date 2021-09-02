@@ -215,11 +215,11 @@ try
 
     std::optional<StatusFile> status;
 
-    // Non-fuzzer mode: main function runs only one time,
-    // so first_time clauses does not affect anything
+#ifdef FUZZING_MODE
     static bool first_time = true;
     if (first_time)
     {
+#endif
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
@@ -315,15 +315,19 @@ try
     {
         attachSystemTables(global_context);
     }
+#ifdef FUZZING_MODE
     }
+#endif
 
     /// processing queries
 
     String initial_create_query = getInitialCreateTableQuery();
     String queries_str = initial_create_query;
 
+#ifdef FUZZING_MODE
     if (first_time)
     {
+#endif
     if (config().has("query"))
         queries_str += config().getRawString("query");
     else
@@ -333,13 +337,19 @@ try
         readStringUntilEOF(queries_from_file, in);
         queries_str += queries_from_file;
     }
+#ifdef FUZZING_MODE
     }
+#endif
 
     const auto & settings = global_context->getSettingsRef();
 
+#ifdef FUZZING_MODE
     static std::vector<String> queries;
     if (first_time)
     {
+#else
+    std::vector<String> queries;
+#endif
     std::pair<const char *, bool> parse_res;
 #ifdef FUZZING_MODE
     try
@@ -362,9 +372,11 @@ try
 
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
+#ifdef FUZZING_MODE
     }
-
     first_time = false;
+#endif
+
     /// Authenticate and create a context to execute queries.
     Session session{global_context, ClientInfo::Interface::LOCAL};
     session.authenticate("default", "", {});
@@ -445,6 +457,7 @@ try
     status.reset();
     cleanup();
 #endif
+
     return Application::EXIT_OK;
 }
 catch (const Exception & e)
