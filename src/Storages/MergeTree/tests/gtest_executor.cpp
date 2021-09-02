@@ -54,14 +54,16 @@ private:
 
 TEST(Executor, RemoveTasks)
 {
-    auto executor = DB::MergeTreeBackgroundExecutor::create(DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE);
-
     const size_t tasks_kinds = 25;
     const size_t batch = 100;
 
-    executor->setThreadsCount([]() { return tasks_kinds; });
-    executor->setTasksCount([] () { return tasks_kinds * batch; });
-    executor->setMetric(CurrentMetrics::BackgroundPoolTask);
+    auto executor = DB::MergeTreeBackgroundExecutor::create
+    (
+        DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
+        [] () { return tasks_kinds; },
+        [] () { return tasks_kinds * batch; },
+        CurrentMetrics::BackgroundPoolTask
+    );
 
     for (size_t i = 0; i < batch; ++i)
         for (size_t j = 0; j < tasks_kinds; ++j)
@@ -93,16 +95,18 @@ TEST(Executor, RemoveTasks)
 
 TEST(Executor, RemoveTasksStress)
 {
-    auto executor = DB::MergeTreeBackgroundExecutor::create(DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE);
-
     const size_t tasks_kinds = 25;
     const size_t batch = 100;
     const size_t schedulers_count = 5;
     const size_t removers_count = 5;
 
-    executor->setThreadsCount([]() { return tasks_kinds; });
-    executor->setTasksCount([] () { return tasks_kinds * batch * (schedulers_count + removers_count); });
-    executor->setMetric(CurrentMetrics::BackgroundPoolTask);
+    auto executor = DB::MergeTreeBackgroundExecutor::create
+    (
+        DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
+        [] () { return tasks_kinds; },
+        [] () { return tasks_kinds * batch * (schedulers_count + removers_count); },
+        CurrentMetrics::BackgroundPoolTask
+    );
 
     std::barrier barrier(schedulers_count + removers_count);
 

@@ -107,7 +107,6 @@ private:
     std::list<Thread> threads;
     std::exception_ptr first_exception;
 
-
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
 

@@ -2729,21 +2729,30 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 
 void Context::initializeBackgroundExecutors()
 {
-    shared->merge_mutate_executor = MergeTreeBackgroundExecutor::create(MergeTreeBackgroundExecutor::Type::MERGE_MUTATE);
-    shared->moves_executor = MergeTreeBackgroundExecutor::create(MergeTreeBackgroundExecutor::Type::MOVE);
-    shared->fetch_executor = MergeTreeBackgroundExecutor::create(MergeTreeBackgroundExecutor::Type::FETCH);
+    shared->merge_mutate_executor = MergeTreeBackgroundExecutor::create
+    (
+        MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
+        [this] () { return getSettingsRef().background_pool_size; },
+        [this] () { return getSettingsRef().background_pool_size; },
+        CurrentMetrics::BackgroundPoolTask
+    );
 
-    shared->merge_mutate_executor->setThreadsCount([this] () { return getSettingsRef().background_pool_size; });
-    shared->merge_mutate_executor->setTasksCount([this] () { return getSettingsRef().background_pool_size; });
-    shared->merge_mutate_executor->setMetric(CurrentMetrics::BackgroundPoolTask);
+    shared->moves_executor = MergeTreeBackgroundExecutor::create
+    (
+        MergeTreeBackgroundExecutor::Type::MOVE,
+        [this] () { return getSettingsRef().background_move_pool_size; },
+        [this] () { return getSettingsRef().background_move_pool_size; },
+        CurrentMetrics::BackgroundMovePoolTask
+    );
 
-    shared->moves_executor->setThreadsCount([this] () { return getSettingsRef().background_move_pool_size; });
-    shared->moves_executor->setTasksCount([this] () { return getSettingsRef().background_move_pool_size; });
-    shared->moves_executor->setMetric(CurrentMetrics::BackgroundMovePoolTask);
 
-    shared->fetch_executor->setThreadsCount([this] () { return getSettingsRef().background_fetches_pool_size; });
-    shared->fetch_executor->setTasksCount([this] () { return getSettingsRef().background_fetches_pool_size; });
-    shared->fetch_executor->setMetric(CurrentMetrics::BackgroundFetchesPoolTask);
+    shared->fetch_executor = MergeTreeBackgroundExecutor::create
+    (
+        MergeTreeBackgroundExecutor::Type::FETCH,
+        [this] () { return getSettingsRef().background_fetches_pool_size; },
+        [this] () { return getSettingsRef().background_fetches_pool_size; },
+        CurrentMetrics::BackgroundFetchesPoolTask
+    );
 }
 
 
