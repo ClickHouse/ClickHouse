@@ -88,7 +88,7 @@ enum class AccessType
     M(CREATE_TEMPORARY_TABLE, "", GLOBAL, CREATE) /* allows to create and manipulate temporary tables;
                                                      implicitly enabled by the grant CREATE_TABLE on any table */ \
     M(CREATE_FUNCTION, "", DATABASE, CREATE) /* allows to execute CREATE FUNCTION */ \
-    M(CREATE_DATA_TYPE, "", DATABASE, CREATE) /* allows to execute CREATE DATA TYPE */ \
+    M(CREATE_TYPE, "", DATABASE, CREATE) /* allows to execute CREATE TYPE */ \
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
     M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH} DATABASE */\
@@ -97,7 +97,7 @@ enum class AccessType
                                     implicitly enabled by the grant DROP_TABLE */\
     M(DROP_DICTIONARY, "", DICTIONARY, DROP) /* allows to execute {DROP|DETACH} DICTIONARY */\
     M(DROP_FUNCTION, "", DATABASE, DROP) /* allows to execute DROP FUNCTION */\
-    M(DROP_DATA_TYPE, "", DATABASE, DROP) /* allows to execute DROP DATA TYPE */\
+    M(DROP_TYPE, "", DATABASE, DROP) /* allows to execute DROP TYPE */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
     M(TRUNCATE, "TRUNCATE TABLE", TABLE, ALL) \

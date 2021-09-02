@@ -11,7 +11,7 @@ namespace DB
 BlockIO InterpreterDropDataTypeQuery::execute()
 {
     auto current_context = getContext();
-    current_context->checkAccess(AccessType::DROP_DATA_TYPE);
+    current_context->checkAccess(AccessType::DROP_TYPE);
 
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & drop_data_type_query = query_ptr->as<ASTDropDataTypeQuery &>();

@@ -14,7 +14,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-def test_access_rights_for_funtion():
+def test_access_rights_for_data_types():
     create_data_type_query = "CREATE TYPE MyType AS int"
 
     instance.query("CREATE USER A")

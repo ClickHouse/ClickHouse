@@ -47,7 +47,7 @@ def test_data_type_persistence():
     instance.restart_clickhouse()
 
     instance.query("INSERT INTO TestTable VALUES(20)")
-    assert instance.query("SELECT * FROM TestTable") == "10\n20\n"
+    assert instance.query("SELECT * FROM TestTable") == "20\n10\n"
 
     instance.query("DROP TABLE TestTable")
     instance.query("DROP TYPE MyType")

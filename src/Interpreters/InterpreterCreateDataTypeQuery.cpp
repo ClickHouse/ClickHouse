@@ -12,7 +12,7 @@ namespace DB
 BlockIO InterpreterCreateDataTypeQuery::execute()
 {
     auto current_context = getContext();
-    current_context->checkAccess(AccessType::CREATE_DATA_TYPE);
+    current_context->checkAccess(AccessType::CREATE_TYPE);
 
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & create_data_type_query = query_ptr->as<ASTCreateDataTypeQuery &>();
