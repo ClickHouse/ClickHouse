@@ -17,10 +17,11 @@ struct PoolFactory::Impl
     std::mutex mutex;
 };
 
-PoolWithFailover PoolFactory::get(const std::string & config_name, unsigned default_connections,
-    unsigned max_connections, size_t max_tries)
+PoolWithFailover PoolFactory::get(const std::string & config_name,
+    const ConnectionConfiguration & configuration,
+    unsigned default_connections, unsigned max_connections, size_t max_tries)
 {
-    return get(Poco::Util::Application::instance().config(), config_name, default_connections, max_connections, max_tries);
+    return get(Poco::Util::Application::instance().config(), config_name, configuration, default_connections, max_connections, max_tries);
 }
 
 /// Duplicate of code from StringUtils.h. Copied here for less dependencies.
@@ -72,10 +73,9 @@ static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & co
     return entry_name;
 }
 
-PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_name, unsigned default_connections, unsigned max_connections, size_t max_tries)
+PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & config, const std::string & config_name,
+    const ConnectionConfiguration & configuration, unsigned default_connections, unsigned max_connections, size_t max_tries)
 {
-
     std::lock_guard<std::mutex> lock(impl->mutex);
     if (auto entry = impl->pools.find(config_name); entry != impl->pools.end())
     {
@@ -92,7 +92,7 @@ PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & conf
             return *pool;
         }
 
-        auto pool = std::make_shared<PoolWithFailover>(config, config_name, default_connections, max_connections, max_tries);
+        auto pool = std::make_shared<PoolWithFailover>(config, config_name, configuration, default_connections, max_connections, max_tries);
         // Check the pool will be shared
         if (!entry_name.empty())
         {

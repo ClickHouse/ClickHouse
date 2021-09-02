@@ -52,8 +52,8 @@ PoolWithFailover::PoolWithFailover(
     for (const auto & [host, port] : configuration.addresses)
     {
         LOG_DEBUG(&Poco::Logger::get("PostgreSQLPoolWithFailover"), "Adding address host: {}, port: {} to connection pool", host, port);
-        auto connection_string = formatConnectionString(configuration.database, configuration.host, configuration.port, configuration.username, configuration.password).first;
-        replicas_with_priority[0].emplace_back(connection_string, pool_size, getConnectionForLog(configuration.host, configuration.port));
+        auto connection_string = formatConnectionString(configuration.database, host, port, configuration.username, configuration.password).first;
+        replicas_with_priority[0].emplace_back(connection_string, pool_size, getConnectionForLog(host, port));
     }
 }
 

@@ -97,15 +97,11 @@ namespace mysqlxx
          * max_connections       Maximum number of connections in pool to each replica.
          * max_tries_            Max number of connection tries.
          */
-        PoolWithFailover(
-            const std::string & config_name_,
-            unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-            unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
-            size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
 
         PoolWithFailover(
             const Poco::Util::AbstractConfiguration & config_,
             const std::string & config_name_,
+            const ConnectionConfiguration & configuration,
             unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
             unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
             size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);

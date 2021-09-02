@@ -141,11 +141,16 @@ ExternalDataSourceConfiguration tryGetConfigurationAsNamedCollection(
 }
 
 
-ExternalDataSourcesConfigurationByPriority tryGetConfigurationsByPriorityAsNamedCollection(
+ExternalDataSourcesByPriority tryGetConfigurationsByPriorityAsNamedCollection(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
 {
     auto common_configuration = tryGetConfigurationAsNamedCollection(dict_config, dict_config_prefix, context);
-    ExternalDataSourcesConfigurationByPriority configurations;
+    ExternalDataSourcesByPriority configuration
+    {
+        .database = common_configuration.database,
+        .table = common_configuration.table,
+        .schema = common_configuration.schema
+    };
 
     if (dict_config.has(dict_config_prefix + ".replica"))
     {
@@ -172,16 +177,16 @@ ExternalDataSourcesConfigurationByPriority tryGetConfigurationsByPriorityAsNamed
                                     "Named collection of connection parameters is missing some of the parameters and no other dictionary parameters are added");
                 }
 
-                configurations[priority].emplace_back(replica_configuration);
+                configuration.replicas_configurations[priority].emplace_back(replica_configuration);
             }
         }
     }
     else
     {
-        configurations[0].emplace_back(common_configuration);
+        configuration.replicas_configurations[0].emplace_back(common_configuration);
     }
 
-    return configurations;
+    return configuration;
 }
 
 }

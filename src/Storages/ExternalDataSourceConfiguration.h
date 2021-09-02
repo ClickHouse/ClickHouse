@@ -15,7 +15,7 @@ namespace DB
 struct ExternalDataSourceConfiguration
 {
     String host;
-    UInt16 port;
+    UInt16 port = 0;
     String username;
     String password;
     String database;
@@ -30,19 +30,24 @@ struct ExternalDataSourceConfiguration
 
 using ExternalDataSourceConfigurationPtr = std::shared_ptr<ExternalDataSourceConfiguration>;
 
-/// Highest priority is 0, the bigger the number in map, the less the priority.
-using ExternalDataSourcesConfigurationByPriority = std::map<size_t, std::vector<ExternalDataSourceConfiguration>>;
-
 
 struct StoragePostgreSQLConfiguration : ExternalDataSourceConfiguration
 {
-    explicit StoragePostgreSQLConfiguration(
-            const ExternalDataSourceConfiguration & common_configuration,
-            const String & on_conflict_ = "")
-        : ExternalDataSourceConfiguration(common_configuration)
-        , on_conflict(on_conflict_) {}
+    explicit StoragePostgreSQLConfiguration(const ExternalDataSourceConfiguration & common_configuration)
+        : ExternalDataSourceConfiguration(common_configuration) {}
 
     String on_conflict;
+    std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
+};
+
+
+struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
+{
+    explicit StorageMySQLConfiguration(const ExternalDataSourceConfiguration & common_configuration)
+        : ExternalDataSourceConfiguration(common_configuration) {}
+
+    bool replace_query;
+    String on_duplicate_clause;
     std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
 };
 
@@ -62,7 +67,22 @@ using EngineArgs = std::vector<std::pair<String, DB::Field>>;
 std::tuple<ExternalDataSourceConfiguration, EngineArgs, bool>
 tryGetConfigurationAsNamedCollection(ASTs args, ContextPtr context, bool is_database_engine = false);
 
-ExternalDataSourcesConfigurationByPriority
+ExternalDataSourceConfiguration tryGetConfigurationAsNamedCollection(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
+
+
+/// Highest priority is 0, the bigger the number in map, the less the priority.
+using ExternalDataSourcesConfigurationByPriority = std::map<size_t, std::vector<ExternalDataSourceConfiguration>>;
+
+struct ExternalDataSourcesByPriority
+{
+    String database;
+    String table;
+    String schema;
+    ExternalDataSourcesConfigurationByPriority replicas_configurations;
+};
+
+ExternalDataSourcesByPriority
 tryGetConfigurationsByPriorityAsNamedCollection(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
 
 }
