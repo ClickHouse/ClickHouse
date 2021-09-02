@@ -181,6 +181,48 @@ Possible values:
 
 Default value: 0.
 
+## max_replicated_fetches_network_bandwidth {#max_replicated_fetches_network_bandwidth}
+
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) fetches for a table.
+
+The setting isn't followed perfectly accurately.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited.
+
+Default value: `0`.
+
+**Usage**
+
+Could be used for throttling speed when replicating the data to add or replace new nodes.
+
+**See Also**
+
+-   [max_replicated_fetches_network_bandwidth_for_server](../../operations/settings/settings.md#max_replicated_fetches_network_bandwidth_for_server)
+
+## max_replicated_sends_network_bandwidth {#max_replicated_sends_network_bandwidth}
+
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends for a table.
+
+The setting isn't followed perfectly accurately.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Unlimited.
+
+Default value: `0`.
+
+**Usage**
+
+Could be used for throttling speed when replicating the data to add or replace new nodes.
+
+**See Also**
+
+-   [max_replicated_sends_network_bandwidth_for_server](../../operations/settings/settings.md#max_replicated_sends_network_bandwidth_for_server)
+
 ## old_parts_lifetime {#old-parts-lifetime}
 
 The time (in seconds) of storing inactive parts to protect against data loss during spontaneous server reboots.
