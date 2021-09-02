@@ -3460,7 +3460,7 @@ Default value: `0`.
 
 ## regexp_max_matches_per_row {#regexp-max-matches-per-row}
 
-Sets the maximum number of matches for a single regular expression per row. Use to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md#extractallgroups-horizontal) function.
+Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md#extractallgroups-horizontal) function.
 
 Possible values:
 
