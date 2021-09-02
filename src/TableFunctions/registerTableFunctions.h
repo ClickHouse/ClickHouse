@@ -13,7 +13,6 @@ void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
 void registerTableFunctionNull(TableFunctionFactory & factory);
 void registerTableFunctionZeros(TableFunctionFactory & factory);
-void registerTableFunctionExecutable(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
@@ -41,10 +40,6 @@ void registerTableFunctionMySQL(TableFunctionFactory & factory);
 
 #if USE_LIBPQXX
 void registerTableFunctionPostgreSQL(TableFunctionFactory & factory);
-#endif
-
-#if USE_SQLITE
-void registerTableFunctionSQLite(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionDictionary(TableFunctionFactory & factory);

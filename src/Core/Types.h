@@ -13,33 +13,7 @@ namespace DB
 
 /// Data types for representing elementary values from a database in RAM.
 
-/// Hold a null value for untyped calculation. It can also store infinities to handle nullable
-/// comparison which is used for nullable KeyCondition.
-struct Null
-{
-    enum class Value
-    {
-        Null,
-        PositiveInfinity,
-        NegativeInfinity,
-    };
-
-    Value value{Value::Null};
-
-    bool isNull() const { return value == Value::Null; }
-    bool isPositiveInfinity() const { return value == Value::PositiveInfinity; }
-    bool isNegativeInfinity() const { return value == Value::NegativeInfinity; }
-
-    bool operator==(const Null & other) const
-    {
-        return value == other.value;
-    }
-
-    bool operator!=(const Null & other) const
-    {
-        return !(*this == other);
-    }
-};
+struct Null {};
 
 /// Ignore strange gcc warning https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55776
 #if !defined(__clang__)
@@ -65,7 +39,6 @@ enum class TypeIndex
     Float32,
     Float64,
     Date,
-    Date32,
     DateTime,
     DateTime64,
     String,
@@ -284,7 +257,6 @@ inline constexpr const char * getTypeName(TypeIndex idx)
         case TypeIndex::Float32:    return "Float32";
         case TypeIndex::Float64:    return "Float64";
         case TypeIndex::Date:       return "Date";
-        case TypeIndex::Date32:     return "Date32";
         case TypeIndex::DateTime:   return "DateTime";
         case TypeIndex::DateTime64: return "DateTime64";
         case TypeIndex::String:     return "String";

@@ -23,13 +23,6 @@ enum class SelectPartsDecision
     NOTHING_TO_MERGE = 2,
 };
 
-enum class ExecuteTTLType
-{
-    NONE = 0,
-    NORMAL = 1,
-    RECALCULATE= 2,
-};
-
 /// Auxiliary struct holding metainformation for the future merged or mutated part.
 struct FutureMergedMutatedPart
 {
@@ -207,7 +200,8 @@ private:
         const ProjectionsDescription & all_projections,
         const MutationCommands & commands_for_removes);
 
-    static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies);
+    static bool shouldExecuteTTL(
+        const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies, const MutationCommands & commands);
 
     /// Return set of indices which should be recalculated during mutation also
     /// wraps input stream into additional expression stream
@@ -248,7 +242,7 @@ private:
         time_t time_of_mutation,
         const CompressionCodecPtr & compression_codec,
         MergeListEntry & merge_entry,
-        ExecuteTTLType execute_ttl_type,
+        bool need_remove_expired_values,
         bool need_sync,
         const ReservationPtr & space_reservation,
         TableLockHolder & holder,
@@ -266,7 +260,7 @@ private:
         time_t time_of_mutation,
         const CompressionCodecPtr & compression_codec,
         MergeListEntry & merge_entry,
-        ExecuteTTLType execute_ttl_type,
+        bool need_remove_expired_values,
         bool need_sync,
         const ReservationPtr & space_reservation,
         TableLockHolder & holder,
@@ -277,7 +271,7 @@ private:
     static void finalizeMutatedPart(
         const MergeTreeDataPartPtr & source_part,
         MergeTreeData::MutableDataPartPtr new_data_part,
-        ExecuteTTLType execute_ttl_type,
+        bool need_remove_expired_values,
         const CompressionCodecPtr & codec);
 
 public :
