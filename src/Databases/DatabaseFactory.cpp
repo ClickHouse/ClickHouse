@@ -135,40 +135,61 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     else if (engine_name == "MySQL" || engine_name == "MaterializeMySQL" || engine_name == "MaterializedMySQL")
     {
         const ASTFunction * engine = engine_define->engine;
-        if (!engine->arguments || engine->arguments->children.size() != 4)
-            throw Exception(
-                engine_name + " Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.",
-                ErrorCodes::BAD_ARGUMENTS);
+        ASTs & engine_args = engine->arguments->children;
+        auto [common_configuration, storage_specific_args, with_named_collection] = tryGetConfigurationAsNamedCollection(engine_args, context, true);
+        StorageMySQLConfiguration configuration(common_configuration);
 
-        ASTs & arguments = engine->arguments->children;
-        arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
+        if (with_named_collection)
+        {
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+            if (!storage_specific_args.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
+        }
+        else
+        {
+            if (!engine->arguments || engine->arguments->children.size() != 4)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
 
-        const auto & host_port = safeGetLiteralValue<String>(arguments[0], engine_name);
-        const auto & mysql_database_name = safeGetLiteralValue<String>(arguments[1], engine_name);
-        const auto & mysql_user_name = safeGetLiteralValue<String>(arguments[2], engine_name);
-        const auto & mysql_user_password = safeGetLiteralValue<String>(arguments[3], engine_name);
+            ASTs & arguments = engine->arguments->children;
+            arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
+
+            const auto & host_port = safeGetLiteralValue<String>(arguments[0], engine_name);
+
+            if (engine_name == "MySQL")
+            {
+                size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
+                configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
+            }
+            else
+            {
+                const auto & [remote_host, remote_port] = parseAddress(host_port, 3306);
+                configuration.host = remote_host;
+                configuration.port = remote_port;
+            }
+
+            configuration.database = safeGetLiteralValue<String>(arguments[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(arguments[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
+        }
 
         try
         {
             if (engine_name == "MySQL")
             {
                 auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
-                /// Split into replicas if needed.
-                size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-                auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-                auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, addresses, mysql_user_name, mysql_user_password);
+                auto mysql_pool = mysqlxx::PoolWithFailover(configuration.database, configuration.addresses, configuration.username, configuration.password);
 
                 mysql_database_settings->loadFromQueryContext(context);
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
 
                 return std::make_shared<DatabaseMySQL>(
-                    context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_database_settings), std::move(mysql_pool));
+                    context, database_name, metadata_path, engine_define, configuration.database, std::move(mysql_database_settings), std::move(mysql_pool));
             }
 
-            const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
-            MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
-            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password, remote_port);
-
+            MySQLClient client(configuration.host, configuration.port, configuration.username, configuration.password);
+            auto mysql_pool = mysqlxx::Pool(configuration.database, configuration.host, configuration.username, configuration.password, configuration.port);
 
             auto materialize_mode_settings = std::make_unique<MaterializedMySQLSettings>();
 
@@ -177,12 +198,12 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
             if (create.uuid == UUIDHelpers::Nil)
                 return std::make_shared<DatabaseMaterializedMySQL<DatabaseOrdinary>>(
-                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
-                    , std::move(materialize_mode_settings));
+                    context, database_name, metadata_path, uuid, configuration.database, std::move(mysql_pool),
+                    std::move(client), std::move(materialize_mode_settings));
             else
                 return std::make_shared<DatabaseMaterializedMySQL<DatabaseAtomic>>(
-                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
-                    , std::move(materialize_mode_settings));
+                    context, database_name, metadata_path, uuid, configuration.database, std::move(mysql_pool),
+                    std::move(client), std::move(materialize_mode_settings));
         }
         catch (...)
         {
@@ -253,7 +274,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                             "Unxpected argument name for key-value defined argument."
                             "Got: {}, but expected one of:"
                             "host, port, username, password, database, schema, on_conflict, use_table_cache.", arg_name);
-        }
+            }
         }
         else
         {

@@ -17,6 +17,7 @@ using namespace mysqlxx;
 PoolWithFailover::PoolWithFailover(
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_name_,
+        const ConnectionConfiguration & configuration,
         const unsigned default_connections_,
         const unsigned max_connections_,
         const size_t max_tries_)
@@ -33,11 +34,9 @@ PoolWithFailover::PoolWithFailover(
             if (startsWith(replica_config_key, "replica"))
             {
                 std::string replica_name = config_name_ + "." + replica_config_key;
-
                 int priority = config_.getInt(replica_name + ".priority", 0);
-
                 replicas_by_priority[priority].emplace_back(
-                    std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections_, config_name_.c_str()));
+                    std::make_shared<Pool>(config_, replica_name, configuration, default_connections_, max_connections_, config_name_.c_str()));
             }
         }
 
@@ -57,19 +56,8 @@ PoolWithFailover::PoolWithFailover(
     else
     {
         replicas_by_priority[0].emplace_back(
-            std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections_));
+            std::make_shared<Pool>(config_, config_name_, configuration, default_connections_, max_connections_));
     }
-}
-
-
-PoolWithFailover::PoolWithFailover(
-        const std::string & config_name_,
-        const unsigned default_connections_,
-        const unsigned max_connections_,
-        const size_t max_tries_)
-    : PoolWithFailover{Poco::Util::Application::instance().config(),
-            config_name_, default_connections_, max_connections_, max_tries_}
-{
 }
 
 
