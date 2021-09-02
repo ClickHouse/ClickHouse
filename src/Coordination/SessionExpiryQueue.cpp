@@ -1,5 +1,6 @@
 #include <Coordination/SessionExpiryQueue.h>
 #include <common/logger_useful.h>
+
 namespace DB
 {
 
@@ -12,66 +13,80 @@ bool SessionExpiryQueue::remove(int64_t session_id)
         if (set_it != expiry_to_sessions.end())
             set_it->second.erase(session_id);
 
+        /// No more sessions in this bucket
+        if (set_it->second.empty())
+            expiry_to_sessions.erase(set_it);
+
+        session_to_timeout.erase(session_it);
+
         return true;
     }
 
     return false;
 }
 
-bool SessionExpiryQueue::update(int64_t session_id, int64_t timeout_ms)
+void SessionExpiryQueue::addNewSessionOrUpdate(int64_t session_id, int64_t timeout_ms)
 {
-    auto session_it = session_to_timeout.find(session_id);
     int64_t now = getNowMilliseconds();
+    /// round up to next interval
     int64_t new_expiry_time = roundToNextInterval(now + timeout_ms);
 
+    auto session_it = session_to_timeout.find(session_id);
+    /// We already registered this session
     if (session_it != session_to_timeout.end())
     {
-        if (new_expiry_time == session_it->second)
-            return false;
+        int64_t prev_expiry_time = session_it->second;
+        session_it->second = new_expiry_time;
+        /// Nothing changed, session stay in the some bucket
+        if (new_expiry_time == prev_expiry_time)
+            return;
 
+        /// This bucket doesn't exist, let's create it
         auto set_it = expiry_to_sessions.find(new_expiry_time);
         if (set_it == expiry_to_sessions.end())
             std::tie(set_it, std::ignore) = expiry_to_sessions.emplace(new_expiry_time, std::unordered_set<int64_t>());
 
+        /// Add session to the next bucket
         set_it->second.insert(session_id);
-        int64_t prev_expiry_time = session_it->second;
 
-        if (prev_expiry_time != new_expiry_time)
-        {
-            auto prev_set_it = expiry_to_sessions.find(prev_expiry_time);
-            if (prev_set_it != expiry_to_sessions.end())
-                prev_set_it->second.erase(session_id);
-        }
-        session_it->second = new_expiry_time;
-        return true;
+        auto prev_set_it = expiry_to_sessions.find(prev_expiry_time);
+        /// Remove session from previous bucket
+        if (prev_set_it != expiry_to_sessions.end())
+            prev_set_it->second.erase(session_id);
+
+        /// No more sessions in this bucket
+        if (prev_set_it->second.empty())
+            expiry_to_sessions.erase(prev_set_it);
     }
     else
     {
+        /// Just add sessions to the new bucket
         session_to_timeout[session_id] = new_expiry_time;
+
         auto set_it = expiry_to_sessions.find(new_expiry_time);
         if (set_it == expiry_to_sessions.end())
             std::tie(set_it, std::ignore) = expiry_to_sessions.emplace(new_expiry_time, std::unordered_set<int64_t>());
+
         set_it->second.insert(session_id);
-        return false;
     }
 }
 
-std::unordered_set<int64_t> SessionExpiryQueue::getExpiredSessions()
+std::unordered_set<int64_t> SessionExpiryQueue::getExpiredSessions() const
 {
     int64_t now = getNowMilliseconds();
-    if (now < next_expiration_time)
-        return {};
+    std::unordered_set<int64_t> result;
 
-    auto set_it = expiry_to_sessions.find(next_expiration_time);
-    int64_t new_expiration_time = next_expiration_time + expiration_interval;
-    next_expiration_time = new_expiration_time;
-    if (set_it != expiry_to_sessions.end())
+    /// Check all buckets
+    for (auto it = expiry_to_sessions.begin(); it != expiry_to_sessions.end(); ++it)
     {
-        auto result = set_it->second;
-        expiry_to_sessions.erase(set_it);
-        return result;
+        int64_t expire_time_for_sessions = it->first;
+        if (expire_time_for_sessions <= now)
+            result.insert(it->second.begin(), it->second.end());
+        else
+            break;
     }
-    return {};
+
+    return result;
 }
 
 void SessionExpiryQueue::clear()
