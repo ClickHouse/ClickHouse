@@ -80,9 +80,9 @@ ASTPtr UserDefinedFunctionFactory::tryGet(const std::string & function_name) con
 std::vector<std::string> UserDefinedFunctionFactory::getAllRegisteredNames() const
 {
     std::vector<std::string> registered_names;
-    registered_names.reserve(function_name_to_create_query.size());
 
     std::lock_guard lock(mutex);
+    registered_names.reserve(function_name_to_create_query.size());
 
     for (const auto & [name, _] : function_name_to_create_query)
         registered_names.emplace_back(name);
