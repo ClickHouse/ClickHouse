@@ -40,7 +40,7 @@ def test_function_persistence():
 
 
 def test_data_type_persistence():
-    instance.query("CREATE DATA TYPE MyType AS int")
+    instance.query("CREATE TYPE MyType AS int")
     instance.query("CREATE TABLE TestTable (first MyType) ENGINE = MergeTree() ORDER BY first")
     instance.query("INSERT INTO TestTable VALUES(10)")
 
@@ -48,4 +48,7 @@ def test_data_type_persistence():
 
     instance.query("INSERT INTO TestTable VALUES(20)")
     assert instance.query("SELECT * FROM TestTable") == "10\n20\n"
+
+    instance.query("DROP TABLE TestTable")
+    instance.query("DROP TYPE MyType")
 
