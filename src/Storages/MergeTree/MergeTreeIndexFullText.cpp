@@ -409,9 +409,9 @@ bool MergeTreeConditionFullText::atomFromAST(
         }
         
         //try to parse arrayElement function
-        if (const auto * func = typeid_cast<const ASTFunction *>(args[0].get()))
+        if (const auto * map_func = typeid_cast<const ASTFunction *>(args[0].get()))
         {
-            const_value = assert_cast<ASTIdentifier *>(func->arguments.get()->children[1].get())->name();
+            const_value = assert_cast<ASTIdentifier *>(map_func->arguments.get()->children[1].get())->name();
         }
 
         if (key_arg_pos == 1 && (func_name != "equals" && func_name != "notEquals"))
@@ -878,17 +878,25 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
 
 void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
-    auto map_validator = [](DataTypeMap & map_type){
-        if (*map_type.getKeyType().get() == TypeIndex::String||
-           *map_type.getKeyType().get() == TypeIndex::FixedString)
+    auto validate_map_type = [](DataTypePtr data_type){
+        if (data_type->getTypeId() != TypeIndex::Map)
+            return false;
+
+        DataTypeMap * map_type = assert_cast<DataTypeMap *>(const_cast<IDataType *>(data_type.get())); 
+
+        if (map_type->getKeyType()->getTypeId() != TypeIndex::String
+            && map_type->getKeyType()->getTypeId() != TypeIndex::FixedString)
+               return false;
+        
+        return true;
     };
 
     for (const auto & data_type : index.data_types)
     {
         if (data_type->getTypeId() != TypeIndex::String 
             && data_type->getTypeId() != TypeIndex::FixedString
-            && data_type->getTypeId() != TypeIndex::Map)
-            throw Exception("Bloom filter index can be used only with `String`,`FixedString` or `Map` column.", ErrorCodes::INCORRECT_QUERY);
+            && !validate_map_type(data_type))
+            throw Exception("Bloom filter index can be used only with `String`,`FixedString` or `Map` with key of String or fixedString type.", ErrorCodes::INCORRECT_QUERY);
     }
 
     if (index.type == NgramTokenExtractor::getName())
