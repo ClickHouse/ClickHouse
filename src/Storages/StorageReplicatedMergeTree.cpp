@@ -2142,11 +2142,6 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
 
-    if (entry.detach)
-        LOG_DEBUG(log, "Detaching parts.");
-    else
-        LOG_DEBUG(log, "Removing parts.");
-
     /// Delete the parts contained in the range to be deleted.
     /// It's important that no old parts remain (after the merge), because otherwise,
     ///  after adding a new replica, this new replica downloads them, but does not delete them.
@@ -2158,7 +2153,14 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     {
         auto data_parts_lock = lockParts();
         parts_to_remove = removePartsInRangeFromWorkingSet(drop_range_info, true, data_parts_lock);
+        if (parts_to_remove.empty())
+            return;
     }
+
+    if (entry.detach)
+        LOG_DEBUG(log, "Detaching parts.");
+    else
+        LOG_DEBUG(log, "Removing parts.");
 
     if (entry.detach)
     {
@@ -6798,15 +6800,16 @@ bool StorageReplicatedMergeTree::dropPart(
         getClearBlocksInPartitionOps(ops, *zookeeper, part_info.partition_id, part_info.min_block, part_info.max_block);
         size_t clear_block_ops_size = ops.size();
 
-        /// Set fake level to treat this part as virtual in queue.
-        auto drop_part_info = part->info;
-        drop_part_info.level = MergeTreePartInfo::MAX_LEVEL;
-
         /// If `part_name` is result of a recent merge and source parts are still available then
         /// DROP_RANGE with detach will move this part together with source parts to `detached/` dir.
         entry.type = LogEntry::DROP_RANGE;
         entry.source_replica = replica_name;
-        entry.new_part_name = getPartNamePossiblyFake(format_version, drop_part_info);
+        /// We don't set fake drop level (999999999) for the single part DROP_RANGE.
+        /// First of all we don't guarantee anything other than the part will not be
+        /// active after DROP PART, but covering part (without data of dropped part) can exist.
+        /// If we add part with 9999999 level than we can break invariant in virtual_parts of
+        /// the queue.
+        entry.new_part_name = getPartNamePossiblyFake(format_version, part->info);
         entry.detach = detach;
         entry.create_time = time(nullptr);
 
