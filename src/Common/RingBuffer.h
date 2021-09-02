@@ -35,7 +35,7 @@ public:
         if (count == capacity) {
             return false;
         }
-        buffer[(position + count) % capacity] = element;
+        buffer[advance(count)] = element;
         ++count;
         return true;
     }
@@ -47,26 +47,49 @@ public:
         }
         *element = std::move(buffer[position]);
         --count;
-        position = (position + 1) % capacity;
+        position = advance();
         return true;
     }
 
     template <typename Predicate>
-    void removeElements(Predicate && predicate)
+    void eraseAll(Predicate && predicate)
     {
         /// Shift all elements to the beginning of the buffer
         std::rotate(buffer.begin(), buffer.begin() + position, buffer.end());
-
         /// Remove elements
         auto end_removed = std::remove_if(buffer.begin(), buffer.begin() + count, predicate);
 
         size_t new_count = std::distance(buffer.begin(), end_removed);
-
         for (size_t i = new_count; i < count; ++i)
             buffer[i] = T{};
 
         count = new_count;
         position = 0;
+    }
+
+    template <class Predicate>
+    std::vector<T> getAll(Predicate && predicate)
+    {
+        std::vector<T> suitable;
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            auto item = buffer[advance(i)];
+            if (predicate(item))
+                suitable.emplace_back(item);
+        }
+
+        return suitable;
+    }
+
+    template <typename Predicate>
+    bool has(Predicate && predicate)
+    {
+        for (size_t i = 0; i < count; ++i)
+            if (predicate(buffer[advance(i)]))
+                return true;
+
+        return false;
     }
 
 
@@ -79,6 +102,13 @@ public:
     }
 
 private:
+
+    size_t advance(size_t amount = 1)
+    {
+        if (position + amount >= capacity)
+            return position + amount - capacity;
+        return position + amount;
+    }
 
     void expand(size_t new_capacity)
     {
@@ -102,7 +132,7 @@ private:
 
         count = std::min(new_capacity, count);
         for (size_t i = 0; i < count; ++i)
-            new_buffer[i] = buffer[(position + i) % capacity];
+            new_buffer[i] = buffer[advance(i)];
 
         std::swap(buffer, new_buffer);
 
