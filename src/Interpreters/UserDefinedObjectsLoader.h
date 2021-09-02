@@ -28,7 +28,7 @@ public:
     void removeObject(ContextPtr context, UserDefinedObjectType object_type, const String & object_name);
 
 private:
-    String makeFilePath(ContextPtr context, UserDefinedObjectType object_type, const String & name);
+    static String makeFilePath(ContextPtr context, UserDefinedObjectType object_type, const String & name);
     void loadUserDefinedObject(ContextPtr context, UserDefinedObjectType object_type, const std::string_view & object_name, const String & file_path);
     Poco::Logger * log;
 };

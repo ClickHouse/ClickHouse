@@ -47,6 +47,7 @@ String userDefinedObjecTypeToString(UserDefinedObjectType object_type)
             return "data_type";
         }
     }
+    return "";
 }
 
 UserDefinedObjectsLoader & UserDefinedObjectsLoader::instance()
@@ -94,16 +95,16 @@ void UserDefinedObjectsLoader::loadUserDefinedObject(ContextPtr context, UserDef
         {
             case UserDefinedObjectType::Function:
             {
-                ParserCreateFunctionQuery functionParser;
-                ASTPtr ast = parse(functionParser);
+                ParserCreateFunctionQuery function_parser;
+                ASTPtr ast = parse(function_parser);
                 InterpreterCreateFunctionQuery interpreter(ast, context, true /*is internal*/);
                 interpreter.execute();
                 break;
             }
             case UserDefinedObjectType::DataType:
             {
-                ParserCreateDataTypeQuery dataTypeParser;
-                ASTPtr ast = parse(dataTypeParser);
+                ParserCreateDataTypeQuery data_type_parser;
+                ASTPtr ast = parse(data_type_parser);
                 InterpreterCreateDataTypeQuery interpreter(ast, context, true /*is internal*/);
                 interpreter.execute();
                 break;
