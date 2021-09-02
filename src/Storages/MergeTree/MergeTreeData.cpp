@@ -199,6 +199,8 @@ MergeTreeData::MergeTreeData(
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
+    , background_executor(*this, BackgroundJobAssignee::Type::DataProcessing, getContext())
+    , background_moves_executor(*this, BackgroundJobAssignee::Type::Moving, getContext())
 {
     const auto settings = getSettings();
     allow_nullable_key = attach || settings->allow_nullable_key;
@@ -304,6 +306,22 @@ MergeTreeData::MergeTreeData(
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
         LOG_WARNING(log, "{} Settings 'min_rows_for_wide_part', 'min_bytes_for_wide_part', "
             "'min_rows_for_compact_part' and 'min_bytes_for_compact_part' will be ignored.", reason);
+
+    common_assignee_trigger = [this] (bool delay) noexcept
+    {
+        if (delay)
+            background_executor.postpone();
+        else
+            background_executor.trigger();
+    };
+
+    moves_assignee_trigger = [this] (bool delay) noexcept
+    {
+        if (delay)
+            background_moves_executor.postpone();
+        else
+            background_moves_executor.trigger();
+    };
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
@@ -4906,7 +4924,7 @@ bool MergeTreeData::scheduleDataMovingJob(BackgroundJobAssignee & executor)
         [this, moving_tagger] () mutable
         {
             return moveParts(moving_tagger);
-        }, *this));
+        }, moves_assignee_trigger, getStorageID()));
     return true;
 }
 

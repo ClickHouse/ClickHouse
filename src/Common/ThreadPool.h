@@ -11,6 +11,7 @@
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
+#include <Common/PriorityQueue.h>
 #include <common/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -103,7 +104,7 @@ private:
         }
     };
 
-    std::priority_queue<JobWithPriority> jobs;
+    DB::PriorityQueue<JobWithPriority> jobs;
     std::list<Thread> threads;
     std::exception_ptr first_exception;
 
