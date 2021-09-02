@@ -320,6 +320,7 @@ def test_predefined_connection_configuration(started_cluster):
     result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
     assert(int(result.strip()) == 99)
 
+    cursor.execute('DROP SCHEMA IF EXISTS test_schema CASCADE')
     cursor.execute('CREATE SCHEMA test_schema')
     cursor.execute('CREATE TABLE test_schema.test_table (id integer, value integer)')
     cursor.execute('INSERT INTO test_schema.test_table SELECT i, 100 FROM generate_series(0, 99) as t(i)')
