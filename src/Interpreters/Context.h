@@ -281,12 +281,6 @@ private:
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializePostgreSQL).
     bool is_internal_query = false;
 
-    /// Background executors for *MergeTree tables
-    /// Must be in global context
-    MergeTreeBackgroundExecutorPtr merge_mutate_executor;
-    MergeTreeBackgroundExecutorPtr moves_executor;
-    MergeTreeBackgroundExecutorPtr fetch_executor;
-
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
