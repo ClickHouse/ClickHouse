@@ -41,11 +41,6 @@ void CollectJoinOnKeysMatcher::Data::setDisjuncts(const ASTPtr & or_func_ast)
     analyzed_join.setDisjuncts(std::move(v));
 }
 
-void CollectJoinOnKeysMatcher::Data::addDisjunct(const ASTPtr & ast)
-{
-    analyzed_join.addDisjunct(std::move(ast));
-}
-
 void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, JoinIdentifierPosPair table_pos)
 {
     ASTPtr left = left_ast->clone();
@@ -107,7 +102,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         return;
     }
 
-    data.addDisjunct(ast);
+    data.analyzed_join.addDisjunct(ast);
 
     if (func.name == "and")
         return; /// go into children
