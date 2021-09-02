@@ -3,6 +3,9 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Interpreters/Context.h>
+#include <Common/isLocalAddress.h>
 
 namespace DB
 {
@@ -11,6 +14,8 @@ void DDLDependencyVisitor::visit(const ASTPtr & ast, Data & data)
 {
     if (const auto * function = ast->as<ASTFunction>())
         visit(*function, data);
+    else if (const auto * dict_source = ast->as<ASTFunctionWithKeyValueArguments>())
+        visit(*dict_source, data);
 }
 
 bool DDLDependencyVisitor::needChildVisit(const ASTPtr & node, const ASTPtr & /*child*/)
@@ -28,6 +33,31 @@ void DDLDependencyVisitor::visit(const ASTFunction & function, Data & data)
         extractTableNameFromArgument(function, data, 0);
     }
 }
+
+void DDLDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data)
+{
+    if (dict_source.name != "clickhouse")
+        return;
+    if (!dict_source.elements)
+        return;
+
+    auto config = getDictionaryConfigurationFromAST(data.create_query->as<ASTCreateQuery &>(), data.global_context);
+    String host = config->getString("dictionary.source.clickhouse.host", "");
+    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", 0);
+    String database = config->getString("dictionary.source.clickhouse.db", "");
+    String table = config->getString("dictionary.source.clickhouse.table", "");
+    bool secure = config->getBool("dictionary.source.clickhouse.secure", false);
+    if (host.empty() || port == 0 || table.empty())
+        return;
+    UInt16 default_port = secure ? data.global_context->getTCPPortSecure().value_or(0) : data.global_context->getTCPPort();
+    if (!isLocalAddress({host, port}, default_port))
+        return;
+
+    if (database.empty())
+        database = data.default_database;
+    data.dependencies.emplace(QualifiedTableName{std::move(database), std::move(table)});
+}
+
 
 void DDLDependencyVisitor::extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx)
 {
