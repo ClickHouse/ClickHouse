@@ -28,6 +28,8 @@ struct StorageInMemoryMetadata
     ConstraintsDescription constraints;
     /// Table projections. Currently supported for MergeTree only.
     ProjectionsDescription projections;
+    /// Table minmax_count projection. Currently supported for MergeTree only.
+    std::optional<ProjectionDescription> minmax_count_projection;
     /// PARTITION BY expression. Currently supported for MergeTree only.
     KeyDescription partition_key;
     /// PRIMARY KEY expression. If absent, than equal to order_by_ast.
@@ -107,6 +109,7 @@ struct StorageInMemoryMetadata
     const ConstraintsDescription & getConstraints() const;
 
     const ProjectionsDescription & getProjections() const;
+
     /// Has at least one projection
     bool hasProjections() const;
 
