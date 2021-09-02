@@ -23,6 +23,9 @@ public:
     void addSource(ProcessorPtr processor);
     void addSink(ProcessorPtr processor);
 
+    IProcessor & getSource();
+    IProcessor & getSink();
+
     InputPort & getInputPort() const;
     OutputPort & getOutputPort() const;
 
