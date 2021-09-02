@@ -54,7 +54,7 @@ private:
 
 TEST(Executor, RemoveTasks)
 {
-    auto executor = DB::MergeTreeBackgroundExecutor::create();
+    auto executor = DB::MergeTreeBackgroundExecutor::create(DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE);
 
     const size_t tasks_kinds = 25;
     const size_t batch = 100;
@@ -93,7 +93,7 @@ TEST(Executor, RemoveTasks)
 
 TEST(Executor, RemoveTasksStress)
 {
-    auto executor = DB::MergeTreeBackgroundExecutor::create();
+    auto executor = DB::MergeTreeBackgroundExecutor::create(DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE);
 
     const size_t tasks_kinds = 25;
     const size_t batch = 100;

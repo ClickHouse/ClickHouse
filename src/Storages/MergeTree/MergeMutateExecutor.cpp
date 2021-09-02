@@ -7,6 +7,20 @@ namespace DB
 {
 
 
+String MergeTreeBackgroundExecutor::toString(Type type)
+{
+    switch (type)
+    {
+        case Type::MERGE_MUTATE:
+            return "MergeMutate";
+        case Type::FETCH:
+            return "Fetch";
+        case Type::MOVE:
+            return "Move";
+    }
+}
+
+
 void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id)
 {
     std::lock_guard remove_lock(remove_mutex);
@@ -21,13 +35,13 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
         std::erase_if(pending, [&] (auto item) -> bool { return item->task->getStorageID() == id; });
 
         /// Find pending to wait
-        for (auto & item : active)
+        for (const auto & item : active)
             if (item->task->getStorageID() == id)
                 tasks_to_wait.emplace_back(item);
     }
 
 
-    for (auto & item : tasks_to_wait)
+    for (const auto & item : tasks_to_wait)
     {
         assert(item->future.valid());
         item->future.wait();
@@ -62,6 +76,8 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
 
         bool res = pool.trySchedule([this, item] ()
         {
+            setThreadName(name.c_str());
+
             auto check_if_deleting = [&] () -> bool
             {
                 active.erase(item);

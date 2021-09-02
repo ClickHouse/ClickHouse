@@ -229,6 +229,11 @@ struct ContextSharedPart
     std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
     std::vector<String> warnings;                           /// Store warning messages about server configuration.
 
+    /// Background executors for *MergeTree tables
+    MergeTreeBackgroundExecutorPtr merge_mutate_executor;
+    MergeTreeBackgroundExecutorPtr moves_executor;
+    MergeTreeBackgroundExecutorPtr fetch_executor;
+
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
     std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
@@ -297,6 +302,13 @@ struct ContextSharedPart
             system_logs->shutdown();
 
         DatabaseCatalog::shutdown();
+
+        if (merge_mutate_executor)
+            merge_mutate_executor->wait();
+        if (fetch_executor)
+            fetch_executor->wait();
+        if (moves_executor)
+            moves_executor->wait();
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         {
@@ -2372,13 +2384,6 @@ void Context::shutdown()
         }
     }
 
-    if (merge_mutate_executor)
-        merge_mutate_executor->wait();
-    if (fetch_executor)
-        fetch_executor->wait();
-    if (moves_executor)
-        moves_executor->wait();
-
     shared->shutdown();
 }
 
@@ -2724,37 +2729,37 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 
 void Context::initializeBackgroundExecutors()
 {
-    merge_mutate_executor = MergeTreeBackgroundExecutor::create();
-    moves_executor = MergeTreeBackgroundExecutor::create();
-    fetch_executor = MergeTreeBackgroundExecutor::create();
+    shared->merge_mutate_executor = MergeTreeBackgroundExecutor::create(MergeTreeBackgroundExecutor::Type::MERGE_MUTATE);
+    shared->moves_executor = MergeTreeBackgroundExecutor::create(MergeTreeBackgroundExecutor::Type::MOVE);
+    shared->fetch_executor = MergeTreeBackgroundExecutor::create(MergeTreeBackgroundExecutor::Type::FETCH);
 
-    merge_mutate_executor->setThreadsCount([this] () { return getSettingsRef().background_pool_size; });
-    merge_mutate_executor->setTasksCount([this] () { return getSettingsRef().background_pool_size; });
-    merge_mutate_executor->setMetric(CurrentMetrics::BackgroundPoolTask);
+    shared->merge_mutate_executor->setThreadsCount([this] () { return getSettingsRef().background_pool_size; });
+    shared->merge_mutate_executor->setTasksCount([this] () { return getSettingsRef().background_pool_size; });
+    shared->merge_mutate_executor->setMetric(CurrentMetrics::BackgroundPoolTask);
 
-    moves_executor->setThreadsCount([this] () { return getSettingsRef().background_move_pool_size; });
-    moves_executor->setTasksCount([this] () { return getSettingsRef().background_move_pool_size; });
-    moves_executor->setMetric(CurrentMetrics::BackgroundMovePoolTask);
+    shared->moves_executor->setThreadsCount([this] () { return getSettingsRef().background_move_pool_size; });
+    shared->moves_executor->setTasksCount([this] () { return getSettingsRef().background_move_pool_size; });
+    shared->moves_executor->setMetric(CurrentMetrics::BackgroundMovePoolTask);
 
-    fetch_executor->setThreadsCount([this] () { return getSettingsRef().background_fetches_pool_size; });
-    fetch_executor->setTasksCount([this] () { return getSettingsRef().background_fetches_pool_size; });
-    fetch_executor->setMetric(CurrentMetrics::BackgroundFetchesPoolTask);
+    shared->fetch_executor->setThreadsCount([this] () { return getSettingsRef().background_fetches_pool_size; });
+    shared->fetch_executor->setTasksCount([this] () { return getSettingsRef().background_fetches_pool_size; });
+    shared->fetch_executor->setMetric(CurrentMetrics::BackgroundFetchesPoolTask);
 }
 
 
 MergeTreeBackgroundExecutorPtr Context::getMergeMutateExecutor() const
 {
-    return merge_mutate_executor;
+    return shared->merge_mutate_executor;
 }
 
 MergeTreeBackgroundExecutorPtr Context::getMovesExecutor() const
 {
-    return moves_executor;
+    return shared->moves_executor;
 }
 
 MergeTreeBackgroundExecutorPtr Context::getFetchesExecutor() const
 {
-    return fetch_executor;
+    return shared->fetch_executor;
 }
 
 
