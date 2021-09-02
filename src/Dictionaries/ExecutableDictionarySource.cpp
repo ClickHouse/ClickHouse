@@ -1,6 +1,5 @@
 #include "ExecutableDictionarySource.h"
 
-#include <functional>
 #include <common/logger_useful.h>
 #include <common/LocalDateTime.h>
 #include <Common/ShellCommand.h>
@@ -125,8 +124,7 @@ Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
         formatBlock(output_stream, block);
         out.close();
     }};
-
-    std::vector<ShellCommandSource::SendDataTask> tasks = {task};
+    std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
 
     Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log, std::move(tasks)));
 

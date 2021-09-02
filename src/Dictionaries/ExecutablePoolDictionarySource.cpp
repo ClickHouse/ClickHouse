@@ -1,24 +1,21 @@
 #include "ExecutablePoolDictionarySource.h"
 
-#include <functional>
-#include <common/scope_guard.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
+#include <common/logger_useful.h>
+#include <common/LocalDateTime.h>
+#include <Common/ShellCommand.h>
+
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+
 #include <DataStreams/formatBlock.h>
+
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Formats/FormatFactory.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Common/ShellCommand.h>
-#include <Common/ThreadPool.h>
-#include <common/logger_useful.h>
-#include <common/LocalDateTime.h>
-#include "DictionarySourceFactory.h"
-#include "DictionarySourceHelpers.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
+
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 
 namespace DB
@@ -37,13 +34,13 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
     const Configuration & configuration_,
     Block & sample_block_,
     ContextPtr context_)
-    : log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
-    , dict_struct{dict_struct_}
-    , configuration{configuration_}
-    , sample_block{sample_block_}
-    , context{context_}
+    : dict_struct(dict_struct_)
+    , configuration(configuration_)
+    , sample_block(sample_block_)
+    , context(context_)
     /// If pool size == 0 then there is no size restrictions. Poco max size of semaphore is integer type.
-    , process_pool{std::make_shared<ProcessPool>(configuration.pool_size == 0 ? std::numeric_limits<int>::max() : configuration.pool_size)}
+    , process_pool(std::make_shared<ProcessPool>(configuration.pool_size == 0 ? std::numeric_limits<int>::max() : configuration.pool_size))
+    , log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
 {
     /// Remove keys from sample_block for implicit_key dictionary because
     /// these columns will not be returned from source
@@ -62,13 +59,12 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
 }
 
 ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other)
-    : log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
-    , update_time{other.update_time}
-    , dict_struct{other.dict_struct}
-    , configuration{other.configuration}
-    , sample_block{other.sample_block}
-    , context{Context::createCopy(other.context)}
-    , process_pool{std::make_shared<ProcessPool>(configuration.pool_size)}
+    : dict_struct(other.dict_struct)
+    , configuration(other.configuration)
+    , sample_block(other.sample_block)
+    , context(Context::createCopy(other.context))
+    , process_pool(std::make_shared<ProcessPool>(configuration.pool_size))
+    , log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
 {
 }
 
@@ -80,123 +76,6 @@ Pipe ExecutablePoolDictionarySource::loadAll()
 Pipe ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
-}
-
-namespace
-{
-    /** A stream, that runs child process and sends data to its stdin in background thread,
-      *  and receives data from its stdout.
-      */
-    class PoolSourceWithBackgroundThread final : public SourceWithProgress
-    {
-    public:
-        PoolSourceWithBackgroundThread(
-            std::shared_ptr<ProcessPool> process_pool_,
-            std::unique_ptr<ShellCommand> && command_,
-            Pipe pipe,
-            size_t read_rows_,
-            Poco::Logger * log_,
-            std::function<void(WriteBufferFromFile &)> && send_data_)
-            : SourceWithProgress(pipe.getHeader())
-            , process_pool(process_pool_)
-            , command(std::move(command_))
-            , rows_to_read(read_rows_)
-            , log(log_)
-            , send_data(std::move(send_data_))
-            , thread([this]
-            {
-                try
-                {
-                    send_data(command->in);
-                }
-                catch (...)
-                {
-                    std::lock_guard<std::mutex> lck(exception_during_read_lock);
-                    exception_during_read = std::current_exception();
-                }
-            })
-        {
-            pipeline.init(std::move(pipe));
-            executor = std::make_unique<PullingPipelineExecutor>(pipeline);
-        }
-
-        ~PoolSourceWithBackgroundThread() override
-        {
-            if (thread.joinable())
-                thread.join();
-
-            if (command)
-                process_pool->returnObject(std::move(command));
-        }
-
-    protected:
-        Chunk generate() override
-        {
-            rethrowExceptionDuringReadIfNeeded();
-
-            if (current_read_rows == rows_to_read)
-                return {};
-
-            Chunk chunk;
-
-            try
-            {
-                if (!executor->pull(chunk))
-                    return {};
-
-                current_read_rows += chunk.getNumRows();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log);
-                command = nullptr;
-                throw;
-            }
-
-            return chunk;
-        }
-
-    public:
-        Status prepare() override
-        {
-            auto status = SourceWithProgress::prepare();
-
-            if (status == Status::Finished)
-            {
-                if (thread.joinable())
-                    thread.join();
-
-                rethrowExceptionDuringReadIfNeeded();
-            }
-
-            return status;
-        }
-
-        void rethrowExceptionDuringReadIfNeeded()
-        {
-            std::lock_guard<std::mutex> lck(exception_during_read_lock);
-            if (exception_during_read)
-            {
-                command = nullptr;
-                std::rethrow_exception(exception_during_read);
-            }
-        }
-
-        String getName() const override { return "PoolWithBackgroundThread"; }
-
-        std::shared_ptr<ProcessPool> process_pool;
-        std::unique_ptr<ShellCommand> command;
-        QueryPipeline pipeline;
-        std::unique_ptr<PullingPipelineExecutor> executor;
-        size_t rows_to_read;
-        Poco::Logger * log;
-        std::function<void(WriteBufferFromFile &)> send_data;
-        ThreadFromGlobalPool thread;
-        size_t current_read_rows = 0;
-        std::mutex exception_during_read_lock;
-        std::exception_ptr exception_during_read;
-    };
-
 }
 
 Pipe ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -228,19 +107,20 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 
     if (!result)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-            "Could not get process from pool, max command execution timeout exceeded ({}) seconds",
+            "Could not get process from pool, max command execution timeout exceeded {} seconds",
             configuration.max_command_execution_time);
 
     size_t rows_to_read = block.rows();
-    auto format = FormatFactory::instance().getInput(configuration.format, process->out, sample_block, context, rows_to_read);
+    auto * process_in = &process->in;
+    ShellCommandPoolSource::SendDataTask task = [process_in, block, this]() mutable
+    {
+        auto & out = *process_in;
+        auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
+        formatBlock(output_stream, block);
+    };
+    std::vector<ShellCommandPoolSource::SendDataTask> tasks = {std::move(task)};
 
-    Pipe pipe(std::make_unique<PoolSourceWithBackgroundThread>(
-        process_pool, std::move(process), Pipe(std::move(format)), rows_to_read, log,
-        [block, this](WriteBufferFromFile & out) mutable
-        {
-            auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
-            formatBlock(output_stream, block);
-        }));
+    Pipe pipe(std::make_unique<ShellCommandPoolSource>(context, configuration.format, sample_block, process_pool, std::move(process), rows_to_read, log, std::move(tasks)));
 
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
