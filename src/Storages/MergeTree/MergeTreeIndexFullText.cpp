@@ -15,6 +15,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Core/Defines.h>
+#include <Columns/ColumnMap.h>
+#include <DataTypes/DataTypeMap.h>
 
 #include <Poco/Logger.h>
 
@@ -153,14 +155,42 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
     for (size_t col = 0; col < index_columns.size(); ++col)
     {
         const auto & column = block.getByName(index_columns[col]).column;
-        for (size_t i = 0; i < rows_read; ++i)
+
+        if (column->getDataType() == TypeIndex::Map)
         {
-            auto ref = column->getDataAt(*pos + i);
-            columnToBloomFilter(ref.data, ref.size, token_extractor, granule->bloom_filters[col]);
+            //update for the key of Map type
+            auto * column_map = assert_cast<ColumnMap *>(const_cast<IColumn *>(column.get()));
+            auto & column_array = assert_cast<ColumnArray &>(column_map->getNestedColumn());
+            auto & column_tuple = assert_cast<ColumnTuple &>(column_array.getData());
+            auto & column_key = assert_cast<ColumnString &>(column_tuple.getColumn(0));
+
+            for (size_t i = 0; i < rows_read; ++i)
+            {
+                size_t element_start_row = *pos !=0 ? column_array.getOffsets()[*pos-1] : 0;
+                size_t elements_size = column_array.getOffsets()[*pos] - element_start_row;
+
+                for (size_t row_num = 0; row_num < elements_size; row_num++)
+                {
+                    auto ref = column_key.getDataAt(element_start_row+row_num);
+                    columnToBloomFilter(ref.data, ref.size, token_extractor, granule->bloom_filters[col]);
+                }
+
+                *pos += 1;
+            }
         }
+        else
+        {
+            for (size_t i = 0; i < rows_read; ++i)
+            {
+                auto ref = column->getDataAt(*pos + i);
+                columnToBloomFilter(ref.data, ref.size, token_extractor, granule->bloom_filters[col]);
+            }
+
+            *pos += rows_read;
+        }
+
     }
     granule->has_elems = true;
-    *pos += rows_read;
 }
 
 
@@ -324,7 +354,15 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 
 bool MergeTreeConditionFullText::getKey(const ASTPtr & node, size_t & key_column_num)
 {
-    auto it = std::find(index_columns.begin(), index_columns.end(), node->getColumnName());
+    String column_name = node->getColumnName();
+
+    //try to get map column name in arrayElement function
+    if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
+    {
+        column_name = assert_cast<ASTIdentifier *>(func->arguments.get()->children[0].get())->name();
+    }
+
+    auto it = std::find(index_columns.begin(), index_columns.end(), column_name);
     if (it == index_columns.end())
         return false;
 
@@ -368,6 +406,12 @@ bool MergeTreeConditionFullText::atomFromAST(
                        && const_type->getTypeId() != TypeIndex::Array)
         {
             return false;
+        }
+        
+        //try to parse arrayElement function
+        if (const auto * func = typeid_cast<const ASTFunction *>(args[0].get()))
+        {
+            const_value = assert_cast<ASTIdentifier *>(func->arguments.get()->children[1].get())->name();
         }
 
         if (key_arg_pos == 1 && (func_name != "equals" && func_name != "notEquals"))
@@ -834,10 +878,17 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
 
 void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
+    auto map_validator = [](DataTypeMap & map_type){
+        if (*map_type.getKeyType().get() == TypeIndex::String||
+           *map_type.getKeyType().get() == TypeIndex::FixedString)
+    };
+
     for (const auto & data_type : index.data_types)
     {
-        if (data_type->getTypeId() != TypeIndex::String && data_type->getTypeId() != TypeIndex::FixedString)
-            throw Exception("Bloom filter index can be used only with `String` or `FixedString` column.", ErrorCodes::INCORRECT_QUERY);
+        if (data_type->getTypeId() != TypeIndex::String 
+            && data_type->getTypeId() != TypeIndex::FixedString
+            && data_type->getTypeId() != TypeIndex::Map)
+            throw Exception("Bloom filter index can be used only with `String`,`FixedString` or `Map` column.", ErrorCodes::INCORRECT_QUERY);
     }
 
     if (index.type == NgramTokenExtractor::getName())
