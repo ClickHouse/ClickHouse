@@ -2,6 +2,7 @@
 
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <city.h>
+#include <optional>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -127,6 +128,11 @@ private:
 
     /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
     void rotate(uint64_t new_start_log_index);
+
+    void removeAllLogsAfter(uint64_t start_to_remove_from_id);
+    void removeAllLogs();
+
+    void initWriter(const ChangelogFileDescription & description, uint64_t entries_already_written, std::optional<uint64_t> truncate_to_offset = {});
 
 private:
     const std::string changelogs_dir;
