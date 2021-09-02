@@ -6,8 +6,8 @@ namespace DB
 
 bool SessionExpiryQueue::remove(int64_t session_id)
 {
-    auto session_it = session_to_timeout.find(session_id);
-    if (session_it != session_to_timeout.end())
+    auto session_it = session_to_expiration_time.find(session_id);
+    if (session_it != session_to_expiration_time.end())
     {
         auto set_it = expiry_to_sessions.find(session_it->second);
         if (set_it != expiry_to_sessions.end())
@@ -17,7 +17,7 @@ bool SessionExpiryQueue::remove(int64_t session_id)
         if (set_it->second.empty())
             expiry_to_sessions.erase(set_it);
 
-        session_to_timeout.erase(session_it);
+        session_to_expiration_time.erase(session_it);
 
         return true;
     }
@@ -31,9 +31,9 @@ void SessionExpiryQueue::addNewSessionOrUpdate(int64_t session_id, int64_t timeo
     /// round up to next interval
     int64_t new_expiry_time = roundToNextInterval(now + timeout_ms);
 
-    auto session_it = session_to_timeout.find(session_id);
+    auto session_it = session_to_expiration_time.find(session_id);
     /// We already registered this session
-    if (session_it != session_to_timeout.end())
+    if (session_it != session_to_expiration_time.end())
     {
         int64_t prev_expiry_time = session_it->second;
         session_it->second = new_expiry_time;
@@ -61,7 +61,7 @@ void SessionExpiryQueue::addNewSessionOrUpdate(int64_t session_id, int64_t timeo
     else
     {
         /// Just add sessions to the new bucket
-        session_to_timeout[session_id] = new_expiry_time;
+        session_to_expiration_time[session_id] = new_expiry_time;
 
         auto set_it = expiry_to_sessions.find(new_expiry_time);
         if (set_it == expiry_to_sessions.end())
@@ -71,17 +71,16 @@ void SessionExpiryQueue::addNewSessionOrUpdate(int64_t session_id, int64_t timeo
     }
 }
 
-std::unordered_set<int64_t> SessionExpiryQueue::getExpiredSessions() const
+std::vector<int64_t> SessionExpiryQueue::getExpiredSessions() const
 {
     int64_t now = getNowMilliseconds();
-    std::unordered_set<int64_t> result;
+    std::vector<int64_t> result;
 
     /// Check all buckets
-    for (auto it = expiry_to_sessions.begin(); it != expiry_to_sessions.end(); ++it)
+    for (auto & [expire_time, expired_sessions] : expiry_to_sessions)
     {
-        int64_t expire_time_for_sessions = it->first;
-        if (expire_time_for_sessions <= now)
-            result.insert(it->second.begin(), it->second.end());
+        if (expire_time <= now)
+            result.insert(result.end(), expired_sessions.begin(), expired_sessions.end());
         else
             break;
     }
@@ -91,7 +90,7 @@ std::unordered_set<int64_t> SessionExpiryQueue::getExpiredSessions() const
 
 void SessionExpiryQueue::clear()
 {
-    session_to_timeout.clear();
+    session_to_expiration_time.clear();
     expiry_to_sessions.clear();
 }
 

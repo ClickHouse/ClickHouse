@@ -1383,12 +1383,12 @@ TEST(CoordinationTest, TestSessionExpiryQueue)
 
     for (size_t i = 0; i < 2; ++i)
     {
-        EXPECT_EQ(queue.getExpiredSessions(), std::unordered_set<int64_t>({}));
+        EXPECT_EQ(queue.getExpiredSessions(), std::vector<int64_t>({}));
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(700));
-    EXPECT_EQ(queue.getExpiredSessions(), std::unordered_set<int64_t>({1}));
+    EXPECT_EQ(queue.getExpiredSessions(), std::vector<int64_t>({1}));
 }
 
 
