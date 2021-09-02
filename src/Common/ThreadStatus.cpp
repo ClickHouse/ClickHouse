@@ -10,6 +10,7 @@
 #include <base/getPageSize.h>
 
 #include <csignal>
+#include <mutex>
 
 
 namespace DB
@@ -195,6 +196,17 @@ void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & 
     std::lock_guard lock(thread_group->mutex);
     thread_group->logs_queue_ptr = logs_queue;
     thread_group->client_logs_level = client_logs_level;
+}
+
+void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
+{
+    profile_queue_ptr = profile_queue;
+
+    if (!thread_group)
+        return;
+
+    std::lock_guard lock(thread_group->mutex);
+    thread_group->profile_queue_ptr = profile_queue;
 }
 
 void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)

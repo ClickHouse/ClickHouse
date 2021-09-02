@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <iterator>
+#include <memory>
 #include <mutex>
 #include <vector>
 #include <base/scope_guard.h>
@@ -243,6 +244,8 @@ void TCPHandler::runImpl()
                     sendLogs();
                 });
             }
+            state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+            CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
             {
@@ -670,10 +673,10 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
                 /// Some time passed and there is a progress.
                 after_send_progress.restart();
                 sendProgress();
-                sendProfileEvents();
             }
 
             sendLogs();
+            sendProfileEvents();
 
             if (block)
             {
@@ -696,7 +699,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             sendProfileInfo(executor.getProfileInfo());
             sendProgress();
             sendLogs();
-            sendProfileEvents();
+            // sendProfileEvents();
         }
 
         if (state.is_connection_closed)
@@ -935,15 +938,37 @@ void TCPHandler::sendProfileEvents()
         dumpProfileEvents(counters_snapshot, columns, server_display_name, current_time, thread_id);
         dumpMemoryTracker(memory_tracker, columns, server_display_name, thread_id);
     }
-    block.setColumns(std::move(columns));
 
-    initProfileEventsBlockOutput(block);
+    MutableColumns logs_columns;
+    Block curr_block;
+    size_t rows = 0;
 
-    writeVarUInt(Protocol::Server::ProfileEvents, *out);
-    writeStringBinary("", *out);
+    bool from_queue = false;
+    for (; state.profile_queue->tryPop(curr_block); ++rows)
+    {
+        from_queue = true;
+        auto curr_columns = curr_block.getColumns();
+        for (size_t j = 0; j < curr_columns.size(); ++j)
+            columns[j]->insertRangeFrom(*curr_columns[j], 0, curr_columns[j]->size());
+    }
 
-    state.profile_events_block_out->write(block);
-    out->next();
+    bool empty = true;
+    for (auto & column : columns)
+        empty = empty && column->empty();
+
+    if (!empty)
+    {
+        block.setColumns(std::move(columns));
+
+        initProfileEventsBlockOutput(block);
+
+        writeVarUInt(Protocol::Server::ProfileEvents, *out);
+        writeStringBinary("", *out);
+
+        state.profile_events_block_out->write(block);
+        out->next();
+        LOG_DEBUG(log, "Sent ProfileEvents packet {} data from queue", (from_queue ? "with" : "without"));
+    }
 }
 
 
