@@ -386,7 +386,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         auto description = existing_changelogs[last_log_read_result->log_start_index];
 
         if (last_log_read_result->error)
-            initWriter(description, last_log_read_result->total_entries_read_from_log,  /* truncate_after = */ last_log_read_result->last_position);
+            initWriter(description, last_log_read_result->total_entries_read_from_log,  /* truncate_to_offset = */ last_log_read_result->last_position);
         else
             initWriter(description, last_log_read_result->total_entries_read_from_log);
     }
