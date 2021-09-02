@@ -1374,6 +1374,23 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
     EXPECT_TRUE(fs::exists("./logs/changelog_141_145.bin"));
 }
 
+TEST(CoordinationTest, TestSessionExpiryQueue)
+{
+    using namespace Coordination;
+    SessionExpiryQueue queue(500);
+
+    queue.addNewSessionOrUpdate(1, 1000);
+
+    for (size_t i = 0; i < 2; ++i)
+    {
+        EXPECT_EQ(queue.getExpiredSessions(), std::unordered_set<int64_t>({}));
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    EXPECT_EQ(queue.getExpiredSessions(), std::unordered_set<int64_t>({1}));
+}
+
 
 int main(int argc, char ** argv)
 {
