@@ -224,46 +224,6 @@ private:
     std::exception_ptr any_exception;
 };
 
-//class ExceptionHandlingSink : public IProcessor
-//{
-//public:
-//    explicit ExceptionHandlingSink(Block header)
-//        : IProcessor({std::move(header)}, {})
-//        , input(inputs.front())
-//    {
-//    }
-//
-//    Status prepare() override
-//    {
-//        while (!input.isFinished())
-//        {
-//            input.setNeeded();
-//            if (!input.hasData())
-//                return Status::NeedData;
-//
-//            auto data = input.pullData();
-//            if (data.exception)
-//                exceptions.emplace_back(std::move(data.exception));
-//        }
-//
-//        if (!exceptions.empty())
-//            return Status::Ready;
-//
-//        return Status::Finished;
-//    }
-//
-//    void work() override
-//    {
-//        auto exception = std::move(exceptions.at(0));
-//        exceptions.clear();
-//        std::rethrow_exception(std::move(exception));
-//    }
-//
-//private:
-//    InputPort & input;
-//    std::vector<std::exception_ptr> exceptions;
-//};
-
 Chain buildPushingToViewsDrain(
     const StoragePtr & storage,
     const StorageMetadataPtr & metadata_snapshot,

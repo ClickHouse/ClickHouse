@@ -35,6 +35,7 @@
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
@@ -339,7 +340,7 @@ void TCPHandler::runImpl()
             after_check_cancelled.restart();
             after_send_progress.restart();
 
-            if (state.io.out)
+            if (!state.io.out.empty())
             {
                 state.need_receive_data_for_insert = true;
                 processInsertQuery(connection_settings);
@@ -568,10 +569,11 @@ void TCPHandler::readData(const Settings & connection_settings)
 
 void TCPHandler::processInsertQuery(const Settings & connection_settings)
 {
+    PushingPipelineExecutor executor(state.io.out);
     /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
       *  client receive exception before sending data.
       */
-    state.io.out->writePrefix();
+    executor.start();
 
     /// Send ColumnsDescription for insertion table
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
@@ -588,19 +590,15 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
     }
 
     /// Send block to the client - table structure.
-    sendData(state.io.out->getHeader());
+    sendData(executor.getHeader());
 
-    try
-    {
-        readData(connection_settings);
-    }
-    catch (...)
-    {
-        /// To avoid flushing from the destructor, that may lead to uncaught exception.
-        state.io.out->writeSuffix();
-        throw;
-    }
-    state.io.out->writeSuffix();
+    auto [poll_interval, receive_timeout] = getReadTimeouts(connection_settings);
+    sendLogs();
+
+    while (readDataNext(poll_interval, receive_timeout))
+        executor.push(std::move(state.block_for_insert));
+
+    executor.finish();
 }
 
 
@@ -1364,7 +1362,7 @@ bool TCPHandler::receiveData(bool scalar)
         else
         {
             /// INSERT query.
-            state.io.out->write(block);
+            state.block_for_insert = block;
         }
         return true;
     }
@@ -1406,8 +1404,8 @@ void TCPHandler::initBlockInput()
             state.maybe_compressed_in = in;
 
         Block header;
-        if (state.io.out)
-            header = state.io.out->getHeader();
+        if (!state.io.out.empty())
+            header = state.io.out.getInputHeader();
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 

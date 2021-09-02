@@ -93,6 +93,18 @@ void Chain::addSink(ProcessorPtr processor)
     processors.emplace_front(std::move(processor));
 }
 
+IProcessor & Chain::getSource()
+{
+    checkInitialized(processors);
+    return *processors.front();
+}
+
+IProcessor & Chain::getSink()
+{
+    checkInitialized(processors);
+    return *processors.back();
+}
+
 InputPort & Chain::getInputPort() const
 {
     checkInitialized(processors);

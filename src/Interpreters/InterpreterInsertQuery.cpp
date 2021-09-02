@@ -19,7 +19,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Storages/StorageDistributed.h>
@@ -357,7 +357,7 @@ BlockIO InterpreterInsertQuery::execute()
 
         res.pipeline.setSinks([&](const Block & cur_header, QueryPipeline::StreamType) -> ProcessorPtr
         {
-            return std::make_shared<EmptySink>(cur_header);
+            return std::make_shared<ExceptionHandlingSink>(cur_header);
         });
 
         if (!allow_materialized)
@@ -375,7 +375,7 @@ BlockIO InterpreterInsertQuery::execute()
         res.pipeline.addChains(std::move(out_chains));
         res.pipeline.setSinks([&](const Block & cur_header, Pipe::StreamType)
         {
-            return std::make_shared<EmptySink>(cur_header);
+            return std::make_shared<ExceptionHandlingSink>(cur_header);
         });
     }
     else

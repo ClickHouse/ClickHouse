@@ -54,6 +54,7 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SinkToOutputStream.h>
+#include <Processors/Sinks/ExceptionHandlingSink.h>
 
 
 namespace ProfileEvents
@@ -623,11 +624,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             }
 
-            if (res.out)
+            if (!res.out.empty())
             {
-                if (auto * stream = dynamic_cast<CountingBlockOutputStream *>(res.out.get()))
+                if (auto * counting = dynamic_cast<CountingTransform *>(&res.out.getSource()))
                 {
-                    stream->setProcessListElement(context->getProcessListElement());
+                    counting->setProcessListElement(context->getProcessListElement());
                 }
             }
         }
@@ -737,7 +738,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                  log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
                  status_info_to_query_log
             ]
-                (IBlockInputStream * stream_in, IBlockOutputStream * stream_out, QueryPipeline * query_pipeline) mutable
+                (IBlockInputStream * stream_in, QueryPipeline * query_pipeline) mutable
             {
                 QueryStatus * process_list_elem = context->getProcessListElement();
 
@@ -773,15 +774,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.result_rows = stream_in_info.rows;
                     elem.result_bytes = stream_in_info.bytes;
                 }
-                else if (stream_out) /// will be used only for ordinary INSERT queries
-                {
-                    if (const auto * counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
-                    {
-                        /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
-                        elem.result_rows = counting_stream->getProgress().read_rows;
-                        elem.result_bytes = counting_stream->getProgress().read_bytes;
-                    }
-                }
                 else if (query_pipeline)
                 {
                     if (const auto * output_format = query_pipeline->getOutputFormat())
@@ -789,6 +781,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         elem.result_rows = output_format->getResultRows();
                         elem.result_bytes = output_format->getResultBytes();
                     }
+                }
+                else /// will be used only for ordinary INSERT queries
+                {
+                    auto progress_out = process_list_elem->getProgressOut();
+                    elem.result_rows = progress_out.read_rows;
+                    elem.result_bytes = progress_out.read_bytes;
                 }
 
                 if (elem.read_rows != 0)
@@ -1009,15 +1007,16 @@ void executeQuery(
 
     try
     {
-        if (streams.out)
+        if (!streams.out.empty())
         {
-            auto pipe = getSourceFromFromASTInsertQuery(ast, &istr, streams.out->getHeader(), context, nullptr);
+            auto pipe = getSourceFromFromASTInsertQuery(ast, &istr, streams.out.getInputHeader(), context, nullptr);
 
             pipeline.init(std::move(pipe));
             pipeline.resize(1);
-            pipeline.setSinks([&](const Block &, Pipe::StreamType)
+            pipeline.addChains({std::move(streams.out)});
+            pipeline.setSinks([&](const Block & header, Pipe::StreamType)
             {
-                return std::make_shared<SinkToOutputStream>(streams.out);
+                return std::make_shared<ExceptionHandlingSink>(header);
             });
 
             auto executor = pipeline.execute();
@@ -1154,7 +1153,7 @@ void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
 {
     try
     {
-        if (streams.out)
+        if (!streams.out.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires input, but no input buffer provided, it's a bug");
         if (streams.in)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query stream requires output, but no output buffer provided, it's a bug");
