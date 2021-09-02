@@ -5,10 +5,13 @@
 #include <atomic>
 #include <mutex>
 #include <condition_variable>
+#include <unordered_set>
 
 #include <common/shared_ptr_helper.h>
 #include <Common/ThreadPool.h>
-#include <Common/ArenaAllocator.h>
+#include <Common/Stopwatch.h>
+#include <Common/RingBuffer.h>
+#include <Common/PlainMultiSet.h>
 #include <Storages/MergeTree/ExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -61,30 +64,25 @@ public:
         MOVE
     };
 
-    explicit MergeTreeBackgroundExecutor(Type type_) : type(type_)
+    MergeTreeBackgroundExecutor(
+        Type type_,
+        CountGetter && threads_count_getter_,
+        CountGetter && max_task_count_getter_,
+        CurrentMetrics::Metric metric_)
+        : type(type_)
+        , threads_count_getter(threads_count_getter_)
+        , max_task_count_getter(max_task_count_getter_)
+        , metric(metric_)
     {
         name = toString(type);
+
+        updateConfiguration();
         scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
     }
 
     ~MergeTreeBackgroundExecutor()
     {
         wait();
-    }
-
-    void setThreadsCount(CountGetter && getter)
-    {
-        threads_count_getter = getter;
-    }
-
-    void setTasksCount(CountGetter && getter)
-    {
-        max_task_count_getter = getter;
-    }
-
-    void setMetric(CurrentMetrics::Metric metric_)
-    {
-        metric = metric_;
     }
 
     bool trySchedule(ExecutableTaskPtr task)
@@ -95,10 +93,13 @@ public:
             return false;
 
         auto & value = CurrentMetrics::values[metric];
-        if (value.load() >= static_cast<int64_t>(max_task_count_getter()))
+        if (value.load() >= static_cast<int64_t>(max_tasks_count))
             return false;
 
-        pending.emplace_back(std::make_shared<Item>(std::move(task), metric));
+        if (!pending.tryPush(std::make_shared<Item>(std::move(task), metric)))
+            return false;
+
+
         has_tasks.notify_one();
         return true;
     }
@@ -133,12 +134,27 @@ public:
 
 private:
 
-    void updatePoolConfiguration()
+    void updateConfiguration()
     {
-        const auto max_threads = threads_count_getter();
-        pool.setMaxFreeThreads(0);
-        pool.setMaxThreads(max_threads);
-        pool.setQueueSize(max_threads);
+        auto new_threads_count = threads_count_getter();
+        auto new_max_tasks_count = max_task_count_getter();
+
+        try
+        {
+            pending.resize(new_max_tasks_count);
+            active.reserve(new_max_tasks_count);
+
+            pool.setMaxFreeThreads(0);
+            pool.setMaxThreads(new_threads_count);
+            pool.setQueueSize(new_max_tasks_count);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+        threads_count = new_threads_count;
+        max_tasks_count = new_max_tasks_count;
     }
 
     void schedulerThreadFunction();
@@ -150,6 +166,11 @@ private:
     CountGetter threads_count_getter;
     CountGetter max_task_count_getter;
     CurrentMetrics::Metric metric;
+
+    size_t threads_count{0};
+    size_t max_tasks_count{0};
+
+    AtomicStopwatch update_timer;
 
     struct Item
     {
@@ -169,8 +190,9 @@ private:
 
     using ItemPtr = std::shared_ptr<Item>;
 
-    std::deque<ItemPtr> pending;
-    std::set<ItemPtr> active;
+    /// Initially it will be empty
+    RingBuffer<ItemPtr> pending{0};
+    PlainMultiSet<ItemPtr> active{0};
     std::set<StorageID> currently_deleting;
 
     std::mutex remove_mutex;

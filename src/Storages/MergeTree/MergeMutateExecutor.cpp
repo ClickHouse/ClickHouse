@@ -32,12 +32,10 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
         /// Mark this StorageID as deleting
         currently_deleting.emplace(id);
 
-        std::erase_if(pending, [&] (auto item) -> bool { return item->task->getStorageID() == id; });
+        pending.removeElements([&] (auto item) -> bool { return item->task->getStorageID() == id; });
 
         /// Find pending to wait
-        for (const auto & item : active)
-            if (item->task->getStorageID() == id)
-                tasks_to_wait.emplace_back(item);
+        tasks_to_wait = active.getAll([&] (auto item) -> bool { return item->task->getStorageID() == id; });
     }
 
 
@@ -66,13 +64,24 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
         if (shutdown_suspend)
             break;
 
-        auto item = std::move(pending.front());
-        pending.pop_front();
+        ItemPtr item;
+        if (!pending.tryPop(&item))
+            continue;
 
-        active.emplace(item);
+        active.tryPush(item);
 
-        /// This is needed to increase / decrease the number of threads at runtime
-        updatePoolConfiguration();
+
+        try
+        {
+            /// This is needed to increase / decrease the number of threads at runtime
+            if (update_timer.compareAndRestartDeferred(1.))
+                updateConfiguration();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
 
         bool res = pool.trySchedule([this, item] ()
         {
@@ -80,7 +89,7 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
 
             auto check_if_deleting = [&] () -> bool
             {
-                active.erase(item);
+                active.tryErase(item);
 
                 for (auto & id : currently_deleting)
                 {
@@ -108,7 +117,7 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
                     if (check_if_deleting())
                         return;
 
-                    pending.emplace_back(item);
+                    pending.tryPush(item);
                     has_tasks.notify_one();
                     return;
                 }
@@ -130,8 +139,8 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
 
         if (!res)
         {
-            active.erase(item);
-            pending.emplace_back(item);
+            active.tryErase(item);
+            pending.tryPush(item);
         }
 
     }
