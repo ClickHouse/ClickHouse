@@ -1,3 +1,5 @@
+#include <Common/ConcurrentBoundedQueue.h>
+
 #include <DataStreams/ConnectionCollector.h>
 #include <DataStreams/RemoteQueryExecutor.h>
 #include <DataStreams/RemoteQueryExecutorReadContext.h>
@@ -393,7 +395,12 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 
         case Protocol::Server::ProfileEvents:
             /// Pass profile events from remote server to client
-            break;
+            {
+                LOG_DEBUG(log, "RemoteQueryExecutor received ProfileEvents");
+                auto profile_queue = CurrentThread::getInternalProfileEventsQueue();
+                profile_queue->emplace(std::move(packet.block));
+                break;
+            }
 
         default:
             got_unknown_packet_from_replica = true;

@@ -48,6 +48,7 @@ struct QueryState
     InternalTextLogsQueuePtr logs_queue;
     std::unique_ptr<NativeWriter> logs_block_out;
 
+    InternalProfileEventsQueuePtr profile_queue;
     std::unique_ptr<NativeWriter> profile_events_block_out;
 
     /// From where to read data for INSERT.
