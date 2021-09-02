@@ -1126,7 +1126,7 @@ Could be used for throttling speed when replicating the data to add or replace n
 
 **See Also**
 
--   [max_replicated_fetches_network_bandwidth](../../operations/merge-tree-settings/settings.md#max_replicated_fetches_network_bandwidth)
+-   [max_replicated_fetches_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth)
 
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
