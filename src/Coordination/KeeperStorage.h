@@ -172,7 +172,7 @@ public:
     }
 
     /// Get all dead sessions
-    std::unordered_set<int64_t> getDeadSessions()
+    std::vector<int64_t> getDeadSessions()
     {
         return session_expiry_queue.getExpiredSessions();
     }
