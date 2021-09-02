@@ -4,16 +4,18 @@
 
 #include <Common/ShellCommand.h>
 #include <Core/Block.h>
+
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+
+#include <DataStreams/IBlockInputStream.h>
 #include <Processors/Pipe.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageFactory.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/ShellCommandSource.h>
 
 
 namespace DB
@@ -24,6 +26,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 StorageExecutable::StorageExecutable(
@@ -47,6 +50,31 @@ StorageExecutable::StorageExecutable(
     setInMemoryMetadata(storage_metadata);
 }
 
+StorageExecutable::StorageExecutable(
+    const StorageID & table_id_,
+    const String & script_name_,
+    const std::vector<String> & arguments_,
+    const String & format_,
+    const std::vector<ASTPtr> & input_queries_,
+    const ExecutablePoolSettings & pool_settings_,
+    const ColumnsDescription & columns,
+    const ConstraintsDescription & constraints)
+    : IStorage(table_id_)
+    , script_name(script_name_)
+    , arguments(arguments_)
+    , format(format_)
+    , input_queries(input_queries_)
+    , pool_settings(pool_settings_)
+    /// If pool size == 0 then there is no size restrictions. Poco max size of semaphore is integer type.
+    , process_pool(std::make_shared<ProcessPool>(pool_settings.pool_size == 0 ? std::numeric_limits<int>::max() : pool_settings.pool_size))
+    , log(&Poco::Logger::get("StorageExecutablePool"))
+{
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns);
+    storage_metadata.setConstraints(constraints);
+    setInMemoryMetadata(storage_metadata);
+}
+
 Pipe StorageExecutable::read(
     const Names & /*column_names*/,
     const StorageMetadataPtr & metadata_snapshot,
@@ -56,6 +84,8 @@ Pipe StorageExecutable::read(
     size_t max_block_size,
     unsigned /*threads*/)
 {
+    std::cerr << getName() << "::read" << std::endl;
+
     auto user_scripts_path = context->getUserScriptsPath();
     auto script_path = user_scripts_path + '/' + script_name;
     if (!std::filesystem::exists(std::filesystem::path(script_path)))
@@ -79,7 +109,27 @@ Pipe StorageExecutable::read(
     for (size_t i = 1; i < inputs.size(); ++i)
         config.write_fds.emplace_back(i + 2);
 
-    auto process = ShellCommand::executeDirect(config);
+    std::unique_ptr<ShellCommand> process;
+
+    if (process_pool)
+    {
+        std::cerr << getName() <<"::read create process" << std::endl;
+        bool result = process_pool->tryBorrowObject(process, [&config, this]()
+        {
+            config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, pool_settings.command_termination_timeout };
+            auto shell_command = ShellCommand::execute(config);
+            return shell_command;
+        }, pool_settings.max_command_execution_time * 10000);
+
+        if (!result)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Could not get process from pool, max command execution timeout exceeded {} seconds",
+                pool_settings.max_command_execution_time);
+    }
+    else
+    {
+        process = ShellCommand::executeDirect(config);
+    }
 
     std::vector<ShellCommandSource::SendDataTask> tasks;
     tasks.reserve(inputs.size());
@@ -123,13 +173,22 @@ Pipe StorageExecutable::read(
     }
 
     auto sample_block = metadata_snapshot->getSampleBlock();
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, format, sample_block, std::move(process), log, std::move(tasks), max_block_size));
-    return pipe;
+
+    if (process_pool)
+    {
+        Pipe pipe(std::make_unique<ShellCommandPoolSource>(context, format, std::move(sample_block), process_pool, std::move(process), log, std::move(tasks)));
+        return pipe;
+    }
+    else
+    {
+        Pipe pipe(std::make_unique<ShellCommandSource>(context, format, std::move(sample_block), std::move(process), log, std::move(tasks), max_block_size));
+        return pipe;
+    }
 }
 
 void registerStorageExecutable(StorageFactory & factory)
 {
-    factory.registerStorage("Executable", [](const StorageFactory::Arguments & args)
+    auto register_storage = [](const StorageFactory::Arguments & args, bool is_executable_pool) -> StoragePtr
     {
         auto local_context = args.getLocalContext();
 
@@ -143,7 +202,7 @@ void registerStorageExecutable(StorageFactory & factory)
         auto scipt_name_with_arguments_value = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         std::vector<String> script_name_with_arguments;
-        boost::split(script_name_with_arguments, scipt_name_with_arguments_value, [](char c){ return c == ' '; });
+        boost::split(script_name_with_arguments, scipt_name_with_arguments_value, [](char c) { return c == ' '; });
 
         auto script_name = script_name_with_arguments[0];
         script_name_with_arguments.erase(script_name_with_arguments.begin());
@@ -154,8 +213,8 @@ void registerStorageExecutable(StorageFactory & factory)
         {
             ASTPtr query = args.engine_args[i]->children.at(0);
             if (!query->as<ASTSelectWithUnionQuery>())
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "StorageExecutable argument is invalid input query {}",
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD, "StorageExecutable argument is invalid input query {}",
                     query->formatForErrorMessage());
 
             input_queries.emplace_back(std::move(query));
@@ -164,7 +223,35 @@ void registerStorageExecutable(StorageFactory & factory)
         const auto & columns = args.columns;
         const auto & constraints = args.constraints;
 
-        return StorageExecutable::create(args.table_id, script_name, script_name_with_arguments, format, input_queries, columns, constraints);
+        if (is_executable_pool)
+        {
+            size_t max_command_execution_time = 10;
+
+            size_t max_execution_time_seconds = static_cast<size_t>(args.getContext()->getSettings().max_execution_time.totalSeconds());
+            if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
+                max_command_execution_time = max_execution_time_seconds;
+
+            ExecutablePoolSettings pool_settings;
+            pool_settings.max_command_execution_time = max_command_execution_time;
+            if (args.storage_def->settings)
+                pool_settings.loadFromQuery(*args.storage_def);
+
+            return StorageExecutable::create(args.table_id, script_name, script_name_with_arguments, format, input_queries, pool_settings, columns, constraints);
+        }
+        else
+        {
+            return StorageExecutable::create(args.table_id, script_name, script_name_with_arguments, format, input_queries, columns, constraints);
+        }
+    };
+
+    factory.registerStorage("Executable", [&](const StorageFactory::Arguments & args)
+    {
+        return register_storage(args, false /*is_executable_pool*/);
+    });
+
+    factory.registerStorage("ExecutablePool", [&](const StorageFactory::Arguments & args)
+    {
+        return register_storage(args, true /*is_executable_pool*/);
     });
 }
 
