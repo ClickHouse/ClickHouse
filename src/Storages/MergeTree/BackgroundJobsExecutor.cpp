@@ -141,8 +141,7 @@ catch (...) /// Catch any exception to avoid thread termination.
 
 BackgroundJobAssignee::~BackgroundJobAssignee()
 {
-    if (!finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "finish() method must be called before destructor")
+    assert(finished);
 }
 
 }
