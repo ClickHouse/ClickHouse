@@ -798,6 +798,14 @@
         "01804_dictionary_decimal256_type",
         "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
         "01821_table_comment",
+        "01710_projection_fetch",
+        "01824_prefer_global_in_and_join",
+        "01870_modulo_partition_key",
+        "01870_buffer_flush", // creates database
+        "01889_postgresql_protocol_null_fields",
+        "01889_check_row_policy_defined_using_user_function",
+        "01921_concurrent_ttl_and_normal_merges_zookeeper_long", // heavy test, better to run sequentially
+        "01850_dist_INSERT_preserve_error", // uses cluster with different static databases shard_0/shard_1
         "01824_prefer_global_in_and_join",
         "01870_modulo_partition_key",
         "01870_buffer_flush", // creates database
