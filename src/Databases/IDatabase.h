@@ -8,8 +8,6 @@
 #include <Common/ThreadPool.h>
 #include <Core/UUID.h>
 
-#include <Core/QualifiedTableName.h> //FIXME
-
 #include <ctime>
 #include <functional>
 #include <memory>
@@ -29,6 +27,7 @@ struct StorageID;
 class ASTCreateQuery;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 struct ParsedTablesMetadata;
+struct QualifiedTableName;
 
 namespace ErrorCodes
 {

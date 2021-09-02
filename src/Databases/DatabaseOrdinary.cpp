@@ -183,6 +183,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 TableLoadingDependenciesVisitor::Data data;
                 data.default_database = metadata.default_database;
+                data.create_query = ast;
+                data.global_context = getContext();
                 TableLoadingDependenciesVisitor visitor{data};
                 visitor.visit(ast);
                 QualifiedTableName qualified_name{database_name, create_query->table};

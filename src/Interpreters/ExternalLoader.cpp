@@ -14,7 +14,6 @@
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
-#include <Poco/Logger.h>
 
 
 namespace CurrentStatusInfo
@@ -468,7 +467,6 @@ public:
             if (infos.find(name) == infos.end())
             {
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
-                LOG_TRACE(log, "Inserted {} into infos", name);
                 if (always_load_everything)
                 {
                     LOG_TRACE(log, "Will load '{}' because always_load_everything flag is set.", name);

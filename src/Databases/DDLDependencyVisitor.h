@@ -7,6 +7,7 @@ namespace DB
 {
 
 class ASTFunction;
+class ASTFunctionWithKeyValueArguments;
 
 
 class DDLDependencyVisitor
@@ -17,6 +18,8 @@ public:
         using TableNamesSet = std::set<QualifiedTableName>;
         String default_database;
         TableNamesSet dependencies;
+        ContextPtr global_context;
+        ASTPtr create_query;
     };
 
     using Visitor = ConstInDepthNodeVisitor<DDLDependencyVisitor, true>;
@@ -26,6 +29,7 @@ public:
 
 private:
     static void visit(const ASTFunction & function, Data & data);
+    static void visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data);
 
     static void extractTableNameFromArgument(const ASTFunction & function, Data & data, size_t arg_idx);
 };
