@@ -1078,7 +1078,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
         zxid = *new_last_zxid;
     }
 
-    session_expiry_queue.update(session_id, session_and_timeout[session_id]);
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
@@ -1115,6 +1114,9 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
     {
+        /// Update session only for heartbeats
+        session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
+
         KeeperStorageRequestProcessorPtr storage_request = KeeperStorageRequestProcessorsFactory::instance().get(zk_request);
         auto [response, _] = storage_request->process(*this, zxid, session_id);
         response->xid = zk_request->xid;
