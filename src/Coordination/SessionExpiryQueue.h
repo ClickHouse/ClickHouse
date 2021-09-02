@@ -2,6 +2,7 @@
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 #include <chrono>
 
 namespace DB
@@ -20,7 +21,7 @@ class SessionExpiryQueue
 {
 private:
     /// Session -> timeout ms
-    std::unordered_map<int64_t, int64_t> session_to_timeout;
+    std::unordered_map<int64_t, int64_t> session_to_expiration_time;
 
     /// Expire time -> session expire near this time
     std::map<int64_t, std::unordered_set<int64_t>> expiry_to_sessions;
