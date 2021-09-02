@@ -4,6 +4,8 @@
 
 #include <sys/mman.h>
 
+#include <boost/noncopyable.hpp>
+
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
@@ -87,22 +89,93 @@ private:
     llvm::TargetMachine & target_machine;
 };
 
-/** MemoryManager for module.
-  * Keep total allocated size during RuntimeDyld linker execution.
-  * Actual compiled code memory is stored in llvm::SectionMemoryManager member, we cannot use ZeroBase optimization here
-  * because it is required for llvm::SectionMemoryManager::MemoryMapper to live longer than llvm::SectionMemoryManager.
+/** Arena that allocate all memory with system page_size.
+  * All allocated pages can be protected with protection_flags using protect method.
+  * During destruction all allocated pages protection_flags will be reset.
   */
-class JITModuleMemoryManager
+class PageArena : private boost::noncopyable
 {
+public:
+    PageArena() : page_size(::getPageSize()) {}
 
-    class PageBlock
+    char * allocate(size_t size, size_t alignment)
+    {
+        /** First check if in some allocated page blocks there are enought free memory to make allocation.
+          * If there is no such block create it and then allocate from it.
+          */
+
+        for (size_t i = 0; i < page_blocks.size(); ++i)
+        {
+            char * result = tryAllocateFromPageBlockWithIndex(size, alignment, i);
+            if (result)
+                return result;
+        }
+
+        allocateNextPageBlock(size);
+        size_t allocated_page_index = page_blocks.size() - 1;
+        char * result = tryAllocateFromPageBlockWithIndex(size, alignment, allocated_page_index);
+        assert(result);
+
+        return result;
+    }
+
+    inline size_t getAllocatedSize() const { return allocated_size; }
+
+    inline size_t getPageSize() const { return page_size; }
+
+    ~PageArena()
+    {
+        protect(PROT_READ | PROT_WRITE);
+
+        for (auto & page_block : page_blocks)
+            free(page_block.base());
+    }
+
+    void protect(int protection_flags)
+    {
+        /** The code is partially based on the LLVM codebase
+              * The LLVM Project is under the Apache License v2.0 with LLVM Exceptions.
+              */
+
+#    if defined(__NetBSD__) && defined(PROT_MPROTECT)
+        protection_flags |= PROT_MPROTECT(PROT_READ | PROT_WRITE | PROT_EXEC);
+#    endif
+
+        bool invalidate_cache = (protection_flags & PROT_EXEC);
+
+        for (const auto & block : page_blocks)
+        {
+#    if defined(__arm__) || defined(__aarch64__)
+            /// Certain ARM implementations treat icache clear instruction as a memory read,
+            /// and CPU segfaults on trying to clear cache on !PROT_READ page.
+            /// Therefore we need to temporarily add PROT_READ for the sake of flushing the instruction caches.
+            if (invalidate_cache && !(protection_flags & PROT_READ))
+            {
+                int res = mprotect(block.base(), block.blockSize(), protection_flags | PROT_READ);
+                if (res != 0)
+                    throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+
+                llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
+                InvalidateCache = false;
+            }
+#    endif
+            int res = mprotect(block.base(), block.blockSize(), protection_flags);
+            if (res != 0)
+                throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+
+            if (invalidate_cache)
+                llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
+        }
+    }
+
+private:
+    struct PageBlock
     {
     public:
         PageBlock(void * pages_base_, size_t pages_size_, size_t page_size_)
-            : pages_base(pages_base_)
-            , pages_size(pages_size_)
-            , page_size(page_size_)
-        {}
+            : pages_base(pages_base_), pages_size(pages_size_), page_size(page_size_)
+        {
+        }
 
         inline void * base() const { return pages_base; }
         inline size_t pagesSize() const { return pages_size; }
@@ -115,208 +188,121 @@ class JITModuleMemoryManager
         size_t page_size;
     };
 
-    class PageArena
+    std::vector<PageBlock> page_blocks;
+
+    std::vector<size_t> page_blocks_allocated_size;
+
+    size_t page_size = 0;
+
+    size_t allocated_size = 0;
+
+    char * tryAllocateFromPageBlockWithIndex(size_t size, size_t alignment, size_t page_block_index)
     {
-    public:
+        assert(page_block_index < page_blocks.size());
+        auto & pages_block = page_blocks[page_block_index];
 
-        PageArena()
-            : page_size(::getPageSize())
+        size_t block_size = pages_block.blockSize();
+        size_t & block_allocated_size = page_blocks_allocated_size[page_block_index];
+        size_t block_free_size = block_size - block_allocated_size;
+
+        uint8_t * pages_start = static_cast<uint8_t *>(pages_block.base());
+        void * pages_offset = pages_start + block_allocated_size;
+
+        auto * result = std::align(alignment, size, pages_offset, block_free_size);
+
+        if (result)
         {
-            allocateNextPageBlock();
+            block_allocated_size = reinterpret_cast<uint8_t *>(result) - pages_start;
+            return static_cast<char *>(result);
         }
-
-        char * allocate(size_t size, size_t alignment)
+        else
         {
-            for (size_t i = 0; i < page_blocks.size(); ++i)
-            {
-                char * result = allocateFromPageBlocks(size, alignment, i);
-                if (result)
-                    return result;
-            }
-
-            while (true)
-            {
-                allocateNextPageBlock();
-                size_t allocated_page_index = page_blocks.size() - 1;
-                char * result = allocateFromPageBlocks(size, alignment, allocated_page_index);
-                if (result)
-                    return result;
-            }
+            return nullptr;
         }
+    }
 
-        inline size_t getAllocatedSize() const
-        {
-            return allocated_size;
-        }
-
-        inline size_t getPageSize() const
-        {
-            return page_size;
-        }
-
-        ~PageArena()
-        {
-            for (auto & page_block : page_blocks)
-                free(page_block.base());
-        }
-
-        const std::vector<PageBlock> & getPageBlocks() const
-        {
-            return page_blocks;
-        }
-
-    private:
-
-        std::vector<PageBlock> page_blocks;
-
-        std::vector<size_t> page_blocks_allocated_size;
-
-        size_t page_size = 0;
-
-        size_t allocated_size = 0;
-
-        char * allocateFromPageBlocks(size_t size, size_t alignment, size_t page_blocks_index)
-        {
-            assert(page_blocks_index < page_blocks.size());
-            auto & pages_block = page_blocks[page_blocks_index];
-
-            size_t block_size = pages_block.blockSize();
-            size_t & block_allocated_size = page_blocks_allocated_size[page_blocks_index];
-            size_t block_free_size = block_size - block_allocated_size;
-
-            uint8_t * pages_start = static_cast<uint8_t *>(pages_block.base());
-            void * pages_offset = pages_start + block_allocated_size;
-
-            auto * result = std::align(
-                alignment,
-                size,
-                pages_offset,
-                block_free_size);
-
-            if (result)
-            {
-                block_allocated_size = reinterpret_cast<uint8_t *>(result) - pages_start;
-                return static_cast<char *>(result);
-            }
-            else
-            {
-                return nullptr;
-            }
-        }
-
-        void allocateNextPageBlock()
-        {
-            size_t pages_to_allocate_size = (page_blocks.size() * 2) + 1;
-            size_t allocate_size = page_size * pages_to_allocate_size;
-
-            llvm::errs() << "PageArena::allocatoeNextPageBlock page size " << page_size << " pages_to_allocate_size " << pages_to_allocate_size << "\n";
-
-            void * buf = nullptr;
-            int res = posix_memalign(&buf, page_size, allocate_size);
-
-            if (res != 0)
-                throwFromErrno(fmt::format("Cannot allocate memory (posix_memalign) alignment {} size {}.",
-                    page_size,
-                    ReadableSize(allocate_size)),
-                    ErrorCodes::CANNOT_ALLOCATE_MEMORY,
-                    res);
-
-            page_blocks.emplace_back(buf, pages_to_allocate_size, page_size);
-            page_blocks_allocated_size.emplace_back(0);
-
-            allocated_size += allocate_size;
-        }
-    };
-
-    class MemoryManager : public llvm::RTDyldMemoryManager
+    void allocateNextPageBlock(size_t size)
     {
-    public:
-        uint8_t * allocateCodeSection(uintptr_t size, unsigned alignment, unsigned, llvm::StringRef) override
-        {
-            return reinterpret_cast<uint8_t *>(ex_page_arena.allocate(size, alignment));
-        }
+        size_t pages_to_allocate_size = ((size / page_size) + 1) * 2;
+        size_t allocate_size = page_size * pages_to_allocate_size;
 
-        uint8_t * allocateDataSection(uintptr_t size, unsigned alignment, unsigned, llvm::StringRef, bool is_read_only) override
-        {
-            if (is_read_only)
-                return reinterpret_cast<uint8_t *>(ro_page_arena.allocate(size, alignment));
-            else
-                return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
-        }
+        void * buf = nullptr;
+        int res = posix_memalign(&buf, page_size, allocate_size);
 
-        bool finalizeMemory(std::string *) override
-        {
-            protectPages(ro_page_arena, PROT_READ);
-            protectPages(ex_page_arena, PROT_READ | PROT_EXEC);
-            return true;
-        }
+        if (res != 0)
+            throwFromErrno(
+                fmt::format("Cannot allocate memory (posix_memalign) alignment {} size {}.", page_size, ReadableSize(allocate_size)),
+                ErrorCodes::CANNOT_ALLOCATE_MEMORY,
+                res);
 
-        ~MemoryManager() override
-        {
-            protectPages(ro_page_arena, PROT_READ | PROT_WRITE);
-            protectPages(ex_page_arena, PROT_READ | PROT_WRITE);
-        }
+        page_blocks.emplace_back(buf, pages_to_allocate_size, page_size);
+        page_blocks_allocated_size.emplace_back(0);
 
-        inline size_t allocatedSize() const
-        {
-            size_t data_size = rw_page_arena.getAllocatedSize() + ro_page_arena.getAllocatedSize();
-            size_t code_size = ex_page_arena.getAllocatedSize();
+        allocated_size += allocate_size;
+    }
+};
 
-            return data_size + code_size;
-        }
-    private:
-        PageArena rw_page_arena;
-        PageArena ro_page_arena;
-        PageArena ex_page_arena;
+// class AssemblyPrinter
+// {
+// public:
 
-        static void protectPages(PageArena & arena, int protection_flags)
-        {
-            /** The code is partially based on the LLVM codebase
-              * The LLVM Project is under the Apache License v2.0 with LLVM Exceptions.
-              */
-            const auto & blocks = arena.getPageBlocks();
+//     explicit AssemblyPrinter(llvm::TargetMachine &target_machine_)
+//     : target_machine(target_machine_)
+//     {
+//     }
 
-#if defined(__NetBSD__) && defined(PROT_MPROTECT)
-            protection_flags |= PROT_MPROTECT(PROT_READ | PROT_WRITE | PROT_EXEC);
-#endif
+//     void print(llvm::Module & module)
+//     {
+//         llvm::legacy::PassManager pass_manager;
+//         target_machine.Options.MCOptions.AsmVerbose = true;
+//         if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+//             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
 
-            bool invalidate_cache = (protection_flags & PROT_EXEC);
+//         pass_manager.run(module);
+//     }
+// private:
+//     llvm::TargetMachine & target_machine;
+// };
 
-            for (const auto & block : blocks)
-            {
-#if defined(__arm__) || defined(__aarch64__)
-                /// Certain ARM implementations treat icache clear instruction as a memory read,
-                /// and CPU segfaults on trying to clear cache on !PROT_READ page.
-                /// Therefore we need to temporarily add PROT_READ for the sake of flushing the instruction caches.
-                if (invalidate_cache && !(protection_flags & PROT_READ))
-                {
-                    int res = mprotect(block.base(), block.blockSize(), protection_flags | PROT_READ);
-                    if (res != 0)
-                        throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
-
-                    llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
-                    InvalidateCache = false;
-                }
-#endif
-                int res = mprotect(block.base(), block.blockSize(), protection_flags);
-                if (res != 0)
-                    throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
-
-                if (invalidate_cache)
-                    llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
-            }
-        }
-    };
-
+/** MemoryManager for module.
+  * Keep total allocated size during RuntimeDyld linker execution.
+  */
+class JITModuleMemoryManager : public llvm::RTDyldMemoryManager
+{
 public:
-    JITModuleMemoryManager() = default;
 
-    inline size_t getAllocatedSize() const { return manager.allocatedSize(); }
+    uint8_t * allocateCodeSection(uintptr_t size, unsigned alignment, unsigned, llvm::StringRef) override
+    {
+        return reinterpret_cast<uint8_t *>(ex_page_arena.allocate(size, alignment));
+    }
 
-    inline llvm::RTDyldMemoryManager & getManager() { return manager; }
+    uint8_t * allocateDataSection(uintptr_t size, unsigned alignment, unsigned, llvm::StringRef, bool is_read_only) override
+    {
+        if (is_read_only)
+            return reinterpret_cast<uint8_t *>(ro_page_arena.allocate(size, alignment));
+        else
+            return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
+    }
+
+    bool finalizeMemory(std::string *) override
+    {
+        ro_page_arena.protect(PROT_READ);
+        ex_page_arena.protect(PROT_READ | PROT_EXEC);
+        return true;
+    }
+
+    inline size_t allocatedSize() const
+    {
+        size_t data_size = rw_page_arena.getAllocatedSize() + ro_page_arena.getAllocatedSize();
+        size_t code_size = ex_page_arena.getAllocatedSize();
+
+        return data_size + code_size;
+    }
 
 private:
-    MemoryManager manager;
+    PageArena rw_page_arena;
+    PageArena ro_page_arena;
+    PageArena ex_page_arena;
 };
 
 class JITSymbolResolver : public llvm::LegacyJITSymbolResolver
@@ -422,12 +408,12 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
     }
 
     std::unique_ptr<JITModuleMemoryManager> module_memory_manager = std::make_unique<JITModuleMemoryManager>();
-    llvm::RuntimeDyld dynamic_linker = {module_memory_manager->getManager(), *symbol_resolver};
+    llvm::RuntimeDyld dynamic_linker = {*module_memory_manager, *symbol_resolver};
 
     std::unique_ptr<llvm::RuntimeDyld::LoadedObjectInfo> linked_object = dynamic_linker.loadObject(*object.get());
 
     dynamic_linker.resolveRelocations();
-    module_memory_manager->getManager().finalizeMemory();
+    module_memory_manager->finalizeMemory(nullptr);
 
     CompiledModuleInfo module_info;
 
@@ -451,7 +437,7 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
         module_info.compiled_functions.emplace_back(std::move(function_name));
     }
 
-    module_info.size = module_memory_manager->getAllocatedSize();
+    module_info.size = module_memory_manager->allocatedSize();
     module_info.identifier = current_module_key;
 
     module_identifier_to_memory_manager[current_module_key] = std::move(module_memory_manager);
