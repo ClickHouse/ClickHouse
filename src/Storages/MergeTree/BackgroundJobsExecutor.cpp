@@ -105,12 +105,11 @@ void BackgroundJobAssignee::finish()
     {
         holder->deactivate();
 
-        auto context = getContext();
         auto storage_id = data.getStorageID();
 
-        context->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        context->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        context->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
     }
 }
 

@@ -8,6 +8,7 @@
 
 #include <common/shared_ptr_helper.h>
 #include <Common/ThreadPool.h>
+#include <Common/ArenaAllocator.h>
 #include <Storages/MergeTree/ExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -53,9 +54,16 @@ public:
     using CountGetter = std::function<size_t()>;
     using Callback = std::function<void()>;
 
-
-    MergeTreeBackgroundExecutor()
+    enum class Type
     {
+        MERGE_MUTATE,
+        FETCH,
+        MOVE
+    };
+
+    explicit MergeTreeBackgroundExecutor(Type type_) : type(type_)
+    {
+        name = toString(type);
         scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
     }
 
@@ -135,7 +143,10 @@ private:
 
     void schedulerThreadFunction();
 
+    static String toString(Type type);
 
+    Type type;
+    String name;
     CountGetter threads_count_getter;
     CountGetter max_task_count_getter;
     CurrentMetrics::Metric metric;
