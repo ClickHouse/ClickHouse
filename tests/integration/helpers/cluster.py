@@ -13,6 +13,7 @@ import subprocess
 import time
 import traceback
 import urllib.parse
+import urllib3
 import shlex
 
 import cassandra.cluster
@@ -546,10 +547,13 @@ class ClickHouseCluster:
                 time.sleep(1)
 
     def wait_minio_to_start(self, timeout=30, secure=False):
-        minio_client = Minio('localhost:9001',
+        self.minio_ip = self.get_instance_ip(self.minio_host)
+        
+        minio_client = Minio(f'{self.minio_ip}:{self.minio_port}',
                              access_key='minio',
                              secret_key='minio123',
-                             secure=secure)
+                             secure=secure,
+                             http_client=urllib3.PoolManager(cert_reqs='CERT_NONE')) # disable SSL check as we test ClickHouse and not Python library
         start = time.time()
         while time.time() - start < timeout:
             try:
