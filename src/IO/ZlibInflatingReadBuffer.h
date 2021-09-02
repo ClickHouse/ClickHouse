@@ -4,6 +4,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 
+#define Z_TLS = __thread
 #include <zlib.h>
 
 

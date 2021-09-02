@@ -1,6 +1,8 @@
 #include <unistd.h>
 #include <vector>
 #include <stdexcept>
+
+#define Z_TLS = __thread
 #include <zlib.h>
 
 #pragma GCC diagnostic ignored "-Wold-style-cast"
