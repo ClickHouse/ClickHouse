@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalLoader.h>
 #include <Common/quoteString.h>
-#include <common/logger_useful.h>
 
 #include <memory>
 
@@ -47,7 +46,6 @@ protected:
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;
-    Poco::Logger * log;
 };
 
 }

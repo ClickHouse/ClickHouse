@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INFINITE_LOOP;
+    extern const int LOGICAL_ERROR;
 }
 
 static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
@@ -60,7 +61,8 @@ void TablesLoader::loadTables()
         databases[database_name]->loadTablesMetadata(global_context, all_tables);
     }
 
-    LOG_INFO(log, "Parsed metadata of {} tables in {} sec", all_tables.metadata.size(), stopwatch.elapsedSeconds());
+    LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {} sec",
+             all_tables.metadata.size(), databases_to_load.size(), stopwatch.elapsedSeconds());
     stopwatch.restart();
 
     logDependencyGraph();
@@ -88,11 +90,11 @@ void TablesLoader::removeUnresolvableDependencies()
             return false;
         /// Table exists and it's already loaded
         if (DatabaseCatalog::instance().isTableExist(StorageID(dependency_name.database, dependency_name.table), global_context))
-            return false;
+            return true;
         /// It's XML dictionary. It was loaded before tables and DDL dictionaries.
         if (dependency_name.database == all_tables.default_database &&
             global_context->getExternalDictionariesLoader().has(dependency_name.table))
-            return false;
+            return true;
 
         /// Some tables depends on table "dependency_name", but there is no such table in DatabaseCatalog and we don't have its metadata.
         /// We will ignore it and try to load dependent tables without "dependency_name"
