@@ -507,7 +507,9 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
                             ErrorCodes::PARAMETER_OUT_OF_BOUND);
     }
 
-    if (table_join->keyNamesLeft().size() > 1)
+    const auto & key_names_left_all = table_join->keyNamesLeft();
+    const auto & key_names_right_all = table_join->keyNamesRight();
+    if (key_names_left_all.size() != 1 || key_names_right_all.size() != 1)
         throw Exception("MergeJoin does not support OR", ErrorCodes::NOT_IMPLEMENTED);
 
     std::tie(mask_column_name_left, mask_column_name_right) = table_join->joinConditionColumnNames(0);
@@ -522,8 +524,8 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         key_names_right.push_back(deriveTempName(mask_column_name_right));
     }
 
-    key_names_left.insert(key_names_left.end(), table_join->keyNamesLeft().front().begin(), table_join->keyNamesLeft().front().end());
-    key_names_right.insert(key_names_right.end(), table_join->keyNamesRight().front().begin(), table_join->keyNamesRight().front().end());
+    key_names_left.insert(key_names_left.end(), key_names_left_all.front().begin(), key_names_left_all.front().end());
+    key_names_right.insert(key_names_right.end(), key_names_right_all.front().begin(), key_names_right_all.front().end());
 
     addConditionJoinColumn(right_sample_block, JoinTableSide::Right);
     JoinCommon::splitAdditionalColumns(NamesVector{key_names_right}, right_sample_block, right_table_keys, right_columns_to_add);

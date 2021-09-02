@@ -74,16 +74,31 @@ private:
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
 
-    NamesVector key_names_left;
-    NamesVector key_names_right; /// Duplicating names are qualified.
-    ASTsVector on_filter_condition_asts_left;
-    ASTsVector on_filter_condition_asts_right;
-private:
-    size_t disjunct_num = 0;
+    /// Corresponds to one disjunct
+    struct JoinOnClause
+    {
+        Names key_names;
+        ASTs key_asts;
+
+        ASTs on_filter_conditions;
+
+        JoinOnClause() = default;
+
+        explicit JoinOnClause(const Names & names)
+            : key_names(names)
+        {}
+
+        void addKey(const String & name, const ASTPtr & ast)
+        {
+            key_names.emplace_back(name);
+            key_asts.emplace_back(ast);
+        }
+    };
+
     Disjuncts disjuncts;
 
-    ASTs key_asts_left;
-    ASTs key_asts_right;
+    std::vector<JoinOnClause> left_clauses;
+    std::vector<JoinOnClause> right_clauses; /// Duplicating key_names are qualified.
 
     ASTTableJoin table_join;
 
@@ -116,7 +131,7 @@ private:
 
     /// Create converting actions and change key column names if required
     ActionsDAGPtr applyKeyConvertToTable(
-        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NamesVector & names_vector_to_rename) const;
+        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, std::vector<JoinOnClause> & join_clause) const;
 
     /// Calculates common supertypes for corresponding join key columns.
     template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
@@ -131,10 +146,8 @@ private:
 
 public:
     TableJoin()
-        : key_names_left(1)
-        , key_names_right(1)
-        , on_filter_condition_asts_left(1)
-        , on_filter_condition_asts_right(1)
+        : left_clauses(1)
+        , right_clauses(1)
     {
     }
 
@@ -142,16 +155,14 @@ public:
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
-              const NamesVector & key_names_right_)
+              const Names & key_names_right)
         : size_limits(limits)
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
         , join_algorithm(JoinAlgorithm::HASH)
-        , key_names_left(1)
-        , key_names_right(key_names_right_)
-        , on_filter_condition_asts_left(1)
-        , on_filter_condition_asts_right(1)
+        , left_clauses(1)
     {
+        right_clauses.emplace_back(key_names_right);
         table_join.kind = kind;
         table_join.strictness = strictness;
     }
@@ -232,8 +243,26 @@ public:
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
-    const NamesVector & keyNamesLeft() const { return key_names_left; }
-    const NamesVector & keyNamesRight() const { return key_names_right; }
+    NamesVector keyNamesLeft() const
+    {
+        NamesVector key_names;
+        for (const auto & clause : left_clauses)
+        {
+            key_names.push_back(clause.key_names);
+        }
+        return key_names;
+    }
+
+    NamesVector keyNamesRight() const
+    {
+        NamesVector key_names;
+        for (const auto & clause : right_clauses)
+        {
+            key_names.push_back(clause.key_names);
+        }
+        return key_names;
+    }
+
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
 
     Names columnsAddedByJoin() const
@@ -245,7 +274,12 @@ public:
     }
 
     /// StorageJoin overrides key names (cause of different names qualification)
-    void setRightKeys(const Names & keys) { key_names_right.clear(); key_names_right.push_back(keys); }
+    void setRightKeys(const Names & keys)
+    {
+        // assert(right_clauses.size() <= 1);
+        right_clauses.clear();
+        right_clauses.emplace_back(keys);
+    }
 
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
