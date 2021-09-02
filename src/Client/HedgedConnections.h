@@ -8,7 +8,8 @@
 #include <Client/HedgedConnectionsFactory.h>
 #include <Client/IConnections.h>
 #include <Client/PacketReceiver.h>
-
+#include <Common/FiberStack.h>
+#include <Common/Fiber.h>
 
 namespace DB
 {
@@ -71,7 +72,7 @@ public:
     };
 
     HedgedConnections(const ConnectionPoolWithFailoverPtr & pool_,
-                      ContextPtr context_,
+                      const Settings & settings_,
                       const ConnectionTimeouts & timeouts_,
                       const ThrottlerPtr & throttler,
                       PoolMode pool_mode,
@@ -96,7 +97,7 @@ public:
 
     Packet receivePacket() override;
 
-    Packet receivePacketUnlocked(AsyncCallback async_callback, bool is_draining) override;
+    Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 
     void disconnect() override;
 
@@ -187,14 +188,7 @@ private:
     Packet last_received_packet;
 
     Epoll epoll;
-    ContextPtr context;
     const Settings & settings;
-
-    /// The following two fields are from settings but can be referenced outside the lifetime of
-    /// settings when connection is drained asynchronously.
-    Poco::Timespan drain_timeout;
-    bool allow_changing_replica_until_first_data_packet;
-
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;

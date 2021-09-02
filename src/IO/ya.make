@@ -5,7 +5,7 @@ LIBRARY()
 
 ADDINCL(
     contrib/libs/zstd/include
-    contrib/restricted/fast_float/include
+    contrib/restricted/fast_float
 )
 
 PEERDIR(
@@ -20,24 +20,18 @@ PEERDIR(
 
 SRCS(
     AIO.cpp
-    AsynchronousReadBufferFromFile.cpp
-    AsynchronousReadBufferFromFileDescriptor.cpp
+    AIOContextPool.cpp
     BrotliReadBuffer.cpp
     BrotliWriteBuffer.cpp
-    Bzip2ReadBuffer.cpp
-    Bzip2WriteBuffer.cpp
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
     DoubleConverter.cpp
-    FileEncryptionCommon.cpp
     HTTPChunkedReadBuffer.cpp
     HTTPCommon.cpp
     HashingWriteBuffer.cpp
     LZMADeflatingWriteBuffer.cpp
     LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
-    Lz4DeflatingWriteBuffer.cpp
-    Lz4InflatingReadBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
     MMapReadBufferFromFileWithCache.cpp
@@ -48,10 +42,9 @@ SRCS(
     MySQLPacketPayloadReadBuffer.cpp
     MySQLPacketPayloadWriteBuffer.cpp
     NullWriteBuffer.cpp
-    OpenedFile.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
-    ReadBufferFromEncryptedFile.cpp
+    ReadBufferAIO.cpp
     ReadBufferFromFile.cpp
     ReadBufferFromFileBase.cpp
     ReadBufferFromFileDecorator.cpp
@@ -60,13 +53,9 @@ SRCS(
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
-    ReadSettings.cpp
     SeekAvoidingReadBuffer.cpp
-    SynchronousReader.cpp
-    ThreadPoolReader.cpp
     TimeoutSetter.cpp
     UseSSL.cpp
-    WriteBufferFromEncryptedFile.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
     WriteBufferFromFileDecorator.cpp

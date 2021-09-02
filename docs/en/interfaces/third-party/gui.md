@@ -84,8 +84,6 @@ Features:
 -   Table data preview.
 -   Full-text search.
 
-By default, DBeaver does not connect using a session (the CLI for example does). If you require session support (for example to set settings for your session), edit the driver connection properties and set session_id to a random string (it uses the http connection under the hood). Then you can use any setting from the query window 
-
 ### clickhouse-cli {#clickhouse-cli}
 
 [clickhouse-cli](https://github.com/hatarist/clickhouse-cli) is an alternative command-line client for ClickHouse, written in Python 3.
@@ -189,21 +187,5 @@ SeekTable is [free](https://www.seektable.com/help/cloud-pricing) for personal/i
 ### Chadmin {#chadmin}
 
 [Chadmin](https://github.com/bun4uk/chadmin) is a simple UI where you can visualize your currently running queries on your ClickHouse cluster and info about them and kill them if you want.
-
-### DBM {#dbm}
-
-[DBM](https://dbm.incubator.edurt.io/) DBM is a visual management tool for ClickHouse!
-
-Features:
-
--   Support query history (pagination, clear all, etc.)
--   Support selected sql clauses query
--   Support terminating query
--   Support table management (metadata, delete, preview)
--   Support database management (delete, create)
--   Support custom query
--   Support multiple data sources management(connection test, monitoring)
--   Support monitor (processor, connection, query)
--   Support migrate data
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->

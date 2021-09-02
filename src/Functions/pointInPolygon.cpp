@@ -81,8 +81,6 @@ public:
         return 0;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
@@ -188,7 +186,7 @@ public:
             /// Preprocessing can be computationally heavy but dramatically speeds up matching.
 
             using Pool = ObjectPoolMap<PointInConstPolygonImpl, UInt128>;
-            /// C++11 has thread-safe function-local static.
+            /// C++11 has thread-safe function-local statics.
             static Pool known_polygons;
 
             auto factory = [&polygon]()

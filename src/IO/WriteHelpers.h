@@ -728,11 +728,6 @@ inline void writeDateText(DayNum date, WriteBuffer & buf)
     writeDateText<delimiter>(LocalDate(date), buf);
 }
 
-template <char delimiter = '-'>
-inline void writeDateText(ExtendedDayNum date, WriteBuffer & buf)
-{
-    writeDateText<delimiter>(LocalDate(date), buf);
-}
 
 /// In the format YYYY-MM-DD HH:MM:SS
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
@@ -901,67 +896,34 @@ inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTim
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 
 template <typename T>
-void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros)
+String decimalFractional(const T & x, UInt32 scale)
 {
-    /// If it's big integer, but the number of digits is small,
-    /// use the implementation for smaller integers for more efficient arithmetic.
-
     if constexpr (std::is_same_v<T, Int256>)
     {
         if (x <= std::numeric_limits<UInt32>::max())
-        {
-            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros);
-            return;
-        }
+            return decimalFractional(static_cast<UInt32>(x), scale);
         else if (x <= std::numeric_limits<UInt64>::max())
-        {
-            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros);
-            return;
-        }
+            return decimalFractional(static_cast<UInt64>(x), scale);
         else if (x <= std::numeric_limits<UInt128>::max())
-        {
-            writeDecimalFractional(static_cast<UInt128>(x), scale, ostr, trailing_zeros);
-            return;
-        }
+            return decimalFractional(static_cast<UInt128>(x), scale);
     }
     else if constexpr (std::is_same_v<T, Int128>)
     {
         if (x <= std::numeric_limits<UInt32>::max())
-        {
-            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros);
-            return;
-        }
+            return decimalFractional(static_cast<UInt32>(x), scale);
         else if (x <= std::numeric_limits<UInt64>::max())
-        {
-            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros);
-            return;
-        }
+            return decimalFractional(static_cast<UInt64>(x), scale);
     }
 
-    constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    assert(scale <= max_digits);
-    char buf[max_digits];
-    memset(buf, '0', scale);
-
+    String str(scale, '0');
     T value = x;
-    Int32 last_nonzero_pos = 0;
-    for (Int32 pos = scale - 1; pos >= 0; --pos)
-    {
-        auto remainder = value % 10;
-        value /= 10;
-
-        if (remainder != 0 && last_nonzero_pos == 0)
-            last_nonzero_pos = pos;
-
-        buf[pos] += static_cast<char>(remainder);
-    }
-
-    writeChar('.', ostr);
-    ostr.write(buf, trailing_zeros ? scale : last_nonzero_pos + 1);
+    for (Int32 pos = scale - 1; pos >= 0; --pos, value /= 10)
+        str[pos] += static_cast<char>(value % 10);
+    return str;
 }
 
 template <typename T>
-void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros)
+void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr)
 {
     T part = DecimalUtils::getWholePart(x, scale);
 
@@ -974,9 +936,10 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
 
     if (scale)
     {
+        writeChar('.', ostr);
         part = DecimalUtils::getFractionalPart(x, scale);
-        if (part || trailing_zeros)
-            writeDecimalFractional(part, scale, ostr, trailing_zeros);
+        String fractional = decimalFractional(part, scale);
+        ostr.write(fractional.data(), scale);
     }
 }
 
@@ -1129,17 +1092,6 @@ writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian archi
         x = __builtin_bswap64(x);
 
     writePODBinary(x, buf);
-}
-
-template <typename T>
-inline std::enable_if_t<is_big_int_v<T>, void>
-writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming little endian architecture.
-{
-    for (size_t i = 0; i != std::size(x.items); ++i)
-    {
-        const auto & item = x.items[std::size(x.items) - i - 1];
-        writeBinaryBigEndian(item, buf);
-    }
 }
 
 struct PcgSerializer
