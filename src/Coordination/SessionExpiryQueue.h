@@ -56,7 +56,7 @@ public:
     void addNewSessionOrUpdate(int64_t session_id, int64_t timeout_ms);
 
     /// Get all expired sessions
-    std::unordered_set<int64_t> getExpiredSessions() const;
+    std::vector<int64_t> getExpiredSessions() const;
 
     void clear();
 };
