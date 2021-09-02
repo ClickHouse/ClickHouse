@@ -62,7 +62,7 @@
 01046_materialized_view_with_join_over_distributed
 01050_clickhouse_dict_source_with_subquery
 01053_ssd_dictionary
-01059_storage_file_brotli
+01059_storage_file_compression
 01070_h3_get_base_cell
 01070_h3_hex_area_m2
 01070_h3_indexes_are_neighbors
