@@ -2,12 +2,10 @@
 #-*- coding: utf-8 -*-
 import subprocess
 import os
-import getpass
 import glob
 import argparse
 import logging
 import signal
-import subprocess
 import sys
 
 CUR_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
