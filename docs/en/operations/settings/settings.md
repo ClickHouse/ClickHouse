@@ -1109,7 +1109,7 @@ Default value: `5`.
 
 ## max_replicated_fetches_network_bandwidth_for_server {#max_replicated_fetches_network_bandwidth_for_server}
 
-Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) fetches for the server. Only has meaning at server startup.
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) fetches for the server. Only has meaning at server startup. You can also limit the speed for a particular table with [max_replicated_fetches_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth) setting.
 
 The setting isn't followed perfectly accurately.
 
@@ -1123,14 +1123,10 @@ Default value: `0`.
 **Usage**
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
-
-**See Also**
-
--   [max_replicated_fetches_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth)
 
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
-Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends for the server. Only has meaning at server startup.
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends for the server. Only has meaning at server startup.  You can also limit the speed for a particular table with [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth) setting.
 
 The setting isn't followed perfectly accurately.
 
@@ -1144,10 +1140,6 @@ Default value: `0`.
 **Usage**
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
-
-**See Also**
-
--   [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth)
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
