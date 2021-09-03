@@ -74,17 +74,6 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
         status = active.tryPush(item);
         assert(status);
 
-        try
-        {
-            /// This is needed to increase / decrease the number of threads at runtime
-            if (update_timer.compareAndRestartDeferred(10.))
-                updateConfiguration();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
 
         bool res = pool.trySchedule([this, item] ()
         {
