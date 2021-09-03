@@ -591,7 +591,7 @@ Possible values:
 -   Positive double.
 -   0 — The ClickHouse server can use all available RAM.
 
-Default value: `0`.
+Default value: `0.9`.
 
 **Usage**
 
