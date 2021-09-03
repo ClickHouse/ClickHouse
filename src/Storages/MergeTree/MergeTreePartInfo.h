@@ -126,18 +126,22 @@ struct DetachedPartInfo : public MergeTreePartInfo
     bool valid_name;
 
     static constexpr auto DETACH_REASONS = std::to_array<std::string_view>({
-        "broken", "unexpected", "noquorum",
-        "ignored", "broken-on-start", "clone",
-        "attaching", "deleting", "tmp-fetch"
+        "broken",
+        "unexpected",
+        "noquorum",
+        "ignored",
+        "broken-on-start",
+        "clone",
+        "attaching",
+        "deleting",
+        "tmp-fetch"
     });
 
     /// NOTE: It may parse part info incorrectly.
     /// For example, if prefix contains '_' or if DETACH_REASONS doesn't contain prefix.
-    // This method has different semantics with MergeTreePartInfo::tryParsePartName as
-    // the former is used for (1) verifying that a part can be parsed without using the result and (2) parsing part
-    // for later usage.
-    // Detached parts are always parsed regardless of their validity (valid_name is used to check that), so we do not
-    // need an std::optional
+    // This method has different semantics with MergeTreePartInfo::tryParsePartName.
+    // Detached parts are always parsed regardless of their validity.
+    // DetachedPartInfo::valid_name field specifies whether parsing was successful or not.
     static DetachedPartInfo parseDetachedPartName(std::string_view dir_name, MergeTreeDataFormatVersion format_version);
 
 private:
