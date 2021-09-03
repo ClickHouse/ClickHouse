@@ -41,7 +41,7 @@ public:
             std::rethrow_exception(std::move(last_exception));
     }
 
-    InputPort & getInputPort() { return input; }
+    InputPort & getPort() { return input; }
 
 private:
     InputPort & input;

@@ -1013,7 +1013,7 @@ void executeQuery(
 
             pipeline.init(std::move(pipe));
             pipeline.resize(1);
-            pipeline.addChains({std::move(streams.out)});
+            pipeline.addChain(std::move(streams.out));
             pipeline.setSinks([&](const Block & header, Pipe::StreamType)
             {
                 return std::make_shared<ExceptionHandlingSink>(header);

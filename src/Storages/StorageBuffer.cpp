@@ -31,6 +31,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 
 
 namespace ProfileEvents
@@ -525,7 +526,7 @@ public:
         , metadata_snapshot(metadata_snapshot_)
     {
         // Check table structure.
-        metadata_snapshot->check(getPort().getHeader(), true);
+        metadata_snapshot->check(getHeader(), true);
     }
 
     String getName() const override { return "BufferSink"; }
@@ -536,7 +537,7 @@ public:
         if (!rows)
             return;
 
-        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
         StoragePtr destination;
         if (storage.destination_id)
@@ -960,9 +961,10 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     InterpreterInsertQuery interpreter{insert, insert_context, allow_materialized};
 
     auto block_io = interpreter.execute();
-    block_io.out->writePrefix();
-    block_io.out->write(block_to_write);
-    block_io.out->writeSuffix();
+    PushingPipelineExecutor executor(block_io.out);
+    executor.start();
+    executor.push(std::move(block_to_write));
+    executor.finish();
 }
 
 

@@ -580,7 +580,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override

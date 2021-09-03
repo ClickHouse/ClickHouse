@@ -109,7 +109,6 @@ protected:
     /// This declaration is compatible with notes about BlockIO::process_list_entry:
     ///  there are no cyclic dependencies: BlockIO::in,out point to objects inside ProcessListElement (not whole object)
     BlockInputStreamPtr query_stream_in;
-    BlockOutputStreamPtr query_stream_out;
 
     /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
     std::vector<PipelineExecutor *> executors;
@@ -183,7 +182,7 @@ public:
     bool streamsAreReleased();
 
     /// Get query in/out pointers from BlockIO
-    bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
+    bool tryGetQueryStreams(BlockInputStreamPtr & in) const;
 
     CancellationCode cancelQuery(bool kill);
 

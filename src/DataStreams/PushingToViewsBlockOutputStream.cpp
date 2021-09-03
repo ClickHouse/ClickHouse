@@ -17,6 +17,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <common/scope_guard.h>
+#include "Processors/printPipeline.h"
 
 #include <atomic>
 #include <chrono>
@@ -28,14 +29,20 @@ struct ViewsData
 {
     std::list<ViewRuntimeData> views;
     ContextPtr context;
+    StorageID source_storage_id;
+    StorageMetadataPtr source_metadata_snapshot;
+    StoragePtr source_storage;
 
     /// In case of exception happened while inserting into main table, it is pushed to pipeline.
     /// Remember the first one, we should keep them after view processing.
     std::atomic_bool has_exception = false;
     std::exception_ptr first_exception;
 
-    ViewsData(std::list<ViewRuntimeData> views_, ContextPtr context_)
-        : views(std::move(views_)), context(std::move(context_))
+    ViewsData(ContextPtr context_, StorageID source_storage_id_, StorageMetadataPtr source_metadata_snapshot_ , StoragePtr source_storage_)
+        : context(std::move(context_))
+        , source_storage_id(std::move(source_storage_id_))
+        , source_metadata_snapshot(std::move(source_metadata_snapshot_))
+        , source_storage(std::move(source_storage_))
     {
     }
 };
@@ -100,6 +107,8 @@ public:
             for (auto & output : outputs)
                 output.push(data.chunk.clone());
         }
+
+        return Status::PortFull;
     }
 
     InputPort & getInputPort() { return input; }
@@ -276,8 +285,8 @@ Chain buildPushingToViewsDrain(
             insert_context->setSetting("min_insert_block_size_bytes", insert_settings.min_insert_block_size_bytes_for_materialized_views.value);
     }
 
-    std::list<ViewRuntimeData> views;
     std::vector<Chain> chains;
+    auto views_data = std::make_shared<ViewsData>(context, table_id, metadata_snapshot, storage);
 
     for (const auto & database_table : dependencies)
     {
@@ -371,7 +380,7 @@ Chain buildPushingToViewsDrain(
             std::chrono::system_clock::now(),
             QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START};
 
-        views.emplace_back(ViewRuntimeData{
+        views_data->views.emplace_back(ViewRuntimeData{
             std::move(query),
             out.getInputHeader(),
             database_table,
@@ -381,7 +390,8 @@ Chain buildPushingToViewsDrain(
             nullptr,
             std::move(runtime_stats)});
 
-        auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(storage_header, views.back());
+        auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
+            storage_header, views_data->views.back(), views_data->source_storage_id, views_data->source_metadata_snapshot, views_data->source_storage);
         executing_inner_query->setRuntimeData(view_runtime_data);
 
         out.addSource(std::move(executing_inner_query));
@@ -397,7 +407,7 @@ Chain buildPushingToViewsDrain(
 
     Chain result_chain;
 
-    size_t num_views = views.size();
+    size_t num_views = views_data->views.size();
     if (num_views != 0)
     {
         std::vector<Block> headers;
@@ -405,7 +415,6 @@ Chain buildPushingToViewsDrain(
         for (const auto & chain : chains)
             headers.push_back(chain.getOutputHeader());
 
-        auto views_data = std::make_shared<ViewsData>(std::move(views), context);
         auto copying_data = std::make_shared<CopyingDataToViewsTransform>(storage_header, views_data);
         auto finalizing_views = std::make_shared<FinalizingViewsTransform>(std::move(headers), views_data);
         auto out = copying_data->getOutputs().begin();
@@ -417,6 +426,8 @@ Chain buildPushingToViewsDrain(
         {
             connect(*out, chain.getInputPort());
             connect(chain.getOutputPort(), *in);
+            ++in;
+            ++out;
             processors.splice(processors.end(), Chain::getProcessors(std::move(chain)));
         }
 
@@ -434,10 +445,14 @@ Chain buildPushingToViewsDrain(
         result_chain.addSource(std::move(sink));
     }
 
+    /// TODO: add pushing to live view
+    if (result_chain.empty())
+        result_chain.addSink(std::make_shared<NullSinkToStorage>(storage_header));
+
     return result_chain;
 }
 
-static void process(Block & block, ViewRuntimeData & view)
+static void process(Block & block, ViewRuntimeData & view, const StorageID & source_storage_id, const StorageMetadataPtr & source_metadata_snapshot, const StoragePtr & source_storage)
 {
     const auto & context = view.context;
 
@@ -446,10 +461,10 @@ static void process(Block & block, ViewRuntimeData & view)
     /// InterpreterSelectQuery will do processing of alias columns.
     auto local_context = Context::createCopy(context);
     local_context->addViewSource(StorageValues::create(
-        view.table_id,
-        view.metadata_snapshot->getColumns(),
+        source_storage_id,
+        source_metadata_snapshot->getColumns(),
         block,
-        view.storage->getVirtuals()));
+        source_storage->getVirtuals()));
 
     /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
     ///
@@ -491,9 +506,18 @@ static void process(Block & block, ViewRuntimeData & view)
             callback(progress);
     });
 
+
     PullingPipelineExecutor executor(io.pipeline);
     if (!executor.pull(block))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No nothing is returned from view inner query {}", view.query);
+    {
+        block.clear();
+        return;
+    }
+
+    WriteBufferFromOwnString buf;
+    auto pipe = QueryPipeline::getPipe(std::move(io.pipeline));
+    const auto & processors = pipe.getProcessors();
+    printPipeline(processors, buf);
 
     if (executor.pull(block))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Single chunk is expected from view inner query {}", view.query);
@@ -502,7 +526,7 @@ static void process(Block & block, ViewRuntimeData & view)
 void ExecutingInnerQueryFromViewTransform::transform(Chunk & chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    process(block, view);
+    process(block, view, source_storage_id, source_metadata_snapshot, source_storage);
     chunk.setColumns(block.getColumns(), block.rows());
 }
 

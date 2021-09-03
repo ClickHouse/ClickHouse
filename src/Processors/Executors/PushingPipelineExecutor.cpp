@@ -47,14 +47,21 @@ PushingPipelineExecutor::PushingPipelineExecutor(Chain & chain_) : chain(chain_)
     pushing_source = std::make_shared<PushingSource>(chain.getInputHeader(), need_data_flag);
     auto sink = std::make_shared<ExceptionHandlingSink>(chain.getOutputHeader());
     connect(pushing_source->getPort(), chain.getInputPort());
-    connect(chain.getOutputPort(), sink->getInputPort());
+    connect(chain.getOutputPort(), sink->getPort());
+
+    processors = std::make_unique<Processors>();
+    processors->reserve(chain.getProcessors().size() + 2);
+    for (const auto & processor : chain.getProcessors())
+        processors->push_back(processor);
+    processors->push_back(pushing_source);
+    processors->push_back(std::move(sink));
 }
 
 PushingPipelineExecutor::~PushingPipelineExecutor()
 {
     try
     {
-        cancel();
+        finish();
     }
     catch (...)
     {

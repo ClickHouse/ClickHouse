@@ -170,7 +170,7 @@ void StorageURLSink::consume(Chunk chunk)
         is_first_chunk = false;
     }
 
-    writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+    writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 void StorageURLSink::onFinish()

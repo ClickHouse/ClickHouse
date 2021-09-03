@@ -109,6 +109,15 @@ void QueryPipeline::addChains(std::vector<Chain> chains)
     pipe.addChains(std::move(chains));
 }
 
+void QueryPipeline::addChain(Chain chain)
+{
+    checkInitializedAndNotCompleted();
+    std::vector<Chain> chains;
+    chains.emplace_back(std::move(chain));
+    pipe.resize(1);
+    pipe.addChains(std::move(chains));
+}
+
 void QueryPipeline::transform(const Transformer & transformer)
 {
     checkInitializedAndNotCompleted();

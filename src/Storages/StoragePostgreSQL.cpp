@@ -114,7 +114,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
         if (!inserter)
             inserter = std::make_unique<StreamTo>(connection_holder->get(),
                                                   remote_table_schema.empty() ? pqxx::table_path({remote_table_name})

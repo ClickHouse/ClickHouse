@@ -19,7 +19,6 @@
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -36,6 +35,7 @@
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
 
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
@@ -1349,10 +1349,11 @@ bool TCPHandler::receiveData(bool scalar)
             }
             auto metadata_snapshot = storage->getInMemoryMetadataPtr();
             /// The data will be written directly to the table.
-            auto temporary_table_out = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
-            temporary_table_out->write(block);
-            temporary_table_out->writeSuffix();
-
+            Chain temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context));
+            PushingPipelineExecutor executor(temporary_table_out);
+            executor.start();
+            executor.push(block);
+            executor.finish();
         }
         else if (state.need_receive_data_for_input)
         {

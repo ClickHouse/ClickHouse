@@ -58,9 +58,17 @@ Chain buildPushingToViewsDrain(
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
 {
 public:
-    ExecutingInnerQueryFromViewTransform(const Block & header, ViewRuntimeData & view_data)
+    ExecutingInnerQueryFromViewTransform(
+        const Block & header,
+        ViewRuntimeData & view_data,
+        const StorageID & source_storage_id_,
+        const StorageMetadataPtr & source_metadata_snapshot_,
+        const StoragePtr & source_storage_)
         : ExceptionKeepingTransform(header, view_data.sample_block)
         , view(view_data)
+        , source_storage_id(source_storage_id_)
+        , source_metadata_snapshot(source_metadata_snapshot_)
+        , source_storage(source_storage_)
     {
     }
 
@@ -71,6 +79,9 @@ protected:
 
 private:
     ViewRuntimeData & view;
+    const StorageID & source_storage_id;
+    const StorageMetadataPtr & source_metadata_snapshot;
+    const StoragePtr & source_storage;
 };
 
 }

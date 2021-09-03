@@ -195,7 +195,7 @@ public:
             writer->writePrefix();
             is_first_chunk = false;
         }
-        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
