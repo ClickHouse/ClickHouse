@@ -63,6 +63,7 @@ const char * auto_contributors[] {
     "Alexei Averchenko",
     "Alexey",
     "Alexey Arno",
+    "Alexey Boykov",
     "Alexey Dushechkin",
     "Alexey Elymanov",
     "Alexey Ilyukhov",

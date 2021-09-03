@@ -41,10 +41,13 @@ LibraryDictionarySource::LibraryDictionarySource(
     , sample_block{sample_block_}
     , context(Context::createCopy(context_))
 {
-    if (fs::path(path).is_relative())
-        path = fs::canonical(path);
+    bool path_checked = false;
+    if (fs::is_symlink(path))
+        path_checked = symlinkStartsWith(path, context->getDictionariesLibPath());
+    else
+        path_checked = pathStartsWith(path, context->getDictionariesLibPath());
 
-    if (created_from_ddl && !pathStartsWith(path, context->getDictionariesLibPath()))
+    if (created_from_ddl && !path_checked)
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, context->getDictionariesLibPath());
 
     if (!fs::exists(path))

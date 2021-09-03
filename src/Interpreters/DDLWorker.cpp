@@ -1137,9 +1137,7 @@ void DDLWorker::runMainThread()
             scheduleTasks(reinitialized);
 
             LOG_DEBUG(log, "Waiting for queue updates");
-            /// FIXME It may hang for unknown reason. Timeout is just a hotfix.
-            constexpr int queue_wait_timeout_ms = 10000;
-            queue_updated_event->tryWait(queue_wait_timeout_ms);
+            queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
         {
