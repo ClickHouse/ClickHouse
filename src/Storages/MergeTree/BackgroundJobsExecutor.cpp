@@ -51,30 +51,21 @@ void BackgroundJobAssignee::postpone()
 void BackgroundJobAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_task)
 {
     bool res = getContext()->getMergeMutateExecutor()->trySchedule(merge_task);
-    if (res)
-        trigger();
-    else
-        postpone();
+    res ? trigger() : postpone();
 }
 
 
 void BackgroundJobAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
 {
     bool res = getContext()->getFetchesExecutor()->trySchedule(fetch_task);
-    if (res)
-        trigger();
-    else
-        postpone();
+    res ? trigger() : postpone();
 }
 
 
 void BackgroundJobAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 {
     bool res = getContext()->getMovesExecutor()->trySchedule(move_task);
-    if (res)
-        trigger();
-    else
-        postpone();
+    res ? trigger() : postpone();
 }
 
 
