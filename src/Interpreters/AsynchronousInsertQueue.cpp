@@ -363,7 +363,6 @@ try
         format->setReadBuffer(*buffer);
         current_entry = entry;
         total_rows += executor.execute();
-        format->resetParser();
     }
 
     auto chunk = Chunk(executor.getResultColumns(), total_rows);

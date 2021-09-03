@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 StreamingFormatExecutor::StreamingFormatExecutor(
     const Block & header_, InputFormatPtr format_, ErrorCallback on_error_)
     : header(header_)

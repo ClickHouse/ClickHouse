@@ -37,8 +37,8 @@ public:
     StoragePtr getTable(ASTInsertQuery & query);
 
 private:
-
-    std::pair<BlockIO, BlockOutputStreams> executeImpl(const StoragePtr & table, Block & sample_block);
+    std::pair<BlockIO, BlockOutputStreams> executeImpl(
+        const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, Block & sample_block);
 
     ASTPtr query_ptr;
     const bool allow_materialized;
