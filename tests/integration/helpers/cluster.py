@@ -1628,6 +1628,7 @@ class ClickHouseCluster:
     def shutdown(self, kill=True):
         sanitizer_assert_instance = None
         fatal_log = None
+
         if self.up_called:
             with open(self.docker_logs_path, "w+") as f:
                 try:
@@ -1640,20 +1641,6 @@ class ClickHouseCluster:
                         sanitizer_assert_instance = line.split('|')[0].strip()
                         break
 
-            for name, instance in self.instances.items():
-                try:
-                    if not instance.is_up:
-                        continue
-                    if instance.contains_in_log(SANITIZER_SIGN):
-                        sanitizer_assert_instance = instance.grep_in_log(SANITIZER_SIGN)
-                        logging.ERROR(f"Sanitizer in instance {name} log {sanitizer_assert_instance}")
-
-                    if instance.contains_in_log("Fatal"):
-                        fatal_log = instance.grep_in_log("Fatal")
-                        logging.ERROR(f"Crash in instance {name} fatal log {fatal_log}")
-                except Exception as e:
-                    logging.error(f"Failed to check fails in logs: {e}")
-
             if kill:
                 try:
                     run_and_check(self.base_cmd + ['stop', '--timeout', '20'])
@@ -1661,6 +1648,17 @@ class ClickHouseCluster:
                     logging.debug("Kill command failed during shutdown. {}".format(repr(e)))
                     logging.debug("Trying to kill forcefully")
                     run_and_check(self.base_cmd + ['kill'])
+
+            # Check server logs for Fatal messages and sanitizer failures.
+            # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
+            for name, instance in self.instances.items():
+                if instance.contains_in_log(SANITIZER_SIGN, from_host=True):
+                    sanitizer_assert_instance = instance.grep_in_log(SANITIZER_SIGN, from_host=True)
+                    logging.error("Sanitizer in instance %s log %s", name, sanitizer_assert_instance)
+
+                if instance.contains_in_log("Fatal", from_host=True):
+                    fatal_log = instance.grep_in_log("Fatal", from_host=True)
+                    logging.error("Crash in instance %s fatal log %s", name, fatal_log)
 
             try:
                 subprocess_check_call(self.base_cmd + ['down', '--volumes'])
@@ -1681,6 +1679,8 @@ class ClickHouseCluster:
         if sanitizer_assert_instance is not None:
             raise Exception(
                 "Sanitizer assert found in {} for instance {}".format(self.docker_logs_path, sanitizer_assert_instance))
+        if fatal_log is not None:
+            raise Exception("Fatal messages found: {}".format(fatal_log))
 
 
     def pause_container(self, instance_name):
@@ -2021,16 +2021,28 @@ class ClickHouseInstance:
     def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
         return self.cluster.exec_in_container(self.docker_id, cmd, detach, nothrow, **kwargs)
 
-    def contains_in_log(self, substring):
-        result = self.exec_in_container(
-            ["bash", "-c", '[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
+    def contains_in_log(self, substring, from_host=False):
+        if from_host:
+            result = subprocess_check_call(["bash", "-c",
+                f'[ -f {self.logs_dir}/clickhouse-server.log ] && grep "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+            ])
+        else:
+            result = self.exec_in_container(["bash", "-c",
+                f'[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+            ])
         return len(result) > 0
 
-    def grep_in_log(self, substring):
-        logging.debug(f"grep in log called {substring}")
-        result = self.exec_in_container(
-            ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
-        logging.debug(f"grep result {result}")
+    def grep_in_log(self, substring, from_host=False):
+        logging.debug(f"grep in log called %s", substring)
+        if from_host:
+            result = subprocess_check_call(["bash", "-c",
+                f'grep "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+            ])
+        else:
+            result = self.exec_in_container(["bash", "-c",
+                f'grep "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+            ])
+        logging.debug("grep result %s", result)
         return result
 
     def count_in_log(self, substring):
@@ -2340,6 +2352,7 @@ class ClickHouseInstance:
         logs_dir = p.abspath(p.join(self.path, 'logs'))
         logging.debug(f"Setup logs dir {logs_dir}")
         os.mkdir(logs_dir)
+        self.logs_dir = logs_dir
 
         depends_on = []
 
