@@ -76,7 +76,6 @@ SRCS(
     MergeTree/MergeTreePartInfo.cpp
     MergeTree/MergeTreePartition.cpp
     MergeTree/MergeTreePartsMover.cpp
-    MergeTree/MergeTreeProjections.cpp
     MergeTree/MergeTreeRangeReader.cpp
     MergeTree/MergeTreeReadPool.cpp
     MergeTree/MergeTreeReaderCompact.cpp
@@ -126,11 +125,8 @@ SRCS(
     StorageBuffer.cpp
     StorageDictionary.cpp
     StorageDistributed.cpp
-<<<<<<< add-executable-table-function
     StorageExecutable.cpp
-=======
     StorageExternalDistributed.cpp
->>>>>>> executable-table-function
     StorageFactory.cpp
     StorageFile.cpp
     StorageGenerateRandom.cpp
