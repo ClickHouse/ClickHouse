@@ -145,7 +145,7 @@ public:
         std::lock_guard lock{nested_mutex};
         if (nested)
             assert(nested->getStoragePolicy() == {});
-        /// Table functions cannot have storage policy. 
+        /// Table functions cannot have storage policy.
         return {};
     }
 
