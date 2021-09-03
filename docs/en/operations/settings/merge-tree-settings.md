@@ -183,7 +183,7 @@ Default value: 0.
 
 ## max_replicated_fetches_network_bandwidth {#max_replicated_fetches_network_bandwidth}
 
-Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) fetches for a table.
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) fetches. This setting is applied to the particular table, unlike the [max_replicated_fetches_network_bandwidth_for_server](settings.md#max_replicated_fetches_network_bandwidth_for_server) setting, which is applied to the server.
 
 The setting isn't followed perfectly accurately.
 
@@ -204,7 +204,7 @@ Could be used for throttling speed when replicating the data to add or replace n
 
 ## max_replicated_sends_network_bandwidth {#max_replicated_sends_network_bandwidth}
 
-Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends for a table.
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends. This setting is applied to the particular table, unlike the [max_replicated_sends_network_bandwidth_for_server](settings.md#max_replicated_sends_network_bandwidth_for_server) setting, which is applied to the server.
 
 The setting isn't followed perfectly accurately.
 
