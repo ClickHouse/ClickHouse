@@ -10,18 +10,22 @@ Columns:
 
 -   `main_dependency_database` ([String](../../sql-reference/data-types/string.md)) — The name of the database on which the view depends.
 
--   `main_dependency_table` ([String](../../sql-reference/data-types/string.md)) - The name of the table on which the view depends.
+-   `main_dependency_table` ([String](../../sql-reference/data-types/string.md)) — The name of the table on which the view depends.
 
--   `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the view. Values:
+-   `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the view. Possible values:
     -   `'Default' = 1` — [Default views](../../sql-reference/statements/create/view.md#normal). Should not appear in this log.
     -   `'Materialized' = 2` — [Materialized views](../../sql-reference/statements/create/view.md#materialized).
     -   `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
 
 **Example**
 
+Query:
+
 ```sql
 SELECT * FROM system.views LIMIT 2 FORMAT Vertical;
 ```
+
+Result:
 
 ```text
 Row 1:
@@ -40,5 +44,3 @@ main_dependency_database: default
 main_dependency_table:    view_source_tb
 view_type:                Materialized
 ```
-
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/views) <!--hide-->
