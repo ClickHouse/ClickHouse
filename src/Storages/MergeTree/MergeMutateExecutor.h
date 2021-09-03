@@ -136,8 +136,6 @@ private:
         max_tasks_count = new_max_tasks_count;
     }
 
-    void schedulerThreadFunction();
-
     static String toString(Type type);
 
     Type type;
@@ -156,22 +154,28 @@ private:
         explicit Item(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_)
             : task(std::move(task_))
             , increment(std::move(metric_))
-            , future(promise.get_future())
         {
         }
 
         ExecutableTaskPtr task;
         CurrentMetrics::Increment increment;
-
-        std::promise<void> promise;
-        std::future<void> future;
     };
 
     using ItemPtr = std::shared_ptr<Item>;
 
+    void routine(ItemPtr item);
+    void schedulerThreadFunction();
+
     /// Initially it will be empty
     RingBuffer<ItemPtr> pending{0};
-    RingBuffer<ItemPtr> active{0};
+
+    struct ActiveMeta
+    {
+        ItemPtr item;
+        std::shared_future<void> future;
+    };
+
+    RingBuffer<ActiveMeta> active{0};
     std::set<StorageID> currently_deleting;
 
     std::mutex remove_mutex;
