@@ -32,6 +32,10 @@ ${CLICKHOUSE_CURL} -sS "$url" -d 'INSERT INTO async_inserts FORMAT CSVWithNames
 12,"l"
 ' &
 
+${CLICKHOUSE_CLIENT} -q "SELECT table, format, total_bytes, length(entries.query_id) \
+    FROM system.asynchronous_inserts WHERE database = '$CLICKHOUSE_DATABASE' \
+    ORDER BY table, format"
+
 wait
 
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM async_inserts ORDER BY id"
