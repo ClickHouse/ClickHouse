@@ -26,7 +26,7 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
 {
     std::lock_guard remove_lock(remove_mutex);
 
-    std::vector<ActiveMeta> tasks_to_wait;
+    std::vector<ItemPtr> tasks_to_wait;
     {
         std::lock_guard lock(mutex);
 
@@ -35,29 +35,21 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
 
         /// Erase storage related tasks from pending and select active tasks to wait for
         pending.eraseAll([&] (auto item) -> bool { return item->task->getStorageID() == id; });
-        tasks_to_wait = active.getAll([&] (auto elem) -> bool { return elem.item->task->getStorageID() == id; });
+        tasks_to_wait = active.getAll([&] (auto item) -> bool { return item->task->getStorageID() == id; });
     }
 
 
-    for (auto & [item, future] : tasks_to_wait)
-    {
-        assert(future.valid());
-        try
-        {
-            future.wait();
-        }
-        catch (...) {}
-    }
+    for (auto & item : tasks_to_wait)
+        item->is_done.wait();
 
     {
         std::lock_guard lock(mutex);
 
-        for (auto & [item, future] : tasks_to_wait)
+        for (auto & item : tasks_to_wait)
         {
             assert(item.use_count() == 1);
             item.reset();
         }
-
 
         currently_deleting.erase(id);
     }
@@ -73,7 +65,7 @@ void MergeTreeBackgroundExecutor::routine(ItemPtr item)
     auto check_if_currently_deleting = [&] ()
     {
         checked = true;
-        return active.eraseAll([&] (auto & x) { return x.item == item; });
+        return active.eraseAll([&] (auto & x) { return x == item; });
     };
 
 
@@ -94,6 +86,7 @@ void MergeTreeBackgroundExecutor::routine(ItemPtr item)
                 return;
 
             pending.tryPush(item);
+            item->is_done.reset();
             has_tasks.notify_one();
             return;
         }
@@ -139,19 +132,21 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
         if (!pending.tryPop(&item))
             continue;
 
-        auto thread_pool_job = std::make_shared<std::packaged_task<void()>>([this, item] { routine(item); });
-        auto future = thread_pool_job->get_future();
-        bool res = pool.trySchedule([thread_pool_job] { (*thread_pool_job)(); });
+        bool res = pool.trySchedule([this, item]
+        {
+            routine(item);
+            item->is_done.set();
+        });
 
         if (!res)
         {
-            active.eraseAll([&] (auto x) { return x.item == item; });
+            active.eraseAll([&] (auto x) { return x == item; });
             status = pending.tryPush(item);
             assert(status);
             continue;
         }
 
-        status = active.tryPush({std::move(item), std::move(future)});
+        status = active.tryPush(std::move(item));
         assert(status);
     }
 }

@@ -9,6 +9,7 @@
 #include <set>
 
 #include <common/shared_ptr_helper.h>
+#include <common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/RingBuffer.h>
@@ -74,6 +75,16 @@ public:
         auto & value = CurrentMetrics::values[metric];
         if (value.load() >= static_cast<int64_t>(max_tasks_count))
             return false;
+
+        if (!scheduler.joinable())
+        {
+            LOG_ERROR(&Poco::Logger::get("MergeTreeBackgroundExecutor"), "Scheduler thread is dead. Trying to alive..");
+            scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
+
+            if (!scheduler.joinable())
+                LOG_FATAL(&Poco::Logger::get("MergeTreeBackgroundExecutor"), "Scheduler thread is dead permanently. Restart is needed");
+        }
+
 
         if (!pending.tryPush(std::make_shared<Item>(std::move(task), metric)))
             return false;
@@ -159,6 +170,7 @@ private:
 
         ExecutableTaskPtr task;
         CurrentMetrics::Increment increment;
+        Poco::Event is_done;
     };
 
     using ItemPtr = std::shared_ptr<Item>;
@@ -168,14 +180,7 @@ private:
 
     /// Initially it will be empty
     RingBuffer<ItemPtr> pending{0};
-
-    struct ActiveMeta
-    {
-        ItemPtr item;
-        std::shared_future<void> future;
-    };
-
-    RingBuffer<ActiveMeta> active{0};
+    RingBuffer<ItemPtr> active{0};
     std::set<StorageID> currently_deleting;
 
     std::mutex remove_mutex;
