@@ -48,8 +48,6 @@ private:
     /// Mutex for thread safety
     std::mutex holder_mutex;
 
-    bool finished{false};
-
 public:
     enum class Type
     {

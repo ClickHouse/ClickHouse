@@ -111,8 +111,6 @@ void BackgroundJobAssignee::finish()
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
     }
-
-    finished = true;
 }
 
 
@@ -141,7 +139,14 @@ catch (...) /// Catch any exception to avoid thread termination.
 
 BackgroundJobAssignee::~BackgroundJobAssignee()
 {
-    assert(finished);
+    try
+    {
+        finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

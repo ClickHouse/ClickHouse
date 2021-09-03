@@ -21,15 +21,9 @@ public:
         buffer.assign(capacity, {});
     }
 
-    size_t size() const
-    {
-        return count;
-    }
+    size_t size() const { return count; }
 
-    bool empty() const
-    {
-        return count == 0;
-    }
+    bool empty() const { return count == 0; }
 
     bool tryPush(T element)
     {
