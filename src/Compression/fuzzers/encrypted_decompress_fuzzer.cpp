@@ -80,7 +80,7 @@ public:
     /// Get config
     const Poco::AutoPtr<Poco::Util::XMLConfiguration>& getResult() const;
 
-    /// If something happend in generator, it will be true
+    /// If something happened in generator, it will be true
     bool hasError() const;
 private:
     /// generate algorithm section with key and nonce

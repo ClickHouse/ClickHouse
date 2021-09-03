@@ -101,7 +101,7 @@ std::string lastErrorString()
 
 /// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
 /// This function get key and nonce and encrypt text with their help.
-/// If somthing went wrong (can't init context or can't encrypt data) it throws exception.
+/// If something went wrong (can't init context or can't encrypt data) it throws exception.
 /// It returns length of encrypted text.
 size_t encrypt(const std::string_view & plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String & key, const String & nonce)
 {
@@ -130,7 +130,7 @@ size_t encrypt(const std::string_view & plaintext, char * ciphertext_and_tag, En
 
 /// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
 /// This function get key and nonce and encrypt text with their help.
-/// If somthing went wrong (can't init context or can't encrypt data) it throws exception.
+/// If something went wrong (can't init context or can't encrypt data) it throws exception.
 /// It returns length of encrypted text.
 size_t decrypt(const std::string_view & ciphertext, char * plaintext, EncryptionMethod method, const String& key, const String& nonce)
 {
@@ -363,7 +363,7 @@ void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractCo
 
 void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionMethod method, UInt64 &current_key_id, String &current_key, String &nonce) const
 {
-    /// It parameters were not set, throw excpetion
+    /// It parameters were not set, throw exception
     if (!params.get())
         throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
 
@@ -438,7 +438,7 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
     // Generate an IV out of the data block and the key-generation
     // key. It is completely deterministic, but does not leak any
     // information about the data block except for equivalence of
-    // identical blocks (under the same key). 
+    // identical blocks (under the same key).
 
     const std::string_view plaintext = std::string_view(source, source_size);
 
