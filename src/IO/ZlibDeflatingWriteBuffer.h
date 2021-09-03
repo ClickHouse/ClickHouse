@@ -4,9 +4,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 
-/// https://github.com/zlib-ng/zlib-ng/pull/733
-/// This is disabed by default
-#define Z_TLS = __thread
+
 #include <zlib.h>
 
 
