@@ -297,6 +297,7 @@ target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
             boost::system
+            boost::circular_buffer
             ${CITYHASH_LIBRARIES}
             ${ZLIB_LIBRARIES}
             pcg_random
@@ -335,6 +336,7 @@ dbms_target_link_libraries (
     PRIVATE
         boost::filesystem
         boost::program_options
+        boost::circular_buffer
         clickhouse_common_config
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
