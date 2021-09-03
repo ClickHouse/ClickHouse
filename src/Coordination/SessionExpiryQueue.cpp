@@ -77,7 +77,7 @@ std::vector<int64_t> SessionExpiryQueue::getExpiredSessions() const
     std::vector<int64_t> result;
 
     /// Check all buckets
-    for (auto & [expire_time, expired_sessions] : expiry_to_sessions)
+    for (const auto & [expire_time, expired_sessions] : expiry_to_sessions)
     {
         if (expire_time <= now)
             result.insert(result.end(), expired_sessions.begin(), expired_sessions.end());
