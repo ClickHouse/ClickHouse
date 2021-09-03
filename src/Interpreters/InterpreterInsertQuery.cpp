@@ -148,11 +148,10 @@ static bool isTrivialSelect(const ASTPtr & select)
 
 
 std::pair<BlockIO, BlockOutputStreams> InterpreterInsertQuery::executeImpl(
-    const StoragePtr & table, Block & sample_block)
+    const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, Block & sample_block)
 {
     const auto & settings = getContext()->getSettingsRef();
     const auto & query = query_ptr->as<const ASTInsertQuery &>();
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     if (query.partition_by && !table->supportsPartitionBy())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PARTITION BY clause is not supported by storage");
@@ -325,7 +324,7 @@ BlockIO InterpreterInsertQuery::execute()
 
     BlockIO res;
     BlockOutputStreams out_streams;
-    std::tie(res, out_streams) = executeImpl(table, sample_block);
+    std::tie(res, out_streams) = executeImpl(table, metadata_snapshot, sample_block);
 
     /// What type of query: INSERT or INSERT SELECT or INSERT WATCH?
     if (out_streams.empty())
@@ -402,7 +401,7 @@ Processors InterpreterInsertQuery::getSinks()
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, sample_block.getNames());
 
-    auto out_streams = executeImpl(table, sample_block).second;
+    auto out_streams = executeImpl(table, metadata_snapshot, sample_block).second;
 
     Processors sinks;
     sinks.reserve(out_streams.size());
