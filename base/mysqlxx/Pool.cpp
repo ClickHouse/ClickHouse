@@ -7,7 +7,6 @@
 #endif
 
 #include <mysqlxx/Pool.h>
-#include <iostream>
 
 #include <common/sleep.h>
 
@@ -37,32 +36,46 @@ void Pool::Entry::decrementRefCount()
         mysql_thread_end();
 }
 
+
 Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & config_name,
-     const ConnectionConfiguration & configuration,
      unsigned default_connections_, unsigned max_connections_,
      const char * parent_config_name_)
     : logger(Poco::Logger::get("mysqlxx::Pool"))
     , default_connections(default_connections_)
     , max_connections(max_connections_)
 {
-    server = cfg.getString(config_name + ".host", configuration.server);
+    server = cfg.getString(config_name + ".host");
 
     if (parent_config_name_)
     {
         const std::string parent_config_name(parent_config_name_);
         db = cfg.getString(config_name + ".db", cfg.getString(parent_config_name + ".db", ""));
-        user = cfg.getString(config_name + ".user", cfg.getString(parent_config_name + ".user"));
-        password = cfg.getString(config_name + ".password", cfg.getString(parent_config_name + ".password"));
+        user = cfg.has(config_name + ".user")
+            ? cfg.getString(config_name + ".user")
+            : cfg.getString(parent_config_name + ".user");
+        password = cfg.has(config_name + ".password")
+            ? cfg.getString(config_name + ".password")
+            : cfg.getString(parent_config_name + ".password");
 
         if (!cfg.has(config_name + ".port") && !cfg.has(config_name + ".socket")
             && !cfg.has(parent_config_name + ".port") && !cfg.has(parent_config_name + ".socket"))
             throw Poco::Exception("mysqlxx::Pool configuration: expected port or socket");
 
-        port = cfg.getInt(config_name + ".port", cfg.getInt(parent_config_name + ".port", 0));
-        socket = cfg.getString(config_name + ".socket", cfg.getString(parent_config_name + ".socket", ""));
-        ssl_ca = cfg.getString(config_name + ".ssl_ca", cfg.getString(parent_config_name + ".ssl_ca", ""));
-        ssl_cert = cfg.getString(config_name + ".ssl_cert", cfg.getString(parent_config_name + ".ssl_cert", ""));
-        ssl_key = cfg.getString(config_name + ".ssl_key", cfg.getString(parent_config_name + ".ssl_key", ""));
+        port = cfg.has(config_name + ".port")
+            ? cfg.getInt(config_name + ".port")
+            : cfg.getInt(parent_config_name + ".port", 0);
+        socket = cfg.has(config_name + ".socket")
+            ? cfg.getString(config_name + ".socket")
+            : cfg.getString(parent_config_name + ".socket", "");
+        ssl_ca = cfg.has(config_name + ".ssl_ca")
+            ? cfg.getString(config_name + ".ssl_ca")
+            : cfg.getString(parent_config_name + ".ssl_ca", "");
+        ssl_cert = cfg.has(config_name + ".ssl_cert")
+            ? cfg.getString(config_name + ".ssl_cert")
+            : cfg.getString(parent_config_name + ".ssl_cert", "");
+        ssl_key = cfg.has(config_name + ".ssl_key")
+            ? cfg.getString(config_name + ".ssl_key")
+            : cfg.getString(parent_config_name + ".ssl_key", "");
 
         enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
             cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
@@ -72,16 +85,15 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
     }
     else
     {
-        db = cfg.getString(config_name + ".db", configuration.db);
-        user = cfg.getString(config_name + ".user", configuration.user);
-        password = cfg.getString(config_name + ".password", configuration.password);
-        port = cfg.getInt(config_name + ".port", configuration.port);
+        db = cfg.getString(config_name + ".db", "");
+        user = cfg.getString(config_name + ".user");
+        password = cfg.getString(config_name + ".password");
 
-        socket = cfg.getString(config_name + ".socket", "");
-
-        if (port == 0 && socket.empty())
+        if (!cfg.has(config_name + ".port") && !cfg.has(config_name + ".socket"))
             throw Poco::Exception("mysqlxx::Pool configuration: expected port or socket");
 
+        port = cfg.getInt(config_name + ".port", 0);
+        socket = cfg.getString(config_name + ".socket", "");
         ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
         ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
         ssl_key = cfg.getString(config_name + ".ssl_key", "");
@@ -92,8 +104,14 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
     }
 
-    connect_timeout = cfg.getInt(config_name + ".connect_timeout", cfg.getInt("mysql_connect_timeout", connect_timeout));
-    rw_timeout = cfg.getInt(config_name + ".rw_timeout", cfg.getInt("mysql_rw_timeout", rw_timeout));
+    connect_timeout = cfg.getInt(config_name + ".connect_timeout",
+        cfg.getInt("mysql_connect_timeout",
+            MYSQLXX_DEFAULT_TIMEOUT));
+
+    rw_timeout =
+        cfg.getInt(config_name + ".rw_timeout",
+            cfg.getInt("mysql_rw_timeout",
+                MYSQLXX_DEFAULT_RW_TIMEOUT));
 }
 
 
@@ -152,7 +170,6 @@ Pool::Entry Pool::tryGet()
     /// Try to pick an idle connection from already allocated
     for (auto connection_it = connections.cbegin(); connection_it != connections.cend();)
     {
-        std::cerr << "try get KSSENII \n\n\n";
         Connection * connection_ptr = *connection_it;
         /// Fixme: There is a race condition here b/c we do not synchronize with Pool::Entry's copy-assignment operator
         if (connection_ptr->ref_count == 0)
@@ -215,7 +232,6 @@ void Pool::Entry::forceConnected() const
     bool first = true;
     while (!tryForceConnected())
     {
-        std::cerr << "while loop KSSENII\n\n";
         if (first)
             first = false;
         else

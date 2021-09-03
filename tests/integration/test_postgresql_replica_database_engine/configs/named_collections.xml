@@ -1,0 +1,19 @@
+<yandex>
+    <named_collections>
+        <postgres1>
+            <user>postgres</user>
+            <password>mysecretpassword</password>
+            <host>postgres1</host>
+            <port>5432</port>
+            <database>postgres_database</database>
+            <table>test_table</table>
+        </postgres1>
+            <user>postgres</user>
+            <password>mysecretpassword</password>
+            <host>postgres1</host>
+            <port>1111</port>
+            <database>postgres_database</database>
+            <table>test_table</table>
+        <postgres2>
+    </named_collections>
+</yandex>

@@ -252,7 +252,7 @@ def test_postgres_distributed(started_cluster):
     node2.query('''
         CREATE TABLE test_replicas
         (id UInt32, name String)
-        ENGINE = PostgreSQL(`postgres{2|3|4}:5432`, 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
+        ENGINE = PostgreSQL('postgres{2|3|4}:5432', 'postgres', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
 
     # Check all replicas are traversed
     query = "SELECT name FROM ("
@@ -359,6 +359,7 @@ def test_predefined_connection_configuration(started_cluster):
     cursor.execute(f'CREATE TABLE test_table (a integer PRIMARY KEY, b integer)')
 
     node1.query('''
+        DROP TABLE IF EXISTS test_table;
         CREATE TABLE test_table (a UInt32, b Int32)
         ENGINE PostgreSQL(postgres1);
     ''')
@@ -405,12 +406,13 @@ def test_predefined_connection_configuration(started_cluster):
     node1.query("INSERT INTO TABLE FUNCTION postgresql(postgres1, on_conflict='ON CONFLICT DO NOTHING') SELECT number, number from numbers(100)")
     assert (node1.query(f"SELECT count() FROM postgresql(postgres1)").rstrip() == '100')
 
-    cursor.execute('DROP SCHEMA IF EXISTS test_schema')
+    cursor.execute('DROP SCHEMA IF EXISTS test_schema CASCADE')
     cursor.execute('CREATE SCHEMA test_schema')
     cursor.execute('CREATE TABLE test_schema.test_table (a integer)')
     node1.query("INSERT INTO TABLE FUNCTION postgresql(postgres1, schema='test_schema', on_conflict='ON CONFLICT DO NOTHING') SELECT number from numbers(200)")
     assert (node1.query(f"SELECT count() FROM postgresql(postgres1, schema='test_schema')").rstrip() == '200')
 
+    cursor.execute('DROP SCHEMA test_schema CASCADE')
     cursor.execute(f'DROP TABLE test_table ')
 
 
