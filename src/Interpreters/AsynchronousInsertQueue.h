@@ -91,11 +91,11 @@ private:
     using Queue = std::unordered_map<InsertQuery, std::shared_ptr<Container>, InsertQuery::Hash>;
     using QueueIterator = Queue::iterator;
 
-    std::shared_mutex rwlock;
+    mutable std::shared_mutex rwlock;
     Queue queue;
 
     using QueryIdToEntry = std::unordered_map<String, InsertData::EntryPtr>;
-    std::mutex currently_processing_mutex;
+    mutable std::mutex currently_processing_mutex;
     QueryIdToEntry currently_processing_queries;
 
     /// Logic and events behind queue are as follows:
@@ -128,8 +128,11 @@ private:
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
 
 public:
-    Queue getQueue() const { return queue; }
-    QueryIdToEntry getCurrentlyProcessingQueries() const { return currently_processing_queries; }
+    Queue getQueue() const
+    {
+        std::shared_lock lock(rwlock);
+        return queue;
+    }
 };
 
 }
