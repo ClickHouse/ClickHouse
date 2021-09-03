@@ -47,7 +47,7 @@ For `ALTER ... ATTACH|DETACH|DROP` queries, you can use the [replication_alter_p
 
 For `ALTER TABLE ... UPDATE|DELETE` queries the synchronicity is defined by the [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting.
 
-You can to specify how long (in seconds) to wait for inactive replicas to execute all `ALTER` queries by the [replication_wait_for_inactive_replica_timeout seconds](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting.
+You can to specify how long (in seconds) to wait for inactive replicas to execute all `ALTER` queries with the [replication_wait_for_inactive_replica_timeout seconds](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting.
 
 !!! warning "Warning"
     For all `ALTER` queries, if the `replication_alter_partitions_sync` setting is `2` and some replicas are not active for more than the time specified by the `replication_wait_for_inactive_replica_timeout seconds` setting, then an exception `UNFINISHED` will be thrown.
