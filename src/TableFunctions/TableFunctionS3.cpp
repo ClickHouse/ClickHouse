@@ -103,6 +103,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
         ConstraintsDescription{},
         String{},
         context,
+        /// No format_settings for table function S3
+        std::nullopt,
         compression_method);
 
     storage->startup();

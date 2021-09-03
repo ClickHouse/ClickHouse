@@ -79,8 +79,9 @@ RUN python3 -m pip install \
     pytest-timeout \
     pytest-xdist \
     pytest-repeat \
+    pytz \
     redis \
-    tzlocal \
+    tzlocal==2.1 \
     urllib3 \
     requests-kerberos \
     pyhdfs
@@ -96,6 +97,8 @@ RUN set -x \
   && adduser dockremap dockremap \
   && echo 'dockremap:165536:65536' >> /etc/subuid \
     && echo 'dockremap:165536:65536' >> /etc/subgid
+
+RUN echo '127.0.0.1 localhost test.com' >> /etc/hosts
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]

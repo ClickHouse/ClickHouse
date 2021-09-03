@@ -88,7 +88,7 @@ bool DatabasePostgreSQL::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */)
+DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -280,7 +280,7 @@ void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 }
 
 
-void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool, bool /*force_attach*/)
+void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, bool, bool /*force_attach*/, bool /* skip_startup_tables */)
 {
     {
         std::lock_guard<std::mutex> lock{mutex};

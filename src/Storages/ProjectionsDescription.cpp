@@ -14,6 +14,7 @@
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <DataStreams/SquashingBlockInputStream.h>
 
 namespace DB
 {
@@ -23,6 +24,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int ILLEGAL_PROJECTION;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 };
 
 const char * ProjectionDescription::typeToString(Type type)
@@ -72,6 +74,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.sample_block_for_keys = sample_block_for_keys;
     other.metadata = metadata;
     other.key_size = key_size;
+    other.is_minmax_count_projection = is_minmax_count_projection;
 
     return other;
 }
@@ -100,6 +103,9 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
     if (projection_definition->name.empty())
         throw Exception("Projection must have name in definition.", ErrorCodes::INCORRECT_QUERY);
+
+    if (startsWith(projection_definition->name, "tmp_"))
+        throw Exception("Projection's name cannot start with 'tmp_'", ErrorCodes::INCORRECT_QUERY);
 
     if (!projection_definition->query)
         throw Exception("QUERY is required for projection", ErrorCodes::INCORRECT_QUERY);
@@ -187,10 +193,80 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     return result;
 }
 
+ProjectionDescription
+ProjectionDescription::getMinMaxCountProjection(const ColumnsDescription & columns, const Names & minmax_columns, ContextPtr query_context)
+{
+    auto select_query = std::make_shared<ASTProjectionSelectQuery>();
+    ASTPtr select_expression_list = std::make_shared<ASTExpressionList>();
+    for (const auto & column : minmax_columns)
+    {
+        select_expression_list->children.push_back(makeASTFunction("min", std::make_shared<ASTIdentifier>(column)));
+        select_expression_list->children.push_back(makeASTFunction("max", std::make_shared<ASTIdentifier>(column)));
+    }
+    select_expression_list->children.push_back(makeASTFunction("count"));
+    select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
+
+    ProjectionDescription result;
+    result.definition_ast = select_query;
+    result.name = MINMAX_COUNT_PROJECTION_NAME;
+    result.query_ast = select_query->cloneToASTSelect();
+
+    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
+    StoragePtr storage = external_storage_holder->getTable();
+    InterpreterSelectQuery select(
+        result.query_ast, query_context, storage, {}, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias());
+    result.required_columns = select.getRequiredColumns();
+    result.sample_block = select.getSampleBlock();
+
+    for (size_t i = 0; i < result.sample_block.columns(); ++i)
+    {
+        const auto & column_with_type_name = result.sample_block.getByPosition(i);
+
+        if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
+
+        result.column_names.emplace_back(column_with_type_name.name);
+        result.data_types.emplace_back(column_with_type_name.type);
+    }
+    result.type = ProjectionDescription::Type::Aggregate;
+    StorageInMemoryMetadata metadata;
+    metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));
+    metadata.partition_key = KeyDescription::getSortingKeyFromAST({}, metadata.columns, query_context, {});
+    metadata.sorting_key = KeyDescription::getSortingKeyFromAST({}, metadata.columns, query_context, {});
+    metadata.primary_key = KeyDescription::getKeyFromAST({}, metadata.columns, query_context);
+    metadata.primary_key.definition_ast = nullptr;
+    result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
+    result.is_minmax_count_projection = true;
+    return result;
+}
+
+
 void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context)
 {
     *this = getProjectionFromAST(definition_ast, new_columns, query_context);
 }
+
+
+Block ProjectionDescription::calculate(const Block & block, ContextPtr context) const
+{
+    auto in = InterpreterSelectQuery(
+                  query_ast,
+                  context,
+                  Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
+                  SelectQueryOptions{
+                      type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
+                                                                  : QueryProcessingStage::WithMergeableState})
+                  .execute()
+                  .getInputStream();
+    in = std::make_shared<SquashingBlockInputStream>(in, block.rows(), 0);
+    in->readPrefix();
+    auto ret = in->read();
+    if (in->read())
+        throw Exception("Projection cannot increase the number of rows in a block", ErrorCodes::LOGICAL_ERROR);
+    in->readSuffix();
+    return ret;
+}
+
 
 String ProjectionsDescription::toString() const
 {

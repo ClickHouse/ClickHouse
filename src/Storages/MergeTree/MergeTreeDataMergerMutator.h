@@ -23,6 +23,13 @@ enum class SelectPartsDecision
     NOTHING_TO_MERGE = 2,
 };
 
+enum class ExecuteTTLType
+{
+    NONE = 0,
+    NORMAL = 1,
+    RECALCULATE= 2,
+};
+
 /// Auxiliary struct holding metainformation for the future merged or mutated part.
 struct FutureMergedMutatedPart
 {
@@ -182,7 +189,7 @@ private:
         const Block & updated_header,
         const std::set<MergeTreeIndexPtr> & indices_to_recalc,
         const String & mrk_extension,
-        const std::set<MergeTreeProjectionPtr> & projections_to_recalc);
+        const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc);
 
     /// Get the columns list of the resulting part in the same order as storage_columns.
     static NamesAndTypesList getColumnsForNewDataPart(
@@ -196,12 +203,11 @@ private:
         const IndicesDescription & all_indices,
         const MutationCommands & commands_for_removes);
 
-    static MergeTreeProjections getProjectionsForNewDataPart(
+    static std::vector<ProjectionDescriptionRawPtr> getProjectionsForNewDataPart(
         const ProjectionsDescription & all_projections,
         const MutationCommands & commands_for_removes);
 
-    static bool shouldExecuteTTL(
-        const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies, const MutationCommands & commands);
+    static ExecuteTTLType shouldExecuteTTL(const StorageMetadataPtr & metadata_snapshot, const ColumnDependencies & dependencies);
 
     /// Return set of indices which should be recalculated during mutation also
     /// wraps input stream into additional expression stream
@@ -213,7 +219,7 @@ private:
         const NameSet & materialized_indices,
         const MergeTreeData::DataPartPtr & source_part);
 
-    static std::set<MergeTreeProjectionPtr> getProjectionsToRecalculate(
+    static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
         const NameSet & updated_columns,
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & materialized_projections,
@@ -222,7 +228,7 @@ private:
     void writeWithProjections(
         MergeTreeData::MutableDataPartPtr new_data_part,
         const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeProjections & projections_to_build,
+        const std::vector<ProjectionDescriptionRawPtr> & projections_to_build,
         BlockInputStreamPtr mutating_stream,
         IMergedBlockOutputStream & out,
         time_t time_of_mutation,
@@ -237,12 +243,12 @@ private:
         MergeTreeData::MutableDataPartPtr new_data_part,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeIndices & skip_indices,
-        const MergeTreeProjections & projections_to_build,
+        const std::vector<ProjectionDescriptionRawPtr> & projections_to_build,
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
         const CompressionCodecPtr & compression_codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values,
+        ExecuteTTLType execute_ttl_type,
         bool need_sync,
         const ReservationPtr & space_reservation,
         TableLockHolder & holder,
@@ -253,14 +259,14 @@ private:
         const MergeTreeDataPartPtr & source_part,
         const StorageMetadataPtr & metadata_snapshot,
         const std::set<MergeTreeIndexPtr> & indices_to_recalc,
-        const std::set<MergeTreeProjectionPtr> & projections_to_recalc,
+        const std::set<ProjectionDescriptionRawPtr> & projections_to_recalc,
         const Block & mutation_header,
         MergeTreeData::MutableDataPartPtr new_data_part,
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
         const CompressionCodecPtr & compression_codec,
         MergeListEntry & merge_entry,
-        bool need_remove_expired_values,
+        ExecuteTTLType execute_ttl_type,
         bool need_sync,
         const ReservationPtr & space_reservation,
         TableLockHolder & holder,
@@ -271,7 +277,7 @@ private:
     static void finalizeMutatedPart(
         const MergeTreeDataPartPtr & source_part,
         MergeTreeData::MutableDataPartPtr new_data_part,
-        bool need_remove_expired_values,
+        ExecuteTTLType execute_ttl_type,
         const CompressionCodecPtr & codec);
 
 public :

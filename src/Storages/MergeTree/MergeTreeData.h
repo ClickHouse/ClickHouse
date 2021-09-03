@@ -362,6 +362,12 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
+    Block getMinMaxCountProjectionBlock(
+        const StorageMetadataPtr & metadata_snapshot,
+        const Names & required_columns,
+        const SelectQueryInfo & query_info,
+        ContextPtr query_context) const;
+
     bool getQueryProcessingStageWithAggregateProjection(
         ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const;
 
@@ -436,7 +442,8 @@ public:
     void swapActivePart(MergeTreeData::DataPartPtr part_copy);
 
     /// Returns all parts in specified partition
-    DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id);
+    DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id) const;
+    DataPartsVector getDataPartsVectorInPartitions(DataPartState state, const std::unordered_set<String> & partition_ids) const;
 
     /// Returns the part with the given name and state or nullptr if no such part.
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
@@ -606,6 +613,17 @@ public:
         ContextPtr context,
         TableLockHolder & table_lock_holder);
 
+    /// Prepares entries to backup data of the storage.
+    BackupEntries backup(const ASTs & partitions, ContextPtr context) const override;
+    static BackupEntries backupDataParts(const DataPartsVector & data_parts);
+
+    /// Extract data from the backup and put it to the storage.
+    RestoreDataTasks restoreDataPartsFromBackup(
+        const BackupPtr & backup,
+        const String & data_path_in_backup,
+        const std::unordered_set<String> & partition_ids,
+        SimpleIncrement * increment);
+
     /// Moves partition to specified Disk
     void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
 
@@ -636,6 +654,7 @@ public:
 
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
+    std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
@@ -728,7 +747,7 @@ public:
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() const { return getStoragePolicy()->makeEmptyReservationOnLargestDisk(); }
 
-    Disks getDisksByType(DiskType::Type type) const { return getStoragePolicy()->getDisksByType(type); }
+    Disks getDisks() const { return getStoragePolicy()->getDisks(); }
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(MergeTreeDataPartPtr part) const;
@@ -782,12 +801,12 @@ public:
     /// Return the partition expression types as a Tuple type. Return DataTypeUInt8 if partition expression is empty.
     DataTypePtr getPartitionValueType() const;
 
+    /// Construct a sample block of virtual columns.
+    Block getSampleBlockWithVirtualColumns() const;
+
     /// Construct a block consisting only of possible virtual columns for part pruning.
     /// If one_part is true, fill in at most one part.
-    Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part) const;
-
-    /// Limiting parallel sends per one table, used in DataPartsExchange
-    std::atomic_uint current_table_sends {0};
+    Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part, bool ignore_empty = false) const;
 
     /// For generating names of temporary parts during insertion.
     SimpleIncrement insert_increment;
