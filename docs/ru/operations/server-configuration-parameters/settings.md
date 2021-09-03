@@ -371,12 +371,12 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем закрыть соединение.
+Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем 10акрыть соединение.
 
 **Пример**
 
 ``` xml
-<keep_alive_timeout>3</keep_alive_timeout>
+<keep_alive_timeout>10</keep_alive_timeout>
 ```
 
 ## listen_host {#server_configuration_parameters-listen_host}
@@ -516,7 +516,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 -   Положительное число с плавающей запятой.
 -   0 — сервер Clickhouse может использовать всю оперативную память.
 
-Значение по умолчанию: `0`.
+Значение по умолчанию: `0.9`.
 
 **Использование**
 
