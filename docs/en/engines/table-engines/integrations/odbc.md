@@ -29,7 +29,7 @@ The table structure can differ from the source table structure:
 
 -   Column names should be the same as in the source table, but you can use just some of these columns and in any order.
 -   Column types may differ from those in the source table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
--   Setting `external_table_functions_use_nulls` defines how to handle Nullable columns. Default is true, if false - table function will not make nullable columns and will insert default values instead of nulls. This is also applicable for null values inside array data types.
+-   The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 

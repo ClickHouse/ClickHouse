@@ -103,7 +103,10 @@ inline DecimalType decimalFromComponentsWithMultiplier(
     if (common::mulOverflow(whole, scale_multiplier, whole_scaled))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
-    const T value = whole_scaled + fractional_sign * (fractional % scale_multiplier);
+    T value;
+    if (common::addOverflow(whole_scaled, fractional_sign * (fractional % scale_multiplier), value))
+        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+
     return DecimalType(value);
 }
 
@@ -273,9 +276,7 @@ template <typename To, typename DecimalType>
 To convertTo(const DecimalType & decimal, size_t scale)
 {
     To result;
-
     convertToImpl<To, DecimalType, void>(decimal, scale, result);
-
     return result;
 }
 

@@ -44,7 +44,19 @@ PostgreSQL Array types converts into ClickHouse arrays.
 !!! info "Note"
     Be careful, in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse it is only allowed to have multidimensional arrays of the same dimension in all rows.
 
-Supports replicas priority for PostgreSQL dictionary source. The bigger the number in map, the less the priority. The highest priority is `0`. 
+Supports multiple replicas that must be listed by `|`. For example:
+
+```sql
+SELECT name FROM postgresql(`postgres{1|2|3}:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+or
+
+```sql
+SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+Supports replicas priority for PostgreSQL dictionary source. The bigger the number in map, the less the priority. The highest priority is `0`.
 
 **Examples**
 
@@ -65,9 +77,9 @@ postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
 postgresql> SELECT * FROM test;
- int_id | int_nullable | float | str  | float_nullable
---------+--------------+-------+------+----------------
-      1 |              |     2 | test |
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
 (1 row)
 ```
 

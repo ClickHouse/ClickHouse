@@ -1,11 +1,12 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
+
 #include <Poco/Timespan.h>
 
 namespace DB
 {
 
-class Context;
 struct Settings;
 
 struct ConnectionTimeouts
@@ -23,9 +24,9 @@ struct ConnectionTimeouts
 
     ConnectionTimeouts() = default;
 
-    ConnectionTimeouts(const Poco::Timespan & connection_timeout_,
-                       const Poco::Timespan & send_timeout_,
-                       const Poco::Timespan & receive_timeout_)
+    ConnectionTimeouts(Poco::Timespan connection_timeout_,
+                       Poco::Timespan send_timeout_,
+                       Poco::Timespan receive_timeout_)
     : connection_timeout(connection_timeout_),
       send_timeout(send_timeout_),
       receive_timeout(receive_timeout_),
@@ -37,10 +38,10 @@ struct ConnectionTimeouts
     {
     }
 
-    ConnectionTimeouts(const Poco::Timespan & connection_timeout_,
-                       const Poco::Timespan & send_timeout_,
-                       const Poco::Timespan & receive_timeout_,
-                       const Poco::Timespan & tcp_keep_alive_timeout_)
+    ConnectionTimeouts(Poco::Timespan connection_timeout_,
+                       Poco::Timespan send_timeout_,
+                       Poco::Timespan receive_timeout_,
+                       Poco::Timespan tcp_keep_alive_timeout_)
     : connection_timeout(connection_timeout_),
       send_timeout(send_timeout_),
       receive_timeout(receive_timeout_),
@@ -51,11 +52,11 @@ struct ConnectionTimeouts
       receive_data_timeout(receive_timeout_)
     {
     }
-    ConnectionTimeouts(const Poco::Timespan & connection_timeout_,
-                       const Poco::Timespan & send_timeout_,
-                       const Poco::Timespan & receive_timeout_,
-                       const Poco::Timespan & tcp_keep_alive_timeout_,
-                       const Poco::Timespan & http_keep_alive_timeout_)
+    ConnectionTimeouts(Poco::Timespan connection_timeout_,
+                       Poco::Timespan send_timeout_,
+                       Poco::Timespan receive_timeout_,
+                       Poco::Timespan tcp_keep_alive_timeout_,
+                       Poco::Timespan http_keep_alive_timeout_)
         : connection_timeout(connection_timeout_),
           send_timeout(send_timeout_),
           receive_timeout(receive_timeout_),
@@ -67,14 +68,14 @@ struct ConnectionTimeouts
     {
     }
 
-    ConnectionTimeouts(const Poco::Timespan & connection_timeout_,
-                       const Poco::Timespan & send_timeout_,
-                       const Poco::Timespan & receive_timeout_,
-                       const Poco::Timespan & tcp_keep_alive_timeout_,
-                       const Poco::Timespan & http_keep_alive_timeout_,
-                       const Poco::Timespan & secure_connection_timeout_,
-                       const Poco::Timespan & receive_hello_timeout_,
-                       const Poco::Timespan & receive_data_timeout_)
+    ConnectionTimeouts(Poco::Timespan connection_timeout_,
+                       Poco::Timespan send_timeout_,
+                       Poco::Timespan receive_timeout_,
+                       Poco::Timespan tcp_keep_alive_timeout_,
+                       Poco::Timespan http_keep_alive_timeout_,
+                       Poco::Timespan secure_connection_timeout_,
+                       Poco::Timespan receive_hello_timeout_,
+                       Poco::Timespan receive_data_timeout_)
         : connection_timeout(connection_timeout_),
           send_timeout(send_timeout_),
           receive_timeout(receive_timeout_),
@@ -86,7 +87,7 @@ struct ConnectionTimeouts
     {
     }
 
-    static Poco::Timespan saturate(const Poco::Timespan & timespan, const Poco::Timespan & limit)
+    static Poco::Timespan saturate(Poco::Timespan timespan, Poco::Timespan limit)
     {
         if (limit.totalMicroseconds() == 0)
             return timespan;
@@ -94,7 +95,7 @@ struct ConnectionTimeouts
             return (timespan > limit) ? limit : timespan;
     }
 
-    ConnectionTimeouts getSaturated(const Poco::Timespan & limit) const
+    ConnectionTimeouts getSaturated(Poco::Timespan limit) const
     {
         return ConnectionTimeouts(saturate(connection_timeout, limit),
                                   saturate(send_timeout, limit),
@@ -110,7 +111,7 @@ struct ConnectionTimeouts
     static ConnectionTimeouts getTCPTimeoutsWithoutFailover(const Settings & settings);
     /// Timeouts for the case when we will try many addresses in a loop.
     static ConnectionTimeouts getTCPTimeoutsWithFailover(const Settings & settings);
-    static ConnectionTimeouts getHTTPTimeouts(const Context & context);
+    static ConnectionTimeouts getHTTPTimeouts(ContextPtr context);
 };
 
 }

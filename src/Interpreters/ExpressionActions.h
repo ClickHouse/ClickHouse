@@ -30,7 +30,6 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
 ///
@@ -57,7 +56,12 @@ public:
         Arguments arguments;
         size_t result_position;
 
+        /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
+        /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
+        bool is_lazy_executed;
+
         std::string toString() const;
+        JSONBuilder::ItemPtr toTree() const;
     };
 
     using Actions = std::vector<Action>;
@@ -68,7 +72,6 @@ public:
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
 
 private:
-
     ActionsDAGPtr actions_dag;
     Actions actions;
     size_t num_columns = 0;
@@ -103,11 +106,13 @@ public:
     void execute(Block & block, bool dry_run = false) const;
 
     bool hasArrayJoin() const;
+    void assertDeterministic() const;
 
     /// Obtain a sample block that contains the names and types of result columns.
     const Block & getSampleBlock() const { return sample_block; }
 
     std::string dumpActions() const;
+    JSONBuilder::ItemPtr toTree() const;
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
@@ -120,7 +125,7 @@ public:
 private:
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
-    void linearizeActions();
+    void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
 };
 
 
@@ -133,9 +138,9 @@ private:
   *     2) calculate the expression in the SELECT section,
   * and between the two steps do the filtering by value in the WHERE clause.
   */
-struct ExpressionActionsChain
+struct ExpressionActionsChain : WithContext
 {
-    explicit ExpressionActionsChain(const Context & context_) : context(context_) {}
+    explicit ExpressionActionsChain(ContextPtr context_) : WithContext(context_) {}
 
 
     struct Step
@@ -241,7 +246,6 @@ struct ExpressionActionsChain
     using StepPtr = std::unique_ptr<Step>;
     using Steps = std::vector<StepPtr>;
 
-    const Context & context;
     Steps steps;
 
     void addStep(NameSet non_constant_inputs = {});
@@ -253,7 +257,7 @@ struct ExpressionActionsChain
         steps.clear();
     }
 
-    ActionsDAGPtr getLastActions(bool allow_empty = false)
+    ActionsDAGPtr getLastActions(bool allow_empty = false)  // -V1071
     {
         if (steps.empty())
         {

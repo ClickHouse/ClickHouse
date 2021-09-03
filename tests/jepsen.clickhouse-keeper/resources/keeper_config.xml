@@ -1,4 +1,12 @@
 <yandex>
+    <listen_host>::</listen_host>
+
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+        <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+    </logger>
+
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>{id}</server_id>

@@ -1,3 +1,4 @@
+#include <common/map.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
@@ -6,6 +7,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <Parsers/IAST.h>
@@ -18,9 +20,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
-
-#include <ext/map.h>
-#include <ext/enumerate.h>
 
 
 namespace DB
@@ -55,9 +54,24 @@ DataTypeMap::DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & valu
 
 void DataTypeMap::assertKeyType() const
 {
-    if (!key_type->isValueRepresentedByInteger() && !isStringOrFixedString(*key_type) && !WhichDataType(key_type).isNothing())
+    bool type_error = false;
+    if (key_type->getTypeId() == TypeIndex::LowCardinality)
+    {
+        const auto & low_cardinality_data_type = assert_cast<const DataTypeLowCardinality &>(*key_type);
+        if (!isStringOrFixedString(*(low_cardinality_data_type.getDictionaryType())))
+            type_error = true;
+    }
+    else if (!key_type->isValueRepresentedByInteger()
+        && !isStringOrFixedString(*key_type)
+        && !WhichDataType(key_type).isNothing()
+        && !WhichDataType(key_type).isUUID())
+    {
+        type_error = true;
+    }
+
+    if (type_error)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Type of Map key must be a type, that can be represented by integer or string,"
+            "Type of Map key must be a type, that can be represented by integer or String or FixedString (possibly LowCardinality) or UUID,"
             " but {} given", key_type->getName());
 }
 
@@ -65,7 +79,7 @@ void DataTypeMap::assertKeyType() const
 std::string DataTypeMap::doGetName() const
 {
     WriteBufferFromOwnString s;
-    s << "Map(" << key_type->getName() << "," << value_type->getName() << ")";
+    s << "Map(" << key_type->getName() << ", " << value_type->getName() << ")";
 
     return s.str();
 }

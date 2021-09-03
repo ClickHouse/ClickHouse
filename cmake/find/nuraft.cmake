@@ -11,7 +11,7 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/NuRaft/CMakeLists.txt")
     return()
 endif ()
 
-if (NOT OS_FREEBSD AND NOT OS_DARWIN)
+if (NOT OS_FREEBSD)
     set (USE_NURAFT 1)
     set (NURAFT_LIBRARY nuraft)
 

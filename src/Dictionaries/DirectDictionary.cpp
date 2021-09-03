@@ -2,12 +2,14 @@
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
+
+#include <Processors/QueryPipeline.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 namespace DB
 {
@@ -27,44 +29,52 @@ DirectDictionary<dictionary_key_type>::DirectDictionary(
     , source_ptr{std::move(source_ptr_)}
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception{full_name + ": source cannot be used with DirectDictionary", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", full_name);
 }
 
 template <DictionaryKeyType dictionary_key_type>
-ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
-        const std::string & attribute_name,
-        const DataTypePtr & result_type,
-        const Columns & key_columns,
-        const DataTypes & key_types [[maybe_unused]],
-        const ColumnPtr & default_values_column) const
+Columns DirectDictionary<dictionary_key_type>::getColumns(
+    const Strings & attribute_names,
+    const DataTypes & result_types,
+    const Columns & key_columns,
+    const DataTypes & key_types [[maybe_unused]],
+    const Columns & default_values_columns) const
 {
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
     const auto requested_keys = extractor.extractAllKeys();
 
-    const DictionaryAttribute & attribute = dict_struct.getAttribute(attribute_name, result_type);
-    DefaultValueProvider default_value_provider(attribute.null_value, default_values_column);
+    DictionaryStorageFetchRequest request(dict_struct, attribute_names, result_types, default_values_columns);
 
     HashMap<KeyType, size_t> key_to_fetched_index;
     key_to_fetched_index.reserve(requested_keys.size());
 
-    auto fetched_from_storage = attribute.type->createColumn();
+    auto fetched_columns_from_storage = request.makeAttributesResultColumns();
+    for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
+    {
+        if (!request.shouldFillResultColumnWithIndex(attribute_index))
+            continue;
+
+        auto & fetched_column_from_storage = fetched_columns_from_storage[attribute_index];
+        fetched_column_from_storage->reserve(requested_keys.size());
+    }
 
     size_t fetched_key_index = 0;
-    size_t requested_attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
 
     Columns block_key_columns;
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    BlockInputStreamPtr stream = getSourceBlockInputStream(key_columns, requested_keys);
+    QueryPipeline pipeline;
+    pipeline.init(getSourceBlockInputStream(key_columns, requested_keys));
 
-    stream->readPrefix();
+    PullingPipelineExecutor executor(pipeline);
 
-    while (const auto block = stream->read())
+    Block block;
+    while (executor.pull(block))
     {
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
@@ -73,8 +83,14 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
         DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
         auto block_keys = block_keys_extractor.extractAllKeys();
 
-        const auto & block_column = block.safeGetByPosition(dictionary_keys_size + requested_attribute_index).column;
-        fetched_from_storage->insertRangeFrom(*block_column, 0, block_keys.size());
+        for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
+        {
+            if (!request.shouldFillResultColumnWithIndex(attribute_index))
+                continue;
+
+            const auto & block_column = block.safeGetByPosition(dictionary_keys_size + attribute_index).column;
+            fetched_columns_from_storage[attribute_index]->insertRangeFrom(*block_column, 0, block_keys.size());
+        }
 
         for (size_t block_key_index = 0; block_key_index < block_keys.size(); ++block_key_index)
         {
@@ -86,37 +102,66 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
         block_key_columns.clear();
     }
 
-    stream->readSuffix();
-
     Field value_to_insert;
 
     size_t requested_keys_size = requested_keys.size();
 
-    auto result = fetched_from_storage->cloneEmpty();
-    result->reserve(requested_keys_size);
+    auto result_columns = request.makeAttributesResultColumns();
 
-    for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
+    size_t keys_found = 0;
+
+    for (size_t attribute_index = 0; attribute_index < result_columns.size(); ++attribute_index)
     {
-        const auto requested_key = requested_keys[requested_key_index];
-        const auto * it = key_to_fetched_index.find(requested_key);
+        if (!request.shouldFillResultColumnWithIndex(attribute_index))
+            continue;
 
-        if (it)
-            fetched_from_storage->get(it->getMapped(), value_to_insert);
-        else
-            value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
+        auto & result_column = result_columns[attribute_index];
 
-        result->insert(value_to_insert);
+        const auto & fetched_column_from_storage = fetched_columns_from_storage[attribute_index];
+        const auto & default_value_provider = request.defaultValueProviderAtIndex(attribute_index);
+
+        result_column->reserve(requested_keys_size);
+
+        for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
+        {
+            const auto requested_key = requested_keys[requested_key_index];
+            const auto * it = key_to_fetched_index.find(requested_key);
+
+            if (it)
+            {
+                fetched_column_from_storage->get(it->getMapped(), value_to_insert);
+                ++keys_found;
+            }
+            else
+                value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
+
+            result_column->insert(value_to_insert);
+        }
     }
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
-    return result;
+    return request.filterRequestedColumns(result_columns);
 }
 
 template <DictionaryKeyType dictionary_key_type>
-ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & key_columns, const DataTypes & key_types [[maybe_unused]]) const
+ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
+    const std::string & attribute_name,
+    const DataTypePtr & result_type,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    const ColumnPtr & default_values_column) const
 {
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+    return getColumns({ attribute_name }, { result_type }, key_columns, key_types, { default_values_column }).front();
+}
+
+template <DictionaryKeyType dictionary_key_type>
+ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
+    const Columns & key_columns,
+    const DataTypes & key_types [[maybe_unused]]) const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
@@ -140,11 +185,14 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & 
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    BlockInputStreamPtr stream = getSourceBlockInputStream(key_columns, requested_keys);
+    QueryPipeline pipeline;
+    pipeline.init(getSourceBlockInputStream(key_columns, requested_keys));
 
-    stream->readPrefix();
+    PullingPipelineExecutor executor(pipeline);
 
-    while (const auto block = stream->read())
+    size_t keys_found = 0;
+    Block block;
+    while (executor.pull(block))
     {
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
@@ -161,6 +209,8 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & 
             assert(it);
 
             size_t result_data_found_index = it->getMapped();
+            /// block_keys_size cannot be used, due to duplicates.
+            keys_found += !result_data[result_data_found_index];
             result_data[result_data_found_index] = true;
 
             block_keys_extractor.rollbackCurrentKey();
@@ -169,9 +219,8 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & 
         block_key_columns.clear();
     }
 
-    stream->readSuffix();
-
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
 }
@@ -181,10 +230,12 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getHierarchy(
     ColumnPtr key_column,
     const DataTypePtr & key_type) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
+    if (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type);
+        size_t keys_found;
+        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
     else
@@ -197,10 +248,12 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
     ColumnPtr in_key_column,
     const DataTypePtr & key_type) const
 {
-    if (dictionary_key_type == DictionaryKeyType::simple)
+    if (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type);
+        size_t keys_found = 0;
+        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
     else
@@ -208,15 +261,15 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
+Pipe DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
     const Columns & key_columns [[maybe_unused]],
     const PaddedPODArray<KeyType> & requested_keys [[maybe_unused]]) const
 {
     size_t requested_keys_size = requested_keys.size();
 
-    BlockInputStreamPtr stream;
+    Pipe pipe;
 
-    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
         std::vector<UInt64> ids;
         ids.reserve(requested_keys_size);
@@ -224,7 +277,7 @@ BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputSt
         for (auto key : requested_keys)
             ids.emplace_back(key);
 
-        stream = source_ptr->loadIds(ids);
+        pipe = source_ptr->loadIds(ids);
     }
     else
     {
@@ -233,14 +286,14 @@ BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getSourceBlockInputSt
         for (size_t i = 0; i < requested_keys_size; ++i)
             requested_rows.emplace_back(i);
 
-        stream = source_ptr->loadKeys(key_columns, requested_rows);
+        pipe = source_ptr->loadKeys(key_columns, requested_rows);
     }
 
-    return stream;
+    return pipe;
 }
 
 template <DictionaryKeyType dictionary_key_type>
-BlockInputStreamPtr DirectDictionary<dictionary_key_type>::getBlockInputStream(const Names & /* column_names */, size_t /* max_block_size */) const
+Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */) const
 {
     return source_ptr->loadAll();
 }
@@ -253,28 +306,30 @@ namespace
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        DictionarySourcePtr source_ptr)
+        DictionarySourcePtr source_ptr,
+        ContextPtr /* global_context */,
+        bool /* created_from_ddl */)
     {
-        const auto * layout_name = dictionary_key_type == DictionaryKeyType::simple ? "direct" : "complex_key_direct";
+        const auto * layout_name = dictionary_key_type == DictionaryKeyType::Simple ? "direct" : "complex_key_direct";
 
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
         {
             if (dict_struct.key)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "'key' is not supported for dictionary of layout '({})'",
+                    "'key' is not supported for dictionary of layout '{}'",
                     layout_name);
         }
         else
         {
             if (dict_struct.id)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "'id' is not supported for dictionary of layout '({})'",
+                    "'id' is not supported for dictionary of layout '{}'",
                     layout_name);
         }
 
         if (dict_struct.range_min || dict_struct.range_max)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "({}): elements .structure.range_min and .structure.range_max should be defined only " \
+                "{}: elements .structure.range_min and .structure.range_max should be defined only "
                 "for a dictionary of layout 'range_hashed'",
                 full_name);
 
@@ -282,20 +337,20 @@ namespace
 
         if (config.has(config_prefix + ".lifetime.min") || config.has(config_prefix + ".lifetime.max"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'lifetime' parameter is redundant for the dictionary' of layout '({})'",
+                "'lifetime' parameter is redundant for the dictionary' of layout '{}'",
                 layout_name);
 
         return std::make_unique<DirectDictionary<dictionary_key_type>>(dict_id, dict_struct, std::move(source_ptr));
     }
 }
 
-template class DirectDictionary<DictionaryKeyType::simple>;
-template class DirectDictionary<DictionaryKeyType::complex>;
+template class DirectDictionary<DictionaryKeyType::Simple>;
+template class DirectDictionary<DictionaryKeyType::Complex>;
 
 void registerDictionaryDirect(DictionaryFactory & factory)
 {
-    factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::simple>, false);
-    factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::complex>, true);
+    factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::Simple>, false);
+    factory.registerLayout("complex_key_direct", createDirectDictionary<DictionaryKeyType::Complex>, true);
 }
 
 

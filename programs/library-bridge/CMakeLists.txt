@@ -1,6 +1,6 @@
 set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
     library-bridge.cpp
-    library-log.cpp
+    LibraryInterface.cpp
     LibraryBridge.cpp
     Handlers.cpp
     HandlerFactory.cpp
@@ -17,7 +17,6 @@ add_executable(clickhouse-library-bridge ${CLICKHOUSE_LIBRARY_BRIDGE_SOURCES})
 target_link_libraries(clickhouse-library-bridge PRIVATE
     daemon
     dbms
-    clickhouse_parsers
     bridge
 )
 

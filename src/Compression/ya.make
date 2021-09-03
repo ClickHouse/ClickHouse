@@ -5,7 +5,7 @@ LIBRARY()
 
 ADDINCL(
     contrib/libs/lz4
-    contrib/libs/zstd
+    contrib/libs/zstd/include
 )
 
 PEERDIR(
@@ -24,6 +24,7 @@ SRCS(
     CompressedWriteBuffer.cpp
     CompressionCodecDelta.cpp
     CompressionCodecDoubleDelta.cpp
+    CompressionCodecEncrypted.cpp
     CompressionCodecGorilla.cpp
     CompressionCodecLZ4.cpp
     CompressionCodecMultiple.cpp
@@ -31,6 +32,7 @@ SRCS(
     CompressionCodecT64.cpp
     CompressionCodecZSTD.cpp
     CompressionFactory.cpp
+    CompressionFactoryAdditions.cpp
     ICompressionCodec.cpp
     LZ4_decompress_faster.cpp
     getCompressionCodecForFile.cpp

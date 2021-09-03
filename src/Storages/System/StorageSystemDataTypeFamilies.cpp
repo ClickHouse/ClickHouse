@@ -16,7 +16,7 @@ NamesAndTypesList StorageSystemDataTypeFamilies::getNamesAndTypes()
     };
 }
 
-void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     const auto & factory = DataTypeFactory::instance();
     auto names = factory.getAllRegisteredNames();

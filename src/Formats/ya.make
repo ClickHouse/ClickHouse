@@ -13,10 +13,8 @@ PEERDIR(
 SRCS(
     FormatFactory.cpp
     FormatSchemaInfo.cpp
-    IRowInputStream.cpp
-    IRowOutputStream.cpp
     JSONEachRowUtils.cpp
-    MySQLBlockInputStream.cpp
+    MySQLSource.cpp
     NativeFormat.cpp
     NullFormat.cpp
     ParsedTemplateFormatString.cpp

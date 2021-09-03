@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 
 
@@ -23,7 +23,7 @@ class FunctionPartitionId : public IFunction
 public:
     static constexpr auto name = "partitionId";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionPartitionId>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPartitionId>(); }
 
     String getName() const override { return name; }
 
@@ -35,6 +35,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

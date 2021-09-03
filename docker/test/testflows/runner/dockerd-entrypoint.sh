@@ -1,6 +1,15 @@
 #!/bin/bash
 set -e
 
+echo "Configure to use Yandex dockerhub-proxy"
+mkdir -p /etc/docker/
+cat > /etc/docker/daemon.json << EOF
+{
+    "insecure-registries" : ["dockerhub-proxy.sas.yp-c.yandex.net:5000"],
+    "registry-mirrors" : ["http://dockerhub-proxy.sas.yp-c.yandex.net:5000"]
+}
+EOF
+
 dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &>/var/log/somefile &
 
 set +e
@@ -15,14 +24,6 @@ while true; do
     sleep 0.1
 done
 set -e
-
-echo "Configure to use Yandex dockerhub-proxy"
-cat > /etc/docker/daemon.json << EOF
-{
-    "insecure-registries": ["dockerhub-proxy.sas.yp-c.yandex.net:5000"],
-    "registry-mirrors": ["dockerhub-proxy.sas.yp-c.yandex.net:5000"]
-}
-EOF
 
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse

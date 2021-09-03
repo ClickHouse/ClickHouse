@@ -35,7 +35,7 @@ public:
 
     explicit FunctionPolygonsDistance() = default;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionPolygonsDistance>();
     }
@@ -59,6 +59,8 @@ public:
     {
         return std::make_shared<DataTypeFloat64>();
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {

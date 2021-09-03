@@ -1,10 +1,11 @@
 #pragma once
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -115,6 +116,8 @@ private:
             f(Float64());
         else if (which.isDate())
             f(DataTypeDate::FieldType());
+        else if (which.isDate32())
+            f(DataTypeDate::FieldType());
         else if (which.isDateTime())
             f(DataTypeDateTime::FieldType());
         else
@@ -124,7 +127,7 @@ private:
 public:
     static constexpr auto name = FunctionRunningDifferenceName<is_first_line_zero>::name;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
     }
@@ -149,6 +152,8 @@ public:
     {
         return false;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
 

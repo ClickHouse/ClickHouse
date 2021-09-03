@@ -3,7 +3,7 @@ create table local_t engine Log as select 1 a;
 
 SELECT '127.0.0.{1,2}';
 SELECT *
-FROM 
+FROM
 (
     SELECT a
     FROM remote('127.0.0.{1,2}', currentDatabase(), local_t)
@@ -17,7 +17,7 @@ WHERE a IN
 
 SELECT '127.0.0.1';
 SELECT *
-FROM 
+FROM
 (
     SELECT a
     FROM remote('127.0.0.1', currentDatabase(), local_t)

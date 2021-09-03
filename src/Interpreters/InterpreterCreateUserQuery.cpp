@@ -5,6 +5,7 @@
 #include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/ASTUserNameWithHost.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTDatabaseOrNone.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/ContextAccess.h>
@@ -59,6 +60,9 @@ namespace
         else if (query.default_roles)
             set_default_roles(*query.default_roles);
 
+        if (query.default_database)
+            user.default_database = query.default_database->database_name;
+
         if (override_settings)
             user.settings = *override_settings;
         else if (query.settings)
@@ -75,8 +79,8 @@ namespace
 BlockIO InterpreterCreateUserQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
-    auto & access_control = context.getAccessControlManager();
-    auto access = context.getAccess();
+    auto & access_control = getContext()->getAccessControlManager();
+    auto access = getContext()->getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
@@ -91,7 +95,7 @@ BlockIO InterpreterCreateUserQuery::execute()
     }
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context);
+        return executeDDLQueryOnCluster(query_ptr, getContext());
 
     std::optional<SettingsProfileElements> settings_from_query;
     if (query.settings)

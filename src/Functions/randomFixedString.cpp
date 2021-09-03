@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Functions/FunctionsRandom.h>
 #include <pcg_random.hpp>
@@ -34,6 +34,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -77,7 +79,7 @@ public:
 class FunctionRandomFixedString : public FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>
 {
 public:
-    explicit FunctionRandomFixedString(const Context & context) : selector(context)
+    explicit FunctionRandomFixedString(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
@@ -93,7 +95,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionRandomFixedString>(context);
     }

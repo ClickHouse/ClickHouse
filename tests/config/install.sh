@@ -28,18 +28,27 @@ ln -sf $SRC_PATH/config.d/clusters.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/graphite.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_atomic.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_concurrent_queries.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/merge_tree_settings.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/readonly.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/access_management.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/database_atomic_drop_detach_sync.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/opentelemetry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/remote_queries.xml $DEST_SERVER_PATH/users.d/
+
+# FIXME DataPartsExchange may hang for http_send_timeout seconds
+# when nobody is going to read from the other side of socket (due to "Fetching of part was cancelled"),
+# but socket is owned by HTTPSessionPool, so it's not closed.
+ln -sf $SRC_PATH/users.d/timeouts.xml $DEST_SERVER_PATH/users.d/
 
 ln -sf $SRC_PATH/ints_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/strings_dictionary.xml $DEST_SERVER_PATH/
@@ -71,8 +80,8 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
 
     # There is a bug in config reloading, so we cannot override macros using --macros.replica r2
     # And we have to copy configs...
-    mkdir /etc/clickhouse-server1
-    mkdir /etc/clickhouse-server2
+    mkdir -p /etc/clickhouse-server1
+    mkdir -p /etc/clickhouse-server2
     chown clickhouse /etc/clickhouse-server1
     chown clickhouse /etc/clickhouse-server2
     chgrp clickhouse /etc/clickhouse-server1
@@ -84,8 +93,8 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     sudo -u clickhouse cat /etc/clickhouse-server/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > /etc/clickhouse-server1/config.d/macros.xml
     sudo -u clickhouse cat /etc/clickhouse-server/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > /etc/clickhouse-server2/config.d/macros.xml
 
-    sudo mkdir /var/lib/clickhouse1
-    sudo mkdir /var/lib/clickhouse2
+    sudo mkdir -p /var/lib/clickhouse1
+    sudo mkdir -p /var/lib/clickhouse2
     sudo chown clickhouse /var/lib/clickhouse1
     sudo chown clickhouse /var/lib/clickhouse2
     sudo chgrp clickhouse /var/lib/clickhouse1

@@ -63,19 +63,19 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (ParserKeyword("IF NOT EXISTS").ignore(pos, expected))
         if_not_exists = true;
 
-    if (!ParserCompoundIdentifier(false).parse(pos, table, expected))
+    if (!ParserCompoundIdentifier(true).parse(pos, table, expected))
         return false;
 
     if (ParserKeyword("LIKE").ignore(pos, expected))
     {
-        if (!ParserCompoundIdentifier(false).parse(pos, like_table, expected))
+        if (!ParserCompoundIdentifier(true).parse(pos, like_table, expected))
             return false;
     }
     else if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
         if (ParserKeyword("LIKE").ignore(pos, expected))
         {
-            if (!ParserCompoundIdentifier(false).parse(pos, like_table, expected))
+            if (!ParserCompoundIdentifier(true).parse(pos, like_table, expected))
                 return false;
 
             if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
@@ -101,7 +101,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     create_query->temporary = is_temporary;
     create_query->if_not_exists = if_not_exists;
 
-    StorageID table_id = getTableIdentifier(table);
+    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
     create_query->table = table_id.table_name;
     create_query->database = table_id.database_name;
     create_query->like_table = like_table;

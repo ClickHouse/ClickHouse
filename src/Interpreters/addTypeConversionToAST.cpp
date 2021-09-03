@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
 {
-    auto func = makeASTFunction("CAST", ast, std::make_shared<ASTLiteral>(type_name));
+    auto func = makeASTFunction("_CAST", ast, std::make_shared<ASTLiteral>(type_name));
 
     if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
@@ -32,10 +32,12 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
     return func;
 }
 
-ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const NamesAndTypesList & all_columns, const Context & context)
+ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const NamesAndTypesList & all_columns, ContextPtr context)
 {
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, all_columns);
-    const auto actions = ExpressionAnalyzer(ast, syntax_analyzer_result, context).getActions(true);
+    const auto actions = ExpressionAnalyzer(ast,
+        syntax_analyzer_result,
+        const_pointer_cast<Context>(context)).getActions(true);
 
     for (const auto & action : actions->getActions())
         if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
@@ -43,7 +45,7 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const Nam
 
     auto block = actions->getSampleBlock();
 
-    auto desc_type =  block.getByName(ast->getColumnName()).type;
+    auto desc_type =  block.getByName(ast->getAliasOrColumnName()).type;
     if (desc_type->getName() != type_name)
         return addTypeConversionToAST(std::move(ast), type_name);
 

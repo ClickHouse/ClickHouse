@@ -29,6 +29,13 @@ using DataTypes = std::vector<DataTypePtr>;
 struct NameAndTypePair;
 class SerializationInfo;
 
+struct DataTypeWithConstInfo
+{
+    DataTypePtr type;
+    bool is_const;
+};
+
+using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 /** Properties of data type.
   *
@@ -55,7 +62,13 @@ public:
     /// static constexpr bool is_parametric = false;
 
     /// Name of data type (examples: UInt64, Array(String)).
-    String getName() const;
+    String getName() const
+    {
+      if (custom_name)
+          return custom_name->getName();
+      else
+          return doGetName();
+    }
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
@@ -98,7 +111,7 @@ public:
     void enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback) const { enumerateStreams(serialization, callback, {}); }
 
 protected:
-    virtual String doGetName() const;
+    virtual String doGetName() const { return getFamilyName(); }
     virtual SerializationPtr doGetDefaultSerialization() const = 0;
 
     DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const;
@@ -177,7 +190,7 @@ public:
       */
     virtual bool canBeComparedWithCollation() const { return false; }
 
-    /** If the type is totally comparable (Ints, Date, DateTime, not nullable, not floats)
+    /** If the type is totally comparable (Ints, Date, DateTime, DateTime64, not nullable, not floats)
       *  and "simple" enough (not String, FixedString) to be used as version number
       *  (to select rows with maximum version).
       */
@@ -322,9 +335,10 @@ struct WhichDataType
     constexpr bool isEnum() const { return isEnum8() || isEnum16(); }
 
     constexpr bool isDate() const { return idx == TypeIndex::Date; }
+    constexpr bool isDate32() const { return idx == TypeIndex::Date32; }
     constexpr bool isDateTime() const { return idx == TypeIndex::DateTime; }
     constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
-    constexpr bool isDateOrDateTime() const { return isDate() || isDateTime() || isDateTime64(); }
+    constexpr bool isDateOrDate32() const { return isDate() || isDate32(); }
 
     constexpr bool isString() const { return idx == TypeIndex::String; }
     constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
@@ -341,8 +355,6 @@ struct WhichDataType
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
     constexpr bool isFunction() const { return idx == TypeIndex::Function; }
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
-
-    constexpr bool IsBigIntOrDeimal() const { return isInt128() || isInt256() || isUInt256() || isDecimal256(); }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -350,7 +362,9 @@ struct WhichDataType
 template <typename T>
 inline bool isDate(const T & data_type) { return WhichDataType(data_type).isDate(); }
 template <typename T>
-inline bool isDateOrDateTime(const T & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
+inline bool isDate32(const T & data_type) { return WhichDataType(data_type).isDate32(); }
+template <typename T>
+inline bool isDateOrDate32(const T & data_type) { return WhichDataType(data_type).isDateOrDate32(); }
 template <typename T>
 inline bool isDateTime(const T & data_type) { return WhichDataType(data_type).isDateTime(); }
 template <typename T>
@@ -360,7 +374,9 @@ inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_ty
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }
 inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_type).isTuple(); }
 inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
-inline bool isMap(const DataTypePtr & data_type) {return WhichDataType(data_type).isMap(); }
+inline bool isMap(const DataTypePtr & data_type) { return WhichDataType(data_type).isMap(); }
+inline bool isNothing(const DataTypePtr & data_type) { return WhichDataType(data_type).isNothing(); }
+inline bool isUUID(const DataTypePtr & data_type) { return WhichDataType(data_type).isUUID(); }
 
 template <typename T>
 inline bool isUInt8(const T & data_type)
@@ -414,7 +430,7 @@ template <typename T>
 inline bool isColumnedAsNumber(const T & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDateTime() || which.isUUID();
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isUUID();
 }
 
 template <typename T>
@@ -429,7 +445,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>::value;
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>;
 }
 
 template <typename T>
@@ -468,19 +484,6 @@ inline bool isCompilableType(const DataTypePtr & data_type)
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
 }
 
-template <TypeIndex TYPE_IDX, typename DataType>
-inline bool isDataType(const DataType & data_type)
-{
-    WhichDataType which(data_type);
-    return which.idx == TYPE_IDX;
-}
-
-template <typename ExpectedDataType, typename DataType>
-inline bool isDataType(const DataType & data_type)
-{
-    return isDataType<ExpectedDataType::type_id>(data_type);
-}
-
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
@@ -494,6 +497,7 @@ template <typename T>
 class DataTypeNumber;
 
 class DataTypeDate;
+class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
 
@@ -503,6 +507,7 @@ template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
 
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
+template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
 

@@ -3,6 +3,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -42,7 +43,7 @@ void PartialSortingStep::updateLimit(size_t limit_)
     if (limit_ && (limit == 0 || limit_ < limit))
     {
         limit = limit_;
-        transform_traits.preserves_number_of_rows = limit == 0;
+        transform_traits.preserves_number_of_rows = false;
     }
 }
 
@@ -57,7 +58,7 @@ void PartialSortingStep::transformPipeline(QueryPipeline & pipeline, const Build
     });
 
     StreamLocalLimits limits;
-    limits.mode = LimitsMode::LIMITS_CURRENT;
+    limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
     limits.size_limits = size_limits;
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
@@ -79,6 +80,14 @@ void PartialSortingStep::describeActions(FormatSettings & settings) const
 
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
+}
+
+void PartialSortingStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    map.add("Sort Description", explainSortDescription(sort_description, input_streams.front().header));
+
+    if (limit)
+        map.add("Limit", limit);
 }
 
 }

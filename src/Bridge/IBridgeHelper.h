@@ -14,7 +14,7 @@ namespace DB
 
 /// Common base class for XDBC and Library bridge helpers.
 /// Contains helper methods to check/start bridge sync.
-class IBridgeHelper
+class IBridgeHelper: protected WithContext
 {
 
 public:
@@ -27,20 +27,24 @@ public:
     static const inline std::string PING_METHOD = Poco::Net::HTTPRequest::HTTP_GET;
     static const inline std::string MAIN_METHOD = Poco::Net::HTTPRequest::HTTP_POST;
 
-    virtual ~IBridgeHelper() = default;
+    explicit IBridgeHelper(ContextPtr context_) : WithContext(context_) {}
 
-    void startBridgeSync() const;
+    virtual ~IBridgeHelper() = default;
 
     Poco::URI getMainURI() const;
 
     Poco::URI getPingURI() const;
 
+    void startBridgeSync();
 
 protected:
-    /// clickhouse-odbc-bridge, clickhouse-library-bridge
-    virtual const String serviceAlias() const = 0;
+    /// Check bridge is running. Can also check something else in the mean time.
+    virtual bool bridgeHandShake() = 0;
 
-    virtual const String serviceFileName() const = 0;
+    /// clickhouse-odbc-bridge, clickhouse-library-bridge
+    virtual String serviceAlias() const = 0;
+
+    virtual String serviceFileName() const = 0;
 
     virtual size_t getDefaultPort() const = 0;
 
@@ -48,23 +52,19 @@ protected:
 
     virtual void startBridge(std::unique_ptr<ShellCommand> cmd) const = 0;
 
-    virtual const String configPrefix() const = 0;
-
-    virtual const Context & getContext() const = 0;
+    virtual String configPrefix() const = 0;
 
     virtual const Poco::Util::AbstractConfiguration & getConfig() const = 0;
 
     virtual Poco::Logger * getLog() const = 0;
 
-    virtual const Poco::Timespan & getHTTPTimeout() const = 0;
+    virtual Poco::Timespan getHTTPTimeout() const = 0;
 
     virtual Poco::URI createBaseURI() const = 0;
 
 
 private:
-    bool checkBridgeIsRunning() const;
-
-    std::unique_ptr<ShellCommand> startBridgeCommand() const;
+    std::unique_ptr<ShellCommand> startBridgeCommand();
 };
 
 }

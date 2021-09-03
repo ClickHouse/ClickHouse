@@ -32,7 +32,7 @@ bool isAlreadySorted(const Block & block, const SortDescription & description);
 /// Column with description for sort
 struct ColumnWithSortDescription
 {
-    const IColumn * column;
+    const IColumn * column = nullptr;
     SortColumnDescription description;
 
     /// It means, that this column is ColumnConst

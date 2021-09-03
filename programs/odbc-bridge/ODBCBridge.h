@@ -13,12 +13,12 @@ class ODBCBridge : public IBridge
 {
 
 protected:
-    const std::string bridgeName() const override
+    std::string bridgeName() const override
     {
         return "ODBCBridge";
     }
 
-    HandlerFactoryPtr getHandlerFactoryPtr(Context & context) const override
+    HandlerFactoryPtr getHandlerFactoryPtr(ContextPtr context) const override
     {
         return std::make_shared<ODBCBridgeHandlerFactory>("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context);
     }

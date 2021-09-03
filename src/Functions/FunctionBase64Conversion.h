@@ -61,7 +61,7 @@ class FunctionBase64Conversion : public IFunction
 public:
     static constexpr auto name = Func::name;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBase64Conversion>();
     }
@@ -75,6 +75,8 @@ public:
     {
         return 1;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override
     {
@@ -146,7 +148,7 @@ public:
                     if (!outlen)
                     {
                         outlen = 0;
-                        dst_pos = savepoint;
+                        dst_pos = savepoint; //-V1048
                         // clean the symbol
                         dst_pos[0] = 0;
                     }

@@ -2,7 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="aggregate_state")
 node1 = cluster.add_instance('node1',
                              with_zookeeper=False, image='yandex/clickhouse-server', tag='19.16.9.37', stay_alive=True,
                              with_installed_binary=True)
@@ -53,3 +53,9 @@ def test_backward_compatability(start_cluster):
     node1.restart_with_latest_version()
 
     assert (node1.query("SELECT avgMerge(x) FROM state") == '2.5\n')
+
+    node1.query("drop table tab")
+    node1.query("drop table state")
+    node2.query("drop table tab")
+    node3.query("drop table tab")
+    node4.query("drop table tab")

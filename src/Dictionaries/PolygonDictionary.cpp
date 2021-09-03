@@ -3,14 +3,14 @@
 #include <numeric>
 #include <cmath>
 
-#include "DictionaryBlockInputStream.h"
-#include "DictionaryFactory.h"
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySource.h>
+
 
 namespace DB
 {
@@ -52,7 +52,6 @@ ColumnPtr IPolygonDictionary::getColumn(
     const auto requested_key_points = extractPoints(key_columns);
 
     const auto & attribute = dict_struct.getAttribute(attribute_name, result_type);
-    bool complex_attribute = attribute.is_nullable || attribute.is_array;
     DefaultValueProvider default_value_provider(attribute.null_value, default_values_column);
 
     size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
@@ -61,25 +60,13 @@ ColumnPtr IPolygonDictionary::getColumn(
     auto result = attribute_values_column->cloneEmpty();
     result->reserve(requested_key_points.size());
 
-    Field row_value_to_insert;
-    size_t polygon_index = 0;
-
-    if (unlikely(complex_attribute))
+    if (unlikely(attribute.is_nullable))
     {
-        for (size_t requested_key_index = 0; requested_key_index < requested_key_points.size(); ++requested_key_index)
-        {
-            const auto found = find(requested_key_points[requested_key_index], polygon_index);
-
-            if (found)
-            {
-                size_t attribute_values_index = polygon_index_to_attribute_value_index[polygon_index];
-                attribute_values_column->get(attribute_values_index, row_value_to_insert);
-            }
-            else
-                row_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
-
-            result->insert(row_value_to_insert);
-        }
+        getItemsImpl<Field>(
+            requested_key_points,
+            [&](size_t row) { return (*attribute_values_column)[row]; },
+            [&](Field & value) { result->insert(value); },
+            default_value_provider);
     }
     else
     {
@@ -88,10 +75,8 @@ ColumnPtr IPolygonDictionary::getColumn(
             using Type = std::decay_t<decltype(dictionary_attribute_type)>;
             using AttributeType = typename Type::AttributeType;
             using ValueType = DictionaryValueType<AttributeType>;
-            using ColumnType = std::conditional_t<
-                std::is_same_v<AttributeType, String>,
-                ColumnString,
-                std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<ValueType>, ColumnVector<AttributeType>>>;
+            using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+            using ColumnType = typename ColumnProvider::ColumnType;
 
             const auto attribute_values_column_typed = typeid_cast<const ColumnType *>(attribute_values_column.get());
             if (!attribute_values_column_typed)
@@ -99,59 +84,46 @@ ColumnPtr IPolygonDictionary::getColumn(
 
             ColumnType & result_column_typed = static_cast<ColumnType &>(*result);
 
-            if constexpr (std::is_same_v<ColumnType, ColumnString>)
+            if constexpr (std::is_same_v<ValueType, Array>)
             {
-                for (size_t requested_key_index = 0; requested_key_index < requested_key_points.size(); ++requested_key_index)
-                {
-                    const auto found = find(requested_key_points[requested_key_index], polygon_index);
-
-                    if (found)
-                    {
-                        size_t attribute_values_index = polygon_index_to_attribute_value_index[polygon_index];
-                        auto data_to_insert = attribute_values_column->getDataAt(attribute_values_index);
-                        result_column_typed.insertData(data_to_insert.data, data_to_insert.size);
-                    }
-                    else
-                        result_column_typed.insert(default_value_provider.getDefaultValue(requested_key_index));
-                }
+                getItemsImpl<ValueType>(
+                    requested_key_points,
+                    [&](size_t row) { return (*attribute_values_column)[row].get<Array>(); },
+                    [&](Array & value) { result_column_typed.insert(value); },
+                    default_value_provider);
+            }
+            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            {
+                getItemsImpl<ValueType>(
+                    requested_key_points,
+                    [&](size_t row) { return attribute_values_column->getDataAt(row); },
+                    [&](StringRef value) { result_column_typed.insertData(value.data, value.size); },
+                    default_value_provider);
             }
             else
             {
                 auto & attribute_data = attribute_values_column_typed->getData();
                 auto & result_data = result_column_typed.getData();
 
-                for (size_t requested_key_index = 0; requested_key_index < requested_key_points.size(); ++requested_key_index)
-                {
-                    const auto found = find(requested_key_points[requested_key_index], polygon_index);
-
-                    if (found)
-                    {
-                        size_t attribute_values_index = polygon_index_to_attribute_value_index[polygon_index];
-                        auto & item = attribute_data[attribute_values_index];
-                        result_data.emplace_back(item);
-                    }
-                    else
-                    {
-                        row_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
-                        result_data.emplace_back(row_value_to_insert.template get<NearestFieldType<ValueType>>());
-                    }
-                }
+                getItemsImpl<ValueType>(
+                    requested_key_points,
+                    [&](size_t row) { return attribute_data[row]; },
+                    [&](auto value) { result_data.emplace_back(value); },
+                    default_value_provider);
             }
         };
 
         callOnDictionaryAttributeType(attribute.underlying_type, type_call);
     }
 
-    query_count.fetch_add(requested_key_points.size(), std::memory_order_relaxed);
-
     return result;
 }
 
-BlockInputStreamPtr IPolygonDictionary::getBlockInputStream(const Names &, size_t) const
+Pipe IPolygonDictionary::read(const Names &, size_t) const
 {
     // TODO: In order for this to work one would first have to support retrieving arrays from dictionaries.
     //  I believe this is a separate task done by some other people.
-    throw Exception{"Reading the dictionary is not allowed", ErrorCodes::UNSUPPORTED_METHOD};
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Reading the dictionary is not allowed");
 }
 
 void IPolygonDictionary::setup()
@@ -164,9 +136,9 @@ void IPolygonDictionary::setup()
         attributes.emplace_back(std::move(column));
 
         if (attribute.hierarchical)
-            throw Exception{ErrorCodes::TYPE_MISMATCH,
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
                             "{}: hierarchical attributes not supported for dictionary of polygonal type",
-                            getDictionaryID().getNameForLogs()};
+                            getDictionaryID().getNameForLogs());
     }
 }
 
@@ -193,12 +165,13 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 
 void IPolygonDictionary::loadData()
 {
-    auto stream = source_ptr->loadAll();
-    stream->readPrefix();
-    while (const auto block = stream->read())
-        blockToAttributes(block);
-    stream->readSuffix();
+    QueryPipeline pipeline;
+    pipeline.init(source_ptr->loadAll());
 
+    PullingPipelineExecutor executor(pipeline);
+    Block block;
+    while (executor.pull(block))
+        blockToAttributes(block);
 
     /// Correct and sort polygons by area and update polygon_index_to_attribute_value_index after sort
     PaddedPODArray<double> areas;
@@ -248,20 +221,20 @@ void IPolygonDictionary::calculateBytesAllocated()
 std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns & key_columns)
 {
     if (key_columns.size() != 2)
-        throw Exception{"Expected two columns of coordinates with type Float64", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two columns of coordinates with type Float64");
 
     const auto * column_x = typeid_cast<const ColumnVector<Float64>*>(key_columns[0].get());
     const auto * column_y = typeid_cast<const ColumnVector<Float64>*>(key_columns[1].get());
 
     if (!column_x || !column_y)
-        throw Exception{"Expected columns of Float64", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected columns of Float64");
 
     const auto rows = key_columns.front()->size();
 
     std::vector<Point> result;
     result.reserve(rows);
 
-    for (const auto row : ext::range(0, rows))
+    for (size_t row = 0; row < rows; ++row)
     {
         auto x = column_x->getElement(row);
         auto y = column_y->getElement(row);
@@ -285,18 +258,71 @@ ColumnUInt8::Ptr IPolygonDictionary::hasKeys(const Columns & key_columns, const 
     std::vector<IPolygonDictionary::Point> points = extractPoints(key_columns);
 
     auto result = ColumnUInt8::create(points.size());
-    auto& out = result->getData();
+    auto & out = result->getData();
+
+    size_t keys_found = 0;
 
     for (size_t i = 0; i < points.size(); ++i)
     {
         size_t unused_find_result = 0;
         auto & point = points[i];
         out[i] = find(point, unused_find_result);
+        keys_found += out[i];
     }
 
     query_count.fetch_add(points.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 
     return result;
+}
+
+template <typename AttributeType, typename ValueGetter, typename ValueSetter, typename DefaultValueExtractor>
+void IPolygonDictionary::getItemsImpl(
+    const std::vector<IPolygonDictionary::Point> & requested_key_points,
+    ValueGetter && get_value,
+    ValueSetter && set_value,
+    DefaultValueExtractor & default_value_extractor) const
+{
+    size_t polygon_index = 0;
+    size_t keys_found = 0;
+
+    for (size_t requested_key_index = 0; requested_key_index < requested_key_points.size(); ++requested_key_index)
+    {
+        const auto found = find(requested_key_points[requested_key_index], polygon_index);
+
+        if (found)
+        {
+            size_t attribute_values_index = polygon_index_to_attribute_value_index[polygon_index];
+            auto value = get_value(attribute_values_index);
+            set_value(value);
+            ++keys_found;
+        }
+        else
+        {
+            Field default_value = default_value_extractor.getDefaultValue(requested_key_index);
+
+            if constexpr (std::is_same_v<AttributeType, Field>)
+            {
+                set_value(default_value);
+            }
+            else if constexpr (std::is_same_v<AttributeType, Array>)
+            {
+                set_value(default_value.get<Array>());
+            }
+            else if constexpr (std::is_same_v<AttributeType, StringRef>)
+            {
+                auto default_value_string = default_value.get<String>();
+                set_value(default_value_string);
+            }
+            else
+            {
+                set_value(default_value.get<NearestFieldType<AttributeType>>());
+            }
+        }
+    }
+
+    query_count.fetch_add(requested_key_points.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 namespace
@@ -392,17 +418,17 @@ const IColumn * unrollMultiPolygons(const ColumnPtr & column, Offset & offset)
 {
     const auto * ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_multi_polygons)
-        throw Exception{"Expected a column containing arrays of polygons", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column containing arrays of polygons");
     offset.multi_polygon_offsets.assign(ptr_multi_polygons->getOffsets());
 
     const auto * ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
     if (!ptr_polygons)
-        throw Exception{"Expected a column containing arrays of rings when reading polygons", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column containing arrays of rings when reading polygons");
     offset.polygon_offsets.assign(ptr_polygons->getOffsets());
 
     const auto * ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
     if (!ptr_rings)
-        throw Exception{"Expected a column containing arrays of points when reading rings", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column containing arrays of points when reading rings");
     offset.ring_offsets.assign(ptr_rings->getOffsets());
 
     return ptr_rings->getDataPtr().get();
@@ -412,7 +438,7 @@ const IColumn * unrollSimplePolygons(const ColumnPtr & column, Offset & offset)
 {
     const auto * ptr_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_polygons)
-        throw Exception{"Expected a column containing arrays of points", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column containing arrays of points");
     offset.ring_offsets.assign(ptr_polygons->getOffsets());
     std::iota(offset.polygon_offsets.begin(), offset.polygon_offsets.end(), 1);
     offset.multi_polygon_offsets.assign(offset.polygon_offsets);
@@ -425,13 +451,13 @@ void handlePointsReprByArrays(const IColumn * column, Data & data, Offset & offs
     const auto * ptr_points = typeid_cast<const ColumnArray*>(column);
     const auto * ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
     if (!ptr_coord)
-        throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected coordinates to be of type Float64");
     const auto & offsets = ptr_points->getOffsets();
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < offsets.size(); ++i)
     {
         if (offsets[i] - prev_offset != 2)
-            throw Exception{"All points should be two-dimensional", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "All points should be two-dimensional");
         prev_offset = offsets[i];
         addNewPoint(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1), data, offset);
     }
@@ -441,13 +467,13 @@ void handlePointsReprByTuples(const IColumn * column, Data & data, Offset & offs
 {
     const auto * ptr_points = typeid_cast<const ColumnTuple*>(column);
     if (!ptr_points)
-        throw Exception{"Expected a column of tuples representing points", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column of tuples representing points");
     if (ptr_points->tupleSize() != 2)
-        throw Exception{"Points should be two-dimensional", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Points should be two-dimensional");
     const auto * column_x = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(0));
     const auto * column_y = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(1));
     if (!column_x || !column_y)
-        throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected coordinates to be of type Float64");
     for (size_t i = 0; i < column_x->size(); ++i)
     {
         addNewPoint(column_x->getElement(i), column_y->getElement(i), data, offset);
@@ -473,8 +499,8 @@ void IPolygonDictionary::extractPolygons(const ColumnPtr & column)
     }
 
     if (!offset.allRingsHaveAPositiveArea())
-        throw Exception{"Every ring included in a polygon or excluded from it should contain at least 3 points",
-                        ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Every ring included in a polygon or excluded from it should contain at least 3 points");
 
     /** Adding the first empty polygon */
     data.addPolygon(true);
@@ -491,4 +517,3 @@ void IPolygonDictionary::extractPolygons(const ColumnPtr & column)
 }
 
 }
-

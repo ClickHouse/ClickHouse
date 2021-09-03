@@ -14,8 +14,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-template class CacheDictionaryUpdateUnit<DictionaryKeyType::simple>;
-template class CacheDictionaryUpdateUnit<DictionaryKeyType::complex>;
+template class CacheDictionaryUpdateUnit<DictionaryKeyType::Simple>;
+template class CacheDictionaryUpdateUnit<DictionaryKeyType::Complex>;
 
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
@@ -49,11 +49,10 @@ template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::tryPushToUpdateQueueOrThrow(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr)
 {
     if (finished)
-        throw Exception{"CacheDictionaryUpdateQueue finished", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
 
     if (!update_queue.tryPush(update_unit_ptr, configuration.update_queue_push_timeout_milliseconds))
-        throw DB::Exception(
-            ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
+        throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
             "Cannot push to internal update queue in dictionary {}. "
             "Timelimit of {} ms. exceeded. Current queue size is {}",
             dictionary_name_for_logs,
@@ -65,7 +64,7 @@ template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::waitForCurrentUpdateFinish(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr) const
 {
     if (finished)
-        throw Exception{"CacheDictionaryUpdateQueue finished", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
 
     std::unique_lock<std::mutex> update_lock(update_mutex);
 
@@ -156,7 +155,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
     }
 }
 
-template class CacheDictionaryUpdateQueue<DictionaryKeyType::simple>;
-template class CacheDictionaryUpdateQueue<DictionaryKeyType::complex>;
+template class CacheDictionaryUpdateQueue<DictionaryKeyType::Simple>;
+template class CacheDictionaryUpdateQueue<DictionaryKeyType::Complex>;
 
 }

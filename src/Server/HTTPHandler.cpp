@@ -6,7 +6,6 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
@@ -22,6 +21,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Session.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
@@ -31,7 +31,7 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <common/getFQDNOrHostName.h>
-#include <ext/scope_guard.h>
+#include <common/scope_guard.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -39,7 +39,6 @@
 
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
-#include <Poco/File.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
@@ -263,6 +262,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
     : server(server_)
     , log(&Poco::Logger::get(name))
+    , default_settings(server.context()->getSettingsRef())
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -270,14 +270,10 @@ HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
 
 /// We need d-tor to be present in this translation unit to make it play well with some
 /// forward decls in the header. Other than that, the default d-tor would be OK.
-HTTPHandler::~HTTPHandler()
-{
-    (void)this;
-}
+HTTPHandler::~HTTPHandler() = default;
 
 
 bool HTTPHandler::authenticateUser(
-    Context & context,
     HTTPServerRequest & request,
     HTMLForm & params,
     HTTPServerResponse & response)
@@ -354,7 +350,7 @@ bool HTTPHandler::authenticateUser(
     else
     {
         if (!request_credentials)
-            request_credentials = request_context->makeGSSAcceptorContext();
+            request_credentials = server.context()->makeGSSAcceptorContext();
 
         auto * gss_acceptor_context = dynamic_cast<GSSAcceptorContext *>(request_credentials.get());
         if (!gss_acceptor_context)
@@ -380,10 +376,7 @@ bool HTTPHandler::authenticateUser(
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
-
-    ClientInfo & client_info = context.getClientInfo();
-    client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-    client_info.interface = ClientInfo::Interface::HTTP;
+    ClientInfo & client_info = session->getClientInfo();
 
     ClientInfo::HTTPMethod http_method = ClientInfo::HTTPMethod::UNKNOWN;
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
@@ -395,10 +388,11 @@ bool HTTPHandler::authenticateUser(
     client_info.http_user_agent = request.get("User-Agent", "");
     client_info.http_referer = request.get("Referer", "");
     client_info.forwarded_for = request.get("X-Forwarded-For", "");
+    client_info.quota_key = quota_key;
 
     try
     {
-        context.setUser(*request_credentials, request.clientAddress());
+        session->authenticate(*request_credentials, request.clientAddress());
     }
     catch (const Authentication::Require<BasicCredentials> & required_credentials)
     {
@@ -415,7 +409,7 @@ bool HTTPHandler::authenticateUser(
     }
     catch (const Authentication::Require<GSSAcceptorContext> & required_credentials)
     {
-        request_credentials = request_context->makeGSSAcceptorContext();
+        request_credentials = server.context()->makeGSSAcceptorContext();
 
         if (required_credentials.getRealm().empty())
             response.set("WWW-Authenticate", "Negotiate");
@@ -428,20 +422,11 @@ bool HTTPHandler::authenticateUser(
     }
 
     request_credentials.reset();
-
-    if (!quota_key.empty())
-        context.setQuotaKey(quota_key);
-
-    /// Query sent through HTTP interface is initial.
-    client_info.initial_user = client_info.current_user;
-    client_info.initial_address = client_info.current_address;
-
     return true;
 }
 
 
 void HTTPHandler::processQuery(
-    Context & context,
     HTTPServerRequest & request,
     HTMLForm & params,
     HTTPServerResponse & response,
@@ -452,13 +437,11 @@ void HTTPHandler::processQuery(
 
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
-    if (!authenticateUser(context, request, params, response))
+    if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
-
-    std::shared_ptr<NamedSession> session;
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
@@ -469,43 +452,30 @@ void HTTPHandler::processQuery(
         session_id = params.get("session_id");
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
-
-        session = context.acquireNamedSession(session_id, session_timeout, session_check == "1");
-
-        context = session->context;
-        context.setSessionContext(session->context);
+        session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
-
-    SCOPE_EXIT({
-        if (session)
-            session->release();
-    });
 
     // Parse the OpenTelemetry traceparent header.
     // Disable in Arcadia -- it interferes with the
     // test_clickhouse.TestTracing.test_tracing_via_http_proxy[traceparent] test.
+    ClientInfo client_info = session->getClientInfo();
 #if !defined(ARCADIA_BUILD)
     if (request.has("traceparent"))
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!context.getClientInfo().client_trace_context.parseTraceparentHeader(
+        if (!client_info.client_trace_context.parseTraceparentHeader(
             opentelemetry_traceparent, error))
         {
             throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
                 "Failed to parse OpenTelemetry traceparent header '{}': {}",
                 opentelemetry_traceparent, error);
         }
-
-        context.getClientInfo().client_trace_context.tracestate = request.get("tracestate", "");
+        client_info.client_trace_context.tracestate = request.get("tracestate", "");
     }
 #endif
 
-    // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    context.setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
-
-    ClientInfo & client_info = context.getClientInfo();
-    client_info.initial_query_id = client_info.current_query_id;
+    auto context = session->makeQueryContext(std::move(client_info));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -570,7 +540,7 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            const std::string tmp_path(context.getTemporaryVolume()->getDisk()->getPath());
+            const std::string tmp_path(server.context()->getTemporaryVolume()->getDisk()->getPath());
             const std::string tmp_path_template(tmp_path + "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
@@ -658,13 +628,13 @@ void HTTPHandler::processQuery(
 
     /// In theory if initially readonly = 0, the client can change any setting and then set readonly
     /// to some other value.
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     /// Only readonly queries are allowed for HTTP GET requests.
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
     {
         if (settings.readonly == 0)
-            context.setSetting("readonly", 2);
+            context->setSetting("readonly", 2);
     }
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
@@ -707,14 +677,17 @@ void HTTPHandler::processQuery(
     }
 
     if (!database.empty())
-        context.setCurrentDatabase(database);
+        context->setCurrentDatabase(database);
 
     if (!default_format.empty())
-        context.setDefaultFormat(default_format);
+        context->setDefaultFormat(default_format);
 
     /// For external data we also want settings
-    context.checkSettingsConstraints(settings_changes);
-    context.applySettingsChanges(settings_changes);
+    context->checkSettingsConstraints(settings_changes);
+    context->applySettingsChanges(settings_changes);
+
+    // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
+    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
 
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
@@ -737,11 +710,11 @@ void HTTPHandler::processQuery(
     /// Origin header.
     used_output.out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
 
-    auto append_callback = [&context] (ProgressCallback callback)
+    auto append_callback = [context] (ProgressCallback callback)
     {
-        auto prev = context.getProgressCallback();
+        auto prev = context->getProgressCallback();
 
-        context.setProgressCallback([prev, callback] (const Progress & progress)
+        context->setProgressCallback([prev, callback] (const Progress & progress)
         {
             if (prev)
                 prev(progress);
@@ -756,12 +729,12 @@ void HTTPHandler::processQuery(
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
-        append_callback([&context, &request](const Progress &)
+        append_callback([context, &request](const Progress &)
         {
             /// Assume that at the point this method is called no one is reading data from the socket any more:
             /// should be true for read-only queries.
             if (!request.checkPeerConnected())
-                context.killCurrentQuery();
+                context->killCurrentQuery();
         });
     }
 
@@ -866,23 +839,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
 
-    SCOPE_EXIT({
-        // If there is no request_credentials instance waiting for the next round, then the request is processed,
-        // so no need to preserve request_context either.
-        // Needs to be performed with respect to the other destructors in the scope though.
-        if (!request_credentials)
-            request_context.reset();
-    });
-
-    if (!request_context)
-    {
-        // Context should be initialized before anything, for correct memory accounting.
-        request_context = std::make_unique<Context>(server.context());
-        request_credentials.reset();
-    }
-
-    /// Cannot be set here, since query_id is unknown.
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP);
+    SCOPE_EXIT({ session.reset(); });
     std::optional<CurrentThread::QueryScope> query_scope;
+
     Output used_output;
 
     /// In case of exception, send stack trace to client.
@@ -896,9 +856,10 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
             response.setChunkedTransferEncoding(true);
 
-        HTMLForm params(request);
+        HTMLForm params(default_settings, request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
+        /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
@@ -907,7 +868,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
                 ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
-        processQuery(*request_context, request, params, response, used_output, query_scope);
+        processQuery(request, params, response, used_output, query_scope);
         LOG_DEBUG(log, (request_credentials ? "Authentication in progress..." : "Done processing query"));
     }
     catch (...)
@@ -936,7 +897,7 @@ DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & 
 {
 }
 
-bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::string & key, const std::string & value)
+bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
 {
     if (key == param_name)
         return true;    /// do nothing
@@ -945,14 +906,16 @@ bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::stri
     {
         /// Save name and values of substitution in dictionary.
         const String parameter_name = key.substr(strlen("param_"));
-        context.setQueryParameter(parameter_name, value);
+
+        if (!context->getQueryParameters().contains(parameter_name))
+            context->setQueryParameter(parameter_name, value);
         return true;
     }
 
     return false;
 }
 
-std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context)
+std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
 {
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
@@ -971,32 +934,46 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
     for (const auto & it : params)
+    {
         if (it.first == param_name)
+        {
             full_query += it.second;
+        }
+        else
+        {
+            customizeQueryParam(context, it.first, it.second);
+        }
+    }
 
     return full_query;
 }
 
 PredefinedQueryHandler::PredefinedQueryHandler(
-    IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
-    , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_)
-    : HTTPHandler(server_, "PredefinedQueryHandler"), receive_params(receive_params_), predefined_query(predefined_query_)
-    , url_regex(url_regex_), header_name_with_capture_regex(header_name_with_regex_)
+    IServer & server_,
+    const NameSet & receive_params_,
+    const std::string & predefined_query_,
+    const CompiledRegexPtr & url_regex_,
+    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_)
+    : HTTPHandler(server_, "PredefinedQueryHandler")
+    , receive_params(receive_params_)
+    , predefined_query(predefined_query_)
+    , url_regex(url_regex_)
+    , header_name_with_capture_regex(header_name_with_regex_)
 {
 }
 
-bool PredefinedQueryHandler::customizeQueryParam(Context & context, const std::string & key, const std::string & value)
+bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
 {
     if (receive_params.count(key))
     {
-        context.setQueryParameter(key, value);
+        context->setQueryParameter(key, value);
         return true;
     }
 
     return false;
 }
 
-void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, DB::Context & context)
+void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context)
 {
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
@@ -1014,7 +991,7 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, DB::C
                 const auto & capturing_value = matches[capturing_index];
 
                 if (capturing_value.data())
-                    context.setQueryParameter(capturing_name, String(capturing_value.data(), capturing_value.size()));
+                    context->setQueryParameter(capturing_name, String(capturing_value.data(), capturing_value.size()));
             }
         }
     };
@@ -1032,7 +1009,7 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, DB::C
     }
 }
 
-std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context)
+std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
 {
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {

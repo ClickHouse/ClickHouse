@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/IInputFormat.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
@@ -12,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <common/logger_useful.h>
 #include <Poco/Event.h>
+
 
 namespace DB
 {
@@ -96,9 +96,6 @@ public:
         // couple more units so that the segmentation thread doesn't spuriously
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
-
-        segmentator_thread = ThreadFromGlobalPool(
-            &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
 
         LOG_TRACE(&Poco::Logger::get("ParallelParsingInputFormat"), "Parallel parsing is used");
     }
@@ -205,6 +202,7 @@ private:
 
     Poco::Event first_parser_finished;
 
+    std::atomic<bool> parsing_started{false};
     std::atomic<bool> parsing_finished{false};
 
     /// There are multiple "parsers", that's why we use thread pool.

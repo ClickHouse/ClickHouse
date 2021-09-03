@@ -364,13 +364,13 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 将Date或DateTime按指定的单位向前取整到最接近的时间点。
 
-**语法** 
+**语法**
 
 ``` sql
 date_trunc(unit, value[, timezone])
 ```
 
-别名: `dateTrunc`. 
+别名: `dateTrunc`.
 
 **参数**
 
@@ -433,7 +433,7 @@ SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
 
 返回当前日期和时间。
 
-**语法** 
+**语法**
 
 ``` sql
 now([timezone])

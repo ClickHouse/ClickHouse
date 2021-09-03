@@ -10,7 +10,7 @@ from kazoo.client import KazooClient, KazooState
 
 cluster = ClickHouseCluster(__file__)
 
-node = cluster.add_instance('node', main_configs=['configs/enable_keeper.xml', 'configs/logs_conf.xml', 'configs/use_keeper.xml'], stay_alive=True)
+node = cluster.add_instance('node', main_configs=['configs/enable_keeper.xml', 'configs/use_keeper.xml'], stay_alive=True)
 
 
 def random_string(length):
@@ -33,13 +33,6 @@ def started_cluster():
 
 def get_connection_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
-    def reset_listener(state):
-        nonlocal _fake_zk_instance
-        print("Fake zk callback called for state", state)
-        if state != KazooState.CONNECTED:
-            _fake_zk_instance._reset()
-
-    _fake_zk_instance.add_listener(reset_listener)
     _fake_zk_instance.start()
     return _fake_zk_instance
 

@@ -6,7 +6,7 @@
 namespace DB
 {
 HTTPServer::HTTPServer(
-    const Context & context,
+    ContextPtr context,
     HTTPRequestHandlerFactoryPtr factory_,
     UInt16 port_number,
     Poco::Net::HTTPServerParams::Ptr params)
@@ -15,7 +15,7 @@ HTTPServer::HTTPServer(
 }
 
 HTTPServer::HTTPServer(
-    const Context & context,
+    ContextPtr context,
     HTTPRequestHandlerFactoryPtr factory_,
     const Poco::Net::ServerSocket & socket,
     Poco::Net::HTTPServerParams::Ptr params)
@@ -24,7 +24,7 @@ HTTPServer::HTTPServer(
 }
 
 HTTPServer::HTTPServer(
-    const Context & context,
+    ContextPtr context,
     HTTPRequestHandlerFactoryPtr factory_,
     Poco::ThreadPool & thread_pool,
     const Poco::Net::ServerSocket & socket,

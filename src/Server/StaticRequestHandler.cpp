@@ -14,13 +14,14 @@
 
 #include <Common/Exception.h>
 
-#include <Poco/Path.h>
-#include <Poco/File.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <filesystem>
 
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -137,11 +138,14 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
 
     if (startsWith(response_expression, file_prefix))
     {
-        const auto & user_files_absolute_path = Poco::Path(server.context().getUserFilesPath()).makeAbsolute().makeDirectory().toString();
-        const auto & file_name = response_expression.substr(file_prefix.size(), response_expression.size() - file_prefix.size());
+        auto file_name = response_expression.substr(file_prefix.size(), response_expression.size() - file_prefix.size());
+        if (file_name.starts_with('/'))
+            file_name = file_name.substr(1);
 
-        const auto & file_path = Poco::Path(user_files_absolute_path, file_name).makeAbsolute().toString();
-        if (!Poco::File(file_path).exists())
+        fs::path user_files_absolute_path = fs::canonical(fs::path(server.context()->getUserFilesPath()));
+        String file_path = fs::weakly_canonical(user_files_absolute_path / file_name);
+
+        if (!fs::exists(file_path))
             throw Exception("Invalid file name " + file_path + " for static HTTPHandler. ", ErrorCodes::INCORRECT_FILE_NAME);
 
         ReadBufferFromFile in(file_path);

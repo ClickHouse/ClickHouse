@@ -6,7 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
-#include <ext/range.h>
+#include <common/range.h>
 #include <common/unaligned.h>
 
 
@@ -447,7 +447,7 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
     IteratorType iterator;
     bool inserted;
 
-    for (auto row : ext::range(num_prefix_rows_to_skip, size))
+    for (auto row : collections::range(num_prefix_rows_to_skip, size))
     {
         UInt64 hash;
         if constexpr (use_saved_hash)
@@ -471,7 +471,7 @@ ColumnUInt64::MutablePtr ReverseIndex<IndexType, ColumnType>::calcHashes() const
     auto size = column->size();
     auto hash = ColumnUInt64::create(size);
 
-    for (auto row : ext::range(0, size))
+    for (auto row : collections::range(0, size))
         hash->getElement(row) = getHash(column->getDataAt(row));
 
     return hash;

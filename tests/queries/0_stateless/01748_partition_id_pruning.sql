@@ -17,3 +17,15 @@ set max_rows_to_read = 1; -- one row for subquery
 select count() from x where _partition_id in (select partitionId(number + 1) from numbers(1));
 
 drop table x;
+
+drop table if exists mt;
+
+create table mt (n UInt64) engine=MergeTree order by n partition by n % 10;
+
+set max_rows_to_read = 200;
+
+insert into mt select * from numbers(100);
+
+select * from mt where toUInt64(substr(_part, 1, position(_part, '_') - 1)) = 1;
+
+drop table mt;

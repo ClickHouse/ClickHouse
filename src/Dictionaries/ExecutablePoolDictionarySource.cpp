@@ -1,12 +1,16 @@
 #include "ExecutablePoolDictionarySource.h"
 
 #include <functional>
-#include <ext/scope_guard.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <common/scope_guard.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPipeline.h>
+#include <DataStreams/formatBlock.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/copyData.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Common/ShellCommand.h>
 #include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
@@ -32,7 +36,7 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     Block & sample_block_,
-    const Context & context_)
+    ContextPtr context_)
     : log(&Poco::Logger::get("ExecutablePoolDictionarySource"))
     , dict_struct{dict_struct_}
     , configuration{configuration_}
@@ -63,19 +67,19 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
     , dict_struct{other.dict_struct}
     , configuration{other.configuration}
     , sample_block{other.sample_block}
-    , context{other.context}
+    , context{Context::createCopy(other.context)}
     , process_pool{std::make_shared<ProcessPool>(configuration.pool_size)}
 {
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::loadAll()
+Pipe ExecutablePoolDictionarySource::loadAll()
 {
-    throw Exception("ExecutablePoolDictionarySource with implicit_key does not support loadAll method", ErrorCodes::UNSUPPORTED_METHOD);
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::loadUpdatedAll()
+Pipe ExecutablePoolDictionarySource::loadUpdatedAll()
 {
-    throw Exception("ExecutablePoolDictionarySource with implicit_key does not support loadAll method", ErrorCodes::UNSUPPORTED_METHOD);
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
 }
 
 namespace
@@ -83,19 +87,19 @@ namespace
     /** A stream, that runs child process and sends data to its stdin in background thread,
       *  and receives data from its stdout.
       */
-    class PoolBlockInputStreamWithBackgroundThread final : public IBlockInputStream
+    class PoolSourceWithBackgroundThread final : public SourceWithProgress
     {
     public:
-        PoolBlockInputStreamWithBackgroundThread(
+        PoolSourceWithBackgroundThread(
             std::shared_ptr<ProcessPool> process_pool_,
             std::unique_ptr<ShellCommand> && command_,
-            BlockInputStreamPtr && stream_,
+            Pipe pipe,
             size_t read_rows_,
             Poco::Logger * log_,
             std::function<void(WriteBufferFromFile &)> && send_data_)
-            : process_pool(process_pool_)
+            : SourceWithProgress(pipe.getHeader())
+            , process_pool(process_pool_)
             , command(std::move(command_))
-            , stream(std::move(stream_))
             , rows_to_read(read_rows_)
             , log(log_)
             , send_data(std::move(send_data_))
@@ -111,9 +115,12 @@ namespace
                     exception_during_read = std::current_exception();
                 }
             })
-        {}
+        {
+            pipeline.init(std::move(pipe));
+            executor = std::make_unique<PullingPipelineExecutor>(pipeline);
+        }
 
-        ~PoolBlockInputStreamWithBackgroundThread() override
+        ~PoolSourceWithBackgroundThread() override
         {
             if (thread.joinable())
                 thread.join();
@@ -122,25 +129,22 @@ namespace
                 process_pool->returnObject(std::move(command));
         }
 
-        Block getHeader() const override
-        {
-            return stream->getHeader();
-        }
-
-    private:
-        Block readImpl() override
+    protected:
+        Chunk generate() override
         {
             rethrowExceptionDuringReadIfNeeded();
 
             if (current_read_rows == rows_to_read)
-                return Block();
+                return {};
 
-            Block block;
+            Chunk chunk;
 
             try
             {
-                block = stream->read();
-                current_read_rows += block.rows();
+                if (!executor->pull(chunk))
+                    return {};
+
+                current_read_rows += chunk.getNumRows();
             }
             catch (...)
             {
@@ -149,22 +153,23 @@ namespace
                 throw;
             }
 
-            return block;
+            return chunk;
         }
 
-        void readPrefix() override
+    public:
+        Status prepare() override
         {
-            rethrowExceptionDuringReadIfNeeded();
-            stream->readPrefix();
-        }
+            auto status = SourceWithProgress::prepare();
 
-        void readSuffix() override
-        {
-            if (thread.joinable())
-                thread.join();
+            if (status == Status::Finished)
+            {
+                if (thread.joinable())
+                    thread.join();
 
-            rethrowExceptionDuringReadIfNeeded();
-            stream->readSuffix();
+                rethrowExceptionDuringReadIfNeeded();
+            }
+
+            return status;
         }
 
         void rethrowExceptionDuringReadIfNeeded()
@@ -181,7 +186,8 @@ namespace
 
         std::shared_ptr<ProcessPool> process_pool;
         std::unique_ptr<ShellCommand> command;
-        BlockInputStreamPtr stream;
+        QueryPipeline pipeline;
+        std::unique_ptr<PullingPipelineExecutor> executor;
         size_t rows_to_read;
         Poco::Logger * log;
         std::function<void(WriteBufferFromFile &)> send_data;
@@ -193,7 +199,7 @@ namespace
 
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -201,7 +207,7 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::loadIds(const std::vector<UI
     return getStreamForBlock(block);
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -209,14 +215,14 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::loadKeys(const Columns & key
     return getStreamForBlock(block);
 }
 
-BlockInputStreamPtr ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
+Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 {
     std::unique_ptr<ShellCommand> process;
     bool result = process_pool->tryBorrowObject(process, [this]()
     {
-        bool terminate_in_destructor = true;
-        ShellCommandDestructorStrategy strategy { terminate_in_destructor, configuration.command_termination_timeout };
-        auto shell_command = ShellCommand::execute(configuration.command, false, strategy);
+        ShellCommand::Config config(configuration.command);
+        config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, configuration.command_termination_timeout };
+        auto shell_command = ShellCommand::execute(config);
         return shell_command;
     }, configuration.max_command_execution_time * 10000);
 
@@ -226,20 +232,20 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::getStreamForBlock(const Bloc
             configuration.max_command_execution_time);
 
     size_t rows_to_read = block.rows();
-    auto read_stream = context.getInputFormat(configuration.format, process->out, sample_block, rows_to_read);
+    auto format = FormatFactory::instance().getInput(configuration.format, process->out, sample_block, context, rows_to_read);
 
-    auto stream = std::make_unique<PoolBlockInputStreamWithBackgroundThread>(
-        process_pool, std::move(process), std::move(read_stream), rows_to_read, log,
+    Pipe pipe(std::make_unique<PoolSourceWithBackgroundThread>(
+        process_pool, std::move(process), Pipe(std::move(format)), rows_to_read, log,
         [block, this](WriteBufferFromFile & out) mutable
         {
-            auto output_stream = context.getOutputStream(configuration.format, out, block.cloneEmpty());
+            auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
             formatBlock(output_stream, block);
-        });
+        }));
 
     if (configuration.implicit_key)
-        return std::make_shared<BlockInputStreamWithAdditionalColumns>(block, std::move(stream));
-    else
-        return std::shared_ptr<PoolBlockInputStreamWithBackgroundThread>(stream.release());
+        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
+
+    return pipe;
 }
 
 bool ExecutablePoolDictionarySource::isModified() const
@@ -254,7 +260,7 @@ bool ExecutablePoolDictionarySource::supportsSelectiveLoad() const
 
 bool ExecutablePoolDictionarySource::hasUpdateField() const
 {
-    return !configuration.update_field.empty();
+    return false;
 }
 
 DictionarySourcePtr ExecutablePoolDictionarySource::clone() const
@@ -273,9 +279,9 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context,
+                                 ContextPtr global_context,
                                  const std::string & /* default_database */,
-                                 bool check_config) -> DictionarySourcePtr
+                                 bool created_from_ddl) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `executable_pool` does not support attribute expressions");
@@ -283,38 +289,35 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         /// Executable dictionaries may execute arbitrary commands.
         /// It's OK for dictionaries created by administrator from xml-file, but
         /// maybe dangerous for dictionaries created from DDL-queries.
-        if (check_config)
+        if (created_from_ddl && global_context->getApplicationType() != Context::ApplicationType::LOCAL)
             throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable pool dictionary source are not allowed to be created from DDL query");
 
-        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+        ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
 
         /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
          *  so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
          */
-        auto settings_no_parallel_parsing = context_local_copy.getSettings();
-        settings_no_parallel_parsing.input_format_parallel_parsing = false;
-        context_local_copy.setSettings(settings_no_parallel_parsing);
+        context->setSetting("input_format_parallel_parsing", false);
 
-        String configuration_config_prefix = config_prefix + ".executable_pool";
+        String settings_config_prefix = config_prefix + ".executable_pool";
 
-        size_t max_command_execution_time = config.getUInt64(configuration_config_prefix + ".max_command_execution_time", 10);
+        size_t max_command_execution_time = config.getUInt64(settings_config_prefix + ".max_command_execution_time", 10);
 
-        size_t max_execution_time_seconds = static_cast<size_t>(context.getSettings().max_execution_time.totalSeconds());
+        size_t max_execution_time_seconds = static_cast<size_t>(context->getSettings().max_execution_time.totalSeconds());
         if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
             max_command_execution_time = max_execution_time_seconds;
 
         ExecutablePoolDictionarySource::Configuration configuration
         {
-            .command = config.getString(configuration_config_prefix + ".command"),
-            .format = config.getString(configuration_config_prefix + ".format"),
-            .pool_size = config.getUInt64(configuration_config_prefix + ".size"),
-            .update_field = config.getString(configuration_config_prefix + ".update_field", ""),
-            .implicit_key = config.getBool(configuration_config_prefix + ".implicit_key", false),
-            .command_termination_timeout = config.getUInt64(configuration_config_prefix + ".command_termination_timeout", 10),
-            .max_command_execution_time = max_command_execution_time
+            .command = config.getString(settings_config_prefix + ".command"),
+            .format = config.getString(settings_config_prefix + ".format"),
+            .pool_size = config.getUInt64(settings_config_prefix + ".size"),
+            .command_termination_timeout = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
+            .max_command_execution_time = max_command_execution_time,
+            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
         };
 
-        return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, context_local_copy);
+        return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, context);
     };
 
     factory.registerSource("executable_pool", create_table_source);

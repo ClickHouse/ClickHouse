@@ -12,17 +12,17 @@ class SharedLibraryHandler;
 using SharedLibraryHandlerPtr = std::shared_ptr<SharedLibraryHandler>;
 
 /// Factory for '/ping', '/' handlers.
-class LibraryBridgeHandlerFactory : public HTTPRequestHandlerFactory
+class LibraryBridgeHandlerFactory : public HTTPRequestHandlerFactory, WithContext
 {
 public:
     LibraryBridgeHandlerFactory(
             const std::string & name_,
             size_t keep_alive_timeout_,
-            Context & context_)
-        : log(&Poco::Logger::get(name_))
+            ContextPtr context_)
+        : WithContext(context_)
+        , log(&Poco::Logger::get(name_))
         , name(name_)
         , keep_alive_timeout(keep_alive_timeout_)
-        , context(context_)
     {
     }
 
@@ -32,7 +32,6 @@ private:
     Poco::Logger * log;
     std::string name;
     size_t keep_alive_timeout;
-    Context & context;
 };
 
 }

@@ -21,6 +21,7 @@
 -   `bytes_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Объем оперативной памяти, используемый словарем.
 -   `query_count` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Количество запросов с момента загрузки словаря или с момента последней успешной перезагрузки.
 -   `hit_rate` ([Float64](../../sql-reference/data-types/float.md)) — Для cache-словарей — процент закэшированных значений.
+-   `found_rate` ([Float64](../../sql-reference/data-types/float.md)) — Процент обращений к словарю, при которых значение было найдено.
 -   `element_count` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Количество элементов, хранящихся в словаре.
 -   `load_factor` ([Float64](../../sql-reference/data-types/float.md)) — Процент заполнения словаря (для хэшированного словаря — процент заполнения хэш-таблицы).
 -   `source` ([String](../../sql-reference/data-types/string.md)) — Текст, описывающий [источник данных](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md) для словаря.
@@ -58,4 +59,3 @@ SELECT * FROM system.dictionaries
 │ dictdb   │ dict │ LOADED │ dictdb.dict │ Flat │ UInt64 │ ['value_default','value_expression'] │ ['String','String'] │           74032 │           0 │        1 │             1 │ 0.0004887585532746823 │ ClickHouse: dictdb.dicttbl │            0 │            1 │ 2020-03-04 04:17:34 │   2020-03-04 04:30:34        │                 0.002 │                │
 └──────────┴──────┴────────┴─────────────┴──────┴────────┴──────────────────────────────────────┴─────────────────────┴─────────────────┴─────────────┴──────────┴───────────────┴───────────────────────┴────────────────────────────┴──────────────┴──────────────┴─────────────────────┴──────────────────────────────┘───────────────────────┴────────────────┘
 ```
-

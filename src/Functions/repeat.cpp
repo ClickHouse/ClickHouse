@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunctionImpl.h>
+#include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 
 
@@ -173,11 +173,13 @@ class FunctionRepeat : public IFunction
 
 public:
     static constexpr auto name = "repeat";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRepeat>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRepeat>(); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

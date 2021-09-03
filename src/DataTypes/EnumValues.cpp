@@ -66,9 +66,20 @@ T EnumValues<T>::getValue(StringRef field_name, bool try_treat_as_id) const
             if (tmp_buf.eof() && value_to_name_map.find(x) != value_to_name_map.end())
                 return x;
         }
-        throw Exception{"Unknown element '" + field_name.toString() + "' for enum", ErrorCodes::BAD_ARGUMENTS};
+        auto hints = this->getHints(field_name.toString());
+        auto hints_string = !hints.empty() ? ", maybe you meant: " + toString(hints) : "";
+        throw Exception{"Unknown element '" + field_name.toString() + "' for enum" + hints_string, ErrorCodes::BAD_ARGUMENTS};
     }
     return it->getMapped();
+}
+
+template <typename T>
+Names EnumValues<T>::getAllRegisteredNames() const
+{
+    Names result;
+    for (const auto & value : values)
+        result.emplace_back(value.first);
+    return result;
 }
 
 template class EnumValues<Int8>;

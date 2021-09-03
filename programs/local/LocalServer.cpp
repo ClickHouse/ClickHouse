@@ -13,12 +13,15 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/UserDefinedObjectsLoader.h>
+#include <Interpreters/Session.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/ThreadStatus.h>
+#include <Common/UnicodeBar.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
 #include <IO/ReadBufferFromFile.h>
@@ -42,9 +45,9 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/randomSeed.h>
-
 #include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -72,11 +75,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
     Poco::Util::Application::initialize(self);
 
     /// Load config files if exists
-    if (config().has("config-file") || Poco::File("config.xml").exists())
+    if (config().has("config-file") || fs::exists("config.xml"))
     {
         const auto config_path = config().getString("config-file", "config.xml");
         ConfigProcessor config_processor(config_path, false, true);
-        config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+        config_processor.setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", "."));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
@@ -100,9 +103,9 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 }
 
-void LocalServer::applyCmdSettings(Context & context)
+void LocalServer::applyCmdSettings(ContextMutablePtr context)
 {
-    context.applySettingsChanges(cmd_settings.changes());
+    context->applySettingsChanges(cmd_settings.changes());
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
@@ -177,7 +180,7 @@ void LocalServer::tryInitPath()
 }
 
 
-static void attachSystemTables(const Context & context)
+static void attachSystemTables(ContextPtr context)
 {
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
     if (!system_database)
@@ -224,7 +227,7 @@ try
     }
 
     shared_context = Context::createShared();
-    global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+    global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();
@@ -281,15 +284,18 @@ try
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
+    /// We load temporary database first, because projections need it.
+    DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
+
     /** Init dummy default DB
       * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
       * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *global_context));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
-    applyCmdOptions(*global_context);
+    applyCmdOptions(global_context);
 
     if (config().has("path"))
     {
@@ -298,20 +304,26 @@ try
         /// Lock path directory before read
         status.emplace(path + "status", StatusFile::write_full_info);
 
+        fs::create_directories(fs::path(path) / "user_defined/");
+        LOG_DEBUG(log, "Loading user defined objects from {}", path);
+        Poco::File(path + "user_defined/").createDirectories();
+        UserDefinedObjectsLoader::instance().loadObjects(global_context);
+        LOG_DEBUG(log, "Loaded user defined objects.");
+
         LOG_DEBUG(log, "Loading metadata from {}", path);
-        Poco::File(path + "data/").createDirectories();
-        Poco::File(path + "metadata/").createDirectories();
-        loadMetadataSystem(*global_context);
-        attachSystemTables(*global_context);
-        attachInformationSchema(*global_context);
-        loadMetadata(*global_context);
+        fs::create_directories(fs::path(path) / "data/");
+        fs::create_directories(fs::path(path) / "metadata/");
+        loadMetadataSystem(global_context);
+        attachSystemTables(global_context);
+        attachInformationSchema(global_context);
+        loadMetadata(global_context);
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else if (!config().has("no-system-tables"))
     {
-        attachSystemTables(*global_context);
-        attachInformationSchema(*global_context);
+        attachSystemTables(global_context);
+        attachInformationSchema(global_context);
     }
 
     processQueries();
@@ -388,25 +400,52 @@ void LocalServer::processQueries()
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);
 
-    /// we can't mutate global global_context (can lead to races, as it was already passed to some background threads)
-    /// so we can't reuse it safely as a query context and need a copy here
-    auto context = Context(*global_context);
+    /// Authenticate and create a context to execute queries.
+    Session session{global_context, ClientInfo::Interface::LOCAL};
+    session.authenticate("default", "", {});
 
-    context.makeSessionContext();
-    context.makeQueryContext();
-
-    context.setUser("default", "", Poco::Net::SocketAddress{});
-    context.setCurrentQueryId("");
+    /// Use the same context for all queries.
+    auto context = session.makeQueryContext();
+    context->makeSessionContext(); /// initial_create_query requires a session context to be set.
+    context->setCurrentQueryId("");
     applyCmdSettings(context);
 
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(context);
 
+    /// Set progress show
+    need_render_progress = config().getBool("progress", false);
+
+    std::function<void()> finalize_progress;
+    if (need_render_progress)
+    {
+        /// Set progress callback, which can be run from multiple threads.
+        context->setProgressCallback([&](const Progress & value)
+        {
+            /// Write progress only if progress was updated
+            if (progress_indication.updateProgress(value))
+                progress_indication.writeProgress();
+        });
+
+        /// Set finalizing callback for progress, which is called right before finalizing query output.
+        finalize_progress = [&]()
+        {
+            progress_indication.clearProgressOutput();
+        };
+
+        /// Set callback for file processing progress.
+        progress_indication.setFileProgressCallback(context);
+    }
+
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
+
     std::exception_ptr exception;
 
     for (const auto & query : queries)
     {
+        written_first_block = false;
+        progress_indication.resetProgress();
+
         ReadBufferFromString read_buf(query);
         WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
@@ -419,7 +458,7 @@ void LocalServer::processQueries()
 
         try
         {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {});
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, context, {}, {}, finalize_progress);
         }
         catch (...)
         {
@@ -470,7 +509,7 @@ void LocalServer::setupUsers()
 {
     ConfigurationPtr users_config;
 
-    if (config().has("users_config") || config().has("config-file") || Poco::File("config.xml").exists())
+    if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
     {
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
         ConfigProcessor config_processor(users_config_path);
@@ -563,6 +602,7 @@ void LocalServer::init(int argc, char ** argv)
         ("ignore-error", "do not stop processing if a query failed")
         ("no-system-tables", "do not attach system tables (better startup time)")
         ("version,V", "print version information and exit")
+        ("progress", "print progress of queries execution")
         ;
 
     cmd_settings.addProgramOptions(description);
@@ -612,6 +652,8 @@ void LocalServer::init(int argc, char ** argv)
 
     if (options.count("stacktrace"))
         config().setBool("stacktrace", true);
+    if (options.count("progress"))
+        config().setBool("progress", true);
     if (options.count("echo"))
         config().setBool("echo", true);
     if (options.count("verbose"))
@@ -633,9 +675,9 @@ void LocalServer::init(int argc, char ** argv)
     argsToConfig(arguments, config(), 100);
 }
 
-void LocalServer::applyCmdOptions(Context & context)
+void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
-    context.setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
+    context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
     applyCmdSettings(context);
 }
 

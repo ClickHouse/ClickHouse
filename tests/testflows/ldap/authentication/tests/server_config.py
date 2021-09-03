@@ -8,7 +8,7 @@ from ldap.authentication.requirements import *
     RQ_SRS_007_LDAP_Server_Configuration_Invalid("1.0"),
     RQ_SRS_007_LDAP_Configuration_Server_Name("1.0")
 )
-def empty_server_name(self, timeout=20):
+def empty_server_name(self, timeout=300):
     """Check that empty string as a server name is not allowed.
     """
     servers = {"": {"host": "foo", "port": "389", "enable_tls": "no",
@@ -229,7 +229,7 @@ def auth_dn_value(self):
 @Requirements(
     RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown_Invalid("1.0")
 )
-def invalid_verification_cooldown_value(self, invalid_value, timeout=20):
+def invalid_verification_cooldown_value(self, invalid_value, timeout=300):
     """Check that server returns an error when LDAP server
     verification cooldown parameter is invalid.
     """

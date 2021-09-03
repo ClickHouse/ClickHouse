@@ -11,15 +11,24 @@
 namespace DB
 {
 
+class Pipe;
+
 class LibraryBridgeHelper : public IBridgeHelper
 {
 
 public:
+    struct LibraryInitData
+    {
+        String library_path;
+        String library_settings;
+        String dict_attributes;
+    };
+
     static constexpr inline size_t DEFAULT_PORT = 9012;
 
-    LibraryBridgeHelper(const Context & context_, const Block & sample_block, const Field & dictionary_id_);
+    LibraryBridgeHelper(ContextPtr context_, const Block & sample_block, const Field & dictionary_id_, const LibraryInitData & library_data_);
 
-    bool initLibrary(const std::string & library_path, const std::string library_settings, const std::string attributes_names);
+    bool initLibrary();
 
     bool cloneLibrary(const Field & other_dictionary_id);
 
@@ -29,39 +38,42 @@ public:
 
     bool supportsSelectiveLoad();
 
-    BlockInputStreamPtr loadAll();
+    Pipe loadAll();
 
-    BlockInputStreamPtr loadIds(const std::string ids_string);
+    Pipe loadIds(const std::vector<uint64_t> & ids);
 
-    BlockInputStreamPtr loadKeys(const Block & requested_block);
+    Pipe loadKeys(const Block & requested_block);
 
-    BlockInputStreamPtr loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
+    Pipe loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
 
-    bool executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
+    bool executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {}) const;
 
+    LibraryInitData getLibraryData() const { return library_data; }
 
 protected:
+    bool bridgeHandShake() override;
+
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override;
 
-    const String serviceAlias() const override { return "clickhouse-library-bridge"; }
+    String serviceAlias() const override { return "clickhouse-library-bridge"; }
 
-    const String serviceFileName() const override { return serviceAlias(); }
+    String serviceFileName() const override { return serviceAlias(); }
 
     size_t getDefaultPort() const override { return DEFAULT_PORT; }
 
     bool startBridgeManually() const override { return false; }
 
-    const String configPrefix() const override { return "library_bridge"; }
-
-    const Context & getContext() const override { return context; }
+    String configPrefix() const override { return "library_bridge"; }
 
     const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
 
     Poco::Logger * getLog() const override { return log; }
 
-    const Poco::Timespan & getHTTPTimeout() const override { return http_timeout; }
+    Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
 
     Poco::URI createBaseURI() const override;
+
+    ReadWriteBufferFromHTTP::OutStreamCallback getInitLibraryCallback() const;
 
 private:
     static constexpr inline auto LIB_NEW_METHOD = "libNew";
@@ -71,18 +83,24 @@ private:
     static constexpr inline auto LOAD_IDS_METHOD = "loadIds";
     static constexpr inline auto LOAD_KEYS_METHOD = "loadKeys";
     static constexpr inline auto IS_MODIFIED_METHOD = "isModified";
+    static constexpr inline auto PING = "ping";
     static constexpr inline auto SUPPORTS_SELECTIVE_LOAD_METHOD = "supportsSelectiveLoad";
 
     Poco::URI createRequestURI(const String & method) const;
 
+    static String getDictIdsString(const std::vector<UInt64> & ids);
+
     Poco::Logger * log;
-    const Context & context;
     const Block sample_block;
     const Poco::Util::AbstractConfiguration & config;
     const Poco::Timespan http_timeout;
 
+    LibraryInitData library_data;
     Field dictionary_id;
     std::string bridge_host;
     size_t bridge_port;
+    bool library_initialized = false;
+    ConnectionTimeouts http_timeouts;
 };
+
 }
