@@ -278,10 +278,13 @@ MergeTreeData::MergeTreeData(
     if (!attach || !version_file_exists)
     {
         format_version = min_format_version;
-        auto buf = version_file.second->writeFile(version_file.first);
-        writeIntText(format_version.toUnderType(), *buf);
-        if (getContext()->getSettingsRef().fsync_metadata)
-            buf->sync();
+        if (!version_file.second->isReadOnly())
+        {
+            auto buf = version_file.second->writeFile(version_file.first);
+            writeIntText(format_version.toUnderType(), *buf);
+            if (getContext()->getSettingsRef().fsync_metadata)
+                buf->sync();
+        }
     }
     else
     {
