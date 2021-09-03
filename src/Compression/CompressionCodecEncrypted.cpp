@@ -239,6 +239,8 @@ inline const char* readNonce(String& nonce, const char* source)
         nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", 12};
         return ++source;
     }
+    /// Move to next byte. Nonce will begin from there
+    ++source;
 
     /// Otherwise, use data from source in nonce
     nonce = {source, 12};
@@ -288,11 +290,11 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple keys have the same ID {}", key_id);
 
         /// Check size of key. Its length depends on encryption algorithm.
-        if (new_params->keys_storage[method][new_params->current_key_id[method]].size() != methodKeySize(method))
+        if (key.size() != methodKeySize(method))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Got an encryption key with unexpected size {}, the size should be {}",
-                new_params->keys_storage[method][new_params->current_key_id[method]].size(), methodKeySize(method));
+                key.size(), methodKeySize(method));
 
         new_params->keys_storage[method][key_id] = key;
     }
@@ -326,17 +328,7 @@ void CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::Abstrac
     /// something went wrong and new parameters are not available
     try
     {
-        std::unique_ptr<Params> new_params(new Params);
-        if (config.has(config_prefix + ".aes_128_gcm_siv"))
-        {
-            loadImpl(config, config_prefix + ".aes_128_gcm_siv", AES_128_GCM_SIV, new_params);
-        }
-        if (config.has(config_prefix + ".aes_256_gcm_siv"))
-        {
-            loadImpl(config, config_prefix + ".aes_256_gcm_siv", AES_256_GCM_SIV, new_params);
-        }
-
-        params.set(std::move(new_params));
+        load(config, config_prefix);
     }
     catch (...)
     {
@@ -379,7 +371,7 @@ void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionM
     }
     catch (...)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no current_key {} in config. Please, put it in config and reload.", current_key);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no current_key {} in config. Please, put it in config and reload.", current_key_id);
     }
 
     /// If there is no nonce in config, we need to generate particular one,
@@ -480,7 +472,7 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
     Configuration::instance().getKey(encryption_method, key_id, key);
 
     /// try to read nonce from file (if it was set while encrypting)
-    const char * ciphertext = readNonce(nonce, source);
+    const char * ciphertext = readNonce(nonce, ciphertext_with_nonce);
 
     /// Size of text should be decreased by nonce_size, because nonce_size bytes were not participating in encryption process.
     UInt64 nonce_size = ciphertext - ciphertext_with_nonce;
