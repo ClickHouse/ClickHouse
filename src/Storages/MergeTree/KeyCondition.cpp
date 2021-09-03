@@ -334,7 +334,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         {
             out.function = RPNElement::FUNCTION_IS_NULL;
             // When using NULL_LAST, isNull means [+Inf, +Inf]
-            out.range = Range(Field(PositiveInfinity{}));
+            out.range = Range(Field(POSITIVE_INFINITY));
             return true;
         }
     }
@@ -1732,8 +1732,6 @@ KeyCondition::Description KeyCondition::getDescription() const
   *  and therefore, feasibility of condition on the range of tuples will be checked by feasibility of condition
   *  over at least one hyperrectangle from which this range consists.
   */
-
-FieldRef negativeInfinity(NegativeInfinity{}), positiveInfinity(PositiveInfinity{});
 
 template <typename F>
 static BoolMask forAnyHyperrectangle(

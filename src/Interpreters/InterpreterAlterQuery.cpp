@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int NOT_IMPLEMENTED;
+    extern const int TABLE_IS_READ_ONLY;
 }
 
 
@@ -62,6 +63,8 @@ BlockIO InterpreterAlterQuery::execute()
     }
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    if (table->isReadOnly())
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
     auto alter_lock = table->lockForAlter(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
@@ -201,6 +204,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::COMMENT_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_COMMENT_COLUMN, database, table, column_name());
+            break;
+        }
+        case ASTAlterCommand::MATERIALIZE_COLUMN:
+        {
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_COLUMN, database, table);
             break;
         }
         case ASTAlterCommand::MODIFY_ORDER_BY:
