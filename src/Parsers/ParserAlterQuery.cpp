@@ -28,6 +28,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_column("MODIFY COLUMN");
     ParserKeyword s_rename_column("RENAME COLUMN");
     ParserKeyword s_comment_column("COMMENT COLUMN");
+    ParserKeyword s_materialize_column("MATERIALIZE COLUMN");
+
     ParserKeyword s_modify_order_by("MODIFY ORDER BY");
     ParserKeyword s_modify_sample_by("MODIFY SAMPLE BY");
     ParserKeyword s_modify_ttl("MODIFY TTL");
@@ -167,6 +169,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
 
             command->type = ASTAlterCommand::RENAME_COLUMN;
+        }
+        else if (s_materialize_column.ignore(pos, expected))
+        {
+            if (!parser_name.parse(pos, command->column, expected))
+                return false;
+
+            command->type = ASTAlterCommand::MATERIALIZE_COLUMN;
+            command->detach = false;
+
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
         }
         else if (s_drop_partition.ignore(pos, expected))
         {
