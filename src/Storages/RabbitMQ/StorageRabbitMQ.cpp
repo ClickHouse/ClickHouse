@@ -97,12 +97,16 @@ StorageRabbitMQ::StorageRabbitMQ(
                     getContext()->getConfigRef().getString("rabbitmq.username"),
                     getContext()->getConfigRef().getString("rabbitmq.password")))
         , vhost(getContext()->getConfigRef().getString("rabbitmq.vhost", rabbitmq_settings->rabbitmq_vhost.value))
+        , connection_string(rabbitmq_settings->rabbitmq_address)
+        , secure(rabbitmq_settings->rabbitmq_secure.value)
         , semaphore(0, num_consumers)
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
         , milliseconds_to_wait(RESCHEDULE_MS)
 {
     event_handler = std::make_shared<RabbitMQHandler>(loop.getLoop(), log);
+    if (secure)
+        SSL_library_init();
     restoreConnection(false);
 
     StorageInMemoryMetadata storage_metadata;
@@ -528,10 +532,10 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
         LOG_TRACE(log, "Trying to restore connection to " + address);
     }
 
-    connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(),
-            AMQP::Address(
-                parsed_address.first, parsed_address.second,
-                AMQP::Login(login_password.first, login_password.second), vhost));
+    auto amqp_address = connection_string.empty() ? AMQP::Address(parsed_address.first, parsed_address.second,
+                                                    AMQP::Login(login_password.first, login_password.second), vhost, secure)
+                                                  : AMQP::Address(connection_string);
+    connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(), amqp_address);
 
     cnt_retries = 0;
     while (!connection->ready() && !stream_cancelled && cnt_retries++ != RETRIES_MAX)
@@ -1053,50 +1057,20 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
-        size_t args_count = engine_args.size();
-        bool has_settings = args.storage_def->settings;
 
         auto rabbitmq_settings = std::make_unique<RabbitMQSettings>();
-        if (has_settings)
-            rabbitmq_settings->loadFromQuery(*args.storage_def);
+        if (!args.storage_def->settings)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ engine must have settings");
 
-        // Check arguments and settings
-        #define CHECK_RABBITMQ_STORAGE_ARGUMENT(ARG_NUM, ARG_NAME)                                           \
-            /* One of the three required arguments is not specified */                                       \
-            if (args_count < (ARG_NUM) && (ARG_NUM) <= 2 && !rabbitmq_settings->ARG_NAME.changed)            \
-            {                                                                                                \
-                throw Exception("Required parameter '" #ARG_NAME "' for storage RabbitMQ not specified",     \
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);                                           \
-            }                                                                                                \
-            if (args_count >= (ARG_NUM))                                                                     \
-            {                                                                                                \
-                if (rabbitmq_settings->ARG_NAME.changed) /* The same argument is given in two places */      \
-                {                                                                                            \
-                    throw Exception("The argument №" #ARG_NUM " of storage RabbitMQ "                        \
-                        "and the parameter '" #ARG_NAME "' is duplicated", ErrorCodes::BAD_ARGUMENTS);       \
-                }                                                                                            \
-            }
+        rabbitmq_settings->loadFromQuery(*args.storage_def);
 
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(1, rabbitmq_host_port)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(2, rabbitmq_format)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(3, rabbitmq_exchange_name)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(4, rabbitmq_exchange_type)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(5, rabbitmq_routing_key_list)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(6, rabbitmq_row_delimiter)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(7, rabbitmq_schema)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(8, rabbitmq_num_consumers)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(9, rabbitmq_num_queues)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(10, rabbitmq_queue_base)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(11, rabbitmq_persistent)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(12, rabbitmq_skip_broken_messages)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(13, rabbitmq_max_block_size)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(14, rabbitmq_flush_interval_ms)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(15, rabbitmq_vhost)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(16, rabbitmq_queue_settings_list)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(17, rabbitmq_queue_consume)
+        if (!rabbitmq_settings->rabbitmq_host_port.changed
+           && !rabbitmq_settings->rabbitmq_address.changed)
+                throw Exception("You must specify either `rabbitmq_host_port` or `rabbitmq_address` settings",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        #undef CHECK_RABBITMQ_STORAGE_ARGUMENT
+        if (!rabbitmq_settings->rabbitmq_format.changed)
+            throw Exception("You must specify `rabbitmq_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         return StorageRabbitMQ::create(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings));
     };
