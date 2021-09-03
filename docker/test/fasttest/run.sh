@@ -315,6 +315,7 @@ function run_tests
         01799_long_uniq_theta_sketch
         01890_stem                               # depends on libstemmer_c
         02003_compress_bz2                       # depends on bzip2
+        01059_storage_file_compression           # depends on brotli and bzip2
         collate
         collation
         _orc_
