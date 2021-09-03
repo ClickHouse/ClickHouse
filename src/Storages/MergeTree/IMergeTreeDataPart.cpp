@@ -1024,6 +1024,9 @@ void IMergeTreeDataPart::loadDeletedMask()
     {
         auto in = openForReading(volume->getDisk(), path);
         deleted_mask.read(*in);
+
+        LOG_TRACE(storage.log, "{} deleted rows", deleted_mask.deleted_rows.size());
+
         return;
     }
 

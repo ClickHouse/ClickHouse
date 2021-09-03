@@ -137,6 +137,8 @@ private:
     std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
     std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
+    std::multimap<Int64, int> current_point_deletes;
+
     std::atomic<bool> shutdown_called {false};
 
     void loadMutations();

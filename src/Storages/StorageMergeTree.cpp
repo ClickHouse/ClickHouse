@@ -1086,6 +1086,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
             mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
 
         has_mutations = !current_mutations_by_version.empty();
+
+        // + delete entry
     }
 
     if (!mutate_entry && has_mutations)
