@@ -815,17 +815,31 @@ try
         writeChar('\n', *used_output.out_maybe_compressed);
 
         used_output.out_maybe_compressed->next();
-        used_output.out->finalize();
     }
     else
     {
         assert(false);
         __builtin_unreachable();
     }
+
+    if (used_output.out)
+        used_output.out->finalize();
 }
 catch (...)
 {
     tryLogCurrentException(log, "Cannot send exception to client");
+
+    if (used_output.out)
+    {
+        try
+        {
+            used_output.out->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
+        }
+    }
 }
 
 
