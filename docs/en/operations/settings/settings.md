@@ -3464,9 +3464,9 @@ Determines how actions that manipulate partitions are executed.
 
 Possible values:
 
--   0 — Do not wait.
--   1 — To wait for own execution.
--   2 — To wait for everyone.
+-   0 — Do not wait. Means that the next action can start any time, not waiting for the previous action to be completed.
+-   1 — Wait for own execution. Means that the next action on the partition starts only after the previous action is completed on this partition.
+-   2 — Wait for everyone. Means that the next action starts only after the previous action is completed on all partitions.
 
 Default value: `1`.
 
