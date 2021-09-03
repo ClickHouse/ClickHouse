@@ -59,6 +59,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [direct](#direct)
 -   [range_hashed](#range-hashed)
 -   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_range_hashed](#complex-key-range-hashed)
 -   [complex_key_cache](#complex-key-cache)
 -   [complex_key_direct](#complex-key-direct)
 -   [ip_trie](#ip-trie)
@@ -266,6 +267,28 @@ CREATE DICTIONARY somedict(
 )
 PRIMARY KEY Abcdef
 RANGE(MIN StartTimeStamp MAX EndTimeStamp)
+```
+
+### complex_key_range_hashed {#complex-key-range-hashed}
+
+Словарь хранится в оперативной памяти в виде хэш-таблицы с упорядоченным массивом диапазонов и соответствующих им значений (см. [range_hashed](#range-hashed)). Данный тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md).
+
+Пример конфигурации:
+
+``` sql
+CREATE DICTIONARY range_dictionary
+(
+  CountryID UInt64,
+  CountryKey String,
+  StartDate Date,
+  EndDate Date,
+  Tax Float64 DEFAULT 0.2
+)
+PRIMARY KEY CountryID, CountryKey
+SOURCE(CLICKHOUSE(TABLE 'date_table'))
+LIFETIME(MIN 1 MAX 1000)
+LAYOUT(COMPLEX_KEY_RANGE_HASHED())
+RANGE(MIN StartDate MAX EndDate);
 ```
 
 ### cache {#cache}

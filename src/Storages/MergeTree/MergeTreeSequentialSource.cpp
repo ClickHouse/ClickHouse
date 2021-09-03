@@ -51,11 +51,13 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         columns_for_reader = data_part->getColumns().addTypes(columns_to_read);
     }
 
+    ReadSettings read_settings;
+    if (read_with_direct_io)
+        read_settings.direct_io_threshold = 1;
+
     MergeTreeReaderSettings reader_settings =
     {
-        /// bytes to use direct IO (this is hack)
-        .min_bytes_to_use_direct_io = read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
-        .max_read_buffer_size = DBMS_DEFAULT_BUFFER_SIZE,
+        .read_settings = read_settings,
         .save_marks_in_cache = false
     };
 
