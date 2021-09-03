@@ -239,7 +239,7 @@ public:
     bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
     /// Get best replica having this partition on a same type remote disk
-    String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType::Type disk_type) const;
+    String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType disk_type) const;
 
     inline String getReplicaName() const { return replica_name; }
 
@@ -346,12 +346,6 @@ private:
 
     /// Event that is signalled (and is reset) by the restarting_thread when the ZooKeeper session expires.
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
-
-    /// Limiting parallel fetches per node
-    static inline std::atomic_uint total_fetches {0};
-
-    /// Limiting parallel fetches per one table
-    std::atomic_uint current_table_fetches {0};
 
     int metadata_version = 0;
     /// Threads.
