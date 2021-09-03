@@ -36,6 +36,8 @@ BlockIO InterpreterDeleteQuery::execute()
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
+    const MutationCommands commands = {{ .type = MutationCommand::DELETE, .predicate = query.predicate }};
+
     // TODO
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,
     /// mutation expression, etc.
@@ -43,15 +45,11 @@ BlockIO InterpreterDeleteQuery::execute()
     //ASTPtr command_list_ptr = alter.command_list->ptr();
     //visitor.visit(command_list_ptr);
 
-    auto & predicate = query.predicate;
+    table->checkMutationIsPossible(commands, getContext()->getSettingsRef());
 
-    // TODO no check for non-replicated tables as for now
-    /// table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
+    MutationsInterpreter(table, metadata_snapshot, commands, getContext(), false).validate();
 
-    // TODO no validation required for non-replicated tables
-    //MutationsInterpreter(table, metadata_snapshot, predicate, getContext()).validate();
-
-    ptr->pointDelete(predicate, getContext());
+    ptr->mutate(commands, getContext(), MutationType::Lightweight);
 
     return {};
 }

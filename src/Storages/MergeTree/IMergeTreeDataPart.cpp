@@ -598,7 +598,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     loadUUID();
-    loadSkipIndex();
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
@@ -1014,26 +1013,6 @@ void IMergeTreeDataPart::loadUUID()
         if (uuid == UUIDHelpers::Nil)
             throw Exception("Unexpected empty " + String(UUID_FILE_NAME) + " in part: " + name, ErrorCodes::LOGICAL_ERROR);
     }
-}
-
-void IMergeTreeDataPart::loadDeletedMask()
-{
-    const String path = fs::path(getFullRelativePath()) / MergeTreeDataPartDeletedMask::FILE_NAME;
-
-    if (volume->getDisk()->exists(path))
-    {
-        auto in = openForReading(volume->getDisk(), path);
-        deleted_mask.read(*in);
-
-        LOG_TRACE(storage.log, "{} deleted rows", deleted_mask.deleted_rows.size());
-
-        return;
-    }
-
-    LOG_WARNING(storage.log, "Deleted mask for part {} not found, assuming empty", name);
-
-    auto out = volume->getDisk()->writeFile(path, 4096);
-    deleted_mask.write(*out);
 }
 
 void IMergeTreeDataPart::loadColumns(bool require)

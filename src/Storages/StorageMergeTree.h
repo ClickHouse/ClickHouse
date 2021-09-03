@@ -74,10 +74,8 @@ public:
         const Names & deduplicate_by_columns,
         ContextPtr context) override;
 
-    void mutate(const MutationCommands & commands, ContextPtr context) override;
-
-    // TODO virtual for replicated solutions
-    void pointDelete(const ASTPtr & predicate, ContextPtr context);
+    void mutate(const MutationCommands & commands, ContextPtr query_context) override;
+    void mutate(const MutationCommands & commands, ContextPtr query_context, MutationType type);
 
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
@@ -133,9 +131,10 @@ private:
     /// This set has to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
 
-
     std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
     std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
+
+    using MutationsByVersionIt = decltype(current_mutations_by_version)::iterator;
 
     std::multimap<Int64, int> current_point_deletes;
 
@@ -162,12 +161,14 @@ private:
     MergeTreeDataPartPtr outdatePart(const String & part_name, bool force);
     ActionLock stopMergesAndWait();
 
-    /// Allocate block number for new mutation, write mutation to disk
-    /// and into in-memory structures. Wake up merge-mutation task.
-    Int64 startMutation(const MutationCommands & commands, String & mutation_file_name);
+    struct MutationPair { Int64 version; String file_name; };
 
-    /// Wait until mutation with version will finish mutation for all parts
-    void waitForMutation(Int64 version, const String & file_name);
+    /// Allocate block number for new mutation, write mutation to disk
+    /// and into in-memory structures. Wake up merge-mutation background executor.
+    MutationPair startMutation(const MutationCommands & commands, MutationType type);
+
+    /// Wait until mutation finishes mutating parts
+    void waitForMutation(const MutationPair& info);
 
     struct CurrentlyMergingPartsTagger
     {
@@ -215,8 +216,26 @@ private:
 
     bool mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, const Names & deduplicate_by_columns, MergeMutateSelectedEntry & entry, TableLockHolder & table_lock_holder);
 
-    std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder);
-    bool mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry, TableLockHolder & table_lock_holder);
+    /**
+     * Given a mutations range, iterates over it.
+     * For each mutation entry calculates its mutation commands and commands size.
+     *
+     * Returns either the union of all mutations in range or a union of a range's prefix
+     * (if accumulated commands size exceeded max_ast_elements).
+     *
+     * If there was an error while trying to calculate an entry's mutation commands, writes to its
+     * .latest_fail{time, reason} fields.
+     */
+    MutationCommands getMutationCommandsForMutationsRange(
+        const StorageMetadataPtr & metadata_snapshot, size_t max_ast_elements,
+        MutationsByVersionIt begin, MutationsByVersionIt end);
+
+    std::shared_ptr<MergeMutateSelectedEntry> selectPartToMutate(
+        const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder);
+
+    bool mutateSelectedPart(
+        const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry,
+        TableLockHolder & table_lock_holder);
 
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,

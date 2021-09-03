@@ -278,39 +278,6 @@ MutationsInterpreter::MutationsInterpreter(
     mutation_ast = prepare(!can_execute);
 }
 
-MutationsInterpreter::MutationsInterpreter(
-    StoragePtr storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
-    const ASTPtr& point_delete_predicate,
-    ContextPtr context_)
-    : storage(std::move(storage_))
-    , metadata_snapshot(metadata_snapshot_)
-    , context(context_)
-    , select_limits(SelectQueryOptions().analyze(true).ignoreLimits())
-{
-    mutation_kind.set(MutationKind::MUTATE_OTHER);
-
-    stages.emplace_back(context);
-    stages[0].filters = { makeASTFunction("isZeroOrNull", point_delete_predicate->clone()) };
-
-    is_prepared = true;
-
-    mutation_ast = std::make_shared<ASTSelectQuery>();
-
-    auto & select = mutation_ast->as<ASTSelectQuery&>();
-    ASTs & children = select.select()->children;
-
-    for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
-    {
-        stages[0].output_columns.insert(column.name);
-        children.push_back(std::make_shared<ASTIdentifier>(column.name));
-    }
-
-    ASTPtr where = stages[0].filters[0];
-    select.setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-    select.setExpression(ASTSelectQuery::Expression::WHERE, std::move(where));
-}
-
 static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot)
 {
     const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());

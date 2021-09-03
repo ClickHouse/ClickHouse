@@ -45,14 +45,6 @@ public:
         ContextPtr context_,
         bool can_execute_);
 
-    /// Constructor to check point DELETEs.
-    /// Call validate() after it
-    MutationsInterpreter(
-        StoragePtr storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const ASTPtr& point_delete_predicate,
-        ContextPtr context_);
-
     void validate();
 
     size_t evaluateCommandsSize();
