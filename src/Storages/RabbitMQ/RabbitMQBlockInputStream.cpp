@@ -6,11 +6,6 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace DB
 {
 
