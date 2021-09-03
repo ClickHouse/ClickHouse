@@ -92,8 +92,8 @@ def test_read_write_two_nodes(started_cluster):
 def test_read_write_two_nodes_with_blocade(started_cluster):
     try:
         wait_nodes()
-        node1_zk = get_fake_zk("node1")
-        node2_zk = get_fake_zk("node2")
+        node1_zk = get_fake_zk("node1", timeout=5.0)
+        node2_zk = get_fake_zk("node2", timeout=5.0)
 
         print("Blocking nodes")
         with PartitionManager() as pm:
