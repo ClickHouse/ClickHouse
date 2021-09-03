@@ -41,7 +41,12 @@ public:
         return {"test", name};
     }
 
-    void onCompleted() override {}
+    void onCompleted() override
+    {
+        auto choice = distribution(generator);
+        if (choice == 0)
+            throw std::runtime_error("Unlucky...");
+    }
 
 private:
     std::mt19937 generator;
