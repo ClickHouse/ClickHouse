@@ -3460,7 +3460,7 @@ Default value: `0`.
 
 ## replication_alter_partitions_sync {#replication-alter-partitions-sync}
 
-Allows to specify waiting for actions to manipulate the partitions.
+Determines how actions that manipulate partitions are executed.
 
 Possible values:
 
