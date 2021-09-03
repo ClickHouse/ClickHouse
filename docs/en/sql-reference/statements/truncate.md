@@ -16,4 +16,4 @@ The `TRUNCATE` query is not supported for [View](../../engines/table-engines/spe
 You can to specify how long (in seconds) to wait for inactive replicas to execute `TRUNCATE` queries with the [replication_wait_for_inactive_replica_timeout seconds](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting.
 
 !!! warning "Warning"
-    If the [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) setting is `2` and some replicas are not active for more than the time specified by the [replication_wait_for_inactive_replica_timeout seconds](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting, then an exception `UNFINISHED` will be thrown.
+    If the [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) is set to `2` and some replicas are not active for more than the time, specified by the [replication_wait_for_inactive_replica_timeout seconds](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting, then an exception `UNFINISHED` is thrown.
