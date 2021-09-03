@@ -46,9 +46,14 @@ def test_data_type_persistence():
 
     instance.restart_clickhouse()
 
-    instance.query("INSERT INTO TestTable VALUES(20)")
-    assert instance.query("SELECT * FROM TestTable") == "20\n10\n"
+    assert instance.query("SELECT * FROM TestTable") == "10\n"
+
+    instance.query("CREATE TABLE TestTable2 (first MyType) ENGINE = MergeTree() ORDER BY first")
+    instance.query("INSERT INTO TestTable2 VALUES(20)")
+
+    assert instance.query("SELECT * FROM TestTable2") == "20\n"
 
     instance.query("DROP TABLE TestTable")
+    instance.query("DROP TABLE TestTable2")
     instance.query("DROP TYPE MyType")
 
