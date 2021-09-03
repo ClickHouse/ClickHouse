@@ -36,7 +36,7 @@ public:
         if (count == capacity) {
             return false;
         }
-        buffer[advance(count)] = element;
+        buffer[advance(count)] = std::move(element);
         ++count;
         return true;
     }

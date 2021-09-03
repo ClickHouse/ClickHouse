@@ -112,7 +112,7 @@ private:
             pending.resize(new_max_tasks_count);
             active.resize(new_max_tasks_count);
 
-            pool.setMaxFreeThreads(0);
+            pool.setMaxFreeThreads(new_threads_count);
             pool.setMaxThreads(new_threads_count);
             pool.setQueueSize(new_max_tasks_count);
         }
