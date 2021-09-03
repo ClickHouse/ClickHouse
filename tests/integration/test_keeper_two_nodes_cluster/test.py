@@ -141,12 +141,6 @@ def test_read_write_two_nodes_with_blocade(started_cluster):
 
         print("Node2 created it's value")
 
-        assert node1_zk.exists("/test_read_write_blocked_node1") is not None
-        assert node2_zk.exists("/test_read_write_blocked_node1") is not None
-
-        assert node1_zk.exists("/test_read_write_blocked_node2") is None
-        assert node2_zk.exists("/test_read_write_blocked_node2") is None
-
         # stale reads are allowed
         while node1_zk.exists("/test_after_block2") is None:
             time.sleep(0.1)
