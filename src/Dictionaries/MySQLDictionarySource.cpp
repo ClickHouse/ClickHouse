@@ -35,7 +35,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                    [[maybe_unused]] Block & sample_block,
                                    [[maybe_unused]] ContextPtr global_context,
                                  const std::string & /* default_database */,
-                                 bool /* created_from_ddl */) -> DictionarySourcePtr {
+                                 bool created_from_ddl) -> DictionarySourcePtr {
 #if USE_MYSQL
         StreamSettings mysql_input_stream_settings(
             global_context->getSettingsRef(),
@@ -44,7 +44,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             config.getBool(config_prefix + ".mysql.fail_on_connection_loss", false) ? 1 : default_num_tries_on_connection_loss);
 
         auto settings_config_prefix = config_prefix + ".mysql";
-        auto configuration = tryGetConfigurationAsNamedCollection(config, settings_config_prefix, global_context);
+        auto configuration = getExternalDataSourceConfiguration(config, settings_config_prefix, global_context);
         auto query = config.getString(settings_config_prefix + ".query", "");
         if (query.empty() && configuration.table.empty())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL dictionary source configuration must contain table or query field");
@@ -61,16 +61,15 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             .dont_check_update_time = config.getBool(settings_config_prefix + ".dont_check_update_time", false)
         };
 
-        mysqlxx::ConnectionConfiguration mysql_configuration
+        std::shared_ptr<mysqlxx::PoolWithFailover> pool;
+        if (created_from_ddl)
         {
-            .db = configuration.database,
-            .server = configuration.host,
-            .user = configuration.username,
-            .password = configuration.password,
-            .port = configuration.port
-        };
+            std::vector<std::pair<String, UInt16>> addresses{std::make_pair(configuration.host, configuration.port)};
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(configuration.database, addresses, configuration.username, configuration.password);
+        }
+        else
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
 
-        auto pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(config, settings_config_prefix, mysql_configuration));
         return std::make_unique<MySQLDictionarySource>(dict_struct, dictionary_configuration, std::move(pool), sample_block, mysql_input_stream_settings);
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

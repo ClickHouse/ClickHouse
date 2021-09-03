@@ -385,7 +385,7 @@ SinkToStoragePtr StoragePostgreSQL::write(
 
 StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    auto [common_configuration, storage_specific_args, with_named_collection] = tryGetConfigurationAsNamedCollection(engine_args, context);
+    auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(engine_args, context);
     StoragePostgreSQLConfiguration configuration(common_configuration);
 
     if (with_named_collection)
@@ -416,6 +416,12 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
         size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
+        if (configuration.addresses.size() == 1)
+        {
+            configuration.host = configuration.addresses[0].first;
+            configuration.port = configuration.addresses[0].second;
+        }
+
         configuration.database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();

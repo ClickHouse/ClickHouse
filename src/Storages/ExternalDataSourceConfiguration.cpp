@@ -28,7 +28,7 @@ String ExternalDataSourceConfiguration::toString() const
 
 
 std::tuple<ExternalDataSourceConfiguration, EngineArgs, bool>
-tryGetConfigurationAsNamedCollection(ASTs args, ContextPtr context, bool is_database_engine)
+getExternalDataSourceConfiguration(ASTs args, ContextPtr context, bool is_database_engine)
 {
     ExternalDataSourceConfiguration configuration;
     EngineArgs non_common_args;
@@ -98,7 +98,7 @@ tryGetConfigurationAsNamedCollection(ASTs args, ContextPtr context, bool is_data
 }
 
 
-ExternalDataSourceConfiguration tryGetConfigurationAsNamedCollection(
+ExternalDataSourceConfiguration getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
 {
     ExternalDataSourceConfiguration configuration;
@@ -141,10 +141,10 @@ ExternalDataSourceConfiguration tryGetConfigurationAsNamedCollection(
 }
 
 
-ExternalDataSourcesByPriority tryGetConfigurationsByPriorityAsNamedCollection(
+ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
 {
-    auto common_configuration = tryGetConfigurationAsNamedCollection(dict_config, dict_config_prefix, context);
+    auto common_configuration = getExternalDataSourceConfiguration(dict_config, dict_config_prefix, context);
     ExternalDataSourcesByPriority configuration
     {
         .database = common_configuration.database,

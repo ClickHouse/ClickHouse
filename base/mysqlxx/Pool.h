@@ -19,23 +19,6 @@
 namespace mysqlxx
 {
 
-struct ConnectionConfiguration
-{
-    std::string db;
-    std::string server;
-    std::string user;
-    std::string password;
-    unsigned port;
-    std::string socket;
-    unsigned connect_timeout;
-    unsigned rw_timeout;
-    std::string ssl_ca;
-    std::string ssl_cert;
-    std::string ssl_key;
-    bool enable_local_infile;
-    bool opt_reconnect;
-};
-
 /** MySQL connections pool.
  * This class is poorly connected with mysqlxx and is made in different style (was taken from old code).
  * Usage:
@@ -152,13 +135,21 @@ public:
         void decrementRefCount();
     };
 
+
+    Pool(const std::string & config_name,
+        unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
+        unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
+        const char * parent_config_name_ = nullptr)
+        : Pool{Poco::Util::Application::instance().config(), config_name,
+            default_connections_, max_connections_, parent_config_name_}
+    {}
+
     /**
      * @param config_name             Setting name in configuration file
      * @param default_connections_    Number of default connections
      * @param max_connections_        Maximum number of connections
      */
     Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & config_name,
-         const ConnectionConfiguration & configuration,
          unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          const char * parent_config_name_ = nullptr);
@@ -233,6 +224,7 @@ private:
     /// Description of connection.
     std::string description;
 
+    /// Connection settings.
     std::string db;
     std::string server;
     std::string user;

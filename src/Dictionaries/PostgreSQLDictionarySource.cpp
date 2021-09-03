@@ -190,10 +190,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 #if USE_LIBPQXX
         const auto settings_config_prefix = config_prefix + ".postgresql";
 
-        auto configuration = tryGetConfigurationsByPriorityAsNamedCollection(config, settings_config_prefix, context);
-        if (configuration.replicas_configurations.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Having no configuration options");
-
+        auto configuration = getExternalDataSourceConfigurationByPriority(config, settings_config_prefix, context);
         auto pool = std::make_shared<postgres::PoolWithFailover>(
                     configuration.replicas_configurations,
                     context->getSettingsRef().postgresql_connection_pool_size,
