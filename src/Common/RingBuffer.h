@@ -13,7 +13,8 @@ namespace DB
  */
 
 template <class T>
-class RingBuffer {
+class RingBuffer
+{
 public:
     explicit RingBuffer(size_t capacity_) : capacity(capacity_)
     {
@@ -51,6 +52,7 @@ public:
         return true;
     }
 
+    /// In case of T = std::shared_ptr<Something> it won't cause any allocations
     template <typename Predicate>
     void eraseAll(Predicate && predicate)
     {
