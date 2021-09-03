@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/queryToString.h>
 #include <Core/DecimalFunctions.h>
+#include <Parsers/ASTInsertQuery.h>
 
 namespace DB
 {
@@ -19,6 +20,9 @@ NamesAndTypesList StorageSystemAsynchronousInserts::getNamesAndTypes()
     return
     {
         {"query", std::make_shared<DataTypeString>()},
+        {"database", std::make_shared<DataTypeString>()},
+        {"table", std::make_shared<DataTypeString>()},
+        {"format", std::make_shared<DataTypeString>()},
         {"first_update", std::make_shared<DataTypeDateTime64>(TIME_SCALE)},
         {"last_update", std::make_shared<DataTypeDateTime64>(TIME_SCALE)},
         {"total_bytes", std::make_shared<DataTypeUInt64>()},
@@ -53,7 +57,12 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
 
         size_t i = 0;
 
-        res_columns[i++]->insert(queryToString(key.query));
+        const auto & insert_query = key.query->as<const ASTInsertQuery &>();
+
+        res_columns[i++]->insert(queryToString(insert_query));
+        res_columns[i++]->insert(insert_query.table_id.getDatabaseName());
+        res_columns[i++]->insert(insert_query.table_id.getTableName());
+        res_columns[i++]->insert(insert_query.format);
         res_columns[i++]->insert(time_in_microseconds(elem->data->first_update));
         res_columns[i++]->insert(time_in_microseconds(elem->data->last_update));
         res_columns[i++]->insert(elem->data->size);
