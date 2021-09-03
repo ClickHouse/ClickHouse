@@ -1065,6 +1065,40 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: `5`.
 
+## max_replicated_fetches_network_bandwidth_for_server {#max_replicated_fetches_network_bandwidth_for_server}
+
+Ограничивает максимальную скорость обмена данными в сети в байтах в секунду для [репликационных](../../engines/table-engines/mergetree-family/replication.md) синхронизаций. Применяется на старте сервера. Возможно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_fetches_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth).
+
+Значение настройки следуется неточно.
+
+Возможные значения:
+
+-   Любое целое положительное число.
+-   0 — Скорость неограничена.
+
+Значение по умолчанию: `0`.
+
+**Использование**
+
+Может быть использована для тротлинга скорости при репликации данных для добавления или замены новых узлов.
+
+## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
+
+Ограничивает максимальную скорость обмена данными в сети в байтах в секунду для [репликационных](../../engines/table-engines/mergetree-family/replication.md) отправок. Применяется на старте сервера. Возможно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth).
+
+Значение настройки следуется неточно.
+
+Возможные значения:
+
+-   Любое целое положительное число.
+-   0 — Скорость неограничена.
+
+Значение по умолчанию: `0`.
+
+**Использование**
+
+Может быть использована для тротлинга скорости при репликации данных для добавления или замены новых узлов.
+
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
 Таймаут в миллисекундах на соединение с удалённым сервером, для движка таблиц Distributed, если используются секции shard и replica в описании кластера.
