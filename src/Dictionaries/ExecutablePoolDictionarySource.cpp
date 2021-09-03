@@ -112,15 +112,18 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 
     size_t rows_to_read = block.rows();
     auto * process_in = &process->in;
-    ShellCommandPoolSource::SendDataTask task = [process_in, block, this]() mutable
+    ShellCommandSource::SendDataTask task = [process_in, block, this]() mutable
     {
         auto & out = *process_in;
         auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
         formatBlock(output_stream, block);
     };
-    std::vector<ShellCommandPoolSource::SendDataTask> tasks = {std::move(task)};
+    std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
 
-    Pipe pipe(std::make_unique<ShellCommandPoolSource>(context, configuration.format, sample_block, process_pool, std::move(process), rows_to_read, log, std::move(tasks)));
+    ShellCommandSourceConfiguration command_configuration;
+    command_configuration.read_fixed_number_of_rows = true;
+    command_configuration.number_of_rows_to_read = rows_to_read;
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log, std::move(tasks), command_configuration, process_pool));
 
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
@@ -173,11 +176,6 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable pool dictionary source are not allowed to be created from DDL query");
 
         ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
-
-        /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
-         *  so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
-         */
-        context->setSetting("input_format_parallel_parsing", false);
 
         String settings_config_prefix = config_prefix + ".executable_pool";
 

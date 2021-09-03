@@ -84,8 +84,6 @@ Pipe StorageExecutable::read(
     size_t max_block_size,
     unsigned /*threads*/)
 {
-    std::cerr << getName() << "::read" << std::endl;
-
     auto user_scripts_path = context->getUserScriptsPath();
     auto script_path = user_scripts_path + '/' + script_name;
     if (!std::filesystem::exists(std::filesystem::path(script_path)))
@@ -111,9 +109,9 @@ Pipe StorageExecutable::read(
 
     std::unique_ptr<ShellCommand> process;
 
-    if (process_pool)
+    bool is_executable_pool = (process_pool != nullptr);
+    if (is_executable_pool)
     {
-        std::cerr << getName() <<"::read create process" << std::endl;
         bool result = process_pool->tryBorrowObject(process, [&config, this]()
         {
             config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, pool_settings.command_termination_timeout };
@@ -153,7 +151,7 @@ Pipe StorageExecutable::read(
             write_buffer = &it->second;
         }
 
-        ShellCommandSource::SendDataTask task = [input_stream, write_buffer, context, this]()
+        ShellCommandSource::SendDataTask task = [input_stream, write_buffer, context, is_executable_pool, this]()
         {
             auto output_stream = context->getOutputStream(format, *write_buffer, input_stream->getHeader().cloneEmpty());
             input_stream->readPrefix();
@@ -166,7 +164,9 @@ Pipe StorageExecutable::read(
             output_stream->writeSuffix();
 
             output_stream->flush();
-            write_buffer->close();
+
+            if (!is_executable_pool)
+                write_buffer->close();
         };
 
         tasks.emplace_back(std::move(task));
@@ -174,16 +174,17 @@ Pipe StorageExecutable::read(
 
     auto sample_block = metadata_snapshot->getSampleBlock();
 
-    if (process_pool)
+    ShellCommandSourceConfiguration configuration;
+    configuration.max_block_size = max_block_size;
+
+    if (is_executable_pool)
     {
-        Pipe pipe(std::make_unique<ShellCommandPoolSource>(context, format, std::move(sample_block), process_pool, std::move(process), log, std::move(tasks)));
-        return pipe;
+        configuration.read_fixed_number_of_rows = true;
+        configuration.read_number_of_rows_from_process_output = true;
     }
-    else
-    {
-        Pipe pipe(std::make_unique<ShellCommandSource>(context, format, std::move(sample_block), std::move(process), log, std::move(tasks), max_block_size));
-        return pipe;
-    }
+
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, format, std::move(sample_block), std::move(process), log, std::move(tasks), configuration, process_pool));
+    return pipe;
 }
 
 void registerStorageExecutable(StorageFactory & factory)
