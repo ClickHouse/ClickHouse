@@ -37,9 +37,7 @@ RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
 RUN apt-get update \
     && apt-get install \
         alien \
-        clang-11 \
         clang-12 \
-        clang-tidy-11 \
         clang-tidy-12 \
         cmake \
         debhelper \
@@ -47,10 +45,7 @@ RUN apt-get update \
         gdb  \
         git \
         gperf \
-        lld-11 \
         lld-12 \
-        llvm-11 \
-        llvm-11-dev \
         llvm-12 \
         llvm-12-dev \
         moreutils \
