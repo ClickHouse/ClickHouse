@@ -18,14 +18,11 @@
 
 
 #define UUID_PATTERN "[\\w]{8}-[\\w]{4}-[\\w]{4}-[\\w]{4}-[\\w]{12}"
-#define EXTRACT_UUID_PATTERN fmt::format(".*/({})/.*", UUID_PATTERN)
+#define EXTRACT_UUID_PATTERN fmt::format(".*/({})\\/.*", UUID_PATTERN)
 
-#define DIRECTORY_FILE_PATTERN(prefix) fmt::format("{}-({})-(\\w+)-(.*)", prefix, UUID_PATTERN)
-#define ROOT_FILE_PATTERN(prefix) fmt::format("{}-({})-(\\w+\\.\\w+)", prefix, UUID_PATTERN)
-
-#define MATCH_DIRECTORY_FILE_PATTERN fmt::format(".*/({})/(\\w+)/(.*)", UUID_PATTERN)
-#define MATCH_DIRECTORY_PATTERN fmt::format(".*/({})/(\\w+)/", UUID_PATTERN)
-#define MATCH_ROOT_FILE_PATTERN fmt::format(".*/({})/(\\w+\\.\\w+)", UUID_PATTERN)
+#define MATCH_DIRECTORY_FILE_PATTERN fmt::format(".*({})\\/(\\w+)\\/(.*)", UUID_PATTERN)
+#define MATCH_DIRECTORY_PATTERN fmt::format(".*({})\\/(\\w+)\\/", UUID_PATTERN)
+#define MATCH_ROOT_FILE_PATTERN fmt::format(".*({})\\/(\\w+\\.\\w+)", UUID_PATTERN)
 
 
 namespace DB
@@ -40,7 +37,7 @@ namespace ErrorCodes
 }
 
 
-void DiskWebServer::Metadata::initialize(const String & uri_with_path, const String & files_prefix, const String & table_uuid, ContextPtr context) const
+void DiskWebServer::Metadata::initialize(const String & uri_with_path, const String & table_uuid, ContextPtr context) const
 {
     ReadWriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(uri_with_path) / (".index-" + table_uuid)),
                                          Poco::Net::HTTPRequest::HTTP_GET,
@@ -58,20 +55,20 @@ void DiskWebServer::Metadata::initialize(const String & uri_with_path, const Str
         LOG_DEBUG(&Poco::Logger::get("DiskWeb"), "Read file: {}, size: {}", remote_file_name, file_size);
 
         /*
-         * URI/   {prefix}-{uuid}-all_x_x_x-{file}
+         * URI/   {uri}/{uuid}/all_x_x_x/{file}
          *        ...
-         *        {prefix}-{uuid}-format_version.txt
-         *        {prefix}-{uuid}-detached-{file}
+         *        {uri}/{uuid}/format_version.txt
+         *        {uri}/{uuid}/detached-{file}
          *        ...
         **/
-        if (RE2::FullMatch(remote_file_name, DIRECTORY_FILE_PATTERN(files_prefix), &uuid, &directory, &file))
+        if (RE2::FullMatch(remote_file_name, MATCH_DIRECTORY_FILE_PATTERN, &uuid, &directory, &file))
         {
             if (uuid != table_uuid)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uuid: {}, expected: {}", uuid, table_uuid);
 
             tables_data[uuid][directory].emplace(std::make_pair(file, file_size));
         }
-        else if (RE2::FullMatch(remote_file_name, ROOT_FILE_PATTERN(files_prefix), &uuid, &file))
+        else if (RE2::FullMatch(remote_file_name, MATCH_ROOT_FILE_PATTERN, &uuid, &file))
         {
             if (uuid != table_uuid)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uuid: {}, expected: {}", uuid, table_uuid);
@@ -148,15 +145,6 @@ private:
 };
 
 
-class WriteBufferFromNothing : public WriteBufferFromFile
-{
-public:
-    WriteBufferFromNothing() : WriteBufferFromFile("/dev/null") {}
-
-    void sync() override {}
-};
-
-
 DiskWebServer::DiskWebServer(
             const String & disk_name_,
             const String & uri_,
@@ -173,16 +161,16 @@ DiskWebServer::DiskWebServer(
 }
 
 
-String DiskWebServer::getFileName(const String & path) const
+String DiskWebServer::getFileName(const String & path)
 {
     String result;
 
     if (RE2::FullMatch(path, MATCH_DIRECTORY_FILE_PATTERN)
-        && RE2::Extract(path, MATCH_DIRECTORY_FILE_PATTERN, fmt::format(R"({}-\1-\2-\3)", settings->files_prefix), &result))
+        && RE2::Extract(path, MATCH_DIRECTORY_FILE_PATTERN, R"(\1/\2/\3)", &result))
         return result;
 
     if (RE2::FullMatch(path, MATCH_ROOT_FILE_PATTERN)
-        && RE2::Extract(path, MATCH_ROOT_FILE_PATTERN, fmt::format(R"({}-\1-\2)", settings->files_prefix), &result))
+        && RE2::Extract(path, MATCH_ROOT_FILE_PATTERN, R"(\1/\2)", &result))
         return result;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected file: {}", path);
@@ -202,6 +190,22 @@ bool DiskWebServer::findFileInMetadata(const String & path, File & file_info) co
 
         if (!metadata.tables_data.count(table_uuid))
             return false;
+
+        try
+        {
+            if (!metadata.tables_data.count(table_uuid))
+                metadata.initialize(uri, table_uuid, getContext());
+        }
+        catch (const Poco::Exception &)
+        {
+            const auto message = getCurrentExceptionMessage(false);
+            bool can_throw = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext();
+            if (can_throw)
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot load disk metadata. Error: {}", message);
+
+            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Cannot load disk metadata. Error: {}", message);
+            return false;
+        }
 
         if (!metadata.tables_data[table_uuid].count(directory_name))
             return false;
@@ -250,15 +254,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 }
 
 
-std::unique_ptr<WriteBufferFromFileBase> DiskWebServer::writeFile(const String & path, size_t, WriteMode)
-{
-    if (path.ends_with("format_version.txt"))
-        return std::make_unique<WriteBufferFromNothing>();
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
-}
-
-
 DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
 {
     LOG_DEBUG(log, "Iterate directory: {}", path);
@@ -276,7 +271,7 @@ DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
     try
     {
         if (!metadata.tables_data.count(uuid))
-            metadata.initialize(uri, settings->files_prefix, uuid, getContext());
+            metadata.initialize(uri, uuid, getContext());
     }
     catch (const Poco::Exception &)
     {
@@ -340,8 +335,7 @@ void registerDiskWebServer(DiskFactory & factory)
 
         auto settings = std::make_unique<DiskWebServerSettings>(
             context->getGlobalContext()->getSettingsRef().http_max_single_read_retries,
-            config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-            config.getString(config_prefix + ".files_prefix", disk_name));
+            config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
 
         String metadata_path = fs::path(context->getPath()) / "disks" / disk_name / "";
 

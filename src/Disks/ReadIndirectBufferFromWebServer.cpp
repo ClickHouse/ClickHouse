@@ -38,13 +38,18 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
 
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
     headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-", offset)));
+    const auto & settings = context->getSettingsRef();
     LOG_DEBUG(log, "Reading from offset: {}", offset);
 
     return std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
-        ConnectionTimeouts::getHTTPTimeouts(context),
+        ConnectionTimeouts(std::max(Poco::Timespan(settings.http_connection_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
+                           settings.http_send_timeout,
+                           std::max(Poco::Timespan(settings.http_receive_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
+                           settings.tcp_keep_alive_timeout,
+                           std::max(Poco::Timespan(settings.http_receive_timeout.totalSeconds(), 0), Poco::Timespan(20, 0))),
         0,
         Poco::Net::HTTPBasicCredentials{},
         buf_size,

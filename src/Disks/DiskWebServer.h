@@ -19,25 +19,21 @@ struct DiskWebServerSettings
     size_t max_read_tries;
     /// Passed to SeekAvoidingReadBuffer.
     size_t min_bytes_for_seek;
-    String files_prefix;
 
-    DiskWebServerSettings(size_t max_read_tries_, size_t min_bytes_for_seek_, String files_prefix_)
-        : max_read_tries(max_read_tries_) , min_bytes_for_seek(min_bytes_for_seek_), files_prefix(files_prefix_) {}
+    DiskWebServerSettings(size_t max_read_tries_, size_t min_bytes_for_seek_)
+        : max_read_tries(max_read_tries_) , min_bytes_for_seek(min_bytes_for_seek_) {}
 };
 
 
 /*
- * Quick ready test - you can try this disk, by using these queries (disk has two tables) and this endpoint:
- *
- *  ATTACH TABLE contributors UUID 'a563f7d8-fb00-4d50-a563-f7d8fb007d50' (good_person_name String) engine=MergeTree() order by good_person_name settings storage_policy='web';
- *  ATTACH TABLE test UUID '11c7a2f9-a949-4c88-91c7-a2f9a949ec88' (a Int32) engine=MergeTree() order by a settings storage_policy='web';
+ * Quick ready test: ATTACH TABLE test_hits UUID 'dbeecc07-58f3-4e89-9bee-cc0758f34e89'  ( WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8)
+ *                   ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS  storage_policy='web';
  *
  *   <storage_configuration>
  *       <disks>
  *           <web>
  *               <type>web</type>
- *               <endpoint>https://clickhouse-datasets.s3.yandex.net/kssenii-static-files-disk-test/kssenii-disk-tests/test1/</endpoint>
- *               <files_prefix>data</files_prefix>
+                 <endpoint>https://clickhouse-datasets.s3.yandex.net/test-hits/</endpoint>
  *           </web>
  *       </disks>
  *       <policies>
@@ -52,7 +48,7 @@ struct DiskWebServerSettings
  *   </storage_configuration>
  *
  * To get files for upload run:
- * clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir> --files-prefix data
+ * clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>
  * (--metadata-path can be found in query: `select data_paths from system.tables where name='<table_name>';`)
  *
  * If url is not reachable on disk load when server is starting up tables, then all errors are caught.
@@ -96,7 +92,7 @@ public:
 
         Metadata() = default;
 
-        void initialize(const String & uri_with_path, const String & files_prefix, const String & uuid, ContextPtr context) const;
+        void initialize(const String & uri_with_path, const String & uuid, ContextPtr context) const;
     };
 
     using UUIDDirectoryListing = std::unordered_map<String, RootDirectory>;
@@ -107,7 +103,7 @@ public:
 
     bool supportZeroCopyReplication() const override { return false; }
 
-    String getFileName(const String & path) const;
+    static String getFileName(const String & path);
 
     DiskType getType() const override { return DiskType::WebServer; }
 
@@ -151,7 +147,10 @@ public:
 
     /// Write and modification part
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
 
     void moveFile(const String &, const String &) override
     {
