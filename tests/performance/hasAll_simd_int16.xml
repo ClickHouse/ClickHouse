@@ -1,0 +1,52 @@
+<test>
+    <create_query>CREATE TABLE test_table_small (`set` Array(Int16), `subset` Array (Int16)) ENGINE = MergeTree ORDER BY set </create_query>
+    <create_query>CREATE TABLE test_table_small2 (`set` Array(Int16), `subset` Array (Int16)) ENGINE = MergeTree ORDER BY set </create_query>
+    <create_query>CREATE TABLE test_table_smallf (`set` Array(Int16), `subset` Array (Int16)) ENGINE = MergeTree ORDER BY set </create_query>
+
+    <create_query>CREATE TABLE test_table_medium (`set` Array(Int16), `subset` Array (Int16)) ENGINE = MergeTree ORDER BY set </create_query>
+    <create_query>CREATE TABLE test_table_medium2 (`set` Array(Int16), `subset` Array (Int16)) ENGINE = MergeTree ORDER BY set </create_query>
+    <create_query>CREATE TABLE test_table_mediumf (`set` Array(Int16), `subset` Array (Int16)) ENGINE = MergeTree ORDER BY set </create_query>
+
+    <create_query>CREATE TABLE test_table_large (`set` Array(Int16), `subset` Array (Int16)) ENGINE = MergeTree ORDER BY set </create_query>
+    <create_query>CREATE TABLE test_table_large2 (`set` Array(Int16), `subset` Array (Int16)) ENGINE = MergeTree ORDER BY set </create_query>
+    <create_query>CREATE TABLE test_table_largef (`set` Array(Int16), `subset` Array (Int16)) ENGINE = MergeTree ORDER BY set </create_query>
+
+    <!-- SMALL version -->
+    <fill_query>INSERT INTO test_table_small SELECT groupArraySample(500)(number) AS set, groupArraySample(10)(number) AS subset FROM (SELECT * FROM numbers(500)) </fill_query>
+    <fill_query>INSERT INTO test_table_small2 SELECT groupArraySample(500)(number) AS set, groupArraySample(400)(number) AS subset FROM (SELECT * FROM numbers(500)) </fill_query>
+    <fill_query>INSERT INTO test_table_smallf SELECT groupArraySample(500)(number) AS set, groupArraySample(10)(number) AS subset FROM (SELECT * FROM numbers(5000000)) </fill_query>
+
+    <!-- MEDIUM version -->
+    <fill_query>INSERT INTO test_table_medium SELECT groupArraySample(1000000)(number) AS set, groupArraySample(10)(number) AS subset FROM (SELECT * FROM numbers(1000000)) </fill_query>
+    <fill_query>INSERT INTO test_table_medium2 SELECT groupArraySample(1000000)(number) AS set, groupArraySample(4000)(number) AS subset FROM (SELECT * FROM numbers(1000000)) </fill_query>
+    <fill_query>INSERT INTO test_table_mediumf SELECT groupArraySample(1000000)(number) AS set, groupArraySample(10)(number) AS subset FROM (SELECT * FROM numbers(100000000)) </fill_query>
+
+    <!-- LARGE version -->
+    <fill_query>INSERT INTO test_table_large SELECT groupArraySample(50000000)(number) AS set, groupArraySample(10)(number) AS subset FROM (SELECT * FROM numbers(50000000)) </fill_query>
+    <fill_query>INSERT INTO test_table_large2 SELECT groupArraySample(50000000)(number) AS set, groupArraySample(8000)(number) AS subset FROM (SELECT * FROM numbers(50000000)) </fill_query>
+    <fill_query>INSERT INTO test_table_largef SELECT groupArraySample(50000000)(number) AS set, groupArraySample(10)(number) AS subset FROM (SELECT * FROM numbers(1000000000)) </fill_query>
+
+    <query tag='SMALL_HASALL_TRUE'>select hasAll(set, subset) from test_table_small</query>
+    <query tag='SMALL2_HASALL_TRUE'>select hasAll(set, subset) from test_table_small2</query>
+    <query tag='SMALL_HASALL_FALSE'>select hasAll(set, subset) from test_table_smallf</query>
+
+    <query tag='MEDIUM_HASALL_TRUE'>select hasAll(set, subset) from test_table_medium</query>
+    <query tag='MEDIUM2_HASALL_TRUE'>select hasAll(set, subset) from test_table_medium2</query>
+    <query tag='MEDIUM_HASALL_FALSE'>select hasAll(set, subset) from test_table_mediumf</query>
+
+    <query tag='LARGE_HASALL_TRUE'>select hasAll(set, subset) from test_table_large</query>
+    <query tag='LARGE2_HASALL_TRUE'>select hasAll(set, subset) from test_table_large2  Settings max_execution_time=300</query>
+    <query tag='LARGE_HASALL_FALSE'>select hasAll(set, subset) from test_table_largef</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_table_small</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_table_small2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_table_smallf</drop_query>
+
+    <drop_query>DROP TABLE IF EXISTS test_table_medium</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_table_medium2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_table_mediumf</drop_query>
+
+    <drop_query>DROP TABLE IF EXISTS test_table_large</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_table_large2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_table_largef</drop_query>
+</test>
