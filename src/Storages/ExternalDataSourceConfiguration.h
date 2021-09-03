@@ -22,9 +22,6 @@ struct ExternalDataSourceConfiguration
     String table;
     String schema;
 
-    ExternalDataSourceConfiguration() = default;
-    ExternalDataSourceConfiguration(const ExternalDataSourceConfiguration & configuration) = default;
-
     String toString() const;
 };
 
@@ -33,8 +30,11 @@ using ExternalDataSourceConfigurationPtr = std::shared_ptr<ExternalDataSourceCon
 
 struct StoragePostgreSQLConfiguration : ExternalDataSourceConfiguration
 {
-    explicit StoragePostgreSQLConfiguration(const ExternalDataSourceConfiguration & common_configuration)
-        : ExternalDataSourceConfiguration(common_configuration) {}
+    explicit StoragePostgreSQLConfiguration(
+        const ExternalDataSourceConfiguration & common_configuration,
+        const std::vector<std::pair<String, UInt16>> & addresses_ = {})
+        : ExternalDataSourceConfiguration(common_configuration)
+        , addresses(addresses_) {}
 
     String on_conflict;
     std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
@@ -51,6 +51,15 @@ struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
     std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
 };
 
+struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
+{
+    explicit StorageMongoDBConfiguration(const ExternalDataSourceConfiguration & common_configuration)
+        : ExternalDataSourceConfiguration(common_configuration) {}
+
+    String collection;
+    String options;
+};
+
 
 using EngineArgs = std::vector<std::pair<String, DB::Field>>;
 
@@ -65,9 +74,9 @@ using EngineArgs = std::vector<std::pair<String, DB::Field>>;
  * i.e. storage-specific arguments, then return them back in a set: ExternalDataSource::EngineArgs.
  */
 std::tuple<ExternalDataSourceConfiguration, EngineArgs, bool>
-tryGetConfigurationAsNamedCollection(ASTs args, ContextPtr context, bool is_database_engine = false);
+getExternalDataSourceConfiguration(ASTs args, ContextPtr context, bool is_database_engine = false);
 
-ExternalDataSourceConfiguration tryGetConfigurationAsNamedCollection(
+ExternalDataSourceConfiguration getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
 
 
@@ -83,6 +92,6 @@ struct ExternalDataSourcesByPriority
 };
 
 ExternalDataSourcesByPriority
-tryGetConfigurationsByPriorityAsNamedCollection(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
+getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
 
 }

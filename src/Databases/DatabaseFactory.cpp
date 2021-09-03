@@ -136,7 +136,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     {
         const ASTFunction * engine = engine_define->engine;
         ASTs & engine_args = engine->arguments->children;
-        auto [common_configuration, storage_specific_args, with_named_collection] = tryGetConfigurationAsNamedCollection(engine_args, context, true);
+        auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(engine_args, context, true);
         StorageMySQLConfiguration configuration(common_configuration);
 
         if (with_named_collection)
@@ -259,7 +259,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         ASTs & engine_args = engine->arguments->children;
-        auto [common_configuration, storage_specific_args, with_named_collection] = tryGetConfigurationAsNamedCollection(engine_args, context, true);
+        auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(engine_args, context, true);
         StoragePostgreSQLConfiguration configuration(common_configuration);
 
         if (with_named_collection)
@@ -313,34 +313,48 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     {
         const ASTFunction * engine = engine_define->engine;
 
-        if (!engine->arguments || engine->arguments->children.size() != 4)
+        ASTs & engine_args = engine->arguments->children;
+        auto [common_configuration, storage_specific_args, with_named_collection] = getExternalDataSourceConfiguration(engine_args, context, true);
+        StoragePostgreSQLConfiguration configuration(common_configuration);
+
+        if (with_named_collection)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "{} Database require `host:port`, `database_name`, `username`, `password`.",
-                            engine_name);
+            if (!storage_specific_args.empty())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "MaterializedPostgreSQL Database requires only `host`, `port`, `database_name`, `username`, `password`.");
+            }
+        }
+        else
+        {
+            if (!engine->arguments || engine->arguments->children.size() != 4)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "MaterializedPostgreSQL Database require `host:port`, `database_name`, `username`, `password`.");
+            }
+
+            for (auto & engine_arg : engine_args)
+                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+
+            auto parsed_host_port = parseAddress(safeGetLiteralValue<String>(engine_args[0], engine_name), 5432);
+
+            configuration.host = parsed_host_port.first;
+            configuration.port = parsed_host_port.second;
+            configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
         }
 
-        ASTs & engine_args = engine->arguments->children;
-
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
-
-        const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
-        const auto & postgres_database_name = safeGetLiteralValue<String>(engine_args[1], engine_name);
-        const auto & username = safeGetLiteralValue<String>(engine_args[2], engine_name);
-        const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
-
-        auto parsed_host_port = parseAddress(host_port, 5432);
-        auto connection_info = postgres::formatConnectionString(postgres_database_name, parsed_host_port.first, parsed_host_port.second, username, password);
+        auto connection_info = postgres::formatConnectionString(
+            configuration.database, configuration.host, configuration.port, configuration.username, configuration.password);
 
         auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
-
         if (engine_define->settings)
             postgresql_replica_settings->loadFromQuery(*engine_define);
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
                 context, metadata_path, uuid, engine_define, create.attach,
-                database_name, postgres_database_name, connection_info,
+                database_name, configuration.database, connection_info,
                 std::move(postgresql_replica_settings));
     }
 

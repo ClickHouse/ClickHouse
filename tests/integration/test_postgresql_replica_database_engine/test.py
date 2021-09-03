@@ -14,7 +14,7 @@ import threading
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-        main_configs = ['configs/log_conf.xml'],
+        main_configs = ['configs/log_conf.xml', 'configs/named_collections.xml'],
         user_configs = ['configs/users.xml'],
         with_postgres=True, stay_alive=True)
 
@@ -921,6 +921,18 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
     drop_materialized_db()
     for i in range(NUM_TABLES):
         cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
+
+
+def test_predefined_connection_configuration(started_cluster):
+    drop_materialized_db()
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
+    cursor = conn.cursor()
+    cursor.execute(f'DROP TABLE IF EXISTS test_table')
+    cursor.execute(f'CREATE TABLE test_table (a integer PRIMARY KEY, b integer)')
+
+    instance.query("CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1)")
+    check_tables_are_synchronized("test_table");
+    drop_materialized_db()
 
 
 if __name__ == '__main__':

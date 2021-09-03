@@ -370,6 +370,8 @@ def test_predefined_connection_configuration(started_cluster):
     ''')
     assert (node1.query(f"SELECT count() FROM test_table").rstrip() == '100')
 
+    assert (node1.query(f"SELECT count() FROM mysql(mysql1)").rstrip() == '100')
+
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
