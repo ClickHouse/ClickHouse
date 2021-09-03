@@ -293,6 +293,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
+    bool useDefaultImplementationForNulls() const final { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
     bool isDeterministic() const override { return false; }
@@ -320,21 +321,32 @@ public:
 
         Strings attribute_names = getAttributeNamesFromColumn(arguments[1].column, arguments[1].type);
 
-        DataTypes types;
-
         auto dictionary_structure = helper.getDictionaryStructure(dictionary_name);
 
+        DataTypes attribute_types;
+        attribute_types.reserve(attribute_names.size());
         for (auto & attribute_name : attribute_names)
         {
             /// We're extracting the return type from the dictionary's config, without loading the dictionary.
-            auto attribute = dictionary_structure.getAttribute(attribute_name);
-            types.emplace_back(attribute.type);
+            const auto & attribute = dictionary_structure.getAttribute(attribute_name);
+            attribute_types.emplace_back(attribute.type);
         }
 
-        if (types.size() > 1)
-            return std::make_shared<DataTypeTuple>(types, attribute_names);
+        bool key_is_nullable = arguments[2].type->isNullable();
+        if (attribute_types.size() > 1)
+        {
+            if (key_is_nullable)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Function {} support nullable key only for single dictionary attribute", getName());
+
+            return std::make_shared<DataTypeTuple>(attribute_types, attribute_names);
+        }
         else
-            return types.front();
+        {
+            if (key_is_nullable)
+                return makeNullable(attribute_types.front());
+            else
+                return attribute_types.front();
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -417,7 +429,9 @@ public:
                 default_cols = tuple_column->getColumnsCopy();
             }
             else
+            {
                 default_cols.emplace_back(result);
+            }
         }
         else
         {
@@ -425,7 +439,16 @@ public:
                 default_cols.emplace_back(nullptr);
         }
 
-        const auto & key_col_with_type = arguments[2];
+        auto key_col_with_type = arguments[2];
+
+        bool key_is_only_null = key_col_with_type.type->onlyNull();
+        if (key_is_only_null)
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        bool key_is_nullable = key_col_with_type.type->isNullable();
+        if (key_is_nullable)
+            key_col_with_type = columnGetNested(key_col_with_type);
+
         auto key_column = key_col_with_type.column;
 
         Columns key_columns;
@@ -481,7 +504,26 @@ public:
             key_types.emplace_back(range_col_type);
         }
 
-        return executeDictionaryRequest(dictionary, attribute_names, key_columns, key_types, result_type, default_cols);
+        DataTypePtr attribute_type = result_type;
+        if (key_is_nullable)
+        {
+            DataTypes attribute_types;
+            attribute_types.reserve(attribute_names.size());
+            for (auto & attribute_name : attribute_names)
+            {
+                const auto & attribute = dictionary->getStructure().getAttribute(attribute_name);
+                attribute_types.emplace_back(attribute.type);
+            }
+
+            attribute_type = attribute_types.front();
+        }
+
+        auto result_column = executeDictionaryRequest(dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols);
+
+        if (key_is_nullable)
+            result_column = wrapInNullable(result_column, {arguments[2]}, result_type, input_rows_count);
+
+        return result_column;
     }
 
 private:
@@ -510,12 +552,14 @@ private:
             result = ColumnTuple::create(std::move(result_columns));
         }
         else
+        {
             result = dictionary->getColumn(
                 attribute_names[0],
                 result_type,
                 key_columns,
                 key_types,
                 default_cols.front());
+        }
 
         return result;
     }
@@ -525,7 +569,9 @@ private:
         Strings attribute_names;
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(column.get()))
+        {
             attribute_names.emplace_back(name_col->getValue<String>());
+        }
         else if (const auto * tuple_col_const = checkAndGetColumnConst<ColumnTuple>(column.get()))
         {
             const ColumnTuple & tuple_col = assert_cast<const ColumnTuple &>(tuple_col_const->getDataColumn());
@@ -550,10 +596,12 @@ private:
             }
         }
         else
+        {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of second argument of function {}, expected a const string or const tuple of const strings.",
                 type->getName(),
                 getName());
+        }
 
         return attribute_names;
     }
