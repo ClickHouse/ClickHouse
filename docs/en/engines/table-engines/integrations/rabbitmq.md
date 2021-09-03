@@ -21,11 +21,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = RabbitMQ SETTINGS
-    rabbitmq_host_port = 'host:port',
+    rabbitmq_host_port = 'host:port' [or rabbitmq_address = 'amqp(s)://guest:guest@localhost/vhost'],
     rabbitmq_exchange_name = 'exchange_name',
     rabbitmq_format = 'data_format'[,]
     [rabbitmq_exchange_type = 'exchange_type',]
     [rabbitmq_routing_key_list = 'key1,key2,...',]
+    [rabbitmq_secure = 0,]
     [rabbitmq_row_delimiter = 'delimiter_symbol',]
     [rabbitmq_schema = '',]
     [rabbitmq_num_consumers = N,]
@@ -58,6 +59,11 @@ Optional parameters:
 -   `rabbitmq_skip_broken_messages` – RabbitMQ message parser tolerance to schema-incompatible messages per block. Default: `0`. If `rabbitmq_skip_broken_messages = N` then the engine skips *N* RabbitMQ messages that cannot be parsed (a message equals a row of data).
 -   `rabbitmq_max_block_size`
 -   `rabbitmq_flush_interval_ms`
+
+SSL connection:
+
+Use either `rabbitmq_secure = 1` or `amqps` in connection address: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+The default behaviour of the used library is not to check if the created TLS connection is sufficiently secure. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
 
 Also format settings can be added along with rabbitmq-related settings.
 
