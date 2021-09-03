@@ -174,13 +174,10 @@ def execute_task(task, cmd_options):
 
 # Tests
 
+import logging
 
-@pytest.mark.parametrize(('use_sample_offset'),[False,True])
-def test_trivial_copy(started_cluster, use_sample_offset):
-    if use_sample_offset:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--experimental-use-sample-offset', '1'])
-    else:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), [])
+def test_trivial_copy(started_cluster):
+    execute_task(TaskTrivial(started_cluster), [])
 
 
 def test_trivial_without_arguments(started_cluster):

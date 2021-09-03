@@ -13,6 +13,7 @@ import subprocess
 import time
 import traceback
 import urllib.parse
+import urllib3
 import shlex
 
 import cassandra.cluster
@@ -594,10 +595,13 @@ class ClickHouseCluster:
                 time.sleep(1)
 
     def wait_minio_to_start(self, timeout=30, secure=False):
-        minio_client = Minio('localhost:9001',
+        self.minio_ip = self.get_instance_ip(self.minio_host)
+        
+        minio_client = Minio(f'{self.minio_ip}:{self.minio_port}',
                              access_key='minio',
                              secret_key='minio123',
-                             secure=secure)
+                             secure=secure,
+                             http_client=urllib3.PoolManager(cert_reqs='CERT_NONE')) # disable SSL check as we test ClickHouse and not Python library
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -634,17 +638,26 @@ class ClickHouseCluster:
                 print(("Can't connect to SchemaRegistry: %s", str(ex)))
                 time.sleep(1)
 
-    def wait_cassandra_to_start(self, timeout=30):
-        cass_client = cassandra.cluster.Cluster(["localhost"], port="9043")
+    def wait_cassandra_to_start(self, timeout=180):
+        self.cassandra_host = "cassandra1"
+        self.cassandra_port = 9042
+        self.cassandra_id = self.get_instance_docker_id(self.cassandra_host)
+        self.cassandra_ip = self.get_instance_ip(self.cassandra_host)
+        cass_client = cassandra.cluster.Cluster([self.cassandra_ip], port=self.cassandra_port)
         start = time.time()
         while time.time() - start < timeout:
             try:
+                logging.info(f"Check Cassandra Online {self.cassandra_id} {self.cassandra_ip} {self.cassandra_port}")
+                check = self.exec_in_container(self.cassandra_id, ["bash", "-c", f"/opt/cassandra/bin/cqlsh -u cassandra -p cassandra -e 'describe keyspaces' {self.cassandra_ip} {self.cassandra_port}"], user='root')
+                logging.info("Cassandra Online")
                 cass_client.connect()
-                logging.info("Connected to Cassandra")
+                logging.info("Connected Clients to Cassandra")
                 return
             except Exception as ex:
                 logging.warning("Can't connect to Cassandra: %s", str(ex))
                 time.sleep(1)
+
+        raise Exception("Can't wait Cassandra to start")
 
     def start(self, destroy_dirs=True):
         print("Cluster start called. is_up={}, destroy_dirs={}".format(self.is_up, destroy_dirs))

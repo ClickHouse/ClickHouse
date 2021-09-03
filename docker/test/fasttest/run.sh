@@ -396,6 +396,14 @@ function run_tests
     then
         stop_server ||:
 
+
+        # needs s3
+        01944_insert_partition_by
+
+        # depends on Go
+        02013_zlib_read_after_eof
+    )
+
         # Clean the data so that there is no interference from the previous test run.
         rm -rf "$FASTTEST_DATA"/{{meta,}data,user_files,coordination} ||:
 
