@@ -60,6 +60,17 @@ public:
         if (shutdown_suspend)
             return false;
 
+        try
+        {
+            /// This is needed to increase / decrease the number of threads at runtime
+            if (update_timer.compareAndRestartDeferred(10.))
+                updateConfiguration();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
         auto & value = CurrentMetrics::values[metric];
         if (value.load() >= static_cast<int64_t>(max_tasks_count))
             return false;
