@@ -185,6 +185,8 @@ Default value: 0.
 
 Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) fetches. This setting is applied to the particular table, unlike the [max_replicated_fetches_network_bandwidth_for_server](settings.md#max_replicated_fetches_network_bandwidth_for_server) setting, which is applied to the server.
 
+You can limit both the server network and a network for a particular table, but for this the value of the table-level setting should be less than server-level one. Otherwise the server considers only the `max_replicated_fetches_network_bandwidth_for_server` setting.
+
 The setting isn't followed perfectly accurately.
 
 Possible values:
@@ -197,15 +199,13 @@ Default value: `0`.
 **Usage**
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
-
-**See Also**
-
--   [max_replicated_fetches_network_bandwidth_for_server](../../operations/settings/settings.md#max_replicated_fetches_network_bandwidth_for_server)
 
 ## max_replicated_sends_network_bandwidth {#max_replicated_sends_network_bandwidth}
 
 Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends. This setting is applied to the particular table, unlike the [max_replicated_sends_network_bandwidth_for_server](settings.md#max_replicated_sends_network_bandwidth_for_server) setting, which is applied to the server.
 
+You can limit both the server network and a network for a particular table, but for this the value of the table-level setting should be less than server-level one. Otherwise the server considers only the `max_replicated_sends_network_bandwidth_for_server` setting.
+
 The setting isn't followed perfectly accurately.
 
 Possible values:
@@ -218,10 +218,6 @@ Default value: `0`.
 **Usage**
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
-
-**See Also**
-
--   [max_replicated_sends_network_bandwidth_for_server](../../operations/settings/settings.md#max_replicated_sends_network_bandwidth_for_server)
 
 ## old_parts_lifetime {#old-parts-lifetime}
 
