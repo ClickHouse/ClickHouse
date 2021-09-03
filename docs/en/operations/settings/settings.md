@@ -3477,7 +3477,7 @@ Specifies how long (in seconds) to wait for inactive replicas to execute [ALTER]
 Possible values:
 
 -   0 — Do not wait.
--   Negative integer — To wait for unlimited time.
--   Positive integer — The number of seconds of waiting.
+-   Negative integer — Wait for unlimited time.
+-   Positive integer — The number of seconds to wait.
 
 Default value: `120`.
