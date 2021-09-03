@@ -213,6 +213,8 @@ private:
         if (result)
         {
             block_allocated_size = reinterpret_cast<uint8_t *>(result) - pages_start;
+            block_allocated_size += size;
+
             return static_cast<char *>(result);
         }
         else
