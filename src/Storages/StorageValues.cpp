@@ -36,6 +36,8 @@ Pipe StorageValues::read(
     for (const auto & name : column_names)
         block.insert(res_block.getByName(name));
 
+    std::cerr << "=== Reading from Values " << block.rows() << " rows\n";
+
     Chunk chunk(block.getColumns(), block.rows());
     return Pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk)));
 }

@@ -2,6 +2,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 #include <common/scope_guard.h>
+#include <iostream>
 
 namespace DB
 {
@@ -161,6 +162,7 @@ SinkToStorage::SinkToStorage(const Block & header) : ExceptionKeepingTransform(h
 
 void SinkToStorage::transform(Chunk & chunk)
 {
+    std::cerr << "--- sink to storage rows " << chunk.getNumRows() << std::endl;
     consume(chunk.clone());
     if (lastBlockIsDuplicate())
         chunk.clear();

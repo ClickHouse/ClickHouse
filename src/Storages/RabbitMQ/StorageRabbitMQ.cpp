@@ -32,6 +32,7 @@
 #include <Common/quoteString.h>
 #include <Common/parseAddress.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <amqpcpp.h>
 
 namespace DB
@@ -918,7 +919,7 @@ bool StorageRabbitMQ::streamToViews()
     auto block_io = interpreter.execute();
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto column_names = block_io.out->getHeader().getNames();
+    auto column_names = block_io.out.getInputHeader().getNames();
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
 
     auto block_size = getMaxBlockSize();
@@ -952,15 +953,19 @@ bool StorageRabbitMQ::streamToViews()
     else
         in = streams[0];
 
-    std::atomic<bool> stub = {false};
-
     if (!event_handler->loopRunning())
     {
         event_handler->updateLoopState(Loop::RUN);
         looping_task->activateAndSchedule();
     }
 
-    copyData(*in, *block_io.out, &stub);
+    PushingPipelineExecutor executor(block_io.out);
+    executor.start();
+    in->readPrefix();
+    while (auto block = in->read())
+        executor.push(std::move(block));
+    executor.finish();
+    in->readSuffix();
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent

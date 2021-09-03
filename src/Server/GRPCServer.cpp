@@ -8,7 +8,6 @@
 #include <Common/setThreadName.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -23,7 +22,10 @@
 #include <Parsers/ParserQuery.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <Processors/QueryPipeline.h>
 #include <Formats/FormatFactory.h>
 #include <Server/IServer.h>
@@ -819,7 +821,7 @@ namespace
 
     void Call::processInput()
     {
-        if (!io.out)
+        if (io.out.empty())
             return;
 
         bool has_data_to_insert = (insert_query && insert_query->data)
@@ -834,18 +836,19 @@ namespace
 
         /// This is significant, because parallel parsing may be used.
         /// So we mustn't touch the input stream from other thread.
-        initializeBlockInputStream(io.out->getHeader());
+        initializeBlockInputStream(io.out.getInputHeader());
 
-        io.out->writePrefix();
+        PushingPipelineExecutor executor(io.out);
+        executor.start();
 
         Block block;
         while (pipeline_executor->pull(block))
         {
             if (block)
-                io.out->write(block);
+                executor.push(block);
         }
 
-        io.out->writeSuffix();
+        executor.finish();
     }
 
     void Call::initializeBlockInputStream(const Block & header)
@@ -977,7 +980,7 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    auto out_stream = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
+                    auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context);
                     ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
                     String format = external_table.format();
                     if (format.empty())
@@ -994,14 +997,20 @@ namespace
                         external_table_context->checkSettingsConstraints(settings_changes);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
-                    auto in_stream = external_table_context->getInputFormat(
-                        format, data, metadata_snapshot->getSampleBlock(), external_table_context->getSettings().max_insert_block_size);
-                    in_stream->readPrefix();
-                    out_stream->writePrefix();
-                    while (auto block = in_stream->read())
-                        out_stream->write(block);
-                    in_stream->readSuffix();
-                    out_stream->writeSuffix();
+                    auto in = FormatFactory::instance().getInput(
+                        format, data, metadata_snapshot->getSampleBlock(),
+                        external_table_context, external_table_context->getSettings().max_insert_block_size);
+
+                    QueryPipeline cur_pipeline;
+                    cur_pipeline.init(Pipe(std::move(in)));
+                    cur_pipeline.addTransform(std::move(sink));
+                    cur_pipeline.setSinks([&](const Block & header, Pipe::StreamType)
+                    {
+                        return std::make_shared<ExceptionHandlingSink>(header);
+                    });
+
+                    auto executor = cur_pipeline.execute();
+                    executor->execute(1);
                 }
             }
 

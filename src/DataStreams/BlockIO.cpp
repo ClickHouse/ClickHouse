@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 BlockInputStreamPtr BlockIO::getInputStream()
 {
-    if (out)
+    if (!out.empty())
         throw Exception("Cannot get input stream from BlockIO because output stream is not empty",
                         ErrorCodes::LOGICAL_ERROR);
 
@@ -38,7 +38,7 @@ void BlockIO::reset()
       */
     /// TODO simplify it all
 
-    out.reset();
+    out = {};
     in.reset();
     if (process_list_entry)
         process_list_entry->get().releaseQueryStreams();

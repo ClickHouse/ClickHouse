@@ -8,7 +8,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Sinks/ExceptionHandlingSink.h>
 
 namespace DB
 {
@@ -485,10 +486,20 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
                 InterpreterInsertQuery interpreter(insert, insert_context, true);
                 auto block_io = interpreter.execute();
-                OneBlockInputStream input(result_rows);
+                auto input = std::make_shared<SourceFromSingleChunk>(
+                    result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
 
-                assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica table sync");
-                copyData(input, *block_io.out);
+                assertBlocksHaveEqualStructure(input->getPort().getHeader(), block_io.out.getInputHeader(), "postgresql replica table sync");
+                QueryPipeline pipeline;
+                pipeline.init(Pipe(std::move(input)));
+                pipeline.addChain(std::move(block_io.out));
+                pipeline.setSinks([&](const Block & header, Pipe::StreamType)
+                {
+                    return std::make_shared<ExceptionHandlingSink>(header);
+                });
+
+                auto executor = pipeline.execute();
+                executor->execute(1);
 
                 buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
             }

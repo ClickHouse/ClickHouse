@@ -11,6 +11,8 @@
 #    include <Columns/ColumnDecimal.h>
 #    include <Processors/QueryPipeline.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
+#    include <Processors/Sinks/ExceptionHandlingSink.h>
+#    include <Processors/Sources/SourceFromSingleChunk.h>
 #    include <DataStreams/CountingBlockOutputStream.h>
 #    include <DataStreams/OneBlockInputStream.h>
 #    include <DataStreams/copyData.h>
@@ -287,7 +289,7 @@ static inline void cleanOutdatedTables(const String & database_name, ContextPtr 
     }
 }
 
-static inline BlockOutputStreamPtr
+static inline Chain
 getTableOutput(const String & database_name, const String & table_name, ContextMutablePtr query_context, bool insert_materialized = false)
 {
     const StoragePtr & storage = DatabaseCatalog::instance().getTable(StorageID(database_name, table_name), query_context);
@@ -311,10 +313,10 @@ getTableOutput(const String & database_name, const String & table_name, ContextM
     BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + "(" + insert_columns_str.str() + ")" + " VALUES",
         query_context, database_name, comment);
 
-    if (!res.out)
+    if (res.out.empty())
         throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    return res.out;
+    return std::move(res.out);
 }
 
 static inline void dumpDataForTables(
@@ -332,25 +334,28 @@ static inline void dumpDataForTables(
             String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
             tryToExecuteQuery(query_prefix + " " + iterator->second, query_context, database_name, comment); /// create table.
 
-            auto out = std::make_shared<CountingBlockOutputStream>(getTableOutput(database_name, table_name, query_context));
+            auto chain = getTableOutput(database_name, table_name, query_context);
+            auto counting = std::make_shared<CountingTransform>(chain.getInputHeader());
+            chain.addSource(counting);
             StreamSettings mysql_input_stream_settings(context->getSettingsRef());
             auto input = std::make_unique<MySQLSource>(
                 connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
-                out->getHeader(), mysql_input_stream_settings);
+                chain.getInputHeader(), mysql_input_stream_settings);
 
             QueryPipeline pipeline;
             pipeline.init(Pipe(std::move(input)));
-            PullingPipelineExecutor executor(pipeline);
+            pipeline.addChain(std::move(chain));
+            pipeline.setSinks([&](const Block & header, Pipe::StreamType)
+            {
+                return std::make_shared<ExceptionHandlingSink>(header);
+            });
+
+            auto executor = pipeline.execute();
 
             Stopwatch watch;
+            executor->execute(1);
 
-            out->writePrefix();
-            Block block;
-            while (executor.pull(block))
-                out->write(block);
-            out->writeSuffix();
-
-            const Progress & progress = out->getProgress();
+            const Progress & progress = counting->getProgress();
             LOG_INFO(&Poco::Logger::get("MaterializedMySQLSyncThread(" + database_name + ")"),
                 "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
                 , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
@@ -800,9 +805,18 @@ void MaterializedMySQLSyncThread::Buffers::commit(ContextPtr context)
         for (auto & table_name_and_buffer : data)
         {
             auto query_context = createQueryContext(context);
-            OneBlockInputStream input(table_name_and_buffer.second->first);
-            BlockOutputStreamPtr out = getTableOutput(database, table_name_and_buffer.first, query_context, true);
-            copyData(input, *out);
+            auto input = std::make_shared<SourceFromSingleChunk>(table_name_and_buffer.second->first);
+            auto out = getTableOutput(database, table_name_and_buffer.first, query_context, true);
+            QueryPipeline pipeline;
+            pipeline.init(Pipe(std::move(input)));
+            pipeline.addChain(std::move(out));
+            pipeline.setSinks([&](const Block & header, Pipe::StreamType)
+            {
+                return std::make_shared<ExceptionHandlingSink>(header);
+            });
+
+            auto executor = pipeline.execute();
+            executor->execute(1);
         }
 
         data.clear();

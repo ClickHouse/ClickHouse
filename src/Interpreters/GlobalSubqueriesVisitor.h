@@ -17,6 +17,7 @@
 #include <Parsers/IAST.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sinks/ExceptionHandlingSink.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -158,10 +159,10 @@ public:
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
-                io.pipeline.resize(1);
-                io.pipeline.setSinks([&](const Block &, Pipe::StreamType) -> ProcessorPtr
+                io.pipeline.addChain(Chain(std::move(table_out)));
+                io.pipeline.setSinks([&](const Block & header, Pipe::StreamType) -> ProcessorPtr
                 {
-                    return table_out;
+                    return std::make_shared<ExceptionHandlingSink>(header);
                 });
                 auto executor = io.pipeline.execute();
                 executor->execute(io.pipeline.getNumStreams());

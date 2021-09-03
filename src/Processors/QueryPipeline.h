@@ -57,6 +57,7 @@ public:
     void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
     void addChains(std::vector<Chain> chains);
+    void addChain(Chain chain);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
     /// Transform pipeline in general way.

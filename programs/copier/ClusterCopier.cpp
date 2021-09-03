@@ -9,6 +9,10 @@
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/QueryPipeline.h>
+#include <Processors/Chain.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 
 namespace DB
@@ -1523,25 +1527,27 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             context_insert->setSettings(task_cluster->settings_push);
 
             /// Custom INSERT SELECT implementation
-            BlockInputStreamPtr input;
-            BlockOutputStreamPtr output;
+            QueryPipeline input;
+            Chain output;
             {
                 BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
                 BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
 
-                auto pure_input = io_select.getInputStream();
-                output = io_insert.out;
+                output = std::move(io_insert.out);
 
                 /// Add converting actions to make it possible to copy blocks with slightly different schema
-                const auto & select_block = pure_input->getHeader();
-                const auto & insert_block = output->getHeader();
+                const auto & select_block = io_select.pipeline.getHeader();
+                const auto & insert_block = output.getInputHeader();
                 auto actions_dag = ActionsDAG::makeConvertingActions(
                         select_block.getColumnsWithTypeAndName(),
                         insert_block.getColumnsWithTypeAndName(),
                         ActionsDAG::MatchColumnsMode::Position);
                 auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext()));
 
-                input = std::make_shared<ExpressionBlockInputStream>(pure_input, actions);
+                input.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, actions);
+                });
             }
 
             /// Fail-fast optimization to abort copying when the current clean state expires
@@ -1587,7 +1593,26 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             };
 
             /// Main work is here
-            copyData(*input, *output, cancel_check, update_stats);
+            PullingPipelineExecutor pulling_executor(input);
+            PushingPipelineExecutor pushing_executor(output);
+
+            Block data;
+            bool is_cancelled = false;
+            while (pulling_executor.pull(data))
+            {
+                if (cancel_check())
+                {
+                    is_cancelled = true;
+                    pushing_executor.cancel();
+                    pushing_executor.cancel();
+                    break;
+                }
+                pushing_executor.push(data);
+                update_stats(data);
+            }
+
+            if (!is_cancelled)
+                pushing_executor.finish();
 
             // Just in case
             if (future_is_dirty_checker.valid())
