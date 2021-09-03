@@ -23,26 +23,29 @@ TEST(Logger, Log)
 TEST(Logger, TestLog)
 {
     {   /// Test logs visible for test level
-        Poco::Logger::root().setLevel("test");
-        std::ostringstream oss;
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss)));
-        Poco::Logger * log = &Poco::Logger::get("Log");
+
+        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
+        auto log = &Poco::Logger::create("TestLogger", my_channel.get());
+        log->setLevel("test");
         LOG_TEST(log, "Hello World");
 
         EXPECT_EQ(oss.str(), "Hello World\n");
+        Poco::Logger::destroy("TestLogger");
     }
 
     {   /// Test logs invisible for other levels
-        for (const auto & level : {"trace", "debug", "information", "warning", "fatal"})
+        for (const auto & level : {"trace", "debug", "information", "warning", "error", "fatal"})
         {
-            Poco::Logger::root().setLevel(level);
-            std::ostringstream oss;
-            Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss)));
-            Poco::Logger * log = &Poco::Logger::get("Log");
-
+            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
+            auto log = &Poco::Logger::create(std::string{level} + "_Logger", my_channel.get());
+            log->setLevel(level);
             LOG_TEST(log, "Hello World");
 
             EXPECT_EQ(oss.str(), "");
+
+            Poco::Logger::destroy(std::string{level} + "_Logger");
         }
     }
 
