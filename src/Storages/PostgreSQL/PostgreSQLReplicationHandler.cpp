@@ -456,7 +456,7 @@ void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
 {
     consumer_task->deactivate();
     consumer->setSetting(setting);
-    consumer_task->schedule();
+    consumer_task->activateAndSchedule();
 }
 
 
@@ -658,6 +658,7 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
     }
     catch (...)
     {
+        consumer_task->activate();
         consumer_task->scheduleAfter(RESCHEDULE_MS);
 
         auto error_message = getCurrentExceptionMessage(false);
@@ -685,13 +686,14 @@ void PostgreSQLReplicationHandler::removeTableFromReplication(const String & pos
     }
     catch (...)
     {
+        consumer_task->activate();
         consumer_task->scheduleAfter(RESCHEDULE_MS);
 
         auto error_message = getCurrentExceptionMessage(false);
         throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                         "Failed to remove table `{}` from replication. Info: {}", postgres_table_name, error_message);
     }
-    consumer_task->schedule();
+    consumer_task->activateAndSchedule();
 }
 
 
