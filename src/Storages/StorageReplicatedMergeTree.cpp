@@ -125,7 +125,6 @@ namespace ErrorCodes
     extern const int PARTITION_DOESNT_EXIST;
     extern const int UNFINISHED;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
-    extern const int TOO_MANY_FETCHES;
     extern const int BAD_DATA_PART_NAME;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
@@ -1970,22 +1969,6 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    if (storage_settings_ptr->replicated_max_parallel_fetches &&
-        total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
-        throw Exception(ErrorCodes::TOO_MANY_FETCHES, "Too many total fetches from replicas, maximum: {} ",
-            storage_settings_ptr->replicated_max_parallel_fetches.toString());
-
-    ++total_fetches;
-    SCOPE_EXIT({--total_fetches;});
-
-    if (storage_settings_ptr->replicated_max_parallel_fetches_for_table
-        && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
-        throw Exception(ErrorCodes::TOO_MANY_FETCHES, "Too many fetches from replicas for table, maximum: {}",
-            storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString());
-
-    ++current_table_fetches;
-    SCOPE_EXIT({--current_table_fetches;});
-
     try
     {
         if (replica.empty())
@@ -2178,25 +2161,6 @@ bool StorageReplicatedMergeTree::executeFetchShared(
 
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
-
-    if (storage_settings_ptr->replicated_max_parallel_fetches && total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
-    {
-        throw Exception("Too many total fetches from replicas, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches.toString(),
-            ErrorCodes::TOO_MANY_FETCHES);
-    }
-
-    ++total_fetches;
-    SCOPE_EXIT({--total_fetches;});
-
-    if (storage_settings_ptr->replicated_max_parallel_fetches_for_table
-        && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
-    {
-        throw Exception("Too many fetches from replicas for table, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString(),
-            ErrorCodes::TOO_MANY_FETCHES);
-    }
-
-    ++current_table_fetches;
-    SCOPE_EXIT({--current_table_fetches;});
 
     try
     {
@@ -7246,7 +7210,7 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
         return;
-    String zero_copy = fmt::format("zero_copy_{}", DiskType::toString(disk->getType()));
+    String zero_copy = fmt::format("zero_copy_{}", toString(disk->getType()));
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
     if (!zookeeper)
@@ -7286,7 +7250,7 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
         return true;
-    String zero_copy = fmt::format("zero_copy_{}", DiskType::toString(disk->getType()));
+    String zero_copy = fmt::format("zero_copy_{}", toString(disk->getType()));
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
     if (!zookeeper)
@@ -7346,7 +7310,7 @@ bool StorageReplicatedMergeTree::tryToFetchIfShared(
 
 
 String StorageReplicatedMergeTree::getSharedDataReplica(
-    const IMergeTreeDataPart & part, DiskType::Type disk_type) const
+    const IMergeTreeDataPart & part, DiskType disk_type) const
 {
     String best_replica;
 
@@ -7354,7 +7318,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     if (!zookeeper)
         return best_replica;
 
-    String zero_copy = fmt::format("zero_copy_{}", DiskType::toString(disk_type));
+    String zero_copy = fmt::format("zero_copy_{}", toString(disk_type));
     String zookeeper_part_node = fs::path(zookeeper_path) / zero_copy / "shared" / part.name;
 
     Strings ids;
