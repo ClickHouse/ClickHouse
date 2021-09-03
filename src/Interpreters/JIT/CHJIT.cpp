@@ -100,7 +100,7 @@ public:
 
     char * allocate(size_t size, size_t alignment)
     {
-        /** First check if in some allocated page blocks there are enought free memory to make allocation.
+        /** First check if in some allocated page blocks there are enough free memory to make allocation.
           * If there is no such block create it and then allocate from it.
           */
 
