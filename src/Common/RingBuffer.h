@@ -54,19 +54,24 @@ public:
 
     /// In case of T = std::shared_ptr<Something> it won't cause any allocations
     template <typename Predicate>
-    void eraseAll(Predicate && predicate)
+    bool eraseAll(Predicate && predicate)
     {
         /// Shift all elements to the beginning of the buffer
         std::rotate(buffer.begin(), buffer.begin() + position, buffer.end());
+        position = 0;
+
         /// Remove elements
         auto end_removed = std::remove_if(buffer.begin(), buffer.begin() + count, predicate);
+
+        if (end_removed == buffer.begin() + count)
+            return false;
 
         size_t new_count = std::distance(buffer.begin(), end_removed);
         for (size_t i = new_count; i < count; ++i)
             buffer[i] = T{};
 
         count = new_count;
-        position = 0;
+        return true;
     }
 
     template <class Predicate>
