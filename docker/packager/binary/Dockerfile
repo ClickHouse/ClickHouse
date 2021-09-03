@@ -39,8 +39,6 @@ RUN apt-get update \
         bash \
         build-essential \
         ccache \
-        clang-11 \
-        clang-tidy-11 \
         cmake \
         curl \
         g++-10 \
@@ -50,9 +48,6 @@ RUN apt-get update \
         gperf \
         libicu-dev \
         libreadline-dev \
-        lld-11 \
-        llvm-11 \
-        llvm-11-dev \
         clang-12 \
         clang-tidy-12 \
         lld-12 \
