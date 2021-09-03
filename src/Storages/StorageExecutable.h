@@ -18,6 +18,7 @@ namespace DB
 class StorageExecutable final : public shared_ptr_helper<StorageExecutable>, public IStorage
 {
     friend struct shared_ptr_helper<StorageExecutable>;
+
 public:
 
     String getName() const override
@@ -38,6 +39,7 @@ public:
         unsigned threads) override;
 
 protected:
+
     StorageExecutable(
         const StorageID & table_id,
         const String & script_name_,
