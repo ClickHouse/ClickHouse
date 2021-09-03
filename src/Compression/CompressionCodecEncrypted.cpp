@@ -344,6 +344,23 @@ void CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::Abstrac
     }
 }
 
+void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    /// Try to create new parameters and fill them from config.
+    /// If there will be some errors, throw error
+    std::unique_ptr<Params> new_params(new Params);
+    if (config.has(config_prefix + ".aes_128_gcm_siv"))
+    {
+        loadImpl(config, config_prefix + ".aes_128_gcm_siv", AES_128_GCM_SIV, new_params);
+    }
+    if (config.has(config_prefix + ".aes_256_gcm_siv"))
+    {
+        loadImpl(config, config_prefix + ".aes_256_gcm_siv", AES_256_GCM_SIV, new_params);
+    }
+
+    params.set(std::move(new_params));
+}
+
 void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionMethod method, UInt64 &current_key_id, String &current_key, String &nonce) const
 {
     /// It parameters were not set, throw excpetion

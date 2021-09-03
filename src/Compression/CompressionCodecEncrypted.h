@@ -77,6 +77,9 @@ public:
         /// Try to load data from config.
         void tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
+        /// Load data and throw exception if something went wrong.
+        void load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
         /// Get current key and nonce (they will be set in variables, which are pass in this function).
         /// All data sets at the same time to prevent situations,
         /// when config changes and key and nonce are read from different versions

@@ -950,8 +950,8 @@ if (ThreadFuzzer::instance().isEffective())
 
 // using if for unbundled build
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
-    /// try set up encryption.
-    CompressionCodecEncrypted::Configuration::instance().tryLoad(config(), "encryption_codecs");
+    /// try set up encryption. There are some errors in config, erorr will be printed and server wouldn't start.
+    CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 #else
     LOG_WARNING(log, "Server was built without Base64 or SSL support. Encryption is disabled.");
 #endif
