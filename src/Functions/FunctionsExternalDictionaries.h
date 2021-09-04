@@ -587,14 +587,14 @@ private:
             {
                 const auto * tuple_column = tuple_col.getColumnPtr(i).get();
 
-                const auto * attribute_name_column = checkAndGetColumnConst<ColumnString>(tuple_column);
+                const auto * attribute_name_column = checkAndGetColumn<ColumnString>(tuple_column);
 
                 if (!attribute_name_column)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Tuple second argument of function {} must contain multiple constant string columns",
                         getName());
 
-                attribute_names.emplace_back(attribute_name_column->getValue<String>());
+                attribute_names.emplace_back(attribute_name_column->getDataAt(0));
             }
         }
         else
