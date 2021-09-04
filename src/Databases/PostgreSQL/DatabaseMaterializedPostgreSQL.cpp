@@ -194,31 +194,6 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
 }
 
 
-void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & table, const ASTPtr & query)
-{
-    /// Create table query can only be called from replication thread.
-    if (local_context->isInternalQuery())
-    {
-        DatabaseAtomic::createTable(local_context, table_name, table, query);
-        return;
-    }
-
-    const auto & create = query->as<ASTCreateQuery>();
-    if (!create->attach)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
-
-    /// Create ReplacingMergeTree table.
-    auto query_copy = query->clone();
-    auto * create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
-    create_query->attach = false;
-    create_query->attach_short_syntax = false;
-    DatabaseAtomic::createTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, table, query_copy);
-
-    /// Attach MaterializedPostgreSQL table.
-    attachTable(table_name, table, {});
-}
-
-
 String DatabaseMaterializedPostgreSQL::getTablesList(const String & except) const
 {
     String tables_list;
@@ -272,26 +247,64 @@ ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingCha
 }
 
 
+void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & table, const ASTPtr & query)
+{
+    /// Create table query can only be called from replication thread.
+    if (local_context->isInternalQuery())
+    {
+        DatabaseAtomic::createTable(local_context, table_name, table, query);
+        return;
+    }
+
+    const auto & create = query->as<ASTCreateQuery>();
+    if (!create->attach)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
+
+    /// Create ReplacingMergeTree table.
+    auto query_copy = query->clone();
+    auto * create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
+    create_query->attach = false;
+    create_query->attach_short_syntax = false;
+    DatabaseAtomic::createTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, table, query_copy);
+
+    /// Attach MaterializedPostgreSQL table.
+    attachTable(table_name, table, {});
+}
+
+
 void DatabaseMaterializedPostgreSQL::attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path)
 {
-    /// TODO: If attach fails, need to delete nested...
     if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
     {
-        auto tables_to_replicate = settings->materialized_postgresql_tables_list.value;
-        if (tables_to_replicate.empty())
-            tables_to_replicate = getTablesList();
-
-        /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
-        SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
-        auto alter_query = createAlterSettingsQuery(new_setting);
-
         auto current_context = Context::createCopy(getContext()->getGlobalContext());
         current_context->setInternalQuery(true);
-        InterpreterAlterQuery(alter_query, current_context).execute();
 
-        auto storage = StorageMaterializedPostgreSQL::create(table, getContext(), remote_database_name, table_name);
-        materialized_tables[table_name] = storage;
-        replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
+        /// We just came from createTable() and created nested table there. Add assert.
+        auto nested_table = DatabaseAtomic::tryGetTable(table_name, current_context);
+        assert(nested_table != nullptr);
+
+        try
+        {
+            auto tables_to_replicate = settings->materialized_postgresql_tables_list.value;
+            if (tables_to_replicate.empty())
+                tables_to_replicate = getTablesList();
+
+            /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
+            SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
+            auto alter_query = createAlterSettingsQuery(new_setting);
+
+            InterpreterAlterQuery(alter_query, current_context).execute();
+
+            auto storage = StorageMaterializedPostgreSQL::create(table, getContext(), remote_database_name, table_name);
+            materialized_tables[table_name] = storage;
+            replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
+        }
+        catch (...)
+        {
+            /// This is a failed attach table. Remove already created nested table.
+            DatabaseAtomic::dropTable(current_context, table_name, true);
+            throw;
+        }
     }
     else
     {
@@ -334,6 +347,14 @@ StoragePtr DatabaseMaterializedPostgreSQL::detachTable(const String & table_name
         }
         catch (Exception & e)
         {
+            /// We already removed this table from replication and adding it back will be an overkill..
+            /// TODO: this is bad, we leave a table lying somewhere not dropped, and if user will want
+            /// to move it back into replication, he will fail to do so because there is undropped nested with the same name.
+            /// This can also happen if we crash after removing table from replication andd before dropping nested.
+            /// As a solution, we could drop a table if it already exists and add a fresh one instead for these two cases.
+            /// TODO: sounds good.
+            materialized_tables.erase(table_name);
+
             e.addMessage("while removing table `" + table_name + "` from replication");
             throw;
         }

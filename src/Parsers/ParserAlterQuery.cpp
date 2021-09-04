@@ -187,6 +187,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::RENAME_COLUMN;
             }
+            else if (s_materialize_column.ignore(pos, expected))
+            {
+                if (!parser_name.parse(pos, command->column, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::MATERIALIZE_COLUMN;
+                command->detach = false;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command->partition, expected))
+                        return false;
+                }
+            }
             else if (s_drop_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, command->partition, expected))
