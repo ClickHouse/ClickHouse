@@ -284,7 +284,7 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
                     {
                         out << "ERROR: Tab found where line feed is expected."
                                " It's like your file has more columns than expected.\n"
-                               "And if your file have right number of columns, maybe it have unescaped tab in value.\n";
+                               "And if your file has the right number of columns, maybe it has an unescaped tab in a value.\n";
                     }
                     else if (*in.position() == '\r')
                     {
@@ -313,8 +313,8 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
                 {
                     out << "ERROR: Line feed found where tab is expected."
                            " It's like your file has less columns than expected.\n"
-                           "And if your file have right number of columns, "
-                           "maybe it have unescaped backslash in value before tab, which cause tab has escaped.\n";
+                           "And if your file has the right number of columns, "
+                           "maybe it has an unescaped backslash in value before tab, which causes the tab to be escaped.\n";
                 }
                 else if (*in.position() == '\r')
                 {

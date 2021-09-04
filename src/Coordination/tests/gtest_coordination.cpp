@@ -404,6 +404,7 @@ TEST(CoordinationTest, ChangelogTestCompaction)
     /// And we able to read it
     DB::KeeperLogStore changelog_reader("./logs", 5, true);
     changelog_reader.init(7, 0);
+
     EXPECT_EQ(changelog_reader.size(), 1);
     EXPECT_EQ(changelog_reader.start_index(), 7);
     EXPECT_EQ(changelog_reader.next_slot(), 8);
@@ -1317,7 +1318,8 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
         }
     }
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_0_99.bin"));
+
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin"));
 
     DB::KeeperLogStore changelog_1("./logs", 10, true);
     changelog_1.init(0, 50);
@@ -1330,8 +1332,8 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
         changelog_1.end_of_append_batch(0, 0);
     }
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_0_99.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_100_109.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin"));
 
     DB::KeeperLogStore changelog_2("./logs", 7, true);
     changelog_2.init(98, 55);
@@ -1346,11 +1348,12 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
     }
 
     changelog_2.compact(105);
-    EXPECT_FALSE(fs::exists("./logs/changelog_0_99.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_100_109.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_110_116.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_117_123.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_124_130.bin"));
+
+    EXPECT_FALSE(fs::exists("./logs/changelog_1_100.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_111_117.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_118_124.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_125_131.bin"));
 
     DB::KeeperLogStore changelog_3("./logs", 5, true);
     changelog_3.init(116, 3);
@@ -1364,14 +1367,31 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
     }
 
     changelog_3.compact(125);
-    EXPECT_FALSE(fs::exists("./logs/changelog_100_109.bin"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_110_116.bin"));
-    EXPECT_FALSE(fs::exists("./logs/changelog_117_123.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_101_110.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_111_117.bin"));
+    EXPECT_FALSE(fs::exists("./logs/changelog_118_124.bin"));
 
-    EXPECT_TRUE(fs::exists("./logs/changelog_124_130.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_131_135.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_136_140.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_141_145.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_125_131.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_132_136.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_137_141.bin"));
+    EXPECT_TRUE(fs::exists("./logs/changelog_142_146.bin"));
+}
+
+TEST(CoordinationTest, TestSessionExpiryQueue)
+{
+    using namespace Coordination;
+    SessionExpiryQueue queue(500);
+
+    queue.addNewSessionOrUpdate(1, 1000);
+
+    for (size_t i = 0; i < 2; ++i)
+    {
+        EXPECT_EQ(queue.getExpiredSessions(), std::vector<int64_t>({}));
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    EXPECT_EQ(queue.getExpiredSessions(), std::vector<int64_t>({1}));
 }
 
 
