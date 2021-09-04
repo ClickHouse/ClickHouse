@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
@@ -12,25 +12,23 @@ namespace Poco
 }
 namespace DB
 {
-class FileLogBlockInputStream : public IBlockInputStream
+class FileLogSource : public SourceWithProgress
 {
 public:
-    FileLogBlockInputStream(
+    FileLogSource(
         StorageFileLog & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const std::shared_ptr<Context> & context_,
+        const ContextPtr & context_,
         const Names & columns,
-        size_t max_block_size_);
-    ~FileLogBlockInputStream() override = default;
-
-    String getName() const override { return storage.getName(); }
-    Block getHeader() const override;
-
-    void readPrefixImpl() override;
-    Block readImpl() override;
-    void readSuffixImpl() override;
+        size_t max_block_size_,
+        size_t poll_time_out_,
+        size_t stream_number_,
+        size_t max_streams_number_);
 
     bool isStalled() { return !buffer || buffer->isStalled(); }
+
+protected:
+    Chunk generate() override;
 
 private:
     StorageFileLog & storage;
@@ -39,10 +37,19 @@ private:
     Names column_names;
     UInt64 max_block_size;
 
+    size_t poll_time_out;
+
+    size_t stream_number;
+    size_t max_streams_number;
+
     ReadBufferFromFileLogPtr buffer;
+
+    bool started = false;
 
     const Block non_virtual_header;
     const Block virtual_header;
+
+    void createReadBuffer();
 };
 
 }
