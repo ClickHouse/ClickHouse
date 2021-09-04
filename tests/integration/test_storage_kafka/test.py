@@ -7,6 +7,7 @@ import time
 import logging
 import io
 import string
+import ast
 
 import avro.schema
 import avro.io
@@ -2792,7 +2793,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
                 "(0,'BAD','AM',0.5,1)",
             ],
-            'expected':r'''{"raw_message":"(0,'BAD','AM',0.5,1)","error":"Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero\/NULL instead of throwing exception.: while executing 'FUNCTION _CAST(assumeNotNull(_dummy_0) :: 2, 'UInt16' :: 1) -> _CAST(assumeNotNull(_dummy_0), 'UInt16') UInt16 : 4'"}''',
+            'expected':r'''{"raw_message":"(0,'BAD','AM',0.5,1)","error":"Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero\/NULL instead of throwing exception"}''',
             'supports_empty_value': True,
             'printable':True,
         },
@@ -2934,11 +2935,13 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
 '''.format(topic_name=topic_name, offset_0=offsets[0], offset_1=offsets[1], offset_2=offsets[2])
         # print(('Checking result\n {result} \n expected \n {expected}\n'.format(result=str(result), expected=str(expected))))
         assert TSV(result) == TSV(expected), 'Proper result for format: {}'.format(format_name)
-        errors_result = instance.query('SELECT raw_message, error FROM test.kafka_errors_{format_name}_mv format JSONEachRow'.format(format_name=format_name))
-        errors_expected = format_opts['expected']
+        errors_result = ast.literal_eval(instance.query('SELECT raw_message, error FROM test.kafka_errors_{format_name}_mv format JSONEachRow'.format(format_name=format_name)))
+        errors_expected = ast.literal_eval(format_opts['expected'])
         # print(errors_result.strip())
         # print(errors_expected.strip())
-        assert  errors_result.strip() == errors_expected.strip(), 'Proper errors for format: {}'.format(format_name)
+        assert errors_result['raw_message'] == errors_expected['raw_message'], 'Proper raw_message for format: {}'.format(format_name)
+        # Errors text can change, just checking prefixes
+        assert errors_expected['error'] in errors_result['error'], 'Proper error for format: {}'.format(format_name)
         kafka_delete_topic(admin_client, topic_name)
 
 def wait_for_new_data(table_name, prev_count = 0, max_retries = 120):
