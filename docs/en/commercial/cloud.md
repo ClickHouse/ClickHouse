@@ -59,4 +59,14 @@ toc_title: Cloud
 -   High security with isolated per cluster VPCs
 -   On-demand pricing with no upfront costs or long-term commitments
 
+## ByteHouse {#bytehouse}
+
+[ByteHouse](https://bytehouse.cloud/) is a lightning-fast data warehouse to supercharge your real-time analytics.
+
+-   Originated from ClickHouse, cloud independent and fully managed
+-   Enterprise-level GUI for easy management
+-   True compute-storage separation, without compromising performance
+-   Exactly-once support for streaming data source
+-   Enhanced data warehouse features, including ANSI-SQL, security, window function and distributed joins
+
 {## [Original article](https://clickhouse.tech/docs/en/commercial/cloud/) ##}
