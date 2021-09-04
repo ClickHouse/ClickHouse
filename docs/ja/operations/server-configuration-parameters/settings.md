@@ -284,12 +284,12 @@ ClickHouseサーバー間でデータを交換するポート。
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-ClickHouseが接続を閉じる前に受信要求を待機する秒数。 既定値は3秒です。
+ClickHouseが接続を閉じる前に受信要求を待機する秒数。 既定値は10秒です。
 
 **例**
 
 ``` xml
-<keep_alive_timeout>3</keep_alive_timeout>
+<keep_alive_timeout>10</keep_alive_timeout>
 ```
 
 ## listen_host {#server_configuration_parameters-listen_host}
