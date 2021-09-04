@@ -52,12 +52,14 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
         auto time_in_microseconds = [](const time_point<steady_clock> & timestamp)
         {
             auto time_diff = duration_cast<microseconds>(steady_clock::now() - timestamp);
-            return (system_clock::now() - time_diff).time_since_epoch().count();
+            auto time_us = (system_clock::now() - time_diff).time_since_epoch().count();
+
+            DecimalUtils::DecimalComponents<DateTime64> components{time_us / 1'000'000, time_us % 1'000'000};
+            return DecimalField(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
         };
 
-        size_t i = 0;
-
         const auto & insert_query = key.query->as<const ASTInsertQuery &>();
+        size_t i = 0;
 
         res_columns[i++]->insert(queryToString(insert_query));
         res_columns[i++]->insert(insert_query.table_id.getDatabaseName());
@@ -78,8 +80,7 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
             arr_bytes.push_back(entry->bytes.size());
             arr_finished.push_back(entry->isFinished());
 
-            auto exception = entry->getException();
-            if (exception)
+            if (auto exception = entry->getException())
             {
                 try
                 {
