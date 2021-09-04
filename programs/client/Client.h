@@ -11,17 +11,16 @@ class Client : public ClientBase
 public:
     Client() = default;
     void initialize(Poco::Util::Application & self) override;
+    int main(const std::vector<String> & /*args*/) override;
 
 protected:
-    void processSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
-    bool processMultiQuery(const String & all_queries_text) override;
+    void executeSignleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
+    bool executeMultiQuery(const String & all_queries_text) override;
     bool processWithFuzzing(const String & full_query) override;
 
+    void connect() override;
     void processError(const String & query) const override;
     void loadSuggestionData(Suggest & suggest) override;
-
-    void connect() override;
-    int mainImpl() override;
 
     void readArguments(int argc, char ** argv,
                        Arguments & common_arguments,

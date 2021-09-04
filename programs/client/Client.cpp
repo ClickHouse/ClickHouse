@@ -42,6 +42,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/UseSSL.h>
 
 #include <DataStreams/NullBlockOutputStream.h>
 
@@ -116,7 +117,7 @@ void Client::processError(const String & query) const
 }
 
 
-void Client::processSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
+void Client::executeSignleQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     client_exception.reset();
     server_exception.reset();
@@ -190,7 +191,7 @@ void Client::processSingleQuery(const String & query_to_execute, ASTPtr parsed_q
 }
 
 
-bool Client::processMultiQuery(const String & all_queries_text)
+bool Client::executeMultiQuery(const String & all_queries_text)
 {
     // It makes sense not to base any control flow on this, so that it is
     // the same in tests and in normal usage. The only difference is that in
@@ -471,90 +472,99 @@ void Client::loadSuggestionData(Suggest & suggest)
 }
 
 
-int Client::mainImpl()
+int Client::main(const std::vector<std::string> & /*args*/)
+try
 {
-    try
+    UseSSL use_ssl;
+    MainThreadStatus::getInstance();
+
+    std::cout << std::fixed << std::setprecision(3);
+    std::cerr << std::fixed << std::setprecision(3);
+
+    /// Limit on total memory usage
+    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+
+    if (max_client_memory_usage != 0)
     {
-        MainThreadStatus::getInstance();
-
-        /// Limit on total memory usage
-        size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
-
-        if (max_client_memory_usage != 0)
-        {
-            total_memory_tracker.setHardLimit(max_client_memory_usage);
-            total_memory_tracker.setDescription("(total)");
-            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-        }
-
-        registerFormats();
-        registerFunctions();
-        registerAggregateFunctions();
-
-        processConfig();
-        connect();
-
-        if (is_interactive)
-        {
-            /// Load Warnings at the beginning of connection
-            if (!config().has("no-warnings"))
-            {
-                try
-                {
-                    std::vector<String> messages = loadWarningMessages();
-                    if (!messages.empty())
-                    {
-                        std::cout << "Warnings:" << std::endl;
-                        for (const auto & message : messages)
-                            std::cout << " * " << message << std::endl;
-                        std::cout << std::endl;
-                    }
-                }
-                catch (...)
-                {
-                    /// Ignore exception
-                }
-            }
-
-            runInteractive();
-        }
-        else
-        {
-            connection->setDefaultDatabase(connection_parameters.default_database);
-
-            runNonInteractive();
-
-            // If exception code isn't zero, we should return non-zero return
-            // code anyway.
-            const auto * exception = server_exception ? server_exception.get() : client_exception.get();
-
-            if (exception)
-            {
-                return exception->code() != 0 ? exception->code() : -1;
-            }
-
-            if (have_error)
-            {
-                // Shouldn't be set without an exception, but check it just in
-                // case so that at least we don't lose an error.
-                return -1;
-            }
-        }
+        total_memory_tracker.setHardLimit(max_client_memory_usage);
+        total_memory_tracker.setDescription("(total)");
+        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
-    catch (const Exception & e)
+
+    registerFormats();
+    registerFunctions();
+    registerAggregateFunctions();
+
+    processConfig();
+
+    if (is_interactive)
     {
-        bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
-        std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-        /// If exception code isn't zero, we should return non-zero return code anyway.
-        return e.code() ? e.code() : -1;
+        clearTerminal();
+        showClientVersion();
     }
-    catch (...)
+
+    connect();
+
+    if (is_interactive)
     {
-        std::cerr << getCurrentExceptionMessage(false) << std::endl;
-        return getCurrentExceptionCode();
+        /// Load Warnings at the beginning of connection
+        if (!config().has("no-warnings"))
+        {
+            try
+            {
+                std::vector<String> messages = loadWarningMessages();
+                if (!messages.empty())
+                {
+                    std::cout << "Warnings:" << std::endl;
+                    for (const auto & message : messages)
+                        std::cout << " * " << message << std::endl;
+                    std::cout << std::endl;
+                }
+            }
+            catch (...)
+            {
+                /// Ignore exception
+            }
+        }
+
+        runInteractive();
+    }
+    else
+    {
+        connection->setDefaultDatabase(connection_parameters.default_database);
+
+        runNonInteractive();
+
+        // If exception code isn't zero, we should return non-zero return
+        // code anyway.
+        const auto * exception = server_exception ? server_exception.get() : client_exception.get();
+
+        if (exception)
+        {
+            return exception->code() != 0 ? exception->code() : -1;
+        }
+
+        if (have_error)
+        {
+            // Shouldn't be set without an exception, but check it just in
+            // case so that at least we don't lose an error.
+            return -1;
+        }
     }
 
     return 0;
+}
+catch (const Exception & e)
+{
+    bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
+    std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+    /// If exception code isn't zero, we should return non-zero return code anyway.
+    return e.code() ? e.code() : -1;
+}
+catch (...)
+{
+    std::cerr << getCurrentExceptionMessage(false) << std::endl;
+    return getCurrentExceptionCode();
 }
 
 
