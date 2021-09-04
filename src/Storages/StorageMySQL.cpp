@@ -251,7 +251,7 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
                 configuration.on_duplicate_clause = arg_value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unxpected argument name for key-value defined argument."
+                        "Unexpected argument name for key-value defined argument."
                         "Got: {}, but expected one of:"
                         "host, port, username, password, database, table, replace_query, on_duplicate_clause.", arg_name);
         }

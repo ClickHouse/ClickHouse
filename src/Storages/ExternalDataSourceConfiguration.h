@@ -46,7 +46,7 @@ struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
     explicit StorageMySQLConfiguration(const ExternalDataSourceConfiguration & common_configuration)
         : ExternalDataSourceConfiguration(common_configuration) {}
 
-    bool replace_query;
+    bool replace_query = false;
     String on_duplicate_clause;
     std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
 };
@@ -66,7 +66,7 @@ using EngineArgs = std::vector<std::pair<String, DB::Field>>;
 /* If storage engine's configuration was define via named_collections,
  * return all options in ExternalDataSource::Configuration struct.
  *
- * Also check if engine arguemnts have key-value defined configuration options:
+ * Also check if engine arguments have key-value defined configuration options:
  * ENGINE = PostgreSQL(postgresql_configuration, database = 'postgres_database');
  * In this case they will override values defined in config.
  *

@@ -271,7 +271,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                     configuration.on_conflict = arg_value.safeGet<String>();
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Unxpected argument name for key-value defined argument."
+                            "Unexpected argument name for key-value defined argument."
                             "Got: {}, but expected one of:"
                             "host, port, username, password, database, schema, on_conflict, use_table_cache.", arg_name);
             }

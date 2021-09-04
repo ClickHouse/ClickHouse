@@ -45,8 +45,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 StoragePostgreSQL::StoragePostgreSQL(
@@ -397,7 +398,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
                 configuration.on_conflict = arg_value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unxpected argument name for key-value defined argument."
+                        "Unexpected argument name for key-value defined argument."
                         "Got: {}, but expected one of:"
                         "host, port, username, password, database, table, schema, on_conflict.", arg_name);
         }
