@@ -26,7 +26,7 @@ TEST(Logger, TestLog)
 
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
-        auto log = &Poco::Logger::create("TestLogger", my_channel.get());
+        auto * log = &Poco::Logger::create("TestLogger", my_channel.get());
         log->setLevel("test");
         LOG_TEST(log, "Hello World");
 
@@ -39,7 +39,7 @@ TEST(Logger, TestLog)
         {
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
-            auto log = &Poco::Logger::create(std::string{level} + "_Logger", my_channel.get());
+            auto * log = &Poco::Logger::create(std::string{level} + "_Logger", my_channel.get());
             log->setLevel(level);
             LOG_TEST(log, "Hello World");
 
