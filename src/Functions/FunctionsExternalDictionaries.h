@@ -104,9 +104,11 @@ public:
 
         const auto * attr_name_col = checkAndGetColumnConst<ColumnString>(sample_columns.getByPosition(1).column.get());
         if (!attr_name_col)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function dictGet... must be a constant string");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function dictGet must be a constant string");
 
-        return getDictionary(dict_name_col->getValue<String>())->isInjective(attr_name_col->getValue<String>());
+        const auto dictionary_name = dict_name_col->getValue<String>();
+        const auto attribute_name = attr_name_col->getValue<String>();
+        return getDictionary(dictionary_name)->isInjective(attribute_name);
     }
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
@@ -585,14 +587,14 @@ private:
             {
                 const auto * tuple_column = tuple_col.getColumnPtr(i).get();
 
-                const auto * attribute_name_column = checkAndGetColumn<ColumnString>(tuple_column);
+                const auto * attribute_name_column = checkAndGetColumnConst<ColumnString>(tuple_column);
 
                 if (!attribute_name_column)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Tuple second argument of function {} must contain multiple constant string columns",
                         getName());
 
-                attribute_names.emplace_back(attribute_name_column->getDataAt(0));
+                attribute_names.emplace_back(attribute_name_column->getValue<String>());
             }
         }
         else
