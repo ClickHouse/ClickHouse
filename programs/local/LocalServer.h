@@ -25,18 +25,16 @@ class LocalServer : public ClientBase, public Loggers
 {
 public:
     LocalServer() = default;
-
     void initialize(Poco::Util::Application & self) override;
+    int main(const std::vector<String> & /*args*/) override;
 
 protected:
-    void processSingleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
-    bool processMultiQuery(const String & all_queries_text) override;
-
-    void processError(const String & query) const override;
-    void loadSuggestionData(Suggest &) override;
+    void executeSignleQuery(const String & query_to_execute, ASTPtr parsed_query) override;
+    bool executeMultiQuery(const String & all_queries_text) override;
 
     void connect() override;
-    int mainImpl() override;
+    void processError(const String & query) const override;
+    void loadSuggestionData(Suggest &) override;
 
     String getQueryTextPrefix() override;
     void printHelpMessage(const OptionsDescription & options_description) override;

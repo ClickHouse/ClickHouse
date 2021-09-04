@@ -35,7 +35,6 @@ struct LocalQueryState
 
     /// Is request cancelled
     bool is_cancelled = false;
-    /// Is query finished == !has_pending_data
     bool is_finished = false;
 
     bool sent_totals = false;
@@ -66,11 +65,10 @@ public:
                           UInt64 & revision) override;
 
     UInt64 getServerRevision(const ConnectionTimeouts & timeouts) override;
-
     const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
-    const String & getDescription() const override;
+    const String & getDescription() const override { return description; }
 
     void sendQuery(
         const ConnectionTimeouts & timeouts,
@@ -85,7 +83,7 @@ public:
 
     void sendData(const Block &, const String &, bool) override;
 
-    void sendExternalTablesData(ExternalTablesData &) override {}
+    void sendExternalTablesData(ExternalTablesData &) override;
 
     bool poll(size_t timeout_microseconds = 0) override;
 

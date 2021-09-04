@@ -30,6 +30,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
+#include <IO/UseSSL.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
@@ -83,7 +84,7 @@ void LocalServer::processError(const String & query) const
 }
 
 
-void LocalServer::processSingleQuery(const String & query_to_execute, ASTPtr parsed_query)
+void LocalServer::executeSignleQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     /// To support previous behaviour of clickhouse-local do not reset first exception in case --ignore-error,
     /// it needs to be thrown after multiquery is finished (test 00385). But I do not think it is ok to output only
@@ -123,7 +124,7 @@ void LocalServer::processSingleQuery(const String & query_to_execute, ASTPtr par
 }
 
 
-bool LocalServer::processMultiQuery(const String & all_queries_text)
+bool LocalServer::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
 
@@ -329,6 +330,13 @@ static void attachSystemTables(ContextPtr context)
 
 void LocalServer::cleanup()
 {
+    connection.reset();
+
+    global_context->shutdown();
+    global_context.reset();
+
+    status.reset();
+
     // Delete the temporary directory if needed.
     if (temporary_directory_to_delete)
     {
@@ -438,10 +446,14 @@ void LocalServer::connect()
 }
 
 
-int LocalServer::mainImpl()
+int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
+    UseSSL use_ssl;
     ThreadStatus thread_status;
+
+    std::cout << std::fixed << std::setprecision(3);
+    std::cerr << std::fixed << std::setprecision(3);
 
     /// We will terminate process on error
     static KillingErrorHandler error_handler;
@@ -463,7 +475,10 @@ try
 
     if (is_interactive)
     {
-        std::cout << std::endl;
+        clearTerminal();
+        showClientVersion();
+        std::cerr << std::endl;
+
         runInteractive();
     }
     else
@@ -476,14 +491,7 @@ try
             client_exception->rethrow();
     }
 
-    connection.reset();
-
-    global_context->shutdown();
-    global_context.reset();
-
-    status.reset();
     cleanup();
-
     return Application::EXIT_OK;
 }
 catch (const Exception & e)
