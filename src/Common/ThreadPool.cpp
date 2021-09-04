@@ -75,7 +75,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
     std::lock_guard lock(mutex);
     queue_size = value;
     /// Reserve memory to get rid of allocations
-    jobs.reserve(queue_size);
+    jobs.reserve(2 * queue_size);
 }
 
 
@@ -123,6 +123,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         /// Check if there are enough threads to process job.
         if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
         {
+            ALLOW_ALLOCATIONS_IN_SCOPE;
             try
             {
                 threads.emplace_front();
