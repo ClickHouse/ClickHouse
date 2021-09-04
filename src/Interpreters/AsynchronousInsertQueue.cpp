@@ -28,6 +28,24 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
+AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const Settings & settings_)
+    : query(query_->clone()), settings(settings_)
+{
+}
+
+AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
+    : query(other.query->clone()), settings(other.settings)
+{
+}
+
+AsynchronousInsertQueue::InsertQuery &
+AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
+{
+    query = other.query->clone();
+    settings = other.settings;
+    return *this;
+}
+
 UInt64 AsynchronousInsertQueue::InsertQuery::Hash::operator()(const InsertQuery & insert_query) const
 {
     SipHash hash;

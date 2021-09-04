@@ -41,6 +41,10 @@ private:
         ASTPtr query;
         Settings settings;
 
+        InsertQuery(const ASTPtr & query_, const Settings & settings_);
+        InsertQuery(const InsertQuery & other);
+        InsertQuery & operator=(const InsertQuery & other);
+
         bool operator==(const InsertQuery & other) const;
         struct Hash { UInt64 operator()(const InsertQuery & insert_query) const; };
     };
