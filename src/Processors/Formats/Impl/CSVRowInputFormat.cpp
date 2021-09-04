@@ -322,7 +322,7 @@ bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
                 verbosePrintString(in.position(), in.position() + 1, out);
                 out << " found instead.\n"
                        " It's like your file has more columns than expected.\n"
-                       "And if your file have right number of columns, maybe it have unquoted string value with comma.\n";
+                       "And if your file has the right number of columns, maybe it has an unquoted string value with a comma.\n";
 
                 return false;
             }
@@ -341,7 +341,7 @@ bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
                 {
                     out << "ERROR: Line feed found where delimiter (" << delimiter << ") is expected."
                            " It's like your file has less columns than expected.\n"
-                           "And if your file have right number of columns, maybe it have unescaped quotes in values.\n";
+                           "And if your file has the right number of columns, maybe it has unescaped quotes in values.\n";
                 }
                 else
                 {
