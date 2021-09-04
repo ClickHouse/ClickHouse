@@ -304,7 +304,7 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
         responses_queue.push(response);
 }
 
-std::unordered_set<int64_t> KeeperStateMachine::getDeadSessions()
+std::vector<int64_t> KeeperStateMachine::getDeadSessions()
 {
     std::lock_guard lock(storage_and_responses_lock);
     return storage->getDeadSessions();
