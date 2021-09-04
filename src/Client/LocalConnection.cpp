@@ -9,11 +9,12 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int NOT_IMPLEMENTED;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_)
     : WithContext(context_)
-    , session(getContext(), ClientInfo::Interface::TCP)
+    , session(getContext(), ClientInfo::Interface::LOCAL)
 {
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
@@ -76,6 +77,9 @@ void LocalConnection::sendQuery(
 
         if (state->io.out)
         {
+            /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
+             *  client receive exception before sending data.
+             */
             state->io.out->writePrefix();
             state->block = state->io.out->getHeader();
         }
@@ -288,10 +292,7 @@ bool LocalConnection::pollImpl()
     auto next_read = pullBlock(block);
     if (block)
     {
-        if (state->io.null_format)
-            state->block.emplace();
-        else
-            state->block.emplace(block);
+        state->block.emplace(block);
     }
     else if (!next_read)
     {
@@ -358,31 +359,34 @@ Packet LocalConnection::receivePacket()
 void LocalConnection::getServerVersion(
     const ConnectionTimeouts & /* timeouts */, String & /* name */,
     UInt64 & /* version_major */, UInt64 & /* version_minor */,
-    UInt64 & /* version_patch */, UInt64 & /* revision */) { }
-
-void LocalConnection::setDefaultDatabase(const String & name)
+    UInt64 & /* version_patch */, UInt64 & /* revision */)
 {
-    default_database = name;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
+void LocalConnection::setDefaultDatabase(const String &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 UInt64 LocalConnection::getServerRevision(const ConnectionTimeouts &)
 {
-    return server_revision;
-}
-
-const String & LocalConnection::getDescription() const
-{
-    return description;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 const String & LocalConnection::getServerTimezone(const ConnectionTimeouts &)
 {
-    return server_timezone;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 const String & LocalConnection::getServerDisplayName(const ConnectionTimeouts &)
 {
-    return server_display_name;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
+void LocalConnection::sendExternalTablesData(ExternalTablesData &)
+{
+    /// Do nothing.
 }
 
 }

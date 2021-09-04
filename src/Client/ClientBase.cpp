@@ -46,7 +46,6 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <IO/WriteBufferFromOStream.h>
-#include <IO/UseSSL.h>
 #include <IO/CompressionMethod.h>
 
 #include <DataStreams/NullBlockOutputStream.h>
@@ -261,7 +260,10 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
         if (!pager.empty())
         {
             signal(SIGPIPE, SIG_IGN);
-            pager_cmd = ShellCommand::execute(pager, true);
+
+            ShellCommand::Config config(pager);
+            config.pipe_stdin_only = true;
+            pager_cmd = ShellCommand::execute(config);
             out_buf = &pager_cmd->in;
         }
         else
@@ -390,10 +392,8 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     }
 
     int retries_left = 10;
-    for (;;)
+    while (retries_left)
     {
-        assert(retries_left > 0);
-
         try
         {
             connection->sendQuery(
@@ -425,6 +425,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             }
         }
     }
+    assert(retries_left > 0);
 }
 
 
@@ -892,7 +893,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     written_first_block = false;
     progress_indication.resetProgress();
 
-    processSingleQuery(query_to_execute, parsed_query);
+    executeSignleQuery(query_to_execute, parsed_query);
 
     if (is_interactive)
     {
@@ -1021,7 +1022,7 @@ bool ClientBase::processQueryText(const String & text)
         return true;
     }
 
-    return processMultiQuery(text);
+    return executeMultiQuery(text);
 }
 
 
@@ -1167,7 +1168,7 @@ void ClientBase::runNonInteractive()
             readStringUntilEOF(queries_from_file, in);
 
             text += queries_from_file;
-            return processMultiQuery(text);
+            return executeMultiQuery(text);
         };
 
         /// Read all queries into `text`.
@@ -1207,7 +1208,7 @@ void ClientBase::runNonInteractive()
 }
 
 
-static void clearTerminal()
+void ClientBase::clearTerminal()
 {
     /// Clear from cursor until end of screen.
     /// It is needed if garbage is left in terminal.
@@ -1218,26 +1219,9 @@ static void clearTerminal()
 }
 
 
-static void showClientVersion()
+void ClientBase::showClientVersion()
 {
     std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
-}
-
-
-int ClientBase::main(const std::vector<std::string> & /*args*/)
-{
-    UseSSL use_ssl;
-
-    std::cout << std::fixed << std::setprecision(3);
-    std::cerr << std::fixed << std::setprecision(3);
-
-    if (is_interactive)
-    {
-        clearTerminal();
-        showClientVersion();
-    }
-
-    return mainImpl();
 }
 
 

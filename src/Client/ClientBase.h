@@ -36,23 +36,20 @@ public:
     using Arguments = std::vector<String>;
 
     void init(int argc, char ** argv);
-    int main(const std::vector<String> & /*args*/) override;
 
 protected:
     void runInteractive();
     void runNonInteractive();
-
-    virtual void connect() = 0;
-    virtual int mainImpl() = 0;
 
     virtual bool processWithFuzzing(const String &)
     {
         throw Exception("Query processing with fuzzing is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void processSingleQuery(const String & query_to_execute, ASTPtr parsed_query) = 0;
-    virtual bool processMultiQuery(const String & all_queries_text) = 0;
+    virtual void executeSignleQuery(const String & query_to_execute, ASTPtr parsed_query) = 0;
+    virtual bool executeMultiQuery(const String & all_queries_text) = 0;
 
+    virtual void connect() = 0;
     virtual void processError(const String & query) const = 0;
     virtual void loadSuggestionData(Suggest &) = 0;
 
@@ -73,6 +70,9 @@ protected:
 
     /// For non-interactive multi-query mode get queries text prefix.
     virtual String getQueryTextPrefix() { return ""; }
+
+    void clearTerminal();
+    void showClientVersion();
 
     using ProgramOptionsDescription = boost::program_options::options_description;
     using CommandLineOptions = boost::program_options::variables_map;
@@ -134,36 +134,33 @@ protected:
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false; /// Output execution time to stderr in batch mode.
 
-    String home_path;
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
-    String history_file; /// Path to a file containing command history.
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
-
-    bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
-    String prompt_by_server_display_name;
-    String server_display_name;
-
-    ProgressIndication progress_indication;
-    bool need_render_progress = true;
-    bool written_first_block = false;
-    size_t processed_rows = 0; /// How many rows have been read or written.
 
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     uint64_t terminal_width = 0;
+
+    std::unique_ptr<IServerConnection> connection;
+    ConnectionParameters connection_parameters;
+
+    String format; /// Query results output format.
+    bool is_default_format = true; /// false, if format is set in the config or command line.
+    size_t format_max_block_size = 0; /// Max block size for console output.
+    String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
+    size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
+    size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
+
+    bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
+
+    /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
+    std::vector<std::pair<String, String>> query_id_formats;
 
     /// Settings specified via command line args
     Settings cmd_settings;
 
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
-
-    QueryFuzzer fuzzer;
-    int query_fuzzer_runs = 0;
-
-    /// If the last query resulted in exception. `server_exception` or
-    /// `client_exception` must be set.
-    bool have_error = false;
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in{STDIN_FILENO};
@@ -180,17 +177,20 @@ protected:
     String server_logs_file;
     BlockOutputStreamPtr logs_out_stream;
 
-    /// We will format query_id in interactive mode in various ways, the default is just to print Query id: ...
-    std::vector<std::pair<String, String>> query_id_formats;
+    String home_path;
+    String history_file; /// Path to a file containing command history.
 
-    /// Dictionary with query parameters for prepared statements.
-    NameToNameMap query_parameters;
+    String current_profile;
 
-    std::unique_ptr<IServerConnection> connection;
-    ConnectionParameters connection_parameters;
+    UInt64 server_revision = 0;
+    String server_version;
+    String prompt_by_server_display_name;
+    String server_display_name;
 
-    String format; /// Query results output format.
-    bool is_default_format = true; /// false, if format is set in the config or command line.
+    ProgressIndication progress_indication;
+    bool need_render_progress = true;
+    bool written_first_block = false;
+    size_t processed_rows = 0; /// How many rows have been read or written.
 
     /// The last exception that was received from the server. Is used for the
     /// return code in batch mode.
@@ -198,20 +198,17 @@ protected:
     /// Likewise, the last exception that occurred on the client.
     std::unique_ptr<Exception> client_exception;
 
+    /// If the last query resulted in exception. `server_exception` or
+    /// `client_exception` must be set.
+    bool have_error = false;
+
+    std::list<ExternalTable> external_tables; /// External tables info.
+    NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
+
+    QueryFuzzer fuzzer;
+    int query_fuzzer_runs = 0;
+
     QueryProcessingStage::Enum query_processing_stage;
-
-    /// External tables info.
-    std::list<ExternalTable> external_tables;
-    String current_profile;
-
-    size_t format_max_block_size = 0; /// Max block size for console output.
-    String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
-    size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
-    size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
-
-    UInt64 server_revision = 0;
-    String server_version;
-
 };
 
 }
