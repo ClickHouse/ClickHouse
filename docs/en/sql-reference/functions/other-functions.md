@@ -2236,6 +2236,53 @@ defaultRoles()
 
 Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
+## getServerPort {#getserverport}
+
+Returns the number of the server port. When the port is not used by the server, throws an exception.
+
+**Syntax**
+
+``` sql
+getServerPort(port_name)
+```
+
+**Arguments**
+
+-   `port_name` — The name of the server port. [String](../../sql-reference/data-types/string.md#string). Possible values:
+
+    -   'tcp_port'
+    -   'tcp_port_secure'
+    -   'http_port'
+    -   'https_port'
+    -   'interserver_http_port'
+    -   'interserver_https_port'
+    -   'mysql_port'
+    -   'postgresql_port'
+    -   'grpc_port'
+    -   'prometheus.port'
+
+**Returned value**
+
+-   The number of the server port.
+
+Type: [UInt16](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT getServerPort('tcp_port');
+```
+
+Result:
+
+``` text
+┌─getServerPort('tcp_port')─┐
+│ 9000                      │
+└───────────────────────────┘
+```
+
 ## queryID {#query-id}
 
 Returns the ID of the current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `query_id`.

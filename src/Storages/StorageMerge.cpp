@@ -338,9 +338,10 @@ Pipe StorageMerge::read(
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
-    if (!pipe.empty())
+    if (!pipe.empty() && !query_info.input_order_info)
         // It's possible to have many tables read from merge, resize(num_streams) might open too many files at the same time.
-        // Using narrowPipe instead.
+        // Using narrowPipe instead. But in case of reading in order of primary key, we cannot do it,
+        // because narrowPipe doesn't preserve order.
         narrowPipe(pipe, num_streams);
 
     return pipe;
