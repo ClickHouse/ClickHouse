@@ -64,6 +64,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     setInMemoryMetadata(storage_metadata);
 
     String replication_identifier = remote_database_name + "_" + remote_table_name_;
+    replication_settings->materialized_postgresql_tables_list = remote_table_name_;
+
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             replication_identifier,
             remote_database_name,
@@ -71,8 +73,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             connection_info,
             getContext(),
             is_attach,
-            replication_settings->materialized_postgresql_max_block_size.value,
-            /* allow_automatic_update */ false, /* is_materialized_postgresql_database */false);
+            *replication_settings,
+            /* is_materialized_postgresql_database */false);
 
     if (!is_attach)
     {

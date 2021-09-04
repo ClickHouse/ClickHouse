@@ -32,24 +32,28 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const postgres::ConnectionInfo & connection_info_,
     ContextPtr context_,
     bool is_attach_,
-    const size_t max_block_size_,
-    bool allow_automatic_update_,
-    bool is_materialized_postgresql_database_,
-    const String tables_list_)
+    const MaterializedPostgreSQLSettings & replication_settings,
+    bool is_materialized_postgresql_database_)
     : log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
     , context(context_)
     , is_attach(is_attach_)
     , remote_database_name(remote_database_name_)
     , current_database_name(current_database_name_)
     , connection_info(connection_info_)
-    , max_block_size(max_block_size_)
-    , allow_automatic_update(allow_automatic_update_)
+    , max_block_size(replication_settings.materialized_postgresql_max_block_size)
+    , allow_automatic_update(replication_settings.materialized_postgresql_allow_automatic_update)
     , is_materialized_postgresql_database(is_materialized_postgresql_database_)
-    , tables_list(tables_list_)
+    , tables_list(replication_settings.materialized_postgresql_tables_list)
+    , user_provided_snapshot(replication_settings.materialized_postgresql_snapshot)
     , connection(std::make_shared<postgres::Connection>(connection_info_))
     , milliseconds_to_wait(RESCHEDULE_MS)
 {
-    replication_slot = fmt::format("{}_ch_replication_slot", replication_identifier);
+    replication_slot = replication_settings.materialized_postgresql_replication_slot;
+    if (replication_slot.empty())
+    {
+        user_managed_slot = false;
+        replication_slot = fmt::format("{}_ch_replication_slot", replication_identifier);
+    }
     publication_name = fmt::format("{}_ch_publication", replication_identifier);
 
     startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ waitConnectionAndStart(); });
@@ -121,7 +125,20 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
     auto initial_sync = [&]()
     {
-        createReplicationSlot(tx, start_lsn, snapshot_name);
+        LOG_TRACE(log, "Starting tables sync load");
+
+        if (user_managed_slot)
+        {
+            if (user_provided_snapshot.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Using a user-defined replication slot must be provided with a snapshot from EXPORT SNAPSHOT when the slot is created."
+                                "Pass it to `materialized_postgresql_snapshot` setting");
+            snapshot_name = user_provided_snapshot;
+        }
+        else
+        {
+            createReplicationSlot(tx, start_lsn, snapshot_name);
+        }
 
         for (const auto & [table_name, storage] : materialized_storages)
         {
@@ -147,12 +164,17 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// Recreation of a replication slot imposes reloading of all tables.
     if (!isReplicationSlotExist(tx, start_lsn, /* temporary */false))
     {
+        if (user_managed_slot)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Having replication slot `{}` from settings, but it does not exist", replication_slot);
+
         initial_sync();
     }
     /// Always drop replication slot if it is CREATE query and not ATTACH.
     else if (!is_attach || new_publication)
     {
-        dropReplicationSlot(tx);
+        if (!user_managed_slot)
+            dropReplicationSlot(tx);
+
         initial_sync();
     }
     /// Synchronization and initial load already took place - do not create any new tables, just fetch StoragePtr's
@@ -376,6 +398,8 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
 void PostgreSQLReplicationHandler::createReplicationSlot(
         pqxx::nontransaction & tx, String & start_lsn, String & snapshot_name, bool temporary)
 {
+    assert(temporary || !user_managed_slot);
+
     String query_str, slot_name;
     if (temporary)
         slot_name = replication_slot + "_tmp";
@@ -401,6 +425,8 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
 
 void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx, bool temporary)
 {
+    assert(temporary || !user_managed_slot);
+
     std::string slot_name;
     if (temporary)
         slot_name = replication_slot + "_tmp";
@@ -433,14 +459,17 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
         connection->execWithRetry([&](pqxx::nontransaction & tx)
         {
-            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
-                dropReplicationSlot(tx, /* temporary */false);
+            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
+                dropReplicationSlot(tx, /* temporary */true);
         });
+
+        if (user_managed_slot)
+            return;
 
         connection->execWithRetry([&](pqxx::nontransaction & tx)
         {
-            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
-                dropReplicationSlot(tx, /* temporary */true);
+            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
+                dropReplicationSlot(tx, /* temporary */false);
         });
     }
     catch (Exception & e)
