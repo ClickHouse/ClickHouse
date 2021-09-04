@@ -288,7 +288,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
     if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials_))
-        session_client_info->current_password = basic_credentials->getPassword();
+        prepared_client_info->current_password = basic_credentials->getPassword();
 #endif
 }
 
