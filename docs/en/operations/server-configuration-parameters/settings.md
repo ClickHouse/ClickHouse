@@ -390,12 +390,12 @@ This section contains the following parameters:
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 3 seconds.
+The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 10 seconds.
 
 **Example**
 
 ``` xml
-<keep_alive_timeout>3</keep_alive_timeout>
+<keep_alive_timeout>10</keep_alive_timeout>
 ```
 
 ## listen_host {#server_configuration_parameters-listen_host}
@@ -535,7 +535,7 @@ Possible values:
 -   Positive double.
 -   0 — The ClickHouse server can use all available RAM.
 
-Default value: `0`.
+Default value: `0.9`.
 
 **Usage**
 
