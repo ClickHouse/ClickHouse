@@ -33,26 +33,13 @@ public:
 
     bool poll();
 
-    bool isStalled() { return buffer_status != BufferStatus::NOT_STALLED; }
+    bool noRecords() { return buffer_status == BufferStatus::NO_RECORD_RETURNED; }
 
 private:
     enum class BufferStatus
     {
         NO_RECORD_RETURNED,
-        NOT_STALLED,
-    };
-    enum class FileStatus
-    {
-        BEGIN,
-        NO_CHANGE,
-        UPDATED,
-        REMOVED
-    };
-
-    struct FileContext
-    {
-        FileStatus status = FileStatus::BEGIN;
-        std::ifstream reader;
+        POLLED_OK,
     };
 
     BufferStatus buffer_status;
@@ -67,10 +54,6 @@ private:
 
     bool time_out = false;
 
-    using NameToFile = std::unordered_map<String, FileContext>;
-    NameToFile file_status;
-
-    std::mutex status_mutex;
 
     ContextPtr context;
 
@@ -85,7 +68,6 @@ private:
     using TaskThread = BackgroundSchedulePool::TaskHolder;
 
     TaskThread wait_task;
-    TaskThread select_task;
 
     Records pollBatch(size_t batch_size_);
 
@@ -97,6 +79,5 @@ private:
 
     void waitFunc();
 
-    [[noreturn]] void watchFunc();
 };
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/FileLog/Buffer_fwd.h>
+#include <Storages/FileLog/FileLogSettings.h>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
@@ -11,8 +12,8 @@
 #include <common/shared_ptr_helper.h>
 
 #include <mutex>
-#include <list>
 #include <atomic>
+#include <fstream>
 
 namespace DB
 {
@@ -52,16 +53,39 @@ protected:
         ContextPtr context_,
         const ColumnsDescription & columns_,
         const String & path_,
-        const String & format_name_);
+        const String & format_name_,
+        std::unique_ptr<FileLogSettings> settings);
 
 private:
+    std::unique_ptr<FileLogSettings> filelog_settings;
     const String path;
+    bool path_is_directory = false;
+
     const String format_name;
     Poco::Logger * log;
 
     ReadBufferFromFileLogPtr buffer;
 
-    std::mutex mutex;
+    enum class FileStatus
+    {
+        BEGIN,
+        NO_CHANGE,
+        UPDATED,
+        REMOVED
+    };
+
+    struct FileContext
+    {
+        FileStatus status = FileStatus::BEGIN;
+        std::ifstream reader;
+    };
+
+    using NameToFile = std::unordered_map<String, FileContext>;
+    NameToFile file_status;
+
+    std::vector<String> file_names;
+
+    std::mutex status_mutex;
 
     // Stream thread
     struct TaskContext
@@ -74,10 +98,13 @@ private:
     };
     std::shared_ptr<TaskContext> task;
 
-    void createReadBuffer();
-    void destroyReadBuffer();
+    using TaskThread = BackgroundSchedulePool::TaskHolder;
+
+    TaskThread watch_task;
 
     void threadFunc();
+
+    void clearInvalidFiles();
 
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
@@ -85,6 +112,8 @@ private:
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
+
+    [[noreturn]] void watchFunc();
 };
 
 }
