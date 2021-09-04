@@ -928,6 +928,10 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
 
 def test_quoting(started_cluster):
     table_name = 'user'
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
+    cursor = conn.cursor()
     create_postgres_table(cursor, table_name);
     instance.query("INSERT INTO postgres_database.{} SELECT number, number from numbers(50)".format(table_name))
     create_materialized_db(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port)

@@ -196,10 +196,12 @@ DatabaseOnDisk::DatabaseOnDisk(
     const String & metadata_path_,
     const String & data_path_,
     const String & logger,
-    ContextPtr local_context)
+    ContextPtr local_context,
+    ASTPtr storage_def_)
     : DatabaseWithOwnTablesBase(name, logger, local_context)
     , metadata_path(metadata_path_)
     , data_path(data_path_)
+    , storage_def(storage_def_)
 {
     fs::create_directories(local_context->getPath() + data_path);
     fs::create_directories(metadata_path);
@@ -699,4 +701,53 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     return ast;
 }
 
+void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr local_context)
+{
+    auto create_query = getCreateDatabaseQuery()->clone();
+    auto * create = create_query->as<ASTCreateQuery>();
+    auto * settings = create->storage->settings;
+    if (settings)
+    {
+        auto & storage_settings = settings->changes;
+        for (const auto & change : settings_changes)
+        {
+            auto it = std::find_if(storage_settings.begin(), storage_settings.end(),
+                                   [&](const auto & prev){ return prev.name == change.name; });
+            if (it != storage_settings.end())
+                it->value = change.value;
+            else
+                storage_settings.push_back(change);
+        }
+    }
+    else
+    {
+        auto storage_settings = std::make_shared<ASTSetQuery>();
+        storage_settings->is_standalone = false;
+        storage_settings->changes = settings_changes;
+        create->storage->set(create->storage->settings, storage_settings->clone());
+    }
+
+    create->attach = true;
+    create->if_not_exists = false;
+
+    WriteBufferFromOwnString statement_buf;
+    formatAST(*create, statement_buf, false);
+    writeChar('\n', statement_buf);
+    String statement = statement_buf.str();
+
+    String database_name_escaped = escapeForFileName(database_name);
+    fs::path metadata_root_path = fs::canonical(local_context->getGlobalContext()->getPath());
+    fs::path metadata_file_tmp_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql.tmp");
+    fs::path metadata_file_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql");
+
+    WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+    writeString(statement, out);
+
+    out.next();
+    if (getContext()->getSettingsRef().fsync_metadata)
+        out.sync();
+    out.close();
+
+    fs::rename(metadata_file_tmp_path, metadata_file_path);
+}
 }
