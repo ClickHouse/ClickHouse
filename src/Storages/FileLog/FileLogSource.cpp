@@ -1,11 +1,11 @@
-#include <Storages/FileLog/FileLogBlockInputStream.h>
-
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
+#include <Common/Stopwatch.h>
 #include <common/logger_useful.h>
 
 namespace DB
@@ -15,42 +15,34 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FileLogBlockInputStream::FileLogBlockInputStream(
+FileLogSource::FileLogSource(
     StorageFileLog & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const std::shared_ptr<Context> & context_,
+    const ContextPtr & context_,
     const Names & columns,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    size_t poll_time_out_,
+    size_t stream_number_,
+    size_t max_streams_number_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
+    , poll_time_out(poll_time_out_)
+    , stream_number(stream_number_)
+    , max_streams_number(max_streams_number_)
     , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
     , virtual_header(
           metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
 {
+    createReadBuffer();
 }
 
-Block FileLogBlockInputStream::getHeader() const
-{
-    return metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
-}
-
-void FileLogBlockInputStream::readPrefixImpl()
-{
-    buffer = storage.getBuffer();
-
-    if (!buffer)
-        return;
-
-    buffer->open();
-}
-
-Block FileLogBlockInputStream::readImpl()
+Chunk FileLogSource::generate()
 {
     if (!buffer)
-        return Block();
+        return {};
 
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
 
@@ -104,8 +96,8 @@ Block FileLogBlockInputStream::readImpl()
 
     while (true)
     {
+        Stopwatch watch;
         size_t new_rows = 0;
-        exception_message.reset();
         if (buffer->poll())
         {
             try
@@ -122,28 +114,16 @@ Block FileLogBlockInputStream::readImpl()
             total_rows = total_rows + new_rows;
         }
 
-        if (!buffer->hasMorePolledRecords() && (total_rows >= max_block_size || !checkTimeLimit()))
+        if ((!buffer->hasMorePolledRecords() && (total_rows >= max_block_size)) || watch.elapsedMilliseconds() > poll_time_out)
         {
             break;
         }
     }
 
     if (total_rows == 0)
-        return Block();
+        return {};
 
-    auto result_block  = non_virtual_header.cloneWithColumns(std::move(result_columns));
-
-    return ConvertingBlockInputStream(
-               std::make_shared<OneBlockInputStream>(result_block),
-               getHeader(),
-               ConvertingBlockInputStream::MatchColumnsMode::Name)
-        .read();
-}
-
-void FileLogBlockInputStream::readSuffixImpl()
-{
-    if (buffer)
-        buffer->close();
+    return Chunk(std::move(result_columns), total_rows);
 }
 
 }

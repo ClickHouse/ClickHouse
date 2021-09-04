@@ -1,13 +1,11 @@
 #include <Interpreters/Context.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/File.h>
 
 #include <common/logger_useful.h>
-#include <common/sleep.h>
 
-#include <boost/algorithm/string/join.hpp>
 #include <algorithm>
+#include <filesystem>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -29,33 +27,9 @@ ReadBufferFromFileLog::ReadBufferFromFileLog(
 
 void ReadBufferFromFileLog::open()
 {
-    Poco::File file(path);
-
-    if (file.isFile())
-    {
-        file_status[path].reader = std::ifstream(path);
-    }
-    else if (file.isDirectory())
-    {
-        path_is_directory = true;
-        Poco::DirectoryIterator dir_iter(file);
-        Poco::DirectoryIterator end;
-        while (dir_iter != end)
-        {
-            if (dir_iter->isFile())
-                file_status[dir_iter->path()].reader = std::ifstream(dir_iter->path());
-            ++dir_iter;
-        }
-    }
-
     wait_task = context->getMessageBrokerSchedulePool().createTask("waitTask", [this] { waitFunc(); });
     wait_task->deactivate();
 
-    if (path_is_directory)
-    {
-        select_task = context->getMessageBrokerSchedulePool().createTask("watchTask", [this] { watchFunc(); });
-        select_task->activateAndSchedule();
-    }
 
     cleanUnprocessed();
     allowed = false;
@@ -183,43 +157,4 @@ void ReadBufferFromFileLog::waitFunc()
     time_out = true;
 }
 
-void ReadBufferFromFileLog::watchFunc()
-{
-    FileLogDirectoryWatcher dw(path);
-    while (true)
-    {
-        sleepForNanoseconds(poll_timeout);
-
-        auto error = dw.getError();
-        if (error)
-            LOG_INFO(log, "Error happened during watching directory {}.", dw.getPath());
-
-        auto events = dw.getEvents();
-        std::lock_guard<std::mutex> lock(status_mutex);
-
-        for (const auto & event : events)
-        {
-            switch (event.type)
-            {
-
-                case Poco::DirectoryWatcher::DW_ITEM_ADDED:
-                    LOG_TRACE(log, "New event {} watched.", event.callback);
-                    file_status[event.path].reader = std::ifstream(event.path);
-                    break;
-
-                case Poco::DirectoryWatcher::DW_ITEM_MODIFIED:
-                    LOG_TRACE(log, "New event {} watched.", event.callback);
-                    file_status[event.path].status = FileStatus::UPDATED;
-                    break;
-
-                case Poco::DirectoryWatcher::DW_ITEM_REMOVED:
-                case Poco::DirectoryWatcher::DW_ITEM_MOVED_TO:
-                case Poco::DirectoryWatcher::DW_ITEM_MOVED_FROM:
-                    LOG_TRACE(log, "New event {} watched.", event.callback);
-                    file_status[event.path].status = FileStatus::REMOVED;
-                    break;
-            }
-        }
-    }
-}
 }
