@@ -29,7 +29,7 @@ namespace DB
 class QueryStatus;
 class ThreadStatus;
 class QueryProfilerReal;
-class QueryProfilerCpu;
+class QueryProfilerCPU;
 class QueryThreadLog;
 struct OpenTelemetrySpanHolder;
 class TasksStatsCounters;
@@ -140,7 +140,7 @@ protected:
 
     // CPU and Real time query profilers
     std::unique_ptr<QueryProfilerReal> query_profiler_real;
-    std::unique_ptr<QueryProfilerCpu> query_profiler_cpu;
+    std::unique_ptr<QueryProfilerCPU> query_profiler_cpu;
 
     Poco::Logger * log = nullptr;
 
