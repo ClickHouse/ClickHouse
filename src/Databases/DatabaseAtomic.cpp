@@ -38,11 +38,10 @@ public:
 };
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_, ASTPtr storage_def_)
-    : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", logger_name, context_)
+    : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", logger_name, context_, storage_def_)
     , path_to_table_symlinks(fs::path(getContext()->getPath()) / "data" / escapeForFileName(name_) / "")
     , path_to_metadata_symlink(fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(name_))
     , db_uuid(uuid)
-    , storage_def(storage_def_)
 {
     assert(db_uuid != UUIDHelpers::Nil);
     fs::create_directories(path_to_table_symlinks);
@@ -567,56 +566,6 @@ void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)
     std::lock_guard lock{mutex};
     not_in_use = cleanupDetachedTables();
     assertDetachedTableNotInUse(uuid);
-}
-
-void DatabaseAtomic::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr local_context)
-{
-    auto create_query = getCreateDatabaseQuery()->clone();
-    auto * create = create_query->as<ASTCreateQuery>();
-    auto * settings = create->storage->settings;
-    if (settings)
-    {
-        auto & previous_settings = settings->changes;
-        for (const auto & change : settings_changes)
-        {
-            auto it = std::find_if(previous_settings.begin(), previous_settings.end(),
-                                   [&](const auto & prev){ return prev.name == change.name; });
-            if (it != previous_settings.end())
-                it->value = change.value;
-            else
-                previous_settings.push_back(change);
-        }
-    }
-    else
-    {
-        auto settings = std::make_shared<ASTSetQuery>();
-        settings->is_standalone = false;
-        settings->changes = settings_changes;
-        create->storage->set(create->storage->settings, settings->clone());
-    }
-
-    create->attach = true;
-    create->if_not_exists = false;
-
-    WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
-    writeChar('\n', statement_buf);
-    String statement = statement_buf.str();
-
-    String database_name_escaped = escapeForFileName(database_name);
-    fs::path metadata_root_path = fs::canonical(local_context->getGlobalContext()->getPath());
-    fs::path metadata_file_tmp_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql.tmp");
-    fs::path metadata_file_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql");
-
-    WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-    writeString(statement, out);
-
-    out.next();
-    if (getContext()->getSettingsRef().fsync_metadata)
-        out.sync();
-    out.close();
-
-    fs::rename(metadata_file_tmp_path, metadata_file_path);
 }
 
 }

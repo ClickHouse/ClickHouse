@@ -128,7 +128,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                         "Database engine `{}` cannot have parameters, primary_key, order_by, sample_by, settings", engine_name);
 
     if (engine_name == "Ordinary")
-        return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
+        return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context, engine_define->clone());
     else if (engine_name == "Atomic")
         return std::make_shared<DatabaseAtomic>(database_name, metadata_path, uuid, context, engine_define->clone());
     else if (engine_name == "Memory")
@@ -208,7 +208,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const auto & arguments = engine->arguments->children;
 
         const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
-        return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
+        return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context, engine_define->clone());
     }
 
     else if (engine_name == "Replicated")

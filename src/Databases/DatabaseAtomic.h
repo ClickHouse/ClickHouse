@@ -61,8 +61,6 @@ public:
     void checkDetachedTableNotInUse(const UUID & uuid) override;
     void setDetachedTableNotInUseForce(const UUID & uuid);
 
-    void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr local_context) override;
-
 protected:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, ContextPtr query_context) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -82,7 +80,6 @@ protected:
     String path_to_table_symlinks;
     String path_to_metadata_symlink;
     const UUID db_uuid;
-    ASTPtr storage_def;
 };
 
 }
