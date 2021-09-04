@@ -31,7 +31,23 @@ struct BitShiftRightImpl
             return static_cast<Result>(a) >> static_cast<Result>(b);
     }
 
-    static inline NO_SANITIZE_UNDEFINED void apply(const UInt8 * pos [[maybe_unused]], const UInt8 * end [[maybe_unused]], const B & b [[maybe_unused]], ColumnString::Chars & out_vec, ColumnString::Offsets & out_offsets)
+    static inline NO_SANITIZE_UNDEFINED void bitShiftRightForBytes(UInt8 * op_pointer, const UInt8 * begin, UInt8 * out, const size_t shift_right_bits)
+    {
+        while (op_pointer > begin)
+        {
+            op_pointer--;
+            out--;
+            *out = *op_pointer >> shift_right_bits;
+            if (op_pointer - 1 >= begin)
+            {
+                /// The right 8-b bit of the left byte is moved to the left 8-b bit of this byte
+                *out = UInt8(UInt8(*(op_pointer - 1) << (8 - shift_right_bits)) | *out);
+            }
+        }
+    }
+
+    /// For String
+    static ALWAYS_INLINE NO_SANITIZE_UNDEFINED void apply(const UInt8 * pos [[maybe_unused]], const UInt8 * end [[maybe_unused]], const B & b [[maybe_unused]], ColumnString::Chars & out_vec, ColumnString::Offsets & out_offsets)
     {
         if constexpr (is_big_int_v<B>)
             throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
@@ -56,23 +72,49 @@ struct BitShiftRightImpl
             size_t length = shift_right_end - begin;
             const size_t new_size = old_size + length + 1;
             out_vec.resize(new_size);
-
-            UInt8 * op_pointer = const_cast<UInt8 *>(shift_right_end);
             out_vec[old_size + length] = 0;
+
+            /// We start from the byte on the right and shift right shift_right_bits bit by byte
+            UInt8 * op_pointer = const_cast<UInt8 *>(shift_right_end);
             UInt8 * out = out_vec.data() + old_size + length;
-            while (op_pointer > begin)
-            {
-                op_pointer--;
-                out--;
-                UInt8 temp_value = *op_pointer >> shift_right_bits;
-                if (op_pointer - 1 >= begin)
-                {
-                    *out = UInt8(UInt8(*(op_pointer - 1) << (8 - shift_right_bits)) | temp_value);
-                }
-                else
-                    *out = temp_value;
-            }
+            bitShiftRightForBytes(op_pointer, begin, out, shift_right_bits);
             out_offsets.push_back(new_size);
+        }
+    }
+
+    /// For FixedString
+    static ALWAYS_INLINE NO_SANITIZE_UNDEFINED void apply(const UInt8 * pos [[maybe_unused]], const UInt8 * end [[maybe_unused]], const B & b [[maybe_unused]], ColumnFixedString::Chars & out_vec)
+    {
+        if constexpr (is_big_int_v<B>)
+            throw Exception("BitShiftRight is not implemented for big integers as second argument", ErrorCodes::NOT_IMPLEMENTED);
+        else
+        {
+            UInt8 word_size = 8;
+            size_t n = end - pos;
+            if (b >= static_cast<B>(n * word_size) || b < 0)
+            {
+                // insert default value
+                out_vec.resize_fill(out_vec.size() + n);
+                return;
+            }
+
+            size_t shift_right_bytes = b / word_size;
+            size_t shift_right_bits = b % word_size;
+
+            const UInt8 * begin = pos;
+            const UInt8 * shift_right_end = end - shift_right_bytes;
+
+            const size_t old_size = out_vec.size();
+            const size_t new_size = old_size + n;
+
+            /// Fill 0 to the left
+            out_vec.resize_fill(out_vec.size() + old_size + shift_right_bytes);
+            out_vec.resize(new_size);
+
+            /// We start from the byte on the right and shift right shift_right_bits bit by byte
+            UInt8 * op_pointer = const_cast<UInt8 *>(shift_right_end);
+            UInt8 * out = out_vec.data() + new_size;
+            bitShiftRightForBytes(op_pointer, begin, out, shift_right_bits);
         }
     }
 

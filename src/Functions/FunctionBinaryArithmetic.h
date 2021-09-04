@@ -222,25 +222,16 @@ struct StringIntegerOperationImpl
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = true;
 
-    template <OpCase op_case, bool is_fixed_string>
-    static void NO_INLINE process(const UInt8 * __restrict in_vec, const UInt64 * __restrict n_or_in_offsets, const B * __restrict b, ColumnString::Chars & out_vec, ColumnString::Offsets & out_offsets, size_t size)
-    {
-        if constexpr (is_fixed_string)
-            processFixedString<op_case>(in_vec, *n_or_in_offsets, b, out_vec, out_offsets, size);
-        else
-            processString<op_case>(in_vec, n_or_in_offsets, b, out_vec, out_offsets, size);
-    }
-
     template <OpCase op_case>
-    static void NO_INLINE processFixedString(const UInt8 * __restrict in_vec, const UInt64 n, const B * __restrict b, ColumnString::Chars & out_vec, ColumnString::Offsets & out_offsets, size_t size)
+    static void NO_INLINE processFixedString(const UInt8 * __restrict in_vec, const UInt64 n, const B * __restrict b, ColumnFixedString::Chars & out_vec, size_t size)
     {
         size_t prev_offset = 0;
-
+        out_vec.reserve(n * size);
         for (size_t i = 0; i < size; ++i)
         {
             if constexpr (op_case == OpCase::LeftConstant)
             {
-                Op::apply(&in_vec[0], &in_vec[n], b[i], out_vec, out_offsets);
+                Op::apply(&in_vec[0], &in_vec[n], b[i], out_vec);
             }
             else
             {
@@ -248,11 +239,11 @@ struct StringIntegerOperationImpl
 
                 if constexpr (op_case == OpCase::Vector)
                 {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[i], out_vec, out_offsets);
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[i], out_vec);
                 }
                 else
                 {
-                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[0], out_vec, out_offsets);
+                    Op::apply(&in_vec[prev_offset], &in_vec[new_offset], b[0], out_vec);
                 }
                 prev_offset = new_offset;
             }
@@ -1113,6 +1104,8 @@ public:
                     return false;
                 else if constexpr (!IsIntegral<RightDataType>)
                     return false;
+                else if constexpr (std::is_same_v<DataTypeFixedString, LeftDataType>)
+                    type_res = std::make_shared<LeftDataType>(left.getN());
                 else
                     type_res = std::make_shared<DataTypeString>();
                 return true;
@@ -1268,11 +1261,6 @@ public:
         const ColVecT1 * const col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
         const ColumnConst * const col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw);
 
-        ColumnString::MutablePtr col_res = ColumnString::create();
-
-        ColumnString::Chars & out_vec = col_res->getChars();
-        ColumnString::Offsets & out_offsets = col_res->getOffsets();
-
         using OpImpl = StringIntegerOperationImpl<T1, Op<LeftDataType, T1>>;
 
         const ColumnConst * const col_left_const = checkAndGetColumnConst<LeftColumnType>(col_left_raw);
@@ -1282,62 +1270,72 @@ public:
 
         const typename LeftColumnType::Chars & in_vec = col_left->getChars();
 
-        UInt64 n;
-        const UInt64 * n_or_in_offsets;
+        typename LeftColumnType::MutablePtr col_res;
         if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
-        {
-            n = col_left->getN();
-            n_or_in_offsets = &n;
-        }
+            col_res = LeftColumnType::create(col_left->getN());
         else
-            n_or_in_offsets = col_left->getOffsets().data();
+            col_res = LeftColumnType::create();
+
+        typename LeftColumnType::Chars & out_vec = col_res->getChars();
 
         if (col_left_const && col_right_const)
         {
             const T1 value = col_right_const->template getValue<T1>();
-            OpImpl::template process<OpCase::Vector, std::is_same_v<LeftDataType, DataTypeFixedString>>(
-                in_vec.data(),
-                n_or_in_offsets,
-                &value,
-                out_vec,
-                out_offsets,
-                1);
+            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
+            {
+                OpImpl::template processFixedString<OpCase::Vector>(in_vec.data(), col_left->getN(), &value, out_vec, 1);
+            }
+            else
+            {
+                ColumnString::Offsets & out_offsets = col_res->getOffsets();
+                OpImpl::template processString<OpCase::Vector>(in_vec.data(), col_left->getOffsets().data(), &value, out_vec, out_offsets, 1);
+            }
 
             return ResultDataType().createColumnConst(col_left_const->size(), col_res->size() ? (*col_res)[0] : Field(""));
         }
         else if (!col_left_const && !col_right_const && col_left && col_right)
         {
-            out_offsets.reserve(col_left->size());
-            OpImpl::template process<OpCase::Vector, std::is_same_v<LeftDataType, DataTypeFixedString>>(
-                in_vec.data(),
-                n_or_in_offsets,
-                col_right->getData().data(),
-                out_vec,
-                out_offsets,
-                col_left->size());
+            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
+            {
+                OpImpl::template processFixedString<OpCase::Vector>(in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_left->size());
+            }
+            else
+            {
+                ColumnString::Offsets & out_offsets = col_res->getOffsets();
+                out_offsets.reserve(col_left->size());
+                OpImpl::template processString<OpCase::Vector>(
+                    in_vec.data(), col_left->getOffsets().data(), col_right->getData().data(), out_vec, out_offsets, col_left->size());
+            }
         }
         else if (col_left_const && col_right)
         {
-            out_offsets.reserve(col_right->size());
-            OpImpl::template process<OpCase::LeftConstant, std::is_same_v<LeftDataType, DataTypeFixedString>>(
-                in_vec.data(),
-                n_or_in_offsets,
-                col_right->getData().data(),
-                out_vec,
-                out_offsets,
-                col_right->size());
+            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
+            {
+                OpImpl::template processFixedString<OpCase::LeftConstant>(
+                    in_vec.data(), col_left->getN(), col_right->getData().data(), out_vec, col_right->size());
+            }
+            else
+            {
+                ColumnString::Offsets & out_offsets = col_res->getOffsets();
+                out_offsets.reserve(col_right->size());
+                OpImpl::template processString<OpCase::LeftConstant>(
+                    in_vec.data(), col_left->getOffsets().data(), col_right->getData().data(), out_vec, out_offsets, col_right->size());
+            }
         }
         else if (col_left && col_right_const)
         {
             const T1 value = col_right_const->template getValue<T1>();
-
-            OpImpl::template process<OpCase::RightConstant, std::is_same_v<LeftDataType, DataTypeFixedString>>(
-                in_vec.data(),
-                n_or_in_offsets,
-                &value,
-                out_vec,
-                out_offsets,
-                col_left->size());
+            if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
+            {
+                OpImpl::template processFixedString<OpCase::RightConstant>(in_vec.data(), col_left->getN(), &value, out_vec, col_left->size());
+            }
+            else
+            {
+                ColumnString::Offsets & out_offsets = col_res->getOffsets();
+                out_offsets.reserve(col_left->size());
+                OpImpl::template processString<OpCase::RightConstant>(
+                    in_vec.data(), col_left->getOffsets().data(), &value, out_vec, out_offsets, col_left->size());
+            }
         }
         else
             return nullptr;
