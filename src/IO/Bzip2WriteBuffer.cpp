@@ -2,7 +2,7 @@
 #    include <Common/config.h>
 #endif
 
-#if USE_BROTLI
+#if USE_BZIP2
 #    include <IO/Bzip2WriteBuffer.h>
 #    include <bzlib.h> // Y_IGNORE
 

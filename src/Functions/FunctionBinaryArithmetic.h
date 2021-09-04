@@ -1422,15 +1422,31 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field & left_point, const Field & right_point) const override
     {
-        // For simplicity, we treat null values as monotonicity breakers.
+        const std::string_view name_view = Name::name;
+
+        // For simplicity, we treat null values as monotonicity breakers, except for variable / non-zero constant.
         if (left_point.isNull() || right_point.isNull())
+        {
+            if (name_view == "divide" || name_view == "intDiv")
+            {
+                // variable / constant
+                if (right.column && isColumnConst(*right.column))
+                {
+                    auto constant = (*right.column)[0];
+                    if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
+                        return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
+                    bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
+
+                    // division is saturated to `inf`, thus it doesn't have overflow issues.
+                    return {true, is_constant_positive, true};
+                }
+            }
             return {false, true, false};
+        }
 
         // For simplicity, we treat every single value interval as positive monotonic.
         if (applyVisitor(FieldVisitorAccurateEquals(), left_point, right_point))
             return {true, true, false};
-
-        const std::string_view name_view = Name::name;
 
         if (name_view == "minus" || name_view == "plus")
         {
@@ -1503,14 +1519,14 @@ public:
                     return {true, true, false}; // 0 / 0 is undefined, thus it's not always monotonic
 
                 bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
-                if (applyVisitor(FieldVisitorAccurateLess(), left_point, Field(0)) &&
-                        applyVisitor(FieldVisitorAccurateLess(), right_point, Field(0)))
+                if (applyVisitor(FieldVisitorAccurateLess(), left_point, Field(0))
+                    && applyVisitor(FieldVisitorAccurateLess(), right_point, Field(0)))
                 {
                     return {true, is_constant_positive, false};
                 }
-                else
-                if (applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point) &&
-                        applyVisitor(FieldVisitorAccurateLess(), Field(0), right_point))
+                else if (
+                    applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point)
+                    && applyVisitor(FieldVisitorAccurateLess(), Field(0), right_point))
                 {
                     return {true, !is_constant_positive, false};
                 }
@@ -1524,7 +1540,7 @@ public:
 
                 bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
                 // division is saturated to `inf`, thus it doesn't have overflow issues.
-                return {true, is_constant_positive, false};
+                return {true, is_constant_positive, true};
             }
         }
         return {false, true, false};
