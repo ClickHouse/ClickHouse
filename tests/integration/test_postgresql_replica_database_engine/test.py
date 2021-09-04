@@ -55,6 +55,9 @@ def create_replication_slot(conn, slot_name='user_slot'):
     print(result[0][2]) # snapshot
     return result[0][2]
 
+def drop_replication_slot(conn, slot_name='user_slot'):
+    cursor = conn.cursor()
+    cursor.execute("select pg_drop_replication_slot('{}')".format(slot_name))
 
 def create_postgres_db(cursor, name='postgres_database'):
     cursor.execute("CREATE DATABASE {}".format(name))
@@ -978,6 +981,7 @@ def test_user_managed_slots(started_cluster):
     check_tables_are_synchronized(table_name);
     drop_postgres_table(cursor, table_name)
     drop_materialized_db()
+    drop_replication_slot(replication_connection, slot_name)
 
 
 if __name__ == '__main__':
