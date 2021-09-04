@@ -34,26 +34,26 @@ SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
 Result:
 
 ``` text
-┌─number─┬─linear_equation(number, 2, 1)─┐
-│      0 │                             1 │
-│      1 │                             3 │
-│      2 │                             5 │
-└────────┴───────────────────────────────┘
+┌─number─┬─plus(multiply(2, number), 1)─┐
+│      0 │                            1 │
+│      1 │                            3 │
+│      2 │                            5 │
+└────────┴──────────────────────────────┘
 ```
 
 A [conditional function](../../../sql-reference/functions/conditional-functions.md) is called in a user defined function in the following query:
 
 ```sql
-CREATE FUNCTION parity AS (n) -> if(n % 2, 'odd', 'even');
-SELECT number, parity(number) FROM numbers(3);
+CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');
+SELECT number, parity_str(number) FROM numbers(3);
 ```
 
 Result:
 
 ``` text
-┌─number─┬─parity(number)─┐
-│      0 │ even           │
-│      1 │ odd            │
-│      2 │ even           │
-└────────┴────────────────┘
+┌─number─┬─if(modulo(number, 2), 'odd', 'even')─┐
+│      0 │ even                                 │
+│      1 │ odd                                  │
+│      2 │ even                                 │
+└────────┴──────────────────────────────────────┘
 ```
