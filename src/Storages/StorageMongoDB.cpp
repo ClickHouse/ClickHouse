@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
+    extern const int BAD_ARGUMENTS;
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -118,7 +119,7 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
                 configuration.options = arg_value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unxpected argument name for key-value defined argument."
+                        "Unexpected argument name for key-value defined argument."
                         "Got: {}, but expected one of:"
                         "host, port, username, password, database, table, options.", arg_name);
         }
