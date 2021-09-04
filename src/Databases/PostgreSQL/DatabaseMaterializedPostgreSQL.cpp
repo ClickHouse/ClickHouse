@@ -61,10 +61,8 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             connection_info,
             getContext(),
             is_attach,
-            settings->materialized_postgresql_max_block_size.value,
-            settings->materialized_postgresql_allow_automatic_update,
-            /* is_materialized_postgresql_database = */ true,
-            settings->materialized_postgresql_tables_list.value);
+            *settings,
+            /* is_materialized_postgresql_database = */ true);
 
     postgres::Connection connection(connection_info);
     NameSet tables_to_replicate;
