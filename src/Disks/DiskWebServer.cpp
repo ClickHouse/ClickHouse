@@ -51,7 +51,7 @@ void DiskWebServer::Metadata::initialize(const String & uri_with_path, const Str
         assertChar('\t', metadata_buf);
         readIntText(file_size, metadata_buf);
         assertChar('\n', metadata_buf);
-        LOG_DEBUG(&Poco::Logger::get("DiskWeb"), "Read file: {}, size: {}", remote_file_name, file_size);
+        LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Read file: {}, size: {}", remote_file_name, file_size);
 
         /*
          * URI/   {uri}/{uuid}/all_x_x_x/{file}
@@ -227,7 +227,7 @@ bool DiskWebServer::findFileInMetadata(const String & path, File & file_info) co
 
 bool DiskWebServer::exists(const String & path) const
 {
-    LOG_DEBUG(log, "Checking existence of file: {}", path);
+    LOG_TRACE(log, "Checking existence of file: {}", path);
 
     File file;
     return findFileInMetadata(path, file);
@@ -243,7 +243,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 
     auto file_name = escapeForFileName(fs::path(path).stem()) + fs::path(path).extension().string();
     auto remote_path = fs::path(path).parent_path() / file_name;
-    LOG_DEBUG(log, "Read from file by path: {}", remote_path.string());
+    LOG_TRACE(log, "Read from file by path: {}", remote_path.string());
 
     RemoteMetadata meta(uri, remote_path);
     meta.remote_fs_objects.emplace_back(std::make_pair(getFileName(remote_path), file.size));
@@ -255,7 +255,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 
 DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
 {
-    LOG_DEBUG(log, "Iterate directory: {}", path);
+    LOG_TRACE(log, "Iterate directory: {}", path);
     String uuid;
 
     if (RE2::FullMatch(path, ".*/store/"))
