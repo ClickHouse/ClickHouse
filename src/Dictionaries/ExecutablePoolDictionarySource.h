@@ -1,20 +1,18 @@
 #pragma once
 
-#include <common/BorrowedObjectPool.h>
+#include <common/logger_useful.h>
 
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
 
-#include "IDictionarySource.h"
-#include "DictionaryStructure.h"
-
-namespace Poco { class Logger; }
+#include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <DataStreams/ShellCommandSource.h>
 
 
 namespace DB
 {
 
-using ProcessPool = BorrowedObjectPool<std::unique_ptr<ShellCommand>>;
 
 /** ExecutablePoolDictionarySource allows loading data from pool of processes.
   * When client requests ids or keys source get process from ProcessPool
@@ -73,14 +71,13 @@ public:
     Pipe getStreamForBlock(const Block & block);
 
 private:
-    Poco::Logger * log;
-    time_t update_time = 0;
     const DictionaryStructure dict_struct;
     const Configuration configuration;
 
     Block sample_block;
     ContextPtr context;
     std::shared_ptr<ProcessPool> process_pool;
+    Poco::Logger * log;
 };
 
 }
