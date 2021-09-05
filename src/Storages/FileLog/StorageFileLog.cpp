@@ -98,7 +98,7 @@ Pipe StorageFileLog::read(
     size_t /* max_block_size */,
     unsigned /* num_streams */)
 {
-    std::lock_guard<std::mutex> lock(status_mutex);
+	std::lock_guard<std::mutex> lock(status_mutex);
     auto modified_context = Context::createCopy(local_context);
 
     clearInvalidFiles();
@@ -206,7 +206,7 @@ void StorageFileLog::threadFunc()
         {
             auto start_time = std::chrono::steady_clock::now();
 
-            watch_task->activateAndSchedule();
+			watch_task->activateAndSchedule();
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
@@ -238,7 +238,7 @@ void StorageFileLog::threadFunc()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    watch_task->deactivate();
+	watch_task->deactivate();
     // Wait for attached views
     if (!task->stream_cancelled)
         task->holder->scheduleAfter(RESCHEDULE_MS);
@@ -247,7 +247,7 @@ void StorageFileLog::threadFunc()
 
 bool StorageFileLog::streamToViews()
 {
-    std::lock_guard<std::mutex> lock(status_mutex);
+	std::lock_guard<std::mutex> lock(status_mutex);
     Stopwatch watch;
 
     auto table_id = getStorageID();
@@ -291,6 +291,8 @@ bool StorageFileLog::streamToViews()
 
     QueryPipeline pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes)));
+
+    assertBlocksHaveEqualStructure(pipeline.getHeader(), block_io.out->getHeader(), "StorageFileLog streamToViews");
 
     size_t rows = 0;
 
@@ -394,7 +396,7 @@ void StorageFileLog::watchFunc()
     FileLogDirectoryWatcher dw(path);
     while (true)
     {
-        sleepForMilliseconds(filelog_settings->filelog_poll_timeout_ms.totalMilliseconds());
+        sleepForMilliseconds(getPollTimeoutMillisecond());
 
         auto error = dw.hasError();
         if (error)
@@ -402,10 +404,9 @@ void StorageFileLog::watchFunc()
 
         auto events = dw.getEvents();
 
-        std::lock_guard<std::mutex> lock(status_mutex);
-
         for (const auto & event : events)
         {
+			std::lock_guard<std::mutex> lock(status_mutex);
             switch (event.type)
             {
 
