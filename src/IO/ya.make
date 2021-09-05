@@ -62,6 +62,7 @@ SRCS(
     ReadHelpers.cpp
     ReadSettings.cpp
     SeekAvoidingReadBuffer.cpp
+    SnappyReadBuffer.cpp
     SynchronousReader.cpp
     ThreadPoolReader.cpp
     TimeoutSetter.cpp
