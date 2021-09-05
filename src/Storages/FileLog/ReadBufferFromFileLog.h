@@ -3,12 +3,11 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 #include <IO/ReadBuffer.h>
-#include <Storages/FileLog/FileLogDirectoryWatcher.h>
+#include <Storages/FileLog/StorageFileLog.h>
 #include <common/types.h>
 
 #include <fstream>
 #include <mutex>
-#include <unordered_map>
 
 namespace Poco
 {
@@ -20,16 +19,19 @@ namespace DB
 class ReadBufferFromFileLog : public ReadBuffer
 {
 public:
-    ReadBufferFromFileLog(const String & path_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_, ContextPtr context_);
+    ReadBufferFromFileLog(
+        StorageFileLog & storage_,
+        size_t max_batch_size,
+        size_t poll_timeout_,
+        ContextPtr context_,
+        size_t stream_number_,
+        size_t max_streams_number_);
 
     ~ReadBufferFromFileLog() override = default;
 
-    void open();
-    void close();
-
     auto pollTimeout() const { return poll_timeout; }
 
-    inline bool hasMorePolledRecords() const { return current != records.end(); }
+    bool hasMorePolledRecords() const { return current != records.end(); }
 
     bool poll();
 
@@ -44,18 +46,17 @@ private:
 
     BufferStatus buffer_status;
 
-    const String path;
-
-    bool path_is_directory = false;
-
     Poco::Logger * log;
+
+    StorageFileLog & storage;
+
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
 
-    bool time_out = false;
-
-
     ContextPtr context;
+
+    size_t stream_number;
+    size_t max_streams_number;
 
     bool allowed = true;
 
@@ -76,8 +77,5 @@ private:
     void cleanUnprocessed();
 
     bool nextImpl() override;
-
-    void waitFunc();
-
 };
 }

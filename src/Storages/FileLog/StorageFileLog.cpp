@@ -8,6 +8,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSource.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
@@ -383,16 +384,9 @@ void registerStorageFileLog(StorageFactory & factory)
         });
 }
 
-NamesAndTypesList StorageFileLog::getVirtuals() const
-{
-    auto result = NamesAndTypesList{};
-    return result;
-}
-
 Names StorageFileLog::getVirtualColumnNames()
 {
-    auto result = Names{};
-    return result;
+    return {};
 }
 
 void StorageFileLog::watchFunc()

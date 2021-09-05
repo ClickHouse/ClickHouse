@@ -22,6 +22,14 @@ class StorageFileLog final : public shared_ptr_helper<StorageFileLog>, public IS
     friend struct shared_ptr_helper<StorageFileLog>;
 
 public:
+    enum class FileStatus
+    {
+        BEGIN,
+        NO_CHANGE,
+        UPDATED,
+        REMOVED
+    };
+
     using Files = std::vector<String>;
 
     std::string getName() const override { return "FileLog"; }
@@ -42,10 +50,10 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    NamesAndTypesList getVirtuals() const override;
     static Names getVirtualColumnNames();
 
-    auto & getBuffer() { return buffer; }
+    auto & getFileNames() { return file_names; }
+    auto & getFileStatus() { return file_status; }
 
 protected:
     StorageFileLog(
@@ -63,16 +71,6 @@ private:
 
     const String format_name;
     Poco::Logger * log;
-
-    ReadBufferFromFileLogPtr buffer;
-
-    enum class FileStatus
-    {
-        BEGIN,
-        NO_CHANGE,
-        UPDATED,
-        REMOVED
-    };
 
     struct FileContext
     {

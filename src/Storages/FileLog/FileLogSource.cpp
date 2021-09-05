@@ -24,19 +24,18 @@ FileLogSource::FileLogSource(
     size_t poll_time_out_,
     size_t stream_number_,
     size_t max_streams_number_)
-    : storage(storage_)
+    : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(columns, storage_.getVirtuals(), storage_.getStorageID()))
+    , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
     , poll_time_out(poll_time_out_)
-    , stream_number(stream_number_)
-    , max_streams_number(max_streams_number_)
     , non_virtual_header(metadata_snapshot->getSampleBlockNonMaterialized())
     , virtual_header(
           metadata_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames(), storage.getVirtuals(), storage.getStorageID()))
 {
-    createReadBuffer();
+    buffer = std::make_unique<ReadBufferFromFileLog>(storage, max_block_size, poll_time_out, context, stream_number_, max_streams_number_);
 }
 
 Chunk FileLogSource::generate()
@@ -114,7 +113,7 @@ Chunk FileLogSource::generate()
             total_rows = total_rows + new_rows;
         }
 
-        if ((!buffer->hasMorePolledRecords() && (total_rows >= max_block_size)) || watch.elapsedMilliseconds() > poll_time_out)
+        if (!buffer->hasMorePolledRecords() && ((total_rows >= max_block_size) || watch.elapsedMilliseconds() > poll_time_out))
         {
             break;
         }
