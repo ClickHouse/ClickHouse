@@ -67,8 +67,7 @@ namespace ErrorCodes
 
 void LocalServer::processError(const String & query) const
 {
-    /// For non-interactive mode process exception only when all queries were executed.
-    if (!is_interactive)
+    if (ignore_error)
         return;
 
     if (server_exception)
