@@ -260,6 +260,39 @@ If an error occurred while reading rows but the error counter is still less than
 
 If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
+## input_format_parquet_import_nested {#input_format_parquet_import_nested}
+
+Enables or disables the ability to insert [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) structures into [Parquet](../../interfaces/formats.md#data-format-parquet) input format as an array of structs.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `0`.
+
+## input_format_arrow_import_nested {#input_format_arrow_import_nested}
+
+Enables or disables the ability to insert [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) structures into [Arrow](../../interfaces/formats.md#data_types-matching-arrow) input format as an array of structs.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `0`.
+
+## input_format_orc_import_nested {#input_format_orc_import_nested}
+
+Enables or disables the ability to insert [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) structures into [ORC](../../interfaces/formats.md#data-format-orc) input format as an array of structs.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `0`.
+
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
 Enables or disables the full SQL parser if the fast stream parser can’t parse the data. This setting is used only for the [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../sql-reference/syntax.md) section.
