@@ -20,7 +20,7 @@ FileLogDirectoryWatcher::Events FileLogDirectoryWatcher::getEvents()
     return res;
 }
 
-bool FileLogDirectoryWatcher::getError() const
+bool FileLogDirectoryWatcher::hasError() const
 {
     return error;
 }

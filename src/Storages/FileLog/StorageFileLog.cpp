@@ -77,6 +77,10 @@ StorageFileLog::StorageFileLog(
             }
         }
     }
+    else
+    {
+        throw Exception("The path neigher a regular file, nor a directory", ErrorCodes::BAD_ARGUMENTS);
+    }
 
     watch_task = getContext()->getMessageBrokerSchedulePool().createTask("watchTask", [this] { watchFunc(); });
 
@@ -384,23 +388,19 @@ void registerStorageFileLog(StorageFactory & factory)
         });
 }
 
-Names StorageFileLog::getVirtualColumnNames()
-{
-    return {};
-}
-
 void StorageFileLog::watchFunc()
 {
     FileLogDirectoryWatcher dw(path);
     while (true)
     {
-        sleepForMicroseconds(filelog_settings->filelog_poll_timeout_ms.totalMilliseconds());
+        sleepForMilliseconds(filelog_settings->filelog_poll_timeout_ms.totalMilliseconds());
 
-        auto error = dw.getError();
+        auto error = dw.hasError();
         if (error)
             LOG_INFO(log, "Error happened during watching directory {}.", dw.getPath());
 
         auto events = dw.getEvents();
+
         std::lock_guard<std::mutex> lock(status_mutex);
 
         for (const auto & event : events)
