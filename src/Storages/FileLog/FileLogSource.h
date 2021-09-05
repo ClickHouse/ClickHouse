@@ -43,10 +43,8 @@ private:
 
     std::unique_ptr<ReadBufferFromFileLog> buffer;
 
-    bool started = false;
-
-    const Block non_virtual_header;
-    const Block virtual_header;
+    Block non_virtual_header;
+    const NamesAndTypesList column_names_and_types;
 };
 
 }

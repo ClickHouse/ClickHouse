@@ -50,8 +50,8 @@ private:
 
     StorageFileLog & storage;
 
-    const size_t batch_size = 1;
-    const size_t poll_timeout = 0;
+    size_t batch_size;
+    size_t poll_timeout;
 
     ContextPtr context;
 
