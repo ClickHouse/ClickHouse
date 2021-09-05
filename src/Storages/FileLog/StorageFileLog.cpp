@@ -98,7 +98,8 @@ Pipe StorageFileLog::read(
     size_t /* max_block_size */,
     unsigned /* num_streams */)
 {
-	std::lock_guard<std::mutex> lock(status_mutex);
+    std::lock_guard<std::mutex> lock(status_mutex);
+
     auto modified_context = Context::createCopy(local_context);
 
     clearInvalidFiles();
@@ -206,7 +207,7 @@ void StorageFileLog::threadFunc()
         {
             auto start_time = std::chrono::steady_clock::now();
 
-			watch_task->activateAndSchedule();
+            watch_task->activateAndSchedule();
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
@@ -238,7 +239,7 @@ void StorageFileLog::threadFunc()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-	watch_task->deactivate();
+    watch_task->deactivate();
     // Wait for attached views
     if (!task->stream_cancelled)
         task->holder->scheduleAfter(RESCHEDULE_MS);
@@ -247,7 +248,7 @@ void StorageFileLog::threadFunc()
 
 bool StorageFileLog::streamToViews()
 {
-	std::lock_guard<std::mutex> lock(status_mutex);
+    std::lock_guard<std::mutex> lock(status_mutex);
     Stopwatch watch;
 
     auto table_id = getStorageID();
@@ -406,7 +407,7 @@ void StorageFileLog::watchFunc()
 
         for (const auto & event : events)
         {
-			std::lock_guard<std::mutex> lock(status_mutex);
+            std::lock_guard<std::mutex> lock(status_mutex);
             switch (event.type)
             {
 
