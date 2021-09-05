@@ -29,7 +29,7 @@ SRCS(
     ITTLAlgorithm.cpp
     InternalTextLogsRowOutputStream.cpp
     MaterializingBlockInputStream.cpp
-    MongoDBSource.cpp
+    MongoDBBlockInputStream.cpp
     NativeBlockInputStream.cpp
     NativeBlockOutputStream.cpp
     PushingToViewsBlockOutputStream.cpp
@@ -37,20 +37,18 @@ SRCS(
     RemoteBlockOutputStream.cpp
     RemoteQueryExecutor.cpp
     RemoteQueryExecutorReadContext.cpp
-    SQLiteSource.cpp
+    SQLiteBlockInputStream.cpp
     SizeLimits.cpp
     SquashingBlockInputStream.cpp
     SquashingBlockOutputStream.cpp
     SquashingTransform.cpp
     TTLAggregationAlgorithm.cpp
     TTLBlockInputStream.cpp
-    TTLCalcInputStream.cpp
     TTLColumnAlgorithm.cpp
     TTLDeleteAlgorithm.cpp
     TTLUpdateInfoAlgorithm.cpp
     copyData.cpp
     finalizeBlock.cpp
-    formatBlock.cpp
     materializeBlock.cpp
     narrowBlockInputStreams.cpp
 

@@ -28,7 +28,6 @@ struct FormatSettings
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
-    bool decimal_trailing_zeros = false;
 
     enum class DateTimeInputFormat
     {
@@ -54,7 +53,6 @@ struct FormatSettings
     {
         UInt64 row_group_size = 1000000;
         bool low_cardinality_as_dictionary = false;
-        bool import_nested = false;
     } arrow;
 
     struct
@@ -102,7 +100,6 @@ struct FormatSettings
     struct
     {
         UInt64 row_group_size = 1000000;
-        bool import_nested = false;
     } parquet;
 
     struct Pretty
@@ -177,11 +174,6 @@ struct FormatSettings
         bool deduce_templates_of_expressions = true;
         bool accurate_types_of_literals = true;
     } values;
-
-    struct
-    {
-        bool import_nested = false;
-    } orc;
 };
 
 }

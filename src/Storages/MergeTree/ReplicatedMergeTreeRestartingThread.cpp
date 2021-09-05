@@ -25,8 +25,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
-    extern const int REPLICA_STATUS_CHANGED;
-
 }
 
 namespace
@@ -57,7 +55,6 @@ void ReplicatedMergeTreeRestartingThread::run()
     if (need_stop)
         return;
 
-    bool reschedule_now = false;
     try
     {
         if (first_time || readonly_mode_was_set || storage.getZooKeeper()->expired())
@@ -134,29 +131,15 @@ void ReplicatedMergeTreeRestartingThread::run()
             first_time = false;
         }
     }
-    catch (const Exception & e)
+    catch (...)
     {
         /// We couldn't activate table let's set it into readonly mode
         setReadonly();
-        partialShutdown();
-        storage.startup_event.set();
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
-        if (e.code() == ErrorCodes::REPLICA_STATUS_CHANGED)
-            reschedule_now = true;
-    }
-    catch (...)
-    {
-        setReadonly();
-        partialShutdown();
         storage.startup_event.set();
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    if (reschedule_now)
-        task->schedule();
-    else
-        task->scheduleAfter(check_period_ms);
+    task->scheduleAfter(check_period_ms);
 }
 
 
@@ -172,21 +155,11 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         storage.cloneReplicaIfNeeded(zookeeper);
 
-        try
-        {
-            storage.queue.load(zookeeper);
+        storage.queue.load(zookeeper);
 
-            /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
-            /// because cleanup_thread doesn't delete log_pointer of active replicas.
-            storage.queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::LOAD);
-        }
-        catch (...)
-        {
-            std::unique_lock lock(storage.last_queue_update_exception_lock);
-            storage.last_queue_update_exception = getCurrentExceptionMessage(false);
-            throw;
-        }
-
+        /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
+        /// because cleanup_thread doesn't delete log_pointer of active replicas.
+        storage.queue.pullLogsToQueue(zookeeper);
         storage.queue.removeCurrentPartsFromMutations();
         storage.last_queue_update_finish_time.store(time(nullptr));
 

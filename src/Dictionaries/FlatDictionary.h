@@ -72,7 +72,7 @@ public:
         return dict_struct.getAttribute(attribute_name).injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Simple; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,

@@ -11,7 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
-#include <libstemmer.h> // Y_IGNORE
+#include <libstemmer.h>
 
 
 namespace DB
@@ -84,8 +84,6 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

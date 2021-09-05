@@ -223,7 +223,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     if (create.storage->engine->name == "MaterializedPostgreSQL" && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql && !internal)
     {
         throw Exception("MaterializedPostgreSQL is an experimental database engine. "
-                        "Enable allow_experimental_database_materialized_postgresql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+                        "Enable allow_experimental_database_postgresql_replica to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", getContext());
@@ -272,8 +272,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         }
 
         /// We use global context here, because storages lifetime is bigger than query context lifetime
-        database->loadStoredObjects(
-            getContext()->getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach, skip_startup_tables); //-V560
+        database->loadStoredObjects(getContext()->getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach); //-V560
     }
     catch (...)
     {
@@ -551,7 +550,7 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(const A
 }
 
 
-InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const
+InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(ASTCreateQuery & create) const
 {
     TableProperties properties;
     TableLockHolder as_storage_lock;
@@ -590,13 +589,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr();
         properties.columns = as_storage_metadata->getColumns();
 
-        /// Secondary indices and projections make sense only for MergeTree family of storage engines.
+        /// Secondary indices make sense only for MergeTree family of storage engines.
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
-        {
             properties.indices = as_storage_metadata->getSecondaryIndices();
-            properties.projections = as_storage_metadata->getProjections().clone();
-        }
 
         properties.constraints = as_storage_metadata->getConstraints();
     }
@@ -768,7 +764,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
 
-    if (database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal
+    if (database->getEngineName() == "Replicated" && getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
         && !internal)
     {
         if (create.uuid == UUIDHelpers::Nil)
@@ -914,7 +910,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
-    TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
+    TableProperties properties = setProperties(create);
 
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;

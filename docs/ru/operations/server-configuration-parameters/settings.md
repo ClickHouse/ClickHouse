@@ -371,12 +371,12 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем 10акрыть соединение.
+Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем закрыть соединение.
 
 **Пример**
 
 ``` xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>3</keep_alive_timeout>
 ```
 
 ## listen_host {#server_configuration_parameters-listen_host}
@@ -465,9 +465,9 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 Подстановки параметров реплицируемых таблиц.
 
-Можно не указывать, если реплицируемые таблицы не используются.
+Можно не указывать, если реплицируемых таблицы не используются.
 
-Подробнее смотрите в разделе [Создание реплицируемых таблиц](../../engines/table-engines/mergetree-family/replication.md#creating-replicated-tables).
+Подробнее смотрите в разделе «[Создание реплицируемых таблиц](../../engines/table-engines/mergetree-family/replication.md)».
 
 **Пример**
 
@@ -516,7 +516,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 -   Положительное число с плавающей запятой.
 -   0 — сервер Clickhouse может использовать всю оперативную память.
 
-Значение по умолчанию: `0.9`.
+Значение по умолчанию: `0`.
 
 **Использование**
 

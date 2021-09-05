@@ -40,7 +40,7 @@ public:
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getInMemoryMetadataPtr(), info);
     }
 
-    Pipe watch(
+    BlockInputStreams watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         ContextPtr context,

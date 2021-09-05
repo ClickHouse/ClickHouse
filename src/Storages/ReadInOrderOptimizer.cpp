@@ -6,6 +6,8 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/TableJoin.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 
 namespace DB
 {

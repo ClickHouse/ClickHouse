@@ -11,7 +11,7 @@
 #include <list>
 
 #include <boost/algorithm/string.hpp>
-#include <wnb/core/wordnet.hh> // Y_IGNORE
+#include <wnb/core/wordnet.hh>
 
 namespace DB
 {

@@ -3,7 +3,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -172,5 +171,4 @@ struct NullPresence
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
 
-bool isDecimalOrNullableDecimal(const DataTypePtr & type);
 }

@@ -8,7 +8,6 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
-#include <IO/copyData.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -242,9 +241,6 @@ void StorageMergeTree::checkTableCanBeDropped() const
 void StorageMergeTree::drop()
 {
     shutdown();
-    /// In case there is read-only disk we cannot allow to call dropAllData(), but dropping tables is allowed.
-    if (isReadOnly())
-        return;
     dropAllData();
 }
 
@@ -963,19 +959,9 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 
             if (!commands_for_size_validation.empty())
             {
-                try
-                {
-                    MutationsInterpreter interpreter(
-                        shared_from_this(), metadata_snapshot, commands_for_size_validation, getContext(), false);
-                    commands_size += interpreter.evaluateCommandsSize();
-                }
-                catch (...)
-                {
-                    MergeTreeMutationEntry & entry = it->second;
-                    entry.latest_fail_time = time(nullptr);
-                    entry.latest_fail_reason = getCurrentExceptionMessage(false);
-                    continue;
-                }
+                MutationsInterpreter interpreter(
+                    shared_from_this(), metadata_snapshot, commands_for_size_validation, getContext(), false);
+                commands_size += interpreter.evaluateCommandsSize();
             }
 
             if (current_ast_elements + commands_size >= max_ast_elements)
@@ -985,21 +971,17 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
             commands.insert(commands.end(), it->second.commands.begin(), it->second.commands.end());
         }
 
-        if (!commands.empty())
-        {
-            auto new_part_info = part->info;
-            new_part_info.mutation = current_mutations_by_version.rbegin()->first;
+        auto new_part_info = part->info;
+        new_part_info.mutation = current_mutations_by_version.rbegin()->first;
 
-            future_part.parts.push_back(part);
-            future_part.part_info = new_part_info;
-            future_part.name = part->getNewName(new_part_info);
-            future_part.type = part->getType();
+        future_part.parts.push_back(part);
+        future_part.part_info = new_part_info;
+        future_part.name = part->getNewName(new_part_info);
+        future_part.type = part->getType();
 
-            tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
-            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);
-        }
+        tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
+        return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);
     }
-
     return {};
 }
 
@@ -1054,7 +1036,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
 
     auto share_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
-    bool has_mutations;
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
         if (merger_mutator.merges_blocker.isCancelled())
@@ -1063,15 +1044,6 @@ bool StorageMergeTree::scheduleDataProcessingJob(IBackgroundJobExecutor & execut
         merge_entry = selectPartsToMerge(metadata_snapshot, false, {}, false, nullptr, share_lock, lock);
         if (!merge_entry)
             mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock);
-
-        has_mutations = !current_mutations_by_version.empty();
-    }
-
-    if (!mutate_entry && has_mutations)
-    {
-        /// Notify in case of errors
-        std::lock_guard lock(mutation_wait_mutex);
-        mutation_wait_event.notify_all();
     }
 
     if (merge_entry)
@@ -1624,12 +1596,6 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         }
     }
     return results;
-}
-
-
-RestoreDataTasks StorageMergeTree::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr local_context)
-{
-    return restoreDataPartsFromBackup(backup, data_path_in_backup, getPartitionIDsFromQuery(partitions, local_context), &increment);
 }
 
 

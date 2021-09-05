@@ -256,9 +256,6 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
         visit(*node_select, ast, data);
     else if (auto * node_param = ast->as<ASTQueryParameter>())
         throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
-    else if (auto * node_function = ast->as<ASTFunction>())
-        if (node_function->parameters)
-            visit(node_function->parameters, data);
 
     /// If we replace the root of the subtree, we will be called again for the new root, in case the alias is replaced by an alias.
     if (ast.get() != initial_ast.get())

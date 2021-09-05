@@ -45,8 +45,6 @@ public:
 
     String getName() const override { return "toTimezone"; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     const DataTypes & getArgumentTypes() const override
     {
         return argument_types;

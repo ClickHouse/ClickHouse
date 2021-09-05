@@ -191,6 +191,7 @@ public:
     void addJoinedColumn(const NameAndTypePair & joined_column);
 
     void addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability = true) const;
+    void addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns, bool correct_nullability = true) const;
 
     /// Calculates common supertypes for corresponding join key columns.
     bool inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right);
@@ -229,7 +230,6 @@ public:
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
-    std::unordered_map<String, String> leftToRightKeyRemap() const;
 };
 
 }

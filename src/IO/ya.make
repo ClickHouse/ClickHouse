@@ -20,8 +20,7 @@ PEERDIR(
 
 SRCS(
     AIO.cpp
-    AsynchronousReadBufferFromFile.cpp
-    AsynchronousReadBufferFromFileDescriptor.cpp
+    AIOContextPool.cpp
     BrotliReadBuffer.cpp
     BrotliWriteBuffer.cpp
     Bzip2ReadBuffer.cpp
@@ -36,8 +35,6 @@ SRCS(
     LZMADeflatingWriteBuffer.cpp
     LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
-    Lz4DeflatingWriteBuffer.cpp
-    Lz4InflatingReadBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
     MMapReadBufferFromFileWithCache.cpp
@@ -60,10 +57,7 @@ SRCS(
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
-    ReadSettings.cpp
     SeekAvoidingReadBuffer.cpp
-    SynchronousReader.cpp
-    ThreadPoolReader.cpp
     TimeoutSetter.cpp
     UseSSL.cpp
     WriteBufferFromEncryptedFile.cpp

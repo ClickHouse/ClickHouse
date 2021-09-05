@@ -2,11 +2,11 @@
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #include <Common/config.h>
-#if USE_SSL && USE_INTERNAL_SSL_LIBRARY && !defined(ARCADIA_BUILD)
+#if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 
 #include <Compression/ICompressionCodec.h>
 #include <boost/noncopyable.hpp>
-#include <openssl/aead.h> // Y_IGNORE
+#include <openssl/aead.h>
 #include <optional>
 
 namespace DB
@@ -51,7 +51,7 @@ namespace DB
           */
         static void setMasterKey(const std::string_view & master_key);
 
-        explicit CompressionCodecEncrypted(const std::string_view & cipher);
+        CompressionCodecEncrypted(const std::string_view & cipher);
 
         uint8_t getMethodByte() const override;
         void updateHash(SipHash & hash) const override;
@@ -88,7 +88,7 @@ namespace DB
           */
         struct KeyHolder : private boost::noncopyable
         {
-            explicit KeyHolder(const std::string_view & master_key);
+            KeyHolder(const std::string_view & master_key);
             ~KeyHolder();
 
             std::string keygen_key;
@@ -99,11 +99,6 @@ namespace DB
 
         static inline std::optional<KeyHolder> keys;
     };
-
-    inline CompressionCodecPtr getCompressionCodecEncrypted(const std::string_view & master_key)
-    {
-        return std::make_shared<CompressionCodecEncrypted>(master_key);
-    }
 }
 
 #endif /* USE_SSL && USE_INTERNAL_SSL_LIBRARY */

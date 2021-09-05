@@ -13,6 +13,15 @@ namespace DB
 
 class KeyCondition;
 
+struct MergeTreeDataSelectSamplingData
+{
+    bool use_sampling = false;
+    bool read_nothing = false;
+    Float64 used_sample_factor = 1.0;
+    std::shared_ptr<ASTFunction> filter_function;
+    ActionsDAGPtr filter_expression;
+};
+
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 /** Executes SELECT queries on data from the merge tree.
@@ -46,13 +55,12 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         unsigned num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
-        MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr = nullptr) const;
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
     /// This method is used to select best projection for table.
-    MergeTreeDataSelectAnalysisResultPtr estimateNumMarksToRead(
+    size_t estimateNumMarksToRead(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot_base,
@@ -177,7 +185,8 @@ public:
         Poco::Logger * log,
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
-        bool use_skip_indexes);
+        bool use_skip_indexes,
+        bool check_limits);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

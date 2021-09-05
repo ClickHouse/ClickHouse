@@ -1,8 +1,4 @@
-#include <string>
-#include "Common/MemoryTracker.h"
-#include "Columns/ColumnsNumber.h"
 #include "ConnectionParameters.h"
-#include "IO/CompressionMethod.h"
 #include "QueryFuzzer.h"
 #include "Suggest.h"
 #include "TestHint.h"
@@ -104,14 +100,6 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
-namespace CurrentMetrics
-{
-    extern const Metric Revision;
-    extern const Metric VersionInteger;
-    extern const Metric MemoryTracking;
-    extern const Metric MaxDDLEntryID;
-}
-
 namespace fs = std::filesystem;
 
 namespace DB
@@ -129,7 +117,6 @@ namespace ErrorCodes
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int TOO_DEEP_RECURSION;
-    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -537,18 +524,6 @@ private:
     {
         UseSSL use_ssl;
 
-        MainThreadStatus::getInstance();
-
-        /// Limit on total memory usage
-        size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
-
-        if (max_client_memory_usage != 0)
-        {
-            total_memory_tracker.setHardLimit(max_client_memory_usage);
-            total_memory_tracker.setDescription("(total)");
-            total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-        }
-
         registerFormats();
         registerFunctions();
         registerAggregateFunctions();
@@ -774,50 +749,31 @@ private:
                       << connection_parameters.host << ":" << connection_parameters.port
                       << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
 
+        connection = std::make_unique<Connection>(
+            connection_parameters.host,
+            connection_parameters.port,
+            connection_parameters.default_database,
+            connection_parameters.user,
+            connection_parameters.password,
+            "", /* cluster */
+            "", /* cluster_secret */
+            "client",
+            connection_parameters.compression,
+            connection_parameters.security);
+
         String server_name;
         UInt64 server_version_major = 0;
         UInt64 server_version_minor = 0;
         UInt64 server_version_patch = 0;
 
-        try
+        if (max_client_network_bandwidth)
         {
-            connection = std::make_unique<Connection>(
-                connection_parameters.host,
-                connection_parameters.port,
-                connection_parameters.default_database,
-                connection_parameters.user,
-                connection_parameters.password,
-                "", /* cluster */
-                "", /* cluster_secret */
-                "client",
-                connection_parameters.compression,
-                connection_parameters.security);
-
-            if (max_client_network_bandwidth)
-            {
-                ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
-                connection->setThrottler(throttler);
-            }
-
-            connection->getServerVersion(
-                connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
+            connection->setThrottler(throttler);
         }
-        catch (const Exception & e)
-        {
-            /// It is typical when users install ClickHouse, type some password and instantly forget it.
-            if ((connection_parameters.user.empty() || connection_parameters.user == "default")
-                && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
-            {
-                std::cerr << std::endl
-                    << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
-                    << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
-                    << "and deleting this file will reset the password." << std::endl
-                    << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
-                    << std::endl;
-            }
 
-            throw;
-        }
+        connection->getServerVersion(
+            connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
@@ -1844,7 +1800,7 @@ private:
     void processInsertQuery()
     {
         const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
-        if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
+        if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
         connection->sendQuery(
@@ -1915,24 +1871,7 @@ private:
         if (!parsed_insert_query)
             return;
 
-        if (parsed_insert_query->infile)
-        {
-            const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
-            const auto in_file = in_file_node.value.safeGet<std::string>();
-
-            auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, ""));
-
-            try
-            {
-                sendDataFrom(*in_buffer, sample, columns_description);
-            }
-            catch (Exception & e)
-            {
-                e.addMessage("data for INSERT was parsed from file");
-                throw;
-            }
-        }
-        else if (parsed_insert_query->data)
+        if (parsed_insert_query->data)
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
@@ -2285,10 +2224,7 @@ private:
             if (!pager.empty())
             {
                 signal(SIGPIPE, SIG_IGN);
-
-                ShellCommand::Config config(pager);
-                config.pipe_stdin_only = true;
-                pager_cmd = ShellCommand::execute(config);
+                pager_cmd = ShellCommand::execute(pager, true);
                 out_buf = &pager_cmd->in;
             }
             else
@@ -2645,7 +2581,6 @@ public:
             ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
             ("history_file", po::value<std::string>(), "path to history file")
             ("no-warnings", "disable warnings when client connects to server")
-            ("max_memory_usage_in_client", po::value<int>(), "sets memory limit in client")
         ;
 
         Settings cmd_settings;

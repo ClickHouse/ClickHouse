@@ -301,10 +301,10 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
-    if (x.isNull())
+    if (x.getType() == Field::Types::Null)
         return getNullValueIndex();
 
-    if (valuesHaveFixedSize())
+    if (isNumeric())
         return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
 
     auto & val = x.get<String>();

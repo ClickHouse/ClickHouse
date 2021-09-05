@@ -6,8 +6,8 @@
 #if USE_NLP
 
 #include <Common/Exception.h>
-#include <Interpreters/Lemmatizers.h> // Y_IGNORE
-#include <RdrLemmatizer.h>  // Y_IGNORE
+#include <Interpreters/Lemmatizers.h>
+#include <RdrLemmatizer.h>
 
 #include <vector>
 #include <filesystem>

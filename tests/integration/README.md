@@ -38,7 +38,7 @@ sudo -H pip install \
     pytest \
     pytest-timeout \
     redis \
-    tzlocal==2.1 \
+    tzlocal \
     urllib3 \
     requests-kerberos \
     dict2xml \

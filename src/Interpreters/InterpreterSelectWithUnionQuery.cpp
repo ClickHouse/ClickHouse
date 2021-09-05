@@ -2,10 +2,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -31,12 +29,10 @@ namespace ErrorCodes
 }
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
-        const ASTPtr & query_ptr_, ContextPtr context_,
-        const SelectQueryOptions & options_, const Names & required_result_column_names)
+    const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
-    bool require_full_header = ast->hasNonDefaultUnionMode();
 
     const Settings & settings = context->getSettingsRef();
     if (options.subquery_depth == 0 && (settings.limit > 0 || settings.offset > 0))
@@ -53,7 +49,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     nested_interpreters.reserve(num_children);
     std::vector<Names> required_result_column_names_for_other_selects(num_children);
 
-    if (!require_full_header && !required_result_column_names.empty() && num_children > 1)
+    if (!required_result_column_names.empty() && num_children > 1)
     {
         /// Result header if there are no filtering by 'required_result_column_names'.
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
@@ -135,7 +131,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             = query_num == 0 ? required_result_column_names : required_result_column_names_for_other_selects[query_num];
 
         nested_interpreters.emplace_back(
-            buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), require_full_header ? Names() : current_required_result_column_names));
+            buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), current_required_result_column_names));
     }
 
     /// Determine structure of the result.
@@ -212,10 +208,8 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
-    else if (ast_ptr_->as<ASTSelectQuery>())
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
     else
-        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
 }
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
@@ -231,14 +225,10 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
     }
 
     if (is_subquery)
-    {
         return cache[key]
             = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
-    }
     else
-    {
         return cache[key] = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
-    }
 }
 
 

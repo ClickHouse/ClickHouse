@@ -3,8 +3,7 @@
 #include <Poco/Timespan.h>
 #include <common/types.h>
 #include <DataStreams/SizeLimits.h>
-
-class Stopwatch;
+#include <Common/Stopwatch.h>
 
 namespace DB
 {

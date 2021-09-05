@@ -1,15 +1,13 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 #include <Compression/CompressionFactory.h>
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTLiteral.h>
 #include <cassert>
-#include <openssl/digest.h> // Y_IGNORE
+#include <openssl/digest.h>
 #include <openssl/err.h>
-#include <openssl/hkdf.h> // Y_IGNORE
+#include <openssl/hkdf.h>
 #include <string_view>
 
 namespace DB

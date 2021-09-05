@@ -20,7 +20,6 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
@@ -419,7 +418,6 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto metric_log = getContext()->getMetricLog()) metric_log->flush(true); },
                 [&] { if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
                 [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
-                [&] { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); },
                 [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); }
             );
             break;

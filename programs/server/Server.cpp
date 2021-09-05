@@ -39,7 +39,6 @@
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
-#include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
@@ -53,7 +52,6 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/UserDefinedObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -81,6 +79,7 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <filesystem>
 
+
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
 #   include "Common/config_version.h"
@@ -98,7 +97,7 @@
 #endif
 
 #if USE_SSL
-#    if USE_INTERNAL_SSL_LIBRARY  && !defined(ARCADIA_BUILD)
+#    if USE_INTERNAL_SSL_LIBRARY
 #        include <Compression/CompressionCodecEncrypted.h>
 #    endif
 #    include <Poco/Net/Context.h>
@@ -127,7 +126,6 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
     extern const Metric MaxDDLEntryID;
-    extern const Metric MaxPushedDDLEntryID;
 }
 
 namespace fs = std::filesystem;
@@ -146,6 +144,7 @@ static bool jemallocOptionEnabled(const char *name)
 #else
 static bool jemallocOptionEnabled(const char *) { return 0; }
 #endif
+
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
@@ -358,7 +357,6 @@ void Server::createServer(const std::string & listen_host, const char * port_nam
     try
     {
         func(port);
-        global_context->registerServerPort(port_name, port);
     }
     catch (const Poco::Exception &)
     {
@@ -668,14 +666,13 @@ if (ThreadFuzzer::instance().isEffective())
 
     global_context->setRemoteHostFilter(config());
 
-    std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
-    fs::path path = path_str;
+    std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
     struct stat statbuf;
-    if (stat(path_str.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+    if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
     {
         const auto effective_user = getUserName(effective_user_id);
         const auto data_owner = getUserName(statbuf.st_uid);
@@ -692,11 +689,9 @@ if (ThreadFuzzer::instance().isEffective())
         }
     }
 
-    global_context->setPath(path_str);
+    global_context->setPath(path);
 
-    StatusFile status{path / "status", StatusFile::write_full_info};
-
-    DB::ServerUUID::load(path / "uuid", log);
+    StatusFile status{path + "status", StatusFile::write_full_info};
 
     /// Try to increase limit on number of open files.
     {
@@ -730,23 +725,19 @@ if (ThreadFuzzer::instance().isEffective())
 
     /// Storage with temporary data for processing of heavy queries.
     {
-        std::string tmp_path = config().getString("tmp_path", path / "tmp/");
+        std::string tmp_path = config().getString("tmp_path", path + "tmp/");
         std::string tmp_policy = config().getString("tmp_policy", "");
         const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
 
-    /// Storage keeping all the backups.
-    fs::create_directories(path / "backups");
-    global_context->setBackupsVolume(config().getString("backups_path", path / "backups"), config().getString("backups_policy", ""));
-
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
       * Flags may be cleared automatically after being applied by the server.
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
     {
-        auto flags_path = path / "flags/";
+        auto flags_path = fs::path(path) / "flags/";
         fs::create_directories(flags_path);
         global_context->setFlagsPath(flags_path);
     }
@@ -755,36 +746,29 @@ if (ThreadFuzzer::instance().isEffective())
       */
     {
 
-        std::string user_files_path = config().getString("user_files_path", path / "user_files/");
+        std::string user_files_path = config().getString("user_files_path", fs::path(path) / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
     }
 
     {
-        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path / "dictionaries_lib/");
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", fs::path(path) / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
         fs::create_directories(dictionaries_lib_path);
     }
 
-    {
-        std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
-        global_context->setUserScriptsPath(user_scripts_path);
-        fs::create_directories(user_scripts_path);
-    }
-
     /// top_level_domains_lists
     {
-        const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
+        const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 
     {
-        fs::create_directories(path / "data/");
-        fs::create_directories(path / "metadata/");
-        fs::create_directories(path / "user_defined/");
+        fs::create_directories(fs::path(path) / "data/");
+        fs::create_directories(fs::path(path) / "metadata/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
-        fs::create_directories(path / "metadata_dropped/");
+        fs::create_directories(fs::path(path) / "metadata_dropped/");
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -967,7 +951,7 @@ if (ThreadFuzzer::instance().isEffective())
 #endif
 
     /// Set path for format schema files
-    fs::path format_schema_path(config().getString("format_schema_path", path / "format_schemas/"));
+    fs::path format_schema_path(config().getString("format_schema_path", fs::path(path) / "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
@@ -1002,7 +986,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
 #if USE_NURAFT
         /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperDispatcher();
+        global_context->initializeKeeperStorageDispatcher();
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -1085,14 +1069,11 @@ if (ThreadFuzzer::instance().isEffective())
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
 
-            global_context->shutdownKeeperDispatcher();
+            global_context->shutdownKeeperStorageDispatcher();
         }
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
-
-        // Uses a raw pointer to global context for getting ZooKeeper.
-        main_config_reloader.reset();
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -1106,31 +1087,19 @@ if (ThreadFuzzer::instance().isEffective())
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
-    LOG_INFO(log, "Loading user defined objects from {}", path_str);
-    try
-    {
-        UserDefinedObjectsLoader::instance().loadObjects(global_context);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Caught exception while loading user defined objects");
-        throw;
-    }
-    LOG_DEBUG(log, "Loaded user defined objects");
-
-    LOG_INFO(log, "Loading metadata from {}", path_str);
+    LOG_INFO(log, "Loading metadata from {}", path);
 
     try
     {
-        auto & database_catalog = DatabaseCatalog::instance();
-        /// We load temporary database first, because projections need it.
-        database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
+        auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
+        /// We load temporary database first, because projections need it.
+        database_catalog.initializeAndLoadTemporaryDatabase();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         database_catalog.loadDatabases();
@@ -1458,6 +1427,7 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
+        global_context->enableNamedSessions();
 
         {
             String level_str = config().getString("text_log.level", "");
@@ -1498,8 +1468,7 @@ if (ThreadFuzzer::instance().isEffective())
             if (pool_size < 1)
                 throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
-                                                                     "distributed_ddl", "DDLWorker",
-                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
+                                                                     "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
         }
 
         for (auto & server : *servers)
@@ -1537,6 +1506,7 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_INFO(log, "Closed connections.");
 
             dns_cache_updater.reset();
+            main_config_reloader.reset();
 
             if (current_connections)
             {

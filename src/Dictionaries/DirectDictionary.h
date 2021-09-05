@@ -20,7 +20,8 @@ template <DictionaryKeyType dictionary_key_type>
 class DirectDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by direct dictionary");
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
 
     DirectDictionary(
         const StorageID & dict_id_,
@@ -29,7 +30,7 @@ public:
 
     std::string getTypeName() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             return "Direct";
         else
             return "ComplexKeyDirect";
@@ -109,7 +110,7 @@ private:
     mutable std::atomic<size_t> found_count{0};
 };
 
-extern template class DirectDictionary<DictionaryKeyType::Simple>;
-extern template class DirectDictionary<DictionaryKeyType::Complex>;
+extern template class DirectDictionary<DictionaryKeyType::simple>;
+extern template class DirectDictionary<DictionaryKeyType::complex>;
 
 }

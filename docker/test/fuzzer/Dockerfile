@@ -5,8 +5,6 @@ ENV LANG=C.UTF-8
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
-
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
             ca-certificates \
@@ -16,8 +14,6 @@ RUN apt-get update \
             p7zip-full \
             parallel \
             psmisc \
-            python3 \
-            python3-pip \
             rsync \
             tree \
             tzdata \
@@ -26,8 +22,6 @@ RUN apt-get update \
     && apt-get autoremove --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-RUN pip3 install Jinja2
 
 COPY * /
 

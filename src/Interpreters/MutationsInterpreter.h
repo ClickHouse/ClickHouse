@@ -53,7 +53,7 @@ public:
     BlockInputStreamPtr execute();
 
     /// Only changed columns.
-    Block getUpdatedHeader() const;
+    const Block & getUpdatedHeader() const;
 
     const ColumnDependencies & getColumnDependencies() const;
 

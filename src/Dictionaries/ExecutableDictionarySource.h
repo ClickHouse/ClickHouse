@@ -1,12 +1,11 @@
 #pragma once
 
-#include <common/logger_useful.h>
-
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
 
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
+namespace Poco { class Logger; }
 
 
 namespace DB

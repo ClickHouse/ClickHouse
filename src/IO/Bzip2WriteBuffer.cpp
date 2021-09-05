@@ -2,9 +2,9 @@
 #    include <Common/config.h>
 #endif
 
-#if USE_BZIP2
+#if USE_BROTLI
 #    include <IO/Bzip2WriteBuffer.h>
-#    include <bzlib.h> // Y_IGNORE
+#    include <bzlib.h>
 
 #include <Common/MemoryTracker.h>
 

@@ -88,20 +88,6 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/uptime", uptime);
     openFileIfExists("/proc/net/dev", net_dev);
 
-    openSensors();
-    openBlockDevices();
-    openEDAC();
-    openSensorsChips();
-#endif
-}
-
-#if defined(OS_LINUX)
-void AsynchronousMetrics::openSensors()
-{
-    LOG_TRACE(log, "Scanning /sys/class/thermal");
-
-    thermal.clear();
-
     for (size_t thermal_device_index = 0;; ++thermal_device_index)
     {
         std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(fmt::format("/sys/class/thermal/thermal_zone{}/temp", thermal_device_index));
@@ -115,71 +101,6 @@ void AsynchronousMetrics::openSensors()
         }
         thermal.emplace_back(std::move(file));
     }
-}
-
-void AsynchronousMetrics::openBlockDevices()
-{
-    LOG_TRACE(log, "Scanning /sys/block");
-
-    if (!std::filesystem::exists("/sys/block"))
-        return;
-
-    block_devices_rescan_delay.restart();
-
-    block_devs.clear();
-
-    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
-    {
-        String device_name = device_dir.path().filename();
-
-        /// We are not interested in loopback devices.
-        if (device_name.starts_with("loop"))
-            continue;
-
-        std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(device_dir.path() / "stat");
-        if (!file)
-            continue;
-
-        block_devs[device_name] = std::move(file);
-    }
-}
-
-void AsynchronousMetrics::openEDAC()
-{
-    LOG_TRACE(log, "Scanning /sys/devices/system/edac");
-
-    edac.clear();
-
-    for (size_t edac_index = 0;; ++edac_index)
-    {
-        String edac_correctable_file = fmt::format("/sys/devices/system/edac/mc/mc{}/ce_count", edac_index);
-        String edac_uncorrectable_file = fmt::format("/sys/devices/system/edac/mc/mc{}/ue_count", edac_index);
-
-        bool edac_correctable_file_exists = std::filesystem::exists(edac_correctable_file);
-        bool edac_uncorrectable_file_exists = std::filesystem::exists(edac_uncorrectable_file);
-
-        if (!edac_correctable_file_exists && !edac_uncorrectable_file_exists)
-        {
-            if (edac_index == 0)
-                continue;
-            else
-                break;
-        }
-
-        edac.emplace_back();
-
-        if (edac_correctable_file_exists)
-            edac.back().first = openFileIfExists(edac_correctable_file);
-        if (edac_uncorrectable_file_exists)
-            edac.back().second = openFileIfExists(edac_uncorrectable_file);
-    }
-}
-
-void AsynchronousMetrics::openSensorsChips()
-{
-    LOG_TRACE(log, "Scanning /sys/class/hwmon");
-
-    hwmon_devices.clear();
 
     for (size_t hwmon_index = 0;; ++hwmon_index)
     {
@@ -228,6 +149,61 @@ void AsynchronousMetrics::openSensorsChips()
 
             hwmon_devices[hwmon_name][sensor_name] = std::move(file);
         }
+    }
+
+    for (size_t edac_index = 0;; ++edac_index)
+    {
+        String edac_correctable_file = fmt::format("/sys/devices/system/edac/mc/mc{}/ce_count", edac_index);
+        String edac_uncorrectable_file = fmt::format("/sys/devices/system/edac/mc/mc{}/ue_count", edac_index);
+
+        bool edac_correctable_file_exists = std::filesystem::exists(edac_correctable_file);
+        bool edac_uncorrectable_file_exists = std::filesystem::exists(edac_uncorrectable_file);
+
+        if (!edac_correctable_file_exists && !edac_uncorrectable_file_exists)
+        {
+            if (edac_index == 0)
+                continue;
+            else
+                break;
+        }
+
+        edac.emplace_back();
+
+        if (edac_correctable_file_exists)
+            edac.back().first = openFileIfExists(edac_correctable_file);
+        if (edac_uncorrectable_file_exists)
+            edac.back().second = openFileIfExists(edac_uncorrectable_file);
+    }
+
+    openBlockDevices();
+#endif
+}
+
+#if defined(OS_LINUX)
+void AsynchronousMetrics::openBlockDevices()
+{
+    LOG_TRACE(log, "Scanning /sys/block");
+
+    if (!std::filesystem::exists("/sys/block"))
+        return;
+
+    block_devices_rescan_delay.restart();
+
+    block_devs.clear();
+
+    for (const auto & device_dir : std::filesystem::directory_iterator("/sys/block"))
+    {
+        String device_name = device_dir.path().filename();
+
+        /// We are not interested in loopback devices.
+        if (device_name.starts_with("loop"))
+            continue;
+
+        std::unique_ptr<ReadBufferFromFilePRead> file = openFileIfExists(device_dir.path() / "stat");
+        if (!file)
+            continue;
+
+        block_devs[device_name] = std::move(file);
     }
 }
 #endif
@@ -991,8 +967,6 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
         /// Try to reopen block devices in case of error
         /// (i.e. ENOENT means that some disk had been replaced, and it may apperas with a new name)
         try
@@ -1003,6 +977,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     if (net_dev)
@@ -1091,9 +1066,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
-    try
+    for (size_t i = 0, size = thermal.size(); i < size; ++i)
     {
-        for (size_t i = 0, size = thermal.size(); i < size; ++i)
+        try
         {
             ReadBufferFromFilePRead & in = *thermal[i];
 
@@ -1102,38 +1077,21 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             readText(temperature, in);
             new_values[fmt::format("Temperature{}", i)] = temperature * 0.001;
         }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        /// Files maybe re-created on module load/unload
-        try
-        {
-            openSensors();
-        }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
-    try
+    for (const auto & [hwmon_name, sensors] : hwmon_devices)
     {
-        for (const auto & [hwmon_name, sensors] : hwmon_devices)
+        try
         {
             for (const auto & [sensor_name, sensor_file] : sensors)
             {
                 sensor_file->rewind();
                 Int64 temperature = 0;
-                try
-                {
-                    readText(temperature, *sensor_file);
-                }
-                catch (const ErrnoException & e)
-                {
-                    LOG_DEBUG(&Poco::Logger::get("AsynchronousMetrics"), "Hardware monitor '{}', sensor '{}' exists but could not be read, error {}.", hwmon_name, sensor_name, e.getErrno());
-                }
+                readText(temperature, *sensor_file);
 
                 if (sensor_name.empty())
                     new_values[fmt::format("Temperature_{}", hwmon_name)] = temperature * 0.001;
@@ -1141,32 +1099,19 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                     new_values[fmt::format("Temperature_{}_{}", hwmon_name, sensor_name)] = temperature * 0.001;
             }
         }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        /// Files can be re-created on:
-        /// - module load/unload
-        /// - suspend/resume cycle
-        /// So file descriptors should be reopened.
-        try
-        {
-            openSensorsChips();
-        }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
-    try
+    for (size_t i = 0, size = edac.size(); i < size; ++i)
     {
-        for (size_t i = 0, size = edac.size(); i < size; ++i)
-        {
-            /// NOTE maybe we need to take difference with previous values.
-            /// But these metrics should be exceptionally rare, so it's ok to keep them accumulated.
+        /// NOTE maybe we need to take difference with previous values.
+        /// But these metrics should be exceptionally rare, so it's ok to keep them accumulated.
 
+        try
+        {
             if (edac[i].first)
             {
                 ReadBufferFromFilePRead & in = *edac[i].first;
@@ -1184,16 +1129,6 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 readText(errors, in);
                 new_values[fmt::format("EDAC{}_Uncorrectable", i)] = errors;
             }
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        /// EDAC files can be re-created on module load/unload
-        try
-        {
-            openEDAC();
         }
         catch (...)
         {
