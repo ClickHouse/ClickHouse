@@ -24,7 +24,7 @@ public:
 
     Events getEvents();
 
-    bool getError() const;
+    bool hasError() const;
 
     const std::string & getPath() const;
 

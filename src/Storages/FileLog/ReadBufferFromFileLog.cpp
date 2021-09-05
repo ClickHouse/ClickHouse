@@ -92,7 +92,6 @@ ReadBufferFromFileLog::Records ReadBufferFromFileLog::pollBatch(size_t batch_siz
     return new_records;
 }
 
-// TODO
 void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_records, size_t batch_size_)
 {
     size_t need_records_size = batch_size_ - new_records.size();

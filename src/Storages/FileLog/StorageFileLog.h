@@ -50,8 +50,6 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    static Names getVirtualColumnNames();
-
     auto & getFileNames() { return file_names; }
     auto & getFileStatus() { return file_status; }
 
