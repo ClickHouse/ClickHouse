@@ -61,7 +61,9 @@ void WriteBufferFromFileDescriptor::nextImpl()
         if ((-1 == res || 0 == res) && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteFailed);
-            throwFromErrnoWithPath("Cannot write to file " + getFileName(), getFileName(),
+
+            /// Don't use getFileName() here because this method can be called from destructor
+            throwFromErrnoWithPath("Cannot write to file " + file_name, file_name,
                                    ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
         }
 
@@ -74,19 +76,17 @@ void WriteBufferFromFileDescriptor::nextImpl()
 }
 
 
-/// Name or some description of file.
-std::string WriteBufferFromFileDescriptor::getFileName() const
-{
-    return "(fd = " + toString(fd) + ")";
-}
-
-
 WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
     int fd_,
     size_t buf_size,
     char * existing_memory,
-    size_t alignment)
-    : WriteBufferFromFileBase(buf_size, existing_memory, alignment), fd(fd_) {}
+    size_t alignment,
+    const std::string & file_name_)
+    : WriteBufferFromFileBase(buf_size, existing_memory, alignment)
+    , fd(fd_)
+    , file_name(file_name_.empty() ? "(fd = " + toString(fd) + ")" : file_name_)
+{
+}
 
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
@@ -115,7 +115,7 @@ void WriteBufferFromFileDescriptor::sync()
 }
 
 
-off_t WriteBufferFromFileDescriptor::seek(off_t offset, int whence)
+off_t WriteBufferFromFileDescriptor::seek(off_t offset, int whence) // NOLINT
 {
     off_t res = lseek(fd, offset, whence);
     if (-1 == res)
@@ -125,7 +125,7 @@ off_t WriteBufferFromFileDescriptor::seek(off_t offset, int whence)
 }
 
 
-void WriteBufferFromFileDescriptor::truncate(off_t length)
+void WriteBufferFromFileDescriptor::truncate(off_t length) // NOLINT
 {
     int res = ftruncate(fd, length);
     if (-1 == res)
@@ -133,7 +133,7 @@ void WriteBufferFromFileDescriptor::truncate(off_t length)
 }
 
 
-off_t WriteBufferFromFileDescriptor::size()
+off_t WriteBufferFromFileDescriptor::size() const
 {
     struct stat buf;
     int res = fstat(fd, &buf);
