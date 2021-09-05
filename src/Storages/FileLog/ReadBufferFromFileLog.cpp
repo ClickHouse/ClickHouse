@@ -1,5 +1,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
+#include <Common/Stopwatch.h>
 
 #include <common/logger_useful.h>
 
@@ -15,22 +16,21 @@ namespace ErrorCodes
 }
 
 ReadBufferFromFileLog::ReadBufferFromFileLog(
-    const String & path_, Poco::Logger * log_, size_t max_batch_size, size_t poll_timeout_, ContextPtr context_)
+    StorageFileLog & storage_,
+    size_t max_batch_size,
+    size_t poll_timeout_,
+    ContextPtr context_,
+    size_t stream_number_,
+    size_t max_streams_number_)
     : ReadBuffer(nullptr, 0)
-    , path(path_)
-    , log(log_)
+    , log(&Poco::Logger::get("ReadBufferFromFileLog " + toString(stream_number)))
+    , storage(storage_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
     , context(context_)
+    , stream_number(stream_number_)
+    , max_streams_number(max_streams_number_)
 {
-}
-
-void ReadBufferFromFileLog::open()
-{
-    wait_task = context->getMessageBrokerSchedulePool().createTask("waitTask", [this] { waitFunc(); });
-    wait_task->deactivate();
-
-
     cleanUnprocessed();
     allowed = false;
 }
@@ -40,17 +40,6 @@ void ReadBufferFromFileLog::cleanUnprocessed()
     records.clear();
     current = records.begin();
     BufferBase::set(nullptr, 0, 0);
-}
-
-void ReadBufferFromFileLog::close()
-{
-    wait_task->deactivate();
-
-    if (path_is_directory)
-        select_task->deactivate();
-
-    for (auto & status : file_status)
-        status.second.reader.close();
 }
 
 bool ReadBufferFromFileLog::poll()
@@ -77,7 +66,7 @@ bool ReadBufferFromFileLog::poll()
 
         LOG_TRACE(log, "Polled batch of {} records. ", records.size());
 
-        buffer_status = BufferStatus::NOT_STALLED;
+        buffer_status = BufferStatus::POLLED_OK;
         allowed = true;
         return true;
     }
@@ -94,43 +83,45 @@ ReadBufferFromFileLog::Records ReadBufferFromFileLog::pollBatch(size_t batch_siz
     if (new_records.size() == batch_size_)
         return new_records;
 
-    wait_task->activateAndSchedule();
-    while (!time_out && new_records.size() != batch_size_)
+    Stopwatch watch;
+    while (watch.elapsedMilliseconds() < poll_timeout && new_records.size() != batch_size_)
     {
         readNewRecords(new_records, batch_size);
     }
 
-    wait_task->deactivate();
-    time_out = false;
     return new_records;
 }
 
+// TODO
 void ReadBufferFromFileLog::readNewRecords(ReadBufferFromFileLog::Records & new_records, size_t batch_size_)
 {
-    std::lock_guard<std::mutex> lock(status_mutex);
-
     size_t need_records_size = batch_size_ - new_records.size();
     size_t read_records_size = 0;
 
-    for (auto & status : file_status)
+    const auto & file_names = storage.getFileNames();
+    auto & file_status = storage.getFileStatus();
+
+    size_t files_per_stream = file_names.size() / max_streams_number;
+    size_t start = stream_number * files_per_stream;
+    size_t end = stream_number == max_streams_number - 1 ? file_names.size() : (stream_number + 1) * files_per_stream;
+
+    for (size_t i = start; i < end; ++i)
     {
-        if (status.second.status == FileStatus::NO_CHANGE)
+        auto & file = file_status[file_names[i]];
+        if (file.status == StorageFileLog::FileStatus::NO_CHANGE || file.status == StorageFileLog::FileStatus::REMOVED)
             continue;
 
-        if (status.second.status == FileStatus::REMOVED)
-            file_status.erase(status.first);
-
-        while (read_records_size < need_records_size && status.second.reader.good() && !status.second.reader.eof())
+        while (read_records_size < need_records_size && file.reader.good() && !file.reader.eof())
         {
             Record record;
-            std::getline(status.second.reader, record);
+            std::getline(file.reader, record);
             new_records.emplace_back(record);
             ++read_records_size;
         }
 
         // Read to the end of the file
-        if (status.second.reader.eof())
-            status.second.status = FileStatus::NO_CHANGE;
+        if (file.reader.eof())
+            file.status = StorageFileLog::FileStatus::NO_CHANGE;
 
         if (read_records_size == need_records_size)
             break;
@@ -149,12 +140,6 @@ bool ReadBufferFromFileLog::nextImpl()
     ++current;
 
     return true;
-}
-
-void ReadBufferFromFileLog::waitFunc()
-{
-    sleepForMicroseconds(poll_timeout);
-    time_out = true;
 }
 
 }

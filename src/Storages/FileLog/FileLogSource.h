@@ -25,7 +25,9 @@ public:
         size_t stream_number_,
         size_t max_streams_number_);
 
-    bool isStalled() { return !buffer || buffer->isStalled(); }
+    String getName() const override { return "FileLog"; }
+
+    bool noRecords() { return !buffer || buffer->noRecords(); }
 
 protected:
     Chunk generate() override;
@@ -39,17 +41,12 @@ private:
 
     size_t poll_time_out;
 
-    size_t stream_number;
-    size_t max_streams_number;
-
-    ReadBufferFromFileLogPtr buffer;
+    std::unique_ptr<ReadBufferFromFileLog> buffer;
 
     bool started = false;
 
     const Block non_virtual_header;
     const Block virtual_header;
-
-    void createReadBuffer();
 };
 
 }
