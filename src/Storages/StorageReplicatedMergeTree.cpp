@@ -5138,14 +5138,14 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
     LOG_INFO(log, "Restoring replica metadata");
 
     if (!is_readonly || has_metadata_in_zookeeper)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: replica is not readonly");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only readonly replicas can be restored");
 
     if (are_restoring_replica.exchange(true))
         throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Replica restoration in progress");
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    const DataPartsVector all_parts = getDataPartsVector(IMergeTreeDataPart::all_part_states);
+    const DataPartsVector all_parts = getAllDataPartsVector();
     Strings active_parts_names;
 
     /// Why all parts (not only Committed) are moved to detached/:

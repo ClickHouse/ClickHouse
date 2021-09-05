@@ -731,9 +731,12 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
         /// This predicate is checked for the first part of each range.
         /// (left = nullptr, right = "first part of partition")
         if (!left)
-            return !currently_merging_mutating_parts.count(right);
-        return !currently_merging_mutating_parts.count(left) && !currently_merging_mutating_parts.count(right)
-            && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock) && partsContainSameProjections(left, right);
+            return !currently_merging_mutating_parts.contains(right);
+
+        return !currently_merging_mutating_parts.contains(left) 
+            && !currently_merging_mutating_parts.contains(right)
+            && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock) 
+            && partsContainSameProjections(left, right);
     };
 
     SelectPartsDecision select_decision = SelectPartsDecision::CANNOT_SELECT;
@@ -993,13 +996,16 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 
     auto mutations_end_it = current_mutations_by_version.end();
 
-    for (const auto & part : getDataPartsVector())
+    DataPartPtr part_to_mutate;
+    MutationCommands commands;
+
+    for (const DataPartPtr & part : getDataPartsVector())
     {
         if (currently_merging_mutating_parts.contains(part))
             continue;
 
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
-        if (mutations_begin_it == mutations_end_it) // part not involved in active mutations
+        if (mutations_begin_it == mutations_end_it)
             continue;
 
         // TODO Need different coefficient for lightweight mutations
@@ -1013,34 +1019,38 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
             continue;
         }
 
-        const MutationCommands commands = getMutationCommandsForMutationsRange(
+        commands = getMutationCommandsForMutationsRange(
             metadata_snapshot, max_ast_elements, mutations_begin_it, mutations_end_it);
 
         if (commands.empty())
             continue;
 
-        MergeTreePartInfo new_part_info = part->info;
-        new_part_info.mutation = current_mutations_by_version.rbegin()->first;
-
-        FutureMergedMutatedPart future_part;
-
-        if (storage_settings.get()->assign_part_uuids)
-            future_part.uuid = UUIDHelpers::generateV4();
-
-        future_part.parts = {part};
-        future_part.part_info = new_part_info;
-        future_part.name = part->getNewName(new_part_info);
-        future_part.type = part->getType();
-
-        const size_t estimated = MergeTreeDataMergerMutator::estimateNeededDiskSpace({part});
-
-        auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(
-            future_part, estimated, *this, metadata_snapshot, true);
-
-        return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);
+        part_to_mutate = part;
+        break;
     }
 
-    return {};
+    if (!part_to_mutate)
+        return {};
+
+    MergeTreePartInfo new_part_info = part_to_mutate->info;
+    new_part_info.mutation = current_mutations_by_version.rbegin()->first;
+
+    FutureMergedMutatedPart future_part;
+
+    if (storage_settings.get()->assign_part_uuids)
+        future_part.uuid = UUIDHelpers::generateV4();
+
+    future_part.parts = {part_to_mutate};
+    future_part.part_info = new_part_info;
+    future_part.name = part_to_mutate->getNewName(new_part_info);
+    future_part.type = part_to_mutate->getType();
+
+    const size_t estimated = MergeTreeDataMergerMutator::estimateNeededDiskSpace({part_to_mutate});
+
+    auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(
+        future_part, estimated, *this, metadata_snapshot, true);
+
+    return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands);
 }
 
 bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & merge_mutate_entry, TableLockHolder & table_lock_holder)

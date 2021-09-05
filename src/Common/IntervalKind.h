@@ -1,6 +1,7 @@
 #pragma once
 
 #include <common/types.h>
+#include <magic_enum.hpp>
 
 
 namespace DB
@@ -24,7 +25,7 @@ struct IntervalKind
     IntervalKind(Kind kind_ = Second) : kind(kind_) {}
     operator Kind() const { return kind; }
 
-    const char * toString() const;
+    constexpr const char * toString() const { return magic_enum::enum_name(kind); }
 
     /// Returns number of seconds in one interval.
     /// For `Month`, `Quarter` and `Year` the function returns an average number of seconds.
