@@ -125,6 +125,44 @@ Result:
 └───────────────────────────┘
 ```
 
+## subBitmap {#subBitmap}
+
+Creates a subset of bitmap limit the results to `cardinality_limit` with offset of `offset`.
+
+**Syntax**
+
+``` sql
+subBitmap(bitmap, offset, cardinality_limit)
+```
+
+**Arguments**
+
+-   `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+-   `offset` – the number of offsets. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `cardinality_limit` – The subset cardinality upper limit. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+The subset.
+
+Type: `Bitmap object`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT bitmapToArray(subBitmap(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(10), toUInt32(10))) AS res;
+```
+
+Result:
+
+``` text
+┌─res─────────────────────────────┐
+│ [10,11,12,13,14,15,16,17,18,19] │
+└─────────────────────────────────┘
+```
+
 ## bitmapContains {#bitmap_functions-bitmapcontains}
 
 Checks whether the bitmap contains an element.

@@ -977,13 +977,14 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     /// For the case when there are no keys (all aggregate into one row).
     if (result.type == AggregatedDataVariants::Type::without_key)
     {
-#if USE_EMBEDDED_COMPILER
-        if (compiled_aggregate_functions_holder)
-        {
-            executeWithoutKeyImpl<true>(result.without_key, num_rows, aggregate_functions_instructions.data(), result.aggregates_pool);
-        }
-        else
-#endif
+        /// TODO: Enable compilation after investigation
+// #if USE_EMBEDDED_COMPILER
+//         if (compiled_aggregate_functions_holder)
+//         {
+//             executeWithoutKeyImpl<true>(result.without_key, num_rows, aggregate_functions_instructions.data(), result.aggregates_pool);
+//         }
+//         else
+// #endif
         {
             executeWithoutKeyImpl<false>(result.without_key, num_rows, aggregate_functions_instructions.data(), result.aggregates_pool);
         }

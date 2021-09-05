@@ -14,33 +14,35 @@
 namespace DB
 {
 
-struct CassandraSettings
-{
-    String host;
-    UInt16 port;
-    String user;
-    String password;
-    String db;
-    String table;
-
-    CassConsistency consistency;
-    bool allow_filtering;
-    /// TODO get information about key from the driver
-    size_t partition_key_prefix;
-    size_t max_threads;
-    String where;
-
-    CassandraSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-
-    void setConsistency(const String & config_str);
-};
-
 class CassandraDictionarySource final : public IDictionarySource
 {
 public:
+
+    struct Configuration
+    {
+        String host;
+        UInt16 port;
+        String user;
+        String password;
+        String db;
+        String table;
+        String query;
+
+        CassConsistency consistency;
+        bool allow_filtering;
+        /// TODO get information about key from the driver
+        size_t partition_key_prefix;
+        size_t max_threads;
+        String where;
+
+        Configuration(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+        void setConsistency(const String & config_str);
+    };
+
     CassandraDictionarySource(
         const DictionaryStructure & dict_struct,
-        const CassandraSettings & settings_,
+        const Configuration & configuration,
         const Block & sample_block);
 
     CassandraDictionarySource(
@@ -59,7 +61,7 @@ public:
 
     DictionarySourcePtr clone() const override
     {
-        return std::make_unique<CassandraDictionarySource>(dict_struct, settings, sample_block);
+        return std::make_unique<CassandraDictionarySource>(dict_struct, configuration, sample_block);
     }
 
     Pipe loadIds(const std::vector<UInt64> & ids) override;
@@ -76,7 +78,7 @@ private:
 
     Poco::Logger * log;
     const DictionaryStructure dict_struct;
-    const CassandraSettings settings;
+    const Configuration configuration;
     Block sample_block;
     ExternalQueryBuilder query_builder;
 

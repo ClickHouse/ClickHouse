@@ -890,13 +890,26 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Queries’ threads runned by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
+Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
 
 Example:
 
 ``` text
 log_query_threads=1
 ```
+
+## log_query_views {#settings-log-query-views}
+
+Setting up query views logging.
+
+When a query run by ClickHouse with this setup on has associated views (materialized or live views), they are logged in the [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) server configuration parameter.
+
+Example:
+
+``` text
+log_query_views=1
+```
+
 
 ## log_comment {#settings-log-comment}
 
@@ -2028,10 +2041,25 @@ Default value: 0.
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
--   Type: bool
--   Default value: True
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) and [JSONEachRow](../../interfaces/formats.md#jsoneachrow) formats.
 
-Enable order-preserving parallel parsing of data formats. Supported only for TSV, TKSV, CSV, and JSONEachRow formats.
+Possible values:
+
+-   1 — Enabled.
+-   0 — Disabled.
+
+Default value: `0`.
+
+## output_format_parallel_formatting {#output-format-parallel-formatting}
+
+Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) and [JSONEachRow](../../interfaces/formats.md#jsoneachrow) formats.
+
+Possible values:
+
+-   1 — Enabled.
+-   0 — Disabled.
+
+Default value: `0`.
 
 ## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 
@@ -3405,5 +3433,27 @@ Possible values:
 
 -   0 — The table is not automatically updated in the background, when schema changes are detected.
 -   1 — The table is automatically updated in the background, when schema changes are detected.
+
+Default value: `0`.
+
+## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
+
+Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md#projections) optimization when processing `SELECT` queries.
+
+Possible values:
+
+-   0 — Projection optimization disabled.
+-   1 — Projection optimization enabled.
+
+Default value: `0`.
+
+## force_optimize_projection {#force-optimize-projection}
+
+Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md#projections) in `SELECT` queries, when projection optimization is enabled (see [allow_experimental_projection_optimization](#allow-experimental-projection-optimization) setting). 
+
+Possible values:
+
+-   0 — Projection optimization is not obligatory.
+-   1 — Projection optimization is obligatory.
 
 Default value: `0`.

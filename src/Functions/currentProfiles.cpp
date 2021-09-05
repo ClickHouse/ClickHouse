@@ -29,6 +29,8 @@ namespace
         static constexpr auto name = (kind == Kind::CURRENT_PROFILES) ? "currentProfiles" : ((kind == Kind::ENABLED_PROFILES) ? "enabledProfiles" : "defaultProfiles");
         static FunctionPtr create(const ContextPtr & context) { return std::make_shared<FunctionCurrentProfiles>(context); }
 
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
         String getName() const override { return name; }
 
         explicit FunctionCurrentProfiles(const ContextPtr & context)

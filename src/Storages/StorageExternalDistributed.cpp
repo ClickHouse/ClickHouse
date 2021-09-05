@@ -98,7 +98,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                     context->getSettingsRef().postgresql_connection_pool_size,
                     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-                shard = StoragePostgreSQL::create(table_id_, std::move(pool), remote_table, columns_, constraints_, String{}, context);
+                shard = StoragePostgreSQL::create(table_id_, std::move(pool), remote_table, columns_, constraints_, String{});
                 break;
             }
 #endif

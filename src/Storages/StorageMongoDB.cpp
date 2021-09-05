@@ -15,7 +15,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
-#include <DataStreams/MongoDBBlockInputStream.h>
+#include <DataStreams/MongoDBSource.h>
 
 namespace DB
 {

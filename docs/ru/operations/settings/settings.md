@@ -1865,10 +1865,25 @@ ClickHouse генерирует исключение
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
--   Тип: bool
--   Значение по умолчанию: True
+Включает или отключает режим, при котором входящие данные разбиваются на части, парсинг каждой из которых осуществляется параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
-Включает режим, при котором входящие данные парсятся параллельно, но с сохранением исходного порядка следования. Поддерживается только для форматов TSV, TKSV, CSV и JSONEachRow.
+Возможные значения:
+
+-   1 — включен режим параллельного разбора.
+-   0 — отключен режим параллельного разбора.
+
+Значение по умолчанию: `0`.
+
+## output_format_parallel_formatting {#output-format-parallel-formatting}
+
+Включает или отключает режим, при котором исходящие данные форматируются параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+
+Возможные значения:
+
+-   1 — включен режим параллельного форматирования.
+-   0 — отключен режим параллельного форматирования.
+
+Значение по умолчанию: `0`.
 
 ## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 
@@ -3235,5 +3250,27 @@ SETTINGS index_granularity = 8192 │
 
 -   0 — таблица не обновляется автоматически в фоновом режиме при обнаружении изменений схемы.
 -   1 — таблица обновляется автоматически в фоновом режиме при обнаружении изменений схемы.
+
+Значение по умолчанию: `0`.
+
+## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
+
+Включает или отключает поддержку [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) при обработке запросов `SELECT`.
+
+Возможные значения:
+
+-   0 — Проекции не поддерживаются.
+-   1 — Проекции поддерживаются.
+
+Значение по умолчанию: `0`.
+
+## force_optimize_projection {#force-optimize-projection}
+
+Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)). 
+
+Возможные значения:
+
+-   0 — Проекции используются опционально.
+-   1 — Проекции обязательно используются.
 
 Значение по умолчанию: `0`.

@@ -1,4 +1,5 @@
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <chrono>
 
 /** Previously, these constants were located in one enum.
@@ -563,8 +564,30 @@
     M(593, ZERO_COPY_REPLICATION_ERROR) \
     M(594, BZIP2_STREAM_DECODER_FAILED) \
     M(595, BZIP2_STREAM_ENCODER_FAILED) \
+    M(596, INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH) \
+    M(597, NO_SUCH_ERROR_CODE) \
+    M(598, BACKUP_ALREADY_EXISTS) \
+    M(599, BACKUP_NOT_FOUND) \
+    M(600, BACKUP_VERSION_NOT_SUPPORTED) \
+    M(601, BACKUP_DAMAGED) \
+    M(602, NO_BASE_BACKUP) \
+    M(603, WRONG_BASE_BACKUP) \
+    M(604, BACKUP_ENTRY_ALREADY_EXISTS) \
+    M(605, BACKUP_ENTRY_NOT_FOUND) \
+    M(606, BACKUP_IS_EMPTY) \
+    M(607, BACKUP_ELEMENT_DUPLICATE) \
+    M(608, CANNOT_RESTORE_TABLE) \
+    M(609, FUNCTION_ALREADY_EXISTS) \
+    M(610, CANNOT_DROP_SYSTEM_FUNCTION) \
+    M(611, CANNOT_CREATE_RECURSIVE_FUNCTION) \
+    M(612, OBJECT_ALREADY_STORED_ON_DISK) \
+    M(613, OBJECT_WAS_NOT_STORED_ON_DISK) \
+    M(614, POSTGRESQL_CONNECTION_FAILURE) \
+    M(615, CANNOT_ADVISE) \
+    M(616, UNKNOWN_READ_METHOD) \
+    M(617, LZ4_ENCODER_FAILED) \
+    M(618, LZ4_DECODER_FAILED) \
     \
-    M(998, POSTGRESQL_CONNECTION_FAILURE) \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
@@ -599,6 +622,21 @@ namespace ErrorCodes
         if (error_code < 0 || error_code >= END)
             return std::string_view();
         return error_codes_names.names[error_code];
+    }
+
+    ErrorCode getErrorCodeByName(std::string_view error_name)
+    {
+        for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+        {
+            std::string_view name = ErrorCodes::getName(i);
+
+            if (name.empty())
+                continue;
+
+            if (name == error_name)
+                return i;
+        }
+        throw Exception(NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
     }
 
     ErrorCode end() { return END + 1; }

@@ -68,7 +68,7 @@
         html, body
         {
             /* Personal choice. */
-            font-family: Sans-Serif;
+            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
         }
@@ -96,9 +96,14 @@
         .monospace
         {
             /* Prefer fonts that have full hinting info. This is important for non-retina displays.
-               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant).
-            */
+               Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant). */
             font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, Monospace;
+        }
+
+        .monospace-table
+        {
+            /* Liberation is worse than DejaVu for block drawing characters. */
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, Monospace;
         }
 
         .shadow
@@ -325,8 +330,8 @@
         <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
     </div>
     <div id="data_div">
-        <table class="monospace shadow" id="data-table"></table>
-        <pre class="monospace shadow" id="data-unparsed"></pre>
+        <table class="monospace-table shadow" id="data-table"></table>
+        <pre class="monospace-table shadow" id="data-unparsed"></pre>
     </div>
     <svg id="graph" fill="none"></svg>
     <p id="error" class="monospace shadow">
@@ -367,7 +372,7 @@
         const server_address = document.getElementById('url').value;
 
         const url = server_address +
-            (server_address.indexOf('?') >= 0 ? '&' : '?') + 
+            (server_address.indexOf('?') >= 0 ? '&' : '?') +
             /// Ask server to allow cross-domain requests.
             'add_http_cors_header=1' +
             '&user=' + encodeURIComponent(user) +

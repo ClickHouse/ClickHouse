@@ -54,6 +54,7 @@ def cluster():
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
+        run_s3_mocks(cluster)
 
         yield cluster
     finally:
@@ -77,11 +78,17 @@ def generate_values(date_str, count, sign=1):
     return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
 
 
-def create_table(cluster, table_name, additional_settings=None):
+def create_table(cluster, table_name, **additional_settings):
     node = cluster.instances["node"]
+    settings = {
+        "storage_policy": "s3",
+        "old_parts_lifetime": 0,
+        "index_granularity": 512
+    }
+    settings.update(additional_settings)
 
-    create_table_statement = """
-        CREATE TABLE {} (
+    create_table_statement = f"""
+        CREATE TABLE {table_name} (
             dt Date,
             id Int64,
             data String,
@@ -89,17 +96,38 @@ def create_table(cluster, table_name, additional_settings=None):
         ) ENGINE=MergeTree()
         PARTITION BY dt
         ORDER BY (dt, id)
-        SETTINGS
-            storage_policy='s3',
-            old_parts_lifetime=0,
-            index_granularity=512
-        """.format(table_name)
-
-    if additional_settings:
-        create_table_statement += ","
-        create_table_statement += additional_settings
+        SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}"""
 
     node.query(create_table_statement)
+
+
+def run_s3_mocks(cluster):
+    logging.info("Starting s3 mocks")
+    mocks = (
+        ("unstable_proxy.py", "resolver", "8081"),
+    )
+    for mock_filename, container, port in mocks:
+        container_id = cluster.get_container_id(container)
+        current_dir = os.path.dirname(__file__)
+        cluster.copy_file_to_container(container_id, os.path.join(current_dir, "s3_mocks", mock_filename), mock_filename)
+        cluster.exec_in_container(container_id, ["python", mock_filename, port], detach=True)
+
+    # Wait for S3 mocks to start
+    for mock_filename, container, port in mocks:
+        num_attempts = 100
+        for attempt in range(num_attempts):
+            ping_response = cluster.exec_in_container(cluster.get_container_id(container),
+                                                              ["curl", "-s", f"http://localhost:{port}/"], nothrow=True)
+            if ping_response != "OK":
+                if attempt == num_attempts - 1:
+                    assert ping_response == "OK", f'Expected "OK", but got "{ping_response}"'
+                else:
+                    time.sleep(1)
+            else:
+                logging.debug(f"mock {mock_filename} ({port}) answered {ping_response} on attempt {attempt}")
+                break
+
+    logging.info("S3 mocks started")
 
 
 def wait_for_delete_s3_objects(cluster, expected, timeout=30):
@@ -136,7 +164,7 @@ def drop_table(cluster):
     ]
 )
 def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
-    create_table(cluster, "s3_test", additional_settings="min_rows_for_wide_part={}".format(min_rows_for_wide_part))
+    create_table(cluster, "s3_test", min_rows_for_wide_part=min_rows_for_wide_part)
 
     node = cluster.instances["node"]
     minio = cluster.minio_client
@@ -158,13 +186,12 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
     "merge_vertical", [False, True]
 )
 def test_insert_same_partition_and_merge(cluster, merge_vertical):
-    settings = None
+    settings = {}
     if merge_vertical:
-        settings = """
-            vertical_merge_algorithm_min_rows_to_activate=0,
-            vertical_merge_algorithm_min_columns_to_activate=0
-        """
-    create_table(cluster, "s3_test", additional_settings=settings)
+        settings['vertical_merge_algorithm_min_rows_to_activate'] = 0
+        settings['vertical_merge_algorithm_min_columns_to_activate'] = 0
+
+    create_table(cluster, "s3_test", **settings)
 
     node = cluster.instances["node"]
     minio = cluster.minio_client
@@ -459,3 +486,13 @@ def test_s3_disk_restart_during_load(cluster):
 
     for thread in threads:
         thread.join()
+
+
+def test_s3_disk_reads_on_unstable_connection(cluster):
+    create_table(cluster, "s3_test", storage_policy='unstable_s3')
+    node = cluster.instances["node"]
+    node.query("INSERT INTO s3_test SELECT today(), *, toString(*) FROM system.numbers LIMIT 9000000")
+    for i in range(30):
+        print(f"Read sequence {i}")
+        assert node.query("SELECT sum(id) FROM s3_test").splitlines() == ["40499995500000"]
+
