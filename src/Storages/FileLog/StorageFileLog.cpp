@@ -33,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -79,7 +80,7 @@ StorageFileLog::StorageFileLog(
     }
     else
     {
-        throw Exception("The path neigher a regular file, nor a directory", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("The path neither a regular file, nor a directory", ErrorCodes::BAD_ARGUMENTS);
     }
 
     watch_task = getContext()->getMessageBrokerSchedulePool().createTask("watchTask", [this] { watchFunc(); });
