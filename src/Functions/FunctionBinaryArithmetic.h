@@ -1295,7 +1295,7 @@ public:
 
             return ColumnConst::create(std::move(col_res), col_left->size());
         }
-        else if (!col_left_const && !col_right_const && col_left && col_right)
+        else if (!col_left_const && !col_right_const && col_right)
         {
             if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
             {
@@ -1324,7 +1324,7 @@ public:
                     in_vec.data(), col_left->getOffsets().data(), col_right->getData().data(), out_vec, out_offsets, col_right->size());
             }
         }
-        else if (col_left && col_right_const)
+        else if (col_right_const)
         {
             const T1 value = col_right_const->template getValue<T1>();
             if constexpr (std::is_same_v<LeftDataType, DataTypeFixedString>)
