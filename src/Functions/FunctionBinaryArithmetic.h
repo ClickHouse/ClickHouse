@@ -1251,7 +1251,6 @@ public:
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
-        using ResultDataType = DataTypeString;
 
         const auto * const col_left_raw = arguments[0].column.get();
         const auto * const col_right_raw = arguments[1].column.get();
@@ -1267,6 +1266,9 @@ public:
 
         const auto * col_left = col_left_const ? checkAndGetColumn<LeftColumnType>(col_left_const->getDataColumn())
                                                : checkAndGetColumn<LeftColumnType>(col_left_raw);
+
+        if (!col_left)
+            return nullptr;
 
         const typename LeftColumnType::Chars & in_vec = col_left->getChars();
 
@@ -1291,7 +1293,7 @@ public:
                 OpImpl::template processString<OpCase::Vector>(in_vec.data(), col_left->getOffsets().data(), &value, out_vec, out_offsets, 1);
             }
 
-            return ResultDataType().createColumnConst(col_left_const->size(), col_res->size() ? (*col_res)[0] : Field(""));
+            return ColumnConst::create(std::move(col_res), col_left->size());
         }
         else if (!col_left_const && !col_right_const && col_left && col_right)
         {
