@@ -113,7 +113,7 @@ namespace DB
 
     std::string CompressionCodecEncrypted::deriveKey(const std::string_view & master_key)
     {
-        std::string_view salt(""); // No salt: derive keys in a deterministic manner.
+        std::string_view salt; // No salt: derive keys in a deterministic manner.
         std::string_view info("Codec Encrypted('AES-128-GCM-SIV') key generation key");
         std::array<char, 32> result;
 
