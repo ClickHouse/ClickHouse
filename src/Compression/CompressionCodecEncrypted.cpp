@@ -367,14 +367,10 @@ void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionM
     current_key_id = current_params->current_key_id[method];
 
     /// As parameters can be created empty, we need to check that this key is available.
-    try
-    {
+    if (current_params->keys_storage[method].contains(current_key_id))
         current_key = current_params->keys_storage[method].at(current_key_id);
-    }
-    catch (...)
-    {
+    else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no current_key {} in config. Please, put it in config and reload.", current_key_id);
-    }
 
     /// If there is no nonce in config, we need to generate particular one,
     /// because all encryptions should have nonce and random nonce generation will lead to cases
