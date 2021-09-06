@@ -321,7 +321,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be 12", new_params->nonce[method].size());
 }
 
-void CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     /// Try to create new parameters and fill them from config.
     /// If there will be some errors, print their message to notify user that
@@ -333,7 +333,9 @@ void CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::Abstrac
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
     }
+    return true;
 }
 
 void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
@@ -353,7 +355,7 @@ void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractCo
     params.set(std::move(new_params));
 }
 
-void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionMethod method, UInt64 &current_key_id, String &current_key, String &nonce) const
+void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, String &current_key, String & nonce) const
 {
     /// It parameters were not set, throw exception
     if (!params.get())
@@ -383,20 +385,22 @@ void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionM
         nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", 12};
 }
 
-void CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method, const UInt64 &key_id, String &key) const
+String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method, const UInt64 & key_id) const
 {
+    String key;
     /// See description of previous finction, logic is the same.
     if (!params.get())
         throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
+
     const auto current_params = params.get();
-    try
-    {
+
+    /// check if there is current key in storage
+    if (current_params->keys_storage[method].contains(key_id))
         key = current_params->keys_storage[method].at(key_id);
-    }
-    catch (...)
-    {
+    else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no key {} in config", key_id);
-    }
+
+    return key;
 }
 
 
@@ -468,8 +472,8 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
 
     /// Size of text should be decreased by key_size, because key_size bytes were not participating in encryption process.
     size_t keyid_size = ciphertext_with_nonce - source;
-    String key, nonce;
-    Configuration::instance().getKey(encryption_method, key_id, key);
+    String nonce;
+    String key = Configuration::instance().getKey(encryption_method, key_id);
 
     /// try to read nonce from file (if it was set while encrypting)
     const char * ciphertext = readNonce(nonce, ciphertext_with_nonce);

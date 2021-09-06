@@ -75,7 +75,7 @@ public:
         static Configuration & instance();
 
         /// Try to load data from config.
-        void tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+        bool tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
         /// Load data and throw exception if something went wrong.
         void load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
@@ -87,7 +87,7 @@ public:
         void getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, String & current_key, String & nonce) const;
 
         /// Same as getCurrentKeyAndNonce. It is used to get key. (need for correct decryption, that is why nonce is not necessary)
-        void getKey(EncryptionMethod method, const UInt64 & key_id, String & key) const;
+        String getKey(EncryptionMethod method, const UInt64 & key_id) const;
     private:
         /// struct Params consists of:
         /// 1) hash-table of keys and their ids
@@ -98,7 +98,7 @@ public:
         struct Params
         {
             std::unordered_map<UInt64, String> keys_storage[MAX_ENCRYPTION_METHOD];
-            UInt64 current_key_id[MAX_ENCRYPTION_METHOD];
+            UInt64 current_key_id[MAX_ENCRYPTION_METHOD] = {0, 0};
             String nonce[MAX_ENCRYPTION_METHOD];
         };
 
