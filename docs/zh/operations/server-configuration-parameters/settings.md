@@ -282,12 +282,12 @@ ClickHouse每x秒重新加载内置字典。 这使得编辑字典 “on the fly
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-ClickHouse在关闭连接之前等待传入请求的秒数。 默认为3秒。
+ClickHouse在关闭连接之前等待传入请求的秒数。默认为10秒。
 
 **示例**
 
 ``` xml
-<keep_alive_timeout>3</keep_alive_timeout>
+<keep_alive_timeout>10</keep_alive_timeout>
 ```
 
 ## listen_host {#server_configuration_parameters-listen_host}

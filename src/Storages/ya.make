@@ -18,6 +18,7 @@ SRCS(
     Distributed/DirectoryMonitor.cpp
     Distributed/DistributedSettings.cpp
     Distributed/DistributedSink.cpp
+    ExecutablePoolSettings.cpp
     IStorage.cpp
     IndicesDescription.cpp
     JoinSettings.cpp
@@ -76,7 +77,6 @@ SRCS(
     MergeTree/MergeTreePartInfo.cpp
     MergeTree/MergeTreePartition.cpp
     MergeTree/MergeTreePartsMover.cpp
-    MergeTree/MergeTreeProjections.cpp
     MergeTree/MergeTreeRangeReader.cpp
     MergeTree/MergeTreeReadPool.cpp
     MergeTree/MergeTreeReaderCompact.cpp

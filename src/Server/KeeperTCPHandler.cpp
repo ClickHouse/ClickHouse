@@ -192,7 +192,7 @@ struct SocketInterruptablePollWrapper
 KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
-    , log(&Poco::Logger::get("NuKeeperTCPHandler"))
+    , log(&Poco::Logger::get("KeeperTCPHandler"))
     , global_context(Context::createCopy(server.context()))
     , keeper_dispatcher(global_context->getKeeperDispatcher())
     , operation_timeout(0, global_context->getConfigRef().getUInt("keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
