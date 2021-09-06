@@ -13,7 +13,7 @@
 -   `main_dependency_table` ([String](../../sql-reference/data-types/string.md)) — имя таблицы, от которой зависит представление.
 
 -   `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — тип представления. Возможные значения:
-    -   `'Default' = 1` — [представления по умолчанию](../../sql-reference/statements/create/view.md#normal). Не должны быть в этом журнале.
+    -   `'Default' = 1` — [представления по умолчанию](../../sql-reference/statements/create/view.md#normal). Не должны быть в этом логе.
     -   `'Materialized' = 2` — [материализованные представления](../../sql-reference/statements/create/view.md#materialized).
     -   `'Live' = 3` — [LIVE-представления](../../sql-reference/statements/create/view.md#live-view).
 
