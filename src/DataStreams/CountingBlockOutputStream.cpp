@@ -17,8 +17,16 @@ void CountingTransform::transform(Chunk & chunk)
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     progress.incrementPiecewiseAtomically(local_progress);
 
-    ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.read_rows);
-    ProfileEvents::increment(ProfileEvents::InsertedBytes, local_progress.read_bytes);
+    if (thread_status)
+    {
+        thread_status->performance_counters.increment(ProfileEvents::InsertedRows, local_progress.read_rows);
+        thread_status->performance_counters.increment(ProfileEvents::InsertedBytes, local_progress.read_bytes);
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.read_rows);
+        ProfileEvents::increment(ProfileEvents::InsertedBytes, local_progress.read_bytes);
+    }
 
     if (process_elem)
         process_elem->updateProgressOut(local_progress);

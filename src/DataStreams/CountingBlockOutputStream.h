@@ -12,7 +12,8 @@ namespace DB
 class CountingTransform final : public ISimpleTransform
 {
 public:
-    explicit CountingTransform(const Block & header) : ISimpleTransform(header, header, false) {}
+    explicit CountingTransform(const Block & header, ThreadStatus * thread_status_ = nullptr)
+        : ISimpleTransform(header, header, false), thread_status(thread_status_) {}
 
     String getName() const override { return "CountingTransform"; }
 
@@ -37,6 +38,7 @@ protected:
     Progress progress;
     ProgressCallback progress_callback;
     QueryStatus * process_elem = nullptr;
+    ThreadStatus * thread_status = nullptr;
 };
 
 }

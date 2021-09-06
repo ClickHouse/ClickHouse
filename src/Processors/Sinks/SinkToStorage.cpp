@@ -2,15 +2,16 @@
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 #include <common/scope_guard.h>
+#include <DataTypes/NestedUtils.h>
 #include <iostream>
 
 namespace DB
 {
 
 ExceptionKeepingTransformRuntimeData::ExceptionKeepingTransformRuntimeData(
-    std::unique_ptr<ThreadStatus> thread_status_,
+    ThreadStatus * thread_status_,
     std::string additional_exception_message_)
-    : thread_status(std::move(thread_status_))
+    : thread_status(thread_status_)
     , additional_exception_message(std::move(additional_exception_message_))
 {
 }
@@ -85,7 +86,7 @@ static std::exception_ptr runStep(std::function<void()> step, ExceptionKeepingTr
     {
         /// Change thread context to store individual metrics. Once the work in done, go back to the original thread
         runtime_data->thread_status->resetPerformanceCountersLastUsage();
-        current_thread = runtime_data->thread_status.get();
+        current_thread = runtime_data->thread_status;
     }
 
     std::exception_ptr res;
@@ -162,7 +163,13 @@ SinkToStorage::SinkToStorage(const Block & header) : ExceptionKeepingTransform(h
 
 void SinkToStorage::transform(Chunk & chunk)
 {
-    std::cerr << "--- sink to storage rows " << chunk.getNumRows() << std::endl;
+    /** Throw an exception if the sizes of arrays - elements of nested data structures doesn't match.
+      * We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
+      * NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
+      * but currently we don't have methods for serialization of nested structures "as a whole".
+      */
+    Nested::validateArraySizes(getHeader().cloneWithColumns(chunk.getColumns()));
+
     consume(chunk.clone());
     if (lastBlockIsDuplicate())
         chunk.clear();
