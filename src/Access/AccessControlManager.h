@@ -153,8 +153,6 @@ public:
 
     const ExternalAuthenticators & getExternalAuthenticators() const;
 
-    String getProfileName(const UUID & profile_id) const;
-
 private:
     class ContextAccessCache;
     class CustomSettingsPrefixes;

@@ -626,20 +626,14 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-std::shared_ptr<const ContextAccess> Context::getContextAccessForUser(const UUID & user_id) const
-{
-    return getAccessControlManager().getContextAccess(
-        user_id, /* current_roles = */ {}, /* use_default_roles = */ true,
-        settings, current_database, client_info);
-}
-
 void Context::setUser(const UUID & user_id_)
 {
     auto lock = getLock();
 
     user_id = user_id_;
 
-    access = getContextAccessForUser(user_id_);
+    access = getAccessControlManager().getContextAccess(
+        user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
 
     auto user = access->getUser();
     current_roles = std::make_shared<std::vector<UUID>>(user->granted_roles.findGranted(user->default_roles));
@@ -1269,14 +1263,6 @@ ContextMutablePtr Context::getBufferContext() const
 {
     if (!buffer_context) throw Exception("There is no buffer context", ErrorCodes::LOGICAL_ERROR);
     return buffer_context;
-}
-
-Session * Context::getSessionOrNull() const
-{
-    if (hasSessionContext())
-        return getSession();
-    else
-        return nullptr;
 }
 
 
