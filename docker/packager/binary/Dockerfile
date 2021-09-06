@@ -1,7 +1,7 @@
 #  docker build -t yandex/clickhouse-binary-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=12
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
@@ -48,11 +48,11 @@ RUN apt-get update \
         gperf \
         libicu-dev \
         libreadline-dev \
-        clang-12 \
-        clang-tidy-12 \
-        lld-12 \
-        llvm-12 \
-        llvm-12-dev \
+        clang-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
+        lld-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION}-dev \
         libicu-dev \
         libreadline-dev \
         moreutils \
@@ -61,10 +61,6 @@ RUN apt-get update \
         rename \
         tzdata \
         --yes --no-install-recommends
-
-RUN wget https://apt.llvm.org/llvm.sh \
-    && chmod +x llvm.sh \
-    &&  ./llvm.sh 13
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
