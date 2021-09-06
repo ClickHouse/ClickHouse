@@ -6,6 +6,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
+#include <span>
+#include <common/EnumReflection.h>
 
 namespace ErrorCodes
 {
@@ -67,13 +69,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     auto res = std::make_shared<ASTSystemQuery>();
 
     bool found = false;
-    for (int i = static_cast<int>(Type::UNKNOWN) + 1; i < static_cast<int>(Type::END); ++i)
+
+    for (const auto & [entry, str] : magic_enum::enum_entries<Type>())
     {
-        Type t = static_cast<Type>(i);
-        if (ParserKeyword{ASTSystemQuery::typeToString(t)}.ignore(pos, expected))
+        if (ParserKeyword(UnderscoreToSpace(str)).ignore(pos, expected))
         {
-            res->type = t;
+            res->type = entry;
             found = true;
+            break;
         }
     }
 

@@ -13,13 +13,13 @@ namespace DB
 class ParserKeyword : public IParserBase
 {
 private:
-    const char * s;
+    std::string_view s;
 
 public:
-    ParserKeyword(const char * s_);
+    constexpr ParserKeyword(std::string_view s_): s(s_) {}
 
 protected:
-    const char * getName() const override;
+    const char * getName() const override { return s.data(); }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

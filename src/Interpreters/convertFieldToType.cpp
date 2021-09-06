@@ -75,8 +75,8 @@ static Field convertNumericType(const Field & from, const IDataType & type)
     if (from.getType() == Field::Types::Int256)
         return convertNumericTypeImpl<Int256, To>(from);
 
-    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-        + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
+        type.getName(), from.getType());
 }
 
 
@@ -134,8 +134,8 @@ static Field convertDecimalType(const Field & from, const To & type)
     if (from.getType() == Field::Types::Decimal128)
         return convertDecimalToDecimalType<Decimal128>(from, type);
 
-    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-        + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
+        type.getName(), from.getType());
 }
 
 
@@ -387,8 +387,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         return convertFieldToType(parsed, type, from_type_hint);
     }
 
-    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-        + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
+        type.getName(), src.getType());
 }
 
 }
