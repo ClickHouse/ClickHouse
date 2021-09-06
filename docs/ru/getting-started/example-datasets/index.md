@@ -16,5 +16,8 @@ toc_title: "Введение"
 -   [AMPLab Big Data Benchmark](amplab-benchmark.md)
 -   [Данные о такси в Нью-Йорке](nyc-taxi.md)
 -   [OnTime](ontime.md)
+-   [OpenSky](../../getting-started/example-datasets/opensky.md)
+-   [Данные о недвижимости в Великобритании](../../getting-started/example-datasets/uk-price-paid.md)
 -   [Вышки сотовой связи](../../getting-started/example-datasets/cell-towers.md)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets) <!--hide-->
