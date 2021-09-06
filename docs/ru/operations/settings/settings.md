@@ -3252,3 +3252,35 @@ SETTINGS index_granularity = 8192 │
 -   1 — таблица обновляется автоматически в фоновом режиме при обнаружении изменений схемы.
 
 Значение по умолчанию: `0`.
+
+## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
+
+Включает или отключает поддержку [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) при обработке запросов `SELECT`.
+
+Возможные значения:
+
+-   0 — Проекции не поддерживаются.
+-   1 — Проекции поддерживаются.
+
+Значение по умолчанию: `0`.
+
+## force_optimize_projection {#force-optimize-projection}
+
+Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)). 
+
+Возможные значения:
+
+-   0 — Проекции используются опционально.
+-   1 — Проекции обязательно используются.
+
+Значение по умолчанию: `0`.
+
+## regexp_max_matches_per_row {#regexp-max-matches-per-row}
+
+Задает максимальное количество совпадений для регулярного выражения. Настройка применяется для защиты памяти от перегрузки при использовании "жадных" квантификаторов в регулярном выражении для функции [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md#extractallgroups-horizontal).
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1000`.
