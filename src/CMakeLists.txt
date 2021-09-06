@@ -335,8 +335,6 @@ dbms_target_link_libraries (
     PRIVATE
         boost::filesystem
         boost::program_options
-        boost::circular_buffer
-        boost::heap
         clickhouse_common_config
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
@@ -350,6 +348,14 @@ dbms_target_link_libraries (
         boost::system
         clickhouse_common_io
 )
+
+if (NOT_UNBUNDLED)
+    dbms_target_link_libraries (
+        PUBLIC
+            boost::circular_buffer
+            boost::heap
+    )
+endif()
 
 target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
 dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
