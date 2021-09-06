@@ -66,7 +66,7 @@ When processing a query, the client shows:
 3.  The result in the specified format.
 4.  The number of lines in the result, the time passed, and the average speed of query processing.
 
-You can cancel a long query by pressing Ctrl+C. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you do not wait and press Ctrl+C a second time, the client will exit.
+You can cancel a long query by pressing Ctrl+C. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you don’t wait and press Ctrl+C a second time, the client will exit.
 
 The command-line client allows passing external data (external temporary tables) for querying. For more information, see the section “External data for query processing”.
 

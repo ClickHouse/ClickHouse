@@ -1,8 +1,4 @@
-if(ARCH_AMD64 OR ARCH_ARM)
-    option (ENABLE_BASE64 "Enable base64" ${ENABLE_LIBRARIES})
-elseif(ENABLE_BASE64)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "base64 library is only supported on x86_64 and aarch64")
-endif()
+option (ENABLE_BASE64 "Enable base64" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_BASE64)
     return()

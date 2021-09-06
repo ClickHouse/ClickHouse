@@ -28,7 +28,6 @@ struct FormatSettings
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
-    bool decimal_trailing_zeros = false;
 
     enum class DateTimeInputFormat
     {
@@ -53,8 +52,6 @@ struct FormatSettings
     struct
     {
         UInt64 row_group_size = 1000000;
-        bool low_cardinality_as_dictionary = false;
-        bool import_nested = false;
     } arrow;
 
     struct
@@ -63,7 +60,6 @@ struct FormatSettings
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
-        String string_column_pattern;
     } avro;
 
     struct CSV
@@ -102,7 +98,6 @@ struct FormatSettings
     struct
     {
         UInt64 row_group_size = 1000000;
-        bool import_nested = false;
     } parquet;
 
     struct Pretty
@@ -134,13 +129,6 @@ struct FormatSettings
          */
         bool allow_multiple_rows_without_delimiter = false;
     } protobuf;
-
-    struct
-    {
-        uint32_t client_capabilities = 0;
-        size_t max_packet_size = 0;
-        uint8_t * sequence_id = nullptr; /// Not null if it's MySQLWire output format used to handle MySQL protocol connections.
-    } mysql_wire;
 
     struct
     {
@@ -177,11 +165,7 @@ struct FormatSettings
         bool deduce_templates_of_expressions = true;
         bool accurate_types_of_literals = true;
     } values;
-
-    struct
-    {
-        bool import_nested = false;
-    } orc;
 };
 
 }
+

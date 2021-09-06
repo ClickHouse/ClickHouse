@@ -7,7 +7,7 @@
 
 #include <common/unaligned.h>
 #include <common/sort.h>
-#include <common/scope_guard.h>
+#include <ext/scope_guard.h>
 
 
 #include <IO/WriteHelpers.h>
@@ -15,7 +15,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/MaskOperations.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -77,12 +76,6 @@ template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.push_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
-}
-
-template <typename T>
-const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
-{
     return pos + sizeof(T);
 }
 
@@ -319,12 +312,6 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
     }
 
     return res;
-}
-
-template <typename T>
-void ColumnDecimal<T>::expand(const IColumn::Filter & mask, bool inverted)
-{
-    expandDataByMask<T>(data, mask, inverted);
 }
 
 template <typename T>

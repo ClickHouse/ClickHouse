@@ -4,8 +4,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# NOTE: database = $CLICKHOUSE_DATABASE is superfluous
-
 function test_completion_word()
 {
     local w=$1 && shift
@@ -15,7 +13,7 @@ function test_completion_word()
     local compword_end=${w:$((w_len-3))}
 
     # NOTE: here and below you should escape variables of the expect.
-    timeout 60s expect << EOF
+    timeout 22s expect << EOF
 log_user 0
 set timeout 3
 match_max 100000
@@ -90,6 +88,15 @@ compwords_positive=(
 )
 for w in "${compwords_positive[@]}"; do
     test_completion_word "$w" || echo "[FAIL] $w (positive)"
+done
+
+# One negative is enough
+compwords_negative=(
+    # system.clusters
+    test_shard_localhost_no_such_cluster
+)
+for w in "${compwords_negative[@]}"; do
+    test_completion_word "$w" && echo "[FAIL] $w (negative)"
 done
 
 exit 0

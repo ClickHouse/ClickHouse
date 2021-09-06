@@ -3,9 +3,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-// Disable warnings by PVS-Studio
-//-V::GA
-
 #include <math.h>
 #include <stdint.h>
 #include "libm.h"

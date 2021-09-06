@@ -80,10 +80,6 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperSession;
 }
 
-namespace DB
-{
-    class ZooKeeperLog;
-}
 
 namespace Coordination
 {
@@ -114,8 +110,7 @@ public:
         const String & auth_data,
         Poco::Timespan session_timeout_,
         Poco::Timespan connection_timeout,
-        Poco::Timespan operation_timeout_,
-        std::shared_ptr<ZooKeeperLog> zk_log_);
+        Poco::Timespan operation_timeout_);
 
     ~ZooKeeper() override;
 
@@ -126,9 +121,6 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
-    void executeGenericRequest(
-        const ZooKeeperRequestPtr & request,
-        ResponseCallback callback);
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
@@ -188,8 +180,6 @@ public:
     /// already performed write.
 
     void finalize()  override { finalize(false, false); }
-
-    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
 private:
     String root_path;
@@ -265,10 +255,7 @@ private:
     template <typename T>
     void read(T &);
 
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false);
-
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
-    std::shared_ptr<ZooKeeperLog> zk_log;
 };
 
 }
