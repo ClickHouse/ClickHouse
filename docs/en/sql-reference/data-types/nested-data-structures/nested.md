@@ -3,7 +3,9 @@ toc_priority: 57
 toc_title: Nested(Name1 Type1, Name2 Type2, ...)
 ---
 
-# Nested(name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
+# Nested {#nested}
+
+## Nested(name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
 
 A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../../sql-reference/statements/create/table.md) query. Each table row can correspond to any number of rows in a nested data structure.
 
@@ -100,5 +102,9 @@ For an INSERT query, you should pass all the component column arrays of a nested
 For a DESCRIBE query, the columns in a nested data structure are listed separately in the same way.
 
 The ALTER query for elements in a nested data structure has limitations.
+
+## Inserting {#inserting}
+
+It is possible to insert `Array(Struct)` columns into nested columns with the settings [input_format_parquet_import_nested](../../../operations/settings/settings.md#input_format_parquet_import_nested), [input_format_arrow_import_nested](../../../operations/settings/settings.md#input_format_arrow_import_nested) and [input_format_orc_import_nested](../../../operations/settings/settings.md#input_format_orc_import_nested) in [Parquet](../../../interfaces/formats.md#data-format-parquet), [Arrow](../../../interfaces/formats.md#data_types-matching-arrow) and [ORC](../../../interfaces/formats.md#data-format-orc) input formats correspondingly.
 
 [Original article](https://clickhouse.tech/docs/en/data_types/nested_data_structures/nested/) <!--hide-->
