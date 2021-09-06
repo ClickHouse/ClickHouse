@@ -18,6 +18,7 @@ SRCS(
     Distributed/DirectoryMonitor.cpp
     Distributed/DistributedSettings.cpp
     Distributed/DistributedSink.cpp
+    ExecutablePoolSettings.cpp
     IStorage.cpp
     IndicesDescription.cpp
     JoinSettings.cpp
