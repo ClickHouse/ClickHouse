@@ -59,6 +59,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
+| [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
 
 Вы можете регулировать некоторые параметры работы с форматами с помощью настроек ClickHouse. За дополнительной информацией обращайтесь к разделу [Настройки](../operations/settings/settings.md).
 
@@ -1458,3 +1459,23 @@ $ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
 ``` text
 f9725a22f9191e064120d718e26862a9  -
 ```
+
+## MsgPack {#msgpack}
+
+ClickHouse поддерживает запись и чтение из файлов в формате [MessagePack](https://msgpack.org/).
+
+### Соответствие типов данных {#data-types-matching-msgpack}
+
+| Тип данных MsgPack              | Тип данных ClickHouse                                                              |
+|---------------------------------|------------------------------------------------------------------------------------|
+| `uint N`, `positive fixint`         | [UIntN](../sql-reference/data-types/int-uint.md)                               |
+| `int N`                           | [IntN](../sql-reference/data-types/int-uint.md)                                  |
+| `fixstr`, `str 8`, `str 16`, `str 32`   | [String](../sql-reference/data-types/string.md), [FixedString](../sql-reference/data-types/fixedstring.md)                   |
+| `float 32`                        | [Float32](../sql-reference/data-types/float.md)                                  |
+| `float 64`                        | [Float64](../sql-reference/data-types/float.md)                                  |
+| `uint 16`                         | [Date](../sql-reference/data-types/date.md)                                      |
+| `uint 32`                         | [DateTime](../sql-reference/data-types/datetime.md)                              |
+| `uint 64`                         | [DateTime64](../sql-reference/data-types/datetime.md)                            |
+| `fixarray`, `array 16`, `array 32`| [Array](../sql-reference/data-types/array.md)                                    |
+	
+Неподдерживаемый тип данных: `nil`.
