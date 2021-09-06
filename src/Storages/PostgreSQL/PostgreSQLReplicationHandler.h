@@ -124,6 +124,8 @@ private:
     MaterializedStorages materialized_storages;
 
     UInt64 milliseconds_to_wait;
+
+    String postgres_schema;
 };
 
 }

@@ -50,7 +50,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <IO/WriteHelpers.h>
-#include <DataStreams/MongoDBBlockInputStream.h>
+#include <DataStreams/MongoDBSource.h>
 
 
 namespace DB
@@ -142,12 +142,12 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
-BlockInputStreamPtr MongoDBDictionarySource::loadAll()
+Pipe MongoDBDictionarySource::loadAll()
 {
-    return std::make_shared<MongoDBBlockInputStream>(connection, createCursor(db, collection, sample_block), sample_block, max_block_size);
+    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(db, collection, sample_block), sample_block, max_block_size));
 }
 
-BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -164,11 +164,11 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 
     cursor->query().selector().addNewDocument(dict_struct.id->name).add("$in", ids_array);
 
-    return std::make_shared<MongoDBBlockInputStream>(connection, std::move(cursor), sample_block, max_block_size);
+    return Pipe(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
 }
 
 
-BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
@@ -230,7 +230,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
     /// If more than one key we should use $or
     cursor->query().selector().add("$or", keys_array);
 
-    return std::make_shared<MongoDBBlockInputStream>(connection, std::move(cursor), sample_block, max_block_size);
+    return Pipe(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
 }
 
 std::string MongoDBDictionarySource::toString() const

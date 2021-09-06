@@ -5,7 +5,7 @@ toc_title: studentTTest
 
 # studentTTest {#studentttest}
 
-Applies Student's t-test to samples from two populations. 
+Applies Student's t-test to samples from two populations.
 
 **Syntax**
 

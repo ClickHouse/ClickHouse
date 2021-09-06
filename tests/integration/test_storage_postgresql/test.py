@@ -291,7 +291,7 @@ def test_postgres_distributed(started_cluster):
     node2.query('DROP TABLE test_shards')
     node2.query('DROP TABLE test_replicas')
 
-    
+
 def test_datetime_with_timezone(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_timezone")
@@ -326,6 +326,32 @@ def test_postgres_ndim(started_cluster):
     result = node1.query('''SELECT toTypeName(a) FROM postgresql('postgres1:5432', 'postgres', 'arr2', 'postgres', 'mysecretpassword')''')
     assert(result.strip() == "Array(Array(Nullable(Int32)))")
     cursor.execute("DROP TABLE arr1, arr2")
+
+
+def test_postgres_on_conflict(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    table = 'test_conflict'
+    cursor.execute(f'DROP TABLE IF EXISTS {table}')
+    cursor.execute(f'CREATE TABLE {table} (a integer PRIMARY KEY, b text, c integer)')
+
+    node1.query('''
+        CREATE TABLE test_conflict (a UInt32, b String, c Int32)
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_conflict', 'postgres', 'mysecretpassword', '', 'ON CONFLICT DO NOTHING');
+    ''')
+    node1.query(f''' INSERT INTO {table} SELECT number, concat('name_', toString(number)), 3 from numbers(100)''')
+    node1.query(f''' INSERT INTO {table} SELECT number, concat('name_', toString(number)), 4 from numbers(100)''')
+
+    check1 = f"SELECT count() FROM {table}"
+    assert (node1.query(check1)).rstrip() == '100'
+
+    table_func = f'''postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', '{table}', 'postgres', 'mysecretpassword', '', 'ON CONFLICT DO NOTHING')'''
+    node1.query(f'''INSERT INTO TABLE FUNCTION {table_func} SELECT number, concat('name_', toString(number)), 3 from numbers(100)''')
+    node1.query(f'''INSERT INTO TABLE FUNCTION {table_func} SELECT number, concat('name_', toString(number)), 3 from numbers(100)''')
+
+    check1 = f"SELECT count() FROM {table}"
+    assert (node1.query(check1)).rstrip() == '100'
+
+    cursor.execute(f'DROP TABLE {table} ')
 
 
 if __name__ == '__main__':

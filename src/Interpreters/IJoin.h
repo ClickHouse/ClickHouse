@@ -5,7 +5,6 @@
 
 #include <Core/Names.h>
 #include <Columns/IColumn.h>
-#include <DataStreams/IBlockStream_fwd.h>
 
 namespace DB
 {
@@ -15,6 +14,7 @@ struct ExtraBlock;
 using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
 class TableJoin;
+class NotJoinedBlocks;
 
 class IJoin
 {
@@ -37,13 +37,13 @@ public:
 
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
-    virtual bool alwaysReturnsEmptySet() const { return false; }
+    virtual bool alwaysReturnsEmptySet() const = 0;
 
     /// StorageJoin/Dictionary is already filled. No need to call addJoinedBlock.
     /// Different query plan is used for such joins.
     virtual bool isFilled() const { return false; }
 
-    virtual BlockInputStreamPtr createStreamWithNonJoinedRows(const Block &, UInt64) const { return {}; }
+    virtual std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block &, UInt64) const = 0;
 };
 
 using JoinPtr = std::shared_ptr<IJoin>;

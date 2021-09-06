@@ -17,6 +17,8 @@ dpkg -i package_folder/clickhouse-test_*.deb
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
+./setup_minio.sh
+
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
@@ -143,15 +145,18 @@ if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
 fi
 tar -chf /test_output/text_log_dump.tar /var/lib/clickhouse/data/system/text_log ||:
 tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:
+tar -chf /test_output/zookeeper_log_dump.tar /var/lib/clickhouse/data/system/zookeeper_log ||:
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-  grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
-  grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
+    grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
+    grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
     pigz < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.gz ||:
     pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
+    tar -chf /test_output/zookeeper_log_dump1.tar /var/lib/clickhouse1/data/system/zookeeper_log ||:
+    tar -chf /test_output/zookeeper_log_dump2.tar /var/lib/clickhouse2/data/system/zookeeper_log ||:
     tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:
     tar -chf /test_output/coordination2.tar /var/lib/clickhouse2/coordination ||:
 fi

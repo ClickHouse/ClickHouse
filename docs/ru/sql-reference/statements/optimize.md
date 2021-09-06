@@ -62,12 +62,12 @@ CREATE TABLE example (
     materialized_value UInt32 MATERIALIZED 12345,
     aliased_value UInt32 ALIAS 2,
     PRIMARY KEY primary_key
-) ENGINE=MergeTree　
+) ENGINE=MergeTree
 PARTITION BY partition_key
 ORDER BY (primary_key, secondary_key);
 ```
 ``` sql
-INSERT INTO example (primary_key, secondary_key, value, partition_key) 
+INSERT INTO example (primary_key, secondary_key, value, partition_key)
 VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
 ```
 ``` sql

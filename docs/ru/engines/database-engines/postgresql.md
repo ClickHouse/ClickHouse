@@ -14,7 +14,7 @@ toc_title: PostgreSQL
 ## Создание БД {#creating-a-database}
 
 ``` sql
-CREATE DATABASE test_database 
+CREATE DATABASE test_database
 ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cache`]);
 ```
 
@@ -43,14 +43,14 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cac
 | TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
 | INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
- 
+
 
 ## Примеры использования {#examples-of-use}
 
 Обмен данными между БД ClickHouse и сервером PostgreSQL:
 
 ``` sql
-CREATE DATABASE test_database 
+CREATE DATABASE test_database
 ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 1);
 ```
 
@@ -102,7 +102,7 @@ SELECT * FROM test_database.test_table;
 └────────┴───────┘
 ```
 
-Пусть структура таблицы была изменена в PostgreSQL: 
+Пусть структура таблицы была изменена в PostgreSQL:
 
 ``` sql
 postgre> ALTER TABLE test_table ADD COLUMN data Text

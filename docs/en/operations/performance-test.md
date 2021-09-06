@@ -5,7 +5,32 @@ toc_title: Testing Hardware
 
 # How to Test Your Hardware with ClickHouse {#how-to-test-your-hardware-with-clickhouse}
 
-With this instruction you can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
+You can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
+
+
+## Automated Run
+
+You can run benchmark with a single script.
+
+1. Download the script.
+```
+wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/hardware.sh
+```
+
+2. Run the script.
+```
+chmod a+x ./hardware.sh
+./hardware.sh
+```
+
+3. Copy the output and send it to clickhouse-feedback@yandex-team.com
+
+All the results are published here: https://clickhouse.tech/benchmark/hardware/
+
+
+## Manual Run
+
+Alternatively you can perform benchmark in the following steps.
 
 1.  ssh to the server and download the binary with wget:
 ```bash
@@ -37,14 +62,10 @@ mv hits_100m_obfuscated_v1/* .
 ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
 100000000
 ```
-6.  Edit the benchmark-new.sh, change `clickhouse-client` to `./clickhouse client` and add `--max_memory_usage 100000000000` parameter.
-```bash
-mcedit benchmark-new.sh
-```
-7.  Run the benchmark:
+6.  Run the benchmark:
 ```bash
 ./benchmark-new.sh hits_100m_obfuscated
 ```
-8.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
+7.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
 
 All the results are published here: https://clickhouse.tech/benchmark/hardware/

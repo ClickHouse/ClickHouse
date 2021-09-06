@@ -5,7 +5,7 @@ LIBRARY()
 
 ADDINCL(
     contrib/libs/zstd/include
-    contrib/restricted/fast_float
+    contrib/restricted/fast_float/include
 )
 
 PEERDIR(
@@ -20,9 +20,12 @@ PEERDIR(
 
 SRCS(
     AIO.cpp
-    AIOContextPool.cpp
+    AsynchronousReadBufferFromFile.cpp
+    AsynchronousReadBufferFromFileDescriptor.cpp
     BrotliReadBuffer.cpp
     BrotliWriteBuffer.cpp
+    Bzip2ReadBuffer.cpp
+    Bzip2WriteBuffer.cpp
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
     DoubleConverter.cpp
@@ -33,6 +36,8 @@ SRCS(
     LZMADeflatingWriteBuffer.cpp
     LZMAInflatingReadBuffer.cpp
     LimitReadBuffer.cpp
+    Lz4DeflatingWriteBuffer.cpp
+    Lz4InflatingReadBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
     MMapReadBufferFromFileWithCache.cpp
@@ -55,7 +60,10 @@ SRCS(
     ReadBufferFromMemory.cpp
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
+    ReadSettings.cpp
     SeekAvoidingReadBuffer.cpp
+    SynchronousReader.cpp
+    ThreadPoolReader.cpp
     TimeoutSetter.cpp
     UseSSL.cpp
     WriteBufferFromEncryptedFile.cpp

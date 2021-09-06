@@ -38,7 +38,7 @@ Arguments:
 -   `-of`, `--format`, `--output-format` — output format, `TSV` by default.
 -   `-d`, `--database` — default database, `_local` by default.
 -   `--stacktrace` — whether to dump debug output in case of exception.
--   `--echo` — print query before execution. 
+-   `--echo` — print query before execution.
 -   `--verbose` — more details on query execution.
 -   `--logger.console` — Log to console.
 -   `--logger.log` — Log file name.

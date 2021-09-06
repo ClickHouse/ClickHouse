@@ -20,6 +20,7 @@ def get_skip_list_cmd(path):
 
 def get_options(i):
     options = []
+    client_options = []
     if 0 < i:
         options.append("--order=random")
 
@@ -27,25 +28,29 @@ def get_options(i):
         options.append("--db-engine=Ordinary")
 
     if i % 3 == 2:
-        options.append('''--client-option='allow_experimental_database_replicated=1' --db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i))
+        options.append('''--db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i))
+        client_options.append('allow_experimental_database_replicated=1')
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
     if i % 2 == 1:
         options.append(" --database=test_{}".format(i))
 
-    if i % 7 == 0:
-        options.append(" --client-option='join_use_nulls=1'")
+    if i % 5 == 1:
+        client_options.append("join_use_nulls=1")
 
-    if i % 14 == 0:
-        options.append(' --client-option="join_algorithm=\'partial_merge\'"')
+    if i % 15 == 6:
+        client_options.append("join_algorithm='partial_merge'")
 
-    if i % 21 == 0:
-        options.append(' --client-option="join_algorithm=\'auto\'"')
-        options.append(' --client-option="max_rows_in_join=1000"')
+    if i % 15 == 11:
+        client_options.append("join_algorithm='auto'")
+        client_options.append('max_rows_in_join=1000')
 
     if i == 13:
-        options.append(" --client-option='memory_tracker_fault_probability=0.00001'")
+        client_options.append('memory_tracker_fault_probability=0.001')
+
+    if client_options:
+        options.append(" --client-option " + ' '.join(client_options))
 
     return ' '.join(options)
 

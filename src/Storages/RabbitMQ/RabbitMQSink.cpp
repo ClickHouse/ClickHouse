@@ -12,7 +12,7 @@ RabbitMQSink::RabbitMQSink(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     ContextPtr context_)
-    : SinkToStorage(metadata_snapshot->getSampleBlockNonMaterialized())
+    : SinkToStorage(metadata_snapshot_->getSampleBlockNonMaterialized())
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
