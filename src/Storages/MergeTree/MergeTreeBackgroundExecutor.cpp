@@ -19,6 +19,7 @@ String MergeTreeBackgroundExecutor::toString(Type type)
         case Type::MOVE:
             return "Move";
     }
+    __builtin_unreachable();
 }
 
 
