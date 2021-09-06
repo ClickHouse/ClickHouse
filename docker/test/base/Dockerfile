@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-test-base .
+# docker build -t clickhouse/test-base .
 FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
