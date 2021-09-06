@@ -100,16 +100,6 @@
             "splitted": "unsplitted",
             "tidy": "disable",
             "with_coverage": false
-        },
-        {
-            "compiler": "clang-13",
-            "build-type": "debug",
-            "sanitizer": "",
-            "package-type": "binary",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
-            "tidy": "disable",
-            "with_coverage": false
         }
     ],
     "special_build_config": [
