@@ -61,9 +61,8 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
     password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
-    const auto & settings = context->getSettingsRef();
     /// Split into replicas if needed. 3306 is the default MySQL port number
-    const size_t max_addresses = settings.glob_expansion_max_elements;
+    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
     auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
     pool.emplace(remote_database_name, addresses, user_name, password);
 
