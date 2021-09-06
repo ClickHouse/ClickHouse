@@ -262,7 +262,7 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 
 ## input_format_parquet_import_nested {#input_format_parquet_import_nested}
 
-Enables or disables the ability to insert [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) structures into [Parquet](../../interfaces/formats.md#data-format-parquet) input format as an array of structs.
+Enables or disables the ability to insert `Array(Struct)` columns into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns in [Parquet](../../interfaces/formats.md#data-format-parquet) input format.
 
 Possible values:
 
@@ -273,7 +273,7 @@ Default value: `0`.
 
 ## input_format_arrow_import_nested {#input_format_arrow_import_nested}
 
-Enables or disables the ability to insert [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) structures into [Arrow](../../interfaces/formats.md#data_types-matching-arrow) input format as an array of structs.
+Enables or disables the ability to insert `Array(Struct)` columns into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns in [Arrow](../../interfaces/formats.md#data_types-matching-arrow) input format.
 
 Possible values:
 
@@ -284,7 +284,7 @@ Default value: `0`.
 
 ## input_format_orc_import_nested {#input_format_orc_import_nested}
 
-Enables or disables the ability to insert [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) structures into [ORC](../../interfaces/formats.md#data-format-orc) input format as an array of structs.
+Enables or disables the ability to insert `Array(Struct)` columns into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns in [ORC](../../interfaces/formats.md#data-format-orc) input format.
 
 Possible values:
 
