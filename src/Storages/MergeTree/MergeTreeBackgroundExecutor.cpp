@@ -33,7 +33,7 @@ void MergeTreeBackgroundExecutor::updateConfiguration()
         pending.set_capacity(new_max_tasks_count);
         active.set_capacity(new_max_tasks_count);
 
-        pool.setMaxFreeThreads(new_threads_count);
+        pool.setMaxFreeThreads(0);
         pool.setMaxThreads(new_threads_count);
         pool.setQueueSize(new_max_tasks_count);
     }
@@ -130,13 +130,6 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
 
     {
         std::lock_guard lock(mutex);
-
-        for (auto & item : tasks_to_wait)
-        {
-            assert(item.use_count() == 1);
-            item.reset();
-        }
-
         currently_deleting.erase(id);
     }
 }
@@ -146,7 +139,7 @@ void MergeTreeBackgroundExecutor::routine(ItemPtr item)
 {
     setThreadName(name.c_str());
 
-    auto erase_from_active = [&]
+    auto erase_from_active = [this, item]
     {
         active.erase(std::remove(active.begin(), active.end(), item), active.end());
     };
@@ -177,6 +170,7 @@ void MergeTreeBackgroundExecutor::routine(ItemPtr item)
         /// because it may interact somehow with BackgroundSchedulePool, which may allocate memory
         /// But it is rather safe, because we have try...catch block here, and another one in ThreadPool.
         item->task->onCompleted();
+        item->task.reset();
     }
     catch (...)
     {
@@ -192,8 +186,6 @@ void MergeTreeBackgroundExecutor::routine(ItemPtr item)
 
 void MergeTreeBackgroundExecutor::schedulerThreadFunction()
 {
-    DENY_ALLOCATIONS_IN_SCOPE;
-
     while (true)
     {
         std::unique_lock lock(mutex);
@@ -206,19 +198,15 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
         ItemPtr item = std::move(pending.front());
         pending.pop_front();
 
-        bool res = false;
+        /// Execute a piece of task
+        bool res = pool.trySchedule([this, item] () mutable
         {
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            /// Execute a piece of task
-            res = pool.trySchedule([this, item]
-            {
-                routine(item);
-                /// When storage shutdowns it will wait until all related background tasks
-                /// are finished, because they may want to interact with its fields
-                /// and this will cause segfault.
-                item->is_done.set();
-            });
-        }
+            routine(item);
+            /// When storage shutdowns it will wait until all related background tasks
+            /// are finished, because they may want to interact with its fields
+            /// and this will cause segfault.
+            item->is_done.set();
+        });
 
         if (!res)
         {

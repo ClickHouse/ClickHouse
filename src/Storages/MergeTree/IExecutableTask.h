@@ -9,19 +9,19 @@
 namespace DB
 {
 
-class ExecutableTask
+class IExecutableTask
 {
 public:
     virtual bool execute() = 0;
     virtual void onCompleted() = 0;
     virtual StorageID getStorageID() = 0;
-    virtual ~ExecutableTask() = default;
+    virtual ~IExecutableTask() = default;
 };
 
-using ExecutableTaskPtr = std::shared_ptr<ExecutableTask>;
+using ExecutableTaskPtr = std::shared_ptr<IExecutableTask>;
 
 
-class LambdaAdapter : public shared_ptr_helper<LambdaAdapter>, public ExecutableTask
+class LambdaAdapter : public shared_ptr_helper<LambdaAdapter>, public IExecutableTask
 {
 public:
 
@@ -32,6 +32,7 @@ public:
     bool execute() override
     {
         res = inner();
+        inner = {};
         return false;
     }
 

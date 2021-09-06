@@ -14,7 +14,7 @@
 #include <common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
-#include <Storages/MergeTree/ExecutableTask.h>
+#include <Storages/MergeTree/IExecutableTask.h>
 
 
 namespace DB

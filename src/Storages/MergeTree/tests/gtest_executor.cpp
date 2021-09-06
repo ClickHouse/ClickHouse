@@ -5,7 +5,7 @@
 #include <memory>
 #include <random>
 
-#include <Storages/MergeTree/ExecutableTask.h>
+#include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
 using namespace DB;
@@ -17,7 +17,7 @@ namespace CurrentMetrics
 
 std::random_device device;
 
-class FakeExecutableTask : public ExecutableTask
+class FakeExecutableTask : public IExecutableTask
 {
 public:
     explicit FakeExecutableTask(String name_) : generator(device()), distribution(0, 5), name(name_)
