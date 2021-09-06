@@ -426,7 +426,7 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
-            throw Exception(String(ASTSystemQuery::typeToString(query.type)) + " is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
     }

@@ -42,7 +42,6 @@
 
 #include <Formats/FormatSettings.h>
 
-
 namespace DB
 {
 
@@ -177,17 +176,20 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     buf.write(buffer, result);
 }
 
-
 inline void writeString(const char * data, size_t size, WriteBuffer & buf)
 {
     buf.write(data, size);
 }
 
-inline void writeString(const StringRef & ref, WriteBuffer & buf)
+inline void writeString(StringRef ref, WriteBuffer & buf)
 {
     writeString(ref.data, ref.size, buf);
 }
 
+inline void writeString(std::string_view ref, WriteBuffer & buf)
+{
+    writeString(ref.data(), ref.size(), buf);
+}
 
 /** Writes a C-string without creating a temporary object. If the string is a literal, then `strlen` is executed at the compilation stage.
   * Use when the string is a literal.

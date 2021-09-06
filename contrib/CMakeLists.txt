@@ -32,6 +32,8 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
+include_directories("${CMAKE_SOURCE_DIR}/contrib/magic_enum/include")
+
 add_subdirectory (abseil-cpp-cmake)
 add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)

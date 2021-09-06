@@ -632,7 +632,9 @@ class FunctionBinaryArithmetic : public IFunction
         std::string function_name;
         if (interval_data_type)
         {
-            function_name = String(is_plus ? "add" : "subtract") + interval_data_type->getKind().toString() + 's';
+            function_name = fmt::format("{}{}s",
+                is_plus ? "add" : "subtract",
+                interval_data_type->getKind().toString());
         }
         else
         {
