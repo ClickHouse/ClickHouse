@@ -4,6 +4,7 @@
 #include <optional>
 #include <shared_mutex>
 #include <deque>
+#include <vector>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -68,10 +69,6 @@ public:
 };
 
 }
-
-using SizesVector = std::vector<Sizes>;
-
-class AddedColumns;
 
 /** Data structure for implementation of JOIN.
   * It is just a hash table: keys -> rows of joined ("right") table.
@@ -194,11 +191,7 @@ public:
     ASOF::Inequality getAsofInequality() const { return asof_inequality; }
     bool anyTakeLastRow() const { return any_take_last_row; }
 
-    const ColumnWithTypeAndName & rightAsofKeyColumn() const
-    {
-        /// It should be nullable if nullable_right_side is true
-        return savedBlockSample().getByName(key_names_right.front().back());
-    }
+    const Block & savedBlockSample() const { return data->sample_block; }
 
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
@@ -330,7 +323,7 @@ public:
 
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        BlocksList blocks;
+        BlocksList blocks; /// Blocks of "right" table.
         BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
@@ -365,10 +358,6 @@ private:
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
 
-    /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
-    const NamesVector key_names_right;
-    const NamesVector key_names_left;
-
     bool nullable_right_side; /// In case of LEFT and FULL joins, if use_nulls, convert right-side columns to Nullable.
     bool nullable_left_side; /// In case of RIGHT and FULL joins, if use_nulls, convert left-side columns to Nullable.
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
@@ -383,7 +372,7 @@ private:
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable JoinStuff::JoinUsedFlags used_flags;
     RightTableDataPtr data;
-    SizesVector key_sizes;
+    std::vector<Sizes> key_sizes;
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -396,10 +385,6 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
-    /// Additional conditions for rows to join from JOIN ON section
-    std::vector<String> condition_mask_column_name_left;
-    std::vector<String> condition_mask_column_name_right;
-
     Poco::Logger * log;
 
     Block totals;
@@ -408,50 +393,25 @@ private:
     /// If set HashJoin instance is not available for modification (addJoinedBlock)
     std::shared_lock<std::shared_mutex> storage_join_lock;
 
-    // void init(Type type_);
-    void init(Type type_, RightTableDataPtr);
-    void data_map_init(MapsVariant &);
-
-    const Block & savedBlockSample() const { return data->sample_block; }
+    void dataMapInit(MapsVariant &);
 
     /// Modify (structure) right block to save it in block list
     Block structureRightBlock(const Block & stored_block) const;
     void initRightBlockStructure(Block & saved_block_sample);
 
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
     void joinBlockImpl(
         Block & block,
-        std::unique_ptr<AddedColumns>,
-        size_t existing_columns) const;
-
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
-    std::unique_ptr<AddedColumns> makeAddedColumns(
-        Block & block,
-        const NamesVector & key_names_left,
         const Block & block_with_columns_to_add,
-        const std::vector<const Maps*> & maps,
-        bool is_join_get = false) const;
-
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
-    std::unique_ptr<AddedColumns> makeAddedColumnsV(
-        Block & block,
-        const Names & key_names_left,
-        const Block & block_with_columns_to_add,
-        const Maps & maps,
-        const Sizes & key_sizes_,
-        HashJoin::Type,
+        const std::vector<const Maps *> & maps_,
         bool is_join_get = false) const;
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
-
-    // template <typename Maps>
-    // ColumnWithTypeAndName joinGetImpl(const Block & block, const Block & block_with_columns_to_add, const Maps & maps_, HashJoin::Type) const;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
     bool overDictionary() const;
 };
-
 
 }

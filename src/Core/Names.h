@@ -11,7 +11,6 @@ namespace DB
 {
 
 using Names = std::vector<std::string>;
-using NamesVector = std::vector<Names>;
 using NameSet = std::unordered_set<std::string>;
 using NameOrderedSet = std::set<std::string>;
 using NameToNameMap = std::unordered_map<std::string, std::string>;

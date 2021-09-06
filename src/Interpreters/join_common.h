@@ -12,7 +12,9 @@ namespace DB
 struct ColumnWithTypeAndName;
 class TableJoin;
 class IColumn;
+
 using ColumnRawPtrs = std::vector<const IColumn *>;
+using ColumnRawPtrMap = std::unordered_map<String, const IColumn *>;
 using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 using UInt8ColumnDataPtrVector = std::vector<UInt8ColumnDataPtr>;
 
@@ -29,6 +31,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
+ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void removeLowCardinalityInplace(Block & block);
 void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type = true);
@@ -59,7 +62,7 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
 ColumnPtr getColumnAsMask(const Block & block, const String & column_name);
 
 /// Split key and other columns by keys name list
-void splitAdditionalColumns(const NamesVector & key_names, const Block & sample_block, Block & block_keys, Block & block_others);
+void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others);
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
 
@@ -101,9 +104,6 @@ private:
 
     /// Right block saved in Join
     Block saved_block_sample;
-
-    NamesVector key_names_left;
-    NamesVector key_names_right;
 
     /// Output of join
     Block result_sample_block;

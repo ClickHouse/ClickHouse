@@ -507,12 +507,11 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
                             ErrorCodes::PARAMETER_OUT_OF_BOUND);
     }
 
-    const auto & key_names_left_all = table_join->keyNamesLeft();
-    const auto & key_names_right_all = table_join->keyNamesRight();
-    if (key_names_left_all.size() != 1 || key_names_right_all.size() != 1)
-        throw Exception("MergeJoin does not support OR", ErrorCodes::NOT_IMPLEMENTED);
+    if (!table_join->oneDisjunct())
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoin does not support OR in JOIN ON section");
 
-    std::tie(mask_column_name_left, mask_column_name_right) = table_join->joinConditionColumnNames(0);
+    const auto & onexpr = table_join->getOnlyClause();
+    std::tie(mask_column_name_left, mask_column_name_right) = onexpr.condColumnNames();
 
     /// Add auxiliary joining keys to join only rows where conditions from JOIN ON sections holds
     /// Input boolean column converted to nullable and only rows with non NULLS value will be joined
@@ -524,11 +523,11 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         key_names_right.push_back(deriveTempName(mask_column_name_right));
     }
 
-    key_names_left.insert(key_names_left.end(), key_names_left_all.front().begin(), key_names_left_all.front().end());
-    key_names_right.insert(key_names_right.end(), key_names_right_all.front().begin(), key_names_right_all.front().end());
+    key_names_left.insert(key_names_left.end(), onexpr.key_names_left.begin(), onexpr.key_names_left.end());
+    key_names_right.insert(key_names_right.end(), onexpr.key_names_right.begin(), onexpr.key_names_right.end());
 
     addConditionJoinColumn(right_sample_block, JoinTableSide::Right);
-    JoinCommon::splitAdditionalColumns(NamesVector{key_names_right}, right_sample_block, right_table_keys, right_columns_to_add);
+    JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, right_columns_to_add);
 
     for (const auto & right_key : key_names_right)
     {
@@ -659,7 +658,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 Block MergeJoin::modifyRightBlock(const Block & src_block) const
 {
     Block block = materializeBlock(src_block);
-    JoinCommon::removeLowCardinalityInplace(block, table_join->keyNamesRight().front());
+    JoinCommon::removeLowCardinalityInplace(block, table_join->getOnlyClause().key_names_right);
     return block;
 }
 
@@ -1108,8 +1107,8 @@ std::shared_ptr<NotJoinedBlocks> MergeJoin::getNonJoinedBlocks(
 {
     if (table_join->strictness() == ASTTableJoin::Strictness::All && (is_right || is_full))
     {
-        size_t left_columns_count = left_sample_block.columns();
-        assert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
+        size_t left_columns_count = result_sample_block.columns() - right_columns_to_add.columns();
+        assert(left_columns_count == left_sample_block.columns());
         auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
         return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
     }
