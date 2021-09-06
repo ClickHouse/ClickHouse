@@ -426,11 +426,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
         }
 
-        if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
-        {
-            query_database = query_with_table_output->database;
-            query_table = query_with_table_output->table;
-        }
+        // if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+        // {
+        //     query_database = query_with_table_output->database;
+        //     query_table = query_with_table_output->table;
+        // }
 
         auto * insert_query = ast->as<ASTInsertQuery>();
 
@@ -686,6 +686,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_columns = info.columns;
                     elem.query_projections = info.projections;
                     elem.query_views = info.views;
+                }
+
+                if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+                {
+                    query_database = query_with_table_output->getDatabase();
+                    query_table = query_with_table_output->getTable();
                 }
 
                 interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);

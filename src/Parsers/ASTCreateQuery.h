@@ -91,7 +91,7 @@ public:
     bool create_or_replace{false};
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }
+    String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + getDatabase()) + delim + getTable(); }
 
     ASTPtr clone() const override;
 

@@ -176,8 +176,8 @@ private:
         if (only_replace_current_database_function)
             return;
 
-        if (node.database.empty())
-            node.database = database_name;
+        if (node.getDatabase().empty())
+            node.setDatabase(database_name);
     }
 
     void visitDDL(ASTRenameQuery & node, ASTPtr &) const

@@ -505,8 +505,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->if_not_exists = if_not_exists;
         query->cluster = cluster_str;
 
-        query->database = table_id.database_name;
-        query->table = table_id.table_name;
+        query->database = std::make_shared<ASTIdentifier>(table_id.database_name);
+        query->table = std::make_shared<ASTIdentifier>(table_id.table_name);
         query->uuid = table_id.uuid;
 
         return true;
@@ -582,8 +582,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->if_not_exists = if_not_exists;
     query->temporary = is_temporary;
 
-    query->database = table_id.database_name;
-    query->table = table_id.table_name;
+    query->database = std::make_shared<ASTIdentifier>(table_id.database_name);
+    query->table = std::make_shared<ASTIdentifier>(table_id.table_name);
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
@@ -730,8 +730,8 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->is_live_view = true;
 
     auto table_id = table->as<ASTTableIdentifier>()->getTableId();
-    query->database = table_id.database_name;
-    query->table = table_id.table_name;
+    query->database = std::make_shared<ASTIdentifier>(table_id.database_name);
+    query->table = std::make_shared<ASTIdentifier>(table_id.table_name);
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
@@ -760,7 +760,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword s_database("DATABASE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserStorage storage_p;
-    ParserIdentifier name_p;
+    ParserIdentifier name_p(true);
 
     ASTPtr database;
     ASTPtr storage;
@@ -811,9 +811,12 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->attach = attach;
     query->if_not_exists = if_not_exists;
 
-    tryGetIdentifierNameInto(database, query->database);
     query->uuid = uuid;
     query->cluster = cluster_str;
+    query->database = database;
+
+    if (database)
+        query->children.push_back(database);
 
     query->set(query->storage, storage);
 
@@ -946,8 +949,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->replace_view = replace_view;
 
     auto table_id = table->as<ASTTableIdentifier>()->getTableId();
-    query->database = table_id.database_name;
-    query->table = table_id.table_name;
+    query->database = std::make_shared<ASTIdentifier>(table_id.database_name);
+    query->table = std::make_shared<ASTIdentifier>(table_id.table_name);
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
@@ -1047,8 +1050,8 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->replace_table = replace;
 
     auto dict_id = name->as<ASTTableIdentifier>()->getTableId();
-    query->database = dict_id.database_name;
-    query->table = dict_id.table_name;
+    query->database = std::make_shared<ASTIdentifier>(dict_id.database_name);
+    query->table = std::make_shared<ASTIdentifier>(dict_id.table_name);
     query->uuid = dict_id.uuid;
 
     query->if_not_exists = if_not_exists;

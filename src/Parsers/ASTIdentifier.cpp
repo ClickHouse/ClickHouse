@@ -244,6 +244,22 @@ bool tryGetIdentifierNameInto(const IAST * ast, String & name)
     return false;
 }
 
+
+const String & getIdentifierNameRef(const IAST * ast)
+{
+    static const String empty = "";
+
+    if (ast)
+    {
+        if (const auto * node = dynamic_cast<const ASTIdentifier *>(ast))
+        {
+            return node->name();
+        }
+    }
+    return empty;
+}
+
+
 void setIdentifierSpecial(ASTPtr & ast)
 {
     if (ast)

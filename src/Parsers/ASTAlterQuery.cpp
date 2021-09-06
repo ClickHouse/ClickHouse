@@ -453,7 +453,7 @@ bool ASTAlterQuery::isFreezeAlter() const
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const
 {
-    return "AlterQuery" + (delim + database) + delim + table;
+    return "AlterQuery" + (delim + getDatabase()) + delim + getTable();
 }
 
 ASTPtr ASTAlterQuery::clone() const
@@ -478,14 +478,14 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
     else
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
 
-    if (!table.empty())
+    if (!getTable().empty())
     {
-        if (!database.empty())
+        if (!getDatabase().empty())
         {
-            settings.ostr << indent_str << backQuoteIfNeed(database);
+            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
             settings.ostr << ".";
         }
-        settings.ostr << indent_str << backQuoteIfNeed(table);
+        settings.ostr << indent_str << backQuoteIfNeed(getTable());
     }
     formatOnCluster(settings);
     settings.ostr << settings.nl_or_ws;

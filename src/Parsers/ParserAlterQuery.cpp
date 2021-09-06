@@ -823,7 +823,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (is_live_view)
         query->is_live_view = true;
 
-    if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))
+    if (!parseDatabaseAndTableASTPtr(pos, expected, query->database, query->table))
         return false;
 
     String cluster_str;
@@ -840,6 +840,12 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     query->set(query->command_list, command_list);
+
+    if (query->database)
+        query->children.push_back(query->database);
+
+    if (query->table)
+        query->children.push_back(query->table);
 
     return true;
 }
