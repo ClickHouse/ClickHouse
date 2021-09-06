@@ -3274,3 +3274,13 @@ SETTINGS index_granularity = 8192 │
 -   1 — Проекции обязательно используются.
 
 Значение по умолчанию: `0`.
+
+## regexp_max_matches_per_row {#regexp-max-matches-per-row}
+
+Задает максимальное количество совпадений для регулярного выражения. Настройка применяется для защиты памяти от перегрузки при использовании "жадных" квантификаторов в регулярном выражении для функции [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md#extractallgroups-horizontal).
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1000`.

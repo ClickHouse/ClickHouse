@@ -7,7 +7,9 @@
 
 TEST(LocalAddress, SmokeTest)
 {
-    auto cmd = DB::ShellCommand::executeDirect("/bin/hostname", {"-i"});
+    DB::ShellCommand::Config config("/bin/hostname");
+    config.arguments = {"-i"};
+    auto cmd = DB::ShellCommand::executeDirect(config);
     std::string address_str;
     DB::readString(address_str, cmd->out);
     cmd->wait();
