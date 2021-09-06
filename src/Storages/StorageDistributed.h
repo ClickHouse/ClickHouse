@@ -101,7 +101,7 @@ public:
     void flush() override;
     void drop() override;
 
-    bool storesDataOnDisk() const override { return true; }
+    bool storesDataOnDisk() const override { return data_volume != nullptr; }
     Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;

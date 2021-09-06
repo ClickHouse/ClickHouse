@@ -106,7 +106,7 @@ using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 // The projection selected to execute current query
 struct ProjectionCandidate
 {
-    const ProjectionDescription * desc{};
+    ProjectionDescriptionRawPtr desc{};
     PrewhereInfoPtr prewhere_info;
     ActionsDAGPtr before_where;
     String where_column_name;
@@ -164,6 +164,7 @@ struct SelectQueryInfo
     bool ignore_projections = false;
     bool is_projection_query = false;
     bool merge_tree_empty_result = false;
+    Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 };
 
