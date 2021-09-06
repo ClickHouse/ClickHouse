@@ -15,7 +15,7 @@ Contains HM Land Registry data © Crown copyright and database right 2021. This 
 
 ## Download the Dataset
 
-```
+```bash
 wget http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv
 ```
 
@@ -23,7 +23,7 @@ Download will take about 2 minutes with good internet connection.
 
 ## Create the Table
 
-```
+```sql
 CREATE TABLE uk_price_paid
 (
     price UInt32,
@@ -59,7 +59,7 @@ The preprocessing is:
 
 Preprocessed data is piped directly to `clickhouse-client` to be inserted into ClickHouse table in streaming fashion.
 
-```
+```bash
 clickhouse-local --input-format CSV --structure '
     uuid String,
     price UInt32,
@@ -102,15 +102,30 @@ It will take about 40 seconds.
 
 ## Validate the Data
 
-```
+Query:
+
+```sql
 SELECT count() FROM uk_price_paid
+26248711
+```
+
+Result:
+
+```text
 26248711
 ```
 
 The size of dataset in ClickHouse is just 226 MiB:
 
-```
+Query:
+
+```sql
 SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'uk_price_paid'
+```
+
+Result:
+
+```text
 226.40 MiB
 ```
 
@@ -118,9 +133,15 @@ SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'uk_price
 
 ### Average price per year:
 
-```
-SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 1000000, 80) FROM uk_price_paid GROUP BY year ORDER BY year
+Query:
 
+```sql
+SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 1000000, 80) FROM uk_price_paid GROUP BY year ORDER BY year
+```
+
+Result:
+
+```text
 ┌─year─┬──price─┬─bar(round(avg(price)), 0, 1000000, 80)─┐
 │ 1995 │  67932 │ █████▍                                 │
 │ 1996 │  71505 │ █████▋                                 │
@@ -156,9 +177,13 @@ SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 1000000, 
 
 ### Average price per year in London:
 
-```
-SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 2000000, 100) FROM uk_price_paid WHERE town = 'LONDON' GROUP BY year ORDER BY year
+Query:
 
+```sql
+SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 2000000, 100) FROM uk_price_paid WHERE town = 'LONDON' GROUP BY year ORDER BY year
+```
+
+```text
 ┌─year─┬───price─┬─bar(round(avg(price)), 0, 2000000, 100)───────────────┐
 │ 1995 │  109112 │ █████▍                                                │
 │ 1996 │  118667 │ █████▊                                                │
@@ -196,7 +221,7 @@ Something happened in 2013. I don't have a clue. Maybe you have a clue what happ
 
 ### The most expensive neighborhoods:
 
-```
+```sql
 SELECT
     town,
     district,
@@ -211,7 +236,9 @@ GROUP BY
 HAVING c >= 100
 ORDER BY price DESC
 LIMIT 100
+```
 
+```text
 ┌─town─────────────────┬─district───────────────┬────c─┬───price─┬─bar(round(avg(price)), 0, 5000000, 100)────────────────────────────┐
 │ LONDON               │ CITY OF WESTMINSTER    │ 3372 │ 3305225 │ ██████████████████████████████████████████████████████████████████ │
 │ LONDON               │ CITY OF LONDON         │  257 │ 3294478 │ █████████████████████████████████████████████████████████████████▊ │
@@ -328,9 +355,9 @@ The data is uploaded to ClickHouse Playground, [example](https://gh-api.clickhou
 
 ### Build a projection 
 
-```
--- create an aggregate projection by dimensions (toYear(date), district, town)
+Create an aggregate projection by dimensions (toYear(date), district, town):
 
+```sql
 ALTER TABLE uk_price_paid
     ADD PROJECTION projection_by_year_district_town
     (
@@ -346,10 +373,11 @@ ALTER TABLE uk_price_paid
             district,
             town
     );
+```
 
--- populate the projection for existing data (without it projection will be 
---  created for only newly inserted data)
+Populate the projection for existing data (without it projection will be created for only newly inserted data)
 
+```sql
 ALTER TABLE uk_price_paid
     MATERIALIZE PROJECTION projection_by_year_district_town
 SETTINGS mutations_sync = 1;
@@ -357,14 +385,18 @@ SETTINGS mutations_sync = 1;
 
 ## Test performance
 
-Let's run the same 3 queries.
+Enable projections for selects and let's run the same 3 queries.
 
-```
--- enable projections for selects
+```sql
 set allow_experimental_projection_optimization=1;
+```
 
--- Q1) Average price per year:
 
+### Average price per year
+
+Query:
+
+```sql
 SELECT
     toYear(date) AS year,
     round(avg(price)) AS price,
@@ -372,7 +404,11 @@ SELECT
 FROM uk_price_paid
 GROUP BY year
 ORDER BY year ASC;
+```
 
+Result:
+
+```text
 ┌─year─┬──price─┬─bar(round(avg(price)), 0, 1000000, 80)─┐
 │ 1995 │  67932 │ █████▍                                 │
 │ 1996 │  71505 │ █████▋                                 │
@@ -404,9 +440,13 @@ ORDER BY year ASC;
 └──────┴────────┴────────────────────────────────────────┘
 
 27 rows in set. Elapsed: 0.003 sec. Processed 106.87 thousand rows, 3.21 MB (31.92 million rows/s., 959.03 MB/s.)
+```
 
--- Q2) Average price per year in London:
+### Average price per year in London
 
+Query:
+
+```sql
 SELECT
     toYear(date) AS year,
     round(avg(price)) AS price,
@@ -415,7 +455,11 @@ FROM uk_price_paid
 WHERE town = 'LONDON'
 GROUP BY year
 ORDER BY year ASC;
+```
 
+Result:
+
+```text
 ┌─year─┬───price─┬─bar(round(avg(price)), 0, 2000000, 100)───────────────┐
 │ 1995 │  109112 │ █████▍                                                │
 │ 1996 │  118667 │ █████▊                                                │
@@ -447,10 +491,13 @@ ORDER BY year ASC;
 └──────┴─────────┴───────────────────────────────────────────────────────┘
 
 27 rows in set. Elapsed: 0.005 sec. Processed 106.87 thousand rows, 3.53 MB (23.49 million rows/s., 775.95 MB/s.)
+```
 
--- Q3) The most expensive neighborhoods:
--- the condition (date >= '2020-01-01') needs to be modified to match projection dimension (toYear(date) >= 2020)
+### The most expensive neighborhoods: the condition (date >= '2020-01-01') needs to be modified to match projection dimension (toYear(date) >= 2020)
 
+Query:
+
+```sql
 SELECT
     town,
     district,
@@ -465,7 +512,11 @@ GROUP BY
 HAVING c >= 100
 ORDER BY price DESC
 LIMIT 100
+```
 
+Result:
+
+```text
 ┌─town─────────────────┬─district───────────────┬────c─┬───price─┬─bar(round(avg(price)), 0, 5000000, 100)────────────────────────────┐
 │ LONDON               │ CITY OF WESTMINSTER    │ 3372 │ 3305225 │ ██████████████████████████████████████████████████████████████████ │
 │ LONDON               │ CITY OF LONDON         │  257 │ 3294478 │ █████████████████████████████████████████████████████████████████▊ │
