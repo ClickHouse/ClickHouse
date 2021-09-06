@@ -249,7 +249,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (!jobs.empty())
             {
-                job = std::move(jobs.top().job);
+                /// boost::priority_queue does not provide interface for getting non-const reference to an element
+                /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
+                job = std::move(const_cast<Job &>(jobs.top().job));
                 jobs.pop();
             }
             else
