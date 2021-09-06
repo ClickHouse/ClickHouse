@@ -11,7 +11,11 @@
 #include <DataStreams/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Storages/IStorage_fwd.h>
+#include "Common/Exception.h"
+#include "Parsers/IAST_fwd.h"
 
+#include <cstddef>
+#include <unordered_map>
 #include <utility>
 #include <memory>
 #include <deque>
@@ -48,6 +52,34 @@ public:
     using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
     using Disjuncts = ASTs;
 
+    /// Corresponds to one disjunct
+    struct JoinOnClause
+    {
+        Names key_names_left;
+        Names key_names_right; /// Duplicating right key names are qualified.
+
+        ASTPtr on_filter_condition_left;
+        ASTPtr on_filter_condition_right;
+
+        JoinOnClause() = default;
+
+        std::pair<String, String> condColumnNames() const
+        {
+            std::pair<String, String> res;
+            if (on_filter_condition_left)
+                res.first = on_filter_condition_left->getColumnName();
+            if (on_filter_condition_right)
+                res.second = on_filter_condition_right->getColumnName();
+            return res;
+        }
+
+        size_t keysCount() const
+        {
+            assert(key_names_left.size() == key_names_right.size());
+            return key_names_right.size();
+        }
+    };
+
 private:
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
       * The join is made by column k.
@@ -74,31 +106,12 @@ private:
     const size_t max_files_to_merge = 0;
     const String temporary_files_codec = "LZ4";
 
-    /// Corresponds to one disjunct
-    struct JoinOnClause
-    {
-        Names key_names;
-        ASTs key_asts;
-
-        ASTs on_filter_conditions;
-
-        JoinOnClause() = default;
-
-        explicit JoinOnClause(const Names & names)
-            : key_names(names)
-        {}
-
-        void addKey(const String & name, const ASTPtr & ast)
-        {
-            key_names.emplace_back(name);
-            key_asts.emplace_back(ast);
-        }
-    };
+    ASTs key_asts_left;
+    ASTs key_asts_right;
 
     Disjuncts disjuncts;
 
-    std::vector<JoinOnClause> left_clauses;
-    std::vector<JoinOnClause> right_clauses; /// Duplicating key_names are qualified.
+    std::vector<JoinOnClause> clauses;
 
     ASTTableJoin table_join;
 
@@ -131,7 +144,7 @@ private:
 
     /// Create converting actions and change key column names if required
     ActionsDAGPtr applyKeyConvertToTable(
-        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, std::vector<JoinOnClause> & join_clause) const;
+        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NameToNameMap & key_column_rename) const;
 
     /// Calculates common supertypes for corresponding join key columns.
     template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
@@ -144,12 +157,25 @@ private:
         const NameSet & required_right_keys,
         std::unordered_map<String, String> & key_map) const;
 
-public:
-    TableJoin()
-        : left_clauses(1)
-        , right_clauses(1)
+    void addKey(const String & left_name, const String & right_name,
+                const ASTPtr & left_ast, const ASTPtr & right_ast = nullptr)
     {
+        clauses.back().key_names_left.emplace_back(left_name);
+        key_asts_left.emplace_back(left_ast);
+
+        clauses.back().key_names_right.emplace_back(right_name);
+        key_asts_right.emplace_back(right_ast ? right_ast : left_ast);
     }
+
+    void assertHasOneOnExpr() const
+    {
+        if (!oneDisjunct())
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have only one join clause, got {}", clauses.size());
+    }
+
+public:
+    TableJoin() : clauses(1)
+    {}
 
     TableJoin(const Settings & settings, VolumePtr tmp_volume_);
 
@@ -160,9 +186,9 @@ public:
         , default_max_bytes(0)
         , join_use_nulls(use_nulls)
         , join_algorithm(JoinAlgorithm::HASH)
-        , left_clauses(1)
+        , clauses(1)
     {
-        right_clauses.emplace_back(key_names_right);
+        getOnlyClause().key_names_right = key_names_right;
         table_join.kind = kind;
         table_join.strictness = strictness;
     }
@@ -192,6 +218,16 @@ public:
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
     bool needStreamWithNonJoinedRows() const;
 
+    bool oneDisjunct() const;
+
+    JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
+    const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }
+
+    std::vector<JoinOnClause> & getClauses() { return clauses; }
+    const std::vector<JoinOnClause> & getClauses() const { return clauses; }
+
+    Names getAllNames(JoinTableSide side) const;
+
     void resetCollected();
     void addUsingKey(const ASTPtr & ast);
     void setDisjuncts(Disjuncts &&);
@@ -212,8 +248,6 @@ public:
      *     doesn't supported yet, it can be added later.
      */
     void addJoinCondition(const ASTPtr & ast, bool is_left);
-    ASTPtr joinConditionColumn(JoinTableSide side, size_t disjunct_num) const;
-    std::pair<String, String> joinConditionColumnNames(size_t disjunct_num) const;
 
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
@@ -243,26 +277,6 @@ public:
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
-    NamesVector keyNamesLeft() const
-    {
-        NamesVector key_names;
-        for (const auto & clause : left_clauses)
-        {
-            key_names.push_back(clause.key_names);
-        }
-        return key_names;
-    }
-
-    NamesVector keyNamesRight() const
-    {
-        NamesVector key_names;
-        for (const auto & clause : right_clauses)
-        {
-            key_names.push_back(clause.key_names);
-        }
-        return key_names;
-    }
-
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
 
     Names columnsAddedByJoin() const
@@ -277,8 +291,9 @@ public:
     void setRightKeys(const Names & keys)
     {
         // assert(right_clauses.size() <= 1);
-        right_clauses.clear();
-        right_clauses.emplace_back(keys);
+        clauses.clear();
+        clauses.emplace_back();
+        clauses.back().key_names_right = keys;
     }
 
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;

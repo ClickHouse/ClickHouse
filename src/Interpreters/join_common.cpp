@@ -1,3 +1,4 @@
+#include <unordered_map>
 #include <Interpreters/join_common.h>
 
 #include <Columns/ColumnLowCardinality.h>
@@ -306,6 +307,21 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     return ptrs;
 }
 
+ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names)
+{
+    ColumnRawPtrMap ptrs;
+    ptrs.reserve(names.size());
+
+    for (const auto & column_name : names)
+    {
+        auto & column = block.getByName(column_name).column;
+        column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
+        ptrs[column_name] = column.get();
+    }
+
+    return ptrs;
+}
+
 ColumnPtr materializeColumn(const Block & block, const String & column_name)
 {
     const auto & src_column = block.getByName(column_name).column;
@@ -517,21 +533,18 @@ ColumnPtr getColumnAsMask(const Block & block, const String & column_name)
 }
 
 
-void splitAdditionalColumns(const NamesVector & key_names, const Block & sample_block, Block & block_keys, Block & block_others)
+void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others)
 {
     block_others = materializeBlock(sample_block);
 
-    for (const auto & key_names_part : key_names)
+    for (const String & column_name : key_names)
     {
-        for (const String & column_name : key_names_part)
+        /// Extract right keys with correct keys order. There could be the same key names.
+        if (!block_keys.has(column_name))
         {
-            /// Extract right keys with correct keys order. There could be the same key names.
-            if (!block_keys.has(column_name))
-            {
-                auto & col = block_others.getByName(column_name);
-                block_keys.insert(col);
-                block_others.erase(column_name);
-            }
+            auto & col = block_others.getByName(column_name);
+            block_keys.insert(col);
+            block_others.erase(column_name);
         }
     }
 }
