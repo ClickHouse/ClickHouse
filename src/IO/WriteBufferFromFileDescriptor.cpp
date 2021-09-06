@@ -80,7 +80,7 @@ void WriteBufferFromFileDescriptor::nextImpl()
 
 /// NOTE: This class can be used as a very low-level building block, for example
 /// in trace collector. In such places allocations of memory can be dangerous,
-/// so don't allocate anything in this consturctor.
+/// so don't allocate anything in this constructor.
 WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
     int fd_,
     size_t buf_size,
