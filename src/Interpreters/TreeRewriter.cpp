@@ -703,9 +703,9 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-        for (const auto & key_names_left_part : analyzed_join.keyNamesLeft())
+        for (const auto & onexpr : analyzed_join.getClauses())
         {
-            if (key_names_left_part.empty())
+            if (onexpr.key_names_left.empty())
             {
                 throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
