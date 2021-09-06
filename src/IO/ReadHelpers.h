@@ -13,6 +13,7 @@
 #include <common/LocalDateTime.h>
 #include <common/StringRef.h>
 #include <common/arithmeticOverflow.h>
+#include <common/Concepts.h>
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
@@ -928,25 +929,23 @@ readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian archi
     }
 }
 
-
 /// Generic methods to read value in text tab-separated format.
-template <typename T>
-inline std::enable_if_t<is_integer_v<T>, void>
-readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
-template <typename T>
-inline std::enable_if_t<is_integer_v<T>, bool>
-tryReadText(T & x, ReadBuffer & buf) { return tryReadIntText(x, buf); }
+inline void readText(is_integer auto & x, ReadBuffer & buf)
+{
+    if constexpr (std::same_as<decltype(x), bool &>)
+        readBoolText(x, buf);
+    else
+        readIntText(x, buf);
+}
 
-template <typename T>
-inline std::enable_if_t<std::is_floating_point_v<T>, void>
-readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
+inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
+{
+    return tryReadIntText(x, buf);
+}
 
-template <typename T>
-inline std::enable_if_t<std::is_floating_point_v<T>, bool>
-tryReadText(T & x, ReadBuffer & buf) { return tryReadFloatText(x, buf); }
+inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
-inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }

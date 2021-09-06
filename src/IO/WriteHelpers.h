@@ -5,6 +5,7 @@
 #include <limits>
 #include <algorithm>
 #include <iterator>
+#include <concepts>
 
 #include <pcg-random/pcg_random.hpp>
 
@@ -29,6 +30,8 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
+
+#include <common/EnumReflection.h>
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -181,7 +184,8 @@ inline void writeString(const char * data, size_t size, WriteBuffer & buf)
     buf.write(data, size);
 }
 
-inline void writeString(StringRef ref, WriteBuffer & buf)
+// Otherwise StringRef and string_view overloads are ambiguous when passing string literal. Prefer std::string_view
+void writeString(std::same_as<StringRef> auto ref, WriteBuffer & buf)
 {
     writeString(ref.data, ref.size, buf);
 }
@@ -878,24 +882,22 @@ inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBi
 inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
-template <typename T>
-inline std::enable_if_t<is_integer_v<T>, void>
-writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
-template <typename T>
-inline std::enable_if_t<std::is_floating_point_v<T>, void>
-writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
+inline void writeText(is_integer auto x, WriteBuffer & buf)
+{
+    if constexpr (std::same_as<decltype(x), bool>)
+        writeBoolText(x, buf);
+    else if constexpr (std::same_as<decltype(x), char>)
+        writeChar(x, buf);
+    else
+        writeIntText(x, buf);
+}
 
-inline void writeText(const String & x, WriteBuffer & buf) { writeString(x.c_str(), x.size(), buf); }
-inline void writeText(const std::string_view & x, WriteBuffer & buf) { writeString(x.data(), x.size(), buf); }
+inline void writeText(is_floating_point auto x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
-/// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
-template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
+inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
 
-/// unlike the method for std::string
-/// assumes here that `x` is a null-terminated string.
-inline void writeText(const char * x, WriteBuffer & buf) { writeCString(x, buf); }
-inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeString(x, size, buf); }
+inline void writeText(std::string_view x, WriteBuffer & buf) { writeString(x.data(), x.size(), buf); }
 
 inline void writeText(const DayNum & x, WriteBuffer & buf) { writeDateText(LocalDate(x), buf); }
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
