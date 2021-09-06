@@ -88,7 +88,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     query->deduplicate_by_columns = deduplicate_by_columns;
     query->database = database;
     query->table = table;
-    
+
     if (database)
         query->children.push_back(database);
 

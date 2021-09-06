@@ -17,7 +17,7 @@ class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 public:
     ASTPtr database;
     ASTPtr table;
-    
+
     UUID uuid = UUIDHelpers::Nil;
     bool temporary{false};
 

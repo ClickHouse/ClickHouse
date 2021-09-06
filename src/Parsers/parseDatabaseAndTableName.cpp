@@ -54,7 +54,7 @@ bool parseDatabaseAndTableASTPtr(IParser::Pos & pos, Expected & expected, ASTPtr
         database = table;
         if (!table_parser.parse(pos, table, expected))
             return false;
-    } 
+    }
 
     return true;
 }
