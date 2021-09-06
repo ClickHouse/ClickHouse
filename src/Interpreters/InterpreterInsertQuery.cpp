@@ -324,7 +324,7 @@ BlockIO InterpreterInsertQuery::execute()
                     table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
             }
 
-            auto counting = std::make_shared<CountingTransform>(out.getInputHeader());
+            auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), runtime_data ? runtime_data->thread_status : nullptr);
             counting->setProcessListElement(getContext()->getProcessListElement());
             out.addSource(std::move(counting));
 

@@ -219,6 +219,8 @@ public:
 
                 view.setException(std::move(status.exception));
             }
+            else
+                view.runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
         }
 
         logQueryViews(views_data->views, views_data->context);
@@ -231,6 +233,30 @@ private:
     ViewsDataPtr views_data;
     std::vector<ExceptionStatus> statuses;
     std::exception_ptr any_exception;
+};
+
+class PushingToLiveViewSink final : public SinkToStorage
+{
+public:
+    PushingToLiveViewSink(const Block & header, StorageLiveView & live_view_, StoragePtr storage_holder_, ContextPtr context_)
+        : SinkToStorage(header)
+        , live_view(live_view_)
+        , storage_holder(std::move(storage_holder_))
+        , context(std::move(context_))
+    {
+    }
+
+    String getName() const override { return "PushingToLiveViewSink"; }
+
+    void consume(Chunk chunk) override
+    {
+        StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
+    }
+
+private:
+    StorageLiveView & live_view;
+    StoragePtr storage_holder;
+    ContextPtr context;
 };
 
 Chain buildPushingToViewsDrain(
@@ -246,8 +272,8 @@ Chain buildPushingToViewsDrain(
 
     /// If we don't write directly to the destination
     /// then expect that we're inserting with precalculated virtual columns
-    auto storage_header = no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals())
-                                         : metadata_snapshot->getSampleBlock();
+    auto storage_header = //no_destination ? metadata_snapshot->getSampleBlockWithVirtuals(storage->getVirtuals())
+                                          metadata_snapshot->getSampleBlock();
 
     /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
@@ -323,7 +349,7 @@ Chain buildPushingToViewsDrain(
         }
 
         auto view_runtime_data = std::make_shared<ExceptionKeepingTransformRuntimeData>(
-            std::move(thread_status),
+            thread_status.get(),
             database_table.getNameForLogs());
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
@@ -361,7 +387,7 @@ Chain buildPushingToViewsDrain(
             BlockIO io = interpreter.execute();
             out = std::move(io.out);
         }
-        else if (const auto * live_view = dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+        else if (auto * live_view = dynamic_cast<StorageLiveView *>(dependent_table.get()))
         {
             type = QueryViewsLogElement::ViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
@@ -390,11 +416,15 @@ Chain buildPushingToViewsDrain(
             nullptr,
             std::move(runtime_stats)});
 
-        auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
-            storage_header, views_data->views.back(), views_data->source_storage_id, views_data->source_metadata_snapshot, views_data->source_storage);
-        executing_inner_query->setRuntimeData(view_runtime_data);
+        //if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
+        {
+            auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
+                storage_header, views_data->views.back(), views_data->source_storage_id, views_data->source_metadata_snapshot, views_data->source_storage);
+            executing_inner_query->setRuntimeData(view_runtime_data);
 
-        out.addSource(std::move(executing_inner_query));
+            out.addSource(std::move(executing_inner_query));
+        }
+
         chains.emplace_back(std::move(out));
 
         /// Add the view to the query access info so it can appear in system.query_log
@@ -436,12 +466,18 @@ Chain buildPushingToViewsDrain(
         result_chain = Chain(std::move(processors));
     }
 
+    if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
+    {
+        auto sink = std::make_shared<PushingToLiveViewSink>(storage_header, *live_view, storage, context);
+        sink->setRuntimeData(runtime_data);
+        result_chain.addSource(std::move(sink));
+    }
     /// Do not push to destination table if the flag is set
-    if (!no_destination)
+    else if (!no_destination)
     {
         auto sink = storage->write(query_ptr, storage->getInMemoryMetadataPtr(), context);
-        sink->setRuntimeData(runtime_data);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
+        sink->setRuntimeData(runtime_data);
         result_chain.addSource(std::move(sink));
     }
 

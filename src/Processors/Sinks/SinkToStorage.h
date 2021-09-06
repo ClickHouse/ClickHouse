@@ -10,12 +10,12 @@ class ThreadStatus;
 
 struct ExceptionKeepingTransformRuntimeData
 {
-    std::unique_ptr<ThreadStatus> thread_status = nullptr;
+    ThreadStatus * thread_status = nullptr;
     UInt64 elapsed_ms = 0;
     std::string additional_exception_message;
 
     ExceptionKeepingTransformRuntimeData(
-        std::unique_ptr<ThreadStatus> thread_status_,
+        ThreadStatus * thread_status_,
         std::string additional_exception_message_);
 };
 

@@ -3,6 +3,7 @@
 #include <Processors/ISource.h>
 #include <Processors/Chain.h>
 #include <Processors/Sinks/ExceptionHandlingSink.h>
+#include <iostream>
 
 
 namespace DB
@@ -18,7 +19,11 @@ public:
 
     String getName() const override { return "PullingOutputFormat"; }
 
-    void setData(Chunk chunk) { data = std::move(chunk); }
+    void setData(Chunk chunk)
+    {
+        need_data_flag = false;
+        data = std::move(chunk);
+    }
 
 protected:
 
