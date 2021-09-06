@@ -63,7 +63,10 @@ void WriteBufferFromFileDescriptor::nextImpl()
             ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteFailed);
 
             /// Don't use getFileName() here because this method can be called from destructor
-            throwFromErrnoWithPath("Cannot write to file " + file_name, file_name,
+            String error_file_name = file_name;
+            if (error_file_name.empty())
+                error_file_name = "(fd = " + toString(fd) + ")";
+            throwFromErrnoWithPath("Cannot write to file " + error_file_name, error_file_name,
                                    ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
         }
 
@@ -75,16 +78,18 @@ void WriteBufferFromFileDescriptor::nextImpl()
     ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteBytes, bytes_written);
 }
 
-
+/// NOTE: This class can be used as a very low-level building block, for example
+/// in trace collector. In such places allocations of memory can be dangerous,
+/// so don't allocate anything in this consturctor.
 WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
     int fd_,
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
-    const std::string & file_name_)
+    std::string file_name_)
     : WriteBufferFromFileBase(buf_size, existing_memory, alignment)
     , fd(fd_)
-    , file_name(file_name_.empty() ? "(fd = " + toString(fd) + ")" : file_name_)
+    , file_name(std::move(file_name_))
 {
 }
 
@@ -141,5 +146,14 @@ off_t WriteBufferFromFileDescriptor::size() const
         throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
     return buf.st_size;
 }
+
+std::string WriteBufferFromFileDescriptor::getFileName() const
+{
+    if (file_name.empty())
+        return "(fd = " + toString(fd) + ")";
+
+    return file_name;
+}
+
 
 }
