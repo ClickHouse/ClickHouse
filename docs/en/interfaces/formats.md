@@ -60,6 +60,7 @@ The supported formats are:
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
+| [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -1545,4 +1546,22 @@ Result:
 f9725a22f9191e064120d718e26862a9  -
 ```
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
+## MsgPack {#msgpack}
+
+ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data files.
+
+### Data Types Matching {#data-types-matching-msgpack}
+
+| MsgPack data type               | ClickHouse data type                                                             |
+|---------------------------------|----------------------------------------------------------------------------------|
+| `uint N`, `positive fixint`     | [UIntN](../sql-reference/data-types/int-uint.md)                                 |
+| `int N`                         | [IntN](../sql-reference/data-types/int-uint.md)                                  |
+| `fixstr`, `str 8`, `str 16`, `str 32`   | [String](../sql-reference/data-types/string.md), [FixedString](../sql-reference/data-types/fixedstring.md)                   |
+| `float 32`                        | [Float32](../sql-reference/data-types/float.md)                                  |
+| `float 64`                        | [Float64](../sql-reference/data-types/float.md)                                  |
+| `uint 16`                         | [Date](../sql-reference/data-types/date.md)                                      |
+| `uint 32`                         | [DateTime](../sql-reference/data-types/datetime.md)                              |
+| `uint 64`                         | [DateTime64](../sql-reference/data-types/datetime.md)                            |
+| `fixarray`, `array 16`, `array 32`| [Array](../sql-reference/data-types/array.md)                                    |
+	
+Unsupported MsgPack data type: `nil`.
