@@ -6,7 +6,7 @@
 #include <random>
 
 #include <Storages/MergeTree/ExecutableTask.h>
-#include <Storages/MergeTree/MergeMutateExecutor.h>
+#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
 using namespace DB;
 

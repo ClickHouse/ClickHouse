@@ -95,7 +95,7 @@ public:
 
     RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
 
-    bool scheduleDataProcessingJob(BackgroundJobAssignee & executor) override;
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & executor) override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
