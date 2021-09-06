@@ -2216,50 +2216,30 @@ void InterpreterSelectQuery::executeTotalsAndHaving(
 void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modificator modificator)
 {
     const auto & header_before_transform = query_plan.getCurrentDataStream().header;
-    ColumnNumbers keys;
-    ColumnNumbers all_keys;
-    ColumnNumbersList keys_vector;
+
+    const Settings & settings = context->getSettingsRef();
+    std::shared_ptr<Aggregator::Params> params_ptr;
+
     auto & query = getSelectQuery();
     if (query.group_by_with_grouping_sets)
     {
-        std::set<size_t> keys_set;
+        ColumnNumbers keys;
+        ColumnNumbers all_keys;
+        ColumnNumbersList keys_vector;
+        std::unordered_set<size_t> keys_set;
         for (const auto & aggregation_keys : query_analyzer->aggregationKeysList())
         {
             keys.clear();
             for (const auto & key : aggregation_keys)
             {
                 size_t key_name_pos = header_before_transform.getPositionByName(key.name);
-                if (!keys_set.count(key_name_pos))
-                {
-                    keys_set.insert(key_name_pos);
-                }
+                keys_set.insert(key_name_pos);
                 keys.push_back(key_name_pos);
             }
             keys_vector.push_back(keys);
-            LOG_DEBUG(
-                log,
-                "execute aggregation with grouping sets add keys set of size {}",
-                keys.size());
         }
         all_keys.assign(keys_set.begin(), keys_set.end());
-        LOG_DEBUG(
-            log,
-            "execute aggregation with grouping sets add all keys of size {}",
-            all_keys.size());
-    }
-    else
-    {
-        for (const auto & key : query_analyzer->aggregationKeys())
-        {
-            keys.push_back(header_before_transform.getPositionByName(key.name));
-        }
-    }
 
-    const Settings & settings = context->getSettingsRef();
-
-    std::shared_ptr<Aggregator::Params> params_ptr;
-    if (query.group_by_with_grouping_sets)
-    {
         params_ptr = std::make_shared<Aggregator::Params>(
             header_before_transform,
             all_keys,
@@ -2280,6 +2260,10 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     }
     else
     {
+        ColumnNumbers keys;
+        for (const auto & key : query_analyzer->aggregationKeys())
+            keys.push_back(header_before_transform.getPositionByName(key.name));
+
         params_ptr = std::make_shared<Aggregator::Params>(
             header_before_transform,
             keys,
