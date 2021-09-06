@@ -123,7 +123,6 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         /// Check if there are enough threads to process job.
         if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
         {
-            ALLOW_ALLOCATIONS_IN_SCOPE;
             try
             {
                 threads.emplace_front();
@@ -249,9 +248,16 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             need_shutdown = shutdown;
 
             if (!jobs.empty())
-                job = std::move(jobs.pop().job);
+            {
+                job = std::move(jobs.top().job);
+                jobs.pop();
+            }
             else
-                return; /// shutdown is true, simply finish the thread.
+            {
+                /// shutdown is true, simply finish the thread.
+                return;
+            }
+
         }
 
         if (!need_shutdown)

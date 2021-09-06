@@ -9,6 +9,8 @@
 #include <list>
 #include <optional>
 
+#include <boost/heap/priority_queue.hpp>
+
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
 #include <Common/PriorityQueue.h>
@@ -104,7 +106,7 @@ private:
         }
     };
 
-    DB::PriorityQueue<JobWithPriority> jobs;
+    boost::heap::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
     std::exception_ptr first_exception;
 
