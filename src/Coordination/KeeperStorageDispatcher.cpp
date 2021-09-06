@@ -289,10 +289,12 @@ void KeeperStorageDispatcher::shutdown()
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
 
-            /// FIXME not the best way to notify
-            requests_queue->push({});
-            if (request_thread.joinable())
-                request_thread.join();
+            if (requests_queue)
+            {
+                requests_queue->push({});
+                if (request_thread.joinable())
+                    request_thread.join();
+            }
 
             responses_queue.push({});
             if (responses_thread.joinable())
@@ -307,7 +309,9 @@ void KeeperStorageDispatcher::shutdown()
             server->shutdown();
 
         KeeperStorage::RequestForSession request_for_session;
-        while (requests_queue->tryPop(request_for_session))
+
+        /// Set session expired for all pending requests
+        while (requests_queue && requests_queue->tryPop(request_for_session))
         {
             if (request_for_session.request)
             {
