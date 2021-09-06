@@ -53,8 +53,6 @@ RUN apt-get update \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
-        libicu-dev \
-        libreadline-dev \
         moreutils \
         ninja-build \
         pigz \
