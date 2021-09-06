@@ -31,7 +31,7 @@ struct BitShiftRightImpl
             return static_cast<Result>(a) >> static_cast<Result>(b);
     }
 
-    static inline NO_SANITIZE_UNDEFINED void bitShiftRightForBytes(UInt8 * op_pointer, const UInt8 * begin, UInt8 * out, const size_t shift_right_bits)
+    static inline NO_SANITIZE_UNDEFINED void bitShiftRightForBytes(const UInt8 * op_pointer, const UInt8 * begin, UInt8 * out, const size_t shift_right_bits)
     {
         while (op_pointer > begin)
         {
@@ -40,7 +40,7 @@ struct BitShiftRightImpl
             *out = *op_pointer >> shift_right_bits;
             if (op_pointer - 1 >= begin)
             {
-                /// The right 8-b bit of the left byte is moved to the left 8-b bit of this byte
+                /// The right b bit of the left byte is moved to the left b bit of this byte
                 *out = UInt8(UInt8(*(op_pointer - 1) << (8 - shift_right_bits)) | *out);
             }
         }
@@ -54,9 +54,10 @@ struct BitShiftRightImpl
         else
         {
             UInt8 word_size = 8;
-            if (b >= static_cast<B>((end - pos) * word_size) || b < 0)
+            /// To prevent overflow
+            if (static_cast<double>(b) >= (static_cast<double>(end - pos) * word_size) || b < 0)
             {
-                // insert default value
+                /// insert default value
                 out_vec.push_back(0);
                 out_offsets.push_back(out_offsets.back() + 1);
                 return;
@@ -91,7 +92,8 @@ struct BitShiftRightImpl
         {
             UInt8 word_size = 8;
             size_t n = end - pos;
-            if (b >= static_cast<B>(n * word_size) || b < 0)
+            /// To prevent overflow
+            if (static_cast<double>(b) >= (static_cast<double>(n) * word_size) || b < 0)
             {
                 // insert default value
                 out_vec.resize_fill(out_vec.size() + n);
