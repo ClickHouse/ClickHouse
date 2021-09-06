@@ -24,7 +24,7 @@ Download will take about 2 minutes with good internet connection. There are 30 f
 
 ## Create the Table
 
-```
+```sql
 CREATE TABLE opensky
 (
     callsign String,
@@ -50,7 +50,7 @@ CREATE TABLE opensky
 
 Upload data into ClickHouse in parallel:
 
-```
+```bash
 ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c '
     gzip -c -d "{}" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"'
 ```
@@ -73,15 +73,29 @@ for file in flightlist_*.csv.gz; do gzip -c -d "$file" | clickhouse-client --dat
 
 ## Validate the Data
 
-```
+Query:
+
+```sql
 SELECT count() FROM opensky
+```
+
+Result:
+
+```text
 66010819
 ```
 
 The size of dataset in ClickHouse is just 2.64 GiB:
 
-```
+Query:
+
+```sql
 SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'opensky'
+```
+
+Result:
+
+```text
 2.64 GiB
 ```
 
@@ -89,26 +103,39 @@ SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'opensky'
 
 Total distance travelled is 68 billion kilometers:
 
-```
+```sql
 SELECT formatReadableQuantity(sum(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) / 1000) FROM opensky
+```
 
+Result:
+
+```text
 ┌─formatReadableQuantity(divide(sum(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)), 1000))─┐
 │ 68.72 billion                                                                                            │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Average flight distance is around 1000 km.
-```
-SELECT avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) FROM opensky
 
+Query:
+
+```sql
+SELECT avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) FROM opensky
+```
+
+Result:
+
+```text
 ┌─avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2))─┐
 │                                                 1041090.6465708319 │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### Most busy origin airports and the average distance seen:
+### Most busy origin airports and the average distance seen
 
-```
+Query:
+
+```sql
 SELECT
     origin,
     count(),
@@ -119,8 +146,11 @@ WHERE origin != ''
 GROUP BY origin
 ORDER BY count() DESC
 LIMIT 100
+```
 
-Query id: f9010ea5-97d0-45a3-a5bd-9657906cd105
+Result:
+
+```text
 
      ┌─origin─┬─count()─┬─distance─┬─bar────────────────────────────────────┐
   1. │ KORD   │  745007 │  1546108 │ ███████████████▍                       │
@@ -228,9 +258,9 @@ Query id: f9010ea5-97d0-45a3-a5bd-9657906cd105
 100 rows in set. Elapsed: 0.186 sec. Processed 48.31 million rows, 2.17 GB (259.27 million rows/s., 11.67 GB/s.)
 ```
 
-### Number of flights from three major Moscow airports, weekly:
+### Number of flights from three major Moscow airports, weekly
 
-```
+```sql
 SELECT
     toMonday(day) AS k,
     count() AS c,
@@ -239,9 +269,11 @@ FROM opensky
 WHERE origin IN ('UUEE', 'UUDD', 'UUWW')
 GROUP BY k
 ORDER BY k ASC
+```
 
-Query id: 1b446157-9519-4cc4-a1cb-178dfcc15a8e
+Result:
 
+```text
      ┌──────────k─┬────c─┬─bar──────────────────────────────────────────────────────────────────────────┐
   1. │ 2018-12-31 │ 5248 │ ████████████████████████████████████████████████████▍                        │
   2. │ 2019-01-07 │ 6302 │ ███████████████████████████████████████████████████████████████              │
