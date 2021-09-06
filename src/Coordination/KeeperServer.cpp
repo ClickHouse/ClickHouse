@@ -357,7 +357,7 @@ void KeeperServer::waitInit()
         throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
 }
 
-std::unordered_set<int64_t> KeeperServer::getDeadSessions()
+std::vector<int64_t> KeeperServer::getDeadSessions()
 {
     return state_machine->getDeadSessions();
 }

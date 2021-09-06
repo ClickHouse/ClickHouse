@@ -71,7 +71,7 @@ public:
     RaftAppendResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
 
     /// Return set of the non-active sessions
-    std::unordered_set<int64_t> getDeadSessions();
+    std::vector<int64_t> getDeadSessions();
 
     bool isLeader() const;
 
