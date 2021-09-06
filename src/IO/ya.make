@@ -5,6 +5,7 @@ LIBRARY()
 
 ADDINCL(
     contrib/libs/zstd/include
+    contrib/libs/lz4
     contrib/restricted/fast_float/include
 )
 
@@ -14,9 +15,9 @@ PEERDIR(
     contrib/libs/brotli/enc
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/zstd
+    contrib/libs/lz4
     contrib/restricted/fast_float
 )
-
 
 SRCS(
     AIO.cpp
