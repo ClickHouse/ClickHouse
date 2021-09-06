@@ -6,6 +6,7 @@
 
 #if defined(__SSE4_2__)
     #include <emmintrin.h>
+    #include <smmintrin.h>
     #include <nmmintrin.h>
 #endif
 #if defined(__AVX2__)
@@ -153,7 +154,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
         {
             has_mask = 0;
             const __m256i f_data = _mm256_lddqu_si256(reinterpret_cast<const __m256i*>(second.data + j));
-            // bitmask is filled with minus ones for ones which are considered as null in the corresponding null map, 0 otherwise;
+            // bits of the bitmask are set to one if considered as null in the corresponding null map, 0 otherwise;
             __m256i bitmask = has_second_null_map ?
                 _mm256_set_epi32(
                     (second_null_map[j + 7]) ? full : none,
@@ -167,15 +168,16 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
                 : zeros;
 
             size_t i = 0;
-            // Search first array to try to match all second elements
             for (; i < first.size - 7 && !has_mask; has_mask = _mm256_testc_si256(bitmask, ones), i += 8)
             {
                 const __m256i s_data = _mm256_lddqu_si256(reinterpret_cast<const __m256i *>(first.data + i));
                 // Create a mask to avoid to compare null elements
-                // set_m128i takes two arguments: (high segment, low segment) that are two __m128i convert from 8bits to 32bits to fit to our following operations
-                const __m256i first_nm_mask = _mm256_set_m128i(
-                    _mm_cvtepi8_epi32(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i + 4))),
-                    _mm_cvtepi8_epi32(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i))));
+                // set_m128i takes two arguments: (high segment, low segment) that are two __m128i convert from 8bits to 32bits to match with next operations
+                const __m256i first_nm_mask = has_first_null_map?
+                    _mm256_set_m128i(
+                        _mm_cvtepi8_epi32(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i + 4))),
+                        _mm_cvtepi8_epi32(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i))))
+                    : zeros;
                 bitmask =
                     _mm256_or_si256(
                         _mm256_or_si256(
@@ -228,7 +230,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
         }
     }
 
-    if (!has_mask)
+    if (!has_mask && second.size > 7)
         return false;
 
     return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
@@ -262,7 +264,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
 
     size_t j = 0;
     short has_mask = 1;
-    const int full = -1, none = 0;
+    const Int64 full = -1, none = 0;
     const __m256i ones = _mm256_set1_epi64x(full);
     const __m256i zeros = _mm256_setzero_si256();
     if (second.size > 3 && first.size > 3)
@@ -271,6 +273,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
         {
             has_mask = 0;
             const __m256i f_data = _mm256_lddqu_si256(reinterpret_cast<const __m256i*>(second.data + j));
+            // bits of the bitmask are set to one if considered as null in the corresponding null map, 0 otherwise;
             __m256i bitmask = has_second_null_map ?
                 _mm256_set_epi64x(
                     (second_null_map[j + 3])? full : none,
@@ -283,9 +286,11 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
             for (; i < first.size - 3 && !has_mask; has_mask = _mm256_testc_si256(bitmask, ones), i += 4)
             {
                 const __m256i s_data = _mm256_lddqu_si256(reinterpret_cast<const __m256i*>(first.data + i));
-                const __m256i first_nm_mask = _mm256_set_m128i(
-                    _mm_cvtepi8_epi64(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i + 2))),
-                    _mm_cvtepi8_epi64(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i))));
+                const __m256i first_nm_mask = has_first_null_map?
+                    _mm256_set_m128i(
+                        _mm_cvtepi8_epi64(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i + 2))),
+                        _mm_cvtepi8_epi64(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i))))
+                    : zeros;
                 bitmask =
                     _mm256_or_si256(
                         _mm256_or_si256(
@@ -321,7 +326,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
         }
     }
 
-    if (!has_mask && second.size > 2)
+    if (!has_mask && second.size > 3)
         return false;
 
     return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
@@ -343,7 +348,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
 
     size_t j = 0;
     short has_mask = 1;
-    const int full = -1, none = 0;
+    const int16_t full = -1, none = 0;
     const __m256i ones = _mm256_set1_epi16(full);
     const __m256i zeros = _mm256_setzero_si256();
     if (second.size > 15 && first.size > 15)
@@ -367,9 +372,11 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
             for (; i < first.size - 15 && !has_mask; has_mask = _mm256_testc_si256(bitmask, ones), i += 16)
             {
                 const __m256i s_data = _mm256_lddqu_si256(reinterpret_cast<const __m256i*>(first.data + i));
-                const __m256i first_nm_mask = _mm256_set_m128i(
-                    _mm_cvtepi8_epi16(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map+i+8))),
-                    _mm_cvtepi8_epi16(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map+i))));
+                const __m256i first_nm_mask = has_first_null_map?
+                    _mm256_set_m128i(
+                        _mm_cvtepi8_epi16(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i + 8))),
+                        _mm_cvtepi8_epi16(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i))))
+                    : zeros;
                 bitmask =
                     _mm256_or_si256(
                         _mm256_or_si256(
@@ -457,7 +464,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
         }
     }
 
-    if (!has_mask && second.size > 2)
+    if (!has_mask && second.size > 15)
         return false;
 
     return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
@@ -481,10 +488,10 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
 
     size_t j = 0;
     short has_mask = 1;
+    const int full = -1, none = 0;
     const __m128i zeros = _mm_setzero_si128();
-    if (second.size > 3 && first.size > 2)
+    if (second.size > 3 && first.size > 3)
     {
-        const int full = -1, none = 0;
         for (; j < second.size - 3 && has_mask; j += 4)
         {
             has_mask = 0;
@@ -540,7 +547,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
         }
     }
 
-    if (!has_mask)
+    if (!has_mask && second.size > 3)
         return false;
 
     return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
@@ -564,48 +571,51 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
     short has_mask = 1;
     const Int64 full = -1, none = 0;
     const __m128i zeros = _mm_setzero_si128();
-    for (; j < second.size - 1 && has_mask; j += 2)
+    if (second.size > 1 && first.size > 1)
     {
-        has_mask = 0;
-        const __m128i f_data = _mm_lddqu_si128(reinterpret_cast<const __m128i *>(second.data + j));
-        __m128i bitmask = has_second_null_map ?
-            _mm_set_epi64x(
-                (second_null_map[j + 1]) ? full : none,
-                (second_null_map[j]) ? full : none)
-            : zeros;
-        unsigned i = 0;
-        for (; i < first.size - 1 && !has_mask; has_mask = _mm_test_all_ones(bitmask), i += 2)
+        for (; j < second.size - 1 && has_mask; j += 2)
         {
-            const __m128i s_data = _mm_lddqu_si128(reinterpret_cast<const __m128i *>(first.data + i));
-            const __m128i first_nm_mask = has_first_null_map ?
-                _mm_cvtepi8_epi64(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i)))
+            has_mask = 0;
+            const __m128i f_data = _mm_lddqu_si128(reinterpret_cast<const __m128i *>(second.data + j));
+            __m128i bitmask = has_second_null_map ?
+                _mm_set_epi64x(
+                    (second_null_map[j + 1]) ? full : none,
+                    (second_null_map[j]) ? full : none)
                 : zeros;
-            bitmask =
-                _mm_or_si128(
-                        _mm_or_si128(
-                            _mm_andnot_si128(
-                                first_nm_mask,
-                                _mm_cmpeq_epi32(f_data, s_data)),
-                            _mm_andnot_si128(
-                                _mm_shuffle_epi32(first_nm_mask, _MM_SHUFFLE(1,0,3,2)),
-                                _mm_cmpeq_epi64(f_data, _mm_shuffle_epi32(s_data, _MM_SHUFFLE(1,0,3,2))))),
-                    bitmask);
-        }
-
-        if (i < first.size)
-        {
-            for (; i < first.size && !has_mask; ++i)
+            unsigned i = 0;
+            for (; i < first.size - 1 && !has_mask; has_mask = _mm_test_all_ones(bitmask), i += 2)
             {
-                if (has_first_null_map && first_null_map[i])
-                    continue;
-                __m128i v_i = _mm_set1_epi64x(first.data[i]);
-                bitmask = _mm_or_si128(bitmask, _mm_cmpeq_epi64(f_data, v_i));
-                has_mask = _mm_test_all_ones(bitmask);
+                const __m128i s_data = _mm_lddqu_si128(reinterpret_cast<const __m128i *>(first.data + i));
+                const __m128i first_nm_mask = has_first_null_map ?
+                    _mm_cvtepi8_epi64(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i)))
+                    : zeros;
+                bitmask =
+                    _mm_or_si128(
+                            _mm_or_si128(
+                                _mm_andnot_si128(
+                                    first_nm_mask,
+                                    _mm_cmpeq_epi64(f_data, s_data)),
+                                _mm_andnot_si128(
+                                    _mm_shuffle_epi32(first_nm_mask, _MM_SHUFFLE(1,0,3,2)),
+                                    _mm_cmpeq_epi64(f_data, _mm_shuffle_epi32(s_data, _MM_SHUFFLE(1,0,3,2))))),
+                        bitmask);
+            }
+
+            if (i < first.size)
+            {
+                for (; i < first.size && !has_mask; ++i)
+                {
+                    if (has_first_null_map && first_null_map[i])
+                        continue;
+                    __m128i v_i = _mm_set1_epi64x(first.data[i]);
+                    bitmask = _mm_or_si128(bitmask, _mm_cmpeq_epi64(f_data, v_i));
+                    has_mask = _mm_test_all_ones(bitmask);
+                }
             }
         }
     }
 
-    if (!has_mask)
+    if (!has_mask && second.size > 1)
         return false;
 
     return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
@@ -634,7 +644,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
         for (; j < second.size - 7 && has_mask; j += 8)
         {
             has_mask = 0;
-            const __m128i f_data = _mm_lddqu_si128(reinterpret_cast<const __m128i *>(second.data+j));
+            const __m128i f_data = _mm_lddqu_si128(reinterpret_cast<const __m128i *>(second.data + j));
             __m128i bitmask = has_second_null_map ?
                 _mm_set_epi16(
                     (second_null_map[j + 7]) ? full : none, (second_null_map[j + 6]) ? full : none,
@@ -647,7 +657,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
             {
                 const __m128i s_data = _mm_lddqu_si128(reinterpret_cast<const __m128i *>(first.data + i));
                 const __m128i first_nm_mask = has_first_null_map ?
-                    _mm_cvtepi8_epi16(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map+i)))
+                    _mm_cvtepi8_epi16(_mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i)))
                     : zeros;
                 bitmask =
                     _mm_or_si128(
@@ -701,13 +711,15 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
         }
     }
 
-    if (!has_mask && second.size > 2)
+    if (!has_mask && second.size > 6)
         return false;
 
     return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
 }
 
-// SSE4.2 Int8_t specialization
+// Int8 version is faster with SSE than with AVX2
+#if defined(__SSE4_2__)
+// SSE2 Int8_t specialization
 template <>
 inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArraySlice<int8_t>, NumericArraySlice<int8_t>, sliceEqualElements<int8_t,int8_t> >(
     const NumericArraySlice<int8_t> & first, const NumericArraySlice<int8_t> & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
@@ -723,14 +735,14 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
 
     size_t j = 0;
     short has_mask = 1;
-    const int full = -1, none = 0;
+    const int8_t full = -1, none = 0;
     const __m128i zeros = _mm_setzero_si128();
-    if (second.size > 15)
+    if (second.size > 15 && first.size > 15)
     {
         for (; j < second.size - 15 && has_mask; j += 16)
         {
             has_mask = 0;
-            const __m128i f_data = _mm_lddqu_si128(reinterpret_cast<const __m128i *>(second.data+j));
+            const __m128i f_data = _mm_lddqu_si128(reinterpret_cast<const __m128i *>(second.data + j));
             __m128i bitmask = has_second_null_map ?
                 _mm_set_epi8(
                     (second_null_map[j + 15]) ? full : none, (second_null_map[j + 14]) ? full : none,
@@ -745,9 +757,9 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
             unsigned i = 0;
             for (; i < first.size - 15 && !has_mask; has_mask = _mm_test_all_ones(bitmask), i += 16)
             {
-                const __m128i s_data = _mm_lddqu_si128(reinterpret_cast<const __m128i *>(first.data+i));
+                const __m128i s_data = _mm_lddqu_si128(reinterpret_cast<const __m128i *>(first.data + i));
                 const __m128i first_nm_mask = has_first_null_map ?
-                    _mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map+i))
+                    _mm_lddqu_si128(reinterpret_cast<const __m128i *>(first_null_map + i))
                     : zeros;
                 bitmask =
                     _mm_or_si128(
@@ -832,7 +844,7 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll<ArraySearchType::All, NumericArrayS
         }
     }
 
-    if (!has_mask)
+    if (!has_mask && second.size > 15)
         return false;
 
     return hasAllIntegralLoopRemainder(j, first, second, first_null_map, second_null_map);
