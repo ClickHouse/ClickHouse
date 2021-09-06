@@ -1,12 +1,11 @@
 #pragma once
 
 #include <functional>
-#include <Interpreters/Session.h>
-#include <Interpreters/Context.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Session.h>
 #include <common/logger_useful.h>
 #include <Poco/Format.h>
 #include <Poco/RegularExpression.h>
