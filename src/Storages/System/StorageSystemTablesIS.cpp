@@ -65,7 +65,7 @@ StorageSystemTablesIS::StorageSystemTablesIS(const StorageID & table_id_)
 }
 
 
-static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, const Context & context)
+static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
@@ -107,7 +107,7 @@ public:
         Block header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
-        const Context & context_)
+        ContextPtr context_)
         : SourceWithProgress(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
@@ -124,7 +124,7 @@ protected:
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
-        const auto access = context.getAccess();
+        const auto access = context->getAccess();
         const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
@@ -151,9 +151,9 @@ protected:
             /// This is for temporary tables. They are output in single block regardless to max_block_size.
             if (database_idx >= databases->size())
             {
-                if (context.hasSessionContext())
+                if (context->hasSessionContext())
                 {
-                    Tables external_tables = context.getSessionContext().getExternalTables();
+                    Tables external_tables = context->getSessionContext()->getExternalTables();
 
                     for (auto & table : external_tables)
                     {
@@ -285,7 +285,7 @@ protected:
                     }
                     try
                     {
-                        lock = table->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+                        lock = table->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
                     }
                     catch (const Exception & e)
                     {
@@ -371,7 +371,7 @@ protected:
                 {
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
 
-                    if (ast && !context.getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
+                    if (ast && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
                     {
                         auto & create = ast->as<ASTCreateQuery &>();
                         create.uuid = UUIDHelpers::Nil;
@@ -458,7 +458,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_rows = table->totalRows(context.getSettingsRef());
+                    auto total_rows = table->totalRows(context->getSettingsRef());
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
                     else
@@ -468,7 +468,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     assert(table != nullptr);
-                    auto total_bytes = table->totalBytes(context.getSettingsRef());
+                    auto total_bytes = table->totalBytes(context->getSettingsRef());
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
                     else
@@ -506,7 +506,7 @@ private:
     ColumnPtr databases;
     size_t database_idx = 0;
     DatabaseTablesIteratorPtr tables_it;
-    const Context context;
+    ContextPtr context;
     bool done = false;
     DatabasePtr database;
     std::string database_name;
@@ -517,7 +517,7 @@ Pipe StorageSystemTablesIS::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)

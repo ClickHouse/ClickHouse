@@ -180,30 +180,16 @@ void LocalServer::tryInitPath()
 }
 
 
-static void attachSystemTables(ContextPtr context)
+static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const String & database_name)
 {
-    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
+    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
-        DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
+        system_database = std::make_shared<DatabaseMemory>(database_name, context);
+        DatabaseCatalog::instance().attachDatabase(database_name, system_database);
     }
-
-    attachSystemTablesLocal(*system_database);
-}
-
-static void attachInformationSchema(const Context & context)
-{
-    DatabasePtr informatinSchema = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::INFORMATION_SCHEMA_DATABASE);
-    if (!informatinSchema)
-    {
-        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        informatinSchema = std::make_shared<DatabaseMemory>(DatabaseCatalog::INFORMATION_SCHEMA_DATABASE, context);
-        DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::INFORMATION_SCHEMA_DATABASE, informatinSchema);
-    }
-
-    attachInformationSchemaLocal(*informatinSchema);
+    return system_database;
 }
 
 int LocalServer::main(const std::vector<std::string> & /*args*/)
@@ -314,16 +300,16 @@ try
         fs::create_directories(fs::path(path) / "data/");
         fs::create_directories(fs::path(path) / "metadata/");
         loadMetadataSystem(global_context);
-        attachSystemTables(global_context);
-        attachInformationSchema(global_context);
+        attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachInformationSchemaLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_DATABASE));
         loadMetadata(global_context);
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else if (!config().has("no-system-tables"))
     {
-        attachSystemTables(global_context);
-        attachInformationSchema(global_context);
+        attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachInformationSchemaLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_DATABASE));
     }
 
     processQueries();

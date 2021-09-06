@@ -100,7 +100,6 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     String database_name = create.database;
-    std::cerr << "Database name is " << database_name << std::endl;
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
@@ -163,7 +162,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             create.uuid = UUIDHelpers::generateV4();
 
         metadata_path = metadata_path / "store" / DatabaseCatalog::getPathForUUID(create.uuid);
-        std::cerr << "metadata_path: " << metadata_path << std::endl;
 
         if (!create.attach && fs::exists(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path.string());
@@ -289,8 +287,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         throw;
     }
-
-    std::cerr << "Database name is " << database_name << std::endl;
 
     return {};
 }

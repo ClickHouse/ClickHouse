@@ -23,11 +23,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct StorageID;
-class WriteBuffer;
-
 using IdentifierNameSet = std::set<String>;
-using StorageIds = std::set<StorageID>;
+
+class WriteBuffer;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */

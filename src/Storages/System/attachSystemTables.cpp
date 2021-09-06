@@ -134,7 +134,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     attach<StorageSystemTimeZones>(system_database, "time_zones");
 #endif
 #ifdef OS_LINUX
-    attachSystemTable<StorageSystemStackTrace>(system_database, "stack_trace");
+    attach<StorageSystemStackTrace>(system_database, "stack_trace");
 #endif
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(system_database, "rocksdb");
@@ -169,7 +169,7 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attach<StorageSystemPartMovesBetweenShards>(system_database, "part_moves_between_shards");
 
     if (has_zookeeper)
-        attachSystemTable<StorageSystemZooKeeper>(system_database, "zookeeper");
+        attach<StorageSystemZooKeeper>(system_database, "zookeeper");
 }
 
 void attachSystemTablesAsync(IDatabase & system_database, AsynchronousMetrics & async_metrics)

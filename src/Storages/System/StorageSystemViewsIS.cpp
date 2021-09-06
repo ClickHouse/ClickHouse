@@ -32,7 +32,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, const Context & context)
+static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
@@ -99,7 +99,7 @@ public:
         Block header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
-        const Context & context_)
+        ContextPtr context_)
         : SourceWithProgress(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
@@ -116,7 +116,7 @@ protected:
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
-        const auto access = context.getAccess();
+        const auto access = context->getAccess();
         const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
@@ -143,9 +143,9 @@ protected:
             /// This is for temporary tables. They are output in single block regardless to max_block_size.
             if (database_idx >= databases->size())
             {
-                if (context.hasSessionContext())
+                if (context->hasSessionContext())
                 {
-                    Tables external_tables = context.getSessionContext().getExternalTables();
+                    Tables external_tables = context->getSessionContext()->getExternalTables();
 
                     for (auto & table : external_tables)
                     {
@@ -229,7 +229,7 @@ protected:
                     }
                     try
                     {
-                        lock = table->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+                        lock = table->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
                     }
                     catch (const Exception & e)
                     {
@@ -279,12 +279,12 @@ protected:
                 size_t res_index = 0;
 
 
-                bool check_option;
-                bool is_updatable;
-                bool is_insertable;
-                bool is_trigger_updatable;
-                bool is_trigger_deletable;
-                bool is_trigger_insertable_into;
+                bool check_option = false;
+                bool is_updatable = false;
+                bool is_insertable = false;
+                bool is_trigger_updatable = false;
+                bool is_trigger_deletable = false;
+                bool is_trigger_insertable_into = false;
                 if (table->getName() == "View") 
                 {
                     check_option = false;
@@ -365,7 +365,7 @@ private:
     ColumnPtr databases;
     size_t database_idx = 0;
     DatabaseTablesIteratorPtr tables_it;
-    const Context context;
+    ContextPtr context;
     bool done = false;
     DatabasePtr database;
     std::string database_name;
@@ -375,7 +375,7 @@ Pipe StorageSystemViewsIS::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
