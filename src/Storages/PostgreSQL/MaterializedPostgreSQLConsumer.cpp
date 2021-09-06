@@ -625,9 +625,8 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
     }
-    catch (const pqxx::broken_connection & e)
+    catch (const pqxx::broken_connection &)
     {
-        LOG_ERROR(log, "Connection error: {}", e.what());
         connection->tryUpdateConnection();
         return false;
     }
@@ -641,6 +640,7 @@ bool MaterializedPostgreSQLConsumer::readFromReplicationSlot()
         if (error_message.find("out of relcache_callback_list slots") == std::string::npos)
             tryLogCurrentException(__PRETTY_FUNCTION__);
 
+        connection->tryUpdateConnection();
         return false;
     }
     catch (const pqxx::conversion_error & e)
