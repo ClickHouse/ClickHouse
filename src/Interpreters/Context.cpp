@@ -77,7 +77,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>

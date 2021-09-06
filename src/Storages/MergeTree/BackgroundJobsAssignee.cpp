@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomSeed.h>
@@ -8,7 +8,7 @@
 namespace DB
 {
 
-BackgroundJobAssignee::BackgroundJobAssignee(MergeTreeData & data_, BackgroundJobAssignee::Type type_, ContextPtr global_context_)
+BackgroundJobsAssignee::BackgroundJobsAssignee(MergeTreeData & data_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
     : WithContext(global_context_)
     , data(data_)
     , sleep_settings(global_context_->getBackgroundMoveTaskSchedulingSettings())
@@ -17,7 +17,7 @@ BackgroundJobAssignee::BackgroundJobAssignee(MergeTreeData & data_, BackgroundJo
 {
 }
 
-void BackgroundJobAssignee::trigger()
+void BackgroundJobsAssignee::trigger()
 {
     std::lock_guard lock(holder_mutex);
 
@@ -29,7 +29,7 @@ void BackgroundJobAssignee::trigger()
     holder->schedule();
 }
 
-void BackgroundJobAssignee::postpone()
+void BackgroundJobsAssignee::postpone()
 {
     std::lock_guard lock(holder_mutex);
 
@@ -48,28 +48,28 @@ void BackgroundJobAssignee::postpone()
 }
 
 
-void BackgroundJobAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_task)
+void BackgroundJobsAssignee::scheduleMergeMutateTask(ExecutableTaskPtr merge_task)
 {
     bool res = getContext()->getMergeMutateExecutor()->trySchedule(merge_task);
     res ? trigger() : postpone();
 }
 
 
-void BackgroundJobAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
+void BackgroundJobsAssignee::scheduleFetchTask(ExecutableTaskPtr fetch_task)
 {
     bool res = getContext()->getFetchesExecutor()->trySchedule(fetch_task);
     res ? trigger() : postpone();
 }
 
 
-void BackgroundJobAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
+void BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 {
     bool res = getContext()->getMovesExecutor()->trySchedule(move_task);
     res ? trigger() : postpone();
 }
 
 
-String BackgroundJobAssignee::toString(Type type)
+String BackgroundJobsAssignee::toString(Type type)
 {
     switch (type)
     {
@@ -80,16 +80,16 @@ String BackgroundJobAssignee::toString(Type type)
     }
 }
 
-void BackgroundJobAssignee::start()
+void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
     if (!holder)
-        holder = getContext()->getSchedulePool().createTask("BackgroundJobAssignee:" + toString(type), [this]{ main(); });
+        holder = getContext()->getSchedulePool().createTask("BackgroundJobsAssignee:" + toString(type), [this]{ main(); });
 
     holder->activateAndSchedule();
 }
 
-void BackgroundJobAssignee::finish()
+void BackgroundJobsAssignee::finish()
 {
     /// No lock here, because scheduled tasks could call trigger method
     if (holder)
@@ -105,7 +105,7 @@ void BackgroundJobAssignee::finish()
 }
 
 
-void BackgroundJobAssignee::main()
+void BackgroundJobsAssignee::main()
 try
 {
     bool succeed = false;
@@ -128,7 +128,7 @@ catch (...) /// Catch any exception to avoid thread termination.
     postpone();
 }
 
-BackgroundJobAssignee::~BackgroundJobAssignee()
+BackgroundJobsAssignee::~BackgroundJobsAssignee()
 {
     try
     {

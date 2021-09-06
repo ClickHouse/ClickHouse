@@ -1041,7 +1041,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobAssignee & executor) //-V657
+bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & executor) //-V657
 {
     if (shutdown_called)
         return false;

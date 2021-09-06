@@ -35,7 +35,7 @@ namespace DB
  *
  *  Due to all caveats I described above we use boost::circular_buffer as a container for queues.
  *
- *  Another nuisance that we faces with is than backgroud operations always interacts with an associated Storage.
+ *  Another nuisance that we faces with is than background operations always interact with an associated Storage.
  *  So, when a Storage want to shutdown, it must wait until all its background operaions are finished.
  */
 class MergeTreeBackgroundExecutor : public shared_ptr_helper<MergeTreeBackgroundExecutor>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeMutateExecutor.h>
+#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Common/ThreadPool.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <pcg_random.hpp>
@@ -29,7 +29,7 @@ struct ExecutableTaskSchedulingSettings
 
 class MergeTreeData;
 
-class BackgroundJobAssignee : protected WithContext
+class BackgroundJobsAssignee : protected WithContext
 {
 private:
     MergeTreeData & data;
@@ -66,9 +66,9 @@ public:
     void scheduleMoveTask(ExecutableTaskPtr move_task);
 
     /// Just call finish
-    virtual ~BackgroundJobAssignee();
+    virtual ~BackgroundJobsAssignee();
 
-    BackgroundJobAssignee(
+    BackgroundJobsAssignee(
         MergeTreeData & data_,
         Type type,
         ContextPtr global_context_);

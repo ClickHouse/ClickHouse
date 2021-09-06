@@ -3,7 +3,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -827,9 +827,9 @@ public:
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
     /// Schedules background job to like merge/mutate/fetch an executor
-    virtual bool scheduleDataProcessingJob(BackgroundJobAssignee & executor) = 0;
+    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & executor) = 0;
     /// Schedules job to move parts between disks/volumes and so on.
-    bool scheduleDataMovingJob(BackgroundJobAssignee & executor);
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & executor);
     bool areBackgroundMovesNeeded() const;
 
     /// Lock part in zookeeper for shared data in several nodes
@@ -925,8 +925,8 @@ protected:
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
     /// but they are being started and finished in derived classes, so let them be protected.
-    BackgroundJobAssignee background_executor;
-    BackgroundJobAssignee background_moves_executor;
+    BackgroundJobsAssignee background_executor;
+    BackgroundJobsAssignee background_moves_executor;
 
     /// Every task that is finished will ask to assign a new one into an executor.
     std::function<void(bool)> common_assignee_trigger;
