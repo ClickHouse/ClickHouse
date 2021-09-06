@@ -879,7 +879,7 @@ public:
 
         /// What to count.
         ColumnNumbers keys;
-        const ColumnNumbersTwoDimension keys_vector;
+        const ColumnNumbersList keys_vector;
         const AggregateDescriptions aggregates;
         size_t keys_size;
         const size_t aggregates_size;
@@ -943,7 +943,7 @@ public:
         Params(
             const Block & src_header_,
             const ColumnNumbers & keys_,
-            const ColumnNumbersTwoDimension & keys_vector_, const AggregateDescriptions & aggregates_,
+            const ColumnNumbersList & keys_vector_, const AggregateDescriptions & aggregates_,
             bool overflow_row_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
             size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,

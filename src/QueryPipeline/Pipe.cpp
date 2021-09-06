@@ -464,9 +464,9 @@ void Pipe::addParallelTransforms(Processors transforms)
                         "but " + std::to_string(output_ports.size()) + " expected", ErrorCodes::LOGICAL_ERROR);
 
     size_t next_output = 0;
-    for (auto * input : inputs)
+    for (size_t i = 0; i < inputs.size(); ++i)
     {
-        connect(*output_ports[next_output], *input);
+        connect(*output_ports[next_output], *inputs[i]);
         ++next_output;
     }
 

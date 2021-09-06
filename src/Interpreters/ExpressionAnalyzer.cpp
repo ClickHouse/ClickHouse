@@ -395,7 +395,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         }
                     }
 
-                    aggregation_keys_list.push_back(grouping_set_list);
+                    aggregation_keys_list.push_back(std::move(grouping_set_list));
                 }
                 else
                 {

@@ -18,7 +18,7 @@ protected:
 private:
     AggregatingTransformParamsPtr params;
     ColumnNumbers keys;
-    ColumnNumbersTwoDimension keys_vector;
+    ColumnNumbersList keys_vector;
 
     Chunks consumed_chunks;
     Chunk grouping_sets_chunk;
