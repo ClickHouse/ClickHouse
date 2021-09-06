@@ -1,6 +1,7 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -508,6 +509,29 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
                 match_with_subtype |= traverseASTEquals(function_name, arguments[index], subtypes[index], tuple[index], out, key_ast);
 
             return match_with_subtype;
+        }
+
+        if (function->name == "arrayElement")
+        {
+            auto & col_name = assert_cast<ASTIdentifier *>(function->arguments.get()->children[0].get())->name();
+
+            if (header.has(col_name))
+            {
+                size_t position = header.getPositionByName(col_name);
+                const DataTypePtr & index_type = header.getByPosition(position).type;
+                const auto * map_type = typeid_cast<const DataTypeMap *>(index_type.get());
+                if (map_type)
+                {
+                    out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
+                    /// TODO :: Here, we assume the second argument of arrayElement is const string, need to support column and other data types.
+                    auto & element_key = assert_cast<ASTIdentifier *>(function->arguments.get()->children[1].get())->name();
+                    Field element_key_field = element_key;
+
+                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), element_key_field)));
+                    return true;
+                }
+            }
         }
     }
 
