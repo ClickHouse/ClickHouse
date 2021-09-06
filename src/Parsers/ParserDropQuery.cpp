@@ -98,7 +98,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->permanently = permanently;
     query->database = database;
     query->table = table;
-    
+
     if (database)
         query->children.push_back(database);
 

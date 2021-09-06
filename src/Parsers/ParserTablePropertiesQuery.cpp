@@ -112,7 +112,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     query->database = database;
     query->table = table;
-    
+
     if (database)
         query->children.push_back(database);
 
