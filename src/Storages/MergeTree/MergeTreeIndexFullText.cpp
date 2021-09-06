@@ -362,7 +362,8 @@ bool MergeTreeConditionFullText::getKey(const ASTPtr & node, size_t & key_column
     //try to get map column name in arrayElement function
     if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
     {
-        column_name = assert_cast<ASTIdentifier *>(func->arguments.get()->children[0].get())->name();
+        if (func->name == "arrayElement")
+            column_name = assert_cast<ASTIdentifier *>(func->arguments.get()->children[0].get())->name();
     }
 
     auto it = std::find(index_columns.begin(), index_columns.end(), column_name);
@@ -414,7 +415,8 @@ bool MergeTreeConditionFullText::atomFromAST(
         //try to parse arrayElement function
         if (const auto * map_func = typeid_cast<const ASTFunction *>(args[0].get()))
         {
-            const_value = assert_cast<ASTIdentifier *>(map_func->arguments.get()->children[1].get())->name();
+            if (map_func->name == "arrayElement")
+                const_value = assert_cast<ASTIdentifier *>(map_func->arguments.get()->children[1].get())->name();
         }
 
         if (key_arg_pos == 1 && (func_name != "equals" && func_name != "notEquals"))
