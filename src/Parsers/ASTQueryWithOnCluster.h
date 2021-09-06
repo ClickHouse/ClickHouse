@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
+#include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {
@@ -35,6 +36,19 @@ public:
 protected:
     template <typename T>
     static ASTPtr removeOnCluster(ASTPtr query_ptr, const std::string & new_database)
+    {
+        T & query = static_cast<T &>(*query_ptr);
+
+        query.cluster.clear();
+        if (query.getDatabase().empty())
+            query.setDatabase(new_database);
+
+        return query_ptr;
+    }
+
+    // TODO: Change String to ASTPtr in DB::ASTSystemQuery
+    template <typename T>
+    static ASTPtr removeOnClusterSystem(ASTPtr query_ptr, const std::string & new_database)
     {
         T & query = static_cast<T &>(*query_ptr);
 

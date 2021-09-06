@@ -494,8 +494,8 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
 
     storage->set(storage->engine, makeASTFunction("ReplacingMergeTree", std::make_shared<ASTIdentifier>(version_column_name)));
 
-    rewritten_query->database = mapped_to_database;
-    rewritten_query->table = create_query.table;
+    rewritten_query->setDatabase(mapped_to_database);
+    rewritten_query->setTable(create_query.table);
     rewritten_query->if_not_exists = create_query.if_not_exists;
     rewritten_query->set(rewritten_query->storage, storage);
     rewritten_query->set(rewritten_query->columns_list, columns);
@@ -510,14 +510,14 @@ void InterpreterDropImpl::validate(const InterpreterDropImpl::TQuery & /*query*/
 ASTs InterpreterDropImpl::getRewrittenQueries(
     const InterpreterDropImpl::TQuery & drop_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
-    const auto & database_name = resolveDatabase(drop_query.database, mysql_database, mapped_to_database, context);
+    const auto & database_name = resolveDatabase(drop_query.getDatabase(), mysql_database, mapped_to_database, context);
 
     /// Skip drop database|view|dictionary
-    if (database_name != mapped_to_database || drop_query.table.empty() || drop_query.is_view || drop_query.is_dictionary)
+    if (database_name != mapped_to_database || drop_query.getTable().empty() || drop_query.is_view || drop_query.is_dictionary)
         return {};
 
     ASTPtr rewritten_query = drop_query.clone();
-    rewritten_query->as<ASTDropQuery>()->database = mapped_to_database;
+    rewritten_query->as<ASTDropQuery>()->setDatabase(mapped_to_database);
     return ASTs{rewritten_query};
 }
 
@@ -569,8 +569,8 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
 
     auto rewritten_alter_query = std::make_shared<ASTAlterQuery>();
     auto rewritten_rename_query = std::make_shared<ASTRenameQuery>();
-    rewritten_alter_query->database = mapped_to_database;
-    rewritten_alter_query->table = alter_query.table;
+    rewritten_alter_query->setDatabase(mapped_to_database);
+    rewritten_alter_query->setTable(alter_query.table);
     rewritten_alter_query->set(rewritten_alter_query->command_list, std::make_shared<ASTExpressionList>());
 
     String default_after_column;

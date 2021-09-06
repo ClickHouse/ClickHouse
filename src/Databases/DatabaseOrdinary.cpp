@@ -55,7 +55,7 @@ namespace
         catch (Exception & e)
         {
             e.addMessage(
-                "Cannot attach table " + backQuote(database_name) + "." + backQuote(query.table) + " from metadata file " + metadata_path
+                "Cannot attach table " + backQuote(database_name) + "." + backQuote(query.getTable()) + " from metadata file " + metadata_path
                 + " from query " + serializeAST(query));
             throw;
         }
@@ -109,7 +109,7 @@ void DatabaseOrdinary::loadStoredObjects(
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
-                create_query->database = database_name;
+                create_query->setDatabase(database_name);
 
                 if (fs::exists(full_path.string() + detached_suffix))
                 {

@@ -83,7 +83,7 @@ public:
 
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
-        return removeOnCluster<ASTSystemQuery>(clone(), new_database);
+        return removeOnClusterSystem<ASTSystemQuery>(clone(), new_database);
     }
 
     const char * getQueryKindString() const override { return "System"; }
