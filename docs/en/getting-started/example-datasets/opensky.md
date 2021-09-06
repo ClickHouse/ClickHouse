@@ -67,7 +67,7 @@ Finally, `clickhouse-client` will do insertion. It will read input data in `CSVW
 Parallel upload takes 24 seconds.
 
 If you don't like parallel upload, here is sequential variant:
-```
+```bash
 for file in flightlist_*.csv.gz; do gzip -c -d "$file" | clickhouse-client --date_time_input_format best_effort --query "INSERT INTO opensky FORMAT CSVWithNames"; done
 ```
 
@@ -76,7 +76,7 @@ for file in flightlist_*.csv.gz; do gzip -c -d "$file" | clickhouse-client --dat
 Query:
 
 ```sql
-SELECT count() FROM opensky
+SELECT count() FROM opensky;
 ```
 
 Result:
@@ -90,7 +90,7 @@ The size of dataset in ClickHouse is just 2.64 GiB:
 Query:
 
 ```sql
-SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'opensky'
+SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'opensky';
 ```
 
 Result:
@@ -104,7 +104,7 @@ Result:
 Total distance travelled is 68 billion kilometers:
 
 ```sql
-SELECT formatReadableQuantity(sum(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) / 1000) FROM opensky
+SELECT formatReadableQuantity(sum(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) / 1000) FROM opensky;
 ```
 
 Result:
@@ -120,7 +120,7 @@ Average flight distance is around 1000 km.
 Query:
 
 ```sql
-SELECT avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) FROM opensky
+SELECT avg(geoDistance(longitude_1, latitude_1, longitude_2, latitude_2)) FROM opensky;
 ```
 
 Result:
@@ -145,13 +145,12 @@ FROM opensky
 WHERE origin != ''
 GROUP BY origin
 ORDER BY count() DESC
-LIMIT 100
+LIMIT 100;
 ```
 
 Result:
 
 ```text
-
      ┌─origin─┬─count()─┬─distance─┬─bar────────────────────────────────────┐
   1. │ KORD   │  745007 │  1546108 │ ███████████████▍                       │
   2. │ KDFW   │  696702 │  1358721 │ █████████████▌                         │
@@ -268,7 +267,7 @@ SELECT
 FROM opensky
 WHERE origin IN ('UUEE', 'UUDD', 'UUWW')
 GROUP BY k
-ORDER BY k ASC
+ORDER BY k ASC;
 ```
 
 Result:

@@ -105,8 +105,7 @@ It will take about 40 seconds.
 Query:
 
 ```sql
-SELECT count() FROM uk_price_paid
-26248711
+SELECT count() FROM uk_price_paid;
 ```
 
 Result:
@@ -120,7 +119,7 @@ The size of dataset in ClickHouse is just 226 MiB:
 Query:
 
 ```sql
-SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'uk_price_paid'
+SELECT formatReadableSize(total_bytes) FROM system.tables WHERE name = 'uk_price_paid';
 ```
 
 Result:
@@ -131,12 +130,12 @@ Result:
 
 ## Run Some Queries
 
-### Average price per year:
+### Average price per year
 
 Query:
 
 ```sql
-SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 1000000, 80) FROM uk_price_paid GROUP BY year ORDER BY year
+SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 1000000, 80) FROM uk_price_paid GROUP BY year ORDER BY year;
 ```
 
 Result:
@@ -180,7 +179,7 @@ Result:
 Query:
 
 ```sql
-SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 2000000, 100) FROM uk_price_paid WHERE town = 'LONDON' GROUP BY year ORDER BY year
+SELECT toYear(date) AS year, round(avg(price)) AS price, bar(price, 0, 2000000, 100) FROM uk_price_paid WHERE town = 'LONDON' GROUP BY year ORDER BY year;
 ```
 
 ```text
@@ -235,7 +234,7 @@ GROUP BY
     district
 HAVING c >= 100
 ORDER BY price DESC
-LIMIT 100
+LIMIT 100;
 ```
 
 ```text
@@ -511,7 +510,7 @@ GROUP BY
     district
 HAVING c >= 100
 ORDER BY price DESC
-LIMIT 100
+LIMIT 100;
 ```
 
 Result:
