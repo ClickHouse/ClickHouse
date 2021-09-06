@@ -2585,8 +2585,9 @@ private:
                 }
                 else
                 {
-                    throw Exception{"Conversion from " + std::string(getTypeName(from_type_index)) + " to " + to_type->getName() + " is not supported",
-                        ErrorCodes::CANNOT_CONVERT_TYPE};
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                        "Conversion from {} to {} is not supported",
+                        from_type_index, to_type->getName());
                 }
             }
 
@@ -2695,8 +2696,9 @@ private:
                     return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
                 }
                 else
-                    throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() + " is not supported",
-                        ErrorCodes::CANNOT_CONVERT_TYPE};
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                        "Conversion from {} to {} is not supported",
+                        type_index, to_type->getName());
             }
 
             return result_column;

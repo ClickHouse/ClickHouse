@@ -346,8 +346,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (const DataTypeAggregateFunction * agg_func_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
     {
         if (src.getType() != Field::Types::AggregateFunctionState)
-            throw Exception(String("Cannot convert ") + src.getTypeName() + " to " + agg_func_type->getName(),
-                    ErrorCodes::TYPE_MISMATCH);
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Cannot convert {} to {}",
+                src.getTypeName(), agg_func_type->getName());
 
         const auto & name = src.get<AggregateFunctionStateData>().name;
         if (agg_func_type->getName() != name)

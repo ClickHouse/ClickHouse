@@ -11,53 +11,33 @@
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/IExternalLoadable.h>
+#include <common/EnumReflection.h>
 
 #if defined(__GNUC__)
     /// GCC mistakenly warns about the names in enum class.
     #pragma GCC diagnostic ignored "-Wshadow"
 #endif
 
-
-#define FOR_ATTRIBUTE_TYPES(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(UInt128) \
-    M(UInt256) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64) \
-    M(Int128) \
-    M(Int256) \
-    M(Float32) \
-    M(Float64) \
-    M(Decimal32) \
-    M(Decimal64) \
-    M(Decimal128) \
-    M(Decimal256) \
-    M(UUID) \
-    M(String) \
-    M(Array) \
-
-
 namespace DB
 {
+using TypeIndexUnderlying = magic_enum::underlying_type_t<TypeIndex>;
 
-enum class AttributeUnderlyingType
+/// We need to be able to map TypeIndex -> AttributeUnderlyingType and AttributeUnderlyingType -> real type
+#define map_item(__T) __T = static_cast<TypeIndexUnderlying>(TypeIndex::__T)
+
+enum class AttributeUnderlyingType : TypeIndexUnderlying
 {
-#define M(TYPE) TYPE,
-    FOR_ATTRIBUTE_TYPES(M)
-#undef M
+    map_item(Int8), map_item(Int16), map_item(Int32), map_item(Int64), map_item(Int128), map_item(Int256),
+    map_item(UInt8), map_item(UInt16), map_item(UInt32), map_item(UInt64), map_item(UInt128), map_item(UInt256),
+    map_item(Float32), map_item(Float64),
+    map_item(Decimal32), map_item(Decimal64), map_item(Decimal128), map_item(Decimal256),
+
+    map_item(UUID), map_item(String), map_item(Array)
 };
 
+#undef map_item
 
-AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type);
-
-std::string toString(AttributeUnderlyingType type);
-
-/// Min and max lifetimes for a dictionary or it's entry
+/// Min and max lifetimes for a dictionary or its entry
 using DictionaryLifetime = ExternalLoadableLifetime;
 
 /** Holds the description of a single dictionary attribute:
@@ -85,24 +65,26 @@ struct DictionaryAttribute final
     const bool is_nullable;
 };
 
-template <typename Type>
-struct DictionaryAttributeType
-{
-    using AttributeType = Type;
-};
+struct T { using AttributeType = int; };
 
 template <typename F>
 void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
 {
-    switch (type)
-    {
-#define M(TYPE) \
-        case AttributeUnderlyingType::TYPE: \
-            func(DictionaryAttributeType<TYPE>()); \
-            break;
-    FOR_ATTRIBUTE_TYPES(M)
-#undef M
-    }
+//    for (AttributeUnderlyingType other : magic_enum::enum_values<AttributeUnderlyingType>())
+//        if (type == other)
+//        {
+//
+//        }
+//
+//    switch (type)
+//    {
+//#define M(TYPE) \
+//        case AttributeUnderlyingType::TYPE: \
+//            func(DictionaryAttributeType<AttributeUnderlyingType::TYPE>()); \
+//            break;
+//    FOR_ATTRIBUTE_TYPES(M)
+//#undef M
+//    }
 };
 
 struct DictionarySpecialAttribute final
@@ -157,7 +139,5 @@ private:
 
     /// parse range_min and range_max
     void parseRangeConfiguration(const Poco::Util::AbstractConfiguration & config, const std::string & structure_prefix);
-
 };
-
 }

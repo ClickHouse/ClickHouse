@@ -70,9 +70,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     bool found = false;
 
+    // If query is executed on single replica, we want to parse input like FLUSH DISTRIBUTED
+    // If query is executed on cluster, we also want to parse serialized input like FLUSH_DISTRIBUTED
     for (const auto & [entry, str] : magic_enum::enum_entries<Type>())
     {
-        if (ParserKeyword(UnderscoreToSpace(str)).ignore(pos, expected))
+        String underscore_to_space(str);
+        std::replace(underscore_to_space.begin(), underscore_to_space.end(), '_', ' ');
+
+        if (ParserKeyword(underscore_to_space).ignore(pos, expected) || ParserKeyword(str).ignore(pos, expected))
         {
             res->type = entry;
             found = true;
