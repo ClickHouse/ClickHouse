@@ -147,7 +147,6 @@ void MergeTreeBackgroundExecutor::routine(ItemPtr item)
 
     auto erase_from_active = [&]
     {
-        DENY_ALLOCATIONS_IN_SCOPE;
         active.erase(std::remove(active.begin(), active.end(), item), active.end());
     };
 
@@ -155,7 +154,6 @@ void MergeTreeBackgroundExecutor::routine(ItemPtr item)
     {
         if (item->task->execute())
         {
-            DENY_ALLOCATIONS_IN_SCOPE;
             std::lock_guard guard(mutex);
 
             if (currently_deleting.contains(item->task->getStorageID()))
