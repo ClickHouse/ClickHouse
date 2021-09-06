@@ -1132,7 +1132,7 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
-        attachInformationSchemaLocal(*database_catalog.getInformationSchemaDatabase());
+        attachInformationSchema(global_context, *database_catalog.getInformationSchemaDatabase());
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         database_catalog.loadDatabases();

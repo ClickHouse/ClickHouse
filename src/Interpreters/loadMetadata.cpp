@@ -171,32 +171,30 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     }
 }
 
-
-void loadMetadataSystem(ContextMutablePtr context)
+static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
 {
-    String path = context->getPath() + "metadata/" + DatabaseCatalog::SYSTEM_DATABASE;
+    String path = context->getPath() + "metadata/" + database_name;
     String metadata_file = path + ".sql";
     if (fs::exists(fs::path(path)) || fs::exists(fs::path(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        loadDatabase(context, DatabaseCatalog::SYSTEM_DATABASE, path, true);
+        loadDatabase(context, database_name, path, true);
     }
     else
     {
         /// Initialize system database manually
         String database_create_query = "CREATE DATABASE ";
-        database_create_query += DatabaseCatalog::SYSTEM_DATABASE;
-        database_create_query += " ENGINE=Atomic";
-        executeCreateQuery(database_create_query, context, DatabaseCatalog::SYSTEM_DATABASE, "<no file>", true);
+        database_create_query += database_name;
+        database_create_query += " ENGINE=";
+        database_create_query += default_engine;
+        executeCreateQuery(database_create_query, context, database_name, "<no file>", true);
     }
+}
 
-    // Loading information schema database
-    {
-        String database_create_query = "CREATE DATABASE ";
-        database_create_query += DatabaseCatalog::INFORMATION_SCHEMA_DATABASE;
-        database_create_query += " ENGINE=Memory";
-        executeCreateQuery(database_create_query, context, DatabaseCatalog::INFORMATION_SCHEMA_DATABASE, "<no file>", false);
-    }
+void loadMetadataSystem(ContextMutablePtr context)
+{
+    loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
+    loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA_DATABASE, "Memory");
 }
 
 }

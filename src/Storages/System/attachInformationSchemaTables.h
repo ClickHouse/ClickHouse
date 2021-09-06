@@ -10,6 +10,6 @@ class Context;
 class AsynchronousMetrics;
 class IDatabase;
 
-void attachInformationSchemaLocal(IDatabase & information_schema_database);
+void attachInformationSchema(ContextMutablePtr context, IDatabase & information_schema_database);
 
 }

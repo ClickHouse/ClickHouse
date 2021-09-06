@@ -41,7 +41,16 @@ list (APPEND storages_system_sources ${GENERATED_TIMEZONES_SRC})
 # Overlength strings
 set_source_files_properties(${GENERATED_LICENSES_SRC} PROPERTIES COMPILE_FLAGS -w)
 
+clickhouse_embed_binaries(
+        TARGET information_schema_metadata
+        RESOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/InformationSchema/"
+        RESOURCES schemata.sql tables.sql views.sql columns.sql
+)
+
 add_library(clickhouse_storages_system ${storages_system_headers} ${storages_system_sources})
+
+add_dependencies(clickhouse_storages_system information_schema_metadata)
+
 target_link_libraries(clickhouse_storages_system PRIVATE
     dbms
     common
@@ -49,4 +58,5 @@ target_link_libraries(clickhouse_storages_system PRIVATE
     clickhouse_common_zookeeper
     clickhouse_parsers
     Poco::JSON
+    INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:information_schema_metadata> -Wl,${NO_WHOLE_ARCHIVE}"
 )
