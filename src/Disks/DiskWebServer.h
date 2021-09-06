@@ -75,11 +75,9 @@ public:
         String name;
         size_t size;
         File(const String & name_ = "", const size_t size_ = 0) : name(name_), size(size_) {}
-        bool operator<(const File & other) const { return name < other.name; }
-        bool operator==(const File & other) const { return name == other.name; }
     };
 
-    using Directory = std::set<File>;
+    using Directory = std::unordered_map<String, size_t>;
 
     /* Each root directory contains either directories like
      * all_x_x_x/{file}, detached/, etc, or root files like format_version.txt.
@@ -96,10 +94,14 @@ public:
         /// Fetch meta only when required.
         mutable TableDirectories tables_data;
 
-        Metadata() {}
+        Metadata() = default;
 
         void initialize(const String & uri_with_path, const String & files_prefix, const String & uuid, ContextPtr context) const;
     };
+
+    using UUIDDirectoryListing = std::unordered_map<String, RootDirectory>;
+    using RootDirectoryListing = std::unordered_map<String, Directory>;
+    using DirectoryListing = std::unordered_map<String, size_t>;
 
     bool findFileInMetadata(const String & path, File & file_info) const;
 

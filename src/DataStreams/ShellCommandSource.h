@@ -3,8 +3,11 @@
 #include <memory>
 
 #include <common/logger_useful.h>
+#include <common/BorrowedObjectPool.h>
+
 #include <Common/ShellCommand.h>
 #include <Common/ThreadPool.h>
+
 #include <IO/ReadHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/ISimpleTransform.h>
@@ -17,44 +20,85 @@
 namespace DB
 {
 
-/** A stream, that runs child process and sends data to its stdin in background thread,
-  * and receives data from its stdout.
+/** A stream, that get child process and sends data using tasks in background threads.
+  * For each send data task background thread is created. Send data task must send data to process input pipes.
+  * ShellCommandPoolSource receives data from process stdout.
+  *
+  * If process_pool is passed in constructor then after source is destroyed process is returned to pool.
   */
+
+using ProcessPool = BorrowedObjectPool<std::unique_ptr<ShellCommand>>;
+
+struct ShellCommandSourceConfiguration
+{
+    /// Read fixed number of rows from command output
+    bool read_fixed_number_of_rows = false;
+    /// Valid only if read_fixed_number_of_rows = true
+    bool read_number_of_rows_from_process_output = false;
+    /// Valid only if read_fixed_number_of_rows = true
+    size_t number_of_rows_to_read = 0;
+    /// Max block size
+    size_t max_block_size = DBMS_DEFAULT_BUFFER_SIZE;
+};
+
 class ShellCommandSource final : public SourceWithProgress
 {
 public:
-    using SendDataTask = std::function<void (void)>;
+
+    using SendDataTask = std::function<void(void)>;
 
     ShellCommandSource(
         ContextPtr context,
         const std::string & format,
         const Block & sample_block,
-        std::unique_ptr<ShellCommand> command_,
+        std::unique_ptr<ShellCommand> && command_,
         Poco::Logger * log_,
-        std::vector<SendDataTask> && send_data_tasks,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE)
+        std::vector<SendDataTask> && send_data_tasks = {},
+        const ShellCommandSourceConfiguration & configuration_ = {},
+        std::shared_ptr<ProcessPool> process_pool_ = nullptr)
         : SourceWithProgress(sample_block)
         , command(std::move(command_))
+        , configuration(configuration_)
         , log(log_)
+        , process_pool(process_pool_)
     {
         for (auto && send_data_task : send_data_tasks)
-            send_data_threads.emplace_back([task = std::move(send_data_task)]() { task(); });
+        {
+            send_data_threads.emplace_back([task = std::move(send_data_task), this]()
+            {
+                try
+                {
+                    task();
+                }
+                catch (...)
+                {
+                    std::lock_guard<std::mutex> lock(send_data_lock);
+                    exception_during_send_data = std::current_exception();
+                }
+            });
+        }
 
-        pipeline.init(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, max_block_size)));
-        executor = std::make_unique<PullingPipelineExecutor>(pipeline);
-    }
+        size_t max_block_size = configuration.max_block_size;
 
-    ShellCommandSource(
-        ContextPtr context,
-        const std::string & format,
-        const Block & sample_block,
-        std::unique_ptr<ShellCommand> command_,
-        Poco::Logger * log_,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE)
-        : SourceWithProgress(sample_block)
-        , command(std::move(command_))
-        , log(log_)
-    {
+        if (configuration.read_fixed_number_of_rows)
+        {
+            /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
+              * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
+              */
+            auto context_for_reading = Context::createCopy(context);
+            context_for_reading->setSetting("input_format_parallel_parsing", false);
+            context = context_for_reading;
+
+            if (configuration.read_number_of_rows_from_process_output)
+            {
+                readText(configuration.number_of_rows_to_read, command->out);
+                char dummy;
+                readChar(dummy, command->out);
+            }
+
+            max_block_size = configuration.number_of_rows_to_read;
+        }
+
         pipeline.init(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, max_block_size)));
         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
     }
@@ -64,33 +108,50 @@ public:
         for (auto & thread : send_data_threads)
             if (thread.joinable())
                 thread.join();
+
+        if (command && process_pool)
+            process_pool->returnObject(std::move(command));
     }
 
 protected:
+
     Chunk generate() override
     {
+        rethrowExceptionDuringSendDataIfNeeded();
+
+        if (configuration.read_fixed_number_of_rows && configuration.number_of_rows_to_read == current_read_rows)
+            return {};
+
         Chunk chunk;
-        executor->pull(chunk);
+
+        try
+        {
+            if (!executor->pull(chunk))
+                return {};
+
+            current_read_rows += chunk.getNumRows();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            command = nullptr;
+            throw;
+        }
+
         return chunk;
     }
 
-public:
     Status prepare() override
     {
         auto status = SourceWithProgress::prepare();
 
         if (status == Status::Finished)
         {
-            std::string err;
-            readStringUntilEOF(err, command->err);
-            if (!err.empty())
-                LOG_ERROR(log, "Having stderr: {}", err);
-
             for (auto & thread : send_data_threads)
                 if (thread.joinable())
                     thread.join();
 
-            command->wait();
+            rethrowExceptionDuringSendDataIfNeeded();
         }
 
         return status;
@@ -100,11 +161,30 @@ public:
 
 private:
 
+    void rethrowExceptionDuringSendDataIfNeeded()
+    {
+        std::lock_guard<std::mutex> lock(send_data_lock);
+        if (exception_during_send_data)
+        {
+            command = nullptr;
+            std::rethrow_exception(exception_during_send_data);
+        }
+    }
+
+    std::unique_ptr<ShellCommand> command;
+    ShellCommandSourceConfiguration configuration;
+
+    size_t current_read_rows = 0;
+
+    Poco::Logger * log;
+
+    std::shared_ptr<ProcessPool> process_pool;
+
     QueryPipeline pipeline;
     std::unique_ptr<PullingPipelineExecutor> executor;
-    std::unique_ptr<ShellCommand> command;
-    std::vector<ThreadFromGlobalPool> send_data_threads;
-    Poco::Logger * log;
-};
 
+    std::vector<ThreadFromGlobalPool> send_data_threads;
+    std::mutex send_data_lock;
+    std::exception_ptr exception_during_send_data;
+};
 }
