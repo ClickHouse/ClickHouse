@@ -23,7 +23,7 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0,
-        const std::string & file_name_ = "");
+        std::string file_name_ = "");
 
     /** Could be used before initialization if needed 'fd' was not passed to constructor.
       * It's not possible to change 'fd' during work.
@@ -48,11 +48,7 @@ public:
     void truncate(off_t length); // NOLINT
 
     /// Name or some description of file.
-    std::string getFileName() const override
-    {
-        return file_name;
-    }
-
+    std::string getFileName() const override;
 
     off_t size() const;
 };
