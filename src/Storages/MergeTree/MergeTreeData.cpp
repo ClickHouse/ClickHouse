@@ -200,8 +200,8 @@ MergeTreeData::MergeTreeData(
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
     , data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
     , parts_mover(this)
-    , background_executor(*this, BackgroundJobAssignee::Type::DataProcessing, getContext())
-    , background_moves_executor(*this, BackgroundJobAssignee::Type::Moving, getContext())
+    , background_executor(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
+    , background_moves_executor(*this, BackgroundJobsAssignee::Type::Moving, getContext())
 {
     const auto settings = getSettings();
     allow_nullable_key = attach || settings->allow_nullable_key;
@@ -5029,7 +5029,7 @@ MergeTreeData::CurrentlyMovingPartsTagger::~CurrentlyMovingPartsTagger()
     }
 }
 
-bool MergeTreeData::scheduleDataMovingJob(BackgroundJobAssignee & executor)
+bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & executor)
 {
     if (parts_mover.moves_blocker.isCancelled())
         return false;

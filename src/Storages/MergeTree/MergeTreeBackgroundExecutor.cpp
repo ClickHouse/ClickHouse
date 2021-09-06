@@ -1,7 +1,7 @@
-#include <Storages/MergeTree/MergeMutateExecutor.h>
+#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
 #include <Common/setThreadName.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 
 namespace DB
@@ -57,7 +57,7 @@ void MergeTreeBackgroundExecutor::wait()
     if (scheduler.joinable())
         scheduler.join();
 
-    pool.wait();
+    /// ThreadPool will be finalized in destructor.
 }
 
 
@@ -115,7 +115,7 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
 
         /// Erase storage related tasks from pending and select active tasks to wait for
         auto it = std::remove_if(pending.begin(), pending.end(),
-            [&] (auto item) -> bool { return item->task->getStorageID() == id; } );
+            [&] (auto item) -> bool { return item->task->getStorageID() == id; });
         pending.erase(it, pending.end());
 
         /// Copy items to wait for their completion
@@ -179,7 +179,7 @@ void MergeTreeBackgroundExecutor::routine(ItemPtr item)
         /// But it is rather safe, because we have try...catch block here, and another one in ThreadPool.
         item->task->onCompleted();
     }
-    catch(...)
+    catch (...)
     {
         std::lock_guard guard(mutex);
         erase_from_active();
