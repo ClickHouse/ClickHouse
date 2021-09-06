@@ -109,9 +109,10 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 }
 
 
-void DatabaseMaterializedPostgreSQL::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseMaterializedPostgreSQL::loadStoredObjects(
+    ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables)
 {
-    DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
+    DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach, skip_startup_tables);
 
     try
     {
@@ -124,7 +125,6 @@ void DatabaseMaterializedPostgreSQL::loadStoredObjects(ContextMutablePtr local_c
         if (!force_attach)
             throw;
     }
-
 }
 
 

@@ -1,74 +1,30 @@
 #include "ExecutableDictionarySource.h"
 
-#include <functional>
-#include <common/scope_guard.h>
-#include <DataStreams/OwningBlockInputStream.h>
-#include <DataStreams/formatBlock.h>
-#include <Processors/ISimpleTransform.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Interpreters/Context.h>
-#include <Formats/FormatFactory.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <Common/ShellCommand.h>
-#include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
 #include <common/LocalDateTime.h>
-#include "DictionarySourceFactory.h"
-#include "DictionarySourceHelpers.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
+#include <Common/ShellCommand.h>
+
+#include <DataStreams/ShellCommandSource.h>
+#include <DataStreams/formatBlock.h>
+
+#include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
 
 
 namespace DB
 {
-
-static const UInt64 max_block_size = 8192;
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
-}
-
-namespace
-{
-    /// Owns ShellCommand and calls wait for it.
-    class ShellCommandOwningTransform final : public ISimpleTransform
-    {
-    private:
-        Poco::Logger * log;
-        std::unique_ptr<ShellCommand> command;
-    public:
-        ShellCommandOwningTransform(const Block & header, Poco::Logger * log_, std::unique_ptr<ShellCommand> command_)
-            : ISimpleTransform(header, header, true), log(log_), command(std::move(command_))
-        {
-        }
-
-        String getName() const override { return "ShellCommandOwningTransform"; }
-        void transform(Chunk &) override {}
-
-        Status prepare() override
-        {
-            auto status = ISimpleTransform::prepare();
-            if (status == Status::Finished)
-            {
-                std::string err;
-                readStringUntilEOF(err, command->err);
-                if (!err.empty())
-                    LOG_ERROR(log, "Having stderr: {}", err);
-
-                command->wait();
-            }
-
-            return status;
-        }
-    };
-
 }
 
 ExecutableDictionarySource::ExecutableDictionarySource(
@@ -112,9 +68,11 @@ Pipe ExecutableDictionarySource::loadAll()
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
 
     LOG_TRACE(log, "loadAll {}", toString());
-    auto process = ShellCommand::execute(configuration.command);
-    Pipe pipe(FormatFactory::instance().getInput(configuration.format, process->out, sample_block, context, max_block_size));
-    pipe.addTransform(std::make_shared<ShellCommandOwningTransform>(pipe.getHeader(), log, std::move(process)));
+
+    ShellCommand::Config config(configuration.command);
+    auto process = ShellCommand::execute(config);
+
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log));
     return pipe;
 }
 
@@ -131,84 +89,10 @@ Pipe ExecutableDictionarySource::loadUpdatedAll()
         command_with_update_field += " " + configuration.update_field + " " + DB::toString(LocalDateTime(update_time - configuration.update_lag));
 
     LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
-    auto process = ShellCommand::execute(command_with_update_field);
-
-    Pipe pipe(FormatFactory::instance().getInput(configuration.format, process->out, sample_block, context, max_block_size));
-    pipe.addTransform(std::make_shared<ShellCommandOwningTransform>(pipe.getHeader(), log, std::move(process)));
+    ShellCommand::Config config(command_with_update_field);
+    auto process = ShellCommand::execute(config);
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log));
     return pipe;
-}
-
-namespace
-{
-    /** A stream, that runs child process and sends data to its stdin in background thread,
-      *  and receives data from its stdout.
-      *
-      *  TODO: implement without background thread.
-      */
-    class SourceWithBackgroundThread final : public SourceWithProgress
-    {
-    public:
-        SourceWithBackgroundThread(
-            ContextPtr context,
-            const std::string & format,
-            const Block & sample_block,
-            const std::string & command_str,
-            Poco::Logger * log_,
-            std::function<void(WriteBufferFromFile &)> && send_data_)
-            : SourceWithProgress(sample_block)
-            , log(log_)
-            , command(ShellCommand::execute(command_str))
-            , send_data(std::move(send_data_))
-            , thread([this] { send_data(command->in); })
-        {
-            pipeline.init(Pipe(FormatFactory::instance().getInput(format, command->out, sample_block, context, max_block_size)));
-            executor = std::make_unique<PullingPipelineExecutor>(pipeline);
-        }
-
-        ~SourceWithBackgroundThread() override
-        {
-            if (thread.joinable())
-                thread.join();
-        }
-
-    protected:
-        Chunk generate() override
-        {
-            Chunk chunk;
-            executor->pull(chunk);
-            return chunk;
-        }
-
-    public:
-        Status prepare() override
-        {
-            auto status = SourceWithProgress::prepare();
-
-            if (status == Status::Finished)
-            {
-                std::string err;
-                readStringUntilEOF(err, command->err);
-                if (!err.empty())
-                    LOG_ERROR(log, "Having stderr: {}", err);
-
-                if (thread.joinable())
-                    thread.join();
-
-                command->wait();
-            }
-
-            return status;
-        }
-
-        String getName() const override { return "SourceWithBackgroundThread"; }
-
-        Poco::Logger * log;
-        QueryPipeline pipeline;
-        std::unique_ptr<PullingPipelineExecutor> executor;
-        std::unique_ptr<ShellCommand> command;
-        std::function<void(WriteBufferFromFile &)> send_data;
-        ThreadFromGlobalPool thread;
-    };
 }
 
 Pipe ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -229,14 +113,20 @@ Pipe ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std
 
 Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
 {
-    Pipe pipe(std::make_unique<SourceWithBackgroundThread>(
-        context, configuration.format, sample_block, configuration.command, log,
-        [block, this](WriteBufferFromFile & out) mutable
-        {
-            auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
-            formatBlock(output_stream, block);
-            out.close();
-        }));
+    ShellCommand::Config config(configuration.command);
+    auto process = ShellCommand::execute(config);
+    auto * process_in = &process->in;
+
+    ShellCommandSource::SendDataTask task = {[process_in, block, this]()
+    {
+        auto & out = *process_in;
+        auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
+        formatBlock(output_stream, block);
+        out.close();
+    }};
+    std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
+
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log, std::move(tasks)));
 
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));

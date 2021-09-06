@@ -22,9 +22,9 @@ NamesAndTypesList StorageSystemViews::getNamesAndTypes()
     return {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
-        {"table_database", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
-        {"type", std::move(view_type_datatype)},
+        {"main_dependency_database", std::make_shared<DataTypeString>()},
+        {"main_dependency_table", std::make_shared<DataTypeString>()},
+        {"view_type", std::move(view_type_datatype)},
     };
 }
 
