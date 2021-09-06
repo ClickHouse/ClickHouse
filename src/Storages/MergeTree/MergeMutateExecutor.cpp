@@ -207,15 +207,19 @@ void MergeTreeBackgroundExecutor::schedulerThreadFunction()
         ItemPtr item = std::move(pending.front());
         pending.pop_front();
 
-        /// Execute a piece of task
-        bool res = pool.trySchedule([this, item]
+        bool res = false;
         {
-            routine(item);
-            /// When storage shutdowns it will wait until all related background tasks
-            /// are finished, because they may want to interact with its fields
-            /// and this will cause segfault.
-            item->is_done.set();
-        });
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            /// Execute a piece of task
+            res = pool.trySchedule([this, item]
+            {
+                routine(item);
+                /// When storage shutdowns it will wait until all related background tasks
+                /// are finished, because they may want to interact with its fields
+                /// and this will cause segfault.
+                item->is_done.set();
+            });
+        }
 
         if (!res)
         {
