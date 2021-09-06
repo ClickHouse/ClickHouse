@@ -1,6 +1,9 @@
 #include <any>
+#include <cstddef>
 #include <limits>
 #include <numeric>
+#include <unordered_map>
+#include <vector>
 
 #include <common/logger_useful.h>
 
@@ -25,8 +28,12 @@
 #include <DataStreams/materializeBlock.h>
 
 #include <Core/ColumnNumbers.h>
+#include <fmt/core.h>
+#include <fmt/format.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include "Columns/IColumn.h"
+#include "Interpreters/IJoin.h"
 
 namespace DB
 {
@@ -228,11 +235,16 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     return std::move(column);
 }
 
-static std::string formatKeysDebug(const NamesVector & key_names)
+static std::string formatKeysDebug(const std::vector<TableJoin::JoinOnClause> & caluses)
 {
     std::vector<std::string> res;
-    for (const auto & keys : key_names)
-        res.emplace_back(fmt::format("{}", fmt::join(keys, ", ")));
+    for (const auto & clause : caluses)
+    {
+        std::vector<std::string> current;
+        for (size_t i = 0; i < clause.keysCount(); ++i)
+            current.emplace_back(fmt::format("{} == {}", clause.key_names_left[i], clause.key_names_right[i]));
+        res.emplace_back(fmt::format("{}", fmt::join(current, ", ")));
+    }
     return fmt::format("{}", fmt::join(res, " | "));
 }
 
@@ -240,8 +252,6 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
-    , key_names_right(table_join->keyNamesRight())
-    , key_names_left(table_join->keyNamesLeft())
     , nullable_right_side(table_join->forceNullableRight())
     , nullable_left_side(table_join->forceNullableLeft())
     , any_take_last_row(any_take_last_row_)
@@ -251,10 +261,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , log(&Poco::Logger::get("HashJoin"))
 {
     LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
-    const size_t disjuncts_num = key_names_right.size();
-    const bool multiple_disjuncts = disjuncts_num > 1;
-
-    if (multiple_disjuncts)
+    if (!table_join->oneDisjunct())
     {
         /// required right keys concept does not work well if multiple disjuncts,
         /// we need all keys
@@ -262,55 +269,50 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     }
     else
     {
+        const auto & key_names_right = table_join->getOnlyClause().key_names_right;
         JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, sample_block_with_columns_to_add);
         required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
     }
 
-    LOG_DEBUG(log, "Right keys: [{}] (required: [{}]), left keys: [{}]",
-              formatKeysDebug(key_names_right),
-              fmt::join(required_right_keys.getNames(), ", "),
-              formatKeysDebug(key_names_left));
+    LOG_DEBUG(log, "Join keys: [{}], required right: [{}])", formatKeysDebug(table_join->getClauses()), fmt::join(required_right_keys.getNames(), ", "));
 
     LOG_DEBUG(log, "Columns to add: [{}]", sample_block_with_columns_to_add.dumpStructure());
 
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
-    key_sizes.resize(key_names_right.size());
-
-    Type join_method = Type::EMPTY;
 
     initRightBlockStructure(data->sample_block);
 
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
 
-    if (table_join->getDictionaryReader())
-    {
-        data->maps.resize(disjuncts_num);
-    }
-    condition_mask_column_name_left.resize(disjuncts_num);
-    condition_mask_column_name_right.resize(disjuncts_num);
-
     if (nullable_right_side)
-    {
         JoinCommon::convertColumnsToNullable(sample_block_with_columns_to_add);
-    }
 
-    for (size_t d = 0; d < disjuncts_num; ++d)
+
+    size_t disjuncts_num = table_join->getClauses().size();
+    data->maps.reserve(disjuncts_num);
+    key_sizes.reserve(disjuncts_num);
+
+    for (const auto & clause : table_join->getClauses())
     {
-        std::tie(condition_mask_column_name_left[d], condition_mask_column_name_right[d]) = table_join->joinConditionColumnNames(d);
-        ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right[d]);
+        const auto & key_names_right = clause.key_names_right;
+        ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right);
 
         if (table_join->dictionary_reader)
         {
+            assert(disjuncts_num == 1);
             LOG_DEBUG(log, "Performing join over dict");
-            join_method = Type::DICT;
+            data->type = Type::DICT;
 
-            std::get<MapsOne>(data->maps[d]).create(Type::DICT);
-            chooseMethod(key_columns, key_sizes[d]); /// init key_sizes
-            continue; // break ?
+            data->maps.resize(disjuncts_num);
+            std::get<MapsOne>(data->maps[0]).create(Type::DICT);
+            key_sizes.resize(1);
+            chooseMethod(key_columns, key_sizes[0]); /// init key_sizes
         }
         else if (strictness == ASTTableJoin::Strictness::Asof)
         {
+            assert(disjuncts_num == 1);
+
             /// @note ASOF JOIN is not INNER. It's better avoid use of 'INNER ASOF' combination in messages.
             /// In fact INNER means 'LEFT SEMI ASOF' while LEFT means 'LEFT OUTER ASOF'.
             if (!isLeft(kind) && !isInner(kind))
@@ -319,7 +321,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
             if (key_columns.size() <= 1)
                 throw Exception("ASOF join needs at least one equi-join column", ErrorCodes::SYNTAX_ERROR);
 
-            if (right_table_keys.getByName(key_names_right[0].back()).type->isNullable())
+            if (right_table_keys.getByName(key_names_right.back()).type->isNullable())
                 throw Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
 
             size_t asof_size;
@@ -330,34 +332,22 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
             /// However, this does not depend on the size of the asof join key (as that goes into the BST)
             /// Therefore, add it back in such that it can be extracted appropriately from the full stored
             /// key_columns and key_sizes
-            key_sizes[d].push_back(asof_size);
+            key_sizes.resize(1);
+            key_sizes[0].push_back(asof_size);
         }
         else
         {
             /// Choose data structure to use for JOIN.
-        }
-
-        auto current_join_method = chooseMethod(key_columns, key_sizes[d]);
-        if (join_method == Type::EMPTY)
-        {
-            join_method = current_join_method;
-        }
-        else if (join_method != current_join_method)
-        {
-            join_method = Type::hashed;
+            auto current_join_method = chooseMethod(key_columns, key_sizes.emplace_back());
+            if (data->type == Type::EMPTY)
+                data->type = current_join_method;
+            else if (data->type != current_join_method)
+                data->type = Type::hashed;
         }
     }
 
-    data->type = join_method;
-    if (join_method != Type::DICT)
-    {
-        data->maps.resize(key_names_right.size());
-
-        for (size_t d = 0; d < disjuncts_num; ++d)
-        {
-            data_map_init(data->maps[d]);
-        }
-    }
+    for (auto & maps : data->maps)
+        dataMapInit(maps);
 }
 
 HashJoin::Type HashJoin::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes)
@@ -453,7 +443,7 @@ public:
                 JoinCommon::convertColumnToNullable(column);
     }
 
-    FindResult findKey(const TableJoin & /* void * */, size_t row, const Arena &)
+    FindResult findKey(const TableJoin &, size_t row, const Arena &)
     {
         result.block = &read_result;
         result.row_num = positions[row];
@@ -518,8 +508,10 @@ struct KeyGetterForType
     using Type = typename KeyGetterForTypeImpl<type, Value, Mapped>::Type;
 };
 
-void HashJoin::data_map_init(MapsVariant & map)
+void HashJoin::dataMapInit(MapsVariant & map)
 {
+    if (data->type == Type::DICT)
+        return;
     if (kind == ASTTableJoin::Kind::Cross)
         return;
     joinDispatchInit(kind, strictness, map);
@@ -650,13 +642,9 @@ namespace
             if constexpr (is_asof_join)
                 Inserter<Map, KeyGetter>::insertAsof(join, map, key_getter, stored_block, i, pool, *asof_column);
             else if constexpr (mapped_one)
-            {
                 Inserter<Map, KeyGetter>::insertOne(join, map, key_getter, stored_block, i, pool);
-            }
             else
-            {
                 Inserter<Map, KeyGetter>::insertAll(join, map, key_getter, stored_block, i, pool);
-            }
         }
         return map.getBufferSizeInCells();
     }
@@ -701,7 +689,7 @@ namespace
 
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 {
-    bool multiple_disjuncts = key_names_right.size() > 1;
+    bool multiple_disjuncts = !table_join->oneDisjunct();
     /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
     bool save_key_columns = !table_join->forceHashJoin() || isRightOrFull(kind) || multiple_disjuncts;
     if (save_key_columns)
@@ -760,47 +748,17 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     Block block = materializeBlock(source_block);
     size_t rows = block.rows();
 
-    size_t total_rows = 0;
-    size_t total_bytes = 0;
-
-    // Collect all keys in all_key_names_right
-    //  and lists of indexes in this vector for all disjuncts
-    Names all_key_names_right = key_names_right.front();
-    const size_t disjuncts_num = key_names_right.size();
-    std::vector<std::vector<size_t>> key_names_right_indexes(disjuncts_num);
-    key_names_right_indexes[0].resize(all_key_names_right.size());
-    std::iota(std::begin(key_names_right_indexes[0]), std::end(key_names_right_indexes[0]), 0);
-
-    for (size_t d = 1; d < disjuncts_num; ++d)
+    ColumnRawPtrMap all_key_columns;
     {
-        for (size_t i = 0; i < key_names_right[d].size(); ++i)
-        {
-            auto it = std::find(std::cbegin(all_key_names_right), std::cend(all_key_names_right), key_names_right[d][i]);
-            if (it == std::cend(all_key_names_right))
-            {
-                key_names_right_indexes[d].push_back(all_key_names_right.size());
-                all_key_names_right.push_back(key_names_right[d][i]);
-            }
-            else
-            {
-                key_names_right_indexes[d].push_back(std::distance(std::cbegin(all_key_names_right), it));
-            }
-        }
+        Names all_key_names_right;
+        for (const auto & clause : table_join->getClauses())
+            all_key_names_right.insert(all_key_names_right.end(), clause.key_names_right.begin(), clause.key_names_right.end());
+        all_key_columns = JoinCommon::materializeColumnsInplaceMap(block, all_key_names_right);
     }
 
-    ColumnRawPtrs all_key_columns = JoinCommon::materializeColumnsInplace(block, all_key_names_right);
-
     Block structured_block = structureRightBlock(block);
-    bool multiple_disjuncts = disjuncts_num > 1;
-
-    std::vector<ColumnPtr> join_mask_col_vector(disjuncts_num);
-    for (size_t d = 0; d < disjuncts_num; ++d)
-        join_mask_col_vector[d] = JoinCommon::getColumnAsMask(block, condition_mask_column_name_right[d]);
-
-
-    std::vector<ConstNullMapPtr> null_map_vector;
-    Columns null_map_holder_vector;
-
+    size_t total_rows = 0;
+    size_t total_bytes = 0;
     {
         if (storage_join_lock.mutex())
             throw DB::Exception("addJoinedBlock called when HashJoin locked to prevent updates",
@@ -812,66 +770,33 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         if (rows)
             data->empty = false;
 
-        bool save_a_nullmap = false;
-
-        for (size_t d = 0; d < disjuncts_num; ++d)
+        bool multiple_disjuncts = !table_join->oneDisjunct();
+        const auto & onexprs = table_join->getClauses();
+        for (size_t onexpr_idx = 0; onexpr_idx < onexprs.size(); ++onexpr_idx)
         {
-            ColumnRawPtrs key_columns(key_names_right_indexes[d].size());
-            std::transform(std::cbegin(key_names_right_indexes[d]),
-                           std::cend(key_names_right_indexes[d]),
-                           std::begin(key_columns),
-                           [&all_key_columns](size_t i){ return all_key_columns[i]; });
+            ColumnRawPtrs key_columns;
+            for (const auto & name : onexprs[onexpr_idx].key_names_right)
+                key_columns.push_back(all_key_columns[name]);
 
             /// We will insert to the map only keys, where all components are not NULL.
+            ConstNullMapPtr null_map{};
+            ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-            null_map_vector.emplace_back();
-            null_map_holder_vector.push_back(extractNestedColumnsAndNullMap(key_columns, null_map_vector.back()));
-
-
-            /// If RIGHT or FULL save blocks with nulls for NonJoinedBlockInputStream
+            /// If RIGHT or FULL save blocks with nulls for NotJoinedBlocks
             UInt8 save_nullmap = 0;
-            if (isRightOrFull(kind) && null_map_vector.back())
+            if (isRightOrFull(kind) && null_map)
             {
-                for (size_t i = 0; !save_nullmap && i < null_map_vector.back()->size(); ++i)
-                    save_nullmap |= (*null_map_vector.back())[i];
+                /// Save rows with NULL keys
+                for (size_t i = 0; !save_nullmap && i < null_map->size(); ++i)
+                    save_nullmap |= (*null_map)[i];
             }
-            save_a_nullmap |= save_nullmap;
 
-            {
-                if (kind != ASTTableJoin::Kind::Cross)
-                {
-                    joinDispatch(kind, strictness, data->maps[d], [&](auto kind_, auto strictness_, auto & map)
-                    {
-                        size_t size = insertFromBlockImpl<strictness_>(
-                            *this, data->type, map, rows, key_columns, key_sizes[d], stored_block, null_map_vector.back(),
-                            join_mask_col_vector[d] ? &assert_cast<const ColumnUInt8 &>(*join_mask_col_vector[d]).getData() : nullptr,
-                            data->pool);
-
-                        if (multiple_disjuncts)
-                            used_flags.reinit<kind_, strictness_>(stored_block);
-                        else
-                            /// Number of buckets + 1 value from zero storage
-                            used_flags.reinit<kind_, strictness_>(size + 1);
-                    });
-                }
-
-                if (!check_limits)
-                    return true;
-
-                /// TODO: Do not calculate them every time
-                total_rows = getTotalRowCount();
-                total_bytes = getTotalByteCount();
-            }
-        }
-
-
-        if (!multiple_disjuncts)
-        {
+            auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
-            if (isRightOrFull(kind) && join_mask_col_vector[0])
+            if (!multiple_disjuncts && isRightOrFull(kind) && join_mask_col)
             {
-                const auto & join_mask = assert_cast<const ColumnUInt8 &>(*join_mask_col_vector[0]).getData();
+                const auto & join_mask = assert_cast<const ColumnUInt8 &>(*join_mask_col).getData();
                 /// Save rows that do not hold conditions
                 not_joined_map = ColumnUInt8::create(block.rows(), 0);
                 for (size_t i = 0, sz = join_mask.size(); i < sz; ++i)
@@ -881,25 +806,87 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
                         continue;
 
                     /// NULL key will be saved anyway because, do not save twice
-                    if (save_a_nullmap && (*null_map_vector[0])[i])
+                    if (save_nullmap && (*null_map)[i])
                         continue;
 
                     not_joined_map->getData()[i] = 1;
                 }
             }
 
-            if (save_a_nullmap)
-                data->blocks_nullmaps.emplace_back(stored_block, null_map_holder_vector[0]);
-            if (not_joined_map)
+            if (kind != ASTTableJoin::Kind::Cross)
+            {
+                joinDispatch(kind, strictness, data->maps[onexpr_idx], [&](auto kind_, auto strictness_, auto & map)
+                {
+                    size_t size = insertFromBlockImpl<strictness_>(
+                        *this, data->type, map, rows, key_columns, key_sizes[onexpr_idx], stored_block, null_map,
+                        join_mask_col ? &assert_cast<const ColumnUInt8 &>(*join_mask_col).getData() : nullptr,
+                        data->pool);
+
+                    if (multiple_disjuncts)
+                        used_flags.reinit<kind_, strictness_>(stored_block);
+                    else
+                        /// Number of buckets + 1 value from zero storage
+                        used_flags.reinit<kind_, strictness_>(size + 1);
+                });
+            }
+
+            if (!multiple_disjuncts && save_nullmap)
+                data->blocks_nullmaps.emplace_back(stored_block, null_map_holder);
+
+            if (!multiple_disjuncts && not_joined_map)
                 data->blocks_nullmaps.emplace_back(stored_block, std::move(not_joined_map));
+
+            if (!check_limits)
+                return true;
+
+            /// TODO: Do not calculate them every time
+            total_rows = getTotalRowCount();
+            total_bytes = getTotalByteCount();
         }
     }
 
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-using ColumnRawPtrsVector = std::vector<ColumnRawPtrs>;
-using SizesVector = std::vector<Sizes>;
+
+namespace
+{
+
+struct JoinOnKeyColumns
+{
+    const Names & key_names;
+
+    Columns materialized_keys_holder;
+    ColumnRawPtrs key_columns;
+
+    ColumnPtr null_map_holder;
+    ConstNullMapPtr null_map;
+
+    /// Only rows where mask == true can be joined
+    ColumnPtr join_mask_column;
+
+    Sizes key_sizes;
+
+
+    explicit JoinOnKeyColumns(const Block & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
+        : key_names(key_names_)
+        , materialized_keys_holder(JoinCommon::materializeColumns(block, key_names)) /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
+        , key_columns(JoinCommon::getRawPointers(materialized_keys_holder))
+        , null_map_holder(extractNestedColumnsAndNullMap(key_columns, null_map))
+        , join_mask_column(JoinCommon::getColumnAsMask(block, cond_column_name))
+        , key_sizes(key_sizes_)
+    {}
+
+    bool isRowFiltered(size_t i) const
+    {
+        if (join_mask_column)
+        {
+            UInt8ColumnDataPtr mask = &assert_cast<const ColumnUInt8 &>(*(join_mask_column)).getData();
+            return !(*mask)[i];
+        }
+        return false;
+    }
+};
 
 class AddedColumns
 {
@@ -921,17 +908,13 @@ public:
         const Block & block,
         const Block & saved_block_sample,
         const HashJoin & join,
-        const ColumnRawPtrsVector & key_columns_,
-        const SizesVector & key_sizes_,
-        const std::vector<ColumnPtr> & join_mask_column_,
+        std::vector<JoinOnKeyColumns> && join_on_keys_,
         bool is_asof_join,
         bool is_join_get_)
-        : key_columns(key_columns_)
-        , key_sizes(key_sizes_)
+        : join_on_keys(join_on_keys_)
         , rows_to_add(block.rows())
         , asof_type(join.getAsofType())
         , asof_inequality(join.getAsofInequality())
-        , join_mask_column(join_mask_column_)
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -954,9 +937,10 @@ public:
 
         if (is_asof_join)
         {
-            const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
+            assert(join_on_keys.size() == 1);
+            const auto & right_asof_column = join.savedBlockSample().getByName(join_on_keys[0].key_names.front());
             addColumn(right_asof_column, right_asof_column.name);
-            left_asof_key = key_columns.front().back();
+            left_asof_key = join_on_keys[0].key_columns.front();
         }
 
         for (auto & tn : type_name)
@@ -1016,24 +1000,10 @@ public:
     ASOF::Inequality asofInequality() const { return asof_inequality; }
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
-    bool isRowFiltered(size_t i, size_t d)
-    {
-        if (join_mask_column[d])
-        {
-
-            UInt8ColumnDataPtr jmc = &assert_cast<const ColumnUInt8 &>(*(join_mask_column[d])).getData();
-            return !(*jmc)[i];
-        }
-
-        return false;
-    }
-
-    const ColumnRawPtrsVector key_columns;
-    const SizesVector key_sizes;
+    std::vector<JoinOnKeyColumns> join_on_keys;
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
-    IColumn::Filter row_filter;
 
 private:
     std::vector<TypeAndName> type_name;
@@ -1044,7 +1014,6 @@ private:
     std::optional<TypeIndex> asof_type;
     ASOF::Inequality asof_inequality;
     const IColumn * left_asof_key = nullptr;
-    std::vector<ColumnPtr> join_mask_column;
     bool is_join_get;
 
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
@@ -1054,10 +1023,7 @@ private:
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 };
-using AddedColumnsV = std::vector<std::unique_ptr<AddedColumns>>;
 
-namespace
-{
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
 struct JoinFeatures
 {
@@ -1230,7 +1196,6 @@ NO_INLINE IColumn::Filter joinRightColumns(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
-    const std::vector<ConstNullMapPtr> & null_map [[maybe_unused]],
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
     constexpr JoinFeatures<KIND, STRICTNESS> jf;
@@ -1245,8 +1210,6 @@ NO_INLINE IColumn::Filter joinRightColumns(
     if constexpr (jf.need_replication)
         added_columns.offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
 
-    size_t disjunct_num = added_columns.key_columns.size();
-
     IColumn::Offset current_offset = 0;
 
     for (size_t i = 0; i < rows; ++i)
@@ -1255,21 +1218,21 @@ NO_INLINE IColumn::Filter joinRightColumns(
         bool null_element_found = false;
 
         KnownRowsHolder<multiple_disjuncts> known_rows;
-        size_t d = 0;
-        do
+        for (size_t onexpr_idx = 0; onexpr_idx < added_columns.join_on_keys.size(); ++onexpr_idx)
         {
+            const auto & join_keys = added_columns.join_on_keys[onexpr_idx];
             if constexpr (has_null_map)
             {
-                if (null_map[d] && (*null_map[d])[i])
+                if (join_keys.null_map && (*join_keys.null_map)[i])
                 {
                     null_element_found = true;
                     continue;
                 }
             }
 
-            bool row_acceptable = !added_columns.isRowFiltered(i, d);
+            bool row_acceptable = !join_keys.isRowFiltered(i);
             using FindResult = typename KeyGetter::FindResult;
-            auto find_result = row_acceptable ? key_getter_vector[d].findKey(*(mapv[d]), i, pool) : FindResult();
+            auto find_result = row_acceptable ? key_getter_vector[onexpr_idx].findKey(*(mapv[onexpr_idx]), i, pool) : FindResult();
 
             if (find_result.isFound())
             {
@@ -1346,7 +1309,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     }
                 }
             }
-        } while (multiple_disjuncts && ++d < disjunct_num);
+        }
 
         if constexpr (has_null_map)
         {
@@ -1356,7 +1319,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
 
                 if constexpr (jf.need_replication)
                 {
-                    (*added_columns.offsets_to_replicate)[i] = current_offset;
+                   (*added_columns.offsets_to_replicate)[i] = current_offset;
                 }
                 continue;
             }
@@ -1371,7 +1334,7 @@ NO_INLINE IColumn::Filter joinRightColumns(
 
         if constexpr (jf.need_replication)
         {
-            (*added_columns.offsets_to_replicate)[i] = current_offset;
+           (*added_columns.offsets_to_replicate)[i] = current_offset;
         }
     }
 
@@ -1384,44 +1347,43 @@ IColumn::Filter joinRightColumnsSwitchMultipleDisjuncts(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
-    const std::vector<ConstNullMapPtr> & null_map [[maybe_unused]],
     JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]])
 {
     return mapv.size() > 1
-        ? joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, true, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, null_map, used_flags)
-        : joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, true, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, null_map, used_flags);
+        ? joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, true, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags)
+        : joinRightColumns<KIND, STRICTNESS, KeyGetter, Map, true, true, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
 IColumn::Filter joinRightColumnsSwitchNullability(
     std::vector<KeyGetter> && key_getter_vector,
-    const std::vector<const Map *>/***/ & mapv,
+    const std::vector<const Map *> & mapv,
     AddedColumns & added_columns,
-    const std::vector<ConstNullMapPtr> & null_map,
     JoinStuff::JoinUsedFlags & used_flags)
 {
+    bool has_null_map = std::any_of(added_columns.join_on_keys.begin(), added_columns.join_on_keys.end(),
+                                    [](const auto & k) { return k.null_map; });
     if (added_columns.need_filter)
     {
-        if (!null_map.empty())
-            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, true, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, null_map, used_flags);
+        if (has_null_map)
+            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, true, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
         else
-            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, true, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, null_map, used_flags);
+            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, true, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
     }
     else
     {
-        if (!null_map.empty())
-            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, false, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, null_map, used_flags);
+        if (has_null_map)
+            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, false, true>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
         else
-            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, false, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, null_map, used_flags);
+            return joinRightColumnsSwitchMultipleDisjuncts<KIND, STRICTNESS, KeyGetter, Map, false, false>(std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, used_flags);
     }
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
 IColumn::Filter switchJoinRightColumns(
-    const std::vector<const Maps*> & mapv,
+    const std::vector<const Maps *> & mapv,
     AddedColumns & added_columns,
     HashJoin::Type type,
-    const std::vector<ConstNullMapPtr> & null_map,
     JoinStuff::JoinUsedFlags & used_flags)
 {
     constexpr bool is_asof_join = STRICTNESS == ASTTableJoin::Strictness::Asof;
@@ -1430,18 +1392,18 @@ IColumn::Filter switchJoinRightColumns(
     #define M(TYPE) \
         case HashJoin::Type::TYPE: \
             {                                                           \
-            using AMapTypeVal = const typename std::remove_reference_t<decltype(Maps::TYPE)>::element_type; \
-            using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, AMapTypeVal>::Type; \
-            std::vector<const AMapTypeVal*> a_map_type_vector(mapv.size()); \
+            using MapTypeVal = const typename std::remove_reference_t<decltype(Maps::TYPE)>::element_type; \
+            using KeyGetter = typename KeyGetterForType<HashJoin::Type::TYPE, MapTypeVal>::Type; \
+            std::vector<const MapTypeVal*> a_map_type_vector(mapv.size()); \
             std::vector<KeyGetter> key_getter_vector;                     \
-            size_t disjunct_num = added_columns.key_columns.size();     \
-            for (size_t d = 0; d < disjunct_num; ++d)                   \
-            {                                                           \
+            for (size_t d = 0; d < added_columns.join_on_keys.size(); ++d)                   \
+            {       \
+                const auto & join_on_key = added_columns.join_on_keys[d];     \
                 a_map_type_vector[d] = mapv[d]->TYPE.get();              \
-                key_getter_vector.push_back(std::move(createKeyGetter<KeyGetter, is_asof_join>(added_columns.key_columns[d], added_columns.key_sizes[d]))); \
+                key_getter_vector.push_back(std::move(createKeyGetter<KeyGetter, is_asof_join>(join_on_key.key_columns, join_on_key.key_sizes))); \
             }                                                           \
             return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetter>( \
-                              std::move(key_getter_vector), a_map_type_vector, added_columns, null_map, used_flags); \
+                              std::move(key_getter_vector), a_map_type_vector, added_columns, used_flags); \
     }
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
@@ -1452,30 +1414,22 @@ IColumn::Filter switchJoinRightColumns(
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
-IColumn::Filter dictionaryJoinRightColumns(const TableJoin & table_join, AddedColumns & added_columns, const ConstNullMapPtr & null_map)
+IColumn::Filter dictionaryJoinRightColumns(const TableJoin & table_join, AddedColumns & added_columns)
 {
     if constexpr (KIND == ASTTableJoin::Kind::Left &&
         (STRICTNESS == ASTTableJoin::Strictness::Any ||
         STRICTNESS == ASTTableJoin::Strictness::Semi ||
         STRICTNESS == ASTTableJoin::Strictness::Anti))
     {
-        assert(added_columns.key_columns.size() == 1);
+        assert(added_columns.join_on_keys.size() == 1);
 
-        // JoinStuff::JoinUsedFlags flags;
-        // KeyGetterForDict key_getter(table_join, added_columns.key_columns);
-        // return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(
-        //         std::move(key_getter), nullptr, added_columns, null_map, flags);
-        std::vector<const TableJoin*> maps_vector;
+        std::vector<const TableJoin *> maps_vector;
         maps_vector.push_back(&table_join);
-
-        std::vector<ConstNullMapPtr> null_maps_vector;
-        null_maps_vector.push_back(null_map);
 
         JoinStuff::JoinUsedFlags flags;
         std::vector<KeyGetterForDict> key_getter_vector;
-        key_getter_vector.push_back(KeyGetterForDict(table_join, added_columns.key_columns[0]));
-        // KeyGetterForDict key_getter(table_join, added_columns.key_columns);
-        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(std::move(key_getter_vector), maps_vector, added_columns, null_maps_vector, flags);
+        key_getter_vector.push_back(KeyGetterForDict(table_join, added_columns.join_on_keys[0].key_columns));
+        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(std::move(key_getter_vector), maps_vector, added_columns, flags);
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", STRICTNESS, KIND);
@@ -1484,36 +1438,22 @@ IColumn::Filter dictionaryJoinRightColumns(const TableJoin & table_join, AddedCo
 } /// nameless
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
-std::unique_ptr<AddedColumns> HashJoin::makeAddedColumns(
+void HashJoin::joinBlockImpl(
     Block & block,
-    const NamesVector & key_names_left_vector,
     const Block & block_with_columns_to_add,
-    const std::vector<const Maps*> & maps_,
+    const std::vector<const Maps *> & maps_,
     bool is_join_get) const
 {
     constexpr JoinFeatures<KIND, STRICTNESS> jf;
 
-    ColumnRawPtrsVector left_key_columns_vector;
-    std::vector<ConstNullMapPtr> null_map_vector;
-    std::vector<ColumnPtr> null_map_holder_vector;
-    std::vector<Columns> materialized_keys_vector;
-    std::vector<ColumnPtr> join_mask_column_vector; /// Only rows where mask == true can be joined
-
-    size_t disjunct = 0;
-
-    for (const auto & key_names_left_part : key_names_left_vector)
+    std::vector<JoinOnKeyColumns> join_on_keys;
+    const auto & onexprs = table_join->getClauses();
+    for (size_t i = 0; i < onexprs.size(); ++i)
     {
-        /// Rare case, when keys are constant or low cardinality. To avoid code bloat, simply materialize them.
-        materialized_keys_vector.emplace_back(JoinCommon::materializeColumns(block, key_names_left_part));
-        ColumnRawPtrs left_key_columns = JoinCommon::getRawPointers(materialized_keys_vector.back());
-        left_key_columns_vector.push_back(std::move(left_key_columns));
-
-        /// Keys with NULL value in any column won't join to anything.
-        null_map_vector.emplace_back();
-        null_map_holder_vector.push_back(extractNestedColumnsAndNullMap(left_key_columns_vector.back(), null_map_vector.back()));
-
-        join_mask_column_vector.push_back(JoinCommon::getColumnAsMask(block, condition_mask_column_name_left[disjunct++]));
+        const auto & key_names = !is_join_get ? onexprs[i].key_names_left : onexprs[i].key_names_right;
+        join_on_keys.emplace_back(block, key_names, onexprs[i].condColumnNames().first, key_sizes[i]);
     }
+    size_t existing_columns = block.columns();
 
     /** If you use FULL or RIGHT JOIN, then the columns from the "left" table must be materialized.
       * Because if they are constants, then in the "not joined" rows, they may have different values
@@ -1532,47 +1472,34 @@ std::unique_ptr<AddedColumns> HashJoin::makeAddedColumns(
       *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
       * For ASOF, the last column is used as the ASOF column
       */
-    auto added_columns = std::make_unique<AddedColumns>(
+    AddedColumns added_columns(
         block_with_columns_to_add,
-        block, savedBlockSample(),
+        block,
+        savedBlockSample(),
         *this,
-        left_key_columns_vector,
-        key_sizes,
-        join_mask_column_vector,
+        std::move(join_on_keys),
         jf.is_asof_join,
         is_join_get);
 
     bool has_required_right_keys = (required_right_keys.columns() != 0);
-    added_columns->need_filter = jf.need_filter || has_required_right_keys;
+    added_columns.need_filter = jf.need_filter || has_required_right_keys;
 
-    added_columns->row_filter = overDictionary() ?
-        dictionaryJoinRightColumns<KIND, STRICTNESS>(*table_join, *added_columns, null_map_vector[0]):
-        switchJoinRightColumns<KIND, STRICTNESS>(maps_, *added_columns, data->type, null_map_vector, used_flags);
+    IColumn::Filter row_filter = overDictionary() ?
+        dictionaryJoinRightColumns<KIND, STRICTNESS>(*table_join, added_columns) :
+        switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, used_flags);
 
-    for (size_t i = 0; i < added_columns->size(); ++i)
-        block.insert(added_columns->moveColumn(i));
+    for (size_t i = 0; i < added_columns.size(); ++i)
+        block.insert(added_columns.moveColumn(i));
 
-    return added_columns;
-}
-
-template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
-void HashJoin::joinBlockImpl(
-    Block & block,
-    std::unique_ptr<AddedColumns> added_columns,
-    size_t existing_columns) const
-{
-    JoinFeatures<KIND, STRICTNESS> jf;
-    bool has_required_right_keys = (required_right_keys.columns() != 0);
     std::vector<size_t> right_keys_to_replicate [[maybe_unused]];
 
     if constexpr (jf.need_filter)
     {
         /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
         for (size_t i = 0; i < existing_columns; ++i)
-            block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(added_columns->row_filter, -1);
+            block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(row_filter, -1);
 
-        /// Add join key columns from right block if needed
-        ///      using value from left table because of equality
+        /// Add join key columns from right block if needed using value from left table because of equality
         for (size_t i = 0; i < required_right_keys.columns(); ++i)
         {
             const auto & right_key = required_right_keys.getByPosition(i);
@@ -1582,7 +1509,7 @@ void HashJoin::joinBlockImpl(
                 const auto & left_name = required_right_keys_sources[i];
 
                 /// asof column is already in block.
-                if (jf.is_asof_join && right_key.name == key_names_right[0].back())
+                if (jf.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
                     continue;
 
                 const auto & col = block.getByName(left_name);
@@ -1601,8 +1528,9 @@ void HashJoin::joinBlockImpl(
         /// Some trash to represent IColumn::Filter as ColumnUInt8 needed for ColumnNullable::applyNullMap()
         auto null_map_filter_ptr = ColumnUInt8::create();
         ColumnUInt8 & null_map_filter = assert_cast<ColumnUInt8 &>(*null_map_filter_ptr);
-        null_map_filter.getData().swap(added_columns->row_filter);
+        null_map_filter.getData().swap(row_filter);
         const IColumn::Filter & filter = null_map_filter.getData();
+
         /// Add join key columns from right block if needed.
         for (size_t i = 0; i < required_right_keys.columns(); ++i)
         {
@@ -1611,8 +1539,9 @@ void HashJoin::joinBlockImpl(
             if (!block.findByName(right_col_name /*right_key.name*/))
             {
                 const auto & left_name = required_right_keys_sources[i];
+
                 /// asof column is already in block.
-                if (jf.is_asof_join && right_key.name == key_names_right[0].back())
+                if (jf.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
                     continue;
 
                 const auto & col = block.getByName(left_name);
@@ -1634,7 +1563,7 @@ void HashJoin::joinBlockImpl(
 
     if constexpr (jf.need_replication)
     {
-        std::unique_ptr<IColumn::Offsets> & offsets_to_replicate = added_columns->offsets_to_replicate;
+        std::unique_ptr<IColumn::Offsets> & offsets_to_replicate = added_columns.offsets_to_replicate;
 
         /// If ALL ... JOIN - we replicate all the columns except the new ones.
         for (size_t i = 0; i < existing_columns; ++i)
@@ -1642,10 +1571,7 @@ void HashJoin::joinBlockImpl(
 
         /// Replicate additional right keys
         for (size_t pos : right_keys_to_replicate)
-        {
             block.safeGetByPosition(pos).column = block.safeGetByPosition(pos).column->replicate(*offsets_to_replicate);
-        }
-
     }
 }
 
@@ -1654,7 +1580,6 @@ void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) 
     size_t max_joined_block_rows = table_join->maxJoinedBlockRows();
     size_t start_left_row = 0;
     size_t start_right_block = 0;
-
     if (not_processed)
     {
         auto & continuation = static_cast<NotProcessedCrossJoin &>(*not_processed);
@@ -1767,31 +1692,24 @@ ColumnWithTypeAndName HashJoin::joinGet(const Block & block, const Block & block
         && kind == ASTTableJoin::Kind::Left;
     if (!is_valid)
         throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
+    const auto & key_names_right = table_join->getOnlyClause().key_names_right;
 
     /// Assemble the key block with correct names.
     Block keys;
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto key = block.getByPosition(i);
-        key.name = key_names_right.front()[i];
+        key.name = key_names_right[i];
         keys.insert(std::move(key));
     }
 
     static_assert(!MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>::flagged,
                   "joinGet are not protected from hash table changes between block processing");
 
-
-    size_t existing_columns = block.columns();
-
-    std::vector<const MapsOne*> maps_vector;
+    std::vector<const MapsOne *> maps_vector;
     maps_vector.push_back(&std::get<MapsOne>(data->maps[0]));
-
-    auto added_columns = makeAddedColumns<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
-        keys, key_names_right, block_with_columns_to_add, maps_vector, /* is_join_get  */ true);
-
-
     joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
-        keys, std::move(added_columns), existing_columns);
+        keys, block_with_columns_to_add, maps_vector, true);
     return keys.getByPosition(keys.columns() - 1);
 }
 
@@ -1802,10 +1720,12 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
-    for (size_t i = 0; i < key_names_left.size(); ++i)
+    for (const auto & onexpr : table_join->getClauses())
     {
-        JoinCommon::checkTypesOfKeys(block, key_names_left[i], condition_mask_column_name_left[i],
-            right_sample_block, key_names_right[i], condition_mask_column_name_right[i]);
+        auto cond_column_name = onexpr.condColumnNames();
+        JoinCommon::checkTypesOfKeys(
+            block, onexpr.key_names_left, cond_column_name.first,
+            right_sample_block, onexpr.key_names_right, cond_column_name.second);
     }
 
     if (kind == ASTTableJoin::Kind::Cross)
@@ -1820,9 +1740,6 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
         if (nullable_left_side)
             JoinCommon::convertColumnsToNullable(block);
     }
-
-    AddedColumnsV added_columns_v;
-    size_t existing_columns = block.columns();
 
     if (overDictionary())
     {
@@ -1839,37 +1756,20 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
             {
             case Strictness::Any:
             case Strictness::All:
-                {
-                    auto added_columns = makeAddedColumns<Kind::Left, Strictness::Any>(
-                        block, key_names_left, sample_block_with_columns_to_add, maps_vector);
-                    joinBlockImpl<Kind::Left, Strictness::Any>(block, std::move(added_columns), existing_columns);
+                    joinBlockImpl<Kind::Left, Strictness::Any>(block, sample_block_with_columns_to_add, maps_vector);
                     break;
-                }
-
             case Strictness::Semi:
-                {
-                    auto added_columns = makeAddedColumns<Kind::Left, Strictness::Semi>(
-                        block, key_names_left, sample_block_with_columns_to_add, maps_vector);
-                    joinBlockImpl<Kind::Left, Strictness::Semi>(block, std::move(added_columns), existing_columns);
+                    joinBlockImpl<Kind::Left, Strictness::Semi>(block, sample_block_with_columns_to_add, maps_vector);
                     break;
-                }
             case Strictness::Anti:
-                {
-                    auto added_columns = makeAddedColumns<Kind::Left, Strictness::Anti>(
-                        block, key_names_left, sample_block_with_columns_to_add, maps_vector);
-                    joinBlockImpl<Kind::Left, Strictness::Anti>(block, std::move(added_columns), existing_columns);
+                    joinBlockImpl<Kind::Left, Strictness::Anti>(block, sample_block_with_columns_to_add, maps_vector);
                     break;
-                }
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: dictionary + {} {}", strictness, kind);
             }
         }
         else if (kind == Kind::Inner && strictness == Strictness::All)
-        {
-            auto added_columns = makeAddedColumns<Kind::Left, Strictness::Semi>(
-                block, key_names_left/*[0]*/, sample_block_with_columns_to_add, maps_vector);
-            joinBlockImpl<Kind::Left, Strictness::Semi>(block, std::move(added_columns), existing_columns);
-        }
+            joinBlockImpl<Kind::Left, Strictness::Semi>(block, sample_block_with_columns_to_add, maps_vector);
 
         else
             throw throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
@@ -1877,25 +1777,15 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
     else
     {
 
-        // MapsVariantPtrVector maps_vector;
-        std::vector<const std::decay_t<decltype(data->maps[0])>* > maps_vector;
-
-        for (size_t i = 0; i < key_names_left.size(); ++i)
+        std::vector<const std::decay_t<decltype(data->maps[0])> * > maps_vector;
+        for (size_t i = 0; i < table_join->getClauses().size(); ++i)
         {
-            // JoinCommon::checkTypesOfKeys(block, key_names_left[i], condition_mask_column_name_left[i],
-            //                              right_table_keys, key_names_right[i], condition_mask_column_name_right[i]);
             maps_vector.push_back(&data->maps[i]);
         }
-        std::unique_ptr<AddedColumns> added_columns;
 
-        joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
+        if (joinDispatch(kind, strictness, maps_vector, [&](auto kind_, auto strictness_, auto & maps_vector_)
         {
-            added_columns = makeAddedColumns<kind_, strictness_>(block, key_names_left, sample_block_with_columns_to_add, maps_vector_);
-        });
-
-        if (joinDispatch(kind, strictness, data->maps[0], [&](auto kind_, auto strictness_, auto &)
-        {
-            joinBlockImpl<kind_, strictness_>(block, std::move(added_columns), existing_columns);
+            joinBlockImpl<kind_, strictness_>(block, sample_block_with_columns_to_add, maps_vector_);
         }))
         {
             /// Joined
@@ -1945,9 +1835,9 @@ struct AdderNonJoined
 
 
 /// Stream from not joined earlier rows of the right table.
-///   Based on
-///      map' offsetInternal saved in used_flags for single disjuncts
-///      flags in BlockWithFlags for multiple disjuncts
+/// Based on:
+///   - map offsetInternal saved in used_flags for single disjuncts
+///   - flags in BlockWithFlags for multiple disjuncts
 template<bool multiple_disjuncts>
 class NotJoinedHash final : public NotJoinedBlocks::RightColumnsFiller
 {
@@ -2100,7 +1990,7 @@ std::shared_ptr<NotJoinedBlocks> HashJoin::getNonJoinedBlocks(const Block & left
     {
         return {};
     }
-    bool multiple_disjuncts = key_names_right.size() > 1;
+    bool multiple_disjuncts = !table_join->oneDisjunct();
 
     if (multiple_disjuncts)
     {
@@ -2125,7 +2015,7 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
     data = join.data;
     from_storage_join = true;
 
-    bool multiple_disjuncts = key_names_left.size() > 1;
+    bool multiple_disjuncts = !table_join->oneDisjunct();
     if (multiple_disjuncts)
         throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
