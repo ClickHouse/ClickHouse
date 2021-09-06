@@ -109,7 +109,7 @@ public:
     std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
 };
 
-using TwoDimensionNamesAndTypesList = std::list<NamesAndTypesList>;
+using NamesAndTypesLists = std::vector<NamesAndTypesList>;
 
 }
 

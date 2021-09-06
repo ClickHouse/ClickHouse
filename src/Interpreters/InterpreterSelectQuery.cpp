@@ -2062,61 +2062,35 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         return;
 
     const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
-    ColumnNumbers keys;
-    ColumnNumbers all_keys;
-    ColumnNumbersTwoDimension keys_vector;
-    auto & query = getSelectQuery();
-    if (query.group_by_with_grouping_sets)
-    {
-        std::set<size_t> keys_set;
-        for (const auto & aggregation_keys : query_analyzer->aggregationKeysList())
-        {
-            keys.clear();
-            for (const auto & key : aggregation_keys)
-            {
-                size_t key_name_pos = header_before_aggregation.getPositionByName(key.name);
-                if (!keys_set.count(key_name_pos))
-                {
-                    keys_set.insert(key_name_pos);
-                }
-                keys.push_back(key_name_pos);
-                LOG_DEBUG(
-                    log,
-                    "execute aggregation with grouping sets add key with name {} and number {}",
-                    key.name,
-                    header_before_aggregation.getPositionByName(key.name));
-            }
-            keys_vector.push_back(keys);
-            LOG_DEBUG(
-                log,
-                "execute aggregation with grouping sets add keys set of size {}",
-                keys.size());
-        }
-        all_keys.assign(keys_set.begin(), keys_set.end());
-        LOG_DEBUG(
-            log,
-            "execute aggregation with grouping sets add all keys of size {}",
-            all_keys.size());
-    }
-    else
-    {
-        for (const auto & key : query_analyzer->aggregationKeys())
-        {
-            keys.push_back(header_before_aggregation.getPositionByName(key.name));
-            LOG_DEBUG(log, "execute aggregation without grouping sets pushed back key with name {} and number {}", key.name, header_before_aggregation.getPositionByName(key.name));
-        }
-    }
 
     AggregateDescriptions aggregates = query_analyzer->aggregates();
     for (auto & descr : aggregates)
         if (descr.arguments.empty())
             for (const auto & name : descr.argument_names)
                 descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
-
     const Settings & settings = context->getSettingsRef();
     std::shared_ptr<Aggregator::Params> params_ptr;
+
+    auto & query = getSelectQuery();
     if (query.group_by_with_grouping_sets)
     {
+        ColumnNumbers keys;
+        ColumnNumbers all_keys;
+        ColumnNumbersList keys_vector;
+        std::unordered_set<size_t> keys_set;
+        for (const auto & aggregation_keys : query_analyzer->aggregationKeysList())
+        {
+            keys.clear();
+            for (const auto & key : aggregation_keys)
+            {
+                size_t key_name_pos = header_before_aggregation.getPositionByName(key.name);
+                keys_set.insert(key_name_pos);
+                keys.push_back(key_name_pos);
+            }
+            keys_vector.push_back(keys);
+        }
+        all_keys.assign(keys_set.begin(), keys_set.end());
+
         params_ptr = std::make_shared<Aggregator::Params>(
             header_before_aggregation,
             all_keys,
@@ -2139,6 +2113,10 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     }
     else
     {
+        ColumnNumbers keys;
+        for (const auto & key : query_analyzer->aggregationKeys())
+            keys.push_back(header_before_aggregation.getPositionByName(key.name));
+
         params_ptr = std::make_shared<Aggregator::Params>(
             header_before_aggregation,
             keys,
@@ -2160,13 +2138,10 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     }
     SortDescription group_by_sort_description;
 
-    if (group_by_info && settings.optimize_aggregation_in_order && !query.group_by_with_grouping_sets) {
+    if (group_by_info && settings.optimize_aggregation_in_order && !query.group_by_with_grouping_sets)
         group_by_sort_description = getSortDescriptionFromGroupBy(query);
-        LOG_DEBUG(log, "execute aggregation without grouping sets got group_by_sort_description");
-    } else {
+    else
         group_by_info = nullptr;
-        LOG_DEBUG(log, "execute aggregation didn't get group_by_sort_description");
-    }
 
     auto merge_threads = max_streams;
     auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
@@ -2175,7 +2150,6 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     bool storage_has_evenly_distributed_read = storage && storage->hasEvenlyDistributedRead();
 
-    LOG_DEBUG(log, "execute aggregation header structure before step: {}", query_plan.getCurrentDataStream().header.dumpStructure());
     auto aggregating_step = std::make_unique<AggregatingStep>(
         query_plan.getCurrentDataStream(),
         *params_ptr,
@@ -2187,7 +2161,6 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         storage_has_evenly_distributed_read,
         std::move(group_by_info),
         std::move(group_by_sort_description));
-    LOG_DEBUG(log, "execute aggregation header structure after step: {}", aggregating_step->getOutputStream().header.dumpStructure());
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -2245,7 +2218,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     const auto & header_before_transform = query_plan.getCurrentDataStream().header;
     ColumnNumbers keys;
     ColumnNumbers all_keys;
-    ColumnNumbersTwoDimension keys_vector;
+    ColumnNumbersList keys_vector;
     auto & query = getSelectQuery();
     if (query.group_by_with_grouping_sets)
     {
