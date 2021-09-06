@@ -26,10 +26,8 @@ String getExceptionMessage(
     const String & message, size_t argument_index, const char * argument_name,
     const std::string & context_data_type_name, Field::Types::Which field_type)
 {
-    return std::string("Parameter #") + std::to_string(argument_index) + " '"
-           + argument_name + "' for " + context_data_type_name
-           + message
-           + ", expected: " + Field::Types::toString(field_type) + " literal.";
+    return fmt::format("Parameter #{} '{}' for {}{}, expected {} literal",
+        argument_index, argument_name, context_data_type_name, message, field_type);
 }
 
 template <typename T, ArgumentKind Kind>

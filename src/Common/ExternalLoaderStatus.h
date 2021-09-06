@@ -4,10 +4,11 @@
 #include <utility>
 #include <ostream>
 #include <common/types.h>
+#include <common/EnumReflection.h>
 
 namespace DB
 {
-    enum class ExternalLoaderStatus
+    enum class ExternalLoaderStatus : Int8
     {
         NOT_LOADED, /// Object hasn't been tried to load. This is an initial state.
         LOADED, /// Object has been loaded successfully.
@@ -18,7 +19,14 @@ namespace DB
         NOT_EXIST, /// Object with this name wasn't found in the configuration.
     };
 
-    String toString(ExternalLoaderStatus status);
-    std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues();
-    std::ostream & operator<<(std::ostream & out, ExternalLoaderStatus status);
+    std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues()
+    {
+        std::vector<std::pair<String, Int8>> out;
+        out.reserve(magic_enum::enum_count<ExternalLoaderStatus>());
+
+        for (const auto & [value, str] : magic_enum::enum_entries<ExternalLoaderStatus>())
+            out.emplace_back(str, value);
+
+        return out;
+    }
 }
