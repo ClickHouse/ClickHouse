@@ -1,8 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <utility>
-#include <ostream>
 #include <common/types.h>
 #include <common/EnumReflection.h>
 
@@ -19,13 +17,13 @@ namespace DB
         NOT_EXIST, /// Object with this name wasn't found in the configuration.
     };
 
-    std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues()
+    inline std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues()
     {
         std::vector<std::pair<String, Int8>> out;
         out.reserve(magic_enum::enum_count<ExternalLoaderStatus>());
 
         for (const auto & [value, str] : magic_enum::enum_entries<ExternalLoaderStatus>())
-            out.emplace_back(str, value);
+            out.emplace_back(std::string{str}, static_cast<Int8>(value));
 
         return out;
     }

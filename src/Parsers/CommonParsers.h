@@ -16,10 +16,11 @@ private:
     std::string_view s;
 
 public:
-    constexpr ParserKeyword(std::string_view s_): s(s_) {}
+    //NOLINTNEXTLINE Want to be able to init ParserKeyword("literal")
+    constexpr ParserKeyword(std::string_view s_): s(s_) { assert(!s.empty()); }
 
 protected:
-    const char * getName() const override { return s.data(); }
+    constexpr const char * getName() const override { return s.data(); }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

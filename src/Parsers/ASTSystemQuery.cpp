@@ -7,12 +7,6 @@
 namespace DB
 {
 
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "SYSTEM ";
