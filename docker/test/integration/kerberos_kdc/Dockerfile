@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-kerberos-kdc .
+# docker build -t clickhouse/kerberos-kdc .
 
 FROM centos:6.6
 # old OS to make is faster and smaller
