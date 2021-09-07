@@ -118,7 +118,10 @@ private:
         ExecutableTaskPtr task;
         CurrentMetrics::Increment increment;
         std::atomic_bool is_currently_deleting{false};
-        Poco::Event is_done;
+        /// Actually autoreset=false is needed only for unit test
+        /// where multiple threads could remove tasks corresponding to the same storage
+        /// This scenario in not possible in reality.
+        Poco::Event is_done{/*autoreset=*/false};
     };
 
     using ItemPtr = std::shared_ptr<Item>;
