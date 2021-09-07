@@ -65,7 +65,6 @@ public:
         name = toString(type);
 
         updateConfiguration();
-        scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
     }
 
     ~MergeTreeBackgroundExecutor()
@@ -125,7 +124,7 @@ private:
     using ItemPtr = std::shared_ptr<Item>;
 
     void routine(ItemPtr item);
-    void schedulerThreadFunction();
+    void threadFunction(size_t number);
 
     /// Initially it will be empty
     boost::circular_buffer<ItemPtr> pending{0};
@@ -137,7 +136,6 @@ private:
     std::atomic_bool shutdown{false};
 
     ThreadPool pool;
-    ThreadFromGlobalPool scheduler;
 };
 
 }
