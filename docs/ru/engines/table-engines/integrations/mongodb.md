@@ -15,7 +15,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
     name1 [type1],
     name2 [type2],
     ...
-) ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
+) ENGINE = MongoDB(host:port, database, collection, user, password);
 ```
 
 **Параметры движка**
@@ -30,11 +30,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 -   `password` — пароль пользователя.
 
--   `options` — MongoDB connection string options (optional parameter).
-
 ## Примеры использования {#usage-example}
 
-Создание в ClickHouse для чтения данных из колекции MongoDB:
+Таблица в ClickHouse для чтения данных из колекции MongoDB:
 
 ``` text
 CREATE TABLE mongo_table
@@ -42,16 +40,6 @@ CREATE TABLE mongo_table
     key UInt64,
     data String
 ) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'clickhouse');
-```
-
-Чтение из сервера MongoDB, защищенного SSL:
-
-``` text
-CREATE TABLE mongo_table_ssl
-(
-    key UInt64,
-    data String
-) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'clickhouse', 'ssl=true');
 ```
 
 Запрос к таблице:
