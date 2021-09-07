@@ -401,6 +401,9 @@ function run_tests
 
         # depends on Go
         02013_zlib_read_after_eof
+
+        # Accesses CH via mysql table function (which is unavailable)
+        01747_system_session_log_long
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
