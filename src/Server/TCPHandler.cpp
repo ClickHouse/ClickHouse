@@ -4,6 +4,8 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include <string.h>
+#include <base/types.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -835,6 +837,14 @@ namespace
     constexpr size_t NAME_COLUMN_INDEX  = 4;
     constexpr size_t VALUE_COLUMN_INDEX = 5;
 
+    struct ProfileEventsSnapshot
+    {
+        UInt64 thread_id;
+        ProfileEvents::Counters counters;
+        CurrentMetrics::Metric metric;
+        time_t current_time;
+    };
+
     /*
      * Add records about provided non-zero ProfileEvents::Counters.
      */
@@ -873,12 +883,11 @@ namespace
     }
 
     void dumpMemoryTracker(
-        MemoryTracker * memoryTracker,
+        CurrentMetrics::Metric metric,
         MutableColumns & columns,
         String const & host_name,
         UInt64 thread_id)
     {
-        auto metric = memoryTracker->getMetric();
         if (metric == CurrentMetrics::end())
             return;
         time_t current_time = time(nullptr);
@@ -923,20 +932,28 @@ void TCPHandler::sendProfileEvents()
 
     MutableColumns columns = block.mutateColumns();
     auto thread_group = CurrentThread::getGroup();
-    std::vector<ThreadStatusPtr> threads;
+    std::vector<ProfileEventsSnapshot> snapshots;
     {
         std::lock_guard guard(thread_group->mutex);
-        std::copy(thread_group->threads.begin(), thread_group->threads.end(), std::back_inserter(threads));
+        for (auto * thread : thread_group->threads)
+        {
+            auto current_time = time(nullptr);
+            auto counters = thread->performance_counters.getPartiallyAtomicSnapshot();
+            auto metric = thread->memory_tracker.getMetric();
+            auto const thread_id = CurrentThread::get().thread_id;
+            snapshots.push_back(ProfileEventsSnapshot{thread_id, std::move(counters), metric, current_time});
+        }
     }
-    for (auto * thread : threads)
-    {
-        auto const counters_snapshot = thread->performance_counters.getPartiallyAtomicSnapshot();
-        auto current_time = time(nullptr);
-        auto * memory_tracker = &thread->memory_tracker;
-        auto const thread_id = CurrentThread::get().thread_id;
 
-        dumpProfileEvents(counters_snapshot, columns, server_display_name, current_time, thread_id);
-        dumpMemoryTracker(memory_tracker, columns, server_display_name, thread_id);
+    for (auto & snapshot : snapshots)
+    {
+        dumpProfileEvents(
+            snapshot.counters,
+            columns,
+            server_display_name,
+            snapshot.current_time,
+            snapshot.thread_id);
+        dumpMemoryTracker(snapshot.metric, columns, server_display_name, snapshot.thread_id);
     }
 
     MutableColumns logs_columns;
@@ -952,10 +969,7 @@ void TCPHandler::sendProfileEvents()
             columns[j]->insertRangeFrom(*curr_columns[j], 0, curr_columns[j]->size());
     }
 
-    bool empty = true;
-    for (auto & column : columns)
-        empty = empty && column->empty();
-
+    bool empty = columns[0]->empty();
     if (!empty)
     {
         block.setColumns(std::move(columns));
