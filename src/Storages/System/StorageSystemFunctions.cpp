@@ -5,7 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/UserDefinedFunctionFactory.h>
+#include <Interpreters/UserDefinedSQLFunctionFactory.h>
 #include <Storages/System/StorageSystemFunctions.h>
 
 namespace DB
@@ -18,7 +18,7 @@ namespace
         res_columns[0]->insert(name);
         res_columns[1]->insert(is_aggregate);
 
-        if constexpr (std::is_same_v<Factory, UserDefinedFunctionFactory>)
+        if constexpr (std::is_same_v<Factory, UserDefinedSQLFunctionFactory>)
         {
             res_columns[2]->insert(false);
             res_columns[3]->insertDefault();
@@ -63,7 +63,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr, 
         fillRow(res_columns, function_name, UInt64(1), "", aggregate_functions_factory);
     }
 
-    const auto & user_defined_functions_factory = UserDefinedFunctionFactory::instance();
+    const auto & user_defined_functions_factory = UserDefinedSQLFunctionFactory::instance();
     const auto & user_defined_functions_names = user_defined_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : user_defined_functions_names)
     {
