@@ -39,6 +39,8 @@ PEERDIR(
 
 SRCS(
     CRC.cpp
+    CastOverloadResolver.cpp
+    DateOrDateTimeFunctionsConvertion.cpp
     FunctionChar.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
@@ -288,6 +290,7 @@ SRCS(
     geohashesInBox.cpp
     getMacro.cpp
     getScalar.cpp
+    getServerPort.cpp
     getSetting.cpp
     getSizeOfEnumType.cpp
     globalVariable.cpp
@@ -312,6 +315,7 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
+    hyperscanRegexpChecker.cpp
     hypot.cpp
     identity.cpp
     if.cpp
@@ -441,6 +445,7 @@ SRCS(
     registerFunctionsNull.cpp
     registerFunctionsRandom.cpp
     registerFunctionsReinterpret.cpp
+    registerFunctionsSnowflake.cpp
     registerFunctionsString.cpp
     registerFunctionsStringRegexp.cpp
     registerFunctionsStringSearch.cpp
@@ -474,12 +479,14 @@ SRCS(
     s2RectIntersection.cpp
     s2RectUnion.cpp
     s2ToGeo.cpp
+    serverUUID.cpp
     sigmoid.cpp
     sign.cpp
     sin.cpp
     sinh.cpp
     sleep.cpp
     sleepEachRow.cpp
+    snowflake.cpp
     sqrt.cpp
     startsWith.cpp
     stem.cpp
@@ -564,6 +571,7 @@ SRCS(
     tuple.cpp
     tupleElement.cpp
     tupleHammingDistance.cpp
+    tupleToNameValuePairs.cpp
     upper.cpp
     upperUTF8.cpp
     uptime.cpp

@@ -49,6 +49,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_FSTAT;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -164,6 +165,12 @@ bool StorageFile::isColumnOriented() const
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
+    struct stat buf;
+    int res = fstat(table_fd_, &buf);
+    if (-1 == res)
+        throwFromErrno("Cannot execute fstat", res, ErrorCodes::CANNOT_FSTAT);
+    total_bytes_to_read = buf.st_size;
+
     if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
     if (args.format_name == "Distributed")
@@ -208,6 +215,8 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
     fs::create_directories(table_dir_path);
     paths = {getTablePath(table_dir_path, format_name)};
+    if (fs::exists(paths[0]))
+        total_bytes_to_read = fs::file_size(paths[0]);
 }
 
 StorageFile::StorageFile(CommonArguments args)

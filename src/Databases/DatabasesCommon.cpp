@@ -1,6 +1,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/StorageDictionary.h>
@@ -40,7 +41,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
     return {};
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)

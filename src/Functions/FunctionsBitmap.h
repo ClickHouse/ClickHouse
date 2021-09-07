@@ -99,6 +99,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -227,6 +229,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -316,6 +320,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 3; }
 
@@ -460,9 +466,24 @@ public:
     }
 };
 
+struct BitmapSubsetOffsetLimitImpl
+{
+public:
+    static constexpr auto name = "subBitmap";
+    template <typename T>
+    static void apply(
+        const AggregateFunctionGroupBitmapData<T> & bitmap_data_0,
+        UInt64 range_start,
+        UInt64 range_end,
+        AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
+        {
+        bitmap_data_0.rbs.rb_offset_limit(range_start, range_end, bitmap_data_2.rbs);
+        }
+};
+
 using FunctionBitmapSubsetInRange = FunctionBitmapSubset<BitmapSubsetInRangeImpl>;
 using FunctionBitmapSubsetLimit = FunctionBitmapSubset<BitmapSubsetLimitImpl>;
-
+using FunctionBitmapSubsetOffsetLimit = FunctionBitmapSubset<BitmapSubsetOffsetLimitImpl>;
 
 class FunctionBitmapTransform : public IFunction
 {
@@ -474,6 +495,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 3; }
 
@@ -640,6 +663,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -813,6 +838,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -916,6 +943,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -1059,6 +1088,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 

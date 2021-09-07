@@ -28,6 +28,8 @@ struct ProjectionDescription
         Aggregate,
     };
 
+    static constexpr const char * MINMAX_COUNT_PROJECTION_NAME = "_minmax_count_projection";
+
     static const char * typeToString(Type type);
 
     /// Definition AST of projection
@@ -62,9 +64,14 @@ struct ProjectionDescription
 
     size_t key_size = 0;
 
+    bool is_minmax_count_projection = false;
+
     /// Parse projection from definition AST
     static ProjectionDescription
     getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
+
+    static ProjectionDescription
+    getMinMaxCountProjection(const ColumnsDescription & columns, const Names & minmax_columns, ContextPtr query_context);
 
     ProjectionDescription() = default;
 
@@ -85,7 +92,13 @@ struct ProjectionDescription
     void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context);
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
+
+    Block calculate(const Block & block, ContextPtr context) const;
+
+    String getDirectoryName() const { return name + ".proj"; }
 };
+
+using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /// All projections in storage
 struct ProjectionsDescription

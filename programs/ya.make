@@ -23,6 +23,7 @@ SRCS(
     client/QueryFuzzer.cpp
     client/ConnectionParameters.cpp
     client/Suggest.cpp
+    client/TestHint.cpp
     extract-from-config/ExtractFromConfig.cpp
     server/Server.cpp
     server/MetricsTransmitter.cpp

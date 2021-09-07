@@ -29,7 +29,7 @@ namespace DB
 class QueryStatus;
 class ThreadStatus;
 class QueryProfilerReal;
-class QueryProfilerCpu;
+class QueryProfilerCPU;
 class QueryThreadLog;
 struct OpenTelemetrySpanHolder;
 class TasksStatsCounters;
@@ -37,6 +37,8 @@ struct RUsageCounters;
 struct PerfEventsCounters;
 class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
+struct ViewRuntimeData;
+class QueryViewsLog;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -138,11 +140,12 @@ protected:
 
     // CPU and Real time query profilers
     std::unique_ptr<QueryProfilerReal> query_profiler_real;
-    std::unique_ptr<QueryProfilerCpu> query_profiler_cpu;
+    std::unique_ptr<QueryProfilerCPU> query_profiler_cpu;
 
     Poco::Logger * log = nullptr;
 
     friend class CurrentThread;
+    friend class PushingToViewsBlockOutputStream;
 
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
@@ -150,6 +153,9 @@ protected:
 
     /// Is used to send logs from logs_queue to client in case of fatal errors.
     std::function<void()> fatal_error_callback;
+
+    /// It is used to avoid enabling the query profiler when you have multiple ThreadStatus in the same thread
+    bool query_profiled_enabled = true;
 
 public:
     ThreadStatus();
@@ -210,8 +216,12 @@ public:
     /// Update ProfileEvents and dumps info to system.query_thread_log
     void finalizePerformanceCounters();
 
+    /// Set the counters last usage to now
+    void resetPerformanceCountersLastUsage();
+
     /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
+
 
 protected:
     void applyQuerySettings();
@@ -223,6 +233,8 @@ protected:
     void finalizeQueryProfiler();
 
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
+
+    void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 

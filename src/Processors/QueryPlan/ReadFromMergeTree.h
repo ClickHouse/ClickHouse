@@ -9,6 +9,18 @@ using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 class Pipe;
 
+struct MergeTreeDataSelectSamplingData
+{
+    bool use_sampling = false;
+    bool read_nothing = false;
+    Float64 used_sample_factor = 1.0;
+    std::shared_ptr<ASTFunction> filter_function;
+    ActionsDAGPtr filter_expression;
+};
+
+struct MergeTreeDataSelectAnalysisResult;
+using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public ISourceStep
@@ -54,6 +66,23 @@ public:
         InReverseOrder,
     };
 
+    struct AnalysisResult
+    {
+        RangesInDataParts parts_with_ranges;
+        MergeTreeDataSelectSamplingData sampling;
+        IndexStats index_stats;
+        Names column_names_to_read;
+        ReadFromMergeTree::ReadType read_type = ReadFromMergeTree::ReadType::Default;
+        UInt64 total_parts = 0;
+        UInt64 parts_before_pk = 0;
+        UInt64 selected_parts = 0;
+        UInt64 selected_ranges = 0;
+        UInt64 selected_marks = 0;
+        UInt64 selected_marks_pk = 0;
+        UInt64 total_marks_pk = 0;
+        UInt64 selected_rows = 0;
+    };
+
     ReadFromMergeTree(
         MergeTreeData::DataPartsVector parts_,
         Names real_column_names_,
@@ -67,7 +96,8 @@ public:
         size_t num_streams_,
         bool sample_factor_column_queried_,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
-        Poco::Logger * log_
+        Poco::Logger * log_,
+        MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_
     );
 
     String getName() const override { return "ReadFromMergeTree"; }
@@ -84,6 +114,20 @@ public:
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
+
+    static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
+        MergeTreeData::DataPartsVector parts,
+        const StorageMetadataPtr & metadata_snapshot_base,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        ContextPtr context,
+        unsigned num_streams,
+        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
+        const MergeTreeData & data,
+        const Names & real_column_names,
+        bool sample_factor_column_queried,
+        Poco::Logger * log);
+
 private:
     const MergeTreeReaderSettings reader_settings;
 
@@ -137,8 +181,17 @@ private:
         const Names & column_names,
         ActionsDAGPtr & out_projection);
 
-    struct AnalysisResult;
-    AnalysisResult selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
+    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
+    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
+    MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
+};
+
+struct MergeTreeDataSelectAnalysisResult
+{
+    std::variant<std::exception_ptr, ReadFromMergeTree::AnalysisResult> result;
+
+    bool error() const;
+    size_t marks() const;
 };
 
 }

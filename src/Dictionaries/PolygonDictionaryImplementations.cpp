@@ -167,7 +167,7 @@ DictionaryPtr createLayout(const std::string & ,
                            const Poco::Util::AbstractConfiguration & config,
                            const std::string & config_prefix,
                            DictionarySourcePtr source_ptr,
-                           ContextPtr /* context */,
+                           ContextPtr /* global_context */,
                            bool /*created_from_ddl*/)
 {
     const String database = config.getString(config_prefix + ".database", "");
