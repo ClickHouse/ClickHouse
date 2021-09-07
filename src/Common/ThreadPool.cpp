@@ -75,7 +75,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
     std::lock_guard lock(mutex);
     queue_size = value;
     /// Reserve memory to get rid of allocations
-    jobs.reserve(2 * queue_size);
+    jobs.reserve(queue_size);
 }
 
 
