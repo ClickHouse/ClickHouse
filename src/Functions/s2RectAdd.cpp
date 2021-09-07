@@ -41,7 +41,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 4; }
+    size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
