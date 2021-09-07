@@ -175,7 +175,6 @@ public:
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);
     Dependencies getDependencies(const StorageID & from) const;
-    ViewDependencies getViewDependencies() const;
 
     /// For Materialized and Live View
     void updateDependency(const StorageID & old_from, const StorageID & old_where,const StorageID & new_from, const StorageID & new_where);
