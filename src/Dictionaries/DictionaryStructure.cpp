@@ -63,6 +63,8 @@ DictionarySpecialAttribute::DictionarySpecialAttribute(const Poco::Util::Abstrac
 
 DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
+    std::cerr << "DictionaryStructure::DictionaryStructure " << config_prefix << std::endl;
+
     std::string structure_prefix = config_prefix + ".structure";
 
     const auto has_id = config.has(structure_prefix + ".id");
