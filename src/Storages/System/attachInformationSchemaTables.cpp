@@ -32,7 +32,7 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
 
         auto & ast_create = ast->as<ASTCreateQuery &>();
         assert(view_name == ast_create.table);
-        if(is_uppercase)
+        if (is_uppercase)
             ast_create.table = Poco::toUpper(view_name);
 
         StoragePtr view = createTableFromAST(ast_create, database.getDatabaseName(),

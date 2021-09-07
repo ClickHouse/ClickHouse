@@ -18,7 +18,7 @@ void attach(IDatabase & system_database, const String & table_name, StorageArgs 
     }
     else
     {
-        /// Attach to Atomic or Memory database
+        /// Attach to Atomic database
         /// NOTE: UUIDs are not persistent, but it's ok since no data are stored on disk for these storages
         /// and path is actually not used
         auto table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name, UUIDHelpers::generateV4());

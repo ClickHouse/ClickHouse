@@ -33,4 +33,4 @@ SELECT
     0 AS is_trigger_deletable,
     0 AS is_trigger_insertable_into
 FROM system.tables
-WHERE engine IN ('View', 'MaterializedView', 'LiveView')
+WHERE engine LIKE '%View'

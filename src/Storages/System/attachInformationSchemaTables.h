@@ -1,13 +1,9 @@
 #pragma once
-
-#include <memory>
-
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
-class Context;
-class AsynchronousMetrics;
 class IDatabase;
 
 void attachInformationSchema(ContextMutablePtr context, IDatabase & information_schema_database);

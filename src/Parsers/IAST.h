@@ -27,6 +27,7 @@ using IdentifierNameSet = std::set<String>;
 
 class WriteBuffer;
 
+
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
 class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAST>
