@@ -390,12 +390,12 @@ This section contains the following parameters:
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 3 seconds.
+The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 10 seconds.
 
 **Example**
 
 ``` xml
-<keep_alive_timeout>3</keep_alive_timeout>
+<keep_alive_timeout>10</keep_alive_timeout>
 ```
 
 ## listen_host {#server_configuration_parameters-listen_host}
@@ -535,7 +535,7 @@ Possible values:
 -   Positive double.
 -   0 — The ClickHouse server can use all available RAM.
 
-Default value: `0`.
+Default value: `0.9`.
 
 **Usage**
 
@@ -1253,7 +1253,7 @@ If this section is specified, the path from [users_config](../../operations/serv
 
 The `user_directories` section can contain any number of items, the order of the items means their precedence (the higher the item the higher the precedence).
 
-**Example**
+**Examples**
 
 ``` xml
 <user_directories>
@@ -1263,13 +1263,23 @@ The `user_directories` section can contain any number of items, the order of the
     <local_directory>
         <path>/var/lib/clickhouse/access/</path>
     </local_directory>
+</user_directories>
+```
+
+Users, roles, row policies, quotas, and profiles can be also stored in ZooKeeper:
+
+``` xml
+<user_directories>
+    <users_xml>
+        <path>/etc/clickhouse-server/users.xml</path>
+    </users_xml>
     <replicated>
         <zookeeper_path>/clickhouse/access/</zookeeper_path>
     </replicated>
 </user_directories>
 ```
 
-You can also specify settings `memory` — means storing information only in memory, without writing to disk, and `ldap` — means storing information on an LDAP server.
+You can also define sections `memory` — means storing information only in memory, without writing to disk, and `ldap` — means storing information on an LDAP server.
 
 To add an LDAP server as a remote user directory of users that are not defined locally, define a single `ldap` section with a following parameters:
 -   `server` — one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.

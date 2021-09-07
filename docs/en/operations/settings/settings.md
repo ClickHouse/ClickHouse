@@ -3436,6 +3436,14 @@ Possible values:
 
 Default value: `0`.
 
+## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+
+Allows to have user-managed replication slots. Must be used together with `materialized_postgresql_snapshot`.
+
+## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+
+A text string identifying a snapshot, from which initial dump of tables will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md#projections) optimization when processing `SELECT` queries.
@@ -3449,7 +3457,7 @@ Default value: `0`.
 
 ## force_optimize_projection {#force-optimize-projection}
 
-Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md#projections) in `SELECT` queries, when projection optimization is enabled (see [allow_experimental_projection_optimization](#allow-experimental-projection-optimization) setting). 
+Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md#projections) in `SELECT` queries, when projection optimization is enabled (see [allow_experimental_projection_optimization](#allow-experimental-projection-optimization) setting).
 
 Possible values:
 
@@ -3457,3 +3465,13 @@ Possible values:
 -   1 — Projection optimization is obligatory.
 
 Default value: `0`.
+
+## regexp_max_matches_per_row {#regexp-max-matches-per-row}
+
+Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md#extractallgroups-horizontal) function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.

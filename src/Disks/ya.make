@@ -22,6 +22,7 @@ SRCS(
     IVolume.cpp
     LocalDirectorySyncGuard.cpp
     ReadIndirectBufferFromRemoteFS.cpp
+    ReadIndirectBufferFromWebServer.cpp
     SingleDiskVolume.cpp
     StoragePolicy.cpp
     TemporaryFileOnDisk.cpp

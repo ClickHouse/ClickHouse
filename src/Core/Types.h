@@ -13,9 +13,33 @@ namespace DB
 
 /// Data types for representing elementary values from a database in RAM.
 
-struct Null {};
-struct NegativeInfinity {};
-struct PositiveInfinity {};
+/// Hold a null value for untyped calculation. It can also store infinities to handle nullable
+/// comparison which is used for nullable KeyCondition.
+struct Null
+{
+    enum class Value
+    {
+        Null,
+        PositiveInfinity,
+        NegativeInfinity,
+    };
+
+    Value value{Value::Null};
+
+    bool isNull() const { return value == Value::Null; }
+    bool isPositiveInfinity() const { return value == Value::PositiveInfinity; }
+    bool isNegativeInfinity() const { return value == Value::NegativeInfinity; }
+
+    bool operator==(const Null & other) const
+    {
+        return value == other.value;
+    }
+
+    bool operator!=(const Null & other) const
+    {
+        return !(*this == other);
+    }
+};
 
 /// Ignore strange gcc warning https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55776
 #if !defined(__clang__)
