@@ -1811,7 +1811,10 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
                 write_part_log(ExecutionStatus::fromCurrentException());
 
-                tryRemovePartImmediately(std::move(part));
+                if (storage_settings_ptr->detach_not_byte_identical_parts)
+                    forgetPartAndMoveToDetached(std::move(part), "merge-not-byte-identical");
+                else
+                    tryRemovePartImmediately(std::move(part));
                 /// No need to delete the part from ZK because we can be sure that the commit transaction
                 /// didn't go through.
 
@@ -1935,7 +1938,10 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
                 write_part_log(ExecutionStatus::fromCurrentException());
 
-                tryRemovePartImmediately(std::move(new_part));
+                if (storage_settings_ptr->detach_not_byte_identical_parts)
+                    forgetPartAndMoveToDetached(std::move(new_part), "mutate-not-byte-identical");
+                else
+                    tryRemovePartImmediately(std::move(new_part));
                 /// No need to delete the part from ZK because we can be sure that the commit transaction
                 /// didn't go through.
 
