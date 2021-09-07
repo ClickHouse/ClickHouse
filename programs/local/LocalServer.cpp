@@ -393,6 +393,7 @@ void LocalServer::processQueries()
     auto context = session.makeQueryContext();
     context->makeSessionContext(); /// initial_create_query requires a session context to be set.
     context->setCurrentQueryId("");
+
     applyCmdSettings(context);
 
     /// Use the same query_id (and thread group) for all queries
