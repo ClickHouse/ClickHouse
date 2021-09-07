@@ -47,6 +47,12 @@ static void executeCreateQuery(
     interpreter.execute();
 }
 
+static bool isSystemOrInformationSchema(const String & database_name)
+{
+    return database_name == DatabaseCatalog::SYSTEM_DATABASE ||
+           database_name == DatabaseCatalog::INFORMATION_SCHEMA ||
+           database_name == DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE;
+}
 
 static void loadDatabase(
     ContextMutablePtr context,
@@ -116,7 +122,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
             if (fs::path(current_file).extension() == ".sql")
             {
                 String db_name = fs::path(current_file).stem();
-                if (db_name != DatabaseCatalog::SYSTEM_DATABASE && db_name != DatabaseCatalog::INFORMATION_SCHEMA_DATABASE)
+                if (!isSystemOrInformationSchema(db_name))
                     databases.emplace(unescapeForFileName(db_name), fs::path(path) / db_name);
             }
 
@@ -142,7 +148,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
         if (current_file.at(0) == '.')
             continue;
 
-        if (current_file == DatabaseCatalog::SYSTEM_DATABASE || current_file == DatabaseCatalog::INFORMATION_SCHEMA_DATABASE)
+        if (isSystemOrInformationSchema(current_file))
             continue;
 
         databases.emplace(unescapeForFileName(current_file), it->path().string());
@@ -194,7 +200,8 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
 void loadMetadataSystem(ContextMutablePtr context)
 {
     loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
-    loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA_DATABASE, "Memory");
+    loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
+    loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, "Memory");
 }
 
 }

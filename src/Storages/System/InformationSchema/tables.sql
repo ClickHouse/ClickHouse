@@ -13,5 +13,5 @@ SELECT
     database AS table_catalog,
     database AS table_schema,
     name AS table_name,
-    multiIf(is_temporary, 4, engine = 'View', 2, engine LIKE 'System%', 5, has_own_data = 0, 3, 1) AS table_type
+    multiIf(is_temporary, 4, engine like '%View', 2, engine LIKE 'System%', 5, has_own_data = 0, 3, 1) AS table_type
 FROM system.tables

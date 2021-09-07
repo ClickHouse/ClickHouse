@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -272,7 +273,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (isDateTime64(not_nullable_type))
-                        res_columns[res_index++]->insert(getDecimalScale(*not_nullable_type));
+                        res_columns[res_index++]->insert(assert_cast<const DataTypeDateTime64 &>(*not_nullable_type).getScale());
                     else if (isDateOrDate32(not_nullable_type) || isDateTime(not_nullable_type) || isDateTime64(not_nullable_type))
                         res_columns[res_index++]->insert(0);
                     else

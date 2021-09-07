@@ -9,12 +9,11 @@ namespace DB
 template<typename StorageT, typename... StorageArgs>
 void attach(IDatabase & system_database, const String & table_name, StorageArgs && ... args)
 {
-    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE ||
-           system_database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA_DATABASE);
+    assert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
     if (system_database.getUUID() == UUIDHelpers::Nil)
     {
         /// Attach to Ordinary database
-        auto table_id = StorageID(system_database.getDatabaseName(), table_name);
+        auto table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name);
         system_database.attachTable(table_name, StorageT::create(table_id, std::forward<StorageArgs>(args)...));
     }
     else
@@ -22,7 +21,7 @@ void attach(IDatabase & system_database, const String & table_name, StorageArgs 
         /// Attach to Atomic or Memory database
         /// NOTE: UUIDs are not persistent, but it's ok since no data are stored on disk for these storages
         /// and path is actually not used
-        auto table_id = StorageID(system_database.getDatabaseName(), table_name, UUIDHelpers::generateV4());
+        auto table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name, UUIDHelpers::generateV4());
         String path = "store/" + DatabaseCatalog::getPathForUUID(table_id.uuid);
         system_database.attachTable(table_name, StorageT::create(table_id, std::forward<StorageArgs>(args)...), path);
     }
