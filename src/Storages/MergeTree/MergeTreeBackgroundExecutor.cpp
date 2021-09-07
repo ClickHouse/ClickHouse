@@ -38,6 +38,9 @@ void MergeTreeBackgroundExecutor::updateConfiguration()
         pool.setMaxFreeThreads(0);
         pool.setMaxThreads(new_threads_count);
         pool.setQueueSize(new_max_tasks_count);
+
+        for (size_t number = threads_count; number < new_threads_count; ++number)
+            pool.scheduleOrThrowOnError([this, number] { threadFunction(number); });
     }
     catch (...)
     {
@@ -56,9 +59,6 @@ void MergeTreeBackgroundExecutor::wait()
         shutdown = true;
         has_tasks.notify_all();
     }
-
-    if (scheduler.joinable())
-        scheduler.join();
 
     pool.wait();
 }
@@ -85,17 +85,6 @@ bool MergeTreeBackgroundExecutor::trySchedule(ExecutableTaskPtr task)
     auto & value = CurrentMetrics::values[metric];
     if (value.load() >= static_cast<int64_t>(max_tasks_count))
         return false;
-
-    /// Just check if the main scheduler thread in excellent condition
-    if (!scheduler.joinable())
-    {
-        LOG_ERROR(&Poco::Logger::get("MergeTreeBackgroundExecutor"), "Scheduler thread is dead. Trying to alive..");
-        scheduler = ThreadFromGlobalPool([this]() { schedulerThreadFunction(); });
-
-        if (!scheduler.joinable())
-            LOG_FATAL(&Poco::Logger::get("MergeTreeBackgroundExecutor"), "Scheduler thread is dead permanently. Restart is needed");
-    }
-
 
     pending.push_back(std::make_shared<Item>(std::move(task), metric));
 
@@ -131,8 +120,6 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
 
 void MergeTreeBackgroundExecutor::routine(ItemPtr item)
 {
-    setThreadName(name.c_str());
-
     auto erase_from_active = [this, item]
     {
         active.erase(std::remove(active.begin(), active.end(), item), active.end());
@@ -177,38 +164,35 @@ void MergeTreeBackgroundExecutor::routine(ItemPtr item)
 }
 
 
-void MergeTreeBackgroundExecutor::schedulerThreadFunction()
+void MergeTreeBackgroundExecutor::threadFunction(size_t number)
 {
+    setThreadName(name.c_str());
+
     while (true)
     {
-        std::unique_lock lock(mutex);
-
-        has_tasks.wait(lock, [this](){ return !pending.empty() || shutdown; });
-
-        if (shutdown)
-            break;
-
-        ItemPtr item = std::move(pending.front());
-        pending.pop_front();
-
-        /// Execute a piece of task
-        bool res = pool.trySchedule([this, item] () mutable
+        ItemPtr item;
         {
-            routine(item);
-            /// When storage shutdowns it will wait until all related background tasks
-            /// are finished, because they may want to interact with its fields
-            /// and this will cause segfault.
-            if (item->is_currently_deleting)
-                item->is_done.set();
-        });
+            std::unique_lock lock(mutex);
+            has_tasks.wait(lock, [this](){ return !pending.empty() || shutdown; });
 
-        if (!res)
-        {
-            pending.push_back(item);
-            continue;
+            if (number >= threads_count)
+                break;
+
+            if (shutdown)
+                break;
+
+            item = std::move(pending.front());
+            pending.pop_front();
+            active.push_back(item);
         }
 
-        active.push_back(std::move(item));
+        routine(item);
+
+        /// When storage shutdowns it will wait until all related background tasks
+        /// are finished, because they may want to interact with its fields
+        /// and this will cause segfault.
+        if (item->is_currently_deleting)
+            item->is_done.set();
     }
 }
 
