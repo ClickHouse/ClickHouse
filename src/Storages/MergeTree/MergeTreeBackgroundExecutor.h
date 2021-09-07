@@ -118,6 +118,7 @@ private:
 
         ExecutableTaskPtr task;
         CurrentMetrics::Increment increment;
+        std::atomic_bool is_currently_deleting{false};
         Poco::Event is_done;
     };
 
@@ -129,9 +130,7 @@ private:
     /// Initially it will be empty
     boost::circular_buffer<ItemPtr> pending{0};
     boost::circular_buffer<ItemPtr> active{0};
-    std::set<StorageID> currently_deleting;
 
-    std::mutex remove_mutex;
     std::mutex mutex;
     std::condition_variable has_tasks;
 
