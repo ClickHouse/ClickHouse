@@ -238,18 +238,15 @@ void DiskEncrypted::copy(const String & from_path, const std::shared_ptr<IDisk> 
 
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     const String & path,
-    size_t buf_size,
-    size_t estimated_size,
-    size_t aio_threshold,
-    size_t mmap_threshold,
-    MMappedFileCache * mmap_cache) const
+    const ReadSettings & settings,
+    size_t estimated_size) const
 {
     auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
-    auto settings = current_settings.get();
+    auto buffer = delegate->readFile(wrapped_path, settings, estimated_size);
+    auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);
-    String key = getKey(path, header, *settings);
-    return std::make_unique<ReadBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header);
+    String key = getKey(path, header, *encryption_settings);
+    return std::make_unique<ReadBufferFromEncryptedFile>(settings.local_fs_buffer_size, std::move(buffer), key, header);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String & path, size_t buf_size, WriteMode mode)
@@ -265,7 +262,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncrypted::writeFile(const String &
         if (old_file_size)
         {
             /// Append mode: we continue to use the same header.
-            auto read_buffer = delegate->readFile(wrapped_path, FileEncryption::Header::kSize);
+            auto read_buffer = delegate->readFile(wrapped_path, ReadSettings().adjustBufferSize(FileEncryption::Header::kSize));
             header = readHeader(*read_buffer);
             key = getKey(path, header, *settings);
         }

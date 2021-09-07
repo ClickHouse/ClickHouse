@@ -32,7 +32,7 @@ message ExternalTable {
    // Data to insert to the external table.
    // If a method with streaming input (i.e. ExecuteQueryWithStreamInput() or ExecuteQueryWithStreamIO()) is used,
    // then data for insertion to the same external table can be split between multiple QueryInfos.
-   string data = 3;
+   bytes data = 3;
 
    // Format of the data to insert to the external table.
    string format = 4;
@@ -53,10 +53,10 @@ message QueryInfo {
    string database = 4;
 
    // Input data, used both as data for INSERT query and as data for the input() function.
-   string input_data = 5;
+   bytes input_data = 5;
 
    // Delimiter for input_data, inserted between input_data from adjacent QueryInfos.
-   string input_data_delimiter = 6;
+   bytes input_data_delimiter = 6;
 
    // Default output format. If not specified, 'TabSeparated' is used.
    string output_format = 7;
@@ -128,9 +128,9 @@ message Exception {
 // Result of execution of a query which is sent back by the ClickHouse server to the client.
 message Result {
    // Output of the query, represented in the `output_format` or in a format specified in `query`.
-   string output = 1;
-   string totals = 2;
-   string extremes = 3;
+   bytes output = 1;
+   bytes totals = 2;
+   bytes extremes = 3;
 
    repeated LogEntry logs = 4;
    Progress progress = 5;

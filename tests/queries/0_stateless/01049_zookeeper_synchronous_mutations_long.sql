@@ -13,12 +13,12 @@ SYSTEM SYNC REPLICA table_for_synchronous_mutations2;
 
 ALTER TABLE table_for_synchronous_mutations1 UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutations_sync = 2;
 
-SELECT is_done FROM system.mutations where table = 'table_for_synchronous_mutations1';
+SELECT is_done FROM system.mutations where database = currentDatabase() and table = 'table_for_synchronous_mutations1';
 
 -- Another mutation, just to be sure, that previous finished
 ALTER TABLE table_for_synchronous_mutations1 UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutations_sync = 2;
 
-SELECT is_done FROM system.mutations where table = 'table_for_synchronous_mutations1';
+SELECT is_done FROM system.mutations where database = currentDatabase() and table = 'table_for_synchronous_mutations1';
 
 DROP TABLE IF EXISTS table_for_synchronous_mutations1;
 DROP TABLE IF EXISTS table_for_synchronous_mutations2;
@@ -33,11 +33,11 @@ INSERT INTO table_for_synchronous_mutations_no_replication select number, number
 
 ALTER TABLE table_for_synchronous_mutations_no_replication UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutations_sync = 2;
 
-SELECT is_done FROM system.mutations where table = 'table_for_synchronous_mutations_no_replication';
+SELECT is_done FROM system.mutations where database = currentDatabase() and table = 'table_for_synchronous_mutations_no_replication';
 
 -- Another mutation, just to be sure, that previous finished
 ALTER TABLE table_for_synchronous_mutations_no_replication UPDATE v1 = v1 + 1 WHERE 1 SETTINGS mutations_sync = 2;
 
-SELECT is_done FROM system.mutations where table = 'table_for_synchronous_mutations_no_replication';
+SELECT is_done FROM system.mutations where database = currentDatabase() and table = 'table_for_synchronous_mutations_no_replication';
 
 DROP TABLE IF EXISTS table_for_synchronous_mutations_no_replication;

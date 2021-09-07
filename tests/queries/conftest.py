@@ -11,7 +11,6 @@ from .server import ServerThread
 
 def pytest_addoption(parser):
     parser.addoption("--builddir", action="store", default=None, help="Path to build directory to use binaries from")
-    parser.addoption("--antlr", action="store_true", default=False, help="Use ANTLR parser")
 
 
 # HTML report hooks
@@ -32,8 +31,7 @@ def pytest_itemcollected(item):
 @pytest.fixture(scope='module')
 def cmdopts(request):
     return {
-        'builddir': request.config.getoption("--builddir"),
-        'antlr': request.config.getoption("--antlr"),
+        'builddir': request.config.getoption("--builddir")
     }
 
 
@@ -46,11 +44,6 @@ def bin_prefix(cmdopts):
     # if not os.path.isabs(prefix):
     #     prefix = os.path.abspath(prefix)
     return prefix
-
-
-@pytest.fixture(scope='module')
-def use_antlr(cmdopts):
-    return cmdopts['antlr']
 
 
 # TODO: also support stateful queries.

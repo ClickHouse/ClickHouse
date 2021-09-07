@@ -16,7 +16,7 @@ class InDepthNodeVisitor
 public:
     using Data = typename Matcher::Data;
 
-    InDepthNodeVisitor(Data & data_, WriteBuffer * ostr_ = nullptr)
+    explicit InDepthNodeVisitor(Data & data_, WriteBuffer * ostr_ = nullptr)
     :   data(data_),
         visit_depth(0),
         ostr(ostr_)

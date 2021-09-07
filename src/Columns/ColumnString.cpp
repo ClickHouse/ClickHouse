@@ -3,6 +3,7 @@
 #include <Columns/Collator.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/MaskOperations.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
@@ -155,6 +156,53 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
 
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
     return res;
+}
+
+void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
+{
+    auto & offsets_data = getOffsets();
+    auto & chars_data = getChars();
+    if (mask.size() < offsets_data.size())
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+
+    /// We cannot change only offsets, because each string should end with terminating zero byte.
+    /// So, we will insert one zero byte when mask value is zero.
+
+    int index = mask.size() - 1;
+    int from = offsets_data.size() - 1;
+    /// mask.size() - offsets_data.size() should be equal to the number of zeros in mask
+    /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
+    UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());
+    offsets_data.resize(mask.size());
+    chars_data.resize_fill(last_offset, 0);
+    while (index >= 0)
+    {
+        offsets_data[index] = last_offset;
+        if (!!mask[index] ^ inverted)
+        {
+            if (from < 0)
+                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+
+            size_t len = offsets_data[from] - offsets_data[from - 1];
+
+            /// Copy only if it makes sense. It's important to copy backward, because
+            /// ranges can overlap, but destination is always is more to the right then source
+            if (last_offset - len != offsets_data[from - 1])
+                std::copy_backward(&chars_data[offsets_data[from - 1]], &chars_data[offsets_data[from]], &chars_data[last_offset]);
+            last_offset -= len;
+            --from;
+        }
+        else
+        {
+            chars_data[last_offset - 1] = 0;
+            --last_offset;
+        }
+
+        --index;
+    }
+
+    if (from != -1)
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
 }
 
 

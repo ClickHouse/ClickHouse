@@ -28,11 +28,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-template <typename T, typename SFINAE = void>
-struct NearestFieldTypeImpl;
-
-template <typename T>
-using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
+constexpr Null NEGATIVE_INFINITY{Null::Value::NegativeInfinity};
+constexpr Null POSITIVE_INFINITY{Null::Value::PositiveInfinity};
 
 class Field;
 using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
@@ -168,6 +165,12 @@ template <> constexpr inline bool is_decimal_field<DecimalField<Decimal64>> = tr
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal128>> = true;
 template <> constexpr inline bool is_decimal_field<DecimalField<Decimal256>> = true;
 
+template <typename T, typename SFINAE = void>
+struct NearestFieldTypeImpl;
+
+template <typename T>
+using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
+
 /// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
 /// signedness of char is different in Linux on x86 and Linux on ARM.
@@ -218,8 +221,6 @@ template <> struct NearestFieldTypeImpl<Tuple> { using Type = Tuple; };
 template <> struct NearestFieldTypeImpl<Map> { using Type = Map; };
 template <> struct NearestFieldTypeImpl<bool> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
-template <> struct NearestFieldTypeImpl<NegativeInfinity> { using Type = NegativeInfinity; };
-template <> struct NearestFieldTypeImpl<PositiveInfinity> { using Type = PositiveInfinity; };
 
 template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 
@@ -229,6 +230,16 @@ struct NearestFieldTypeImpl<T, std::enable_if_t<std::is_enum_v<T>>>
 {
     using Type = NearestFieldType<std::underlying_type_t<T>>;
 };
+
+template <typename T>
+decltype(auto) castToNearestFieldType(T && x)
+{
+    using U = NearestFieldType<std::decay_t<T>>;
+    if constexpr (std::is_same_v<std::decay_t<T>, U>)
+        return std::forward<T>(x);
+    else
+        return U(x);
+}
 
 /** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.
   * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
@@ -271,10 +282,6 @@ public:
             Int256  = 25,
             Map = 26,
             UUID = 27,
-
-            // Special types for index analysis
-            NegativeInfinity = 254,
-            PositiveInfinity = 255,
         };
 
         static const char * toString(Which which)
@@ -282,8 +289,6 @@ public:
             switch (which)
             {
                 case Null:    return "Null";
-                case NegativeInfinity: return "-Inf";
-                case PositiveInfinity: return "+Inf";
                 case UInt64:  return "UInt64";
                 case UInt128: return "UInt128";
                 case UInt256: return "UInt256";
@@ -322,14 +327,12 @@ public:
 
     /// Templates to avoid ambiguity.
     template <typename T, typename Z = void *>
-    using enable_if_not_field_or_stringlike_t = std::enable_if_t<
-        !std::is_same_v<std::decay_t<T>, Field>
-        && !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>, Z>;
+    using enable_if_not_field_or_bool_or_stringlike_t = std::enable_if_t<
+        !std::is_same_v<std::decay_t<T>, Field> &&
+        !std::is_same_v<std::decay_t<T>, bool> &&
+        !std::is_same_v<NearestFieldType<std::decay_t<T>>, String>, Z>;
 
-    Field() //-V730
-        : which(Types::Null)
-    {
-    }
+    Field() : Field(Null{}) {}
 
     /** Despite the presence of a template constructor, this constructor is still needed,
       *  since, in its absence, the compiler will still generate the default constructor.
@@ -345,7 +348,9 @@ public:
     }
 
     template <typename T>
-    Field(T && rhs, enable_if_not_field_or_stringlike_t<T> = nullptr);
+    Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T> = nullptr);
+
+    Field(bool rhs) : Field(castToNearestFieldType(rhs)) {}
 
     /// Create a string inplace.
     Field(const std::string_view & str) { create(str.data(), str.size()); }
@@ -395,8 +400,10 @@ public:
     /// 1. float <--> int needs explicit cast
     /// 2. customized types needs explicit cast
     template <typename T>
-    enable_if_not_field_or_stringlike_t<T, Field> &
+    enable_if_not_field_or_bool_or_stringlike_t<T, Field> &
     operator=(T && rhs);
+
+    Field & operator= (bool rhs) { return *this = castToNearestFieldType(rhs); }
 
     Field & operator= (const std::string_view & str);
     Field & operator= (const String & str) { return *this = std::string_view{str}; }
@@ -412,12 +419,7 @@ public:
     Types::Which getType() const { return which; }
     const char * getTypeName() const { return Types::toString(which); }
 
-    // Non-valued field are all denoted as Null
-    bool isNull() const { return which == Types::Null || which == Types::NegativeInfinity || which == Types::PositiveInfinity; }
-    bool isNegativeInfinity() const { return which == Types::NegativeInfinity; }
-    bool isPositiveInfinity() const { return which == Types::PositiveInfinity; }
-
-
+    bool isNull() const { return which == Types::Null; }
     template <typename T>
     NearestFieldType<std::decay_t<T>> & get();
 
@@ -427,6 +429,9 @@ public:
         auto mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
         return mutable_this->get<T>();
     }
+
+    bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
+    bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
 
     template <typename T>
     T & reinterpret();
@@ -470,10 +475,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:
-            case Types::NegativeInfinity:
-            case Types::PositiveInfinity:
-                return false;
+            case Types::Null:    return false;
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
             case Types::UInt256: return get<UInt256>() < rhs.get<UInt256>();
@@ -510,10 +512,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:
-            case Types::NegativeInfinity:
-            case Types::PositiveInfinity:
-                return true;
+            case Types::Null:    return true;
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
             case Types::UInt256: return get<UInt256>() <= rhs.get<UInt256>();
@@ -550,10 +549,7 @@ public:
 
         switch (which)
         {
-            case Types::Null:
-            case Types::NegativeInfinity:
-            case Types::PositiveInfinity:
-                return true;
+            case Types::Null: return true;
             case Types::UInt64: return get<UInt64>() == rhs.get<UInt64>();
             case Types::Int64:   return get<Int64>() == rhs.get<Int64>();
             case Types::Float64:
@@ -593,8 +589,6 @@ public:
         switch (field.which)
         {
             case Types::Null:    return f(field.template get<Null>());
-            case Types::NegativeInfinity:    return f(field.template get<NegativeInfinity>());
-            case Types::PositiveInfinity:    return f(field.template get<PositiveInfinity>());
 // gcc 8.2.1
 #if !defined(__clang__)
 #pragma GCC diagnostic push
@@ -752,9 +746,7 @@ private:
 using Row = std::vector<Field>;
 
 
-template <> struct Field::TypeToEnum<Null>    { static const Types::Which value = Types::Null; };
-template <> struct Field::TypeToEnum<NegativeInfinity>    { static const Types::Which value = Types::NegativeInfinity; };
-template <> struct Field::TypeToEnum<PositiveInfinity>    { static const Types::Which value = Types::PositiveInfinity; };
+template <> struct Field::TypeToEnum<Null> { static const Types::Which value = Types::Null; };
 template <> struct Field::TypeToEnum<UInt64>  { static const Types::Which value = Types::UInt64; };
 template <> struct Field::TypeToEnum<UInt128> { static const Types::Which value = Types::UInt128; };
 template <> struct Field::TypeToEnum<UInt256> { static const Types::Which value = Types::UInt256; };
@@ -775,8 +767,6 @@ template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static const Typ
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static const Types::Which value = Types::AggregateFunctionState; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
-template <> struct Field::EnumToType<Field::Types::NegativeInfinity>    { using Type = NegativeInfinity; };
-template <> struct Field::EnumToType<Field::Types::PositiveInfinity>    { using Type = PositiveInfinity; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
 template <> struct Field::EnumToType<Field::Types::UInt128> { using Type = UInt128; };
 template <> struct Field::EnumToType<Field::Types::UInt256> { using Type = UInt256; };
@@ -876,24 +866,14 @@ template <> inline constexpr const char * TypeName<AggregateFunctionStateData> =
 
 
 template <typename T>
-decltype(auto) castToNearestFieldType(T && x)
-{
-    using U = NearestFieldType<std::decay_t<T>>;
-    if constexpr (std::is_same_v<std::decay_t<T>, U>)
-        return std::forward<T>(x);
-    else
-        return U(x);
-}
-
-template <typename T>
-Field::Field(T && rhs, enable_if_not_field_or_stringlike_t<T>) //-V730
+Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
 }
 
 template <typename T>
-Field::enable_if_not_field_or_stringlike_t<T, Field> &
+Field::enable_if_not_field_or_bool_or_stringlike_t<T, Field> &
 Field::operator=(T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
@@ -907,7 +887,6 @@ Field::operator=(T && rhs)
         assignConcrete(std::forward<U>(val));
     return *this;
 }
-
 
 inline Field & Field::operator=(const std::string_view & str)
 {
@@ -974,9 +953,9 @@ __attribute__ ((noreturn)) inline void writeText(const AggregateFunctionStateDat
 }
 
 template <typename T>
-inline void writeText(const DecimalField<T> & value, WriteBuffer & buf)
+inline void writeText(const DecimalField<T> & value, WriteBuffer & buf, bool trailing_zeros = false)
 {
-    writeText(value.getValue(), value.getScale(), buf);
+    writeText(value.getValue(), value.getScale(), buf, trailing_zeros);
 }
 
 template <typename T>

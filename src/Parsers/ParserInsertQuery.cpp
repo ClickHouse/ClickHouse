@@ -11,6 +11,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
+#include "Parsers/IAST_fwd.h"
 
 
 namespace DB
@@ -25,6 +26,7 @@ namespace ErrorCodes
 bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_insert_into("INSERT INTO");
+    ParserKeyword s_from_infile("FROM INFILE");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_function("FUNCTION");
     ParserToken s_dot(TokenType::Dot);
@@ -33,21 +35,27 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_select("SELECT");
     ParserKeyword s_watch("WATCH");
+    ParserKeyword s_partition_by("PARTITION BY");
     ParserKeyword s_with("WITH");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
+    ParserStringLiteral infile_name_p;
+    ParserExpressionWithOptionalAlias exp_elem_p(false);
 
     ASTPtr database;
     ASTPtr table;
+    ASTPtr infile;
     ASTPtr columns;
     ASTPtr format;
     ASTPtr select;
     ASTPtr watch;
     ASTPtr table_function;
     ASTPtr settings_ast;
+    ASTPtr partition_by_expr;
+
     /// Insertion data
     const char * data = nullptr;
 
@@ -60,6 +68,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!table_function_p.parse(pos, table_function, expected))
             return false;
+
+        if (s_partition_by.ignore(pos, expected))
+        {
+            if (!exp_elem_p.parse(pos, partition_by_expr, expected))
+                return false;
+        }
     }
     else
     {
@@ -86,8 +100,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     Pos before_values = pos;
 
-    /// VALUES or FORMAT or SELECT
-    if (s_values.ignore(pos, expected))
+    if (s_from_infile.ignore(pos, expected))
+    {
+        if (!infile_name_p.parse(pos, infile, expected))
+            return false;
+    }
+
+    /// VALUES or FROM INFILE or FORMAT or SELECT
+    if (!infile && s_values.ignore(pos, expected))
     {
         data = pos->begin;
     }
@@ -136,7 +156,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
 
-    if (format)
+    if (format && !infile)
     {
         Pos last_token = pos;
         --last_token;
@@ -167,9 +187,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto query = std::make_shared<ASTInsertQuery>();
     node = query;
 
+    if (infile)
+        query->infile = infile;
+
     if (table_function)
     {
         query->table_function = table_function;
+        query->partition_by = partition_by_expr;
     }
     else
     {

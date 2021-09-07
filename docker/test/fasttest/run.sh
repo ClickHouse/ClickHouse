@@ -303,6 +303,7 @@ function run_tests
         01683_codec_encrypted                   # Depends on OpenSSL
         01776_decrypt_aead_size_check           # Depends on OpenSSL
         01811_filter_by_null                    # Depends on OpenSSL
+        02012_sha512_fixedstring                # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent
@@ -314,6 +315,7 @@ function run_tests
         01799_long_uniq_theta_sketch
         01890_stem                               # depends on libstemmer_c
         02003_compress_bz2                       # depends on bzip2
+        01059_storage_file_compression           # depends on brotli and bzip2
         collate
         collation
         _orc_
@@ -376,6 +378,7 @@ function run_tests
 
         # Depends on AWS
         01801_s3_cluster
+        02012_settings_clause_for_s3
 
         # needs psql
         01889_postgresql_protocol_null_fields
@@ -392,6 +395,12 @@ function run_tests
         01853_s2_cells_intersect
         01854_s2_cap_contains
         01854_s2_cap_union
+
+        # needs s3
+        01944_insert_partition_by
+
+        # depends on Go
+        02013_zlib_read_after_eof
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
