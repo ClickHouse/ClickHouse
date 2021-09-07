@@ -13,7 +13,6 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
@@ -757,7 +756,7 @@ void HTTPHandler::processQuery(
     }
 
     /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to the client.
-    used_output.out->finalize();
+    used_output.finalize();
 }
 
 void HTTPHandler::trySendExceptionToClient(
@@ -822,23 +821,19 @@ try
         __builtin_unreachable();
     }
 
-    if (used_output.out)
-        used_output.out->finalize();
+    used_output.finalize();
 }
 catch (...)
 {
     tryLogCurrentException(log, "Cannot send exception to client");
 
-    if (used_output.out)
+    try
     {
-        try
-        {
-            used_output.out->finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
-        }
+        used_output.finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
     }
 }
 
@@ -897,8 +892,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
     }
 
-    if (used_output.out)
-        used_output.out->finalize();
+    used_output.finalize();
 }
 
 DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_)
