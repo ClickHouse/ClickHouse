@@ -18,6 +18,7 @@
           - information
           - debug
           - trace
+          - test (not for production usage)
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
         -->

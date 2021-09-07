@@ -764,6 +764,12 @@ if (ThreadFuzzer::instance().isEffective())
         fs::create_directories(dictionaries_lib_path);
     }
 
+    {
+        std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
+        global_context->setUserScriptsPath(user_scripts_path);
+        fs::create_directories(user_scripts_path);
+    }
+
     /// top_level_domains_lists
     {
         const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
@@ -1123,6 +1129,10 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
+        /// Firstly remove partially dropped databases, to avoid race with MaterializedMySQLSyncThread,
+        /// that may execute DROP before loadMarkedAsDroppedTables() in background,
+        /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
+        database_catalog.loadMarkedAsDroppedTables();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
         database_catalog.loadDatabases();

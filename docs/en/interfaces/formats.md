@@ -26,17 +26,17 @@ The supported formats are:
 | [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
-| [JSONString](#jsonstring)                                                               | ✗     | ✔      |
+| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
-| [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
+| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
 | [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
 | [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
 | [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
-| [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringEachRowWithNamesAndTypes](#jsoncompactstringeachrowwithnamesandtypes) | ✔     | ✔      |
+| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
+| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
 | [TSKV](#tskv)                                                                           | ✔     | ✔      |
 | [Pretty](#pretty)                                                                       | ✗     | ✔      |
 | [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
@@ -464,7 +464,7 @@ ClickHouse supports [NULL](../sql-reference/syntax.md), which is displayed as `n
 -   [JSONEachRow](#jsoneachrow) format
 -   [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows) setting
 
-## JSONString {#jsonstring}
+## JSONStrings {#jsonstrings}
 
 Differs from JSON only in that data fields are output in strings, not in typed JSON values.
 
@@ -541,7 +541,7 @@ Result:
 ```
 
 ## JSONCompact {#jsoncompact}
-## JSONCompactString {#jsoncompactstring}
+## JSONCompactStrings {#jsoncompactstrings}
 
 Differs from JSON only in that data rows are output in arrays, not in objects.
 
@@ -580,7 +580,7 @@ Example:
 ```
 
 ```
-// JSONCompactString
+// JSONCompactStrings
 {
         "meta":
         [
@@ -614,7 +614,7 @@ Example:
 ## JSONEachRow {#jsoneachrow}
 ## JSONStringsEachRow {#jsonstringseachrow}
 ## JSONCompactEachRow {#jsoncompacteachrow}
-## JSONCompactStringEachRow {#jsoncompactstringeachrow}
+## JSONCompactStringsEachRow {#jsoncompactstringseachrow}
 
 When using these formats, ClickHouse outputs rows as separated, newline-delimited JSON values, but the data as a whole is not valid JSON.
 
@@ -639,9 +639,9 @@ Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yie
 ```
 
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
-## JSONCompactStringEachRowWithNamesAndTypes {#jsoncompactstringeachrowwithnamesandtypes}
+## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
 
-Differs from `JSONCompactEachRow`/`JSONCompactStringEachRow` in that the column names and types are written as the first two rows.
+Differs from `JSONCompactEachRow`/`JSONCompactStringsEachRow` in that the column names and types are written as the first two rows.
 
 ```json
 ["'hello'", "multiply(42, number)", "range(5)"]

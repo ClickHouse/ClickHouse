@@ -2,6 +2,7 @@
 
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <city.h>
+#include <optional>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -87,12 +88,12 @@ public:
 
     uint64_t getNextEntryIndex() const
     {
-        return start_index + logs.size();
+        return max_log_id + 1;
     }
 
     uint64_t getStartIndex() const
     {
-        return start_index;
+        return min_log_id;
     }
 
     /// Last entry in log, or fake entry with term 0 if log is empty
@@ -128,6 +129,13 @@ private:
     /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
     void rotate(uint64_t new_start_log_index);
 
+    /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
+    void removeAllLogsAfter(uint64_t start_to_remove_from_id);
+    /// Remove all logs from disk
+    void removeAllLogs();
+    /// Init writer for existing log with some entries already written
+    void initWriter(const ChangelogFileDescription & description, uint64_t entries_already_written, std::optional<uint64_t> truncate_to_offset = {});
+
 private:
     const std::string changelogs_dir;
     const uint64_t rotate_interval;
@@ -144,7 +152,9 @@ private:
     /// Mapping log_id -> log_entry
     IndexToLogEntry logs;
     /// Start log_id which exists in all "active" logs
-    uint64_t start_index = 0;
+    /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
+    uint64_t min_log_id = 0;
+    uint64_t max_log_id = 0;
 };
 
 }
