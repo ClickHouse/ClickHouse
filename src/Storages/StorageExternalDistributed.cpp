@@ -96,10 +96,11 @@ StorageExternalDistributed::StorageExternalDistributed(
                     .username = username,
                     .password = password,
                     .database = remote_database,
+                    .addresses = addresses
                 };
 
                 auto pool = std::make_shared<postgres::PoolWithFailover>(
-                    StoragePostgreSQLConfiguration(configuration, addresses),
+                    StoragePostgreSQLConfiguration(configuration),
                     context->getSettingsRef().postgresql_connection_pool_size,
                     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 

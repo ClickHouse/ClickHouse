@@ -5,10 +5,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 
-namespace ExternalDataSource
-{
-}
-
 namespace DB
 {
 
@@ -22,6 +18,8 @@ struct ExternalDataSourceConfiguration
     String table;
     String schema;
 
+    std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
+
     String toString() const;
 };
 
@@ -30,14 +28,10 @@ using ExternalDataSourceConfigurationPtr = std::shared_ptr<ExternalDataSourceCon
 
 struct StoragePostgreSQLConfiguration : ExternalDataSourceConfiguration
 {
-    explicit StoragePostgreSQLConfiguration(
-        const ExternalDataSourceConfiguration & common_configuration,
-        const std::vector<std::pair<String, UInt16>> & addresses_ = {})
-        : ExternalDataSourceConfiguration(common_configuration)
-        , addresses(addresses_) {}
+    explicit StoragePostgreSQLConfiguration(const ExternalDataSourceConfiguration & common_configuration)
+        : ExternalDataSourceConfiguration(common_configuration) {}
 
     String on_conflict;
-    std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
 };
 
 
@@ -48,7 +42,6 @@ struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
 
     bool replace_query = false;
     String on_duplicate_clause;
-    std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
 };
 
 struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
@@ -74,7 +67,7 @@ using EngineArgs = std::vector<std::pair<String, DB::Field>>;
  * i.e. storage-specific arguments, then return them back in a set: ExternalDataSource::EngineArgs.
  */
 std::tuple<ExternalDataSourceConfiguration, EngineArgs, bool>
-getExternalDataSourceConfiguration(ASTs args, ContextPtr context, bool is_database_engine = false);
+getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine = false);
 
 ExternalDataSourceConfiguration getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
@@ -93,5 +86,28 @@ struct ExternalDataSourcesByPriority
 
 ExternalDataSourcesByPriority
 getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
+
+
+struct URLBasedDataSourceConfiguration
+{
+    String url;
+    String format;
+    String compression_method = "auto";
+    String structure;
+
+    std::vector<std::pair<String, Field>> headers;
+};
+
+struct StorageS3Configuration : URLBasedDataSourceConfiguration
+{
+    explicit StorageS3Configuration(const URLBasedDataSourceConfiguration & common_configuration)
+        : URLBasedDataSourceConfiguration(common_configuration) {}
+
+    String access_key_id;
+    String secret_access_key;
+};
+
+std::tuple<URLBasedDataSourceConfiguration, EngineArgs, bool>
+getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
 
 }

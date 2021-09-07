@@ -20,16 +20,30 @@ namespace ErrorCodes
 String ExternalDataSourceConfiguration::toString() const
 {
     WriteBufferFromOwnString configuration_info;
-    configuration_info << "host: " << host << "\t";
-    configuration_info << "port: " << port << "\t";
-    configuration_info << "username: " << username;
+    configuration_info << "username: " << username << "\t";
+    if (addresses.empty())
+    {
+        configuration_info << "host: " << host << "\t";
+        configuration_info << "port: " << port << "\t";
+    }
+    else
+    {
+        for (const auto & [replica_host, replica_port] : addresses)
+        {
+            configuration_info << "host: " << replica_host << "\t";
+            configuration_info << "port: " << replica_port << "\t";
+        }
+    }
     return configuration_info.str();
 }
 
 
 std::tuple<ExternalDataSourceConfiguration, EngineArgs, bool>
-getExternalDataSourceConfiguration(ASTs args, ContextPtr context, bool is_database_engine)
+getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine)
 {
+    if (args.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
+
     ExternalDataSourceConfiguration configuration;
     EngineArgs non_common_args;
 
@@ -187,6 +201,82 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
     }
 
     return configuration;
+}
+
+
+std::tuple<URLBasedDataSourceConfiguration, EngineArgs, bool>
+getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
+{
+    if (args.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
+
+    URLBasedDataSourceConfiguration configuration;
+    EngineArgs non_common_args;
+
+    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
+    {
+        const auto & config = context->getConfigRef();
+        auto config_prefix = fmt::format("named_collections.{}", collection->name());
+
+        if (!config.has(config_prefix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
+
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(config_prefix, keys);
+        for (const auto & key : keys)
+        {
+            if (key == "url")
+                configuration.url = config.getString(config_prefix + ".url", "");
+            if (key == "headers")
+            {
+                Poco::Util::AbstractConfiguration::Keys header_keys;
+                config.keys(config_prefix + '.' + "headers", header_keys);
+                for (const auto & header : header_keys)
+                {
+                    const auto header_prefix = config_prefix + ".headers." + header;
+                    configuration.headers.emplace_back(std::make_pair(config.getString(header_prefix + ".name"), config.getString(header_prefix + ".value")));
+                }
+            }
+            else
+                non_common_args.emplace_back(std::make_pair(key, config.getString(config_prefix + '.' + key)));
+        }
+
+        for (size_t i = 1; i < args.size(); ++i)
+        {
+            if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
+            {
+                const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_function->arguments.get());
+                auto function_args = args_expr->children;
+                if (function_args.size() != 2)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
+
+                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
+                auto arg_value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context)->as<ASTLiteral>()->value;
+
+                if (arg_name == "url")
+                    configuration.url = arg_value.safeGet<String>();
+                else if (arg_name == "format")
+                    configuration.format = arg_value.safeGet<String>();
+                else if (arg_name == "compression_method")
+                    configuration.compression_method = arg_value.safeGet<String>();
+                else if (arg_name == "structure")
+                    configuration.structure = arg_value.safeGet<String>();
+                else
+                    non_common_args.emplace_back(std::make_pair(arg_name, arg_value));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
+            }
+        }
+
+        if (configuration.url.empty() || configuration.format.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Storage requires {}", configuration.url.empty() ? "uri" : "format");
+
+        return std::make_tuple(configuration, non_common_args, true);
+    }
+    return std::make_tuple(configuration, non_common_args, false);
 }
 
 }
