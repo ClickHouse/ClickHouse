@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# This test reproduces crash in case of insufficient coroutines stack size
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
