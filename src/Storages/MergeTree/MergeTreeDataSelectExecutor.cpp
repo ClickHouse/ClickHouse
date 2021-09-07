@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
@@ -169,10 +170,19 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     Pipe projection_pipe;
     Pipe ordinary_pipe;
 
-    if (query_info.projection->merge_tree_projection_select_result_ptr)
+    auto projection_plan = std::make_unique<QueryPlan>();
+    if (query_info.projection->desc->is_minmax_count_projection)
+    {
+        Pipe pipe(std::make_shared<SourceFromSingleChunk>(
+            query_info.minmax_count_projection_block.cloneEmpty(),
+            Chunk(query_info.minmax_count_projection_block.getColumns(), query_info.minmax_count_projection_block.rows())));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        projection_plan->addStep(std::move(read_from_pipe));
+    }
+    else if (query_info.projection->merge_tree_projection_select_result_ptr)
     {
         LOG_DEBUG(log, "projection required columns: {}", fmt::join(query_info.projection->required_columns, ", "));
-        auto plan = readFromParts(
+        projection_plan = readFromParts(
             {},
             query_info.projection->required_columns,
             metadata_snapshot,
@@ -183,35 +193,32 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             num_streams,
             max_block_numbers_to_read,
             query_info.projection->merge_tree_projection_select_result_ptr);
+    }
 
-        if (plan->isInitialized())
+    if (projection_plan->isInitialized())
+    {
+        if (query_info.projection->before_where)
         {
-            // If `before_where` is not empty, transform input blocks by adding needed columns
-            // originated from key columns. We already project the block at the end, using
-            // projection_block, so we can just add more columns here without worrying
-            // NOTE: prewhere is executed inside readFromParts
-            if (query_info.projection->before_where)
-            {
-                auto where_step = std::make_unique<FilterStep>(
-                    plan->getCurrentDataStream(),
-                    query_info.projection->before_where,
-                    query_info.projection->where_column_name,
-                    query_info.projection->remove_where_filter);
+            auto where_step = std::make_unique<FilterStep>(
+                projection_plan->getCurrentDataStream(),
+                query_info.projection->before_where,
+                query_info.projection->where_column_name,
+                query_info.projection->remove_where_filter);
 
-                where_step->setStepDescription("WHERE");
-                plan->addStep(std::move(where_step));
-            }
-
-            if (query_info.projection->before_aggregation)
-            {
-                auto expression_before_aggregation
-                    = std::make_unique<ExpressionStep>(plan->getCurrentDataStream(), query_info.projection->before_aggregation);
-                expression_before_aggregation->setStepDescription("Before GROUP BY");
-                plan->addStep(std::move(expression_before_aggregation));
-            }
-            projection_pipe = plan->convertToPipe(
-                QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+            where_step->setStepDescription("WHERE");
+            projection_plan->addStep(std::move(where_step));
         }
+
+        if (query_info.projection->before_aggregation)
+        {
+            auto expression_before_aggregation
+                = std::make_unique<ExpressionStep>(projection_plan->getCurrentDataStream(), query_info.projection->before_aggregation);
+            expression_before_aggregation->setStepDescription("Before GROUP BY");
+            projection_plan->addStep(std::move(expression_before_aggregation));
+        }
+
+        projection_pipe = projection_plan->convertToPipe(
+            QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     }
 
     if (query_info.projection->merge_tree_normal_select_result_ptr)
@@ -1258,7 +1265,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             field = {index_columns.get(), row, column};
             // NULL_LAST
             if (field.isNull())
-                field = PositiveInfinity{};
+                field = POSITIVE_INFINITY;
         };
     }
     else
@@ -1268,7 +1275,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             index[column]->get(row, field);
             // NULL_LAST
             if (field.isNull())
-                field = PositiveInfinity{};
+                field = POSITIVE_INFINITY;
         };
     }
 
@@ -1283,7 +1290,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             for (size_t i = 0; i < used_key_size; ++i)
             {
                 create_field_ref(range.begin, i, index_left[i]);
-                index_right[i] = PositiveInfinity{};
+                index_right[i] = POSITIVE_INFINITY;
             }
         }
         else

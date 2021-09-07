@@ -44,7 +44,7 @@ void processTableFiles(const fs::path & path, const String & files_prefix, Strin
         writeIntText(fs::file_size(file_path), metadata_buf);
         writeChar('\n', metadata_buf);
 
-        auto src_buf = createReadBufferFromFileBase(file_path, fs::file_size(file_path), 0, 0, nullptr);
+        auto src_buf = createReadBufferFromFileBase(file_path, {}, fs::file_size(file_path));
         auto dst_buf = create_dst_buf(remote_file_name);
 
         copyData(*src_buf, *dst_buf);
