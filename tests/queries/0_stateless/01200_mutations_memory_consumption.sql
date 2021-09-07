@@ -15,9 +15,9 @@ ALTER TABLE table_with_single_pk DELETE WHERE key % 77 = 0 SETTINGS mutations_sy
 SYSTEM FLUSH LOGS;
 
 -- Memory usage for all mutations must be almost constant and less than
--- read_bytes.
+-- read_bytes (with a margin)
 SELECT
-  DISTINCT read_bytes >= peak_memory_usage
+  DISTINCT 1.1 * read_bytes >= peak_memory_usage
 FROM
     system.part_log
 WHERE event_type = 'MutatePart' AND table = 'table_with_single_pk' AND database = currentDatabase();
@@ -43,9 +43,9 @@ ALTER TABLE table_with_multi_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations_sy
 SYSTEM FLUSH LOGS;
 
 -- Memory usage for all mutations must be almost constant and less than
--- read_bytes.
+-- read_bytes (with a margin)
 SELECT
-  DISTINCT read_bytes >= peak_memory_usage
+  DISTINCT 1.1 * read_bytes >= peak_memory_usage
   FROM
       system.part_log
  WHERE event_type = 'MutatePart' AND table = 'table_with_multi_pk' AND database = currentDatabase();
@@ -73,9 +73,9 @@ ALTER TABLE table_with_function_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations
 SYSTEM FLUSH LOGS;
 
 -- Memory usage for all mutations must be almost constant and less than
--- read_bytes.
+-- read_bytes (with a margin)
 SELECT
-  DISTINCT read_bytes >= peak_memory_usage
+  DISTINCT 1.1 * read_bytes >= peak_memory_usage
   FROM
       system.part_log
  WHERE event_type = 'MutatePart' AND table = 'table_with_function_pk' AND database = currentDatabase();
@@ -101,9 +101,9 @@ ALTER TABLE table_without_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations_sync 
 SYSTEM FLUSH LOGS;
 
 -- Memory usage for all mutations must be almost constant and less than
--- read_bytes.
+-- read_bytes (with a margin)
 SELECT
-  DISTINCT read_bytes >= peak_memory_usage
+  DISTINCT 1.1 * read_bytes >= peak_memory_usage
   FROM
       system.part_log
  WHERE event_type = 'MutatePart' AND table = 'table_without_pk' AND database = currentDatabase();
