@@ -11,4 +11,7 @@ select min(i), max(i), count() from d group by _partition_id order by _partition
 select min(i), max(i), count() from d where _partition_value.1 = 0 group by _partition_id order by _partition_id;
 select min(i), max(i), count() from d where _partition_value.1 = 10 group by _partition_id order by _partition_id;
 
+-- fuzz crash
+select min(i) from d where 1 = _partition_value.1;
+
 drop table d;

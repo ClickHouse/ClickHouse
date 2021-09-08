@@ -1,7 +1,7 @@
 #  docker build -t yandex/clickhouse-binary-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=12
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
@@ -39,8 +39,6 @@ RUN apt-get update \
         bash \
         build-essential \
         ccache \
-        clang-11 \
-        clang-tidy-11 \
         cmake \
         curl \
         g++-10 \
@@ -50,9 +48,13 @@ RUN apt-get update \
         gperf \
         libicu-dev \
         libreadline-dev \
-        lld-11 \
-        llvm-11 \
-        llvm-11-dev \
+        clang-12 \
+        clang-tidy-12 \
+        lld-12 \
+        llvm-12 \
+        llvm-12-dev \
+        libicu-dev \
+        libreadline-dev \
         moreutils \
         ninja-build \
         pigz \
