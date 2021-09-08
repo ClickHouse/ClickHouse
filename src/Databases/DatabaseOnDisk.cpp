@@ -196,12 +196,10 @@ DatabaseOnDisk::DatabaseOnDisk(
     const String & metadata_path_,
     const String & data_path_,
     const String & logger,
-    ContextPtr local_context,
-    ASTPtr storage_def_)
+    ContextPtr local_context)
     : DatabaseWithOwnTablesBase(name, logger, local_context)
     , metadata_path(metadata_path_)
     , data_path(data_path_)
-    , storage_def(storage_def_)
 {
     fs::create_directories(local_context->getPath() + data_path);
     fs::create_directories(metadata_path);
@@ -701,8 +699,10 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     return ast;
 }
 
-void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr local_context)
+void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
+    std::lock_guard lock(modify_settings_mutex);
+
     auto create_query = getCreateDatabaseQuery()->clone();
     auto * create = create_query->as<ASTCreateQuery>();
     auto * settings = create->storage->settings;
@@ -736,7 +736,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     String statement = statement_buf.str();
 
     String database_name_escaped = escapeForFileName(database_name);
-    fs::path metadata_root_path = fs::canonical(local_context->getGlobalContext()->getPath());
+    fs::path metadata_root_path = fs::canonical(query_context->getGlobalContext()->getPath());
     fs::path metadata_file_tmp_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql");
 

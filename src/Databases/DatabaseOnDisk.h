@@ -32,7 +32,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 class DatabaseOnDisk : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context, ASTPtr storage_def_);
+    DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context);
 
     void createTable(
         ContextPtr context,
@@ -74,7 +74,7 @@ public:
     void checkMetadataFilenameAvailability(const String & to_table_name) const;
     void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const;
 
-    void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr local_context) override;
+    void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
 protected:
     static constexpr const char * create_suffix = ".tmp";
@@ -100,7 +100,8 @@ protected:
     const String metadata_path;
     const String data_path;
 
-    ASTPtr storage_def;
+    /// For alter settings.
+    std::mutex modify_settings_mutex;
 };
 
 }

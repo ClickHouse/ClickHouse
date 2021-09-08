@@ -500,14 +500,10 @@ void PostgreSQLReplicationHandler::shutdownFinal()
                 dropReplicationSlot(tx, /* temporary */true);
         });
 
-<<<<<<< HEAD
-        connection.execWithRetry([&](pqxx::nontransaction & tx)
-=======
         if (user_managed_slot)
             return;
 
-        connection->execWithRetry([&](pqxx::nontransaction & tx)
->>>>>>> 8588e4d9bb809f7ca29426934855567646d2bd01
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
                 dropReplicationSlot(tx, /* temporary */false);

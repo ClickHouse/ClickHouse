@@ -358,24 +358,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-void AlterCommands::apply(DatabasePtr database, ContextPtr context) const
-{
-    for (const AlterCommand & command : *this)
-    {
-        if (!command.ignore)
-        {
-            if (command.type == AlterCommand::MODIFY_DATABASE_SETTING)
-            {
-                database->tryApplySettings(command.settings_changes, context);
-                database->modifySettingsMetadata(command.settings_changes, context);
-            }
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported alter command");
-        }
-    }
-}
-
-
 void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (type == ADD_COLUMN)
