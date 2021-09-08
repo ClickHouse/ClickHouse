@@ -260,6 +260,39 @@ If an error occurred while reading rows but the error counter is still less than
 
 If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
+## input_format_parquet_import_nested {#input_format_parquet_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Parquet](../../interfaces/formats.md#data-format-parquet) input format.
+
+Possible values:
+
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
+
+## input_format_arrow_import_nested {#input_format_arrow_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Arrow](../../interfaces/formats.md#data_types-matching-arrow) input format.
+
+Possible values:
+
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
+
+## input_format_orc_import_nested {#input_format_orc_import_nested}
+
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [ORC](../../interfaces/formats.md#data-format-orc) input format.
+
+Possible values:
+
+-   0 — Data can not be inserted into `Nested` columns as an array of structs.
+-   1 — Data can be inserted into `Nested` columns as an array of structs.
+
+Default value: `0`.
+
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
 Enables or disables the full SQL parser if the fast stream parser can’t parse the data. This setting is used only for the [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../sql-reference/syntax.md) section.
@@ -3436,6 +3469,14 @@ Possible values:
 
 Default value: `0`.
 
+## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+
+Allows to have user-managed replication slots. Must be used together with `materialized_postgresql_snapshot`.
+
+## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+
+A text string identifying a snapshot, from which initial dump of tables will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md#projections) optimization when processing `SELECT` queries.
@@ -3449,7 +3490,7 @@ Default value: `0`.
 
 ## force_optimize_projection {#force-optimize-projection}
 
-Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md#projections) in `SELECT` queries, when projection optimization is enabled (see [allow_experimental_projection_optimization](#allow-experimental-projection-optimization) setting). 
+Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md#projections) in `SELECT` queries, when projection optimization is enabled (see [allow_experimental_projection_optimization](#allow-experimental-projection-optimization) setting).
 
 Possible values:
 
@@ -3457,3 +3498,13 @@ Possible values:
 -   1 — Projection optimization is obligatory.
 
 Default value: `0`.
+
+## regexp_max_matches_per_row {#regexp-max-matches-per-row}
+
+Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md#extractallgroups-horizontal) function.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
