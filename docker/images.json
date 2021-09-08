@@ -108,7 +108,7 @@
         "dependent": []
     },
     "docker/test/integration/mysql_java_client": {
-        "name": "clickhouse/clickhouse-mysql-java-client",
+        "name": "clickhouse/mysql-java-client",
         "dependent": []
     },
     "docker/test/integration/mysql_js_client": {
