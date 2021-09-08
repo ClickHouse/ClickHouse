@@ -19,13 +19,12 @@ class AsynchronousInsertQueue : public WithContext
 {
 public:
     using Milliseconds = std::chrono::milliseconds;
-    using Seconds = std::chrono::seconds;
 
     /// Using structure to allow and benefit from designated initialization and not mess with a positional arguments in ctor.
     struct Timeout
     {
-        Seconds busy;
-        Seconds stale;
+        Milliseconds busy;
+        Milliseconds stale;
     };
 
     AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, size_t max_data_size, const Timeout & timeouts);
@@ -113,8 +112,8 @@ private:
     ///  - max_data_size:  if the maximum size of data is reached, then again we dump the data.
 
     const size_t max_data_size;  /// in bytes
-    const Seconds busy_timeout;
-    const Seconds stale_timeout;
+    const Milliseconds busy_timeout;
+    const Milliseconds stale_timeout;
 
     std::atomic<bool> shutdown{false};
     ThreadPool pool;  /// dump the data only inside this pool.
