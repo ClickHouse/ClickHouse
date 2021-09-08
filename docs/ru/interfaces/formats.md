@@ -1188,7 +1188,7 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
-Чтобы вставить данные типа `Array(Struct)` в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md), нужно включить настройку [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested).
+Чтобы вставлять данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested).
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Parquet, используйте команду следующего вида:
 
@@ -1248,7 +1248,7 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-Чтобы вставить данные типа `Array(Struct)` в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md), нужно включить настройку [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested).
+Чтобы вставлять данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested).
 
 ### Вывод данных {#selecting-data-arrow}
 
@@ -1306,7 +1306,7 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Чтобы вставить данные типа `Array(Struct)` в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md), нужно включить настройку [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested).
+Чтобы вставлять данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested).
 
 ### Вывод данных {#selecting-data-2}
 
