@@ -191,5 +191,16 @@ elseif (COMPILER_GCC)
         #     34 |   return __builtin___memcpy_chk (__dest, __src, __len, __bos0 (__dest));
         # For some reason (bug in gcc?) macro 'GCC diagnostic ignored "-Wstringop-overflow"' doesn't help.
         add_cxx_compile_options(-Wno-stringop-overflow)
+        # reinterpretAs.cpp:182:31: error: ‘void* memcpy(void*, const void*, size_t)’ copying an object of non-trivial type
+        # ‘using ToFieldType = using FieldType = using UUID = struct StrongTypedef<wide::integer<128, unsigned int>, DB::UUIDTag>’
+        # {aka ‘struct StrongTypedef<wide::integer<128, unsigned int>, DB::UUIDTag>’} from an array of ‘const char8_t’
+        add_cxx_compile_options(-Wno-error=class-memaccess)
+    endif()
+
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 11)
+        # reinterpretAs.cpp:182:31: error: ‘void* memcpy(void*, const void*, size_t)’ copying an object of non-trivial type
+        # ‘using ToFieldType = using FieldType = using UUID = struct StrongTypedef<wide::integer<128, unsigned int>, DB::UUIDTag>’
+        # {aka ‘struct StrongTypedef<wide::integer<128, unsigned int>, DB::UUIDTag>’} from an array of ‘const char8_t’
+        add_cxx_compile_options(-Wno-error=class-memaccess)
     endif()
 endif ()
