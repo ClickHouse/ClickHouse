@@ -6,6 +6,7 @@
 #include "IO/VarInt.h"
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecEncrypted.h>
+#include <Poco/Logger.h>
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
@@ -487,6 +488,53 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
 namespace DB
 {
 
+namespace
+{
+
+/// Get string name for method. Return empty string for undefined Method
+String getMethodName(EncryptionMethod Method)
+{
+    if (Method == AES_128_GCM_SIV)
+    {
+        return "AES_128_GCM_SIV";
+    }
+    else if (Method == AES_256_GCM_SIV)
+    {
+        return "AES_256_GCM_SIV";
+    }
+    else
+    {
+        return "";
+    }
+}
+
+/// Get method code (used for codec, to understand which one we are using)
+uint8_t getMethodCode(EncryptionMethod Method)
+{
+    if (Method == AES_128_GCM_SIV)
+    {
+        return uint8_t(CompressionMethodByte::AES_128_GCM_SIV);
+    }
+    else if (Method == AES_256_GCM_SIV)
+    {
+        return uint8_t(CompressionMethodByte::AES_256_GCM_SIV);
+    }
+    else
+    {
+        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
+    }
+}
+
+/// Register codec in factory
+void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod Method)
+{
+    auto throw_no_ssl = [](const ASTPtr &) -> CompressionCodecPtr { throw Exception(ErrorCodes::OPENSSL_ERROR, "Server was built without SSL support. Encryption is disabled."); };
+    const auto method_code = getMethodCode(Method); /// Codec need to know its code
+    factory.registerCompressionCodec(getMethodName(Method), method_code, throw_no_ssl);
+}
+
+}
+
 namespace ErrorCodes
 {
     extern const int OPENSSL_ERROR;
@@ -508,36 +556,6 @@ bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::Abstrac
 void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractConfiguration & config [[maybe_unused]], const String & config_prefix [[maybe_unused]])
 {
     LOG_WARNING(&Poco::Logger::get("CompressionCodecEncrypted"), "Server was built without SSL support. Encryption is disabled.");
-}
-
-namespace
-{
-
-/// Register codec in factory
-void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod Method)
-{
-    auto throw_no_ssl = [](const ASTPtr &) -> CompressionCodecPtr { throw Exception(ErrorCodes::OPENSSL_ERROR, "Server was built without SSL support. Encryption is disabled."); };
-    const auto method_code = getMethodCode(Method); /// Codec need to know its code
-    factory.registerCompressionCodec(getMethodName(Method), method_code, throw_no_ssl);
-}
-
-/// Get method code (used for codec, to understand which one we are using)
-uint8_t getMethodCode(EncryptionMethod Method)
-{
-    if (Method == AES_128_GCM_SIV)
-    {
-        return uint8_t(CompressionMethodByte::AES_128_GCM_SIV);
-    }
-    else if (Method == AES_256_GCM_SIV)
-    {
-        return uint8_t(CompressionMethodByte::AES_256_GCM_SIV);
-    }
-    else
-    {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
-    }
-}
-
 }
 
 }
