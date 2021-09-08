@@ -57,6 +57,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <AggregateFunctions/AggregateFunctionCount.h>
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -447,8 +448,6 @@ void MergeTreeData::checkProperties(
 
         for (const auto & projection : new_metadata.projections)
         {
-            MergeTreeProjectionFactory::instance().validate(projection);
-
             if (projections_names.find(projection.name) != projections_names.end())
                 throw Exception(
                         "Projection with name " + backQuote(projection.name) + " already exists",
@@ -768,7 +767,7 @@ Block MergeTreeData::getSampleBlockWithVirtualColumns() const
 }
 
 
-Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part) const
+Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part, bool ignore_empty) const
 {
     auto block = getSampleBlockWithVirtualColumns();
     MutableColumns columns = block.mutateColumns();
@@ -781,6 +780,8 @@ Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPar
     bool has_partition_value = typeid_cast<const ColumnTuple *>(partition_value_column.get());
     for (const auto & part_or_projection : parts)
     {
+        if (ignore_empty && part_or_projection->isEmpty())
+            continue;
         const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         part_column->insert(part->name);
         partition_id_column->insert(part->info.partition_id);
@@ -1249,6 +1250,10 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         /// TODO: use data_parts iterators instead of pointers
         for (const auto & part : parts)
         {
+            /// Temporary does not present in data_parts_by_info.
+            if (part->getState() == DataPartState::Temporary)
+                continue;
+
             auto it = data_parts_by_info.find(part->info);
             if (it == data_parts_by_info.end())
                 throw Exception("Deleting data part " + part->name + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
@@ -4151,6 +4156,110 @@ static void selectBestProjection(
 }
 
 
+Block MergeTreeData::getMinMaxCountProjectionBlock(
+    const StorageMetadataPtr & metadata_snapshot,
+    const Names & required_columns,
+    const SelectQueryInfo & query_info,
+    ContextPtr query_context) const
+{
+    if (!metadata_snapshot->minmax_count_projection)
+        throw Exception(
+            "Cannot find the definition of minmax_count projection but it's used in current query. It's a bug",
+            ErrorCodes::LOGICAL_ERROR);
+
+    auto block = metadata_snapshot->minmax_count_projection->sample_block;
+    auto minmax_count_columns = block.mutateColumns();
+
+    auto insert = [](ColumnAggregateFunction & column, const Field & value)
+    {
+        auto func = column.getAggregateFunction();
+        Arena & arena = column.createOrGetArena();
+        size_t size_of_state = func->sizeOfData();
+        size_t align_of_state = func->alignOfData();
+        auto * place = arena.alignedAlloc(size_of_state, align_of_state);
+        func->create(place);
+        auto value_column = func->getReturnType()->createColumnConst(1, value)->convertToFullColumnIfConst();
+        const auto * value_column_ptr = value_column.get();
+        func->add(place, &value_column_ptr, 0, &arena);
+        column.insertFrom(place);
+    };
+
+    auto parts = getDataPartsVector();
+    ASTPtr expression_ast;
+    Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */, true /* ignore_empty */);
+    if (virtual_columns_block.rows() == 0)
+        return {};
+
+    // Generate valid expressions for filtering
+    VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, query_context, virtual_columns_block, expression_ast);
+    if (expression_ast)
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, query_context, expression_ast);
+
+    size_t rows = virtual_columns_block.rows();
+    const ColumnString & part_name_column = typeid_cast<const ColumnString &>(*virtual_columns_block.getByName("_part").column);
+    size_t part_idx = 0;
+    for (size_t row = 0; row < rows; ++row)
+    {
+        while (parts[part_idx]->name != part_name_column.getDataAt(row))
+            ++part_idx;
+
+        const auto & part = parts[part_idx];
+
+        if (!part->minmax_idx.initialized)
+            throw Exception("Found a non-empty part with uninitialized minmax_idx. It's a bug", ErrorCodes::LOGICAL_ERROR);
+
+        size_t minmax_idx_size = part->minmax_idx.hyperrectangle.size();
+        if (2 * minmax_idx_size + 1 != minmax_count_columns.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "minmax_count projection should have twice plus one the number of ranges in minmax_idx. 2 * minmax_idx_size + 1 = {}, "
+                "minmax_count_columns.size() = {}. It's a bug",
+                2 * minmax_idx_size + 1,
+                minmax_count_columns.size());
+
+        for (size_t i = 0; i < minmax_idx_size; ++i)
+        {
+            size_t min_pos = i * 2;
+            size_t max_pos = i * 2 + 1;
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[min_pos]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[max_pos]);
+            const auto & range = part->minmax_idx.hyperrectangle[i];
+            insert(min_column, range.left);
+            insert(max_column, range.right);
+        }
+
+        {
+            auto & column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns.back());
+            auto func = column.getAggregateFunction();
+            Arena & arena = column.createOrGetArena();
+            size_t size_of_state = func->sizeOfData();
+            size_t align_of_state = func->alignOfData();
+            auto * place = arena.alignedAlloc(size_of_state, align_of_state);
+            func->create(place);
+            const AggregateFunctionCount & agg_count = assert_cast<const AggregateFunctionCount &>(*func);
+            agg_count.set(place, part->rows_count);
+            column.insertFrom(place);
+        }
+    }
+    block.setColumns(std::move(minmax_count_columns));
+
+    Block res;
+    for (const auto & name : required_columns)
+    {
+        if (virtual_columns_block.has(name))
+            res.insert(virtual_columns_block.getByName(name));
+        else if (block.has(name))
+            res.insert(block.getByName(name));
+        else
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot find column {} in minmax_count projection but query analysis still selects this projection. It's a bug",
+                name);
+    }
+    return res;
+}
+
+
 bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const
 {
@@ -4364,11 +4473,27 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         }
     };
 
-    for (const auto & projection : metadata_snapshot->projections)
-        add_projection_candidate(projection);
+    ProjectionCandidate * selected_candidate = nullptr;
+    size_t min_sum_marks = std::numeric_limits<size_t>::max();
+    if (metadata_snapshot->minmax_count_projection)
+        add_projection_candidate(*metadata_snapshot->minmax_count_projection);
+
+    // Only add more projection candidates if minmax_count_projection cannot match.
+    if (candidates.empty())
+    {
+        for (const auto & projection : metadata_snapshot->projections)
+            add_projection_candidate(projection);
+    }
+    else
+    {
+        selected_candidate = &candidates.front();
+        query_info.minmax_count_projection_block
+            = getMinMaxCountProjectionBlock(metadata_snapshot, selected_candidate->required_columns, query_info, query_context);
+        min_sum_marks = query_info.minmax_count_projection_block.rows();
+    }
 
     // Let's select the best projection to execute the query.
-    if (!candidates.empty())
+    if (!candidates.empty() && !selected_candidate)
     {
         std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks;
         if (settings.select_sequential_consistency)
@@ -4389,7 +4514,6 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             settings.max_threads,
             max_added_blocks);
 
-        size_t min_sum_marks = std::numeric_limits<size_t>::max();
         if (!query_info.merge_tree_select_result_ptr->error())
         {
             // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
@@ -4397,7 +4521,6 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             min_sum_marks = query_info.merge_tree_select_result_ptr->marks() + 1;
         }
 
-        ProjectionCandidate * selected_candidate = nullptr;
         /// Favor aggregate projections
         for (auto & candidate : candidates)
         {
@@ -4437,28 +4560,27 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     min_sum_marks);
             }
         }
-
-        if (!selected_candidate)
-            return false;
-        else if (min_sum_marks == 0)
-        {
-            /// If selected_projection indicated an empty result set. Remember it in query_info but
-            /// don't use projection to run the query, because projection pipeline with empty result
-            /// set will not work correctly with empty_result_for_aggregation_by_empty_set.
-            query_info.merge_tree_empty_result = true;
-            return false;
-        }
-
-        if (selected_candidate->desc->type == ProjectionDescription::Type::Aggregate)
-        {
-            selected_candidate->aggregation_keys = select.getQueryAnalyzer()->aggregationKeys();
-            selected_candidate->aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
-        }
-
-        query_info.projection = std::move(*selected_candidate);
-        return true;
     }
-    return false;
+
+    if (!selected_candidate)
+        return false;
+    else if (min_sum_marks == 0)
+    {
+        /// If selected_projection indicated an empty result set. Remember it in query_info but
+        /// don't use projection to run the query, because projection pipeline with empty result
+        /// set will not work correctly with empty_result_for_aggregation_by_empty_set.
+        query_info.merge_tree_empty_result = true;
+        return false;
+    }
+
+    if (selected_candidate->desc->type == ProjectionDescription::Type::Aggregate)
+    {
+        selected_candidate->aggregation_keys = select.getQueryAnalyzer()->aggregationKeys();
+        selected_candidate->aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
+    }
+
+    query_info.projection = std::move(*selected_candidate);
+    return true;
 }
 
 
