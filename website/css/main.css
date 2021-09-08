@@ -1,10 +1,58 @@
-.btn-tertiary-light {
-  border-color: #257af4;
-  color: #257af4;
+.btn-primary {
+  color: #212529;
 }
-.btn-tertiary-light:active, .btn-tertiary-light:hover {
+.btn-primary:active, .btn-primary:hover {
+  color: #212529;
+}
+
+.btn-outline-primary {
+  background: #fffaf0;
+  border-color: #ffcc00;
+  color: #212529;
+}
+.btn-outline-primary:active, .btn-outline-primary:hover {
+  background: #ffcc00;
+  border-color: #ffcc00;
+  color: #212529;
+}
+
+.btn-secondary {
+  border-color: #212529;
+  color: #fff;
+}
+.btn-secondary:active, .btn-secondary:hover {
+  background: #fff;
+  border-color: #212529;
+  color: #212529;
+}
+
+.btn-outline-secondary {
+  background: #fff;
+  border-color: #212529;
+  color: #212529;
+}
+.btn-outline-secondary:active, .btn-outline-secondary:hover {
+  background: #212529;
+  border-color: #212529;
+  color: #fff;
+}
+
+.btn-tertiary {
+  border-color: #257af4;
+  color: #fff;
+}
+.btn-tertiary:active, .btn-tertiary:hover {
   background: #257af4;
   border-color: #257af4;
+  color: #fff;
+}
+
+.btn-outline-tertiary {
+  background: #e3f1fe;
+  color: #257af4;
+}
+.btn-outline-tertiary:active, .btn-outline-tertiary:hover {
+  background: #257af4;
   color: #fff;
 }
 
