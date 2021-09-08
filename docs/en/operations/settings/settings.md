@@ -3480,7 +3480,7 @@ Possible values:
 -   Negative integer — Wait for unlimited time.
 -   Positive integer — The number of seconds to wait.
 
-Default value: `120`.
+Default value: `120` seconds.
 
 ## regexp_max_matches_per_row {#regexp-max-matches-per-row}
 
