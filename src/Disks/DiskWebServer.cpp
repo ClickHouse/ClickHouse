@@ -17,14 +17,6 @@
 #include <re2/re2.h>
 
 
-#define UUID_PATTERN "[\\w]{8}-[\\w]{4}-[\\w]{4}-[\\w]{4}-[\\w]{12}"
-#define EXTRACT_UUID_PATTERN fmt::format(".*/({})\\/.*", UUID_PATTERN)
-
-#define MATCH_DIRECTORY_FILE_PATTERN fmt::format(".*({})\\/(\\w+)\\/(.*)", UUID_PATTERN)
-#define MATCH_DIRECTORY_PATTERN fmt::format(".*({})\\/(\\w+)\\/", UUID_PATTERN)
-#define MATCH_ROOT_FILE_PATTERN fmt::format(".*({})\\/(\\w+\\.\\w+)", UUID_PATTERN)
-
-
 namespace DB
 {
 
@@ -33,84 +25,82 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NETWORK_ERROR;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int DIRECTORY_DOESNT_EXIST;
 }
 
 
-void DiskWebServer::Metadata::initialize(const String & uri_with_path, const String & table_uuid, ContextPtr context) const
+void DiskWebServer::initialize(const String & uri_path) const
 {
-    ReadWriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(uri_with_path) / (".index-" + table_uuid)),
-                                         Poco::Net::HTTPRequest::HTTP_GET,
-                                         ReadWriteBufferFromHTTP::OutStreamCallback(),
-                                         ConnectionTimeouts::getHTTPTimeouts(context));
-    String uuid, directory, file, remote_file_name;
-    size_t file_size;
-
-    while (!metadata_buf.eof())
+    std::vector<String> directories_to_load;
+    LOG_TRACE(log, "Loading metadata for directory: {}", uri_path);
+    try
     {
-        readText(remote_file_name, metadata_buf);
-        assertChar('\t', metadata_buf);
-        readIntText(file_size, metadata_buf);
-        assertChar('\n', metadata_buf);
-        LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Read file: {}, size: {}", remote_file_name, file_size);
+        ReadWriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(uri_path) / ".index"),
+                                            Poco::Net::HTTPRequest::HTTP_GET,
+                                            ReadWriteBufferFromHTTP::OutStreamCallback(),
+                                            ConnectionTimeouts::getHTTPTimeouts(getContext()));
+        String file_name;
+        FileData file_data;
 
-        /*
-         * URI/   {uri}/{uuid}/all_x_x_x/{file}
-         *        ...
-         *        {uri}/{uuid}/format_version.txt
-         *        {uri}/{uuid}/detached-{file}
-         *        ...
-        **/
-        if (RE2::FullMatch(remote_file_name, MATCH_DIRECTORY_FILE_PATTERN, &uuid, &directory, &file))
+        String dir_name = fs::path(uri_path.substr(url.size())) / "";
+        LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding directory: {}", dir_name);
+
+        while (!metadata_buf.eof())
         {
-            if (uuid != table_uuid)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uuid: {}, expected: {}", uuid, table_uuid);
+            readText(file_name, metadata_buf);
+            assertChar('\t', metadata_buf);
 
-            tables_data[uuid][directory].emplace(std::make_pair(file, file_size));
-        }
-        else if (RE2::FullMatch(remote_file_name, MATCH_ROOT_FILE_PATTERN, &uuid, &file))
-        {
-            if (uuid != table_uuid)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected uuid: {}, expected: {}", uuid, table_uuid);
+            bool is_directory;
+            readBoolText(is_directory, metadata_buf);
+            if (!is_directory)
+            {
+                assertChar('\t', metadata_buf);
+                readIntText(file_data.size, metadata_buf);
+            }
+            assertChar('\n', metadata_buf);
 
-            tables_data[uuid][file].emplace(std::make_pair(file, file_size));
+            file_data.type = is_directory ? FileType::Directory : FileType::File;
+            String file_path = fs::path(uri_path) / file_name;
+            if(file_data.type == FileType::Directory)
+                directories_to_load.push_back(file_path);
+            file_path = file_path.substr(url.size());
+
+            files.emplace(std::make_pair(file_path, file_data));
+            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, file_data.size);
         }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected file: {}", remote_file_name);
+
+        LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding directory: {}", dir_name);
+        files.emplace(std::make_pair(dir_name, FileData({ .type = FileType::Directory })));
     }
+    catch (Exception & e)
+    {
+        e.addMessage("while loadng disk metadata");
+        throw;
+    }
+
+    for (const auto & directory_path : directories_to_load)
+        initialize(directory_path);
 }
 
 
-template <typename Directory>
-class DiskWebDirectoryIterator final : public IDiskDirectoryIterator
+class DiskWebServerDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
-
-    DiskWebDirectoryIterator(Directory & directory_, const String & directory_root_)
-        : directory(directory_), iter(directory.begin()), directory_root(directory_root_)
-    {
-    }
+    explicit DiskWebServerDirectoryIterator(std::vector<fs::path> && dir_file_paths_)
+        : dir_file_paths(std::move(dir_file_paths_)), iter(dir_file_paths.begin()) {}
 
     void next() override { ++iter; }
 
-    bool isValid() const override
-    {
-        return iter != directory.end();
-    }
+    bool isValid() const override { return iter != dir_file_paths.end(); }
 
-    String path() const override
-    {
-        return fs::path(directory_root) / name();
-    }
+    String path() const override { return iter->string(); }
 
-    String name() const override
-    {
-        return iter->first;
-    }
+    String name() const override { return iter->filename(); }
 
 private:
-    Directory & directory;
-    typename Directory::iterator iter;
-    const String directory_root;
+    std::vector<fs::path> dir_file_paths;
+    std::vector<fs::path>::iterator iter;
 };
 
 
@@ -146,177 +136,95 @@ private:
 
 DiskWebServer::DiskWebServer(
             const String & disk_name_,
-            const String & uri_,
-            const String & metadata_path_,
+            const String & url_,
+            const String &,
             ContextPtr context_,
             SettingsPtr settings_)
         : WithContext(context_->getGlobalContext())
         , log(&Poco::Logger::get("DiskWeb"))
-        , uri(uri_)
+        , url(url_)
         , name(disk_name_)
-        , metadata_path(metadata_path_)
+        , metadata_path(url)
         , settings(std::move(settings_))
 {
 }
 
 
-String DiskWebServer::getFileName(const String & path)
-{
-    String result;
-
-    if (RE2::FullMatch(path, MATCH_DIRECTORY_FILE_PATTERN)
-        && RE2::Extract(path, MATCH_DIRECTORY_FILE_PATTERN, R"(\1/\2/\3)", &result))
-        return result;
-
-    if (RE2::FullMatch(path, MATCH_ROOT_FILE_PATTERN)
-        && RE2::Extract(path, MATCH_ROOT_FILE_PATTERN, R"(\1/\2)", &result))
-        return result;
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected file: {}", path);
-}
-
-
-bool DiskWebServer::findFileInMetadata(const String & path, File & file_info) const
-{
-    String table_uuid, directory_name, file_name;
-
-    if (RE2::FullMatch(path, MATCH_DIRECTORY_FILE_PATTERN, &table_uuid, &directory_name, &file_name)
-       || RE2::FullMatch(path, MATCH_ROOT_FILE_PATTERN, &table_uuid, &file_name)
-       || RE2::FullMatch(path, MATCH_DIRECTORY_PATTERN, &table_uuid, &directory_name))
-    {
-        if (directory_name.empty())
-            directory_name = file_name;
-
-        if (!metadata.tables_data.count(table_uuid))
-            return false;
-
-        try
-        {
-            if (!metadata.tables_data.count(table_uuid))
-                metadata.initialize(uri, table_uuid, getContext());
-        }
-        catch (const Poco::Exception &)
-        {
-            const auto message = getCurrentExceptionMessage(false);
-            bool can_throw = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext();
-            if (can_throw)
-                throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot load disk metadata. Error: {}", message);
-
-            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Cannot load disk metadata. Error: {}", message);
-            return false;
-        }
-
-        if (!metadata.tables_data[table_uuid].count(directory_name))
-            return false;
-
-        if (file_name.empty())
-            return true;
-
-        const auto & files = metadata.tables_data[table_uuid][directory_name];
-        auto file = files.find(file_name);
-        if (file == files.end())
-            return false;
-
-        file_info = File(file->first, file->second);
-        return true;
-    }
-
-    return false;
-}
-
-
 bool DiskWebServer::exists(const String & path) const
 {
-    LOG_TRACE(log, "Checking existence of file: {}", path);
-
-    File file;
-    return findFileInMetadata(path, file);
+    LOG_TRACE(log, "Checkig existance of path: {}", path);
+    // if (files.find(path) == files.end())
+    //     initialize(fs::path(url) / path);
+    return files.find(path) != files.end();
 }
 
 
 std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, size_t) const
 {
+    LOG_TRACE(log, "Read from path: {}", path);
+    auto iter = files.find(path);
+    if (iter == files.end())
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File path {} does not exist", path);
 
-    File file;
-    if (!findFileInMetadata(path, file))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} not found", path);
+    auto fs_path = fs::path(url) / path;
+    auto remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
+    remote_path = remote_path.string().substr(url.size());
 
-    auto file_name = escapeForFileName(fs::path(path).stem()) + fs::path(path).extension().string();
-    auto remote_path = fs::path(path).parent_path() / file_name;
-    LOG_TRACE(log, "Read from file by path: {}", remote_path.string());
+    RemoteMetadata meta(path, remote_path);
+    meta.remote_fs_objects.emplace_back(std::make_pair(remote_path, iter->second.size));
 
-    RemoteMetadata meta(uri, remote_path);
-    meta.remote_fs_objects.emplace_back(std::make_pair(getFileName(remote_path), file.size));
-
-    auto reader = std::make_unique<ReadBufferFromWebServer>(uri, meta, getContext(), settings->max_read_tries, read_settings.remote_fs_buffer_size);
+    auto reader = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(), settings->max_read_tries, read_settings.remote_fs_buffer_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
 }
 
 
 DiskDirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
 {
-    LOG_TRACE(log, "Iterate directory: {}", path);
-    String uuid;
+    if (files.find(path) == files.end())
+        initialize(fs::path(url) / path);
 
-    if (RE2::FullMatch(path, ".*/store/"))
-        return std::make_unique<DiskWebDirectoryIterator<UUIDDirectoryListing>>(metadata.tables_data, path);
+    if (files.find(path) == files.end())
+        throw Exception("Directory '" + path + "' does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
-    if (!RE2::Extract(path, EXTRACT_UUID_PATTERN, "\\1", &uuid))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot extract uuid for: {}", path);
+    std::vector<fs::path> dir_file_paths;
+    for (const auto & file : files)
+        if (parentPath(file.first) == path)
+            dir_file_paths.emplace_back(file.first);
 
-    /// Do not throw if it is not a query, but disk load.
-    bool can_throw = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext();
-
-    try
-    {
-        if (!metadata.tables_data.count(uuid))
-            metadata.initialize(uri, uuid, getContext());
-    }
-    catch (const Poco::Exception &)
-    {
-        const auto message = getCurrentExceptionMessage(false);
-        if (can_throw)
-        {
-            throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot load disk metadata. Error: {}", message);
-        }
-
-        LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Cannot load disk metadata. Error: {}", message);
-        /// Empty iterator.
-        return std::make_unique<DiskWebDirectoryIterator<RootDirectoryListing>>(metadata.tables_data[""], path);
-    }
-
-    String directory_name;
-    if (RE2::FullMatch(path, MATCH_DIRECTORY_PATTERN, &uuid, &directory_name))
-    {
-        if (metadata.tables_data[uuid].contains(directory_name))
-            return std::make_unique<DiskWebDirectoryIterator<DirectoryListing>>(metadata.tables_data[uuid][directory_name], path);
-        if (can_throw)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory {} does not exist. (uuid: {})", directory_name, uuid);
-        return std::make_unique<DiskWebDirectoryIterator<RootDirectoryListing>>(metadata.tables_data[""], path); /// Empty directory.
-    }
-
-    return std::make_unique<DiskWebDirectoryIterator<RootDirectoryListing>>(metadata.tables_data[uuid], path);
+    LOG_TRACE(log, "Iterate directory {} with {} files", path, dir_file_paths.size());
+    if (dir_file_paths.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "EMpty dir: {}", path);
+    return std::make_unique<DiskWebServerDirectoryIterator>(std::move(dir_file_paths));
 }
 
 
 size_t DiskWebServer::getFileSize(const String & path) const
 {
-    File file;
-    if (!findFileInMetadata(path, file))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} not found", path);
-    return file.size;
+    auto iter = files.find(path);
+    if (iter == files.end())
+        return false;
+
+    return iter->second.size;
 }
 
 
 bool DiskWebServer::isFile(const String & path) const
 {
-    return RE2::FullMatch(path, ".*/\\w+.\\w+");
+    auto iter = files.find(path);
+    if (iter == files.end())
+        return false;
+
+    return iter->second.type == FileType::File;
 }
 
 
 bool DiskWebServer::isDirectory(const String & path) const
 {
-    return RE2::FullMatch(path, ".*/\\w+");
+    auto iter = files.find(path);
+    if (iter == files.end())
+        return false;
+
+    return iter->second.type == FileType::Directory;
 }
 
 
