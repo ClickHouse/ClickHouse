@@ -18,6 +18,7 @@ SRCS(
     Distributed/DirectoryMonitor.cpp
     Distributed/DistributedSettings.cpp
     Distributed/DistributedSink.cpp
+    ExecutablePoolSettings.cpp
     IStorage.cpp
     IndicesDescription.cpp
     JoinSettings.cpp
@@ -58,6 +59,7 @@ SRCS(
     MergeTree/MergeTreeDataSelectExecutor.cpp
     MergeTree/MergeTreeDataWriter.cpp
     MergeTree/MergeTreeDeduplicationLog.cpp
+    MergeTree/MergeTreeInOrderSelectProcessor.cpp
     MergeTree/MergeTreeIndexAggregatorBloomFilter.cpp
     MergeTree/MergeTreeIndexBloomFilter.cpp
     MergeTree/MergeTreeIndexConditionBloomFilter.cpp
@@ -75,7 +77,6 @@ SRCS(
     MergeTree/MergeTreePartInfo.cpp
     MergeTree/MergeTreePartition.cpp
     MergeTree/MergeTreePartsMover.cpp
-    MergeTree/MergeTreeProjections.cpp
     MergeTree/MergeTreeRangeReader.cpp
     MergeTree/MergeTreeReadPool.cpp
     MergeTree/MergeTreeReaderCompact.cpp
@@ -125,6 +126,7 @@ SRCS(
     StorageBuffer.cpp
     StorageDictionary.cpp
     StorageDistributed.cpp
+    StorageExecutable.cpp
     StorageExternalDistributed.cpp
     StorageFactory.cpp
     StorageFile.cpp
@@ -140,6 +142,7 @@ SRCS(
     StorageMerge.cpp
     StorageMergeTree.cpp
     StorageMongoDB.cpp
+    StorageMongoDBSocketFactory.cpp
     StorageMySQL.cpp
     StorageNull.cpp
     StorageReplicatedMergeTree.cpp

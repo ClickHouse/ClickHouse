@@ -1166,6 +1166,23 @@ void WindowTransform::appendChunk(Chunk & chunk)
             // Write out the aggregation results.
             writeOutCurrentRow();
 
+            if (isCancelled())
+            {
+                // Good time to check if the query is cancelled. Checking once
+                // per block might not be enough in severe quadratic cases.
+                // Just leave the work halfway through and return, the 'prepare'
+                // method will figure out what to do. Note that this doesn't
+                // handle 'max_execution_time' and other limits, because these
+                // limits are only updated between blocks. Eventually we should
+                // start updating them in background and canceling the processor,
+                // like we do for Ctrl+C handling.
+                //
+                // This class is final, so the check should hopefully be
+                // devirtualized and become a single never-taken branch that is
+                // basically free.
+                return;
+            }
+
             // Move to the next row. The frame will have to be recalculated.
             // The peer group start is updated at the beginning of the loop,
             // because current_row might now be past-the-end.
@@ -1255,10 +1272,12 @@ IProcessor::Status WindowTransform::prepare()
 //        next_output_block_number, first_not_ready_row, first_block_number,
 //        blocks.size());
 
-    if (output.isFinished())
+    if (output.isFinished() || isCancelled())
     {
         // The consumer asked us not to continue (or we decided it ourselves),
-        // so we abort.
+        // so we abort. Not sure what the difference between the two conditions
+        // is, but it seemed that output.isFinished() is not enough to cancel on
+        // Ctrl+C. Test manually if you change it.
         input.close();
         return Status::Finished;
     }
@@ -1745,21 +1764,21 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
-        }, properties});
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
 
     factory.registerFunction("dense_rank", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
-        }, properties});
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
 
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
-        }, properties});
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
 
     factory.registerFunction("lagInFrame", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -1780,7 +1799,7 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionNthValue>(
                 name, argument_types, parameters);
-        }, properties});
+        }, properties}, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

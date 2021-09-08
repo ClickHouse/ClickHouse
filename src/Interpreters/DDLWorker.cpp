@@ -158,14 +158,19 @@ DDLWorker::DDLWorker(
     const Poco::Util::AbstractConfiguration * config,
     const String & prefix,
     const String & logger_name,
-    const CurrentMetrics::Metric * max_entry_metric_)
+    const CurrentMetrics::Metric * max_entry_metric_,
+    const CurrentMetrics::Metric * max_pushed_entry_metric_)
     : context(Context::createCopy(context_))
     , log(&Poco::Logger::get(logger_name))
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
+    , max_pushed_entry_metric(max_pushed_entry_metric_)
 {
     if (max_entry_metric)
         CurrentMetrics::set(*max_entry_metric, 0);
+
+    if (max_pushed_entry_metric)
+        CurrentMetrics::set(*max_pushed_entry_metric, 0);
 
     if (1 < pool_size)
     {
@@ -629,7 +634,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
             String dummy;
             if (zookeeper->tryGet(active_node_path, dummy, nullptr, eph_node_disappeared))
             {
-                constexpr int timeout_ms = 30 * 1000;
+                constexpr int timeout_ms = 60 * 1000;
                 if (!eph_node_disappeared->tryWait(timeout_ms))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Ephemeral node {} still exists, "
                                     "probably it's owned by someone else", active_node_path);
@@ -1046,6 +1051,15 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     zookeeper->createAncestors(query_path_prefix);
 
     String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
+    if (max_pushed_entry_metric)
+    {
+        String str_buf = node_path.substr(query_path_prefix.length());
+        DB::ReadBufferFromString in(str_buf);
+        CurrentMetrics::Metric id;
+        readText(id, in);
+        id = std::max(*max_pushed_entry_metric, id);
+        CurrentMetrics::set(*max_pushed_entry_metric, id);
+    }
 
     /// We cannot create status dirs in a single transaction with previous request,
     /// because we don't know node_path until previous request is executed.
@@ -1140,30 +1154,7 @@ void DDLWorker::runMainThread()
 
             LOG_DEBUG(log, "Waiting for queue updates (stat: {}, {}, {}, {})",
                       queue_node_stat.version, queue_node_stat.cversion, queue_node_stat.numChildren, queue_node_stat.pzxid);
-            /// FIXME It may hang for unknown reason. Timeout is just a hotfix.
-            constexpr int queue_wait_timeout_ms = 10000;
-            bool updated = queue_updated_event->tryWait(queue_wait_timeout_ms);
-            if (!updated)
-            {
-                Coordination::Stat new_stat;
-                tryGetZooKeeper()->get(queue_dir, &new_stat);
-                bool queue_changed = memcmp(&queue_node_stat, &new_stat, sizeof(Coordination::Stat)) != 0;
-                bool watch_triggered = queue_updated_event->tryWait(0);
-                if (queue_changed && !watch_triggered)
-                {
-                    /// It should never happen.
-                    /// Maybe log message, abort() and system.zookeeper_log will help to debug it and remove timeout (#26036).
-                    LOG_TRACE(
-                        log,
-                        "Queue was not updated (stat: {}, {}, {}, {})",
-                        new_stat.version,
-                        new_stat.cversion,
-                        new_stat.numChildren,
-                        new_stat.pzxid);
-                    context->getZooKeeperLog()->flush();
-                    abort();
-                }
-            }
+            queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
         {

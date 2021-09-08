@@ -54,3 +54,4 @@ FROM
 );
 
 DROP TABLE if exists test_01054.ints;
+DROP DATABASE test_01054_overflow;

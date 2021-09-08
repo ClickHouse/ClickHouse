@@ -287,7 +287,7 @@ static void injectVirtualColumnsImpl(
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeUUID().createColumnConst(rows, task->data_part->uuid)->convertToFullColumnIfConst();
+                    column = DataTypeUUID().createColumnConst(rows, part->uuid)->convertToFullColumnIfConst();
                 else
                     column = DataTypeUUID().createColumn();
 
@@ -306,7 +306,7 @@ static void injectVirtualColumnsImpl(
             else if (virtual_column_name == "_partition_value")
             {
                 if (rows)
-                    inserter.insertPartitionValueColumn(rows, task->data_part->partition.value, partition_value_type, virtual_column_name);
+                    inserter.insertPartitionValueColumn(rows, part->partition.value, partition_value_type, virtual_column_name);
                 else
                     inserter.insertPartitionValueColumn(rows, {}, partition_value_type, virtual_column_name);
             }
@@ -465,6 +465,19 @@ Block MergeTreeBaseSelectProcessor::transformHeader(
     return block;
 }
 
+std::unique_ptr<MergeTreeBlockSizePredictor> MergeTreeBaseSelectProcessor::getSizePredictor(
+    const MergeTreeData::DataPartPtr & data_part,
+    const MergeTreeReadTaskColumns & task_columns,
+    const Block & sample_block)
+{
+    const auto & required_column_names = task_columns.columns.getNames();
+    const auto & required_pre_column_names = task_columns.pre_columns.getNames();
+    NameSet complete_column_names(required_column_names.begin(), required_column_names.end());
+    complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
+
+    return std::make_unique<MergeTreeBlockSizePredictor>(
+        data_part, Names(complete_column_names.begin(), complete_column_names.end()), sample_block);
+}
 
 MergeTreeBaseSelectProcessor::~MergeTreeBaseSelectProcessor() = default;
 

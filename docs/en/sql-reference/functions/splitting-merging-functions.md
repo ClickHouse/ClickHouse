@@ -145,6 +145,72 @@ Result:
 └────────────────────────────┘
 ```
 
+## splitByWhitespace(s) {#splitbywhitespaceseparator-s}
+
+Splits a string into substrings separated by whitespace characters. 
+Returns an array of selected substrings.
+
+**Syntax**
+
+``` sql
+splitByWhitespace(s)
+```
+
+**Arguments**
+
+-   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
+
+**Returned value(s)**
+
+Returns an array of selected substrings.
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+**Example**
+
+``` sql
+SELECT splitByWhitespace('  1!  a,  b.  ');
+```
+
+``` text
+┌─splitByWhitespace('  1!  a,  b.  ')─┐
+│ ['1!','a,','b.']                    │
+└─────────────────────────────────────┘
+```
+
+## splitByNonAlpha(s) {#splitbynonalphaseparator-s}
+
+Splits a string into substrings separated by whitespace and punctuation characters. 
+Returns an array of selected substrings.
+
+**Syntax**
+
+``` sql
+splitByNonAlpha(s)
+```
+
+**Arguments**
+
+-   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
+
+**Returned value(s)**
+
+Returns an array of selected substrings.
+
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+
+**Example**
+
+``` sql
+SELECT splitByNonAlpha('  1!  a,  b.  ');
+```
+
+``` text
+┌─splitByNonAlpha('  1!  a,  b.  ')─┐
+│ ['1','a','b']                     │
+└───────────────────────────────────┘
+```
+
 ## arrayStringConcat(arr\[, separator\]) {#arraystringconcatarr-separator}
 
 Concatenates the strings listed in the array with the separator.’separator’ is an optional parameter: a constant string, set to an empty string by default.

@@ -41,9 +41,11 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 4; }
+    size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

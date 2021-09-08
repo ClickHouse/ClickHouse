@@ -42,10 +42,10 @@ public:
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
       */
-    void setHeader(const Block & header);
+    void setHeader(const ColumnsWithTypeAndName & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromBlock(const Block & block);
+    bool insertFromBlock(const ColumnsWithTypeAndName & columns);
     /// Call after all blocks were inserted. To get the information that set is already created.
     void finishInsert() { is_created = true; }
 
@@ -54,7 +54,7 @@ public:
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
-    ColumnPtr execute(const Block & block, bool negative) const;
+    ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const;
 
     bool empty() const;
     size_t getTotalRowCount() const;
@@ -208,7 +208,7 @@ public:
         std::vector<FunctionBasePtr> functions;
     };
 
-    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && index_mapping_);
+    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
 
     size_t size() const { return ordered_set.at(0)->size(); }
 
@@ -217,6 +217,8 @@ public:
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
 
 private:
+    // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
+    bool has_all_keys;
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 
