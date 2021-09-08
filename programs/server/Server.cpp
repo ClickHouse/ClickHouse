@@ -14,7 +14,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <common/scope_guard.h>
+#include <common/scope_guard_safe.h>
 #include <common/defines.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
@@ -1510,7 +1510,7 @@ if (ThreadFuzzer::instance().isEffective())
             server.start();
         LOG_INFO(log, "Ready for connections.");
 
-        SCOPE_EXIT({
+        SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
             LOG_DEBUG(log, "Waiting for current connections to close.");
 
