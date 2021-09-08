@@ -1,4 +1,6 @@
-# Nested(Name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
+# Nested {#nested}
+
+## Nested(Name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
 
 Вложенная структура данных - это как будто вложенная таблица. Параметры вложенной структуры данных - имена и типы столбцов, указываются так же, как у запроса CREATE. Каждой строке таблицы может соответствовать произвольное количество строк вложенной структуры данных.
 
@@ -96,3 +98,6 @@ LIMIT 10
 
 Работоспособность запроса ALTER для элементов вложенных структур данных, является сильно ограниченной.
 
+## Inserting {#inserting}
+
+Чтобы вставить данные типа `Array(Struct)` в колонки `Nested`, нужно включить настройку [input_format_parquet_import_nested](../../../operations/settings/settings.md#input_format_parquet_import_nested), [input_format_arrow_import_nested](../../../operations/settings/settings.md#input_format_arrow_import_nested) или [input_format_orc_import_nested](../../../operations/settings/settings.md#input_format_orc_import_nested) для форматов ввода [Parquet](../../../interfaces/formats.md#data-format-parquet), [Arrow](../../../interfaces/formats.md#data_types-matching-arrow) и [ORC](../../../interfaces/formats.md#data-format-orc) соответственно.
