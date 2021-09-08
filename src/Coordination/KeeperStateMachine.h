@@ -60,7 +60,7 @@ public:
 
     void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
 
-    std::unordered_set<int64_t> getDeadSessions();
+    std::vector<int64_t> getDeadSessions();
 
     void shutdownStorage();
 

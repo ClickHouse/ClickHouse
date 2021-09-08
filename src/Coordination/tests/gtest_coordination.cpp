@@ -1299,7 +1299,6 @@ TEST(CoordinationTest, TestEphemeralNodeRemove)
     EXPECT_EQ(storage.ephemerals.size(), 0);
 }
 
-
 TEST(CoordinationTest, TestRotateIntervalChanges)
 {
     using namespace Coordination;
@@ -1317,6 +1316,7 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
             changelog.end_of_append_batch(0, 0);
         }
     }
+
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin"));
 
@@ -1347,6 +1347,7 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
     }
 
     changelog_2.compact(105);
+
     EXPECT_FALSE(fs::exists("./logs/changelog_1_100.bin"));
     EXPECT_TRUE(fs::exists("./logs/changelog_101_110.bin"));
     EXPECT_TRUE(fs::exists("./logs/changelog_111_117.bin"));
@@ -1375,6 +1376,23 @@ TEST(CoordinationTest, TestRotateIntervalChanges)
     EXPECT_TRUE(fs::exists("./logs/changelog_142_146.bin"));
 }
 
+
+TEST(CoordinationTest, TestSessionExpiryQueue)
+{
+    using namespace Coordination;
+    SessionExpiryQueue queue(500);
+
+    queue.addNewSessionOrUpdate(1, 1000);
+
+    for (size_t i = 0; i < 2; ++i)
+    {
+        EXPECT_EQ(queue.getExpiredSessions(), std::vector<int64_t>({}));
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    EXPECT_EQ(queue.getExpiredSessions(), std::vector<int64_t>({1}));
+}
 
 int main(int argc, char ** argv)
 {
