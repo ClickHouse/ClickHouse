@@ -112,7 +112,7 @@ void StorageMergeTree::startup()
 
     try
     {
-        background_executor.start();
+        background_operations_assignee.start();
         startBackgroundMovesIfNeeded();
     }
     catch (...)
@@ -150,8 +150,8 @@ void StorageMergeTree::shutdown()
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
 
-    background_executor.finish();
-    background_moves_executor.finish();
+    background_operations_assignee.finish();
+    background_moves_assignee.finish();
 
     try
     {
@@ -411,7 +411,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
 
         LOG_INFO(log, "Added mutation: {}", mutation_file_name);
     }
-    background_executor.trigger();
+    background_operations_assignee.trigger();
     return version;
 }
 
@@ -637,7 +637,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     }
 
     /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
-    background_executor.trigger();
+    background_operations_assignee.trigger();
 
     return CancellationCode::CancelSent;
 }
@@ -1041,7 +1041,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     return true;
 }
 
-bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & executor) //-V657
+bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) //-V657
 {
     if (shutdown_called)
         return false;
@@ -1073,7 +1073,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & execut
 
     if (merge_entry)
     {
-        executor.scheduleMergeMutateTask(LambdaAdapter::create(
+        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
             [this, metadata_snapshot, merge_entry, share_lock] () mutable
             {
                 return mergeSelectedParts(metadata_snapshot, false, {}, *merge_entry, share_lock);
@@ -1082,27 +1082,27 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & execut
     }
     if (mutate_entry)
     {
-        executor.scheduleMergeMutateTask(LambdaAdapter::create(
+        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
             [this, metadata_snapshot, merge_entry, mutate_entry, share_lock] () mutable
             {
             return mutateSelectedPart(metadata_snapshot, *mutate_entry, share_lock);
             }, common_assignee_trigger, getStorageID()));
         return true;
     }
-    bool executed = false;
+    bool scheduled = false;
     if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
     {
-        executor.scheduleMergeMutateTask(LambdaAdapter::create(
+        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
                 clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
                 return true;
             }, common_assignee_trigger, getStorageID()));
-        executed = true;
+        scheduled = true;
     }
     if (time_after_previous_cleanup_parts.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
     {
-        executor.scheduleMergeMutateTask(LambdaAdapter::create(
+        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
                 /// All use relative_data_path which changes during rename
@@ -1113,10 +1113,10 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & execut
                 clearEmptyParts();
                 return true;
             }, common_assignee_trigger, getStorageID()));
-        executed = true;
+        scheduled = true;
      }
 
-    return executed;
+    return scheduled;
 }
 
 Int64 StorageMergeTree::getCurrentMutationVersion(
@@ -1567,9 +1567,9 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge ||  action_type == ActionLocks::PartsTTLMerge)
-        background_executor.trigger();
+        background_operations_assignee.trigger();
     else if (action_type == ActionLocks::PartsMove)
-        background_moves_executor.trigger();
+        background_moves_assignee.trigger();
 }
 
 CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_context)
@@ -1647,7 +1647,7 @@ MutationCommands StorageMergeTree::getFirstAlterMutationCommandsForPart(const Da
 void StorageMergeTree::startBackgroundMovesIfNeeded()
 {
     if (areBackgroundMovesNeeded())
-        background_moves_executor.start();
+        background_moves_assignee.start();
 }
 
 std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const
