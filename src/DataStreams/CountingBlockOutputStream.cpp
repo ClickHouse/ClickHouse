@@ -18,7 +18,7 @@ void CountingTransform::transform(Chunk & chunk)
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     progress.incrementPiecewiseAtomically(local_progress);
 
-    std::cerr << "============ counting adding progress for " << static_cast<const void *>(thread_status) << ' ' << chunk.getNumRows() << " rows\n";
+    //std::cerr << "============ counting adding progress for " << static_cast<const void *>(thread_status) << ' ' << chunk.getNumRows() << " rows\n";
 
     if (thread_status)
     {
