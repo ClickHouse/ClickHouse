@@ -389,7 +389,16 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
     if (with_named_collection)
     {
         if (!storage_specific_args.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal arguments");
+        {
+            String illegal_args;
+            for (const auto & arg : storage_specific_args)
+            {
+                if (!illegal_args.empty())
+                    illegal_args += ", ";
+                illegal_args += arg.first;
+            }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown arguements {} for table function URL", illegal_args);
+        }
     }
     else
     {

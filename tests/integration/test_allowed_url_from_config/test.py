@@ -2,7 +2,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/config_with_hosts.xml'])
+node1 = cluster.add_instance('node1', main_configs=['configs/config_with_hosts.xml', 'configs/named_collections.xml'])
 node2 = cluster.add_instance('node2', main_configs=['configs/config_with_only_primary_hosts.xml'])
 node3 = cluster.add_instance('node3', main_configs=['configs/config_with_only_regexp_hosts.xml'])
 node4 = cluster.add_instance('node4', main_configs=[]) # No `remote_url_allow_hosts` at all.
