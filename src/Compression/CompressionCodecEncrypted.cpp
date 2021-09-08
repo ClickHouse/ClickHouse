@@ -487,6 +487,11 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int OPENSSL_ERROR;
+}
+
 CompressionCodecEncrypted::Configuration & CompressionCodecEncrypted::Configuration::instance()
 {
     static CompressionCodecEncrypted::Configuration ret;
@@ -511,9 +516,26 @@ namespace
 /// Register codec in factory
 void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod Method)
 {
-    auto throw_no_ssl = [](const ASTPtr &) -> CompressionCodecPtr { throw Exception(ErrorCodes::OPENSSL_ERROR, "Server was built without SSL support. Encryption is disabled."); }
+    auto throw_no_ssl = [](const ASTPtr &) -> CompressionCodecPtr { throw Exception(ErrorCodes::OPENSSL_ERROR, "Server was built without SSL support. Encryption is disabled."); };
     const auto method_code = getMethodCode(Method); /// Codec need to know its code
     factory.registerCompressionCodec(getMethodName(Method), method_code, throw_no_ssl);
+}
+
+/// Get method code (used for codec, to understand which one we are using)
+uint8_t getMethodCode(EncryptionMethod Method)
+{
+    if (Method == AES_128_GCM_SIV)
+    {
+        return uint8_t(CompressionMethodByte::AES_128_GCM_SIV);
+    }
+    else if (Method == AES_256_GCM_SIV)
+    {
+        return uint8_t(CompressionMethodByte::AES_256_GCM_SIV);
+    }
+    else
+    {
+        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
+    }
 }
 
 }
