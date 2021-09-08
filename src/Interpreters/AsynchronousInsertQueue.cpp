@@ -41,8 +41,12 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
 AsynchronousInsertQueue::InsertQuery &
 AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
 {
-    query = other.query->clone();
-    settings = other.settings;
+    if (this != &other)
+    {
+        query = other.query->clone();
+        settings = other.settings;
+    }
+
     return *this;
 }
 
@@ -251,7 +255,7 @@ void AsynchronousInsertQueue::busyCheck()
             if (lag >= busy_timeout)
                 scheduleProcessDataJob(key, std::move(elem->data), getContext());
             else
-                timeout = std::min(timeout, std::chrono::ceil<std::chrono::seconds>(busy_timeout - lag));
+                timeout = std::min(timeout, std::chrono::ceil<std::chrono::milliseconds>(busy_timeout - lag));
         }
     }
 }
