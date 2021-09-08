@@ -42,7 +42,7 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 !!! attention "Внимание"
     Если вам нужно установить ClickHouse определенной версии, вы должны установить все пакеты одной версии:
-    `apt-get install clickhouse-server=21.6.5.37 clickhouse-client=21.6.5.37 clickhouse-common-static=21.6.5.37`
+    `apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
 
 ### Из RPM пакетов {#from-rpm-packages}
 
