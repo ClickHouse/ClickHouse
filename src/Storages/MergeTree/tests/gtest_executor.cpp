@@ -65,8 +65,8 @@ TEST(Executor, RemoveTasks)
     auto executor = DB::MergeTreeBackgroundExecutor::create
     (
         DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
-        [] () { return tasks_kinds; },
-        [] () { return tasks_kinds * batch; },
+        tasks_kinds,
+        tasks_kinds * batch,
         CurrentMetrics::BackgroundPoolTask
     );
 
@@ -108,8 +108,8 @@ TEST(Executor, RemoveTasksStress)
     auto executor = DB::MergeTreeBackgroundExecutor::create
     (
         DB::MergeTreeBackgroundExecutor::Type::MERGE_MUTATE,
-        [] () { return tasks_kinds; },
-        [] () { return tasks_kinds * batch * (schedulers_count + removers_count); },
+        tasks_kinds,
+        tasks_kinds * batch * (schedulers_count + removers_count),
         CurrentMetrics::BackgroundPoolTask
     );
 
