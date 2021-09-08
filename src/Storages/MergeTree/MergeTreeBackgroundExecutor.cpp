@@ -39,8 +39,6 @@ void MergeTreeBackgroundExecutor::updateConfiguration()
         pool.setMaxThreads(new_threads_count);
         pool.setQueueSize(new_max_tasks_count);
 
-        std::cout << "threads_count " << threads_count << std::endl;
-
         /// We don't enter this loop if size is decreased.
         for (size_t number = threads_count; number < new_threads_count; ++number)
             pool.scheduleOrThrowOnError([this, number] { threadFunction(number); });
