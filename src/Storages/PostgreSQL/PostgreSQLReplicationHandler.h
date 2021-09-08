@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MaterializedPostgreSQLConsumer.h"
+#include "MaterializedPostgreSQLSettings.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Core/PostgreSQL/Utils.h>
 
@@ -25,10 +26,8 @@ public:
             const postgres::ConnectionInfo & connection_info_,
             ContextPtr context_,
             bool is_attach_,
-            const size_t max_block_size_,
-            bool allow_automatic_update_,
-            bool is_materialized_postgresql_database_,
-            const String tables_list = "");
+            const MaterializedPostgreSQLSettings & replication_settings,
+            bool is_materialized_postgresql_database_);
 
     /// Activate task to be run from a separate thread: wait until connection is available and call startReplication().
     void startup();
@@ -107,6 +106,9 @@ private:
 
     /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
     String tables_list;
+
+    bool user_managed_slot = true;
+    String user_provided_snapshot;
 
     String replication_slot, publication_name;
 
