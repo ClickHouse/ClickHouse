@@ -31,13 +31,8 @@ SRCS(
     MySQL/PacketsProtocolText.cpp
     MySQL/PacketsReplication.cpp
     NamesAndTypes.cpp
-    PostgreSQL/Connection.cpp
-    PostgreSQL/PoolWithFailover.cpp
-    PostgreSQL/Utils.cpp
-    PostgreSQL/insertPostgreSQLValue.cpp
     PostgreSQLProtocol.cpp
     QueryProcessingStage.cpp
-    ServerUUID.cpp
     Settings.cpp
     SettingsEnums.cpp
     SettingsFields.cpp

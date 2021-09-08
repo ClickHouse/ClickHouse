@@ -126,7 +126,6 @@ ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
     : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
     , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
-    , distributed_group_by_no_merge(settings_.distributed_group_by_no_merge)
 {}
 
 ExpressionAnalyzer::~ExpressionAnalyzer() = default;
@@ -162,36 +161,6 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     analyzeAggregation();
 }
 
-static ASTPtr checkPositionalArgument(ASTPtr argument, const ASTSelectQuery * select_query, ASTSelectQuery::Expression expression)
-{
-    auto columns = select_query->select()->children;
-
-    /// Case when GROUP BY element is position.
-    /// Do not consider case when GROUP BY element is not a literal, but expression, even if all values are constants.
-    if (const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get()))
-    {
-        auto which = ast_literal->value.getType();
-        if (which == Field::Types::UInt64)
-        {
-            auto pos = ast_literal->value.get<UInt64>();
-            if (pos > 0 && pos <= columns.size())
-            {
-                const auto & column = columns[--pos];
-                if (const auto * literal_ast = typeid_cast<const ASTIdentifier *>(column.get()))
-                {
-                    return std::make_shared<ASTIdentifier>(literal_ast->name());
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal value for positional argument in {}",
-                                    ASTSelectQuery::expressionToString(expression));
-                }
-            }
-            /// Do not throw if out of bounds, see appendUnusedGroupByColumn.
-        }
-    }
-    return nullptr;
-}
 
 void ExpressionAnalyzer::analyzeAggregation()
 {
@@ -246,7 +215,7 @@ void ExpressionAnalyzer::analyzeAggregation()
         if (join)
         {
             getRootActionsNoMakeSet(analyzedJoin().leftKeysList(), true, temp_actions, false);
-            auto sample_columns = temp_actions->getNamesAndTypesList();
+            auto sample_columns = temp_actions->getResultColumns();
             analyzedJoin().addJoinedColumnsAndCorrectTypes(sample_columns);
             temp_actions = std::make_shared<ActionsDAG>(sample_columns);
         }
@@ -268,44 +237,31 @@ void ExpressionAnalyzer::analyzeAggregation()
             {
                 NameSet unique_keys;
                 ASTs & group_asts = select_query->groupBy()->children;
-
                 for (ssize_t i = 0; i < ssize_t(group_asts.size()); ++i)
                 {
                     ssize_t size = group_asts.size();
                     getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
-                    if (getContext()->getSettingsRef().enable_positional_arguments)
-                    {
-                        auto new_argument = checkPositionalArgument(group_asts[i], select_query, ASTSelectQuery::Expression::GROUP_BY);
-                        if (new_argument)
-                            group_asts[i] = new_argument;
-                    }
-
                     const auto & column_name = group_asts[i]->getColumnName();
                     const auto * node = temp_actions->tryFindInIndex(column_name);
-
                     if (!node)
                         throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
-                    /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
-                    if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
+                    /// Constant expressions have non-null column pointer at this stage.
+                    if (node->column && isColumnConst(*node->column))
                     {
-                        /// Constant expressions have non-null column pointer at this stage.
-                        if (node->column && isColumnConst(*node->column))
+                        select_query->group_by_with_constant_keys = true;
+
+                        /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
+                        if (!aggregate_descriptions.empty() || size > 1)
                         {
-                            select_query->group_by_with_constant_keys = true;
+                            if (i + 1 < static_cast<ssize_t>(size))
+                                group_asts[i] = std::move(group_asts.back());
 
-                            /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
-                            if (!aggregate_descriptions.empty() || size > 1)
-                            {
-                                if (i + 1 < static_cast<ssize_t>(size))
-                                    group_asts[i] = std::move(group_asts.back());
+                            group_asts.pop_back();
 
-                                group_asts.pop_back();
-
-                                --i;
-                                continue;
-                            }
+                            --i;
+                            continue;
                         }
                     }
 
@@ -376,7 +332,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     PullingAsyncPipelineExecutor executor(io.pipeline);
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
-    set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
+    set->setHeader(executor.getHeader());
 
     Block block;
     while (executor.pull(block))
@@ -385,7 +341,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
             continue;
 
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-        if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
+        if (!set->insertFromBlock(block))
             return;
     }
 
@@ -408,7 +364,7 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
 }
 
 
-/// Performance optimization for IN() if storage supports it.
+/// Performance optimisation for IN() if storage supports it.
 void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 {
     if (!node || !storage() || !storage()->supportsIndexForIn())
@@ -652,6 +608,18 @@ void makeWindowDescriptionFromAST(const Context & context,
 
 void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
 {
+    // Convenient to check here because at least we have the Context.
+    if (!syntax->window_function_asts.empty() &&
+        !getContext()->getSettingsRef().allow_experimental_window_functions)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "The support for window functions is experimental and will change"
+            " in backwards-incompatible ways in the future releases. Set"
+            " allow_experimental_window_functions = 1 to enable it."
+            " While processing '{}'",
+            syntax->window_function_asts[0]->formatForErrorMessage());
+    }
+
     // Window definitions from the WINDOW clause
     const auto * select_query = query->as<ASTSelectQuery>();
     if (select_query && select_query->window())
@@ -1245,7 +1213,7 @@ void SelectQueryExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain,
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order,
-                                                           ManyExpressionActions & order_by_elements_actions)
+                                                  ManyExpressionActions & order_by_elements_actions)
 {
     const auto * select_query = getSelectQuery();
 
@@ -1262,20 +1230,11 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
     bool with_fill = false;
     NameSet order_by_keys;
-
     for (auto & child : select_query->orderBy()->children)
     {
-        auto * ast = child->as<ASTOrderByElement>();
+        const auto * ast = child->as<ASTOrderByElement>();
         if (!ast || ast->children.empty())
             throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
-
-        if (getContext()->getSettingsRef().enable_positional_arguments)
-        {
-            auto new_argument = checkPositionalArgument(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
-            if (new_argument)
-                ast->children[0] = new_argument;
-        }
-
         ASTPtr order_expression = ast->children.at(0);
         step.addRequiredOutput(order_expression->getColumnName());
 
@@ -1325,16 +1284,8 @@ bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain
         aggregated_names.insert(column.name);
     }
 
-    auto & children = select_query->limitBy()->children;
-    for (auto & child : children)
+    for (const auto & child : select_query->limitBy()->children)
     {
-        if (getContext()->getSettingsRef().enable_positional_arguments)
-        {
-            auto new_argument = checkPositionalArgument(child, select_query, ASTSelectQuery::Expression::LIMIT_BY);
-            if (new_argument)
-                child = new_argument;
-        }
-
         auto child_name = child->getColumnName();
         if (!aggregated_names.count(child_name))
             step.addRequiredOutput(std::move(child_name));
@@ -1523,6 +1474,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         chain.clear();
     };
+
+    if (storage)
+    {
+        query_analyzer.makeSetsForIndex(query.where());
+        query_analyzer.makeSetsForIndex(query.prewhere());
+    }
 
     {
         ExpressionActionsChain chain(context);

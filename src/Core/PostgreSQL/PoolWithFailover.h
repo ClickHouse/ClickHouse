@@ -1,12 +1,5 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#include "config_core.h"
-#endif
-
-#if USE_LIBPQXX
-
-
 #include "ConnectionHolder.h"
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -70,5 +63,3 @@ private:
 using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
 
 }
-
-#endif

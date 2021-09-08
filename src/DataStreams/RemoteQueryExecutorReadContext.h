@@ -34,8 +34,7 @@ public:
     /// This mutex for fiber is needed because fiber could be destroyed in cancel method from another thread.
     std::mutex fiber_lock;
 
-    /// atomic is required due to data-race between setConnectionFD() and setTimer() from the cancellation path.
-    std::atomic<uint64_t> receive_timeout_usec = 0;
+    Poco::Timespan receive_timeout;
     IConnections & connections;
     Poco::Net::Socket * last_used_socket = nullptr;
 
@@ -76,7 +75,6 @@ class RemoteQueryExecutorReadContext
 {
 public:
     void cancel() {}
-    void setTimer() {}
 };
 
 }

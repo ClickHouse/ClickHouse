@@ -173,7 +173,7 @@ try
 catch (...) /// Exception while we looking for a task, reschedule
 {
     tryLogCurrentException(__PRETTY_FUNCTION__);
-
+    
     /// Why do we scheduleTask again?
     /// To retry on exception, since it may be some temporary exception.
     scheduleTask(/* with_backoff = */ true);

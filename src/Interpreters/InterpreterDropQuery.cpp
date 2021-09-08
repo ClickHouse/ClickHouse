@@ -17,7 +17,7 @@
 #endif
 
 #if USE_MYSQL
-#   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
+#   include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #endif
 
 #if USE_LIBPQXX
@@ -34,7 +34,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
-    extern const int TABLE_IS_READ_ONLY;
 }
 
 
@@ -163,8 +162,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
             getContext()->checkAccess(drop_storage, table_id);
-            if (table->isReadOnly())
-                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
             if (table->isDictionary())
             {
@@ -198,8 +195,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
                 throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
 
             getContext()->checkAccess(AccessType::TRUNCATE, table_id);
-            if (table->isReadOnly())
-                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
             table->checkTableCanBeDropped();
 
@@ -320,7 +315,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 throw Exception("DETACH PERMANENTLY is not implemented for databases", ErrorCodes::NOT_IMPLEMENTED);
 
 #if USE_MYSQL
-            if (database->getEngineName() == "MaterializedMySQL")
+            if (database->getEngineName() == "MaterializeMySQL")
                 stopDatabaseSynchronization(database);
 #endif
             if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
@@ -340,7 +335,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
                 /// Flush should not be done if shouldBeEmptyOnDetach() == false,
                 /// since in this case getTablesIterator() may do some additional work,
-                /// see DatabaseMaterializedMySQL<>::getTablesIterator()
+                /// see DatabaseMaterializeMySQL<>::getTablesIterator()
                 for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
                 {
                     iterator->table()->flush();

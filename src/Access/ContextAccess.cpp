@@ -7,7 +7,6 @@
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
-#include <Access/SettingsProfilesInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -308,25 +307,23 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
 }
 
 
-SettingsChanges ContextAccess::getDefaultSettings() const
+std::shared_ptr<const Settings> ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};
     if (enabled_settings)
-    {
-        if (auto info = enabled_settings->getInfo())
-            return info->settings;
-    }
-    return {};
+        return enabled_settings->getSettings();
+    static const auto everything_by_default = std::make_shared<Settings>();
+    return everything_by_default;
 }
 
 
-std::shared_ptr<const SettingsProfilesInfo> ContextAccess::getDefaultProfileInfo() const
+std::shared_ptr<const SettingsConstraints> ContextAccess::getSettingsConstraints() const
 {
     std::lock_guard lock{mutex};
     if (enabled_settings)
-        return enabled_settings->getInfo();
-    static const auto everything_by_default = std::make_shared<SettingsProfilesInfo>(*manager);
-    return everything_by_default;
+        return enabled_settings->getConstraints();
+    static const auto no_constraints = std::make_shared<SettingsConstraints>();
+    return no_constraints;
 }
 
 

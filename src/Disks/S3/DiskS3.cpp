@@ -146,7 +146,7 @@ public:
 
     std::unique_ptr<ReadBufferFromS3> createReadBuffer(const String & path) override
     {
-        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, buf_size);
+        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, metadata.remote_fs_root_path + path, max_single_read_retries, buf_size);
     }
 
 private:
@@ -170,6 +170,15 @@ DiskS3::DiskS3(
 {
 }
 
+String DiskS3::getUniqueId(const String & path) const
+{
+    Metadata metadata(remote_fs_root_path, metadata_path, path);
+    String id;
+    if (!metadata.remote_fs_objects.empty())
+        id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
+    return id;
+}
+
 RemoteFSPathKeeperPtr DiskS3::createFSPathKeeper() const
 {
     auto settings = current_settings.get();
@@ -184,7 +193,7 @@ void DiskS3::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
     if (s3_paths_keeper)
         s3_paths_keeper->removePaths([&](S3PathKeeper::Chunk && chunk)
         {
-            LOG_TRACE(log, "Remove AWS keys {}", S3PathKeeper::getChunkKeys(chunk));
+            LOG_DEBUG(log, "Remove AWS keys {}", S3PathKeeper::getChunkKeys(chunk));
             Aws::S3::Model::Delete delkeys;
             delkeys.SetObjects(chunk);
             /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
@@ -221,16 +230,15 @@ void DiskS3::moveFile(const String & from_path, const String & to_path, bool sen
     fs::rename(fs::path(metadata_path) / from_path, fs::path(metadata_path) / to_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, const ReadSettings & read_settings, size_t) const
+std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *) const
 {
     auto settings = current_settings.get();
     auto metadata = readMeta(path);
 
-    LOG_TRACE(log, "Read from file by path: {}. Existing S3 objects: {}",
+    LOG_DEBUG(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    auto reader = std::make_unique<ReadIndirectBufferFromS3>(
-        settings->client, bucket, metadata, settings->s3_max_single_read_retries, read_settings.remote_fs_buffer_size);
+    auto reader = std::make_unique<ReadIndirectBufferFromS3>(settings->client, bucket, metadata, settings->s3_max_single_read_retries, buf_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
 }
 
@@ -252,7 +260,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         s3_path = "r" + revisionToString(revision) + "-file-" + s3_path;
     }
 
-    LOG_TRACE(log, "{} to file by path: {}. S3 path: {}",
+    LOG_DEBUG(log, "{} to file by path: {}. S3 path: {}",
               mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_path + path), remote_fs_root_path + s3_path);
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
@@ -352,7 +360,7 @@ void DiskS3::findLastRevision()
     {
         auto revision_prefix = revision + "1";
 
-        LOG_TRACE(log, "Check object exists with revision prefix {}", revision_prefix);
+        LOG_DEBUG(log, "Check object exists with revision prefix {}", revision_prefix);
 
         /// Check file or operation with such revision prefix exists.
         if (checkObjectExists(bucket, remote_fs_root_path + "r" + revision_prefix)
@@ -376,8 +384,7 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
         settings->client,
         source_bucket,
         source_path + SCHEMA_VERSION_OBJECT,
-        settings->s3_max_single_read_retries,
-        DBMS_DEFAULT_BUFFER_SIZE);
+        settings->s3_max_single_read_retries);
 
     readIntText(version, buffer);
 
@@ -406,7 +413,7 @@ void DiskS3::updateObjectMetadata(const String & key, const ObjectMetadata & met
 
 void DiskS3::migrateFileToRestorableSchema(const String & path)
 {
-    LOG_TRACE(log, "Migrate file {} to restorable schema", metadata_path + path);
+    LOG_DEBUG(log, "Migrate file {} to restorable schema", metadata_path + path);
 
     auto meta = readMeta(path);
 
@@ -423,7 +430,7 @@ void DiskS3::migrateToRestorableSchemaRecursive(const String & path, Futures & r
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
-    LOG_TRACE(log, "Migrate directory {} to restorable schema", metadata_path + path);
+    LOG_DEBUG(log, "Migrate directory {} to restorable schema", metadata_path + path);
 
     bool dir_contains_only_files = true;
     for (auto it = iterateDirectory(path); it->isValid(); it->next())
@@ -596,7 +603,7 @@ void DiskS3::copyObjectMultipartImpl(const String & src_bucket, const String & s
     std::optional<Aws::S3::Model::HeadObjectResult> head,
     std::optional<std::reference_wrapper<const ObjectMetadata>> metadata) const
 {
-    LOG_TRACE(log, "Multipart copy upload has created. Src Bucket: {}, Src Key: {}, Dst Bucket: {}, Dst Key: {}, Metadata: {}",
+    LOG_DEBUG(log, "Multipart copy upload has created. Src Bucket: {}, Src Key: {}, Dst Bucket: {}, Dst Key: {}, Metadata: {}",
         src_bucket, src_key, dst_bucket, dst_key, metadata ? "REPLACE" : "NOT_SET");
 
     auto settings = current_settings.get();
@@ -670,7 +677,7 @@ void DiskS3::copyObjectMultipartImpl(const String & src_bucket, const String & s
 
         throwIfError(outcome);
 
-        LOG_TRACE(log, "Multipart copy upload has completed. Src Bucket: {}, Src Key: {}, Dst Bucket: {}, Dst Key: {}, "
+        LOG_DEBUG(log, "Multipart copy upload has completed. Src Bucket: {}, Src Key: {}, Dst Bucket: {}, Dst Key: {}, "
             "Upload_id: {}, Parts: {}", src_bucket, src_key, dst_bucket, dst_key, multipart_upload_id, part_tags.size());
     }
 }
@@ -872,7 +879,7 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
         metadata.addObject(relative_key, head_result.GetContentLength());
         metadata.save();
 
-        LOG_TRACE(log, "Restored file {}", path);
+        LOG_DEBUG(log, "Restored file {}", path);
     }
 }
 
@@ -919,7 +926,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
                 if (exists(from_path))
                 {
                     moveFile(from_path, to_path, send_metadata);
-                    LOG_TRACE(log, "Revision {}. Restored rename {} -> {}", revision, from_path, to_path);
+                    LOG_DEBUG(log, "Revision {}. Restored rename {} -> {}", revision, from_path, to_path);
 
                     if (restore_information.detached && isDirectory(to_path))
                     {
@@ -946,7 +953,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
                 {
                     createDirectories(directoryPath(dst_path));
                     createHardLink(src_path, dst_path, send_metadata);
-                    LOG_TRACE(log, "Revision {}. Restored hardlink {} -> {}", revision, src_path, dst_path);
+                    LOG_DEBUG(log, "Revision {}. Restored hardlink {} -> {}", revision, src_path, dst_path);
                 }
             }
         }
@@ -977,7 +984,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
 
             auto detached_path = pathToDetached(path);
 
-            LOG_TRACE(log, "Move directory to 'detached' {} -> {}", path, detached_path);
+            LOG_DEBUG(log, "Move directory to 'detached' {} -> {}", path, detached_path);
 
             fs::path from_path = fs::path(metadata_path) / path;
             fs::path to_path = fs::path(metadata_path) / detached_path;
@@ -1032,7 +1039,7 @@ void DiskS3::onFreeze(const String & path)
     revision_file_buf.finalize();
 }
 
-void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &)
+void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context)
 {
     auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context);
 

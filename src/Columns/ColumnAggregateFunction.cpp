@@ -1,6 +1,5 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/MaskOperations.h>
 #include <Common/assert_cast.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
@@ -309,10 +308,6 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
     return res;
 }
 
-void ColumnAggregateFunction::expand(const Filter & mask, bool inverted)
-{
-    expandDataByMask<char *>(data, mask, inverted);
-}
 
 ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
 {
