@@ -46,6 +46,8 @@ def test_simple_select(started_cluster):
     assert node.query("SELECT sum(key) FROM simple_mongo_table") == str(sum(range(0, 100))) + '\n'
 
     assert node.query("SELECT data from simple_mongo_table where key = 42") == hex(42 * 42) + '\n'
+    node.query("DROP TABLE simple_mongo_table")
+    simple_mongo_table.drop()
 
 
 @pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
@@ -67,6 +69,8 @@ def test_complex_data_type(started_cluster):
     assert node.query("SELECT sum(key) FROM incomplete_mongo_table") == str(sum(range(0, 100))) + '\n'
 
     assert node.query("SELECT data from incomplete_mongo_table where key = 42") == hex(42 * 42) + '\n'
+    node.query("DROP TABLE incomplete_mongo_table")
+    incomplete_mongo_table.drop()
 
 
 @pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
@@ -95,7 +99,9 @@ def test_incorrect_data_type(started_cluster):
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT bbbb FROM strange_mongo_table2")
-
+    node.query("DROP TABLE strange_mongo_table")
+    node.query("DROP TABLE strange_mongo_table2")
+    strange_mongo_table.drop()
 
 @pytest.mark.parametrize('started_cluster', [True], indirect=['started_cluster'])
 def test_secure_connection(started_cluster):
@@ -116,3 +122,5 @@ def test_secure_connection(started_cluster):
     assert node.query("SELECT sum(key) FROM simple_mongo_table") == str(sum(range(0, 100))) + '\n'
 
     assert node.query("SELECT data from simple_mongo_table where key = 42") == hex(42 * 42) + '\n'
+    node.query("DROP TABLE simple_mongo_table")
+    simple_mongo_table.drop()
