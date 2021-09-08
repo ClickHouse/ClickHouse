@@ -1,0 +1,66 @@
+.btn-tertiary-light {
+  border-color: #257af4;
+  color: #257af4;
+}
+.btn-tertiary-light:active, .btn-tertiary-light:hover {
+  background: #257af4;
+  border-color: #257af4;
+  color: #fff;
+}
+
+.navbar {
+  border-bottom: 4px solid #f1f6f9;
+  height: 142px;
+}
+.navbar-super {
+  flex-shrink: 0;
+  width: 100%;
+}
+.navbar-super ul {
+  list-style: none;
+}
+.navbar-super li + li {
+  margin-left: 24px;
+}
+.navbar-super a {
+  align-items: center;
+  color: #212529;
+  display: flex;
+  font-size: 0.875rem;
+}
+.navbar-super a:active, .navbar-super a:hover {
+  color: #257af4;
+  text-decoration: none;
+}
+.navbar-super img {
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+.navbar-brand {
+  background: no-repeat url(../images/logo.svg);
+  background-size: contain;
+  flex-shrink: 0;
+  height: 28px;
+  margin-right: 48px;
+  padding: 0;
+  width: 180px;
+}
+.navbar-nav {
+  align-items: center;
+  height: 46px;
+}
+
+.navbar-expand-lg > .container {
+  flex-wrap: wrap;
+}
+
+.nav-item + .nav-item {
+  margin-left: 24px;
+}
+
+.nav-link {
+  color: #212529;
+}
+.nav-link:active, .nav-link:hover {
+  color: #257af4;
+}

@@ -1,16 +1,3 @@
-body {
-    font-family: -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Helvetica Neue",Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
-}
-
-a:link, a:visited {
-    color: #f14600;
-    text-decoration: none;
-}
-
-a:hover, a:active {
-    text-decoration: underline;
-}
-
 .btn.disabled, .btn:disabled {
     cursor: default;
     opacity: 0.4;
@@ -111,19 +98,6 @@ a.btn-outline-yellow {
 
 .text-yellow {
     color: #fc0;
-}
-
-.navbar-light {
-    border-bottom: 1px solid #efefef;
-}
-
-
-.navbar-light .navbar-nav .nav-link {
-    color: #000;
-}
-
-.navbar-light .navbar-nav .nav-link:hover {
-    color: #f14600;
 }
 
 .bg-number {
