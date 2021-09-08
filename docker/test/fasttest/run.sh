@@ -9,7 +9,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-11}
+export LLVM_VERSION=${LLVM_VERSION:-12}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
@@ -401,6 +401,9 @@ function run_tests
 
         # depends on Go
         02013_zlib_read_after_eof
+
+        # Accesses CH via mysql table function (which is unavailable)
+        01747_system_session_log_long
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \
